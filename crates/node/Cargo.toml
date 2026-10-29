@@ -19,6 +19,7 @@ core-ring = { workspace = true }
 daemon-core = { workspace = true }
 relay-core = { workspace = true }
 path-core = { workspace = true }
+socket-core = { workspace = true }
 futures-util = { workspace = true }
 hyper-util = { workspace = true }
 quinn = { workspace = true }

@@ -27,9 +27,10 @@ pub use ask::{
 /// The character that marks an attachment's place in text.
 pub use attachments::PLACEHOLDER;
 pub use composer::{
-    CONTEXT_NEAR_FULL_PERCENT, ComposerView, ContextView, Lands, QueuedRow, RefusedPrompt,
-    SentPrompt, SignInView, Underway, composer, composer_tokens, context, prompts_underway,
-    queue_rows, refused_prompts, sends_to_feed, sign_in, switched_away, waiting,
+    CONTEXT_NEAR_FULL_PERCENT, CommandMatch, ComposerView, ContextView, Lands, PASTE_CHARS,
+    PASTE_LINES, QueuedRow, RefusedPrompt, SentPrompt, SignInView, Underway, command_matches,
+    composer, composer_tokens, context, pastes_as_attachment, prompts_underway, queue_rows,
+    refused_prompts, sends_to_feed, sign_in, switched_away, waiting,
 };
 pub use fleet::{
     ActivityLine, AskSubject, AskSummary, ExitCause, FamilyHeader, FleetCard, FleetFilter,
@@ -42,9 +43,9 @@ pub use form::{
     form_problems,
 };
 pub use overview::{
-    ChangeTotals, ChangedFile, Changes, Comparison, Folder, JobRow, Overview, ServerView, TaskLine,
-    TaskMark, TasksView, UsageLabel, UsageView, UsageWindowView, changes, diff_base, overview,
-    usage_windows,
+    ChangeTotals, ChangedFile, Changes, Comparison, Folder, JobRow, JobStop, Overview, ServerView,
+    TaskLine, TaskMark, TasksView, UsageLabel, UsageView, UsageWindowView, changes, diff_base,
+    overview, usage_windows,
 };
 pub use review::{DiffLine, FileStatus, Hunk, LineKind, ReviewDoc, ReviewFile, review_doc};
 pub use rows::{
@@ -63,6 +64,9 @@ pub use settings::{
 };
 /// Why an input was refused, which every client words.
 pub use ui_state::{Refusal, RefusalReason};
+/// The most an attachment may hold, which every client checks before it
+/// reads or uploads one.
+pub use wire::ATTACHMENT_SIZE_LIMIT;
 /// What a host offers an agent to pick from, which a new agent's settings
 /// are built from.
 pub use wire::Catalogue;

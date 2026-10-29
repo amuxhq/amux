@@ -223,6 +223,7 @@ public enum ChatWords {
                 String(localized: "always \(scope(destination))")
             }
         case .session: String(localized: "this session")
+        case .always: String(localized: "always, in every project")
         case .commandPrefix(let words):
             String(localized: "commands starting with \(words.joined(separator: " "))")
         case .networkHosts(let hosts):
@@ -361,6 +362,7 @@ public enum ChatWords {
                 ? String(localized: "1 subagent working")
                 : String(localized: "\(count) subagents working"), nil, nil)
         case .compacting: return (String(localized: "Compacting"), nil, nil)
+        case .safetyCheck: return (String(localized: "Running safety checks"), nil, nil)
         case .retrying(let attempt, let most, _):
             return (most > 0
                 ? String(localized: "Retrying · attempt \(attempt) of \(most)")
@@ -499,7 +501,9 @@ public enum ChatWords {
         }
         if let usage = overview.usageNearLimit, !usage.blocked {
             let near = usage.windows
-                .map { "\(usageLabel($0.label)) \(Int($0.usedPercent.rounded()))%" }
+                .compactMap { window in
+                    window.usedPercent.map { "\(usageLabel(window.label)) \(Int($0.rounded()))%" }
+                }
                 .joined(separator: " · ")
             parts.append((
                 near.isEmpty
@@ -514,11 +518,11 @@ public enum ChatWords {
     }
 
     /// "5-hour limit reached · resets 23:24": the window of a usage limit
-    /// that has been reached, the fullest one when the provider does not
-    /// say which. Sending stays open: the provider may still take a prompt.
+    /// that has been reached, the fullest one whose use is known when the
+    /// provider does not say which. Sending stays open: the provider may still take a prompt.
     public static func limitReached(_ usage: UsageView, now: Date) -> String {
         let window = usage.windows.first { $0.state == .blocked }
-            ?? usage.windows.max { $0.usedPercent < $1.usedPercent }
+            ?? usage.windows.compactMap { window in window.usedPercent.map { (window, $0) } }.max { $0.1 < $1.1 }?.0
         guard let window else { return String(localized: "Usage limit reached") }
         let reached = String(localized: "\(usageLabel(window.label)) reached")
         guard let at = window.resetsAtMs, Date(milliseconds: at) > now else { return reached }
@@ -614,9 +618,11 @@ public enum ChatWords {
         }
     }
 
-    /// How full a usage window is: "91% used".
+    /// How full a usage window is: "91% used", or "—" when the provider
+    /// has not said.
     public static func used(_ window: UsageWindowView) -> String {
-        String(localized: "\(Int(window.usedPercent.rounded()))% used")
+        guard let used = window.usedPercent else { return "—" }
+        return String(localized: "\(Int(used.rounded()))% used")
     }
 
     /// A usage window's state and when it resets: "near · resets 16:07".
@@ -659,6 +665,18 @@ public enum ChatWords {
         [added > 0 ? "+\(added)" : nil, removed > 0 ? "\u{2212}\(removed)" : nil]
             .compactMap { $0 }.joined(separator: " ")
     }
+
+    /// The question before one background job is stopped, naming it:
+    /// "Stop cargo test?".
+    public static func stopJob(_ job: JobRow) -> String {
+        String(localized: "Stop \(firstLine(job.command))?")
+    }
+
+    /// What stopping one background job leaves alone.
+    public static let stopJobLeaves = String(localized: "The agent keeps running.")
+
+    /// A background job asked to stop that has not yet ended.
+    public static let stoppingJob = String(localized: "Stopping…")
 
     /// How long a background job has run: "40s", "14m".
     public static func ran(since startedAtMs: Int64, now: Date) -> String {

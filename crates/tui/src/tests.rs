@@ -635,6 +635,42 @@ fn a_denial_takes_a_note_that_goes_back_to_the_agent() {
     assert_eq!(deny.note, "use cargo clean");
 }
 
+/// An ask Claude says must not be approved by a stray key opens on its
+/// refusal and takes no digit: a 1 answers nothing, and Enter refuses.
+#[test]
+fn an_ask_that_defaults_to_no_opens_on_deny_and_takes_no_digit() {
+    let (state, at) = fixtures::frame_where(Kind::ClaudeSdk, "flagged_ask", |state| {
+        ask_card(state).is_some()
+    });
+    let mut view = ChatView::new(b"agent".to_vec(), at, false);
+    assert!(
+        view.key(&state, key(KeyCode::Char('1')), theme())
+            .is_empty(),
+        "a digit answers nothing"
+    );
+    let effects = view.key(&state, key(KeyCode::Enter), theme());
+    let [ChatEffect::Answer(input)] = effects.as_slice() else {
+        panic!("{effects:?}");
+    };
+    let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
+        of: Some(wire::claude_sdk_input::Of::Answer(answer)),
+    })) = input.decode_body()
+    else {
+        panic!("{input:?}");
+    };
+    assert!(
+        matches!(
+            answer.of,
+            Some(wire::claude_answer::Of::Permission(
+                wire::PermissionAnswer {
+                    of: Some(wire::permission_answer::Of::Deny(_)),
+                }
+            ))
+        ),
+        "{answer:?}"
+    );
+}
+
 /// docs/TERMINAL.md: when the agent waits on you "the ask takes over the
 /// composer's box ... the draft waits behind it and comes back after".
 #[test]
@@ -952,6 +988,27 @@ fn a_steered_prompt_reads_sending_into_this_turn_until_its_reflection() {
     );
 }
 
+/// A pasted file is an image only if its bytes are one both providers read
+/// natively, typed by the bytes: a PNG with no extension is a PNG, and a
+/// file named `.png` that is not one is a file.
+#[test]
+fn a_pasted_file_is_an_image_by_its_bytes() {
+    let state = chat(replies(1, 3));
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    let dir = tempfile::tempdir().unwrap();
+    let mut pasted = |name: &str, bytes: &[u8]| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        match view.paste(ClipboardContent::Path(path)).unwrap() {
+            Some(ChatEffect::Attach { mime, .. }) => mime,
+            other => panic!("{other:?}"),
+        }
+    };
+    assert_eq!(pasted("screenshot", b"\x89PNG\r\n\x1a\n"), "image/png");
+    assert!(!pasted("fake.png", b"not a picture").starts_with("image/"));
+    let _ = state;
+}
+
 #[test]
 fn ctrl_v_attaches_a_file_through_put_blob() {
     let state = chat(replies(1, 3));
@@ -962,14 +1019,14 @@ fn ctrl_v_attaches_a_file_through_put_blob() {
     );
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("shot.png");
-    std::fs::write(&path, b"png bytes").unwrap();
+    std::fs::write(&path, b"\x89PNG\r\n\x1a\n").unwrap();
     let effect = view.paste(ClipboardContent::Path(path)).unwrap();
     assert_eq!(
         effect,
         Some(ChatEffect::Attach {
             name: "shot.png".into(),
             mime: "image/png".into(),
-            bytes: b"png bytes".to_vec()
+            bytes: b"\x89PNG\r\n\x1a\n".to_vec()
         })
     );
     typed(&mut view, &state, "see ");
@@ -2203,6 +2260,7 @@ fn a_paste_into_a_secret_answer_shows_as_bullets() {
         question_skip: true,
         question_reply: true,
         stops_turn: true,
+        default_to_no: false,
         state: CardState::Open,
     };
     let mut ask = crate::chat::ask::AskUi::default();
@@ -3604,6 +3662,7 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
             used_percent,
             resets_at_ms: None,
             state: state as i32,
+            used_unknown: false,
         })
     };
     let body = wire::ClaudeSdkSnapshot {
@@ -3677,6 +3736,49 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
         "{screen}"
     );
     assert_eq!(pane[at("Fable weekly limit") + 1], "fine");
+}
+
+/// A window whose use the provider did not give reads "—" in the overview,
+/// and never stands for the limit reached: the composer's edge names the
+/// fullest window whose use is known.
+#[test]
+fn a_window_of_unknown_use_reads_a_dash_and_is_never_the_fullest() {
+    let window =
+        |limit: wire::Limit, name: &str, used_percent, used_unknown| wire::ClaudeUsageWindow {
+            limit: limit as i32,
+            provider_name: name.into(),
+            meter: Some(wire::UsageMeter {
+                used_percent,
+                used_unknown,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+    let body = wire::ClaudeSdkSnapshot {
+        usage: Some(wire::ClaudeUsage {
+            state: wire::UsageState::Blocked as i32,
+            windows: vec![
+                window(wire::Limit::FiveHour, "five_hour", 60.0, false),
+                window(wire::Limit::Unspecified, "overage", 99.0, true),
+            ],
+        }),
+        ..Default::default()
+    }
+    .encode_to_vec();
+    let mut state = chat_in_git(replies(1, 2), Some("main"));
+    state.update(snapshot(Phase::Idle, body, vec![]));
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    view.open_pane();
+    let (buffer, _) = draw(&mut view, &state, 5 * 60_000, 140, 40, theme());
+    let screen = text(&buffer);
+    let overage = screen
+        .lines()
+        .filter_map(|line| line.split_once('│').map(|(_, pane)| pane.trim()))
+        .find(|line| line.starts_with("overage limit"))
+        .unwrap_or_else(|| panic!("no overage window in the pane:\n{screen}"));
+    assert!(overage.ends_with('—'), "{screen}");
+    assert!(!screen.contains("99%"), "{screen}");
+    assert!(screen.contains("5-hour limit reached"), "{screen}");
 }
 
 /// A background command reads as code; the provider's own subagent or
@@ -3914,6 +4016,7 @@ fn two_questions() -> ui_view::AskCard {
         question_skip: true,
         question_reply: true,
         stops_turn: true,
+        default_to_no: false,
         state: CardState::Open,
     }
 }
@@ -4208,4 +4311,55 @@ fn a_focused_control_on_home_carries_the_agent_rows_marker() {
         new_agent.contains('›') && heading.contains('›'),
         "a focused control has no marker: {new_agent:?} and {heading:?}"
     );
+}
+
+/// A background job the provider can stop alone: `x` on its row in the
+/// side pane asks first, naming it, and Stop sends the stop for its key. A
+/// stop sent reads "Stopping…" on the row; a refused one shows the
+/// provider's words; terminal Claude's jobs offer no stop.
+#[test]
+fn a_job_is_stopped_from_the_pane_behind_a_confirm_card() {
+    let job = |key: &str, command: &str, stopping: bool, stop_error: &str| wire::BackgroundJob {
+        item_key: format!("k-{key}"),
+        command: command.into(),
+        key: key.into(),
+        stopping,
+        stop_error: stop_error.into(),
+        ..Default::default()
+    };
+    let shown = |jobs: Vec<wire::BackgroundJob>| {
+        let body = wire::ClaudeSdkSnapshot {
+            background_jobs: Some(wire::BackgroundJobs { known: true, jobs }),
+            ..Default::default()
+        }
+        .encode_to_vec();
+        let mut state = chat(replies(1, 2));
+        state.update(snapshot(Phase::Idle, body, vec![]));
+        let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+        view.open_pane();
+        let _ = draw(&mut view, &state, 60_000, 140, 40, theme());
+        (state, view)
+    };
+    let (state, mut view) = shown(vec![job("b1", "cargo test", false, "")]);
+    assert_eq!(view.key(&state, key(KeyCode::Char('x')), theme()), vec![]);
+    let (buffer, _) = draw(&mut view, &state, 60_000, 140, 40, theme());
+    let screen = text(&buffer);
+    assert!(
+        screen.contains("Stop cargo test? The agent keeps running."),
+        "{screen}"
+    );
+    let effects = view.key(&state, key(KeyCode::Enter), theme());
+    assert!(
+        format!("{effects:?}").contains("StopJob") && format!("{effects:?}").contains("b1"),
+        "{effects:?}"
+    );
+
+    let (state, mut view) = shown(vec![
+        job("b1", "cargo test", true, ""),
+        job("b2", "npm run dev", false, "Task b2 is not running"),
+    ]);
+    let (buffer, _) = draw(&mut view, &state, 60_000, 140, 40, theme());
+    let screen = text(&buffer);
+    assert!(screen.contains("Stopping…"), "{screen}");
+    assert!(screen.contains("Task b2 is not running"), "{screen}");
 }

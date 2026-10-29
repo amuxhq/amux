@@ -174,6 +174,7 @@ fn a_long_edit_path_keeps_the_files_name() {
         question_skip: false,
         question_reply: false,
         stops_turn: true,
+        default_to_no: false,
         state: CardState::Open,
     };
     let mut ask = crate::chat::ask::AskUi::default();
@@ -245,6 +246,7 @@ fn a_codex_rule_for_a_long_command_reads_whole() {
         question_skip: false,
         question_reply: false,
         stops_turn: true,
+        default_to_no: false,
         state: CardState::Open,
     };
     let mut ask = crate::chat::ask::AskUi::default();
@@ -419,6 +421,7 @@ fn code_question() -> AskCard {
         question_skip: false,
         question_reply: true,
         stops_turn: true,
+        default_to_no: false,
         state: CardState::Open,
     }
 }

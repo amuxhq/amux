@@ -52,4 +52,24 @@ extension Bridge {
             }
         }
     }
+
+    /// The agent's commands matching the word `draft` ends in, as the shared
+    /// view finds them, each with the draft it leaves once picked.
+    public static func commandMatches(_ commands: [CommandView], _ draft: String) -> [CommandMatch] {
+        Bridge.json(commands).withCString { commands in
+            draft.withCString { draft in
+                Bridge.read([CommandMatch].self, amux_command_matches(commands, draft)) ?? []
+            }
+        }
+    }
+
+    /// Whether text arriving in one paste joins the draft as one text
+    /// attachment rather than as words, by the rule every client's paste
+    /// follows.
+    public static func pastesAsAttachment(_ text: String) -> Bool {
+        text.withCString { amux_pastes_as_attachment($0) }
+    }
+
+    /// The most an attachment may hold, in bytes; the hosts refuse more.
+    public static var attachmentLimit: Int { Int(amux_attachment_limit()) }
 }

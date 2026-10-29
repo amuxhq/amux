@@ -31,6 +31,8 @@ public protocol ChatSource: AnyObject, Sendable {
     func resend(_ input: [UInt8]) async -> SendOutcome?
     func discard(_ input: [UInt8])
     func interrupt() async -> ActOutcome?
+    /// Stops one background job by the key its `JobStop` gives.
+    func stopJob(_ key: String) async -> ActOutcome?
     func change(_ setting: SettingChange) async -> ActOutcome?
     func resume(with draft: Draft) async -> ActOutcome?
     func pageOlder(_ rows: UInt32) async -> PageOutcome?
@@ -673,8 +675,8 @@ public final class ChatModel {
                 if composed == typed { clearDraft() }
                 setFollowing(true)
                 toNewest += 1
-            case .refused(let command, let offered)?:
-                notice = Self.refused(command: command, offered: offered, kind: frame?.kind)
+            case .refused(let command, let offered, let hint)?:
+                notice = Self.refused(command: command, offered: offered, hint: hint, kind: frame?.kind)
             case .unknown(let command, let value, let offered)?:
                 notice = Self.unknown(command, value: value, offered: offered)
             case nil:
@@ -683,10 +685,12 @@ public final class ChatModel {
         }
     }
 
-    /// "Codex does not run /status here. It runs /compact, /clear and its skills."
-    static func refused(command: String, offered: [String], kind: Kind?) -> String {
+    /// "Codex does not run /status here. It runs /compact, /clear." or, for a
+    /// skill, "Codex takes a skill as a mention: type $lint."
+    static func refused(command: String, offered: [String], hint: String? = nil, kind: Kind?) -> String {
         let name = command.hasPrefix("/") ? command : "/" + command
         let agent = kind == .codex ? "Codex" : String(localized: "This agent")
+        if let hint { return String(localized: "\(agent) takes a skill as a mention: type \(hint).") }
         let runs = offered.map { $0.hasPrefix("/") || $0.hasPrefix("$") ? $0 : "/" + $0 }
         guard !runs.isEmpty else { return String(localized: "\(agent) does not run \(name) here.") }
         return String(localized: "\(agent) does not run \(name) here. It runs \(runs.joined(separator: ", ")).")
@@ -757,39 +761,21 @@ public final class ChatModel {
 
     /// How many commands the slash rows offer at once.
     public static let slashRows = 5
-    /// A paste this long becomes one attachment instead of draft text, as
-    /// the terminal client does.
-    public static let pasteLines = 8
-    public static let pasteCharacters = 1_000
 
-    /// The agent's commands that match a draft that is exactly a leading
-    /// "/word": by prefix, or by prefix after a plugin's namespace. The
-    /// list is the settings view's, which already leaves out what a
-    /// headless agent cannot run; an agent that offers none lists nothing.
-    public var slashMatches: [CommandView] {
-        guard let word = Self.slashWord(draft), let commands = settings?.commands else { return [] }
-        return Array(commands.filter { Self.command($0.name, matches: word) }.prefix(Self.slashRows))
+    /// The agent's commands that match the word being typed, as the shared
+    /// view finds them: a "/" command when the draft is one "/word", a
+    /// Codex "$" skill when the draft ends in a "$word" mention. Each comes
+    /// with the draft a pick leaves. A draft with neither sigil asks for
+    /// nothing, so typing words costs no call.
+    public var slashMatches: [CommandMatch] {
+        guard let commands = settings?.commands, !commands.isEmpty,
+              draft.contains(where: { $0 == "/" || $0 == "$" }) else { return [] }
+        return Array(Bridge.commandMatches(commands, draft).prefix(Self.slashRows))
     }
 
-    static func slashWord(_ draft: String) -> String? {
-        guard draft.hasPrefix("/") else { return nil }
-        let word = draft.dropFirst()
-        guard !word.contains(where: { $0.isWhitespace || $0 == "/" }) else { return nil }
-        return word.lowercased()
-    }
-
-    static func command(_ name: String, matches word: String) -> Bool {
-        let name = name.lowercased()
-        if name.hasPrefix(word) { return true }
-        guard let colon = name.firstIndex(of: ":") else { return false }
-        return name[name.index(after: colon)...].hasPrefix(word)
-    }
-
-    /// Puts a picked command in the draft as the agent reads one: Claude's
-    /// "/name", and a Codex skill by its "$name" mention.
-    public func pick(_ command: CommandView) {
-        let sigil = frame?.kind == .codex ? "$" : "/"
-        draft = sigil + command.name + " "
+    /// Puts a picked command in the draft as the agent reads one.
+    public func pick(_ match: CommandMatch) {
+        draft = match.picked
     }
 
     /// The field's edits. A long run arriving in one edit is a paste: it
@@ -816,8 +802,7 @@ public final class ChatModel {
         while tail < old.count - head, tail < new.count - head,
               old[old.count - 1 - tail] == new[new.count - 1 - tail] { tail += 1 }
         var inserted = Array(new[head..<(new.count - tail)])
-        guard inserted.count >= Self.pasteCharacters || Self.lines(String(inserted)) >= Self.pasteLines
-        else {
+        guard Bridge.pastesAsAttachment(String(inserted)) else {
             draft = String(new)
             return
         }
@@ -908,19 +893,15 @@ public final class ChatModel {
         return (joined, (sent.attachments ?? []) + composer.attachments)
     }
 
-    /// The most an attachment may hold, in bytes: 64 MiB of its content,
-    /// worded "64 MB". The hosts refuse more; the phone says so before it
-    /// uploads anything. A copy of `wire::ATTACHMENT_SIZE_LIMIT`, because the
-    /// bridge carries values and no constants: the two change together.
-    public static let attachmentLimit = 64 * 1024 * 1024
-
     /// Whether an attachment this large may be stored. One over the limit is
     /// refused here, in words naming the file and the limit, so nothing is
     /// read or uploaded for it.
     @discardableResult
     public func admits(name: String, size: Int) -> Bool {
-        guard size > Self.attachmentLimit else { return true }
-        notice = String(localized: "\(name) is not attached because it is over the 64 MB limit for attachments.")
+        let limit = Bridge.attachmentLimit
+        guard size > limit else { return true }
+        let megabytes = limit / (1024 * 1024)
+        notice = String(localized: "\(name) is not attached because it is over the \(megabytes) MB limit for attachments.")
         return false
     }
 
@@ -1066,6 +1047,13 @@ public final class ChatModel {
     @discardableResult
     public func interrupt() -> Task<Void, Never>? {
         return act({ await $0.interrupt() })
+    }
+
+    /// Stops one background job; the agent keeps running. The job reads
+    /// stopping once the agent says so.
+    @discardableResult
+    public func stopJob(_ key: String) -> Task<Void, Never>? {
+        return act({ await $0.stopJob(key) })
     }
 
     /// Terminal Claude's own view resumed another conversation: puts this

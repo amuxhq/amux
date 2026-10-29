@@ -818,6 +818,7 @@ dependencies = [
  "codex",
  "codex-protocol",
  "futures-util",
+ "pty-host",
  "redaction",
  "replay-support",
  "semver",
@@ -2277,6 +2278,7 @@ dependencies = [
  "release",
  "rusqlite",
  "serde_json",
+ "socket-core",
  "stateright",
  "store",
  "supervisor-core",
@@ -2376,6 +2378,7 @@ dependencies = [
  "serde_json",
  "settings",
  "sha2",
+ "socket-core",
  "socket2",
  "store",
  "supervisor-core",
@@ -3066,6 +3069,7 @@ dependencies = [
  "bytes",
  "libc",
  "portable-pty",
+ "tempfile",
  "thiserror 2.0.20",
  "tokio",
 ]
@@ -3984,6 +3988,14 @@ name = "smallvec"
 version = "1.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
+
+[[package]]
+name = "socket-core"
+version = "0.1.0"
+dependencies = [
+ "path-core",
+ "uuid",
+]
 
 [[package]]
 name = "socket-pktinfo"

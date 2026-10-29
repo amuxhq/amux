@@ -692,6 +692,7 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
         used_percent: 91.0,
         resets_at_ms: Some(5),
         state: wire::UsageState::NearLimit as i32,
+        used_unknown: false,
     });
     let claude_usage = wire::ClaudeUsage {
         state: wire::UsageState::NearLimit as i32,
@@ -1269,6 +1270,7 @@ fn settings_offering(
             commands,
             permissions,
             modes,
+            skills: Vec::new(),
         },
     )
 }
@@ -2333,6 +2335,7 @@ fn each_row_says_what_its_state_calls_for() {
                 used_percent,
                 resets_at_ms: Some(resets_at_ms),
                 state: state as i32,
+                used_unknown: false,
             }),
         }
     };
@@ -2944,6 +2947,7 @@ fn a_forms_answer_carries_the_checked_values() {
             question_skip: false,
             question_reply: false,
             stops_turn: true,
+            default_to_no: false,
             state: ui_view::CardState::Open,
         }
     };
@@ -3774,6 +3778,41 @@ fn codexs_dont_ask_again_on_a_patch_names_the_files_it_covers() {
     );
 }
 
+/// Codex's "always" on a tool server's call is saved in the person's Codex
+/// config, so the choice says it holds in every project from now on, for
+/// that tool.
+#[test]
+fn codexs_always_on_a_tool_call_reads_as_every_project() {
+    let ask = wire::CodexAsk {
+        key: "mcp-1".into(),
+        item_key: "call-1".into(),
+        body: Some(wire::codex_ask::Body::McpTool(wire::McpToolApproval {
+            server: "docs".into(),
+            tool: "search".into(),
+            ..Default::default()
+        })),
+        decisions: vec![
+            wire::Decision::Approve as i32,
+            wire::Decision::ApproveAlways as i32,
+            wire::Decision::Deny as i32,
+        ],
+    };
+    let card = card_of(Kind::Codex, vec![], vec![ask]);
+    let outcomes: Vec<String> = card
+        .choices
+        .iter()
+        .map(|choice| format!("{:?}", choice.outcome))
+        .collect();
+    assert!(
+        outcomes
+            .iter()
+            .any(|outcome| outcome.contains("AllowAlways")
+                && outcome.contains("search")
+                && outcome.contains("User")),
+        "no every-project choice for the tool: {outcomes:?}"
+    );
+}
+
 // --- the client's own commands: /model, /effort and /rename run in the
 // client, are listed once for every kind, and win over a provider's
 // command of the same name.
@@ -3987,4 +4026,238 @@ fn a_chat_whose_host_is_away_counts_no_working_time() {
     );
     state.update(event(session_event::Of::Detached(wire::Detached {})));
     assert_eq!(composer(&state, 60_000).activity, None);
+}
+
+fn session_offering(kind: Kind, catalogue: wire::Catalogue) -> SessionState {
+    let mut state = SessionState::new(agent(kind), CAP);
+    state.set_catalogue(b"offered".to_vec(), catalogue);
+    state.update(event(session_event::Of::Snapshot(wire::Snapshot {
+        kind: kind as i32,
+        phase: Phase::Idle as i32,
+        catalogue: Some(b"offered".to_vec()),
+        ..wire::Snapshot::default()
+    })));
+    state
+}
+
+fn offered_skill(name: &str) -> wire::OfferedSkill {
+    wire::OfferedSkill {
+        name: name.into(),
+        ..Default::default()
+    }
+}
+
+/// Each kind's catalogue is typed as that agent reads it: Claude's whole
+/// list as "/name" at the start of a message; Codex's commands the same,
+/// and its skills as "$name" anywhere. The phone's picker shows and inserts
+/// what this says.
+#[test]
+fn each_kinds_catalogue_is_typed_the_way_its_agent_reads_it() {
+    let triggers = |view: &SettingsView| -> Vec<(String, String, bool)> {
+        view.commands
+            .iter()
+            .map(|command| {
+                (
+                    command.name.clone(),
+                    command.sigil.clone(),
+                    command.anywhere,
+                )
+            })
+            .collect()
+    };
+    let codex = settings(&session_offering(
+        Kind::Codex,
+        wire::Catalogue {
+            commands: vec![providers_command("compact")],
+            skills: vec![offered_skill("lint")],
+            ..Default::default()
+        },
+    ));
+    let codex = triggers(&codex);
+    assert!(
+        codex.contains(&("compact".into(), "/".into(), false)),
+        "{codex:?}"
+    );
+    assert!(
+        codex.contains(&("lint".into(), "$".into(), true)),
+        "{codex:?}"
+    );
+    let claude = settings(&session_offering(
+        Kind::ClaudeSdk,
+        wire::Catalogue {
+            commands: vec![providers_command("compact"), providers_command("lint")],
+            ..Default::default()
+        },
+    ));
+    assert!(
+        triggers(&claude)
+            .iter()
+            .all(|(_, sigil, anywhere)| sigil == "/" && !anywhere),
+        "{:?}",
+        triggers(&claude)
+    );
+}
+
+/// A Codex skill typed after a slash is refused in the composer with the
+/// mention Codex reads.
+#[test]
+fn a_codex_skill_after_a_slash_is_refused_with_its_mention() {
+    let state = session_offering(
+        Kind::Codex,
+        wire::Catalogue {
+            commands: vec![providers_command("compact")],
+            skills: vec![offered_skill("lint")],
+            ..Default::default()
+        },
+    );
+    match ui_view::slash(&state, "/lint") {
+        Slash::Refused { hint, .. } => assert_eq!(hint.as_deref(), Some("$lint")),
+        other => panic!("not refused: {other:?}"),
+    }
+}
+
+fn command_list(commands: &[&str], skills: &[&str]) -> Vec<CommandView> {
+    let view = |name: &&str, sigil: &str, anywhere: bool| CommandView {
+        name: (*name).into(),
+        description: String::new(),
+        argument_hint: String::new(),
+        source: String::new(),
+        sigil: sigil.into(),
+        anywhere,
+    };
+    commands
+        .iter()
+        .map(|name| view(name, "/", false))
+        .chain(skills.iter().map(|name| view(name, "$", true)))
+        .collect()
+}
+
+fn matched(commands: &[CommandView], draft: &str) -> Vec<String> {
+    command_matches(commands, draft)
+        .into_iter()
+        .map(|found| found.command.name)
+        .collect()
+}
+
+/// A draft that is one "/word" lists the commands whose names start with
+/// it, ignoring case and a plugin's namespace, in the agent's order; a
+/// pick makes the command the whole draft.
+#[test]
+fn a_leading_slash_word_lists_the_commands_it_starts() {
+    let commands = command_list(
+        &[
+            "clear",
+            "compact",
+            "context",
+            "code-review:review",
+            "documents:documents",
+        ],
+        &[],
+    );
+    assert_eq!(
+        matched(&commands, "/c"),
+        ["clear", "compact", "context", "code-review:review"]
+    );
+    assert_eq!(matched(&commands, "/Doc"), ["documents:documents"]);
+    assert_eq!(matched(&commands, "/rev"), ["code-review:review"]);
+    for draft in ["/compact now", "please /c", "c", "/a/b", ""] {
+        assert!(matched(&commands, draft).is_empty(), "{draft:?}");
+    }
+    let picked = command_matches(&commands, "/comp");
+    assert_eq!(picked[0].picked, "/compact ");
+    assert!(command_matches(&commands, &picked[0].picked).is_empty());
+}
+
+/// A Codex skill is offered after a "$" that starts the draft or follows a
+/// space, and a pick puts its mention in place of the word being typed;
+/// it is never a slash command.
+#[test]
+fn a_skill_mention_matches_anywhere_and_is_picked_in_place() {
+    let commands = command_list(&["compact"], &["autopilot", "documents:documents"]);
+    assert!(matched(&commands, "/auto").is_empty());
+    assert_eq!(matched(&commands, "/comp"), ["compact"]);
+    assert_eq!(matched(&commands, "$doc"), ["documents:documents"]);
+    for draft in ["$comp", "$auto now", "costs$auto"] {
+        assert!(matched(&commands, draft).is_empty(), "{draft:?}");
+    }
+    let picked = command_matches(&commands, "please use $auto");
+    assert_eq!(picked.len(), 1);
+    assert_eq!(picked[0].picked, "please use $autopilot ");
+    assert!(command_matches(&commands, &picked[0].picked).is_empty());
+}
+
+/// A paste joins the draft as a text attachment from eight lines or a
+/// thousand characters; a last line break ends a line.
+#[test]
+fn a_long_paste_is_an_attachment_and_a_short_one_words() {
+    let lines = |count: usize| "line\n".repeat(count);
+    assert!(!pastes_as_attachment(&lines(PASTE_LINES - 1)));
+    assert!(pastes_as_attachment(&lines(PASTE_LINES)));
+    assert!(pastes_as_attachment(&"line\r\n".repeat(PASTE_LINES)));
+    assert!(!pastes_as_attachment(&"x".repeat(PASTE_CHARS - 1)));
+    assert!(pastes_as_attachment(&"x".repeat(PASTE_CHARS)));
+    assert!(!pastes_as_attachment("two\nlines"));
+}
+
+/// Each background job says whether the person can stop it alone: headless
+/// Claude and Codex stop one job by its key, terminal Claude cannot, and a
+/// job the provider gave no key cannot be named. A stop sent reads
+/// stopping; a refused one carries the provider's words and is offered again.
+#[test]
+fn a_job_offers_its_own_stop_where_the_kind_can_stop_one() {
+    use ui_view::JobStop;
+    let job = |key: &str, stopping: bool, stop_error: &str| wire::BackgroundJob {
+        command: format!("job {key}"),
+        key: key.into(),
+        stopping,
+        stop_error: stop_error.into(),
+        ..Default::default()
+    };
+    let jobs = wire::BackgroundJobs {
+        known: true,
+        jobs: vec![
+            job("b1", false, ""),
+            job("b2", true, ""),
+            job("b3", false, "not running"),
+            job("", false, ""),
+        ],
+    };
+    let stops = |kind: Kind| {
+        let body = match kind {
+            Kind::ClaudeSdk => wire::ClaudeSdkSnapshot {
+                background_jobs: Some(jobs.clone()),
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            Kind::ClaudePty => wire::ClaudePtySnapshot {
+                background_jobs: Some(jobs.clone()),
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            _ => wire::CodexSnapshot {
+                background_jobs: Some(jobs.clone()),
+                ..Default::default()
+            }
+            .encode_to_vec(),
+        };
+        let mut state = SessionState::new(agent(kind), CAP);
+        state.update(snapshot(kind, Phase::Idle, body, vec![]));
+        overview(&state, None)
+            .jobs
+            .into_iter()
+            .map(|row| row.stop)
+            .collect::<Vec<_>>()
+    };
+    let offered = vec![
+        JobStop::Offered { key: "b1".into() },
+        JobStop::Stopping,
+        JobStop::Refused {
+            key: "b3".into(),
+            error: "not running".into(),
+        },
+        JobStop::Unavailable,
+    ];
+    assert_eq!(stops(Kind::ClaudeSdk), offered);
+    assert_eq!(stops(Kind::Codex), offered);
+    assert_eq!(stops(Kind::ClaudePty), vec![JobStop::Unavailable; 4]);
 }

@@ -64,8 +64,20 @@ pub fn main(provider: &str, command: &str, out: &Path) -> i32 {
 }
 
 /// Headless Claude's initialize answer lists its models and commands and
-/// names the account. Claude starts no tool server and runs no hook for it.
+/// names the account. Claude starts no tool server and runs no hook for it,
+/// except where the organization manages its MCP servers: Claude there
+/// refuses to be told to start none, and starts the organization's.
 async fn ask_claude(command: &str) -> Result<(Catalogue, bool), String> {
+    let managed = claude::launch::managed_mcp(
+        std::env::var_os(claude::launch::MANAGED_SETTINGS_PATH_ENV)
+            .as_deref()
+            .map(Path::new),
+    );
+    let only_named = [
+        "--strict-mcp-config",
+        "--mcp-config",
+        r#"{"mcpServers":{}}"#,
+    ];
     let mut child = tokio::process::Command::new(command)
         .args([
             "--print",
@@ -74,12 +86,10 @@ async fn ask_claude(command: &str) -> Result<(Catalogue, bool), String> {
             "--output-format",
             "stream-json",
             "--verbose",
-            "--strict-mcp-config",
-            "--mcp-config",
-            r#"{"mcpServers":{}}"#,
             "--settings",
             r#"{"disableAllHooks":true}"#,
         ])
+        .args(if managed { &[][..] } else { &only_named[..] })
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

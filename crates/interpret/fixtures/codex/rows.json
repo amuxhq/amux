@@ -150,6 +150,18 @@
       "fact": {
         "channel": "rpc",
         "json": {
+          "method": "warning",
+          "params": {
+            "threadId": "t1",
+            "message": "This request was routed to gpt-5.6-mini. To use gpt-5.6-luna for this work, apply for trusted access."
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
           "method": "item/started",
           "params": {
             "threadId": "t1",

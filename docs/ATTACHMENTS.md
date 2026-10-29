@@ -132,10 +132,24 @@ bytes)`; the daemon hashes the bytes, writes the file into that agent's
 directory and returns the `BlobRef`. The client puts the reference in its
 draft at the cursor, and the prompt goes out through `SendInput` with the
 reference in its attachments. The terminal attaches a clipboard image or a
-copied file path with Ctrl+V, and turns a paste of eight lines or 1000
-characters into a `text` attachment; the phone stores bytes with
-`amux_session_put_blob`. `PutBlob` for another host's agent is forwarded to
+copied file path with Ctrl+V, and both clients turn a paste of eight lines or
+1000 characters into a `text` attachment (`ui_view::pastes_as_attachment`);
+the phone stores bytes with `amux_session_put_blob`. `PutBlob` for another host's agent is forwarded to
 that host, since only the agent's own host writes its directory.
+
+**What counts as an image.** One rule, `attachments::native_image`: an
+attachment is an image only if its bytes are PNG, JPEG, GIF or WebP, the
+types both Claude and Codex read natively, and its type is the one the
+bytes say. Anything else (SVG, HEIC, TIFF, a misnamed file) is a file the
+model opens from its element's path. The agent applies the rule to every
+image it hands a provider, whatever the label; the terminal's paste and the
+`attach` tool use it to decide image or file. The phone cannot call it, so
+its pickers keep to the same types: a photo that is a PNG or GIF keeps its
+bytes, any other is re-encoded as JPEG (which drops its location), each is
+named `photo-<n>` with its type's extension, and one that cannot be read is
+sent as a file; a picked file in an image type no provider reads is
+converted (PNG if it has transparency, else JPEG), and one that cannot be
+decoded (SVG) goes as a file.
 
 **A model's attachment.** The `attach` tool reads a file on the agent's host,
 hashes it, writes it into the agent's directory and returns the element that
@@ -191,8 +205,8 @@ that provider reads (`crates/agent/src/provider.rs`):
 | Kind | What the provider receives |
 | --- | --- |
 | `claude_pty` | The prompt typed into the terminal with each placeholder replaced by its element, blob paths included. |
-| `claude_sdk` | A user message whose text carries the elements with paths. When the prompt has images, the content is blocks instead: the text split at each image's element, with the image's bytes as a native image block right after it. |
-| `codex` | The turn's input with each attachment appended after the text: an image as a `localImage` item naming its blob's path, anything else as its element text naming the same path. |
+| `claude_sdk` | A user message whose text carries the elements with paths. When the prompt has images, the content is blocks instead: the text split at each image's element, with the image's bytes as a native image block right after it, typed by its bytes. An image whose bytes are not a native image gets no block. |
+| `codex` | The turn's input with each attachment appended after the text as its element text naming its blob's path, and an image whose bytes are a native image then as a `localImage` item naming the same path. |
 
 **Between agents.** An agent message carries attachments as a prompt does:
 `SendMessageRequest` and an `Envelope`'s message body hold positioned text and the ordered

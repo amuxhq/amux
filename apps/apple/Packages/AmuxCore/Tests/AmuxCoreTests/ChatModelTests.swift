@@ -247,6 +247,7 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         interrupts += 1
         return .done
     }
+    func stopJob(_ key: String) async -> ActOutcome? { .done }
 
     func change(_ setting: SettingChange) async -> ActOutcome? {
         changed.append(setting)
@@ -780,11 +781,15 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(model.frame?.controls.model, "sonnet")
     }
 
-    private func offering(_ names: [String]) -> SettingsView {
+    private func offering(_ names: [String], skills: [String] = []) -> SettingsView {
         SettingsView(
             models: [], efforts: [], permissions: [], modes: [], changeable: Changeability(
                 model: .notOffered, effort: .notOffered, permission: .notOffered, mode: .notOffered),
-            commands: names.map { CommandView(name: $0, description: "", argumentHint: "", source: "") })
+            commands: names.map {
+                CommandView(name: $0, description: "", argumentHint: "", source: "", sigil: "/", anywhere: false)
+            } + skills.map {
+                CommandView(name: $0, description: "", argumentHint: "", source: "", sigil: "$", anywhere: true)
+            })
     }
 
     func testALeadingSlashWordListsUpToFiveMatchingCommandsAndAPickFillsTheDraft() {
@@ -796,12 +801,12 @@ final class ChatModelTests: XCTestCase {
         let model = ChatModel(source: source)
         model.draft = "/c"
         XCTAssertEqual(
-            model.slashMatches.map(\.name), ["clear", "compact", "context", "cost", "config-check"],
+            model.slashMatches.map(\.command.name), ["clear", "compact", "context", "cost", "config-check"],
             "five at most, in the agent's order")
         model.draft = "/Doc"
-        XCTAssertEqual(model.slashMatches.map(\.name), ["documents:documents"])
+        XCTAssertEqual(model.slashMatches.map(\.command.name), ["documents:documents"])
         model.draft = "/rev"
-        XCTAssertEqual(model.slashMatches.map(\.name), ["code-review:review"], "after a plugin's namespace")
+        XCTAssertEqual(model.slashMatches.map(\.command.name), ["code-review:review"], "after a plugin's namespace")
         for draft in ["/compact now", "please /c", "c", "/a/b", ""] {
             model.draft = draft
             XCTAssertTrue(model.slashMatches.isEmpty, "\(draft) is not a leading /word")
@@ -812,13 +817,25 @@ final class ChatModelTests: XCTestCase {
         XCTAssertTrue(model.slashMatches.isEmpty)
     }
 
-    func testACodexSkillIsPickedAsItsMention() {
+    func testACodexSkillIsOfferedAfterADollarAnywhereAndPickedAsItsMention() {
         let source = FakeChat(rows: [], frame: frame(kind: .codex))
-        source.offered = offering(["autopilot"])
+        source.offered = offering(["compact"], skills: ["autopilot", "documents:documents"])
         let model = ChatModel(source: source)
         model.draft = "/auto"
+        XCTAssertTrue(model.slashMatches.isEmpty, "a skill is not a slash command")
+        model.draft = "/comp"
+        XCTAssertEqual(model.slashMatches.map(\.command.name), ["compact"])
+        model.draft = "$doc"
+        XCTAssertEqual(model.slashMatches.map(\.command.name), ["documents:documents"])
+        for draft in ["$comp", "$auto now", "costs$auto"] {
+            model.draft = draft
+            XCTAssertTrue(model.slashMatches.isEmpty, "\(draft) ends in no skill mention")
+        }
+        model.draft = "please use $auto"
+        XCTAssertEqual(model.slashMatches.map(\.command.name), ["autopilot"])
         model.pick(model.slashMatches[0])
-        XCTAssertEqual(model.draft, "$autopilot ")
+        XCTAssertEqual(model.draft, "please use $autopilot ")
+        XCTAssertTrue(model.slashMatches.isEmpty)
     }
 
     func testAnAgentOfferingNoCommandsListsNothing() {
@@ -860,7 +877,7 @@ final class ChatModelTests: XCTestCase {
         model.type("Look at this: two\nlines")
         XCTAssertEqual(model.draft, "Look at this: two\nlines", "a short paste stays words")
         XCTAssertEqual(model.attachments.count, 1)
-        model.type(model.draft + String(repeating: "x", count: ChatModel.pasteCharacters))
+        model.type(model.draft + String(repeating: "x", count: 1_000))
         XCTAssertEqual(model.attachments.count, 2, "one very long line is a paste too")
         await model.send()?.value
         XCTAssertEqual(
@@ -971,7 +988,7 @@ final class ChatModelTests: XCTestCase {
         source.card = AskCard(
             kind: .codex, key: "ask:1", itemKey: "", position: 1, count: 1, body: .question([]),
             choices: [], questionNote: true, questionSkip: true, questionReply: true,
-            stopsTurn: true, state: .open)
+            stopsTurn: true, defaultToNo: false, state: .open)
         let model = ChatModel(source: source)
         let answers = [
             QuestionResponse(note: "only on staging", other: nil, picked: [1]),
@@ -989,7 +1006,7 @@ final class ChatModelTests: XCTestCase {
             AskCard(
                 kind: .claudeSdk, key: key, itemKey: "", position: 1, count: 1, body: .question([]),
                 choices: [], questionNote: true, questionSkip: true, questionReply: true,
-                stopsTurn: true, state: .open)
+                stopsTurn: true, defaultToNo: false, state: .open)
         }
         let source = FakeChat(rows: [row("a", 1)], frame: frame())
         source.card = card("ask:1")
@@ -1022,7 +1039,7 @@ final class ChatModelTests: XCTestCase {
                 kind: .claudeSdk, key: key, itemKey: "", position: 1, count: 1,
                 body: .form(server: "linear", message: "File an issue", fields: []),
                 choices: [], questionNote: false, questionSkip: false, questionReply: false,
-                stopsTurn: true, state: .open)
+                stopsTurn: true, defaultToNo: false, state: .open)
         }
         let source = FakeChat(rows: [row("a", 1)], frame: frame())
         source.card = card("ask:1")

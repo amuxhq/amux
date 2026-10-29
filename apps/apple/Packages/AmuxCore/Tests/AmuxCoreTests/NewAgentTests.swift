@@ -121,7 +121,8 @@ final class NewAgentTests: XCTestCase {
         modes: [
             OfferedMode(value: "default", displayName: "Default", normal: true, settable: true),
             OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true),
-        ])
+        ],
+        skills: [])
 
     func testTheChoicesComeFromTheHostsCatalogueAndGoInTheRequest() {
         let store = NewAgentStore()

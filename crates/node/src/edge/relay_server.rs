@@ -24,7 +24,7 @@ use crate::link::quic::{stream_carrier_kind, stream_path};
 use crate::link::relaying::Relaying;
 use crate::link::socket::{LinkSocket, Path, PathId};
 use crate::link::{ChannelPool, LinkEndpoint, QuicCarrier, run_link};
-use crate::resource_limits::HandshakeAdmission;
+use crate::resource_limits::{Admitted, HandshakeAdmission};
 use crate::routing::{
     AuthenticatedLinkContextProvider, AuthenticatedLinkUser, Capabilities, LinkCtx, LinkRegistry,
     LinkTokenAuthenticator, LiveLocalHost, local_host,
@@ -302,11 +302,14 @@ impl CloudLinkServer {
                     _ => None,
                 };
                 let addr = endpoint.address_of(stand_in);
-                let Some((incoming, permit)) =
-                    service
-                        .inner
-                        .admission
-                        .admit(incoming, addr, stream.is_some())
+                let Some(Admitted {
+                    incoming,
+                    permit,
+                    spent,
+                }) = service
+                    .inner
+                    .admission
+                    .admit(incoming, addr, stream.is_some())
                 else {
                     continue;
                 };
@@ -344,7 +347,8 @@ impl CloudLinkServer {
                     let ctx = service
                         .accepting_link_ctx()
                         .await
-                        .observing(socket);
+                        .observing(socket)
+                        .refunding(spent);
                     if let Err(error) = run_link(
                         ctx,
                         Arc::new(carrier),
@@ -781,12 +785,9 @@ mod tests {
                 .unwrap(),
         );
         let _far = link(far, carrier, &format!("{account}/pro")).await;
-        assert_eq!(
-            relay.server.user_links(account).await.len(),
-            2,
-            "both hosts hold a link"
-        );
 
+        // The relay answers a Hello before it registers the link, so the
+        // probe is sent again until the far host's link is there.
         let through = LinkId(1);
         let via = endpoint.socket.stand_in_at(udp_addr);
         endpoint
@@ -808,6 +809,11 @@ mod tests {
         }
         let answer = answered.expect("the probe's answer came back through the relay");
         assert!(answer.nonce < 50, "{answer:?}");
+        assert_eq!(
+            relay.server.user_links(account).await.len(),
+            2,
+            "both hosts hold a link"
+        );
         relay.serving.close();
     }
 
@@ -1005,16 +1011,38 @@ mod tests {
         relay.serving.close();
     }
 
-    /// A host presenting a token skips the Retry but not the relay's
-    /// per-source limit: its handshake counts as an attempt, so a source
-    /// that spent its attempts is not taken on again however it proves its
-    /// address.
+    /// A host whose dials bring up links is taken on however often it has
+    /// dialled this window, as a phone opened again and again is: each
+    /// accepted link gives its handshake back to its address's limit. A
+    /// dialler that brings up no link spends the limit, token or not, and
+    /// past it is refused at once rather than left to time out.
     #[tokio::test(flavor = "multi_thread")]
-    async fn relay_admission_counts_a_validated_handshake_against_the_limit() {
-        let relay = relay_limited(2).await;
+    async fn relay_admission_gives_linked_handshakes_back_and_refuses_the_rest() {
+        let relay = relay_limited(1).await;
         let udp_addr = relay.serving.udp_addr().unwrap();
         let endpoint = LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap();
-        let first = endpoint
+        let id = HostId::new_v4();
+        let token = format!("{}/free", Uuid::new_v4());
+        for dial in 1..=4 {
+            let carrier = QuicCarrier::connect_relay_with_config(
+                &endpoint,
+                udp_addr,
+                NAME,
+                relay.client.clone(),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("dial {dial}: {error}"));
+            let (task, shutdown) = link(id, Arc::new(carrier), &token).await;
+            shutdown.send_replace(true);
+            let _ = task.await;
+        }
+        assert_eq!(relay.server.handshakes_limited(), 0);
+
+        // Another dialler at the same address that never links: its first
+        // handshake spends the address's one attempt, and its second,
+        // with the token the first left it, is refused.
+        let stranger = LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap();
+        let first = stranger
             .connect_with(relay.client.clone(), udp_addr, NAME)
             .unwrap()
             .await
@@ -1022,7 +1050,7 @@ mod tests {
         patience::until("the relay's tokens to arrive", || {
             let received = first.stats().frame_rx.new_token;
             async move {
-                (received >= 2)
+                (received >= 1)
                     .then_some(())
                     .ok_or_else(|| format!("{received} tokens"))
             }
@@ -1030,37 +1058,20 @@ mod tests {
         .await
         .unwrap();
         first.close(0_u32.into(), b"done");
-        // The retried attempt was the first; a token is the second.
-        let second = endpoint
-            .connect_with(relay.client.clone(), udp_addr, NAME)
-            .unwrap()
-            .await
-            .unwrap();
-        second.close(0_u32.into(), b"done");
-        let third = endpoint
-            .connect_with(relay.client.clone(), udp_addr, NAME)
-            .unwrap();
-        patience::until("the relay to drop the third attempt", || {
-            let limited = relay.server.handshakes_limited();
-            async move {
-                (limited >= 1)
-                    .then_some(())
-                    .ok_or_else(|| format!("{limited} dropped"))
-            }
-        })
+        let refused = tokio::time::timeout(
+            Duration::from_secs(1),
+            stranger
+                .connect_with(relay.client.clone(), udp_addr, NAME)
+                .unwrap(),
+        )
         .await
-        .unwrap();
-        assert_eq!(
-            relay.server.handshakes_limited(),
-            1,
-            "only the third attempt from the source is not taken on"
+        .expect("refused well inside the handshake timeout");
+        assert!(
+            matches!(refused, Err(quinn::ConnectionError::ConnectionClosed(ref close))
+                if close.error_code == quinn::TransportErrorCode::CONNECTION_REFUSED),
+            "{refused:?}"
         );
-        drop(third);
-        assert_eq!(
-            relay.server.retries_sent(),
-            1,
-            "both later dials had tokens"
-        );
+        assert_eq!(relay.server.handshakes_limited(), 1);
         relay.serving.close();
     }
 

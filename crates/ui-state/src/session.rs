@@ -346,6 +346,7 @@ impl SessionState {
         };
         self.state.models = offered.models;
         self.state.commands = offered.commands;
+        self.state.skills = offered.skills;
         self.state.permissions = offered.permissions;
         self.state.modes = offered.modes;
     }
@@ -585,6 +586,7 @@ impl SessionState {
                 },
             ),
             ItemClass::Compacting => at(since, ActivityKind::Compacting),
+            ItemClass::SafetyCheck => at(since, ActivityKind::SafetyCheck),
             ItemClass::Thinking { complete: false } => at(since, ActivityKind::Thinking),
             _ if let Some(call) = announced => at(
                 call.since_ms,

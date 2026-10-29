@@ -17,32 +17,30 @@
 ## 27 recorded 26: fact Rpc method=error
   row    3 error:01a0db79-73fb-78b2-b3a1-6f3f7e36bff7 Error { error_kind: "responseStreamDisconnected", message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: wss://api.openai.com/v1/responses, cf-ray: a40eba11ab53fea1-CPH", attempts: 5, gave_up: false }
   composer Send activity=Some(Retrying { attempt: 5, max_attempts: 5, retry_at_ms: None }) queue=[] underway=[] refused=[]
+## 29 recorded 28: fact Rpc method=warning
+  row    4 warning:2 Error { error_kind: "warning", message: "Falling back from WebSockets to HTTPS transport. unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: wss://api.openai.com/v1/responses, cf-ray: a40eba262958e41f-CPH", attempts: 0, gave_up: true } attention
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 31 recorded 30: fact Rpc method=error
   row    3 error:01a0db79-73fb-78b2-b3a1-6f3f7e36bff7 Error { error_kind: "responseStreamDisconnected", message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a40eba269c17abf5-CPH, request id: req_a1393d5c4cf64d15a809f53265c3b058", attempts: 1, gave_up: false }
-  composer Send activity=Some(Retrying { attempt: 1, max_attempts: 5, retry_at_ms: None }) queue=[] underway=[] refused=[]
 ## 33 recorded 32: fact Rpc method=error
   row    3 error:01a0db79-73fb-78b2-b3a1-6f3f7e36bff7 Error { error_kind: "responseStreamDisconnected", message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a40eba298b28a264-CPH, request id: req_9a94de107db94db784c39a6c3d25bcd3", attempts: 2, gave_up: false }
-  composer Send activity=Some(Retrying { attempt: 2, max_attempts: 5, retry_at_ms: None }) queue=[] underway=[] refused=[]
 ## 35 recorded 34: fact Rpc method=error
   row    3 error:01a0db79-73fb-78b2-b3a1-6f3f7e36bff7 Error { error_kind: "responseStreamDisconnected", message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a40eba2e1bd85cfc-CPH, request id: req_70bebb0dbd124cbaa476aad8e81948f6", attempts: 3, gave_up: false }
-  composer Send activity=Some(Retrying { attempt: 3, max_attempts: 5, retry_at_ms: None }) queue=[] underway=[] refused=[]
 ## 37 recorded 36: fact Rpc method=error
   row    3 error:01a0db79-73fb-78b2-b3a1-6f3f7e36bff7 Error { error_kind: "responseStreamDisconnected", message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a40eba36b89d53db-CPH, request id: req_6de8cb2e25f7406ca42fbd0327b7a0bb", attempts: 4, gave_up: false }
-  composer Send activity=Some(Retrying { attempt: 4, max_attempts: 5, retry_at_ms: None }) queue=[] underway=[] refused=[]
 ## 39 recorded 38: fact Rpc method=error
   row    3 error:01a0db79-73fb-78b2-b3a1-6f3f7e36bff7 Error { error_kind: "responseStreamDisconnected", message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a40eba42eb5befc1-CPH, request id: req_761b843f85ad42088993e438994ec82c", attempts: 5, gave_up: false }
-  composer Send activity=Some(Retrying { attempt: 5, max_attempts: 5, retry_at_ms: None }) queue=[] underway=[] refused=[]
 ## 43 recorded 42: fact Rpc method=error
   row    3 error:01a0db79-73fb-78b2-b3a1-6f3f7e36bff7 Error { error_kind: "other", message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a40eba5a8e5a7da8-CPH, request id: req_dea86bb657864187a20038a2886fefc3", attempts: 0, gave_up: true } attention
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 45 recorded 44: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(16747), failed: true }
+  row    5 turn:1 TurnEnd { duration_ms: Some(16747), failed: true }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:737464696e2d35 Prompt { text: [Text("Reply with exactly CODEX_SPEC_SIGNED_OUT.")], steered: false }
      3 error:01a0db79-73fb-78b2-b3a1-6f3f7e36bff7 Error { error_kind: "other", message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a40eba5a8e5a7da8-CPH, request id: req_dea86bb657864187a20038a2886fefc3", attempts: 0, gave_up: true } attention
-     4 turn:1 TurnEnd { duration_ms: Some(16747), failed: true }
+     4 warning:2 Error { error_kind: "warning", message: "Falling back from WebSockets to HTTPS transport. unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: wss://api.openai.com/v1/responses, cf-ray: a40eba262958e41f-CPH", attempts: 0, gave_up: true } attention
+     5 turn:1 TurnEnd { duration_ms: Some(16747), failed: true }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in Some(SignInView { state: Failed, account: "", message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a40eba42eb5befc1-CPH, request id: req_761b843f85ad42088993e438994ec82c" })
 == settings

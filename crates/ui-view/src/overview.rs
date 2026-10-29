@@ -7,8 +7,8 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use ui_state::{Key, SessionState, Usage};
 use wire::{
-    BackgroundKind, Diff, DiffBase, DiffFileChange, Limit, TaskListStatus, UsageMeter, UsageState,
-    diff_base,
+    BackgroundKind, Diff, DiffBase, DiffFileChange, Kind, Limit, TaskListStatus, UsageMeter,
+    UsageState, diff_base,
 };
 
 use crate::review::FileStatus;
@@ -62,6 +62,24 @@ pub struct JobRow {
     /// What the job is, so a client can tell a command from the provider's
     /// own subagent or monitor, whose `command` is a description.
     pub kind: BackgroundKind,
+    /// Whether the person can stop this one job, and how that stands.
+    pub stop: JobStop,
+}
+
+/// Stopping one background job, which leaves the agent running. Only a kind
+/// whose provider stops one job on request offers it: terminal Claude
+/// cannot.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+pub enum JobStop {
+    /// This job cannot be stopped on its own.
+    Unavailable,
+    /// The person can stop it; the key names it in the stop input.
+    Offered { key: String },
+    /// A stop was sent and the provider has not yet said the job ended.
+    Stopping,
+    /// The provider refused the last stop, in its words; the person can
+    /// try again.
+    Refused { key: String, error: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
@@ -78,12 +96,12 @@ pub struct UsageView {
     pub credits: Option<String>,
 }
 
-/// One rate-limit window: which limit it is, how much of it is used, when
-/// it resets, and its own state.
+/// One rate-limit window: which limit it is, how much of it is used (none
+/// when the provider has not said), when it resets, and its own state.
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 pub struct UsageWindowView {
     pub label: UsageLabel,
-    pub used_percent: f64,
+    pub used_percent: Option<f64>,
     pub resets_at_ms: Option<i64>,
     pub state: UsageState,
 }
@@ -206,6 +224,9 @@ pub fn overview(state: &SessionState, diff: Option<&Diff>) -> Overview {
             entries,
         }
     });
+    // Headless Claude and Codex stop one job on request; terminal Claude
+    // has no way to.
+    let stops_one = matches!(state.kind(), Kind::ClaudeSdk | Kind::Codex);
     let jobs = if agent.background.known {
         agent
             .background
@@ -216,6 +237,17 @@ pub fn overview(state: &SessionState, diff: Option<&Diff>) -> Overview {
                 command: job.command.clone(),
                 started_at_ms: job.started_at_ms,
                 kind: job.kind(),
+                stop: match () {
+                    () if !stops_one || job.key.is_empty() => JobStop::Unavailable,
+                    () if job.stopping => JobStop::Stopping,
+                    () if !job.stop_error.is_empty() => JobStop::Refused {
+                        key: job.key.clone(),
+                        error: job.stop_error.clone(),
+                    },
+                    () => JobStop::Offered {
+                        key: job.key.clone(),
+                    },
+                },
             })
             .collect()
     } else {
@@ -309,7 +341,7 @@ pub fn usage_windows(usage: &Usage) -> Vec<UsageWindowView> {
         let meter = meter.unwrap_or_default();
         UsageWindowView {
             label,
-            used_percent: meter.used_percent,
+            used_percent: (!meter.used_unknown).then_some(meter.used_percent),
             resets_at_ms: meter.resets_at_ms,
             state: meter.state(),
         }

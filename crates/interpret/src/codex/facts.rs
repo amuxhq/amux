@@ -3,18 +3,20 @@
 use std::collections::BTreeSet;
 
 use codex_protocol::client::{
-    BackgroundTerminalsListParams, CommandApprovalResponse, ElicitationAction, ModelListParams,
-    SkillsListParams, ThreadReadParams, ThreadSetNameParams, ToolCallResponse, TurnInterruptParams,
+    BackgroundTerminalsListParams, BackgroundTerminalsTerminateParams, CommandApprovalResponse,
+    ElicitationAction, ModelListParams, SkillsListParams, ThreadIdParams, ThreadReadParams,
+    ThreadResumeParams, ThreadSetNameParams, ToolCallResponse, TurnInterruptParams,
 };
 use codex_protocol::items::{
-    CommandAction, DynamicToolCallItem, McpToolCallItem, MessagePhase, PatchChangeKind,
-    TextContent, ThreadItem, ToolOutputContent, UserInput, WebSearchAction, WebSearchItem,
+    CommandAction, DynamicToolCallItem, FileUpdateChange, McpToolCallItem, MessagePhase,
+    PatchChangeKind, TextContent, ThreadItem, ToolOutputContent, UserInput, WebSearchAction,
+    WebSearchItem,
 };
 use codex_protocol::server::{
-    AccountReadResponse, AutoApprovalReview, BackgroundTerminalsResponse, CommandApprovalParams,
-    CommandDecision, Decision as Offered, ElicitationParams, ErrorNotification,
-    McpServerStatusUpdated, Model, ModelListResponse, SkillsListResponse, ThreadResponse,
-    TurnStartResponse,
+    AccountReadResponse, AutoApprovalReview, BackgroundTerminalTerminateResponse,
+    BackgroundTerminalsResponse, CommandApprovalParams, CommandDecision, Decision as Offered,
+    DeprecationNotice, ElicitationParams, ErrorNotification, McpServerStatusUpdated, Model,
+    ModelListResponse, SkillsListResponse, ThreadResponse, TurnStartResponse,
 };
 use codex_protocol::thread::{
     AskForApproval, CodexErrorInfo, RateLimitSnapshot, ReasoningEffort, SandboxPolicy, TurnError,
@@ -27,15 +29,15 @@ use serde_json::Value;
 use wire::{
     AccessGrant, ApiError, BackgroundJob, CodexAsk, CodexUsage, CodexUsageWindow, CommandApproval,
     Decision, DecisionOutcome, FileChangeApproval, FormAsk, Limit, LinkAsk, McpToolApproval,
-    ModelSwitch, OfferedCommand, OfferedModel, Question, QuestionAsk, QuestionOption,
-    ReviewerVerdict, SignIn, SignInState, TaskListStatus, ToolClass, ToolDecision, ToolServer,
-    ToolServerHealth, ToolServerStatus, ToolState, Turn, TurnOutcome, UsageMeter, UsageState, Work,
-    codex_ask, codex_item, work,
+    OfferedModel, Question, QuestionAsk, QuestionOption, ReviewerVerdict, SignIn, SignInState,
+    TaskListStatus, ToolClass, ToolDecision, ToolServer, ToolServerHealth, ToolServerStatus,
+    ToolState, Turn, TurnOutcome, UsageMeter, UsageState, Work, codex_ask, codex_item, work,
 };
 
 use super::{
-    AskMeta, InjectConsumption, Proposed, Request, State, Streamed, WorkState, ask_key,
-    client_message_id, elicitation_response, item_body, work_ask, work_complete,
+    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, InjectConsumption, ListedSkill, Proposed,
+    RESUME_REQUEST, Request, State, Streamed, WorkState, ask_key, client_message_id,
+    elicitation_response, item_body, work_ask, work_complete,
 };
 use crate::claude_common::compact_json;
 use crate::shared::{Output, json_as_written, patch_first_change};
@@ -198,25 +200,25 @@ fn no_content() -> Option<Value> {
 }
 
 /// The skills `skills/list` answers.
-fn skills(result: &Value) -> Vec<OfferedCommand> {
+fn skills(result: &Value) -> Vec<ListedSkill> {
     codex_protocol::result::<SkillsListResponse>(result)
-        .map(offered_skills)
+        .map(listed_skills)
         .unwrap_or_default()
 }
 
-/// The skills a `skills/list` answer names, across every folder it lists;
-/// a skill the person turned off is left out.
-pub(crate) fn offered_skills(listed: SkillsListResponse) -> Vec<OfferedCommand> {
+/// The skills a `skills/list` answer names, across every folder it lists,
+/// in Codex's order; a skill the person turned off is left out.
+pub(super) fn listed_skills(listed: SkillsListResponse) -> Vec<ListedSkill> {
     listed
         .data
         .into_iter()
         .flat_map(|folder| folder.skills)
         .filter(|skill| skill.enabled)
-        .map(|skill| OfferedCommand {
+        .map(|skill| ListedSkill {
             name: skill.name,
             description: skill.description,
-            argument_hint: String::new(),
             source: skill.scope,
+            path: skill.path,
         })
         .collect()
 }
@@ -328,13 +330,21 @@ impl State {
                     extra: Default::default(),
                 };
                 self.respond(emit, &ask_key(id), Err(refusal));
-                self.unrecognized(emit, method, "a request amux cannot answer");
+                if !unknown
+                    .thread_id()
+                    .is_some_and(|thread| self.is_child(&thread))
+                {
+                    self.unrecognized(emit, method, "a request amux cannot answer");
+                }
             }
             (Some(method), None) => {
                 // A child thread's activity on the same server is its own.
                 if let (Some(ours), Some(theirs)) = (self.thread_id.as_deref(), unknown.thread_id())
                     && ours != theirs
                 {
+                    return;
+                }
+                if DROPPED_NOTIFICATIONS.contains(&method) {
                     return;
                 }
                 self.unrecognized(emit, method, "a notification amux does not read");
@@ -387,6 +397,121 @@ impl State {
 
     // --- responses -------------------------------------------------------
 
+    /// The account the handshake's `account/read` names.
+    fn account_answered(&mut self, result: &Value) {
+        if let Ok(response) = codex_protocol::result::<AccountReadResponse>(result) {
+            self.sign_in = Some(match response.account {
+                None => SignIn {
+                    state: SignInState::SignedOut as i32,
+                    ..Default::default()
+                },
+                Some(account) => SignIn {
+                    state: SignInState::SignedIn as i32,
+                    account: match &account {
+                        codex_protocol::server::Account::Chatgpt(chatgpt) => {
+                            some_of(chatgpt.email.as_deref())
+                        }
+                        _ => None,
+                    }
+                    .unwrap_or_else(|| account.kind().to_owned()),
+                    message: String::new(),
+                },
+            });
+        }
+    }
+
+    /// A thread answer: the handshake's, the resume after an unarchive, or
+    /// the new thread started in place of one with no history. False when
+    /// the answer names no thread.
+    fn thread_answered(
+        &mut self,
+        emit: &mut Emit,
+        result: &Value,
+        resumed: bool,
+        fresh: bool,
+    ) -> bool {
+        let Ok(response) = codex_protocol::result::<ThreadResponse>(result) else {
+            return false;
+        };
+        if fresh {
+            self.thread_id = None;
+        }
+        self.thread_started(emit, &response.thread, Some(&response), fresh);
+        if self.thread_id.as_ref() == Some(&response.thread.id) {
+            self.name_thread(emit);
+            // A resume leaves the turns out, so an empty list says nothing
+            // about a resumed thread, which Codex has already written.
+            if !resumed && response.thread.turns.is_empty() {
+                self.persist_thread(emit);
+            }
+        }
+        self.list_offers(emit);
+        true
+    }
+
+    /// Codex refused the resume of the agent's thread. An archived thread
+    /// is unarchived and resumed, as Codex's refusal asks; one whose history
+    /// is gone is replaced by a new thread, with a notice. False for any
+    /// other refusal.
+    fn resume_refused(&mut self, emit: &mut Emit, error: &RpcError) -> bool {
+        if error.message.contains(" is archived")
+            && let Some(thread_id) = self.thread_id.clone()
+        {
+            let bytes = self.request_as(
+                "amux-unarchive".into(),
+                ClientRequest::ThreadUnarchive(ThreadIdParams {
+                    thread_id,
+                    extra: Default::default(),
+                }),
+                Request::Unarchive,
+            );
+            emit.effect(Effect::ProviderWrite(bytes));
+            return true;
+        }
+        if error.message.starts_with("no rollout found") {
+            self.warning(
+                emit,
+                "missingHistory",
+                "Codex has no history left for this conversation, so a new one started.".to_owned(),
+            );
+            let params = self.new_thread();
+            let bytes = self.request_as(
+                FRESH_THREAD_REQUEST.into(),
+                ClientRequest::ThreadStart(params),
+                Request::Fresh,
+            );
+            emit.effect(Effect::ProviderWrite(bytes));
+            return true;
+        }
+        false
+    }
+
+    /// Resumes the agent's thread, without its turns.
+    fn resume(&mut self, emit: &mut Emit) {
+        let params = ThreadResumeParams {
+            thread_id: self.thread(),
+            cwd: (!self.cwd.is_empty()).then(|| self.cwd.clone()),
+            model: self.model.clone(),
+            exclude_turns: Some(true),
+            ..Default::default()
+        };
+        let bytes = self.request_as(
+            "amux-resume".into(),
+            ClientRequest::ThreadResume(params),
+            Request::Resume,
+        );
+        emit.effect(Effect::ProviderWrite(bytes));
+    }
+
+    /// Codex refused to give the agent a thread. Waiting would leave the
+    /// agent starting for good and swallow every prompt, so the incarnation
+    /// ends with Codex's own words.
+    fn refused_to_start(&mut self, emit: &mut Emit, error: &RpcError) {
+        emit.effect(Effect::Exit {
+            cause: format!("Codex refused to start: {}", error.message),
+        });
+    }
+
     fn response(&mut self, emit: &mut Emit, id: &RequestId, result: Result<Value, RpcError>) {
         let tracked = match id {
             RequestId::String(id) => self
@@ -397,57 +522,40 @@ impl State {
         };
         let Some((id, request)) = tracked else {
             // The agent process's own handshake.
+            let resumed = matches!(id, RequestId::String(id) if id == RESUME_REQUEST);
             let result = match result {
                 Ok(result) => result,
+                Err(error) if resumed && self.resume_refused(emit, &error) => return,
                 // Refused, it never brings a thread: Codex holding the
                 // thread for another server ("already has an active
-                // writer"), a thread it cannot find. Waiting would leave the
-                // agent starting for good and swallow every prompt, so the
-                // incarnation ends with Codex's own words.
-                Err(error) if is_agent_request(id) => {
-                    emit.effect(Effect::Exit {
-                        cause: format!("Codex refused to start: {}", error.message),
-                    });
-                    return;
-                }
+                // writer"), a thread it cannot find.
+                Err(error) if is_agent_request(id) => return self.refused_to_start(emit, &error),
                 Err(_) => return,
             };
-            if let Ok(response) = codex_protocol::result::<ThreadResponse>(&result) {
-                self.thread_started(emit, &response.thread, Some(&response));
-                if self.thread_id.as_ref() == Some(&response.thread.id) {
-                    self.name_thread(emit);
-                    if response.thread.turns.is_empty() {
-                        self.persist_thread(emit);
-                    }
-                }
-                self.list_offers(emit);
-            } else if let Ok(response) = codex_protocol::result::<AccountReadResponse>(&result) {
-                self.sign_in = Some(match response.account {
-                    None => SignIn {
-                        state: SignInState::SignedOut as i32,
-                        ..Default::default()
-                    },
-                    Some(account) => SignIn {
-                        state: SignInState::SignedIn as i32,
-                        account: match &account {
-                            codex_protocol::server::Account::Chatgpt(chatgpt) => {
-                                some_of(chatgpt.email.as_deref())
-                            }
-                            _ => None,
-                        }
-                        .unwrap_or_else(|| account.kind().to_owned()),
-                        message: String::new(),
-                    },
-                });
+            if !self.thread_answered(emit, &result, resumed, false) {
+                self.account_answered(&result);
             }
             return;
         };
+        match request {
+            Request::Unarchive | Request::Resume | Request::Fresh => {
+                return match result {
+                    Ok(_) if request == Request::Unarchive => self.resume(emit),
+                    Ok(result) => {
+                        let fresh = request == Request::Fresh;
+                        self.thread_answered(emit, &result, !fresh, fresh);
+                    }
+                    Err(error) => self.refused_to_start(emit, &error),
+                };
+            }
+            _ => {}
+        }
         if let Request::Models { page, listed } = request {
             return self.models_listed(emit, page, listed, result.ok().as_ref());
         }
         if let Request::Skills = request {
             if let Ok(result) = &result {
-                self.commands = skills(result);
+                self.skills = skills(result);
                 self.publish_catalogue(emit);
             }
             if std::mem::take(&mut self.skills_stale) {
@@ -457,6 +565,23 @@ impl State {
         }
         if let Request::Jobs { page, listed } = request {
             return self.jobs_listed(emit, page, listed, result.ok().as_ref());
+        }
+        if let Request::StopJob { key } = request {
+            // Ended, the command's item completes and takes the job off
+            // the list; refused, the job runs on and says why.
+            let refused = match result {
+                Ok(answer) => {
+                    codex_protocol::result::<BackgroundTerminalTerminateResponse>(&answer)
+                        .ok()
+                        .filter(|answer| !answer.terminated)
+                        .map(|_| "Codex is not running it.".to_owned())
+                }
+                Err(error) => Some(error.message),
+            };
+            if let Some(error) = refused {
+                self.stop_refused(&key, error);
+            }
+            return;
         }
         let result = match result {
             Ok(result) => result,
@@ -501,7 +626,12 @@ impl State {
                     | Request::Name
                     | Request::Persist
                     | Request::Skills
-                    | Request::Jobs { .. } => {}
+                    | Request::Jobs { .. }
+                    | Request::StopJob { .. }
+                    | Request::Unarchive
+                    | Request::Resume
+                    | Request::Fresh
+                    | Request::Unsubscribe => {}
                 }
                 return;
             }
@@ -512,19 +642,9 @@ impl State {
                     self.cleared(emit, &response);
                 }
             }
-            Request::Review => {
-                if self.active_turn.is_none() {
-                    self.active_turn = codex_protocol::result::<TurnStartResponse>(&result)
-                        .ok()
-                        .and_then(|response| some(&response.turn.id));
-                }
-            }
+            Request::Review => self.turn_answered(&result),
             Request::Turn { consumes } => {
-                if self.active_turn.is_none() {
-                    self.active_turn = codex_protocol::result::<TurnStartResponse>(&result)
-                        .ok()
-                        .and_then(|response| some(&response.turn.id));
-                }
+                self.turn_answered(&result);
                 for envelope in consumes {
                     self.shared.message_consumed(&envelope);
                 }
@@ -553,8 +673,30 @@ impl State {
             | Request::Name
             | Request::Persist
             | Request::Skills
-            | Request::Jobs { .. } => {}
+            | Request::Jobs { .. }
+            | Request::StopJob { .. }
+            | Request::Unarchive
+            | Request::Resume
+            | Request::Fresh
+            | Request::Unsubscribe => {}
         }
+    }
+
+    /// The child threads the agent's thread spawned, from its subagent
+    /// calls.
+    fn spawned_threads(&self) -> Vec<String> {
+        let mut threads: Vec<String> = self
+            .works
+            .values()
+            .filter_map(|state| match state.work.as_ref()?.of.as_ref()? {
+                work::Of::Collab(collab) => Some(collab.thread_ids.clone()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        threads.sort();
+        threads.dedup();
+        threads
     }
 
     /// `/clear`'s thread: from now on it is this agent's conversation.
@@ -564,6 +706,26 @@ impl State {
             self.shared.turn_abandoned();
             return;
         };
+        // Codex keeps a thread loaded, with its tool servers, while a client
+        // is subscribed: the agent leaves the old thread and the children it
+        // spawned, as Codex's own app does when it switches threads.
+        let left: Vec<String> = self
+            .thread_id
+            .take()
+            .into_iter()
+            .chain(self.spawned_threads())
+            .collect();
+        for thread_id in left {
+            let bytes = self.request_as(
+                format!("amux-unsubscribe-{thread_id}"),
+                ClientRequest::ThreadUnsubscribe(ThreadIdParams {
+                    thread_id,
+                    extra: Default::default(),
+                }),
+                Request::Unsubscribe,
+            );
+            emit.effect(Effect::ProviderWrite(bytes));
+        }
         self.thread_id = Some(id);
         if let Some(model) = some(&response.model) {
             self.model = Some(model);
@@ -638,9 +800,10 @@ impl State {
             emit,
             wire::Catalogue {
                 models: self.models.clone(),
-                commands: super::offered_commands(self.commands.iter().cloned()),
+                commands: super::offered_commands(),
                 permissions: super::offered_permissions(),
                 modes: super::offered_modes(),
+                skills: self.skills.iter().map(ListedSkill::offered).collect(),
             },
         );
     }
@@ -715,7 +878,10 @@ impl State {
             return;
         };
         let now = self.shared.now_ms();
+        // A stop sent or refused stands across a new list of the same job.
+        let held = self.shared.jobs().jobs;
         listed.extend(page.data.iter().map(|terminal| {
+            let before = held.iter().find(|job| job.key == terminal.process_id);
             BackgroundJob {
                 item_key: terminal.item_id.clone(),
                 command: terminal.command.clone(),
@@ -724,6 +890,9 @@ impl State {
                     .get(&terminal.item_id)
                     .map_or(now, |work| work.at_ms),
                 kind: wire::BackgroundKind::Shell as i32,
+                key: terminal.process_id.clone(),
+                stopping: before.is_some_and(|job| job.stopping),
+                stop_error: before.map(|job| job.stop_error.clone()).unwrap_or_default(),
             }
         }));
         match some_of(page.next_cursor.as_deref()) {
@@ -731,6 +900,42 @@ impl State {
                 self.list_jobs(emit, number + 1, Some(cursor), listed)
             }
             _ => self.shared.set_jobs(listed),
+        }
+    }
+
+    /// The person stops one background command by its process id: it
+    /// reads stopping until its item completes.
+    pub(super) fn stop_job(&mut self, emit: &mut Emit, id: &[u8], key: String) {
+        let mut jobs = self.shared.jobs().jobs;
+        let Some(job) = jobs
+            .iter_mut()
+            .find(|job| !key.is_empty() && job.key == key)
+        else {
+            return self.shared.reject(emit, id, wire::Refusal::Unsupported);
+        };
+        job.stopping = true;
+        job.stop_error.clear();
+        self.shared.set_jobs(jobs);
+        let bytes = self.request_as(
+            format!("amux-stop-{key}"),
+            ClientRequest::BackgroundTerminalsTerminate(BackgroundTerminalsTerminateParams {
+                thread_id: self.thread(),
+                process_id: key.clone(),
+                extra: Default::default(),
+            }),
+            Request::StopJob { key },
+        );
+        emit.effect(Effect::ProviderWrite(bytes));
+        self.shared.accept(emit, id, false);
+    }
+
+    /// Codex did not stop the job keyed `key`, saying `error`.
+    fn stop_refused(&mut self, key: &str, error: String) {
+        let mut jobs = self.shared.jobs().jobs;
+        if let Some(job) = jobs.iter_mut().find(|job| job.key == key) {
+            job.stopping = false;
+            job.stop_error = error;
+            self.shared.set_jobs(jobs);
         }
     }
 
@@ -820,6 +1025,7 @@ impl State {
         emit: &mut Emit,
         thread: &Thread,
         response: Option<&ThreadResponse>,
+        fresh: bool,
     ) {
         let Some(id) = some(&thread.id) else {
             return;
@@ -866,7 +1072,7 @@ impl State {
         self.shared.provider_started();
         let kind = if some_of(thread.forked_from_id.as_deref()).is_some() {
             wire::BoundaryKind::Forked
-        } else if self.incarnation > 1 || !thread.turns.is_empty() {
+        } else if !fresh && (self.incarnation > 1 || !thread.turns.is_empty()) {
             wire::BoundaryKind::Resumed
         } else {
             wire::BoundaryKind::Started
@@ -886,20 +1092,31 @@ impl State {
     ) {
         let key = ask_key(id);
         let method = request.method();
+        let thread = request.thread_id().to_owned();
+        // A child thread's request is the child's: its work is no row of the
+        // agent's turn, so the ask points at none.
+        let child = self.is_child(&thread);
         let (item_key, body, decisions) = match request {
-            ServerRequest::CommandApproval(params) => self.command_approval(emit, params),
+            ServerRequest::CommandApproval(params) => self.command_approval(emit, params, child),
             ServerRequest::FileChangeApproval(params) => {
-                let changes = match self
-                    .works
-                    .get(&params.item_id)
-                    .and_then(|state| state.work.as_ref())
-                    .and_then(|work| work.of.as_ref())
-                {
-                    Some(work::Of::FileChange(change)) => change.changes.clone(),
-                    _ => Vec::new(),
+                let changes = if child {
+                    self.child_changes
+                        .get(&params.item_id)
+                        .map(|work| work.changes.clone())
+                        .unwrap_or_default()
+                } else {
+                    match self
+                        .works
+                        .get(&params.item_id)
+                        .and_then(|state| state.work.as_ref())
+                        .and_then(|work| work.of.as_ref())
+                    {
+                        Some(work::Of::FileChange(change)) => change.changes.clone(),
+                        _ => Vec::new(),
+                    }
                 };
                 (
-                    params.item_id,
+                    if child { String::new() } else { params.item_id },
                     codex_ask::Body::FileChange(FileChangeApproval {
                         reason: params.reason.unwrap_or_default(),
                         grant_root: params.grant_root.unwrap_or_default(),
@@ -969,11 +1186,12 @@ impl State {
                         responses: Vec::new(),
                         questions: shapes,
                         at_ms: 0,
+                        thread,
                     },
                 );
             }
             ServerRequest::Elicitation(params) => {
-                return self.elicitation(emit, key, method, params, payload);
+                return self.elicitation(emit, key, method, params, payload, child);
             }
             ServerRequest::ToolCall(_) => {
                 // Tools amux offers Codex are served by amux's tool server;
@@ -1008,6 +1226,7 @@ impl State {
                 responses,
                 questions: Vec::new(),
                 at_ms: 0,
+                thread,
             },
         );
     }
@@ -1018,11 +1237,12 @@ impl State {
         &mut self,
         emit: &mut Emit,
         params: CommandApprovalParams,
+        child: bool,
     ) -> (String, codex_ask::Body, Vec<CommandDecision>) {
-        let item_id = params.item_id;
+        let item_id = if child { String::new() } else { params.item_id };
         let command = shown_command(&params.command.unwrap_or_default());
         let cwd = params.cwd.unwrap_or_default();
-        if !self.works.contains_key(&item_id) {
+        if !child && !self.works.contains_key(&item_id) {
             let at_ms = params.started_at_ms.unwrap_or(self.shared.now_ms());
             self.works.insert(
                 item_id.clone(),
@@ -1093,22 +1313,38 @@ impl State {
         self.shared.open_ask(ask);
     }
 
-    /// The tool-server call running now, which an elicitation belongs to.
-    fn running_tool_call(&self) -> Option<(String, String, String)> {
-        self.works
-            .iter()
-            .filter_map(|(key, state)| match state.work.as_ref() {
-                Some(Work {
-                    of: Some(work::Of::Mcp(call)),
-                    state: running,
-                    ..
-                }) if *running == ToolState::Running as i32 => {
-                    Some((state.at_ms, key, call.server.clone(), call.tool.clone()))
-                }
-                _ => None,
-            })
-            .max_by_key(|(at_ms, ..)| *at_ms)
-            .map(|(_, key, server, tool)| (key.clone(), server, tool))
+    /// The running call an elicitation of `server` belongs to, and its tool:
+    /// that server's call of `tool` when Codex names it, else the server's
+    /// newest, else, when no running call is that server's, the newest
+    /// running call.
+    fn running_tool_call(&self, server: &str, tool: &str) -> Option<(String, String, String)> {
+        let running = |of_server: bool| {
+            self.works
+                .iter()
+                .filter_map(|(key, state)| match state.work.as_ref() {
+                    Some(Work {
+                        of: Some(work::Of::Mcp(call)),
+                        state: running,
+                        ..
+                    }) if *running == ToolState::Running as i32
+                        && (!of_server
+                            || (call.server == server
+                                && (tool.is_empty() || call.tool == tool))) =>
+                    {
+                        Some((state.at_ms, key, call.server.clone(), call.tool.clone()))
+                    }
+                    _ => None,
+                })
+                .max_by_key(|(at_ms, ..)| *at_ms)
+                .map(|(_, key, server, tool)| (key.clone(), server, tool))
+        };
+        running(true).or_else(|| running(false))
+    }
+
+    /// Whether `thread` is a child thread on the agent's server, not the
+    /// agent's own.
+    fn is_child(&self, thread: &str) -> bool {
+        !thread.is_empty() && self.thread_id.as_deref().is_some_and(|ours| ours != thread)
     }
 
     fn elicitation(
@@ -1118,14 +1354,18 @@ impl State {
         method: &str,
         params: ElicitationParams,
         payload: &[u8],
+        child: bool,
     ) {
+        let thread = params.thread_id.clone();
         let meta = params.meta.unwrap_or_default();
         let server = params.server_name;
         let approval = meta.codex_approval_kind.as_deref() == Some("mcp_tool_call");
-        let session = meta
-            .persist
-            .as_ref()
-            .is_some_and(|persist| persist.offers("session"));
+        let offers = |scope: &str| {
+            meta.persist
+                .as_ref()
+                .is_some_and(|persist| persist.offers(scope))
+        };
+        let (session, always) = (offers("session"), offers("always"));
         if approval && server == AMUX_TOOL_SERVER {
             // amux's own tools never ask, as the Claude launch settings
             // pre-approve them: the call is approved at once, for the rest
@@ -1138,7 +1378,11 @@ impl State {
             return self.respond(emit, &key, Ok(accept));
         }
         let message = params.message.unwrap_or_default();
-        let (item_key, call_server, tool) = self.running_tool_call().unwrap_or_default();
+        let named_tool = meta.tool_name.clone().unwrap_or_default();
+        let (item_key, call_server, tool) = match self.running_tool_call(&server, &named_tool) {
+            Some(call) if !child => call,
+            _ => (String::new(), server.clone(), named_tool),
+        };
         let (body, offered): (_, Vec<(Decision, ClientResponse)>) = if approval {
             let mut offered = vec![(
                 Decision::Approve,
@@ -1148,6 +1392,12 @@ impl State {
                 offered.push((
                     Decision::ApproveSession,
                     elicitation_response(ElicitationAction::Accept, no_content(), Some("session")),
+                ));
+            }
+            if always {
+                offered.push((
+                    Decision::ApproveAlways,
+                    elicitation_response(ElicitationAction::Accept, no_content(), Some("always")),
                 ));
             }
             offered.push((
@@ -1160,11 +1410,7 @@ impl State {
             ));
             (
                 codex_ask::Body::McpTool(McpToolApproval {
-                    server: if call_server.is_empty() {
-                        server
-                    } else {
-                        call_server
-                    },
+                    server: call_server,
                     tool,
                     arguments_json: compact_json(meta.tool_params.as_ref().unwrap_or(&Value::Null))
                         .into_bytes(),
@@ -1211,6 +1457,7 @@ impl State {
                 responses,
                 questions: Vec::new(),
                 at_ms: 0,
+                thread,
             },
         );
     }
@@ -1232,16 +1479,32 @@ impl State {
     // --- notifications ---------------------------------------------------
 
     fn notification(&mut self, emit: &mut Emit, notification: ServerNotification) {
+        // Codex says an ask was answered on whichever thread asked it.
+        if let ServerNotification::ServerRequestResolved(resolved) = &notification {
+            return self.ask_resolved(emit, &ask_key(&resolved.request_id));
+        }
         // A child thread's activity on the same server is its own; the
-        // collaboration item reports it here.
+        // collaboration item reports it here. Its file changes are kept for
+        // its approvals to show.
         if let (Some(ours), Some(theirs)) = (self.thread_id.as_deref(), about_thread(&notification))
             && ours != theirs
         {
+            if let ServerNotification::ItemStarted(started)
+            | ServerNotification::ItemCompleted(started) = &notification
+                && let ThreadItem::FileChange(change) = &started.item
+            {
+                self.child_changes.insert(
+                    change.id.clone(),
+                    wire::FileChangeWork {
+                        changes: file_changes(&change.changes, false),
+                    },
+                );
+            }
             return;
         }
         match notification {
             ServerNotification::ThreadStarted(started) => {
-                self.thread_started(emit, &started.thread, None);
+                self.thread_started(emit, &started.thread, None, false);
             }
             ServerNotification::TurnStarted(started) => {
                 self.plan_overtaken(emit);
@@ -1337,9 +1600,19 @@ impl State {
                     self.context_window = Some(window as u64);
                 }
             }
-            ServerNotification::AccountRateLimitsUpdated(updated) => {
+            // Codex reports each of its limits under its own id; the meter
+            // is the `codex` limit's, as in Codex's own app, and an update
+            // without an id is that one.
+            ServerNotification::AccountRateLimitsUpdated(updated)
+                if updated
+                    .rate_limits
+                    .limit_id
+                    .as_deref()
+                    .is_none_or(|id| id == "codex") =>
+            {
                 self.usage = Some(codex_usage(&updated.rate_limits));
             }
+            ServerNotification::AccountRateLimitsUpdated(_) => {}
             ServerNotification::AccountUpdated(updated) => {
                 self.sign_in = Some(
                     match some_of(updated.auth_mode.as_ref().map(|m| m.as_str())) {
@@ -1370,23 +1643,10 @@ impl State {
             ServerNotification::McpServerStatusUpdated(updated) => {
                 self.server_status(emit, updated)
             }
-            ServerNotification::ModelRerouted(rerouted) => {
-                let key = self.local_key("reroute");
-                self.emit_item(
-                    emit,
-                    ItemDraft {
-                        key,
-                        body: item_body(codex_item::Kind::Reroute(ModelSwitch {
-                            from: rerouted.from_model,
-                            to: rerouted.to_model.clone(),
-                            reason: rerouted.reason,
-                        })),
-                        complete: true,
-                        ..Default::default()
-                    },
-                );
-                self.model = Some(rerouted.to_model);
-            }
+            // A reroute covers one request and Codex keeps the chosen model
+            // for the next; it also sends a warning saying so, with a link,
+            // which is what the person sees.
+            ServerNotification::ModelRerouted(_) => {}
             ServerNotification::Error(error) => self.api_error(emit, error),
             ServerNotification::AutoApprovalReviewStarted(review) => {
                 self.review(emit, review, false)
@@ -1412,9 +1672,7 @@ impl State {
                 self.effort = settings.effort.map(|effort| effort.as_str().to_owned());
                 self.left_plan(emit);
             }
-            ServerNotification::ServerRequestResolved(resolved) => {
-                self.ask_resolved(emit, &ask_key(&resolved.request_id));
-            }
+            ServerNotification::ServerRequestResolved(_) => {}
             // Nothing a client draws, or what another fact already covers.
             ServerNotification::ThreadStatusChanged(_)
             | ServerNotification::ThreadNameUpdated(_)
@@ -1425,40 +1683,109 @@ impl State {
             | ServerNotification::ThreadGoalCleared(_)
             | ServerNotification::ThreadReadStateChanged(_)
             | ServerNotification::TurnModerationMetadata(_)
-            | ServerNotification::DeprecationNotice(_)
             | ServerNotification::RemoteControlStatusChanged(_)
-            | ServerNotification::GuardianWarning(_)
-            | ServerNotification::Warning(_)
             | ServerNotification::FileChangeOutputDelta(_)
             | ServerNotification::TerminalInteraction(_) => {}
             ServerNotification::SkillsChanged(_) => self.skills_changed(emit),
             // Configuration Codex found and did not apply: the person
             // wants to know, in Codex's words.
             ServerNotification::ConfigWarning(warning) => {
-                let words = match some_of(warning.details.as_deref()) {
-                    Some(details) => format!("{}\n{details}", warning.summary),
-                    None => warning.summary,
-                };
-                let key = self.local_key("warning");
-                self.emit_item(
-                    emit,
-                    ItemDraft {
-                        key,
-                        text: words.clone(),
-                        body: item_body(codex_item::Kind::Error(ApiError {
-                            error_kind: "configWarning".into(),
-                            message: words,
-                            ..Default::default()
-                        })),
-                        complete: true,
-                        ..Default::default()
-                    },
-                );
+                self.warning(emit, "configWarning", notice_words(warning))
             }
-            other @ ServerNotification::ThreadClosed(_) => {
-                self.unrecognized(emit, other.method(), "a notification amux does not read")
+            // Codex's own app shows each of these as a warning line.
+            ServerNotification::DeprecationNotice(notice) => {
+                self.warning(emit, "deprecationNotice", notice_words(notice))
             }
+            ServerNotification::Warning(warning) => self.warning(emit, "warning", warning.message),
+            // An approved review's warning repeats its verdict row, so
+            // Codex's own app leaves it out too.
+            ServerNotification::GuardianWarning(warning)
+                if warning
+                    .message
+                    .starts_with("Automatic approval review approved (") => {}
+            ServerNotification::GuardianWarning(warning) => {
+                self.warning(emit, "guardianWarning", warning.message)
+            }
+            // Codex's own app shows only this check, in these words.
+            ServerNotification::ModelVerification(verified) => {
+                if verified
+                    .verifications
+                    .iter()
+                    .any(|check| check == "trustedAccessForCyber")
+                {
+                    self.warning(emit, "modelVerification", CYBER_CHECKS.to_owned());
+                }
+            }
+            ServerNotification::StrictReviewRequired(_) => self.warning(
+                emit,
+                "strictReviewRequired",
+                "This request requires additional safety checks, some tool calls might take extra time"
+                    .to_owned(),
+            ),
+            ServerNotification::SafetyBufferingUpdated(update) => {
+                self.safety_check(emit, &update.turn_id, update.show_buffering_ui)
+            }
+            ServerNotification::HookStarted(_) | ServerNotification::HookCompleted(_) => {}
+            // Codex closes a thread only once no client is subscribed, so
+            // the agent's own thread closing means it is gone; the next
+            // incarnation resumes it.
+            ServerNotification::ThreadClosed(_) => emit.effect(Effect::Exit {
+                cause: "Codex closed the agent's thread".into(),
+            }),
         }
+    }
+
+    /// A line Codex's own app prints for a command amux runs for it.
+    fn review_line(&mut self, emit: &mut Emit, key: String, at_ms: Option<i64>, line: String) {
+        self.emit_item(
+            emit,
+            ItemDraft {
+                key,
+                text: line,
+                body: item_body(codex_item::Kind::CommandOutput(wire::SlashOutput {
+                    command: "review".into(),
+                    args: String::new(),
+                })),
+                at_ms,
+                complete: true,
+                ..Default::default()
+            },
+        );
+    }
+
+    /// Codex holding the turn's answer for a slower safety check: the turn's
+    /// status while it runs.
+    fn safety_check(&mut self, emit: &mut Emit, turn: &str, running: bool) {
+        self.emit_item(
+            emit,
+            ItemDraft {
+                key: format!("safety:{turn}"),
+                text: "Our systems are thinking a bit more about this request before responding."
+                    .into(),
+                body: item_body(codex_item::Kind::SafetyCheck(wire::SafetyCheck { running })),
+                complete: !running,
+                ..Default::default()
+            },
+        );
+    }
+
+    /// A warning row in Codex's words, under the kind Codex sent it as.
+    fn warning(&mut self, emit: &mut Emit, kind: &str, words: String) {
+        let key = self.local_key("warning");
+        self.emit_item(
+            emit,
+            ItemDraft {
+                key,
+                text: words.clone(),
+                body: item_body(codex_item::Kind::Error(ApiError {
+                    error_kind: kind.into(),
+                    message: words,
+                    ..Default::default()
+                })),
+                complete: true,
+                ..Default::default()
+            },
+        );
     }
 
     /// A reasoning summary's part, started or extended.
@@ -1713,6 +2040,24 @@ impl State {
             | ThreadItem::CollabAgentToolCall(_) => {
                 self.work_item(emit, &id, item, turn, at_ms, ended_at_ms, completed)
             }
+            // Codex's own app prints a review's start and end as lines of
+            // their own; the review's findings arrive as an agent message.
+            ThreadItem::EnteredReviewMode(review) => self.review_line(
+                emit,
+                id,
+                at_ms,
+                format!("Code review started: {}", review.review),
+            ),
+            ThreadItem::ExitedReviewMode(_) => {
+                self.review_line(emit, id, at_ms, "Code review finished".to_owned())
+            }
+            // Read for what they carry elsewhere: a hook's prompt reaches the
+            // conversation, a child's activity its own subagent row; a sleep
+            // or a raw call output shows nothing in Codex's own app.
+            ThreadItem::HookPrompt(_)
+            | ThreadItem::SubAgentActivity(_)
+            | ThreadItem::Sleep(_)
+            | ThreadItem::FunctionCallOutput(_) => {}
             other => {
                 let other = other.kind().to_owned();
                 self.emit_item(
@@ -1914,32 +2259,7 @@ impl State {
             }
             ThreadItem::FileChange(change) => (
                 work::Of::FileChange(wire::FileChangeWork {
-                    changes: change
-                        .changes
-                        .iter()
-                        .map(|change| wire::FileChange {
-                            path: change.path.clone(),
-                            kind: match &change.kind {
-                                PatchChangeKind::Add(_) => wire::FileChangeKind::Add,
-                                PatchChangeKind::Delete(_) => wire::FileChangeKind::Delete,
-                                PatchChangeKind::Update(_) => wire::FileChangeKind::Update,
-                                PatchChangeKind::Unknown(_) => wire::FileChangeKind::Unspecified,
-                            } as i32,
-                            move_to: match &change.kind {
-                                PatchChangeKind::Update(update) => {
-                                    update.move_path.clone().unwrap_or_default()
-                                }
-                                _ => String::new(),
-                            },
-                            patch: change.diff.clone(),
-                            line: match &change.kind {
-                                PatchChangeKind::Update(_) if state == ToolState::Succeeded => {
-                                    patch_first_change(&change.diff)
-                                }
-                                _ => None,
-                            },
-                        })
-                        .collect(),
+                    changes: file_changes(&change.changes, state == ToolState::Succeeded),
                 }),
                 ToolClass::Consequential,
             ),
@@ -2178,6 +2498,21 @@ impl State {
 
     // --- turn end and exit -----------------------------------------------
 
+    /// The answer to a `turn/start` or `review/start` names the turn it
+    /// began; it records that turn unless Codex already named one running or
+    /// the turn has already ended.
+    fn turn_answered(&mut self, result: &Value) {
+        if self.active_turn.is_some() {
+            return;
+        }
+        let turn = codex_protocol::result::<TurnStartResponse>(result)
+            .ok()
+            .and_then(|response| some(&response.turn.id));
+        if turn != self.ended_turn {
+            self.active_turn = turn;
+        }
+    }
+
     fn turn_completed(&mut self, emit: &mut Emit, turn: &codex_protocol::Turn) {
         let outcome = match turn.status.as_str() {
             "completed" => TurnOutcome::Completed,
@@ -2200,9 +2535,25 @@ impl State {
             );
         }
         self.final_error = None;
-        // Work whose approval was still open never ran.
+        // Work whose approval was still open never ran. A child thread's
+        // asks are the child's, and stay open past the agent's turn.
         let mut unapproved = BTreeSet::new();
-        for ask in self.shared.close_all_asks() {
+        let own: Vec<String> = self
+            .shared
+            .asks()
+            .open_asks()
+            .iter()
+            .map(|ask| ask.key.clone())
+            .filter(|key| {
+                self.asks
+                    .get(key)
+                    .is_none_or(|meta| !self.is_child(&meta.thread))
+            })
+            .collect();
+        for key in own {
+            let Some(ask) = self.shared.close_ask(&key) else {
+                continue;
+            };
             if let Some(codex_ask::Body::Plan(_)) = ask.body {
                 self.decide_plan(emit, wire::PlanVerdict::Dismissed, None);
                 continue;
@@ -2265,6 +2616,7 @@ impl State {
                 },
             );
         }
+        self.ended_turn = some(&turn_id).or(self.active_turn.take());
         self.active_turn = None;
         self.interrupt_pending = false;
         if outcome == TurnOutcome::Completed {
@@ -2408,6 +2760,7 @@ fn codex_usage(limits: &RateLimitSnapshot) -> CodexUsage {
                     used_percent: used,
                     resets_at_ms: window.resets_at.map(|at| at * 1000),
                     state: window_state(used) as i32,
+                    used_unknown: false,
                 }),
             }
         })
@@ -2478,4 +2831,41 @@ fn dynamic_work(call: &DynamicToolCallItem) -> wire::McpToolCall {
 /// A decoded part of a message as the JSON Codex wrote.
 fn as_written(value: &impl serde::Serialize) -> Value {
     serde_json::to_value(value).expect("protocol types serialize")
+}
+
+/// A notice's summary, then its details on their own lines when it has any.
+fn notice_words(notice: DeprecationNotice) -> String {
+    match some_of(notice.details.as_deref()) {
+        Some(details) => format!("{}\n{details}", notice.summary),
+        None => notice.summary,
+    }
+}
+
+/// Codex's words for its cybersecurity checks, as its own app shows them.
+const CYBER_CHECKS: &str = "Your conversations have multiple flags for possible cybersecurity risk. Responses may take longer because extra safety checks are on. To get authorized for security work, join the Trusted Access for Cyber program: https://chatgpt.com/cyber";
+
+/// A patch's changes as the wire carries them; the first changed line only
+/// once the patch applied.
+fn file_changes(changes: &[FileUpdateChange], applied: bool) -> Vec<wire::FileChange> {
+    changes
+        .iter()
+        .map(|change| wire::FileChange {
+            path: change.path.clone(),
+            kind: match &change.kind {
+                PatchChangeKind::Add(_) => wire::FileChangeKind::Add,
+                PatchChangeKind::Delete(_) => wire::FileChangeKind::Delete,
+                PatchChangeKind::Update(_) => wire::FileChangeKind::Update,
+                PatchChangeKind::Unknown(_) => wire::FileChangeKind::Unspecified,
+            } as i32,
+            move_to: match &change.kind {
+                PatchChangeKind::Update(update) => update.move_path.clone().unwrap_or_default(),
+                _ => String::new(),
+            },
+            patch: change.diff.clone(),
+            line: match &change.kind {
+                PatchChangeKind::Update(_) if applied => patch_first_change(&change.diff),
+                _ => None,
+            },
+        })
+        .collect()
 }

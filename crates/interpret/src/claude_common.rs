@@ -13,10 +13,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
     Ask, Attachment, BackgroundJob, BlobRef, ClaudeGrant, ClaudeUsage, DecisionOutcome, EditInput,
-    Limit, NotebookCell, NotebookEditMode, OfferedCommand, OfferedModel, OfferedPermission,
-    PatchHunk, Question, QuestionAsk, QuestionOption, Replacement, ScopeChoice, ScopeDestination,
-    ShellInput, TaskList, TaskListEntry, TaskListStatus, ToolCall, ToolClass, ToolInput, ToolState,
-    UsageState, attachment, codex_grant, tool_decision, tool_input,
+    HealthState, Limit, NotebookCell, NotebookEditMode, OfferedCommand, OfferedModel,
+    OfferedPermission, PatchHunk, Question, QuestionAsk, QuestionOption, Replacement, ScopeChoice,
+    ScopeDestination, ShellInput, TaskList, TaskListEntry, TaskListStatus, ToolCall, ToolClass,
+    ToolInput, ToolServer, ToolServerHealth, ToolServerStatus, ToolState, UsageState, attachment,
+    codex_grant, tool_decision, tool_input,
 };
 
 use crate::Effect;
@@ -170,10 +171,17 @@ pub(crate) fn plan_ask(switch: &str) -> wire::PlanAsk {
     }
 }
 
-/// The permission Claude's own plan approval switches to: auto mode where
-/// Claude offers it, accept edits otherwise.
-pub(crate) fn plan_switch(offers_auto: bool) -> &'static str {
-    if offers_auto { "auto" } else { "acceptEdits" }
+/// The permission Claude's own plan approval switches to, in both modes:
+/// never ask where Claude was launched allowing it, else auto mode where
+/// Claude offers it, else accept edits.
+pub(crate) fn plan_switch(offers_auto: bool, never_ask: bool) -> &'static str {
+    if never_ask {
+        NEVER_ASK
+    } else if offers_auto {
+        "auto"
+    } else {
+        "acceptEdits"
+    }
 }
 
 /// An RFC 3339 timestamp, as Claude writes them, in milliseconds.
@@ -574,6 +582,12 @@ struct Job {
     launched_after: u64,
     #[serde(default)]
     kind: i32,
+    /// A stop was sent and Claude has not said the job ended.
+    #[serde(default)]
+    stopping: bool,
+    /// Claude's refusal of the last stop.
+    #[serde(default)]
+    stop_error: String,
 }
 
 impl Jobs {
@@ -630,6 +644,34 @@ impl Jobs {
         self.published()
     }
 
+    /// Whether task `task_id` is a job still running, as far as Claude
+    /// has said.
+    pub(crate) fn running(&self, task_id: &str) -> bool {
+        self.jobs.contains_key(task_id)
+    }
+
+    /// A stop was sent for task `task_id`. Returns the jobs to publish;
+    /// None when no job has that id.
+    pub(crate) fn stop_sent(&mut self, task_id: &str) -> Option<Vec<BackgroundJob>> {
+        let job = self.jobs.get_mut(task_id)?;
+        job.stopping = true;
+        job.stop_error.clear();
+        Some(self.published())
+    }
+
+    /// Claude refused to stop task `task_id`, saying `error`; the job runs
+    /// on. Returns the jobs to publish when it is still one.
+    pub(crate) fn stop_refused(
+        &mut self,
+        task_id: &str,
+        error: String,
+    ) -> Option<Vec<BackgroundJob>> {
+        let job = self.jobs.get_mut(task_id)?;
+        job.stopping = false;
+        job.stop_error = error;
+        Some(self.published())
+    }
+
     /// Claude said task `task_id` ended. Returns the jobs to publish when
     /// it was one.
     pub(crate) fn ended(&mut self, task_id: &str) -> Option<Vec<BackgroundJob>> {
@@ -657,11 +699,14 @@ impl Jobs {
             .iter()
             .filter_map(|id| Some((id, self.jobs.get(id)?)))
             .chain(launched)
-            .map(|(_, job)| BackgroundJob {
+            .map(|(id, job)| BackgroundJob {
                 item_key: job.step.clone(),
                 command: job.command.clone(),
                 started_at_ms: job.started_at_ms,
                 kind: job.kind,
+                key: id.clone(),
+                stopping: job.stopping,
+                stop_error: job.stop_error.clone(),
             })
             .collect()
     }
@@ -778,6 +823,7 @@ pub(crate) fn describe_grant(granted: Option<&tool_decision::Granted>) -> String
         }
         Some(tool_decision::Granted::Codex(grant)) => match &grant.of {
             Some(codex_grant::Of::Session(_)) => " grant=session".into(),
+            Some(codex_grant::Of::Always(_)) => " grant=always".into(),
             Some(codex_grant::Of::CommandPrefix(prefix)) => {
                 format!(" grant=prefix{}", words(&prefix.words))
             }
@@ -1282,6 +1328,9 @@ pub(crate) fn describe_asks(asks: &[Ask]) -> String {
                             .deny_can_stop
                             .then(|| " deny-can-stop".to_owned()),
                         permission.deny_stops.then(|| " deny-stops".to_owned()),
+                        permission
+                            .default_to_no
+                            .then(|| " default-to-no".to_owned()),
                     ]
                     .into_iter()
                     .flatten()
@@ -1429,39 +1478,47 @@ pub(crate) fn launched_permission(args: &[String]) -> Option<String> {
     launch_arg(args, "--permission-mode")
 }
 
-/// Text a terminal program wrote, without its colour and cursor codes:
-/// CSI and OSC sequences and the other escapes.
+/// Claude's text as a wire field carries it: without the colour, cursor
+/// and link codes a terminal program writes (CSI and OSC sequences, in
+/// their escaped and their one-character C1 forms, and the other escapes)
+/// or any other control character but a newline and a tab. Every field
+/// made of Claude's words goes through this one cleaner.
 pub(crate) fn without_terminal_codes(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c != '\u{1b}' {
-            out.push(c);
-            continue;
+    // CSI: parameters and intermediates, then one final byte.
+    let csi = |chars: &mut std::iter::Peekable<std::str::Chars>| {
+        for c in chars.by_ref() {
+            if ('\u{40}'..='\u{7e}').contains(&c) {
+                break;
+            }
         }
-        match chars.next() {
-            // CSI: parameters and intermediates, then one final byte.
-            Some('[') => {
-                for c in chars.by_ref() {
-                    if ('\u{40}'..='\u{7e}').contains(&c) {
-                        break;
-                    }
-                }
+    };
+    // OSC: up to BEL or ST, in either form.
+    let osc = |chars: &mut std::iter::Peekable<std::str::Chars>| {
+        while let Some(c) = chars.next() {
+            if c == '\u{7}' || c == '\u{9c}' {
+                break;
             }
-            // OSC: up to BEL or ST.
-            Some(']') => {
-                while let Some(c) = chars.next() {
-                    if c == '\u{7}' {
-                        break;
-                    }
-                    if c == '\u{1b}' && chars.peek() == Some(&'\\') {
-                        chars.next();
-                        break;
-                    }
-                }
+            if c == '\u{1b}' && chars.peek() == Some(&'\\') {
+                chars.next();
+                break;
             }
-            // A two-character escape.
-            _ => {}
+        }
+    };
+    while let Some(c) = chars.next() {
+        match c {
+            '\u{1b}' => match chars.next() {
+                Some('[') => csi(&mut chars),
+                Some(']') => osc(&mut chars),
+                // A two-character escape.
+                _ => {}
+            },
+            '\u{9b}' => csi(&mut chars),
+            '\u{9d}' => osc(&mut chars),
+            '\n' | '\t' => out.push(c),
+            c if c.is_control() => {}
+            c => out.push(c),
         }
     }
     out
@@ -1587,6 +1644,22 @@ pub(crate) fn describe_model_name(name: Option<&str>) -> String {
     name.map_or("?".to_owned(), |name| {
         serde_json::Value::String(name.to_owned()).to_string()
     })
+}
+
+/// Tool-server health with amux's own server listed as off: where an
+/// organization manages Claude's MCP servers, Claude takes none added on
+/// its command line, so the agent launched it without amux's, and the
+/// person reads why amux's tools are missing.
+pub(crate) fn amux_tools_withheld(mut health: ToolServerHealth) -> ToolServerHealth {
+    health.servers.push(ToolServer {
+        name: crate::AMUX_TOOL_SERVER.to_owned(),
+        status: ToolServerStatus::Failed as i32,
+        error:
+            "Your organization's MCP policy allows no other tool servers, so amux's tools are off."
+                .to_owned(),
+    });
+    health.state = HealthState::Degraded as i32;
+    health
 }
 
 #[cfg(test)]

@@ -2,40 +2,40 @@
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 2 recorded 1: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue cfb4734d models=[default{low/medium/high/xhigh/max},opus[1m]{low/medium/high/xhigh/max},claude-fable-5[1m]{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku] commands=64 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue cfb4734d
-snapshot IDLE queue=[] working_on=- at=1787960865626 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+effect catalogue 8572d50d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=55 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 8572d50d
+snapshot IDLE queue=[] working_on=- at=1793267893120 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Remember the word ALBATROSS. Reply with exactly REMEMBERED."
-item boundary:1 boundary final at=1787960865629 text="" BOUNDARY_KIND_STARTED session=- version=-
-item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1787960865629 text="Remember the word ALBATROSS. Reply with exactly REMEMBERED."
-snapshot WORKING queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1787960865629 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 6 recorded 5: fact Stream type=system subtype=init uuid=3f931560-8e2e-4519-bf7b-15207bb06ec0
-item boundary:1 boundary final at=1787960866337 text="" BOUNDARY_KIND_STARTED session=5651c630-6550-4233-8837-517f88ab245c version=2.1.247
-snapshot WORKING queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1787960866337 asks=[] session=5651c630-6550-4233-8837-517f88ab245c model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 8 recorded 7: fact Stream type=rate_limit_event uuid=e7cb03f1-1c91-4bd0-8f8f-1dc9ddef3d5e
-snapshot WORKING queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1787960866514 asks=[] session=5651c630-6550-4233-8837-517f88ab245c model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 22 recorded 21: fact Stream type=assistant uuid=3f4f9f91-baad-46ff-8c37-9a491181447c
-item msg_011CeW3FrFoj3phfnaViDk1b:0 thinking final at=1787960867807 text="The user is asking me to remember the word \"ALBATROSS\" and reply with exactly \"REMEMBERED\".\n\nThis is a simple instruction - they want me to confirm that I've noted the word ALBATROSS. They want me to respond with exactly \"REMEMBERED\".\n\nLet me do that."
-snapshot WORKING queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1787960867807 asks=[] session=5651c630-6550-4233-8837-517f88ab245c model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=27910/? tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 24 recorded 23: fact Stream type=assistant uuid=38c5757d-70e3-4837-b9d7-5fb067c3c30c
-item msg_011CeW3FrFoj3phfnaViDk1b:1 message final at=1787960867826 text="REMEMBERED"
-## 26 recorded 25: fact Stream type=result subtype=success uuid=00fa741b-bf79-4039-98a7-37477097d94c
-item turn:1 turn final at=1787960867867 text="" #1 TURN_OUTCOME_COMPLETED started=1787960866311
-snapshot IDLE queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1787960867867 asks=[] session=5651c630-6550-4233-8837-517f88ab245c model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=27910/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-turn_end 1 last=msg_011CeW3FrFoj3phfnaViDk1b:1
-## 28 recorded 27: input stdin-3
+item boundary:1 boundary final at=1793267893122 text="" BOUNDARY_KIND_STARTED session=- version=-
+item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793267893122 text="Remember the word ALBATROSS. Reply with exactly REMEMBERED."
+snapshot WORKING queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1793267893122 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 6 recorded 5: fact Stream type=system subtype=init uuid=c9558a15-9bee-42d2-9cbb-f9c71c449058
+item boundary:1 boundary final at=1793267893172 text="" BOUNDARY_KIND_STARTED session=4d76409f-298d-487c-8527-3a932dec09bb version=2.1.312
+snapshot WORKING queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1793267893172 asks=[] session=4d76409f-298d-487c-8527-3a932dec09bb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 14 recorded 13: fact Stream type=assistant uuid=341530f1-e7b1-4f74-b8fe-6ea7d4e57f47
+item msg_011CgWL9dU7VZYMo2ZDjPV56:0 thinking final at=1793267896278 text=""
+snapshot WORKING queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1793267896278 asks=[] session=4d76409f-298d-487c-8527-3a932dec09bb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23730/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 16 recorded 15: fact Stream type=assistant uuid=59f733fa-70a0-4537-aa15-e49b43a4e110
+item msg_011CgWL9dU7VZYMo2ZDjPV56:1 message final at=1793267896287 text="REMEMBERED"
+## 18 recorded 17: fact Stream type=rate_limit_event uuid=c162f56f-4573-4466-99bc-9d23465a47a4
+snapshot WORKING queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1793267896308 asks=[] session=4d76409f-298d-487c-8527-3a932dec09bb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23730/? tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 20 recorded 19: fact Stream type=result subtype=success uuid=9afffb98-1c84-4a6d-b8f4-94cbed3c3ee7
+item turn:1 turn final at=1793267896328 text="" #1 TURN_OUTCOME_COMPLETED started=1793267893146
+snapshot IDLE queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1793267896328 asks=[] session=4d76409f-298d-487c-8527-3a932dec09bb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23730/200000 tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 1 last=msg_011CgWL9dU7VZYMo2ZDjPV56:1
+## 22 recorded 21: input stdin-3
 effect reply stdin-3 accepted
 effect user 73746469-6e2d-4300-8000-000000000000 "What word did I ask you to remember? Reply with just that word."
-item 73746469-6e2d-4300-8000-000000000000 prompt final input=stdin-3 at=1787960867869 text="What word did I ask you to remember? Reply with just that word."
-snapshot WORKING queue=[] working_on="What word did I ask you to remember? Reply with just that word." at=1787960867869 asks=[] session=5651c630-6550-4233-8837-517f88ab245c model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=27910/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 42 recorded 41: fact Stream type=assistant uuid=b8930adc-4558-46ec-8062-49962d067aad
-item msg_011CeW3FxowpDKEe7YP46nJR:0 thinking final at=1787960869614 text="The user is asking me to recall the word they asked me to remember in the previous message. They asked me to remember the word \"ALBATROSS\" and to reply with exactly \"REMEMBERED\", which I did.\n\nNow they're asking what word they asked me to remember, and they want me to reply with just that word.\n\nThe answer is: ALBATROSS"
-snapshot WORKING queue=[] working_on="What word did I ask you to remember? Reply with just that word." at=1787960869614 asks=[] session=5651c630-6550-4233-8837-517f88ab245c model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=28040/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 44 recorded 43: fact Stream type=assistant uuid=4af584e7-3095-4311-84f3-ed7b108b32f0
-item msg_011CeW3FxowpDKEe7YP46nJR:1 message final at=1787960869616 text="ALBATROSS"
-## 46 recorded 45: fact Stream type=result subtype=success uuid=ffc0f667-b65b-4824-8727-67c8887694cc
-item turn:2 turn final at=1787960869636 text="" #2 TURN_OUTCOME_COMPLETED started=1787960867871
-snapshot IDLE queue=[] working_on="What word did I ask you to remember? Reply with just that word." at=1787960869636 asks=[] session=5651c630-6550-4233-8837-517f88ab245c model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=28040/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-turn_end 2 last=msg_011CeW3FxowpDKEe7YP46nJR:1
+item 73746469-6e2d-4300-8000-000000000000 prompt final input=stdin-3 at=1793267896330 text="What word did I ask you to remember? Reply with just that word."
+snapshot WORKING queue=[] working_on="What word did I ask you to remember? Reply with just that word." at=1793267896330 asks=[] session=4d76409f-298d-487c-8527-3a932dec09bb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23730/200000 tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 30 recorded 29: fact Stream type=assistant uuid=ce32a0ba-640b-43c8-a99d-463f5d21db59
+item msg_011CgWL9rREno3vzTHarDtvq:0 thinking final at=1793267897640 text=""
+snapshot WORKING queue=[] working_on="What word did I ask you to remember? Reply with just that word." at=1793267897640 asks=[] session=4d76409f-298d-487c-8527-3a932dec09bb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23995/200000 tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 32 recorded 31: fact Stream type=assistant uuid=2c43dd5c-6193-427b-960b-7e8d5e2b4e61
+item msg_011CgWL9rREno3vzTHarDtvq:1 message final at=1793267897641 text="ALBATROSS"
+## 34 recorded 33: fact Stream type=result subtype=success uuid=23f26b23-9256-448e-8022-1c55ca33704d
+item turn:2 turn final at=1793267897648 text="" #2 TURN_OUTCOME_COMPLETED started=1793267896335
+snapshot IDLE queue=[] working_on="What word did I ask you to remember? Reply with just that word." at=1793267897648 asks=[] session=4d76409f-298d-487c-8527-3a932dec09bb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23995/200000 tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 2 last=msg_011CgWL9rREno3vzTHarDtvq:1

@@ -44,6 +44,32 @@ async fn a_codex_agent_handshakes_runs_a_turn_and_resumes_its_thread() {
         })
         .await;
     assert_eq!(agent.provider_session(), thread, "the same thread resumed");
+    // A long thread's whole history can exceed what one message carries,
+    // so the resume leaves the turns out, as Codex's own app does, and the
+    // resumed thread is not then read back in full.
+    let input = agent.provider_input();
+    // What amux never draws, Codex is asked not to send.
+    let initialize = input
+        .iter()
+        .find(|line| line["method"] == "initialize")
+        .expect("an initialize");
+    let opted_out = &initialize["params"]["capabilities"]["optOutNotificationMethods"];
+    assert!(
+        opted_out
+            .as_array()
+            .is_some_and(|methods| methods.contains(&serde_json::json!("hook/started"))),
+        "{initialize}"
+    );
+    let resume = input
+        .iter()
+        .find(|line| line["method"] == "thread/resume")
+        .expect("a resume");
+    assert_eq!(resume["params"]["excludeTurns"], true, "{resume}");
+    let reads = input
+        .iter()
+        .filter(|line| line["method"] == "thread/read")
+        .count();
+    assert_eq!(reads, 1, "the resumed thread was read back in full");
     let mut daemon = agent.dial().await;
     daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
@@ -121,7 +147,8 @@ async fn a_codex_agent_is_one_client_of_a_server_on_its_private_socket() {
 
 /// The thread id Codex answers with is what the next incarnation resumes;
 /// an incarnation that cannot keep it ends rather than run a thread nobody
-/// can find again. A read-only session file stands in for the full disk.
+/// can find again. A read-only session file stands in for the full disk; a
+/// resume keeps the thread it was given, so the new thread is a `/clear`'s.
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_codex_thread_that_cannot_be_kept_ends_the_incarnation() {
@@ -150,6 +177,9 @@ async fn a_codex_thread_that_cannot_be_kept_ends_the_incarnation() {
     let session = agent.dir.join(agent::PRIVATE).join("provider-session");
     std::fs::set_permissions(&session, std::fs::Permissions::from_mode(0o400)).unwrap();
     agent.resume();
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p2", "/clear").await, Verdict::Accepted);
     let cause = agent.exit().await;
     std::fs::set_permissions(&session, std::fs::Permissions::from_mode(0o600)).unwrap();
     match cause {
@@ -600,7 +630,7 @@ fn assert_no_drift(agent: &Agent) {
     );
 }
 
-const SDK_SESSION: &str = "d7ec31b2-733c-4a1c-8f61-38a6b6d96b2b";
+const SDK_SESSION: &str = "d34066a8-442f-45df-b6b9-8c7054bd21c6";
 const SDK_PROMPT: &str = "Use AskUserQuestion to ask exactly one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue. Then repeat my answer.";
 
 /// Headless Claude: the initialize exchange, a turn whose thinking, tool
@@ -627,7 +657,11 @@ async fn headless_claude_replays_initialization_a_control_reply_and_the_end_of_i
     agent
         .wait("the turn ends", |log| log.turn_ends() == 1)
         .await;
-    assert!(agent.log().has_text("You selected **Blue**."));
+    assert!(
+        agent
+            .log()
+            .has_text("You chose **Blue** as your preferred color.")
+    );
     daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
     assert_no_drift(&agent);
@@ -1089,6 +1123,114 @@ async fn a_headless_session_that_never_began_is_started_not_resumed() {
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 }
 
+/// A `/clear` gives headless Claude a new session, which the next
+/// incarnation resumes: the conversation after the clear, not before it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_headless_clear_is_the_session_the_next_incarnation_resumes() {
+    let agent = Agent::start(Setup {
+        steps: vec![
+            Step::Text {
+                chunks: vec!["after the clear".into()],
+            },
+            Step::TurnEnd,
+        ],
+        ..Setup::sdk()
+    })
+    .await;
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    let before = agent.provider_session();
+    assert_eq!(daemon.prompt(b"p1", "/clear").await, Verdict::Accepted);
+    agent
+        .wait("the clear ends", |log| log.turn_ends() == 1)
+        .await;
+    assert_eq!(daemon.prompt(b"p2", "one").await, Verdict::Accepted);
+    agent
+        .wait("the turn ends", |log| log.turn_ends() == 2)
+        .await;
+    let after = agent.provider_session();
+    assert_ne!(after, before, "the cleared session is saved");
+    let sent: Vec<String> = agent
+        .provider_input()
+        .iter()
+        .filter(|line| line["type"] == "user")
+        .map(|line| line["session_id"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(
+        sent.last(),
+        Some(&after),
+        "a prompt names the session it goes to"
+    );
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+
+    agent.resume();
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p3", "two").await, Verdict::Accepted);
+    agent
+        .wait("the resumed turn ends", |log| log.turn_ends() == 3)
+        .await;
+    assert_eq!(
+        agent.provider_session(),
+        after,
+        "the cleared session resumed"
+    );
+    assert!(
+        agent.log().boundaries().iter().all(|kind| kind != "FORKED"),
+        "{:?}",
+        agent.log().boundaries()
+    );
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+}
+
+/// A session file holding no conversation (a Claude stopped before it
+/// saved its first prompt leaves only metadata) cannot be resumed, and
+/// Claude refuses a new session under its id: the next incarnation starts
+/// a new session, under a new id it saves.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_file_with_no_conversation_is_replaced_by_a_new_session() {
+    let agent = Agent::start(Setup {
+        steps: vec![
+            Step::Text {
+                chunks: vec!["a new session".into()],
+            },
+            Step::TurnEnd,
+        ],
+        ..Setup::sdk()
+    })
+    .await;
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    let session = agent.provider_session();
+    daemon.kill().await;
+    assert_eq!(agent.exit().await, ExitCause::Killed);
+    let file = provider_fakes::playback::transcript_path(
+        &agent.claude_config(),
+        &std::fs::canonicalize(agent.work()).unwrap(),
+        &session,
+    );
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(
+        &file,
+        format!("{{\"type\":\"last-prompt\",\"sessionId\":\"{session}\"}}\n"),
+    )
+    .unwrap();
+
+    agent.resume();
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p1", "say hello").await, Verdict::Accepted);
+    agent
+        .wait("the turn ends", |log| log.turn_ends() == 1)
+        .await;
+    assert!(agent.log().has_text("a new session"));
+    assert_ne!(agent.provider_session(), session, "a new session id, saved");
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+}
+
 /// Headless Claude that ran a turn began its session: the next incarnation
 /// resumes it (Claude refuses to start a session under an id it has).
 #[tokio::test(flavor = "multi_thread")]
@@ -1256,4 +1398,206 @@ async fn headless_claude_is_told_at_initialize_that_amux_stops_each_task_on_its_
         serde_json::json!(true),
         "the initialize request declares no per-task stop: {initialize}"
     );
+}
+
+/// A folder of managed settings holding an organization's MCP config, as
+/// `CLAUDE_CODE_MANAGED_SETTINGS_PATH` names it; it lives as long as the
+/// test binary.
+fn managed_mcp_folder() -> &'static str {
+    let folder = tempfile::tempdir().unwrap().keep();
+    std::fs::write(folder.join("managed-mcp.json"), r#"{"mcpServers":{}}"#).unwrap();
+    Box::leak(folder.display().to_string().into_boxed_str())
+}
+
+/// Under an organization's managed MCP config Claude refuses a server added
+/// on its command line and will not start; an agent there launches without
+/// amux's tool server, runs a turn, and says amux's tools are off.
+async fn under_managed_mcp(kind: Kind) {
+    let agent = Agent::start(Setup {
+        kind,
+        env: vec![("CLAUDE_CODE_MANAGED_SETTINGS_PATH", managed_mcp_folder())],
+        steps: vec![
+            Step::Text {
+                chunks: vec!["hello under policy".into()],
+            },
+            Step::TurnEnd,
+        ],
+        ..Setup::sdk()
+    })
+    .await;
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p1", "say hello").await, Verdict::Accepted);
+    agent
+        .wait("the turn ends", |log| log.turn_ends() == 1)
+        .await;
+    assert!(agent.log().has_text("hello under policy"));
+    let servers = agent.log().tool_servers();
+    assert!(
+        servers
+            .iter()
+            .any(|server| server.name == interpret::AMUX_TOOL_SERVER
+                && server.status == wire::ToolServerStatus::Failed as i32
+                && server.error.contains("organization")),
+        "amux's tool server is not reported off by policy: {servers:?}"
+    );
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_headless_agent_under_a_managed_mcp_config_runs_and_says_its_tools_are_off() {
+    under_managed_mcp(Kind::ClaudeSdk).await;
+}
+
+#[test]
+fn a_terminal_agent_under_a_managed_mcp_config_runs_and_says_its_tools_are_off() {
+    terminal_test(under_managed_mcp(Kind::ClaudePty));
+}
+
+/// Headless Claude gets an image block only for bytes it reads natively,
+/// typed by the bytes rather than the label; anything else goes as the
+/// file its element names.
+#[tokio::test(flavor = "multi_thread")]
+async fn headless_claude_gets_an_image_block_typed_by_its_bytes_and_anything_else_as_a_file() {
+    use sha2::Digest as _;
+
+    let agent = Agent::start(Setup {
+        steps: vec![
+            Step::Text {
+                chunks: vec!["seen".into()],
+            },
+            Step::TurnEnd,
+        ],
+        ..Setup::sdk()
+    })
+    .await;
+    let store = |bytes: &[u8], name: &str, mime: &str| {
+        let hash = sha2::Sha256::digest(bytes).to_vec();
+        let blob = agent.dir.join(agent::BLOBS).join(interpret::to_hex(&hash));
+        std::fs::create_dir_all(blob.parent().unwrap()).unwrap();
+        std::fs::write(&blob, bytes).unwrap();
+        wire::Attachment {
+            of: Some(wire::attachment::Of::Image(wire::BlobRef {
+                hash,
+                name: name.into(),
+                mime: mime.into(),
+                size: bytes.len() as u64,
+            })),
+        }
+    };
+    // A PNG the phone labelled JPEG, and an SVG labelled an image.
+    let png = store(b"\x89PNG\r\n\x1a\n a square", "photo.jpg", "image/jpeg");
+    let svg = store(
+        b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+        "logo.svg",
+        "image/svg+xml",
+    );
+    let input = wire::Input::new(
+        b"p1".to_vec(),
+        wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+                text: format!("{0} and {0}", attachments::PLACEHOLDER),
+                attachments: vec![png, svg],
+            })),
+        },
+    );
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.input(input).await, Verdict::Accepted);
+    agent
+        .wait("the turn ends", |log| log.turn_ends() == 1)
+        .await;
+    let sent = agent
+        .provider_input()
+        .into_iter()
+        .find(|line| line["type"] == "user")
+        .expect("the prompt reached Claude");
+    let images: Vec<&serde_json::Value> = sent["message"]["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|block| block["type"] == "image")
+        .collect();
+    assert_eq!(images.len(), 1, "{sent}");
+    assert_eq!(images[0]["source"]["media_type"], "image/png");
+}
+
+/// A person stops one background command: the agent sends the provider's
+/// own stop for that job, the job reads stopping, and it leaves the list
+/// when the provider says it ended. The agent keeps running.
+async fn one_job_stops(kind: Kind) {
+    let never = tempfile::tempdir().unwrap().keep().join("never");
+    let agent = Agent::start(Setup {
+        kind,
+        steps: vec![
+            Step::Tool(provider_fakes::Tool {
+                name: Some("Bash".into()),
+                class: provider_fakes::ToolClass::Consequential,
+                input: Some(serde_json::json!({
+                    "command": "cargo watch", "description": "cargo watch",
+                    "run_in_background": true,
+                })),
+                outcome: Default::default(),
+                wait_for: Some(never),
+            }),
+            Step::TurnEnd,
+        ],
+        ..Setup::sdk()
+    })
+    .await;
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p1", "watch it").await, Verdict::Accepted);
+    agent
+        .wait("the job is listed with its key", |log| {
+            log.background_jobs().iter().any(|job| !job.key.is_empty())
+        })
+        .await;
+    let key = agent.log().background_jobs()[0].key.clone();
+    let stop = wire::StopJob { key: key.clone() };
+    let input = match kind {
+        Kind::Codex => wire::Input::new(
+            b"s1".to_vec(),
+            wire::CodexInput {
+                of: Some(wire::codex_input::Of::StopJob(stop)),
+            },
+        ),
+        _ => wire::Input::new(
+            b"s1".to_vec(),
+            wire::ClaudeSdkInput {
+                of: Some(wire::claude_sdk_input::Of::StopJob(stop)),
+            },
+        ),
+    };
+    assert_eq!(daemon.input(input).await, Verdict::Accepted);
+    agent
+        .wait("the job leaves the list", |log| {
+            log.background_jobs().is_empty()
+        })
+        .await;
+    let sent = agent.provider_input();
+    let stopped = sent.iter().any(|line| match kind {
+        Kind::Codex => {
+            line["method"] == "thread/backgroundTerminals/terminate"
+                && line["params"]["processId"] == key.as_str()
+        }
+        _ => {
+            line["request"]["subtype"] == "stop_task" && line["request"]["task_id"] == key.as_str()
+        }
+    });
+    assert!(stopped, "no stop for {key} reached the provider");
+    assert!(!agent.finished(), "the agent keeps running");
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn headless_claude_stops_one_background_job() {
+    one_job_stops(Kind::ClaudeSdk).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn codex_stops_one_background_job() {
+    one_job_stops(Kind::Codex).await;
 }

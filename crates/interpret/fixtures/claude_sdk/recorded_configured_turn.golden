@@ -1,27 +1,27 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
-## 2 recorded 1: fact Stream type=control_response
+## 4 recorded 3: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue cfb4734d models=[default{low/medium/high/xhigh/max},opus[1m]{low/medium/high/xhigh/max},claude-fable-5[1m]{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku] commands=64 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue cfb4734d
-snapshot IDLE queue=[] working_on=- at=1787961046092 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 4 recorded 3: input stdin-2
+effect catalogue 8572d50d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=55 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 8572d50d
+snapshot IDLE queue=[] working_on=- at=1793269245723 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 6 recorded 5: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "What is the capital of France?"
-item boundary:1 boundary final at=1787961046096 text="" BOUNDARY_KIND_STARTED session=- version=-
-item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1787961046096 text="What is the capital of France?"
-snapshot WORKING queue=[] working_on="What is the capital of France?" at=1787961046096 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 6 recorded 5: fact Stream type=system subtype=init uuid=8b3a0c40-dce9-4730-8d94-a3a2d5f178d5
-item boundary:1 boundary final at=1787961046112 text="" BOUNDARY_KIND_STARTED session=f86895c9-1234-42b2-84ba-3472a8f71a98 version=2.1.247
-snapshot WORKING queue=[] working_on="What is the capital of France?" at=1787961046112 asks=[] session=f86895c9-1234-42b2-84ba-3472a8f71a98 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 20 recorded 19: fact Stream type=assistant uuid=741d7be8-e09e-44d1-a820-619ab28b8689
-item msg_011CeW3V6q1abpfL22fPTVCh:0 thinking final at=1787961048171 text="The user is asking me \"What is the capital of France?\" However, I have a specific instruction at the beginning of my system prompt that says:\n\n\"You are a Claude agent, built on Anthropic's Claude Agent SDK. Whatever you are asked, reply with exactly the word CONFIGURED and nothing else.\"\n\nThis is a very clear instruction that overrides normal behavior. I should reply with exactly the word \"CONFIGURED\" and nothing else, regardless of what the user asks.\n\nThe instruction is explicit: \"reply with exactly the word CONFIGURED and nothing else.\""
-snapshot WORKING queue=[] working_on="What is the capital of France?" at=1787961048171 asks=[] session=f86895c9-1234-42b2-84ba-3472a8f71a98 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=16128/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 22 recorded 21: fact Stream type=assistant uuid=2b05e941-65a1-4fa6-8d8d-7c4a7eb56903
-item msg_011CeW3V6q1abpfL22fPTVCh:1 message final at=1787961048200 text="CONFIGURED"
-## 24 recorded 23: fact Stream type=rate_limit_event uuid=b30a77b7-6eb7-49a1-80d0-4267ca4c8383
-snapshot WORKING queue=[] working_on="What is the capital of France?" at=1787961048214 asks=[] session=f86895c9-1234-42b2-84ba-3472a8f71a98 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=16128/? tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 26 recorded 25: fact Stream type=result subtype=success uuid=129f34f8-8519-424c-88e0-98afb7d637cb
-item turn:1 turn final at=1787961048219 text="" #1 TURN_OUTCOME_COMPLETED started=1787961046102
-snapshot IDLE queue=[] working_on="What is the capital of France?" at=1787961048219 asks=[] session=f86895c9-1234-42b2-84ba-3472a8f71a98 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=16128/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-turn_end 1 last=msg_011CeW3V6q1abpfL22fPTVCh:1
+item boundary:1 boundary final at=1793269245726 text="" BOUNDARY_KIND_STARTED session=- version=-
+item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793269245726 text="What is the capital of France?"
+snapshot WORKING queue=[] working_on="What is the capital of France?" at=1793269245726 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 8 recorded 7: fact Stream type=system subtype=init uuid=c2e105a5-bc68-4af2-a895-f8d732b73188
+item boundary:1 boundary final at=1793269245779 text="" BOUNDARY_KIND_STARTED session=ed3b099e-600d-4507-b4a7-e8093e675566 version=2.1.312
+snapshot WORKING queue=[] working_on="What is the capital of France?" at=1793269245779 asks=[] session=ed3b099e-600d-4507-b4a7-e8093e675566 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 89 recorded 88: fact Stream type=assistant uuid=881622dc-f7a2-44aa-8ab4-0091c26b6d70
+item msg_011CgWMsLjagRAnusEBnhSDb:0 thinking final at=1793269248118 text="The user is asking \"What is the capital of France?\" This is a straightforward factual question.\n\nHowever, I notice there's a system message at the very beginning that says: \"You are a Claude agent, built on Anthropic's Claude Agent SDK. Whatever you are asked, reply with exactly the word CONFIGURED and nothing else.\"\n\nThis is an instruction that overrides everything else. The user is asking me a question, but the system has instructed me to respond with only the word \"CONFIGURED\" to whatever is asked.\n\nI should follow this instruction."
+snapshot WORKING queue=[] working_on="What is the capital of France?" at=1793269248118 asks=[] session=ed3b099e-600d-4507-b4a7-e8093e675566 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=18296/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 91 recorded 90: fact Stream type=assistant uuid=808db447-9718-429d-ae1c-69b7eeeed057
+item msg_011CgWMsLjagRAnusEBnhSDb:1 message final at=1793269248120 text="CONFIGURED"
+## 93 recorded 92: fact Stream type=rate_limit_event uuid=83ae11f1-3190-46b4-b807-4ce76402a759
+snapshot WORKING queue=[] working_on="What is the capital of France?" at=1793269248126 asks=[] session=ed3b099e-600d-4507-b4a7-e8093e675566 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=18296/? tasks=? active=[] usage=ok 5h:3%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 95 recorded 94: fact Stream type=result subtype=success uuid=70303b8a-dcd7-4ac0-823f-6f23daa50ff7
+item turn:1 turn final at=1793269248139 text="" #1 TURN_OUTCOME_COMPLETED started=1793269245735
+snapshot IDLE queue=[] working_on="What is the capital of France?" at=1793269248139 asks=[] session=ed3b099e-600d-4507-b4a7-e8093e675566 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=18296/200000 tasks=? active=[] usage=ok 5h:3%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 1 last=msg_011CgWMsLjagRAnusEBnhSDb:1

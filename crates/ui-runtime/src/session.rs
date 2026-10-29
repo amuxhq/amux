@@ -919,6 +919,11 @@ impl Session {
         self.act(inputs::interrupt(self.kind())).await
     }
 
+    /// Stops one background job by its key; the agent keeps running.
+    pub async fn stop_job(&self, key: &str) -> Result<(), InputError> {
+        self.act(inputs::stop_job(self.kind(), key)).await
+    }
+
     /// Takes the agent's own view back to its conversation after it
     /// switched to another (terminal Claude).
     pub async fn switch_back(&self) -> Result<(), InputError> {

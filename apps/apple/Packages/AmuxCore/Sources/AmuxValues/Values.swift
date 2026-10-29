@@ -147,6 +147,8 @@ public enum ActivityKind: Codable, Hashable, Sendable {
     case running(key: String)
     /// The agent waits on its subagents.
     case subagents(count: UInt32)
+    /// The provider holds the answer for a slower safety check.
+    case safetyCheck
     case retrying(attempt: UInt32, maxAttempts: UInt32, retryAtMs: Int64?)
 
     private enum Tag: String, CodingKey {
@@ -177,6 +179,7 @@ public enum ActivityKind: Codable, Hashable, Sendable {
             case "Compacting": self = .compacting
             case "Working": self = .working
             case "Thinking": self = .thinking
+            case "SafetyCheck": self = .safetyCheck
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no ActivityKind is named \(_name)")
@@ -230,6 +233,9 @@ public enum ActivityKind: Codable, Hashable, Sendable {
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: SubagentsKeys.self, forKey: .subagents)
             try _fields.encode(count, forKey: .count)
+        case .safetyCheck:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("SafetyCheck")
         case .retrying(let attempt, let maxAttempts, let retryAtMs):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: RetryingKeys.self, forKey: .retrying)
@@ -621,9 +627,13 @@ public struct AskCard: Codable, Hashable, Sendable {
     /// Stopping interrupts a running turn. Codex proposes a plan as its
     /// turn ends, so with its plan open there is no turn to stop.
     public var stopsTurn: Bool
+    /// Approving must be deliberate: a keyboard view opens the card on its
+    /// refusal and takes no digit shortcut, and nothing pre-selects
+    /// approve.
+    public var defaultToNo: Bool
     public var state: CardState
 
-    public init(kind: Kind, key: String, itemKey: String, position: UInt, count: UInt, body: AskBody, choices: [Choice], questionNote: Bool, questionSkip: Bool, questionReply: Bool, stopsTurn: Bool, state: CardState) {
+    public init(kind: Kind, key: String, itemKey: String, position: UInt, count: UInt, body: AskBody, choices: [Choice], questionNote: Bool, questionSkip: Bool, questionReply: Bool, stopsTurn: Bool, defaultToNo: Bool, state: CardState) {
         self.kind = kind
         self.key = key
         self.itemKey = itemKey
@@ -635,6 +645,7 @@ public struct AskCard: Codable, Hashable, Sendable {
         self.questionSkip = questionSkip
         self.questionReply = questionReply
         self.stopsTurn = stopsTurn
+        self.defaultToNo = defaultToNo
         self.state = state
     }
 
@@ -650,6 +661,7 @@ public struct AskCard: Codable, Hashable, Sendable {
         case questionSkip = "question_skip"
         case questionReply = "question_reply"
         case stopsTurn = "stops_turn"
+        case defaultToNo = "default_to_no"
         case state
     }
 }
@@ -1428,12 +1440,16 @@ public struct Catalogue: Codable, Hashable, Sendable {
     public var permissions: [OfferedPermission]
     /// How it works; empty for Claude.
     public var modes: [OfferedMode]
+    /// Codex's skills, which a person mentions as "$name" anywhere in a
+    /// message; empty for Claude, whose skills are among its commands.
+    public var skills: [OfferedSkill]
 
-    public init(models: [OfferedModel], commands: [OfferedCommand], permissions: [OfferedPermission], modes: [OfferedMode]) {
+    public init(models: [OfferedModel], commands: [OfferedCommand], permissions: [OfferedPermission], modes: [OfferedMode], skills: [OfferedSkill]) {
         self.models = models
         self.commands = commands
         self.permissions = permissions
         self.modes = modes
+        self.skills = skills
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1441,6 +1457,7 @@ public struct Catalogue: Codable, Hashable, Sendable {
         case commands
         case permissions
         case modes
+        case skills
     }
 }
 
@@ -1919,6 +1936,25 @@ public enum ClientCommand: String, Codable, Hashable, Sendable, CaseIterable {
     case rename = "Rename"
 }
 
+/// One of the agent's commands matching the word a draft ends in.
+public struct CommandMatch: Codable, Hashable, Sendable {
+    public var command: CommandView
+    /// The draft once the command is picked: a "/" command is the whole
+    /// draft, a mention takes the place of the word being typed, and a
+    /// space follows either.
+    public var picked: String
+
+    public init(command: CommandView, picked: String) {
+        self.command = command
+        self.picked = picked
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case command
+        case picked
+    }
+}
+
 /// What the client did with a draft that names a command it runs itself
 /// (`/model`, `/effort`, `/rename`), or one the agent does not run.
 public enum CommandOutcome: Codable, Hashable, Sendable {
@@ -1934,9 +1970,9 @@ public enum CommandOutcome: Codable, Hashable, Sendable {
     /// model and effort): a prompt, as any other.
     case sent(SendOutcome)
     /// The agent does not run this command, and it was not sent: Codex
-    /// runs only the commands amux implements for it and its skills.
-    /// `offered` is what it does run.
-    case refused(command: String, offered: [String])
+    /// runs only the commands amux implements for it. `offered` is what it
+    /// does run; `hint` is the mention to type when the name is a skill.
+    case refused(command: String, offered: [String], hint: String?)
     /// The command names a model or effort the agent does not offer.
     case unknown(command: ClientCommand, value: String, offered: [String])
 
@@ -1951,6 +1987,7 @@ public enum CommandOutcome: Codable, Hashable, Sendable {
     private enum RefusedKeys: String, CodingKey {
         case command
         case offered
+        case hint
     }
 
     private enum UnknownKeys: String, CodingKey {
@@ -1991,7 +2028,8 @@ public enum CommandOutcome: Codable, Hashable, Sendable {
                 keyedBy: RefusedKeys.self, forKey: .refused)
             self = .refused(
                 command: try _fields.decode(String.self, forKey: .command),
-                offered: try _fields.decode([String].self, forKey: .offered))
+                offered: try _fields.decode([String].self, forKey: .offered),
+                hint: try _fields.decodeIfPresent(String.self, forKey: .hint))
         case .unknown:
             let _fields = try _container.nestedContainer(
                 keyedBy: UnknownKeys.self, forKey: .unknown)
@@ -2019,11 +2057,12 @@ public enum CommandOutcome: Codable, Hashable, Sendable {
         case .sent(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .sent)
-        case .refused(let command, let offered):
+        case .refused(let command, let offered, let hint):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: RefusedKeys.self, forKey: .refused)
             try _fields.encode(command, forKey: .command)
             try _fields.encode(offered, forKey: .offered)
+            try _fields.encodeIfPresent(hint, forKey: .hint)
         case .unknown(let command, let value, let offered):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: UnknownKeys.self, forKey: .unknown)
@@ -2041,12 +2080,19 @@ public struct CommandView: Codable, Hashable, Sendable {
     /// A plugin's namespace or the provider's scope word; empty when the
     /// provider does not say.
     public var source: String
+    /// What the person types before the name: "/" for a command, "$" for a
+    /// Codex skill.
+    public var sigil: String
+    /// It may be typed anywhere in a message, not only at its start.
+    public var anywhere: Bool
 
-    public init(name: String, description: String, argumentHint: String, source: String) {
+    public init(name: String, description: String, argumentHint: String, source: String, sigil: String, anywhere: Bool) {
         self.name = name
         self.description = description
         self.argumentHint = argumentHint
         self.source = source
+        self.sigil = sigil
+        self.anywhere = anywhere
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -2054,6 +2100,8 @@ public struct CommandView: Codable, Hashable, Sendable {
         case description
         case argumentHint = "argument_hint"
         case source
+        case sigil
+        case anywhere
     }
 }
 
@@ -3730,13 +3778,16 @@ public struct JobRow: Codable, Hashable, Sendable {
     /// What the job is, so a client can tell a command from the provider's
     /// own subagent or monitor, whose `command` is a description.
     public var kind: BackgroundKind
+    /// Whether the person can stop this one job, and how that stands.
+    public var stop: JobStop
     /// The step that started it, when the provider said which.
     public var step: String?
 
-    public init(command: String, startedAtMs: Int64, kind: BackgroundKind, step: String?) {
+    public init(command: String, startedAtMs: Int64, kind: BackgroundKind, stop: JobStop, step: String?) {
         self.command = command
         self.startedAtMs = startedAtMs
         self.kind = kind
+        self.stop = stop
         self.step = step
     }
 
@@ -3744,7 +3795,92 @@ public struct JobRow: Codable, Hashable, Sendable {
         case command
         case startedAtMs = "started_at_ms"
         case kind
+        case stop
         case step
+    }
+}
+
+/// Stopping one background job, which leaves the agent running. Only a kind
+/// whose provider stops one job on request offers it: terminal Claude
+/// cannot.
+public enum JobStop: Codable, Hashable, Sendable {
+    /// This job cannot be stopped on its own.
+    case unavailable
+    /// The person can stop it; the key names it in the stop input.
+    case offered(key: String)
+    /// A stop was sent and the provider has not yet said the job ended.
+    case stopping
+    /// The provider refused the last stop, in its words; the person can
+    /// try again.
+    case refused(key: String, error: String)
+
+    private enum Tag: String, CodingKey {
+        case offered = "Offered"
+        case refused = "Refused"
+    }
+
+    private enum OfferedKeys: String, CodingKey {
+        case key
+    }
+
+    private enum RefusedKeys: String, CodingKey {
+        case key
+        case error
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "Unavailable": self = .unavailable
+            case "Stopping": self = .stopping
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no JobStop is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a JobStop names exactly one variant"))
+        }
+        switch _tag {
+        case .offered:
+            let _fields = try _container.nestedContainer(
+                keyedBy: OfferedKeys.self, forKey: .offered)
+            self = .offered(
+                key: try _fields.decode(String.self, forKey: .key))
+        case .refused:
+            let _fields = try _container.nestedContainer(
+                keyedBy: RefusedKeys.self, forKey: .refused)
+            self = .refused(
+                key: try _fields.decode(String.self, forKey: .key),
+                error: try _fields.decode(String.self, forKey: .error))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .unavailable:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Unavailable")
+        case .offered(let key):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: OfferedKeys.self, forKey: .offered)
+            try _fields.encode(key, forKey: .key)
+        case .stopping:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Stopping")
+        case .refused(let key, let error):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: RefusedKeys.self, forKey: .refused)
+            try _fields.encode(key, forKey: .key)
+            try _fields.encode(error, forKey: .error)
+        }
     }
 }
 
@@ -4140,6 +4276,26 @@ public struct OfferedPermission: Codable, Hashable, Sendable {
     }
 }
 
+/// A skill Codex offers this session.
+public struct OfferedSkill: Codable, Hashable, Sendable {
+    public var name: String
+    public var description: String
+    /// Codex's scope word for where it lives (user, repo, system).
+    public var source: String
+
+    public init(name: String, description: String, source: String) {
+        self.name = name
+        self.description = description
+        self.source = source
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case description
+        case source
+    }
+}
+
 /// Why a host is offline from here. A powered-off host and a signed-out
 /// machine look the same from here, so the cause is only ever a fact about
 /// this machine, never a claim about the host.
@@ -4444,6 +4600,9 @@ public enum PermissionGrant: Codable, Hashable, Sendable {
     case claude(subjects: [String], directories: [String], mode: String, modeName: String, destination: Scope)
     /// Codex: approvals like this one, for the rest of the session.
     case session
+    /// Codex: calls like this one, saved in the person's Codex config for
+    /// every project.
+    case always
     /// Codex: commands starting with these words.
     case commandPrefix(words: [String])
     /// Codex: network access to these hosts.
@@ -4477,6 +4636,7 @@ public enum PermissionGrant: Codable, Hashable, Sendable {
         {
             switch _name {
             case "Session": self = .session
+            case "Always": self = .always
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no PermissionGrant is named \(_name)")
@@ -4526,6 +4686,9 @@ public enum PermissionGrant: Codable, Hashable, Sendable {
         case .session:
             var _container = encoder.singleValueContainer()
             try _container.encode("Session")
+        case .always:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Always")
         case .commandPrefix(let words):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: CommandPrefixKeys.self, forKey: .commandPrefix)
@@ -6474,26 +6637,26 @@ public struct UsageView: Codable, Hashable, Sendable {
     }
 }
 
-/// One rate-limit window: which limit it is, how much of it is used, when
-/// it resets, and its own state.
+/// One rate-limit window: which limit it is, how much of it is used (none
+/// when the provider has not said), when it resets, and its own state.
 public struct UsageWindowView: Codable, Hashable, Sendable {
     public var label: UsageLabel
-    public var usedPercent: Double
     public var state: UsageState
     public var resetsAtMs: Int64?
+    public var usedPercent: Double?
 
-    public init(label: UsageLabel, usedPercent: Double, state: UsageState, resetsAtMs: Int64?) {
+    public init(label: UsageLabel, state: UsageState, resetsAtMs: Int64?, usedPercent: Double?) {
         self.label = label
-        self.usedPercent = usedPercent
         self.state = state
         self.resetsAtMs = resetsAtMs
+        self.usedPercent = usedPercent
     }
 
     private enum CodingKeys: String, CodingKey {
         case label
-        case usedPercent = "used_percent"
         case state
         case resetsAtMs = "resets_at_ms"
+        case usedPercent = "used_percent"
     }
 }
 

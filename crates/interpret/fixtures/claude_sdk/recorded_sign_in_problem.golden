@@ -1,28 +1,23 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
-## 6 recorded 5: fact Stream type=control_response
+## 2 recorded 1: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue e07ea06e models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},claude-fable-5-1[1m]{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku] commands=75 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue e07ea06e
-snapshot IDLE queue=[] working_on=- at=1790388859436 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
-## 8 recorded 7: input stdin-2
+effect catalogue 73c9103c models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},claude-fable-5-1[1m]{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001] commands=49 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 73c9103c
+snapshot IDLE queue=[] working_on=- at=1793268544049 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
+## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Reply with exactly PONG and nothing else."
-item boundary:1 boundary final at=1790388859439 text="" BOUNDARY_KIND_STARTED session=- version=-
-item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1790388859439 text="Reply with exactly PONG and nothing else."
-snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1790388859439 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
-## 10 recorded 9: fact Stream type=system subtype=init uuid=cc599307-55a0-4f90-82ad-d756cd24887f
-item boundary:1 boundary final at=1790388859499 text="" BOUNDARY_KIND_STARTED session=103225c5-6001-41b1-b15f-38626db1d385 version=2.1.283
-snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1790388859499 asks=[] session=103225c5-6001-41b1-b15f-38626db1d385 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
-## 12 recorded 11: fact Stream type=system subtype=api_retry uuid=d85ab0c7-bfef-4a0f-994b-61ad4b774f54
-item d85ab0c7-bfef-4a0f-994b-61ad4b774f54 api_error final at=1790388859714 text="" authentication_failed "authentication_failed (401)" retry=true 1/2 at=1790388860326
-snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1790388859714 asks=[] session=103225c5-6001-41b1-b15f-38626db1d385 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_FAILED - background=?
-## 14 recorded 13: fact Stream type=system subtype=api_retry uuid=2d7d9687-a10d-4df3-a987-e4d08ae2bd5a
-item 2d7d9687-a10d-4df3-a987-e4d08ae2bd5a api_error final at=1790388860548 text="" authentication_failed "authentication_failed (401)" retry=true 2/2 at=1790388861781
-## 16 recorded 15: fact Stream type=assistant uuid=8f0f7a3e-1a84-4841-941a-7c5805737e84
-item 8f0f7a3e-1a84-4841-941a-7c5805737e84 api_error final at=1790388861992 text="" authentication_failed "Failed to authenticate. API Error: 401 API key is invalid." retry=false 0/0
-snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1790388861992 asks=[] session=103225c5-6001-41b1-b15f-38626db1d385 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_FAILED - background=?
-## 18 recorded 17: fact Stream type=result subtype=success uuid=22cb37c7-0bd8-4e34-9a82-d6aa579513cb
-item turn:1 turn final at=1790388861995 text="" #1 TURN_OUTCOME_FAILED started=1790388859443
-snapshot IDLE queue=[] working_on="Reply with exactly PONG and nothing else." at=1790388861995 asks=[] session=103225c5-6001-41b1-b15f-38626db1d385 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_NEEDS_AUTH,linear-server:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_FAILED - background=?
+item boundary:1 boundary final at=1793268544053 text="" BOUNDARY_KIND_STARTED session=- version=-
+item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793268544053 text="Reply with exactly PONG and nothing else."
+snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268544053 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
+## 6 recorded 5: fact Stream type=system subtype=init uuid=49b5e6a8-f6fa-462e-bf33-883aecac4251
+item boundary:1 boundary final at=1793268544165 text="" BOUNDARY_KIND_STARTED session=af07af0f-5492-4717-bcd9-a585df50edd9 version=2.1.312
+snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268544165 asks=[] session=af07af0f-5492-4717-bcd9-a585df50edd9 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
+## 8 recorded 7: fact Stream type=assistant uuid=2040d8e5-627b-45e0-81e1-dcc7f8fb815b
+item 2040d8e5-627b-45e0-81e1-dcc7f8fb815b api_error final at=1793268544466 text="" authentication_failed "Invalid API key · Fix external API key" retry=false 0/0
+snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268544466 asks=[] session=af07af0f-5492-4717-bcd9-a585df50edd9 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_FAILED - background=?
+## 10 recorded 9: fact Stream type=result subtype=success uuid=e1545f2e-5339-45a3-a87b-b279b0b748f4
+item turn:1 turn final at=1793268544469 text="" #1 TURN_OUTCOME_FAILED started=1793268544094
+snapshot IDLE queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268544469 asks=[] session=af07af0f-5492-4717-bcd9-a585df50edd9 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_FAILED - background=?
 turn_end 1 last=-

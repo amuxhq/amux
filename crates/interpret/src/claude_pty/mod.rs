@@ -211,6 +211,10 @@ pub(crate) enum AgentFact {
     /// Whether a terminal client shows Claude's own terminal: sent when
     /// the first comes to it and when the last leaves it.
     Watched { watched: bool },
+    /// The agent launched Claude without amux's tool server, which an
+    /// organization's managed MCP config forbids. Headless Claude's
+    /// interpreter reads this one too.
+    ToolsWithheld,
 }
 
 impl AgentFact {
@@ -243,6 +247,12 @@ pub fn watched_fact(watched: bool) -> Vec<u8> {
     AgentFact::Watched { watched }.encode()
 }
 
+/// The fact, for either Claude kind, that Claude was launched without
+/// amux's tool server because the organization manages its MCP servers.
+pub fn tools_withheld_fact() -> Vec<u8> {
+    AgentFact::ToolsWithheld.encode()
+}
+
 /// What the interpreter knows about the Claude process and its session.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 struct Provider {
@@ -272,6 +282,9 @@ struct Provider {
     /// that is not this agent's.
     #[serde(default)]
     switched_away: bool,
+    /// Launched without amux's tool server, by organization policy.
+    #[serde(default)]
+    tools_withheld: bool,
     /// What the host's Claude offers, from the spec: a terminal offers
     /// nothing a program can read.
     #[serde(with = "serde_pb::opt_msg")]
@@ -697,6 +710,10 @@ impl State {
             permission: self.provider.permission_mode.clone(),
             provider_session: self.provider.session.clone(),
             background_jobs: Some(self.shared.jobs()),
+            servers: self
+                .provider
+                .tools_withheld
+                .then(|| crate::claude_common::amux_tools_withheld(unknown::tool_server_health())),
             running_calls: self
                 .running
                 .iter()
@@ -1086,6 +1103,23 @@ impl State {
     fn close_all_unknown(&mut self, emit: &mut Emit) {
         for key in self.open_ask_keys() {
             self.close(emit, &key, Decision::unknown());
+        }
+    }
+
+    /// A fact that proves the main thread's asks are over without saying
+    /// how. A subagent Claude still runs in the background keeps the dialog
+    /// it raised open in Claude's own view: so does amux, until that
+    /// subagent stops.
+    fn close_main_threads_asks(&mut self, emit: &mut Emit) {
+        for key in self.open_ask_keys() {
+            let in_background = self
+                .asks
+                .get(&key)
+                .and_then(|meta| meta.agent.as_ref())
+                .is_some_and(|agent| self.jobs.running(agent));
+            if !in_background {
+                self.close(emit, &key, Decision::unknown());
+            }
         }
     }
 
@@ -1677,6 +1711,9 @@ impl Interpreter for ClaudePty {
         // The new process's transcript is followed anew, from wherever the
         // agent process last read it.
         state.provider.transcript = None;
+        // The agent says again at each launch whether policy withholds
+        // amux's tools.
+        state.provider.tools_withheld = false;
         state.provider.offered = spec.offered.clone();
         // The new process counts its own terminal clients, each of which
         // says so again: one attached when the last process ended never

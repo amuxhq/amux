@@ -17,7 +17,7 @@
   composer Send activity=Some(Running { key: "exec-2" }) queue=[] underway=[] refused=[]
 ## 9 fact {"channel":"rpc","json":{"id":1,"method":"mcpServer/elicitation/request","params":{"_meta":{"codex_approval_kind":"mcp_tool_call","persist":["session","always"],"tool_description":"Ask the operator to confirm a word, then return it.","tool_params":{"word":"BLUE"},"tool_params_display":[{"display_name":"word","name":"word","value":"BLUE"}]},"message":"Allow the spec MCP server to run tool \"as…
   ask 1 -> "exec-2" 1/1 Open
-    choices AllowOnce*, AllowForSession, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowForSession, AllowAlways { subjects: ["ask_the_operator"], directories: [], mode: "", mode_name: "", scope: User }, Deny { stops: false }, DenyAndStop
     body Tool { server: "spec", tool: "ask_the_operator", arguments: "{\n  \"word\": \"BLUE\"\n}" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 10 input {"answer":{"answer":{"decision":"approve"},"ask":"1"},"id":"a1"}

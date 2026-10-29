@@ -589,6 +589,32 @@ async fn the_server_lists_the_seven_tools() {
     );
 }
 
+/// Claude defers every MCP tool behind its tool search, showing the model
+/// only the tools' bare names, but always shows a server's instructions:
+/// they say briefly what each tool the server lists is for, naming it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_server_says_at_initialize_what_each_tool_is_for() {
+    let mut mcp = Mcp::start(WINDOW).await;
+    let init = mcp
+        .request(
+            "initialize",
+            json!({ "protocolVersion": "2025-06-18", "capabilities": {},
+                    "clientInfo": { "name": "test", "version": "1" } }),
+        )
+        .await;
+    let instructions = init["result"]["instructions"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no instructions: {init}"));
+    let listed = mcp.request("tools/list", json!({})).await;
+    for tool in listed["result"]["tools"].as_array().unwrap() {
+        let name = tool["name"].as_str().unwrap();
+        assert!(
+            instructions.contains(&format!("({name})")),
+            "{name} is not said: {instructions}"
+        );
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn agents_lists_the_fleet_read_to_caught_up_and_marks_you() {
     let mut mcp = Mcp::start(WINDOW).await;
@@ -853,6 +879,36 @@ async fn attach_stores_the_file_by_its_hash_and_answers_the_element() {
     assert!(named.contains("name=\"Q3 chart\""), "{named}");
     let missing = mcp.refused("attach", json!({ "path": "nope.txt" })).await;
     assert!(missing.starts_with("reading "), "{missing}");
+}
+
+/// The attach tool calls a file an image only if its bytes are one that
+/// both providers read natively, typed by the bytes: an SVG is a file, and
+/// a JPEG named `.png` is a JPEG.
+#[tokio::test(flavor = "multi_thread")]
+async fn attach_calls_a_file_an_image_by_its_bytes() {
+    let mut mcp = Mcp::start(WINDOW).await;
+    std::fs::write(
+        mcp.cwd.join("logo.svg"),
+        b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+    )
+    .unwrap();
+    std::fs::write(mcp.cwd.join("shot.png"), b"\xff\xd8\xff\xe0 a jpeg").unwrap();
+    let of = |element: &str| {
+        attachments::parse(element).positioned.attachments[0]
+            .of
+            .clone()
+            .unwrap()
+    };
+    let (svg, _) = mcp.call("attach", json!({ "path": "logo.svg" })).await;
+    assert!(
+        matches!(of(&svg), wire::attachment::Of::File(_)),
+        "an SVG is attached as an image: {svg}"
+    );
+    let (jpeg, _) = mcp.call("attach", json!({ "path": "shot.png" })).await;
+    let wire::attachment::Of::Image(blob) = of(&jpeg) else {
+        panic!("a JPEG is not attached as an image: {jpeg}");
+    };
+    assert_eq!(blob.mime, "image/jpeg");
 }
 
 /// A file over the attachment limit is refused in words naming the limit,

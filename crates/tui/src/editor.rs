@@ -11,11 +11,6 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use unicode_segmentation::UnicodeSegmentation as _;
 use wire::{Attachment, InlineText, attachment};
 
-/// A paste at least this many lines long becomes a text attachment.
-pub const PASTE_TOKEN_LINES: usize = 8;
-/// A paste at least this many characters long becomes a text attachment.
-pub const PASTE_TOKEN_CHARS: usize = 1_000;
-
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Editor {
     text: String,
@@ -185,13 +180,13 @@ impl Editor {
         }
     }
 
-    /// A bracketed or clipboard paste: long text becomes one token.
+    /// A bracketed or clipboard paste: long text becomes one token, as every
+    /// client's paste does.
     /// Terminals deliver a paste's line breaks as carriage returns, so they
     /// are read as newlines before the lines are counted.
     pub fn paste(&mut self, text: &str) {
         let text = &text.replace("\r\n", "\n").replace('\r', "\n");
-        let lines = text.lines().count();
-        if lines >= PASTE_TOKEN_LINES || text.chars().count() >= PASTE_TOKEN_CHARS {
+        if ui_view::pastes_as_attachment(text) {
             self.pasted += 1;
             self.attach(Attachment {
                 of: Some(attachment::Of::Text(InlineText {
@@ -477,7 +472,7 @@ mod tests {
     #[test]
     fn a_long_paste_becomes_one_text_token() {
         let mut editor = Editor::default();
-        editor.paste(&"line\n".repeat(PASTE_TOKEN_LINES));
+        editor.paste(&"line\n".repeat(ui_view::PASTE_LINES));
         // The token, and the space a chip keeps after itself.
         assert_eq!(editor.text(), format!("{PLACEHOLDER} "));
         assert!(matches!(
@@ -487,10 +482,10 @@ mod tests {
         editor.paste("short");
         assert_eq!(editor.text(), format!("{PLACEHOLDER} short"));
         // As a terminal delivers it: carriage returns between the lines.
-        editor.paste(&"line\r".repeat(PASTE_TOKEN_LINES));
+        editor.paste(&"line\r".repeat(ui_view::PASTE_LINES));
         assert!(matches!(
             &editor.attachments()[1].of,
-            Some(attachment::Of::Text(text)) if text.text == "line\n".repeat(PASTE_TOKEN_LINES)
+            Some(attachment::Of::Text(text)) if text.text == "line\n".repeat(ui_view::PASTE_LINES)
         ));
     }
 

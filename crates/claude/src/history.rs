@@ -57,6 +57,60 @@ pub fn find_session_file(
     found
 }
 
+/// What Claude would make of a session id at launch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SessionFile {
+    /// A transcript holding a conversation: `--resume` takes it.
+    Conversation,
+    /// A transcript in this folder's project with no conversation (a Claude
+    /// stopped before it saved its first prompt leaves only metadata):
+    /// `--resume` finds nothing to resume, and `--session-id` refuses an id
+    /// it already has.
+    Empty,
+    /// No transcript where `--session-id` looks: Claude starts the session.
+    Missing,
+}
+
+/// Looks where Claude does: `--resume` across every project
+/// [`find_session_file`] reaches, `--session-id` in this folder's project
+/// alone.
+pub fn session_file(config_root: &Path, working_dir: &Path, session_id: &str) -> SessionFile {
+    if find_session_file(config_root, working_dir, session_id)
+        .is_some_and(|path| has_conversation(&path))
+    {
+        return SessionFile::Conversation;
+    }
+    let here = absolute_path(working_dir).map(|dir| {
+        config_root
+            .join("projects")
+            .join(project_slug(&dir))
+            .join(format!("{session_id}.jsonl"))
+    });
+    if here.is_ok_and(|path| path.is_file()) {
+        SessionFile::Empty
+    } else {
+        SessionFile::Missing
+    }
+}
+
+/// Whether a transcript has a user or assistant row. Claude writes the
+/// file only at its first such message, so this is its own test in
+/// practice; reading stops at the first.
+fn has_conversation(path: &Path) -> bool {
+    #[derive(serde::Deserialize)]
+    struct Row {
+        #[serde(rename = "type")]
+        kind: String,
+    }
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
+    std::io::BufRead::lines(std::io::BufReader::new(file))
+        .map_while(Result::ok)
+        .filter_map(|line| serde_json::from_str::<Row>(&line).ok())
+        .any(|row| row.kind == "user" || row.kind == "assistant")
+}
+
 fn valid_session_id(session_id: &str) -> bool {
     uuid::Uuid::parse_str(session_id).is_ok()
 }
@@ -106,6 +160,38 @@ mod tests {
         assert_eq!(
             find_session_file(&config, project, session_id),
             Some(transcript)
+        );
+    }
+
+    /// A transcript resumes only with a conversation in it; one in this
+    /// folder's project without one blocks its id; none here is unused.
+    #[test]
+    fn a_session_file_is_judged_as_claude_judges_it() {
+        let root = TempDir::new().unwrap();
+        let config = root.path().join("claude");
+        let work = root.path().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        let session = "33333333-3333-3333-3333-333333333333";
+        let transcript = config
+            .join("projects")
+            .join(project_slug(&work))
+            .join(format!("{session}.jsonl"));
+        assert_eq!(session_file(&config, &work, session), SessionFile::Missing);
+        std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
+        std::fs::write(
+            &transcript,
+            "{\"type\":\"last-prompt\"}\n{\"type\":\"mode\"}\n",
+        )
+        .unwrap();
+        assert_eq!(session_file(&config, &work, session), SessionFile::Empty);
+        std::fs::write(
+            &transcript,
+            "{\"type\":\"mode\"}\nnot json\n{\"type\":\"user\"}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            session_file(&config, &work, session),
+            SessionFile::Conversation
         );
     }
 

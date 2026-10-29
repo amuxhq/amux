@@ -97,6 +97,7 @@ impl Codex {
                 },
                 capabilities: Some(Capabilities {
                     experimental_api: Some(true),
+                    opt_out_notification_methods: Vec::new(),
                     extra: Extra::new(),
                 }),
                 extra: Extra::new(),

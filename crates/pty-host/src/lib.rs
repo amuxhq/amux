@@ -2,7 +2,8 @@
 //!
 //! A spawned process owns one output stream and runs in its own process group.
 //! Cloning [`PtyHandle`] shares input, resize, and process identity; callers
-//! that need output fan-out own that policy above this crate.
+//! that need output fan-out own that policy above this crate. A provider
+//! spawned some other way is tied to its agent with a [`Tether`].
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
@@ -14,6 +15,11 @@ use bytes::Bytes;
 pub use portable_pty::ExitStatus;
 use portable_pty::{CommandBuilder, MasterPty, native_pty_system};
 use tokio::sync::{mpsc, watch};
+
+#[cfg(unix)]
+mod tether;
+#[cfg(unix)]
+pub use tether::Tether;
 
 const IO_CHANNEL_CAPACITY: usize = 256;
 

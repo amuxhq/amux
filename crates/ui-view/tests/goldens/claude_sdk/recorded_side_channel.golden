@@ -1,43 +1,40 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 18 recorded 17: input stdin-2
+## 10 recorded 9: input stdin-2
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
   row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Reply with exactly ALPHA and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 20 recorded 19: fact Stream type=system subtype=init uuid=91119331-96af-4095-9945-a8028040ef7c
+## 12 recorded 11: fact Stream type=system subtype=init uuid=3d366cb4-cfbd-451c-845a-3d251a30bc6f
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 28 recorded 27: fact Stream type=assistant uuid=299c348e-e377-4945-9c51-e3cf5b3c465d
-  row    3 msg_011CfRDeiMZ5wg6gShJp7jSk:0 Thinking { text: "", open: false, duration_ms: Some(2644) }
-## 30 recorded 29: fact Stream type=assistant uuid=1ca5b3a9-e3a2-4337-aab7-98a08030986e
-  row    4 msg_011CfRDeiMZ5wg6gShJp7jSk:1 Prose { text: [Text("BRAVO")], streaming: false, working_note: false }
-## 34 recorded 33: fact Stream type=result subtype=success uuid=57eb1000-9a69-4e5f-949b-d29615c6dc22
-  row    5 turn:1 TurnEnd { duration_ms: Some(2690), failed: false }
-  composer Send activity=None queue=[] underway=[] refused=[]
-## 45 recorded 44: fact Stream type=assistant uuid=e0c80fce-5ace-4ab9-9487-785035f57169
-  row    6 msg_011CfRDev6jemvasLfgS6uLQ:0 Thinking { text: "", open: false, duration_ms: Some(2276) }
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 47 recorded 46: fact Stream type=assistant uuid=4a35e32f-d33e-4117-9e57-889a232df0b0
-  row    7 msg_011CfRDev6jemvasLfgS6uLQ:1 Prose { text: [Text("ALPHA")], streaming: false, working_note: false }
-## 49 recorded 48: fact Stream type=result subtype=success uuid=6cadb046-140d-4373-95aa-6094924a9144
-  row    8 turn:2 TurnEnd { duration_ms: Some(2296), failed: false }
+## 20 recorded 19: fact Stream type=assistant uuid=d069852e-6e14-4bc3-b991-239800271090
+  row    3 msg_011CgWLWwZseW4bsJiDyzBWg:0 Thinking { text: "", open: false, duration_ms: Some(3699) }
+## 22 recorded 21: fact Stream type=assistant uuid=958c4602-f0c3-4ac2-9ec1-eed62b5dbbcb
+  row    4 msg_011CgWLWwZseW4bsJiDyzBWg:1 Prose { text: [Text("BRAVO")], streaming: false, working_note: false }
+## 34 recorded 33: fact Stream type=assistant uuid=d69a5d8c-2b43-408a-94d4-be38ba7510b5
+  row    5 msg_011CgWLXD2ZXGnBfsLCeCzsy:0 Thinking { text: "", open: false, duration_ms: Some(1278) }
+## 36 recorded 35: fact Stream type=assistant uuid=ff6e3ceb-9452-47bd-a9bf-808a2bb36bae
+  row    6 msg_011CgWLXD2ZXGnBfsLCeCzsy:1 Prose { text: [Text("ALPHA")], streaming: false, working_note: false }
+## 38 recorded 37: fact Stream type=result subtype=success uuid=b9c0e342-b9d4-4adf-a41e-5abbf5a2417c
+  row    7 turn:1 TurnEnd { duration_ms: Some(1271), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Reply with exactly ALPHA and nothing else.")], steered: false }
-     3 msg_011CfRDeiMZ5wg6gShJp7jSk:0 Thinking { text: "", open: false, duration_ms: Some(2644) }
-     4 msg_011CfRDeiMZ5wg6gShJp7jSk:1 Prose { text: [Text("BRAVO")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(2690), failed: false }
-     6 msg_011CfRDev6jemvasLfgS6uLQ:0 Thinking { text: "", open: false, duration_ms: Some(2276) }
-     7 msg_011CfRDev6jemvasLfgS6uLQ:1 Prose { text: [Text("ALPHA")], streaming: false, working_note: false }
-     8 turn:2 TurnEnd { duration_ms: Some(2296), failed: false }
-== overview Overview { tasks: None, jobs: [], failed_servers: [ServerView { name: "plugin:stripe:stripe", error: "", needs_auth: true }, ServerView { name: "claude.ai Google Drive", error: "", needs_auth: true }], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 26427, window_tokens: Some(200000), percent: Some(13), near_full: false }) sign-in None
+     3 msg_011CgWLWwZseW4bsJiDyzBWg:0 Thinking { text: "", open: false, duration_ms: Some(3699) }
+     4 msg_011CgWLWwZseW4bsJiDyzBWg:1 Prose { text: [Text("BRAVO")], streaming: false, working_note: false }
+     5 msg_011CgWLXD2ZXGnBfsLCeCzsy:0 Thinking { text: "", open: false, duration_ms: Some(1278) }
+     6 msg_011CgWLXD2ZXGnBfsLCeCzsy:1 Prose { text: [Text("ALPHA")], streaming: false, working_note: false }
+     7 turn:1 TurnEnd { duration_ms: Some(1271), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 24044, window_tokens: Some(200000), percent: Some(12), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]
   model  opus "Opus 5.5" efforts=[low,medium,high,xhigh,max]
-  model  claude-fable-5-1 "Fable 5.1" efforts=[low,medium,high,xhigh,max]
-  model  sonnet "Sonnet 5" efforts=[low,medium,high,xhigh,max]
-  model* haiku "Haiku 4.5" efforts=[]
+  model  fable "Fable 5.1" efforts=[low,medium,high,xhigh,max]
+  model  sonnet "Sonnet 5.5" efforts=[low,medium,high,xhigh,max]
+  model  haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
+  model* claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
+  model  claude-sonnet-5 "Sonnet 5" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-5 "Opus 5" efforts=[low,medium,high,xhigh,max]
   model  claude-fable-5 "Fable 5" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-4-8 "Opus 4.8" efforts=[low,medium,high,xhigh,max]
@@ -51,32 +48,14 @@
   changes: model Pick · effort NotOffered · permission Pick · mode NotOffered
   command /model source="" hint="[model]" "Choose the model the agent runs"
   command /rename source="" hint="<name>" "Rename the agent"
-  command /autopilot source="" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested. (user)"
-  command /delegate source="" hint="" "Resolve or diagnose agent staffing by mapping a requested role and effort through the operator-owned roster to a mind and dispatch specification. Use when an agent or driver will dispatch work, or when a binding cannot launch. Do not use merely because ordinary work is being discussed or performed locally. (user)"
-  command /frontend-design source="" hint="" "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.…
-  command /gardening source="" hint="" "Review and improve an operator's Linear backlog with them. Use when the operator asks to garden, clean up, shape, deduplicate, or reassess tracked work. Do not invoke merely because Linear is available or ordinary work reveals a possible follow-up. (user)"
-  command /handoff source="" hint="" "Independently verify and present finished work when an ordinary diff and focused checks are not enough to judge it, including third-party branches or pull requests. Use compact proof for easily judged behavior and a decision page for consequential or difficult work. Do not invoke at project start or impose a page on ordinary small changes. (user)"
-  command /intake source="" hint="" "Align and confirm a durable acceptance contract for consequential work that must cross contexts. Use after the operator commits to work when several requirements, boundaries, or success demonstrations remain unsettled. Skip for exploration, one or two locally resolvable questions, and already-confirmed requirements. (user)"
   command /deep-research source="" hint="" "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)"
-  command /stripe:explain-error source="stripe" hint="error_code or error_message" "(stripe) Explain Stripe error codes and provide solutions with code examples"
-  command /stripe:test-cards source="stripe" hint="scenario" "(stripe) Display Stripe test card numbers for various testing scenarios"
-  command /stripe:connect-recommend source="stripe" hint="" "(stripe) Use this skill when the user asks about Stripe Connect configuration, charge patterns, Dashboard access, or how to get started with Connect, is building a marketplace, platform, multi-vendor store, gig platform, or subscription platform, needs to pay out sellers, vendors, or providers, mentions split payments, revenue sharing, multi-party payments, or similar payment distribution concept…
-  command /stripe:connect-required-verification-information source="stripe" hint="" "(stripe) Use this skill when the user asks what information a Stripe Connect connected account must provide for verification, onboarding, KYC, or account requirements; when they need to compare requirements between connected-account setups; or when they ask which verification fields, documents, or business details are required for a particular platform country, account country, business type, das…
-  command /stripe:metronome source="stripe" hint="" "(stripe) Guides Metronome usage-based billing integration decisions — event ingestion (single and batch, idempotency, billable metrics), contract design (rate cards, overrides, dimensional pricing, products), invoicing lifecycle (grace periods, finalization, Stripe sync), credit and commit management (prepaid, postpaid, thresholds, auto-recharge), and Stripe integration (arrears invoicing, tax pr…
-  command /stripe:stripe-apps source="stripe" hint="" "(stripe) Use when building, modifying, or reviewing a Stripe App — or when the user describes something that implies one (e.g. \"add a panel to the customer page\", \"customize my Stripe Dashboard\", \"react to Stripe events from my app\", \"connect my service to Stripe without sharing API keys\"). Covers the full app development workflow (scaffold, preview, upload, versioning), UI extension arch…
-  command /stripe:stripe-best-practices source="stripe" hint="" "(stripe) Guides Stripe integration decisions across development and test environment planning (separate sandboxes vs the shared test mode sandbox), API selection (Checkout Sessions vs PaymentIntents), Connect platform setup (Accounts v2, controller properties), billing/subscriptions, tax and registrations (Stripe Tax, automatic_tax, product tax codes), Treasury financial accounts, integration opt…
-  command /stripe:stripe-directory source="stripe" hint="" "(stripe) Identifies external providers, merchants, nonprofits, platforms, APIs, and software services, and resolves the documented way to engage them — to pay, donate, subscribe, book, provision, or integrate with them. MUST be used BEFORE web search, model memory, or any other directory/vendor-lookup skill for ANY request that requires selecting, finding, or engaging an external provider or orga…
-  command /stripe:stripe-docs source="stripe" hint="" "(stripe) Use when the user or agent needs to read, search, or look up Stripe documentation or API reference. Prefer this over curl or WebFetch for any docs.stripe.com content. Use to fetch gated documentation."
-  command /stripe:stripe-pay source="stripe" hint="" "(stripe) Helps users send funds to another Stripe business, transfer money to a Stripe Profile handle or network ID, or ask whether an agent can pay a Stripe business. Use Stripe Directory to find or verify a recipient when the user doesn't provide an exact Stripe Profile handle or network ID."
-  command /stripe:stripe-projects source="stripe" hint="" "(stripe) Use when the user wants to provision infrastructure or third-party services using Stripe Projects. Triggers: \"I need a database\", \"set up auth\", \"add caching\", \"give me a Postgres\", \"provision Redis\", \"I need hosting\", \"add a vector DB\", \"get me an API key for X\", \"get credentials for X\", \"sign up for a service\", \"set up monitoring\", \"show me the catalog\", \"what …
-  command /stripe:upgrade-stripe source="stripe" hint="" "(stripe) Guide for upgrading Stripe API versions and SDKs"
   command /design source="" hint="consent | revoke" "Grant or revoke Claude agent access to your Design projects"
   command /design-sync source="" hint="[<project hint, e.g. \"Acme DS\">]" "Push a React design system to claude.ai/design. This runs a converter that bundles the real component code (from Storybook or a bare package) and uploads it. Use when the user runs /design-sync or says \"sync my design system to Claude Design\"."
   command /dataviz source="" hint="" "Use this skill whenever you are about to create ANY chart, graph, plot, dashboard, or data visualization, in ANY output medium — an HTML or React artifact, inline SVG, plotting code in any library (matplotlib, plotly, d3, Recharts, …), an image/PNG you will render and upload, or a chart shared into Slack. Read it BEFORE writing the first line of chart code, choosing chart colors, building a stat …
   command /update-config source="" hint="" "Use this skill to configure the Claude Code harness via settings.json. Automated behaviors (\"from now on when X\", \"each time X\", \"whenever X\", \"before/after X\") require hooks configured in settings.json - the harness executes these, not Claude, so memory/preferences cannot fulfill them. Also use for: permissions (\"allow X\", \"add permission\", \"move permission to\"), env vars (\"set X=…
   command /verify source="" hint="" "Verify that a code change actually does what it's supposed to by exercising it end-to-end and observing behavior — drive the affected flow, not just tests or typecheck. Run before committing nontrivial changes; bootstraps this repo's project verify skill if none exists yet. Don't invoke it on a diff that only touches tests, docs, or other code with no runtime surface to drive (a change to product…
   command /debug source="" hint="[issue description]" "Enable debug logging for this session and help diagnose issues"
-  command /code-review source="" hint="[low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<pr#>|<branch>|<path>]" "Review the current diff, or a PR number/branch/path target, for correctness bugs (plus reuse/simplification/efficiency cleanups where the model's review recipe covers them) at the given effort level (low/medium: fewer, high-confidence findings; high→max: broader coverage, may include uncertain findings; ultra: deep multi-agent review in the cloud); with no level given, it reuses the level you typ…
+  command /code-review source="" hint="[low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<pr#>|<branch>|<path>] [--max-findings <n>|all]" "Review the current diff, or a PR number/branch/path target, for correctness bugs (plus reuse/simplification/efficiency cleanups where the model's recipe covers them) at the effort level given first, before any target (low|medium|high|xhigh|max: from few high-confidence findings to many, some uncertain; ultra: deep multi-agent review in the cloud); with no level given, it reuses the level you type…
   command /simplify source="" hint="[<target>]" "Review the changed code for reuse, simplification, efficiency, and altitude cleanups, then apply the fixes. Quality only — it does not hunt for bugs; use /code-review for that."
   command /batch source="" hint="<instruction>" "Research and plan a large-scale change, then execute it in parallel across 5–30 isolated worktree agents that each open a PR."
   command /fewer-permission-prompts source="" hint="" "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts."
@@ -86,6 +65,7 @@
   command /workflow-authoring source="" hint="" "Reference for writing a Workflow tool script (script API and gotchas, resume, quality patterns, worked examples). Load before authoring a script for a workflow the user already opted into; it does not itself authorize running one."
   command /run source="" hint="" "Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library)."
   command /run-skill-generator source="" hint="" "Author or improve the run-<unit> skill - a per-project skill that tells agents how to build, launch, and drive this project's app. Use when the user asks to set up the project, get it running, write run instructions, or verify build/run steps work from a clean environment."
+  command /plugin-authoring source="" hint="" "Make a mod: a change to Claude's own interface or behaviour, such as a panel or pane that stays beside the chat and updates, a band, status line, toast, slash command, or hook on tool calls. Use to make, change or debug a mod or its hooks module."
   command /advisor source="" hint="[fable|opus|sonnet|off]" "Let Claude consult a stronger model at key moments"
   command /autocompact source="" hint="[auto|<tokens>]" "Configure the auto-compact window size"
   command /clear source="" hint="[name]" "Start a new session with empty context; previous session stays on disk (resumable with /resume)"
@@ -113,13 +93,4 @@
   command /design-revoke source="" hint="" "Revoke Claude agent access to your Design projects"
   command /list-agents source="" hint="" "List subagents, teammates, and other Claude sessions you can message"
   command /team-onboarding source="" hint="" "Help teammates ramp on Claude Code with a guide from your usage"
-  command /docs source="" hint="" "docs (living docs people share, comment on and edit; use only when the user asks for one: names a doc, document, page, memo, spec, PRD, runbook or write-up, asks for somewhere to share or keep editing something, or says yes to your doc offer; a plan, comparison, summary or notes asked in chat stays in chat (at most a one-line doc offer); a report, status update, recap or \"something I can send th…
-  command /docx source="" hint="" "Use this skill whenever the user wants to create, read, edit, or manipulate Word documents (.docx) or Word templates (.dotx). Triggers include: any mention of Microsoft Word Documents, such as 'Word doc', 'word document', '.docx', '.dotx', 'microsoft doc'. Also use when extracting or reorganizing content from .docx or .dotx files, inserting or replacing images in documents, find-and-replace in Wo…
-  command /google-workspace source="" hint="" "Read this before the first Google Drive, Docs, Sheets or Slides connector call whenever the task creates or changes a Google file. Use this skill whenever the user wants to create or change a Google Doc, Sheet or Slides file in their Google Drive. Triggers include: a request that names Google Docs, Sheets, Slides or Drive and asks to make, edit, format, copy or rename a file; a docs.google.com li…
-  command /import-memory source="" hint="" "Import a memory export from another AI assistant into Claude's memory — conversationally, additively, and with the content treated as data. (claude.ai sync)"
-  command /morning source="" hint="" "Render the user's morning brief as a styled HTML artifact, or set it up as a recurring weekday task. Use only when the user explicitly asks to run, see, or set up their morning brief, or if they invoke /morning by name. A question about their day, schedule, or calendar is not by itself a request for the brief; answer it directly instead. (claude.ai sync)"
-  command /pdf source="" hint="" "Use this skill whenever the user wants to do anything with PDF files. This includes reading or extracting text/tables from PDFs, combining or merging multiple PDFs into one, splitting PDFs apart, rotating pages, adding watermarks, creating new PDFs, filling PDF forms, encrypting/decrypting PDFs, extracting images, and OCR on scanned PDFs to make them searchable. If the user mentions a .pdf file o…
-  command /pptx source="" hint="" "Use this skill any time a .pptx or .potx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations as PowerPoint (.pptx) files; reading, parsing, or extracting text from any .pptx or .potx file (even if the extracted content will be used elsewhere, like in an email, summary, or creating a different type of slide deck); editing, mod…
-  command /skill-creator source="" hint="" "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy. (claude.ai sync)"
-  command /xlsx source="" hint="" "Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .xltx, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new spreadsheet from scratch or from other data sources; or convert between tabular file formats. Trigger …
   controls: model=Some("Haiku 4.5") effort=None permission=None mode=None

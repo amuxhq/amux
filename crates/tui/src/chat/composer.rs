@@ -78,13 +78,8 @@ pub fn edge_row(
         .usage_near_limit
         .as_ref()
         .filter(|usage| typing && !usage.blocked)
-        .and_then(|usage| {
-            usage
-                .windows
-                .iter()
-                .max_by(|a, b| a.used_percent.total_cmp(&b.used_percent))
-        })
-        .map(|window| usage_words(window, now_ms, theme));
+        .and_then(|usage| fullest(&usage.windows))
+        .map(|(window, used)| usage_words(window, used, now_ms, theme));
     if groups.is_empty() && usage.is_none() {
         return None;
     }
@@ -134,16 +129,25 @@ pub fn edge_row(
     Some(line)
 }
 
+/// The window nearest its limit, and its use, of those whose use is known.
+fn fullest(windows: &[ui_view::UsageWindowView]) -> Option<(&ui_view::UsageWindowView, f64)> {
+    windows
+        .iter()
+        .filter_map(|window| Some((window, window.used_percent?)))
+        .max_by(|(_, a), (_, b)| a.total_cmp(b))
+}
+
 /// "5-hour limit 81% used · resets 22:56": one usage window in words.
 fn usage_words(
     window: &ui_view::UsageWindowView,
+    used: f64,
     now_ms: i64,
     theme: Theme,
 ) -> Vec<(String, ratatui::style::Style)> {
     let name = limit_name(&window.label);
     let mut spans = vec![
         (name, theme.muted()),
-        (format!(" {:.0}% used", window.used_percent), theme.text()),
+        (format!(" {used:.0}% used"), theme.text()),
     ];
     if let Some(at) = window.resets_at_ms.filter(|at| *at > now_ms) {
         spans.push((format!(" · resets {}", resets(at, now_ms)), theme.faint()));
@@ -176,12 +180,7 @@ pub fn limit_reached(overview: &Overview, now_ms: i64) -> Option<String> {
         .windows
         .iter()
         .find(|window| window.state == wire::UsageState::Blocked)
-        .or_else(|| {
-            usage
-                .windows
-                .iter()
-                .max_by(|a, b| a.used_percent.total_cmp(&b.used_percent))
-        })
+        .or_else(|| fullest(&usage.windows).map(|(window, _)| window))
     else {
         return Some("Usage limit reached".to_owned());
     };

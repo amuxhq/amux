@@ -2,22 +2,23 @@
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 2 recorded 1: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue cfb4734d models=[default{low/medium/high/xhigh/max},opus[1m]{low/medium/high/xhigh/max},claude-fable-5[1m]{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku] commands=64 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue cfb4734d
-snapshot IDLE queue=[] working_on=- at=808 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+effect catalogue 8572d50d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=55 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 8572d50d
+snapshot IDLE queue=[] working_on=- at=218 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "/clear"
-item boundary:1 boundary final at=811 text="" BOUNDARY_KIND_STARTED session=- version=-
-item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=811 text="/clear"
-snapshot WORKING queue=[] working_on=- at=811 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 6 recorded 5: fact Stream type=conversation_reset uuid=90c51d45-4ba1-41c3-ad9d-e94f961d30f8
-item boundary:2 boundary final at=1455 text="" BOUNDARY_KIND_CLEARED session=848fc322-c996-407a-8927-27ad22c3bad2 version=-
-snapshot WORKING queue=[] working_on=- at=1455 asks=[] session=848fc322-c996-407a-8927-27ad22c3bad2 model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 8 recorded 7: fact Stream type=system subtype=init uuid=c3d005a9-fb76-4ae7-a143-7bfd6bb27b27
-item boundary:1 boundary final at=1472 text="" BOUNDARY_KIND_STARTED session=8ec52715-9d83-4355-a41d-183bc9175409 version=2.1.247
-snapshot WORKING queue=[] working_on=- at=1472 asks=[] session=8ec52715-9d83-4355-a41d-183bc9175409 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 10 recorded 9: fact Stream type=result subtype=success uuid=d5673ad0-69c1-4bb2-9469-80354dfd604a
-item turn:1 turn final at=1473 text="" #1 TURN_OUTCOME_COMPLETED started=1445
-snapshot IDLE queue=[] working_on=- at=1473 asks=[] session=8ec52715-9d83-4355-a41d-183bc9175409 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+item boundary:1 boundary final at=220 text="" BOUNDARY_KIND_STARTED session=- version=-
+item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=220 text="/clear"
+snapshot WORKING queue=[] working_on=- at=220 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 6 recorded 5: fact Stream type=conversation_reset uuid=527853b9-b52c-4272-aa3f-d6aa5b58bd8f
+item boundary:2 boundary final at=562 text="" BOUNDARY_KIND_CLEARED session=- version=-
+## 8 recorded 7: fact Stream type=system subtype=init uuid=5a2aae3f-aa14-46a7-868e-f2cbc9534a70
+effect session "a7f1f49a-1bef-4922-bfcd-3094e1b86d23"
+item boundary:2 boundary final at=591 text="" BOUNDARY_KIND_CLEARED session=a7f1f49a-1bef-4922-bfcd-3094e1b86d23 version=2.1.312
+item boundary:1 boundary final at=591 text="" BOUNDARY_KIND_STARTED session=a7f1f49a-1bef-4922-bfcd-3094e1b86d23 version=2.1.312
+snapshot WORKING queue=[] working_on=- at=591 asks=[] session=a7f1f49a-1bef-4922-bfcd-3094e1b86d23 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 10 recorded 9: fact Stream type=result subtype=success uuid=d36b3c0b-8f47-472f-9bdd-df369fc7b8a6
+item turn:1 turn final at=592 text="" #1 TURN_OUTCOME_COMPLETED started=237
+snapshot IDLE queue=[] working_on=- at=592 asks=[] session=a7f1f49a-1bef-4922-bfcd-3094e1b86d23 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=-

@@ -344,16 +344,21 @@ fn offered_lists_keep_what_the_server_named() {
         ["gpt-6-astra", "gpt-6-sol"],
         "both pages, the hidden model left out"
     );
-    // The commands amux runs come first; the skills follow.
-    let skills: Vec<_> = catalogue
-        .commands
-        .iter()
-        .filter(|command| command.source != "codex")
-        .collect();
+    // The commands are the ones amux runs, typed as "/name"; the skills are
+    // apart, mentioned as "$name".
+    assert_eq!(
+        catalogue
+            .commands
+            .iter()
+            .map(|command| command.name.as_str())
+            .collect::<Vec<_>>(),
+        ["compact", "clear", "review", "init", "plan"]
+    );
+    let skills = &catalogue.skills;
     assert_eq!(
         skills
             .iter()
-            .map(|command| (command.name.as_str(), command.source.as_str()))
+            .map(|skill| (skill.name.as_str(), skill.source.as_str()))
             .collect::<Vec<_>>(),
         [
             ("autopilot", "user"),
@@ -512,15 +517,58 @@ fn an_approval_offering_one_lifetime_as_a_string_is_read() {
             .map(|decision| wire::Decision::try_from(*decision).unwrap())
             .collect::<Vec<_>>()
     };
-    use wire::Decision::{Abort, Approve, ApproveSession, Deny};
+    use wire::Decision::{Abort, Approve, ApproveAlways, ApproveSession, Deny};
     assert_eq!(
         decisions(json!("session")),
         [Approve, ApproveSession, Deny, Abort]
     );
     assert_eq!(
         decisions(json!("always")),
-        [Approve, Deny, Abort],
+        [Approve, ApproveAlways, Deny, Abort],
         "no remember-for-session choice when Codex offers only always"
+    );
+    assert_eq!(
+        decisions(json!(["session", "always"])),
+        [Approve, ApproveSession, ApproveAlways, Deny, Abort]
+    );
+}
+
+/// "Always" on a tool server's call is Codex's own choice: answered with
+/// `persist: always`, which Codex writes into the person's config, and
+/// recorded as that grant.
+#[test]
+fn an_mcp_approval_answered_always_persists_it() {
+    let mut agent = Driven::started();
+    agent.rpc(json!({
+        "id": 0,
+        "method": "mcpServer/elicitation/request",
+        "params": {
+            "_meta": {"codex_approval_kind": "mcp_tool_call", "persist": ["session", "always"]},
+            "message": "Allow the server to run tool \"ask\"?",
+            "mode": "form",
+            "requestedSchema": {"properties": {}, "type": "object"},
+            "serverName": "spec",
+            "threadId": "t1",
+            "turnId": "turn-1",
+        },
+    }));
+    let key = agent.snapshot.asks[0].key.clone();
+    let answered = agent.step(Event::Input(wire::Input::new(
+        b"a1".to_vec(),
+        wire::CodexInput {
+            of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
+                ask_key: key,
+                of: Some(wire::codex_answer::Of::Approve(
+                    wire::Decision::ApproveAlways as i32,
+                )),
+            })),
+        },
+    )));
+    assert_eq!(
+        writes(&answered.effects),
+        [
+            json!({"id": 0, "result": {"action": "accept", "content": {}, "_meta": {"persist": "always"}}})
+        ]
     );
 }
 
@@ -1657,4 +1705,741 @@ fn a_prompt_over_codexs_limit_is_refused_before_it_is_sent() {
         ),
         "a prompt at the limit was refused"
     );
+}
+
+/// A Codex agent driven by authored facts, keeping the last snapshot and
+/// every item its steps wrote.
+struct Driven {
+    state: State,
+    snapshot: wire::CodexSnapshot,
+    items: Vec<wire::Item>,
+}
+
+impl Driven {
+    /// An agent whose thread `t1` has started.
+    fn started() -> Self {
+        use prost::Message as _;
+        let spec = wire::AgentSpec {
+            agent_id: b"agent".to_vec(),
+            ..Default::default()
+        };
+        let (state, step) = Codex::initial(&spec, "test");
+        let snapshot = wire::CodexSnapshot::decode(
+            step.snapshot.expect("an initial snapshot").body.as_slice(),
+        )
+        .unwrap();
+        let mut driven = Driven {
+            state,
+            snapshot,
+            items: Vec::new(),
+        };
+        driven.rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}),
+        );
+        driven
+    }
+
+    fn step(&mut self, event: Event) -> interpret::Stepped {
+        use prost::Message as _;
+        let stepped = Codex::step(&mut self.state, event);
+        if let Some(snapshot) = &stepped.step.snapshot {
+            self.snapshot = wire::CodexSnapshot::decode(snapshot.body.as_slice()).unwrap();
+        }
+        self.items.extend(stepped.step.items.iter().cloned());
+        stepped
+    }
+
+    fn rpc(&mut self, message: Value) -> interpret::Stepped {
+        self.step(rpc(message))
+    }
+
+    /// The writes a prompt makes.
+    fn prompt(&mut self, id: &[u8], text: &str) -> Vec<Value> {
+        writes(&self.step(prompt(id, text)).effects)
+    }
+}
+
+fn rate_limits(id: Option<&str>, used: i64) -> Value {
+    let mut limits = json!({
+        "primary": {"usedPercent": used, "windowDurationMins": 300, "resetsAt": 1_800_000_000},
+    });
+    if let Some(id) = id {
+        limits["limitId"] = json!(id);
+    }
+    json!({"method": "account/rateLimits/updated", "params": {"rateLimits": limits}})
+}
+
+/// Codex reports several limits, each under its own id; the meter is the
+/// `codex` limit's (an update without an id is that one), as in Codex's own
+/// app, so another limit's update leaves it alone.
+#[test]
+fn the_usage_meter_reads_the_codex_limit_only() {
+    let mut agent = Driven::started();
+    agent.rpc(rate_limits(None, 12));
+    agent.rpc(rate_limits(Some("other_model"), 100));
+    let usage = agent.snapshot.usage.clone().expect("usage");
+    let used = usage.windows[0].meter.as_ref().unwrap().used_percent;
+    assert_eq!(used, 12.0, "another limit's update moved the meter");
+    assert_ne!(usage.state(), wire::UsageState::Blocked);
+    agent.rpc(rate_limits(Some("codex"), 40));
+    let usage = agent.snapshot.usage.clone().unwrap();
+    assert_eq!(usage.windows[0].meter.as_ref().unwrap().used_percent, 40.0);
+}
+
+impl Driven {
+    /// The bodies of every item written so far.
+    fn bodies(&self) -> Vec<wire::codex_item::Kind> {
+        self.items
+            .iter()
+            .filter_map(|item| {
+                <wire::CodexItem as prost::Message>::decode(item.body.as_slice())
+                    .ok()?
+                    .kind
+            })
+            .collect()
+    }
+
+    /// The fact types drawn as unrecognized rows so far.
+    fn unrecognized(&self) -> Vec<String> {
+        self.bodies()
+            .into_iter()
+            .filter_map(|kind| match kind {
+                wire::codex_item::Kind::Unrecognized(what) => Some(what.fact_type),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+/// `model/rerouted` covers one request: Codex keeps the chosen model for the
+/// next, so amux does too, including for the thread `/clear` starts. Codex
+/// says so with a warning carrying its link, which is what the person sees.
+#[test]
+fn a_reroute_leaves_the_chosen_model_and_shows_codexs_warning() {
+    let mut agent = Driven::started();
+    let rerouted = agent.rpc(json!({"method": "model/rerouted", "params": {
+        "threadId": "t1", "turnId": "turn-1", "fromModel": "m", "toModel": "fallback",
+        "reason": "highRiskCyberActivity"}}));
+    assert!(
+        rerouted.step.items.is_empty(),
+        "the reroute drew a row of its own beside Codex's warning"
+    );
+    agent.rpc(json!({"method": "warning", "params": {
+        "threadId": "t1", "message": "Your request was routed to fallback. Apply for access at https://example.com"}}));
+    assert_eq!(agent.snapshot.model.as_deref(), Some("m"));
+    assert!(
+        agent
+            .items
+            .iter()
+            .any(|item| item.text.contains("routed to fallback")),
+        "Codex's warning was not drawn"
+    );
+    let cleared = agent.prompt(b"p1", "/clear");
+    for write in &cleared {
+        if let Some(model) = write["params"]["model"].as_str() {
+            assert_eq!(model, "m", "{write}");
+        }
+    }
+}
+
+/// Codex writes a turn's completion and the answer to the `turn/start` (or
+/// `review/start`) that began it from separate tasks, so the answer can come
+/// last; a late answer must not reopen the turn that already ended.
+#[test]
+fn a_late_turn_start_answer_does_not_reopen_an_ended_turn() {
+    for (text, method) in [("hello", "turn/start"), ("/review", "review/start")] {
+        let mut agent = Driven::started();
+        let sent = agent.prompt(b"p1", text);
+        let start = sent
+            .iter()
+            .find(|write| write["method"] == method)
+            .unwrap_or_else(|| panic!("{method} sent: {sent:?}"))
+            .clone();
+        agent.rpc(json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}));
+        agent.rpc(json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "completed"}}}));
+        agent.rpc(json!({"id": start["id"], "result": {"turn": {"id": "turn-1"}}}));
+        assert_eq!(
+            agent.snapshot.active_turn, None,
+            "{method}'s late answer reopened the ended turn"
+        );
+    }
+}
+
+/// A later incarnation's agent, whose thread `t1` the agent process is
+/// resuming with `agent-resume`.
+fn resuming() -> Driven {
+    use prost::Message as _;
+    let mut first = Driven::started();
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 2,
+        ..Default::default()
+    };
+    let state = std::mem::replace(&mut first.state, Codex::initial(&spec, "test").0);
+    let (state, step) = Codex::reincarnate(state, &spec, "test");
+    let snapshot = wire::CodexSnapshot::decode(step.snapshot.unwrap().body.as_slice()).unwrap();
+    Driven {
+        state,
+        snapshot,
+        items: Vec::new(),
+    }
+}
+
+fn exits(stepped: &interpret::Stepped) -> bool {
+    stepped
+        .effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::Exit { .. }))
+}
+
+/// A resume leaves the turns out, so its answer has none however long the
+/// thread; that is no sign of a new thread, whose history Codex has yet to
+/// write, so nothing reads the whole history back.
+#[test]
+fn a_resumed_thread_is_not_read_back_in_full() {
+    let mut agent = resuming();
+    let answered = agent.rpc(json!({"id": "agent-resume", "result": {
+        "thread": {"id": "t1", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}));
+    assert!(
+        !writes(&answered.effects)
+            .iter()
+            .any(|write| write["method"] == "thread/read"),
+        "{:?}",
+        writes(&answered.effects)
+    );
+}
+
+/// An archived thread refuses a resume until it is unarchived, which
+/// Codex's own words ask for: the agent unarchives it and resumes again
+/// rather than ending the incarnation, which retries the same refusal.
+#[test]
+fn an_archived_thread_is_unarchived_and_resumed() {
+    let mut agent = resuming();
+    let refused = agent.rpc(json!({"id": "agent-resume", "error": {"code": -32600,
+        "message": "session t1 is archived. Run `codex unarchive t1` to unarchive it first."}}));
+    assert!(
+        !exits(&refused),
+        "the archived thread ended the incarnation"
+    );
+    let sent = writes(&refused.effects);
+    let unarchive = sent
+        .iter()
+        .find(|write| write["method"] == "thread/unarchive")
+        .unwrap_or_else(|| panic!("no unarchive: {sent:?}"));
+    assert_eq!(unarchive["params"]["threadId"], "t1");
+    let resumed = agent.rpc(json!({"id": unarchive["id"], "result": {"thread": {"id": "t1"}}}));
+    let sent = writes(&resumed.effects);
+    let resume = sent
+        .iter()
+        .find(|write| write["method"] == "thread/resume")
+        .unwrap_or_else(|| panic!("no second resume: {sent:?}"));
+    assert_eq!(resume["params"]["threadId"], "t1");
+    assert_eq!(resume["params"]["excludeTurns"], true);
+    agent.rpc(json!({"id": resume["id"], "result": {
+        "thread": {"id": "t1", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}));
+    assert_eq!(agent.snapshot.thread_id.as_deref(), Some("t1"));
+}
+
+/// A thread whose history is gone cannot be resumed, archived or not: the
+/// agent says so and starts a new thread, which it keeps from then on.
+#[test]
+fn a_thread_with_no_history_starts_afresh_with_a_notice() {
+    let mut agent = resuming();
+    let refused = agent.rpc(json!({"id": "agent-resume", "error": {"code": -32600,
+        "message": "no rollout found for thread id t1"}}));
+    assert!(
+        !exits(&refused),
+        "the missing history ended the incarnation"
+    );
+    assert!(
+        agent.items.iter().any(|item| item.text.contains("history")),
+        "the person is not told the conversation started over"
+    );
+    let sent = writes(&refused.effects);
+    let start = sent
+        .iter()
+        .find(|write| write["method"] == "thread/start")
+        .unwrap_or_else(|| panic!("no new thread: {sent:?}"));
+    assert!(
+        interpret::codex::starts_a_thread(start["id"].as_str().unwrap()),
+        "the agent process would not keep the new thread"
+    );
+    agent.rpc(json!({"id": start["id"], "result": {
+        "thread": {"id": "t2", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}));
+    assert_eq!(agent.snapshot.thread_id.as_deref(), Some("t2"));
+}
+
+/// `/clear` moves the agent to a new thread; Codex keeps a thread loaded,
+/// with its tool servers, while a client is subscribed, so the agent
+/// unsubscribes from the old thread and from the child threads it spawned,
+/// as Codex's own app does when it switches threads.
+#[test]
+fn a_clear_unsubscribes_the_old_thread_and_its_children() {
+    let mut agent = Driven::started();
+    agent.rpc(
+        json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1",
+        "item": {"type": "collabAgentToolCall", "id": "spawn-1", "tool": "spawnAgent",
+            "status": "completed", "senderThreadId": "t1", "receiverThreadIds": ["child-1"],
+            "prompt": "look around", "agentsStates": {}}}}),
+    );
+    let cleared = agent.prompt(b"p1", "/clear");
+    let start = cleared
+        .iter()
+        .find(|write| write["method"] == "thread/start")
+        .expect("a new thread")
+        .clone();
+    let answered = agent.rpc(json!({"id": start["id"], "result": {
+        "thread": {"id": "t2", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}));
+    let mut unsubscribed: Vec<String> = writes(&answered.effects)
+        .iter()
+        .filter(|write| write["method"] == "thread/unsubscribe")
+        .map(|write| write["params"]["threadId"].as_str().unwrap().to_owned())
+        .collect();
+    unsubscribed.sort();
+    assert_eq!(unsubscribed, ["child-1", "t1"]);
+}
+
+/// Codex closes a thread only once no client is subscribed, so its own
+/// thread closing means it is gone: the incarnation ends, and the next one
+/// resumes it, rather than drawing a row nobody can read.
+#[test]
+fn the_agents_thread_closing_ends_the_incarnation() {
+    let mut agent = Driven::started();
+    let closed = agent.rpc(json!({"method": "thread/closed", "params": {"threadId": "t1"}}));
+    assert!(
+        agent.unrecognized().is_empty(),
+        "{:?}",
+        agent.unrecognized()
+    );
+    assert!(exits(&closed), "the closed thread left the agent running");
+}
+
+/// Every message the audit of Codex 0.163 found amux drawing as an
+/// "unrecognized" row is either drawn, folded into the turn's status or
+/// dropped on purpose: none shows as a row nobody can read.
+#[test]
+fn known_codex_messages_draw_no_unrecognized_rows() {
+    let mut agent = Driven::started();
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+    );
+    let item = |kind: &str, extra: Value| {
+        let mut item = json!({"type": kind, "id": format!("{kind}-1")});
+        item.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1", "item": item}})
+    };
+    let hook_run = json!({"id": "h1", "eventName": "preToolUse", "handlerType": "command",
+        "executionMode": "sync", "scope": "turn", "sourcePath": "/h.sh", "source": "user",
+        "displayOrder": 0, "status": "completed", "statusMessage": null, "startedAt": 1,
+        "completedAt": 2, "durationMs": 1, "entries": []});
+    for message in [
+        json!({"method": "hook/started", "params": {"threadId": "t1", "turnId": "turn-1", "run": hook_run}}),
+        json!({"method": "hook/completed", "params": {"threadId": "t1", "turnId": "turn-1", "run": hook_run}}),
+        json!({"method": "model/verification", "params": {"threadId": "t1", "turnId": "turn-1",
+            "verifications": ["trustedAccessForCyber"]}}),
+        json!({"method": "autoApprovalReview/strictReviewRequired", "params": {"threadId": "t1",
+            "turnId": "turn-1", "startedAtMs": 1}}),
+        json!({"method": "model/safetyBuffering/updated", "params": {"threadId": "t1", "turnId": "turn-1",
+            "model": "m", "useCases": [], "reasons": [], "showBufferingUi": true, "fasterModel": null}}),
+        json!({"method": "model/safetyBuffering/updated", "params": {"threadId": "t1", "turnId": "turn-1",
+            "model": "m", "useCases": [], "reasons": [], "showBufferingUi": false, "fasterModel": null}}),
+        json!({"method": "guardianWarning", "params": {"threadId": "t1",
+            "message": "Automatic approval review approved (risk: low): fine."}}),
+        json!({"method": "item/mcpToolCall/progress", "params": {"threadId": "t1", "turnId": "turn-1",
+            "itemId": "x", "message": "half way"}}),
+        json!({"method": "item/fileChange/patchUpdated", "params": {"threadId": "t1", "turnId": "turn-1", "itemId": "x"}}),
+        json!({"method": "app/list/updated", "params": {"data": []}}),
+        json!({"method": "thread/queue/changed", "params": {"threadId": "t1"}}),
+        json!({"method": "thread/environment/connected", "params": {"threadId": "t1"}}),
+        json!({"method": "thread/environment/disconnected", "params": {"threadId": "t1"}}),
+        json!({"method": "thread/attachment/updated", "params": {"threadId": "t1"}}),
+        json!({"method": "thread/prediction/updated", "params": {"threadId": "t1"}}),
+        json!({"method": "account/gatewayOAuth/changed", "params": {}}),
+        json!({"method": "mcpServer/oauthLogin/completed", "params": {"name": "docs", "success": true}}),
+        json!({"method": "mcpServer/event/stream/notification", "params": {}}),
+        json!({"method": "modelProvider/authRecoveryStarted", "params": {}}),
+        json!({"method": "modelProvider/authRecoveryCompleted", "params": {}}),
+        json!({"method": "windows/worldWritableWarning", "params": {}}),
+        json!({"method": "windowsSandbox/setupCompleted", "params": {}}),
+        item("enteredReviewMode", json!({"review": "current changes"})),
+        item("exitedReviewMode", json!({"review": "current changes"})),
+        item("hookPrompt", json!({"fragments": []})),
+        item(
+            "subAgentActivity",
+            json!({"kind": "started", "agentThreadId": "c1", "agentPath": "/a"}),
+        ),
+        item("sleep", json!({})),
+        item("functionCallOutput", json!({})),
+    ] {
+        agent.rpc(message);
+    }
+    assert!(
+        agent.unrecognized().is_empty(),
+        "{:?}",
+        agent.unrecognized()
+    );
+    let texts: Vec<&str> = agent.items.iter().map(|item| item.text.as_str()).collect();
+    let shows = |words: &str| texts.iter().any(|text| text.contains(words));
+    assert!(shows("Trusted Access for Cyber"), "{texts:?}");
+    assert!(shows("additional safety checks"), "{texts:?}");
+    assert!(shows("Code review started"), "{texts:?}");
+    assert!(shows("Code review finished"), "{texts:?}");
+    assert!(
+        !shows("Automatic approval review approved"),
+        "an approved review's warning repeats the verdict row: {texts:?}"
+    );
+}
+
+/// Codex's slow safety check holds the answer for a while; it is the turn's
+/// status, as Codex's own app shows it, open while the check runs.
+#[test]
+fn a_safety_check_is_the_turns_status_while_it_runs() {
+    let mut agent = Driven::started();
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+    );
+    let buffering = |on: bool| {
+        json!({"method": "model/safetyBuffering/updated", "params": {"threadId": "t1", "turnId": "turn-1",
+            "model": "m", "useCases": [], "reasons": [], "showBufferingUi": on, "fasterModel": null}})
+    };
+    let on = agent.rpc(buffering(true));
+    let [status] = &on.step.items[..] else {
+        panic!("one status item: {:?}", on.step.items);
+    };
+    assert!(
+        !status.text.is_empty() && !matches!(status.body.as_slice(), []),
+        "{status:?}"
+    );
+    let off = agent.rpc(buffering(false));
+    assert!(
+        off.step.items.iter().any(|item| item.key == status.key),
+        "the check's end does not close its status"
+    );
+}
+
+/// A Codex agent whose thread `t1` runs a turn while its child thread
+/// `child` works on the same server.
+fn with_a_child() -> Driven {
+    let mut agent = Driven::started();
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+    );
+    agent.rpc(json!({"method": "turn/started", "params": {"threadId": "child", "turn": {"id": "child-turn"}}}));
+    agent
+}
+
+fn turn_ends(agent: &mut Driven) -> interpret::Stepped {
+    agent.rpc(
+        json!({"method": "turn/completed", "params": {"threadId": "t1",
+        "turn": {"id": "turn-1", "status": "completed"}}}),
+    )
+}
+
+/// Codex sends a child thread's approvals to every client of the server. A
+/// child's command ask is the child's: it adds no row to the parent's turn,
+/// outlives the parent's turn end, and closes when Codex says it was
+/// answered, whichever thread that is on.
+#[test]
+fn a_childs_command_approval_outlives_the_parents_turn() {
+    let mut agent = with_a_child();
+    let asked = agent.rpc(
+        json!({"id": 7, "method": "item/commandExecution/requestApproval",
+        "params": {"threadId": "child", "turnId": "child-turn", "itemId": "child-cmd",
+            "command": "rm -rf build", "cwd": "/work", "reason": "clean"}}),
+    );
+    assert!(
+        !asked.step.items.iter().any(|item| item.key == "child-cmd"),
+        "the child's command became a row in the parent's turn"
+    );
+    assert_eq!(agent.snapshot.asks.len(), 1);
+    let ended = turn_ends(&mut agent);
+    assert!(
+        writes(&ended.effects).is_empty(),
+        "the parent's turn end answered the child's ask: {:?}",
+        writes(&ended.effects)
+    );
+    assert_eq!(agent.snapshot.asks.len(), 1, "the child's ask was closed");
+    agent.rpc(json!({"method": "serverRequest/resolved", "params": {"threadId": "child", "requestId": 7}}));
+    assert!(agent.snapshot.asks.is_empty(), "Codex said it was answered");
+}
+
+/// A child's file-change ask shows the child's own changes.
+#[test]
+fn a_childs_file_change_approval_shows_its_diff() {
+    let mut agent = with_a_child();
+    agent.rpc(
+        json!({"method": "item/started", "params": {"threadId": "child", "turnId": "child-turn",
+        "item": {"type": "fileChange", "id": "child-patch", "status": "inProgress",
+            "changes": [{"path": "/work/a.txt", "kind": {"type": "update", "move_path": null},
+                "diff": "@@ -1 +1 @@\n-a\n+b\n"}]}}}),
+    );
+    agent.rpc(json!({"id": 8, "method": "item/fileChange/requestApproval",
+        "params": {"threadId": "child", "turnId": "child-turn", "itemId": "child-patch"}}));
+    let Some(wire::codex_ask::Body::FileChange(change)) = &agent.snapshot.asks[0].body else {
+        panic!("a file-change ask: {:?}", agent.snapshot.asks);
+    };
+    assert_eq!(change.changes.len(), 1, "the child's diff is missing");
+}
+
+/// A tool server's approval belongs to that server's call, not to whichever
+/// call started last; a child's names its own server.
+#[test]
+fn an_mcp_approval_names_its_own_servers_call() {
+    let mut agent = with_a_child();
+    agent.rpc(
+        json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1",
+        "item": {"type": "mcpToolCall", "id": "call-spec", "server": "spec", "tool": "ask",
+            "status": "inProgress", "arguments": {}}}}),
+    );
+    agent.rpc(
+        json!({"id": 9, "method": "mcpServer/elicitation/request", "params": {
+        "_meta": {"codex_approval_kind": "mcp_tool_call", "tool_name": "search"},
+        "message": "Allow docs to run search?", "mode": "form",
+        "requestedSchema": {"properties": {}, "type": "object"},
+        "serverName": "docs", "threadId": "child", "turnId": "child-turn"}}),
+    );
+    let ask = &agent.snapshot.asks[0];
+    let Some(wire::codex_ask::Body::McpTool(tool)) = &ask.body else {
+        panic!("a tool approval: {ask:?}");
+    };
+    assert_eq!(
+        (tool.server.as_str(), tool.tool.as_str()),
+        ("docs", "search")
+    );
+    assert_ne!(ask.item_key, "call-spec", "pinned to another server's call");
+}
+
+/// A child's request amux cannot answer is refused, and draws no row in the
+/// parent.
+#[test]
+fn a_childs_unknown_request_draws_nothing_in_the_parent() {
+    let mut agent = with_a_child();
+    let refused = agent.rpc(json!({"id": 10, "method": "item/somethingNew/request",
+        "params": {"threadId": "child", "turnId": "child-turn"}}));
+    assert_eq!(
+        writes(&refused.effects).len(),
+        1,
+        "the request was not refused"
+    );
+    assert!(
+        agent.unrecognized().is_empty(),
+        "{:?}",
+        agent.unrecognized()
+    );
+}
+
+/// A Codex agent whose server lists `skills`, each `(name, path)`.
+fn with_skills(skills: &[(&str, &str)]) -> Driven {
+    let mut agent = Driven::started();
+    let listed: Vec<Value> = skills
+        .iter()
+        .map(|(name, path)| {
+            json!({"name": name, "description": "", "path": path, "scope": "user", "enabled": true})
+        })
+        .collect();
+    agent.rpc(json!({"id": "amux-skills", "result": {"data": [{"cwd": "/work", "skills": listed, "errors": []}]}}));
+    agent
+}
+
+fn turn_input(writes: &[Value]) -> Vec<Value> {
+    writes
+        .iter()
+        .find(|write| write["method"] == "turn/start")
+        .unwrap_or_else(|| panic!("a turn: {writes:?}"))["params"]["input"]
+        .as_array()
+        .unwrap()
+        .clone()
+}
+
+/// Codex selects a skill from a "$name" mention anywhere in the message, or
+/// from a skill item naming its file: the text goes as typed, with an item
+/// for each skill it mentions, as Codex's own app sends them.
+#[test]
+fn a_dollar_mention_sends_the_skill_with_its_path() {
+    let mut agent = with_skills(&[("lint", "/skills/lint/SKILL.md")]);
+    let input = turn_input(&agent.prompt(b"p1", "tidy this up with $lint please"));
+    assert_eq!(input[0]["type"], "text");
+    assert_eq!(input[0]["text"], "tidy this up with $lint please");
+    assert_eq!(
+        input[1..],
+        [json!({"type": "skill", "name": "lint", "path": "/skills/lint/SKILL.md"})]
+    );
+}
+
+/// Two skills of one name select nothing from a bare mention; the item
+/// names one of them, the first Codex lists.
+#[test]
+fn a_mention_of_a_shared_name_names_one_skill() {
+    let mut agent = with_skills(&[
+        ("lint", "/repo/lint/SKILL.md"),
+        ("lint", "/home/lint/SKILL.md"),
+    ]);
+    let input = turn_input(&agent.prompt(b"p1", "$lint"));
+    let skills: Vec<&Value> = input
+        .iter()
+        .filter(|part| part["type"] == "skill")
+        .collect();
+    assert_eq!(
+        skills,
+        [&json!({"type": "skill", "name": "lint", "path": "/repo/lint/SKILL.md"})]
+    );
+}
+
+/// "/name" is a command; a skill typed that way would reach the model as
+/// words, so it is refused with the way Codex takes it.
+#[test]
+fn a_skill_after_a_slash_is_refused_with_its_mention() {
+    let mut agent = with_skills(&[("lint", "/skills/lint/SKILL.md")]);
+    let stepped = agent.step(prompt(b"p1", "/lint"));
+    let refused = stepped
+        .effects
+        .iter()
+        .find_map(|effect| match effect {
+            Effect::Reply { verdict, .. } => match &verdict.of {
+                Some(wire::send_input_response::Of::Rejected(rejected)) => Some(rejected.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("refused");
+    assert!(
+        refused
+            .detail
+            .as_deref()
+            .is_some_and(|detail| detail.contains("$lint")),
+        "{refused:?}"
+    );
+}
+
+/// A person stops one command Codex runs in the background: amux asks
+/// Codex to terminate it by the process id Codex listed, the job reads
+/// stopping until the command ends, and Codex's error shows on the job.
+#[test]
+fn a_stopped_background_command_reads_stopping_until_it_ends() {
+    use prost::Message as _;
+    let verdicts = |effects: &[Effect]| {
+        effects
+            .iter()
+            .filter_map(|effect| match effect {
+                Effect::Reply { verdict, .. } => verdict.of.clone(),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut state = idle_codex();
+    let mut jobs: Vec<wire::BackgroundJob> = Vec::new();
+    let mut step = |state: &mut State, event: Event| {
+        let stepped = Codex::step(state, event);
+        if let Some(snapshot) = &stepped.step.snapshot {
+            jobs = wire::CodexSnapshot::decode(&snapshot.body[..])
+                .unwrap()
+                .background_jobs
+                .unwrap_or_default()
+                .jobs;
+        }
+        (writes(&stepped.effects), jobs.clone(), stepped)
+    };
+    let command = |id: &str, pid: &str| {
+        json!({"type": "commandExecution", "id": id, "command": format!("cargo watch {id}"),
+            "cwd": "/w", "processId": pid, "source": "unifiedExecStartup", "status": "inProgress",
+            "commandActions": [], "aggregatedOutput": null, "exitCode": null, "durationMs": null})
+    };
+    let mut listed = Vec::new();
+    for event in [
+        prompt(b"p1", "watch both"),
+        rpc(
+            json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "inProgress"}}}),
+        ),
+        rpc(
+            json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1", "item": command("exec-1", "8911")}}),
+        ),
+        rpc(
+            json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1", "item": command("exec-2", "8912")}}),
+        ),
+        rpc(
+            json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "items": [], "status": "completed", "error": null}}}),
+        ),
+    ] {
+        listed.extend(step(&mut state, event).0);
+    }
+    let list = listed
+        .iter()
+        .find(|write| write["method"] == "thread/backgroundTerminals/list")
+        .expect("Codex is asked what runs on");
+    let terminal = |id: &str, pid: &str| json!({"itemId": id, "processId": pid, "command": format!("cargo watch {id}"), "cwd": "/w"});
+    let (_, jobs, _) = step(
+        &mut state,
+        rpc(
+            json!({"id": list["id"], "result": {"data": [terminal("exec-1", "8911"), terminal("exec-2", "8912")], "nextCursor": null}}),
+        ),
+    );
+    assert_eq!(
+        jobs.iter().map(|job| job.key.as_str()).collect::<Vec<_>>(),
+        ["8911", "8912"]
+    );
+    let stop = |id: &[u8], key: &str| {
+        Event::Input(wire::Input::new(
+            id.to_vec(),
+            wire::CodexInput {
+                of: Some(wire::codex_input::Of::StopJob(wire::StopJob {
+                    key: key.into(),
+                })),
+            },
+        ))
+    };
+    let terminate = |writes: &[Value]| {
+        writes
+            .iter()
+            .find(|write| write["method"] == "thread/backgroundTerminals/terminate")
+            .cloned()
+    };
+
+    let (written, jobs, stopped) = step(&mut state, stop(b"s1", "8911"));
+    assert!(
+        matches!(
+            verdicts(&stopped.effects)[..],
+            [wire::send_input_response::Of::Accepted(_)]
+        ),
+        "{:?}",
+        stopped.effects
+    );
+    let sent = terminate(&written).unwrap_or_else(|| panic!("no terminate in {written:?}"));
+    assert_eq!(
+        sent["params"],
+        json!({"threadId": "t1", "processId": "8911"})
+    );
+    let first = jobs.iter().find(|job| job.key == "8911").unwrap();
+    assert!(first.stopping, "{jobs:?}");
+
+    let (written, _, _) = step(&mut state, stop(b"s2", "8912"));
+    let refused = terminate(&written).expect("the second stop is sent");
+    let (_, jobs, _) = step(
+        &mut state,
+        rpc(json!({"id": refused["id"], "error": {"code": -32600, "message": "no such process"}})),
+    );
+    let second = jobs.iter().find(|job| job.key == "8912").unwrap();
+    assert!(
+        !second.stopping && second.stop_error == "no such process",
+        "{second:?}"
+    );
+
+    let ended = json!({"type": "commandExecution", "id": "exec-1", "command": "cargo watch exec-1",
+        "cwd": "/w", "processId": "8911", "source": "unifiedExecStartup", "status": "completed",
+        "commandActions": [], "aggregatedOutput": "", "exitCode": 143, "durationMs": 10});
+    let (_, jobs, _) = step(
+        &mut state,
+        rpc(
+            json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1", "item": ended}}),
+        ),
+    );
+    assert!(jobs.iter().all(|job| job.key != "8911"), "{jobs:?}");
+
+    let (written, _, unknown) = step(&mut state, stop(b"s3", "1"));
+    assert!(matches!(
+        verdicts(&unknown.effects)[..],
+        [wire::send_input_response::Of::Rejected(_)]
+    ));
+    assert!(terminate(&written).is_none());
 }

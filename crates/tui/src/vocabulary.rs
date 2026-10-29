@@ -1731,6 +1731,7 @@ fn card(body: AskBody, mut choices: Vec<Choice>) -> AskCard {
         question_skip: true,
         question_reply: true,
         stops_turn: true,
+        default_to_no: false,
         state: CardState::Open,
     }
 }
@@ -2052,6 +2053,7 @@ fn cards() -> Vec<CardSet> {
             AskCard {
                 kind: wire::Kind::Codex,
                 stops_turn: false,
+                default_to_no: false,
                 ..card(
                     AskBody::Plan {
                         title: None,
@@ -2322,6 +2324,19 @@ pub fn chat_overview() -> ChatScene {
     around_a_chat().1
 }
 
+/// The [`chat_overview`] with the Stop window asking before its first
+/// background job is stopped.
+pub fn chat_overview_stop() -> ChatScene {
+    let mut scene = chat_overview();
+    scene.view.open_pane();
+    scene.view.key(
+        &scene.state,
+        crossterm::event::KeyCode::Char('x').into(),
+        Theme::default(),
+    );
+    scene
+}
+
 /// The [`surroundings`], and the [`chat_overview`] built from the same
 /// parts.
 fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) {
@@ -2382,12 +2397,15 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
                 item_key: "t1".into(),
                 command: "npm run dev -- --port 5173".into(),
                 started_at_ms: now - 14 * MINUTE,
+                key: "b1".into(),
                 ..Default::default()
             },
             wire::BackgroundJob {
                 item_key: "t2".into(),
                 command: "cargo watch -x 'test -p ui-view'".into(),
                 started_at_ms: now - 40_000,
+                key: "b2".into(),
+                stopping: true,
                 ..Default::default()
             },
         ],
@@ -2397,6 +2415,7 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
             used_percent,
             resets_at_ms: Some(resets_at_ms),
             state: state as i32,
+            used_unknown: false,
         })
     };
     use wire::UsageState::{NearLimit, Ok};

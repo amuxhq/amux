@@ -1,6 +1,6 @@
 //! Stream-JSON lines from headless Claude, read into state and items.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use claude_protocol::stream::control::{CanUseToolRequest, ControlOutcome};
 use claude_protocol::stream::init::{ContextUsage, SlashCommand};
@@ -28,11 +28,12 @@ use crate::claude_common::{
     apply_task_tool, auto_models, blocks_text, claude_limit, compact_json, job_kind, message_text,
     offered_commands, offered_models, old_source, permission_scopes, plan_ask, plan_mode_write,
     question_ask, question_ask_text, split_tool_name, tool_class, tool_input, tool_result_images,
-    tool_result_text, without_image_bytes,
+    tool_result_text, without_image_bytes, without_terminal_codes,
 };
 use crate::shared::json_as_written;
 use crate::{
-    Channel, Emit, Fact, ItemDraft, ask_item, is_attach_tool, is_status_tool, status_working_on,
+    Channel, Effect, Emit, Fact, ItemDraft, ask_item, is_attach_tool, is_status_tool,
+    status_working_on,
 };
 
 const INTERRUPTED: &str = "[Request interrupted by user";
@@ -72,6 +73,14 @@ impl State {
     }
 
     pub(super) fn fact(&mut self, emit: &mut Emit, fact: Fact) {
+        if fact.channel == Channel::Agent {
+            if let Ok(crate::claude_pty::AgentFact::ToolsWithheld) =
+                serde_json::from_slice(&fact.payload)
+            {
+                self.tools_withheld = true;
+            }
+            return;
+        }
         if fact.channel != Channel::Stream {
             return;
         }
@@ -139,10 +148,16 @@ impl State {
                     },
                 })
             }
-            Message::ConversationReset(reset) => {
-                self.session = written(&reset.new_conversation_id);
+            // Every reset, whatever started it, is a new session the next
+            // init names.
+            Message::ConversationReset(_) => {
+                self.session = None;
                 self.context_tokens = None;
-                self.boundary(emit, BoundaryKind::Cleared, wire::IncarnationEnd::default());
+                self.cleared = Some(self.boundary(
+                    emit,
+                    BoundaryKind::Cleared,
+                    wire::IncarnationEnd::default(),
+                ));
             }
             Message::Status(status) => {
                 if let Some(mode) = status
@@ -154,7 +169,7 @@ impl State {
                 }
                 // The activity line reads "Compacting" from this item until
                 // the compaction row lands; a status of null only ends one.
-                if let Some(word) = status.status {
+                if let Some(word) = status.status.as_deref().map(without_terminal_codes) {
                     let typed = match word.as_str() {
                         "compacting" => wire::SdkStatus::Compacting,
                         "requesting" => wire::SdkStatus::Requesting,
@@ -229,9 +244,11 @@ impl State {
             Message::ModelRefusalFallback(fallback) => {
                 self.model = Some(fallback.fallback_model.clone());
                 self.chosen_model = None;
-                let reason = written_opt(fallback.api_refusal_explanation.as_deref())
-                    .or_else(|| written_opt(fallback.api_refusal_category.as_deref()))
-                    .unwrap_or(fallback.content);
+                let reason = without_terminal_codes(
+                    &written_opt(fallback.api_refusal_explanation.as_deref())
+                        .or_else(|| written_opt(fallback.api_refusal_category.as_deref()))
+                        .unwrap_or(fallback.content),
+                );
                 self.shared.item(
                     emit,
                     ItemDraft {
@@ -252,8 +269,10 @@ impl State {
                     key: refusal.uuid,
                     body: item_body(Kind::ApiError(wire::ApiError {
                         error_kind: "refusal".into(),
-                        message: written_opt(refusal.api_refusal_explanation.as_deref())
-                            .unwrap_or(refusal.content),
+                        message: without_terminal_codes(
+                            &written_opt(refusal.api_refusal_explanation.as_deref())
+                                .unwrap_or(refusal.content),
+                        ),
                         ..Default::default()
                     })),
                     complete: true,
@@ -261,7 +280,7 @@ impl State {
                 },
             ),
             Message::LocalCommandOutput(output) => {
-                self.slash_output(emit, output.uuid, &output.content)
+                self.slash_output(emit, output.uuid, &without_terminal_codes(&output.content))
             }
             // Claude's own ambient work (memory consolidation and the
             // like) is nothing the person started: no row, no job.
@@ -333,7 +352,9 @@ impl State {
                 }
             }
             Message::PermissionDenied(denied) => {
-                let note = written_opt(denied.decision_reason.as_deref()).unwrap_or(denied.message);
+                let note = without_terminal_codes(
+                    &written_opt(denied.decision_reason.as_deref()).unwrap_or(denied.message),
+                );
                 self.decide(
                     emit,
                     &denied.tool_use_id,
@@ -373,6 +394,7 @@ impl State {
         self.shared.provider_exited();
         self.jobs.clear();
         self.exited = true;
+        self.unanswered.clear();
         self.early_boundary = None;
         self.stream = None;
     }
@@ -424,11 +446,30 @@ impl State {
                     (server.name.as_str(), server.status.as_str(), "")
                 })));
         }
+        let changed = session.is_some() && session != previous;
+        // A reset's boundary names the session it began once one does.
+        let cleared = self.cleared.take();
+        // The session the process launched under is saved already; one it
+        // moved to (a reset's) is the one the next incarnation resumes.
+        if changed
+            && (previous.is_some() || cleared.is_some())
+            && let Some(id) = &session
+        {
+            emit.effect(Effect::ProviderSession { id: id.clone() });
+        }
+        if let Some(key) = &cleared {
+            self.boundary_at(
+                emit,
+                key.clone(),
+                BoundaryKind::Cleared,
+                wire::IncarnationEnd::default(),
+            );
+        }
         // Claude repeats its init at every turn; only a new process or a
-        // new session is a boundary.
+        // new session it did not reset to is a boundary.
         let kind = self
             .coming_boundary()
-            .or_else(|| (session.is_some() && session != previous).then_some(BoundaryKind::Forked));
+            .or_else(|| (changed && cleared.is_none()).then_some(BoundaryKind::Forked));
         self.exited = false;
         self.inits += 1;
         let Some(kind) = kind else {
@@ -534,6 +575,14 @@ impl State {
         let shell = task.shell;
         let summary = written_opt(report.summary);
         let key = task.tool_key.clone();
+        // A subagent that ended asks nothing more, and a job that ended
+        // leaves the list, whether or not its call was shown.
+        if wire.state != WireTaskState::Running as i32 {
+            self.task_asks_over(emit, &id, &key);
+            if let Some(jobs) = self.jobs.ended(&id) {
+                self.shared.set_jobs(jobs);
+            }
+        }
         // A task of a call this interpreter showed is progress on that call,
         // which stays open until the task ends: its own result only said the
         // task was launched. The notification carries the task's answer.
@@ -565,9 +614,6 @@ impl State {
                 if let Some(jobs) = self.jobs.current() {
                     self.shared.set_jobs(jobs);
                 }
-            }
-            if finished && let Some(jobs) = self.jobs.ended(&id) {
-                self.shared.set_jobs(jobs);
             }
             if !finished {
                 tool.state = ToolState::Running as i32;
@@ -603,6 +649,11 @@ impl State {
     // --- streams ---------------------------------------------------------
 
     fn stream_event(&mut self, emit: &mut Emit, event: &StreamEvent, parent: &str) {
+        // A subagent's stream is its own; its whole assistant frame carries
+        // the calls it makes.
+        if !parent.is_empty() {
+            return;
+        }
         match event {
             StreamEvent::MessageStart { message, .. } => {
                 self.stream = written(&message.id);
@@ -626,7 +677,7 @@ impl State {
                     }
                     ContentBlock::ToolUse { id, name, .. } => {
                         self.stream_tools.insert(*index, id.clone());
-                        self.tool_seen(emit, id, name, None, parent);
+                        self.tool_seen(emit, id, name, None, "");
                     }
                     _ => {}
                 }
@@ -745,8 +796,22 @@ impl State {
     // --- whole messages --------------------------------------------------
 
     fn assistant(&mut self, emit: &mut Emit, assistant: &AssistantMessage) {
-        self.shared.turn_started();
         let message = &assistant.message;
+        // A subagent's frame is its own: no turn, model, context, text or
+        // error of the main thread's, only its calls, under the call that
+        // started it.
+        if let Some(parent) = written_opt(assistant.parent_tool_use_id.as_deref()) {
+            for block in &message.content {
+                if let ContentBlock::ToolUse {
+                    id, name, input, ..
+                } = block
+                {
+                    self.tool_seen(emit, id, name, Some(input), &parent);
+                }
+            }
+            return;
+        }
+        self.shared.turn_started();
         let message_id = message.id.clone();
         if let Some(model) = written(&message.model)
             && model != "<synthetic>"
@@ -779,7 +844,6 @@ impl State {
             );
             return;
         }
-        let parent = assistant.parent_tool_use_id.as_deref().unwrap_or_default();
         let base = self.blocks.get(&message_id).copied().unwrap_or(0);
         // A built-in command Claude runs itself answers as the `<synthetic>`
         // model: the answer is the command's output, not a reply.
@@ -817,7 +881,7 @@ impl State {
                 ContentBlock::ToolUse {
                     id, name, input, ..
                 } => {
-                    self.tool_seen(emit, id, name, Some(input), parent);
+                    self.tool_seen(emit, id, name, Some(input), "");
                 }
                 other => self.shared.item(
                     emit,
@@ -912,7 +976,9 @@ impl State {
         }
         // The compaction summary Claude writes back is its own; the SDK's
         // compaction row carries the counts.
-        if message_text(content).trim_start().starts_with(INTERRUPTED) {
+        if user.parent_tool_use_id.as_deref().is_none_or(str::is_empty)
+            && message_text(content).trim_start().starts_with(INTERRUPTED)
+        {
             self.interrupted = true;
         }
     }
@@ -1066,10 +1132,6 @@ impl State {
     }
 
     fn result(&mut self, emit: &mut Emit, result: &ResultMessage) {
-        self.dismiss_asks(emit);
-        // A command that ran a turn (a custom command or a skill) wrote no
-        // output of its own; a later note is not its.
-        self.slash = None;
         // A result of a kind this build does not know still carries the
         // fields every result does.
         let unknown = match result {
@@ -1089,12 +1151,20 @@ impl State {
                 None => (None, &[]),
             },
         };
+        // Any result states the window, the main thread's model's.
         if let Some(window) = common
             .and_then(|common| common.model_usage.as_ref())
             .and_then(|models| context_window(models, self.model.as_deref().unwrap_or_default()))
         {
             self.context_window = Some(window);
         }
+        if common.is_some_and(|common| self.foreign(common)) {
+            return;
+        }
+        self.dismiss_asks_but_background(emit);
+        // A command that ran a turn (a custom command or a skill) wrote no
+        // output of its own; a later note is not its.
+        self.slash = None;
         let subtype = result.subtype();
         let aborted = common
             .and_then(|common| common.terminal_reason.as_deref())
@@ -1149,10 +1219,52 @@ impl State {
             },
         );
         // A call whose task outlives the turn is still open: its task's
-        // events are progress on it until the notification ends it.
-        self.tools
-            .retain(|_, tool| tool.task.as_ref().is_some_and(|task| !task.finished));
+        // events are progress on it until the notification ends it. So are
+        // the calls of a subagent it runs, which finish after the turn.
+        let open: BTreeSet<String> = self
+            .tools
+            .keys()
+            .filter(|id| self.under_running_task(id))
+            .cloned()
+            .collect();
+        self.tools.retain(|id, _| open.contains(id));
         self.blocks.clear();
+    }
+
+    /// Whether `result` ends work of Claude's own while a message amux
+    /// handed it is unanswered: it names none of amux's messages, or names
+    /// none at all and is not a person's. Such a result changes nothing of
+    /// the person's turn. Any other answers the messages it names, or all
+    /// of them when it names none.
+    fn foreign(&mut self, common: &ResultCommon) -> bool {
+        let named: BTreeSet<&str> = common
+            .user_message_uuids
+            .iter()
+            .flatten()
+            .chain(&common.user_message_uuid)
+            .map(String::as_str)
+            .collect();
+        if !self.unanswered.is_empty() {
+            let foreign = if named.is_empty() {
+                common
+                    .origin
+                    .as_ref()
+                    .and_then(|origin| origin.kind.as_deref())
+                    .is_some_and(|kind| kind != "human")
+            } else {
+                !named.iter().any(|uuid| self.unanswered.contains(*uuid))
+            };
+            if foreign {
+                return true;
+            }
+        }
+        if named.is_empty() {
+            self.unanswered.clear();
+        } else {
+            self.unanswered
+                .retain(|uuid| !named.contains(uuid.as_str()));
+        }
+        false
     }
 
     // --- control ---------------------------------------------------------
@@ -1163,7 +1275,7 @@ impl State {
             ControlRequestBody::CanUseTool(asked) => self.can_use_tool(emit, &request_id, asked),
             ControlRequestBody::Elicitation(elicitation) => {
                 let server = elicitation.mcp_server_name;
-                let message = elicitation.message;
+                let message = without_terminal_codes(&elicitation.message);
                 let (body, shape) = if elicitation.mode.as_deref() == Some("url") {
                     (
                         wire::ask::Body::Link(LinkAsk {
@@ -1192,6 +1304,7 @@ impl State {
                         input: String::new(),
                         suggestions: Vec::new(),
                         shape,
+                        agent: None,
                     },
                 );
                 let ask = wire::Ask {
@@ -1217,10 +1330,24 @@ impl State {
         let input = &asked.input;
         let tool_use_id = asked.tool_use_id.clone();
         // The call's row may not have been written yet: the request names
-        // it, so the ask always has an item to point at.
-        self.tool_seen(emit, &tool_use_id, name, Some(input), "");
+        // it, so the ask always has an item to point at, under the call
+        // that started the subagent asking.
+        let parent = asked
+            .agent_id
+            .as_ref()
+            .and_then(|agent| self.active_tasks.get(agent))
+            .map(|task| task.tool_key.clone())
+            .unwrap_or_default();
+        self.tool_seen(emit, &tool_use_id, name, Some(input), &parent);
         let (server, tool) = split_tool_name(name);
-        let suggestions = asked.permission_suggestions.clone().unwrap_or_default();
+        // An ask Claude says may offer no persistent rule offers no scope:
+        // a rule sent back would be narrowed or dropped, and amux would
+        // record a grant Claude never applied.
+        let suggestions = if asked.suppress_always_allow_rule == Some(true) {
+            Vec::new()
+        } else {
+            asked.permission_suggestions.clone().unwrap_or_default()
+        };
         let (body, shape) = match tool.as_str() {
             QUESTION_TOOL if server.is_empty() => {
                 let question = question_ask(input);
@@ -1245,7 +1372,8 @@ impl State {
                 )
             }
             PLAN_TOOL if server.is_empty() => {
-                let switch = crate::claude_common::plan_switch(self.offers_auto()).to_owned();
+                let switch = crate::claude_common::plan_switch(self.offers_auto(), self.never_ask)
+                    .to_owned();
                 (
                     wire::ask::Body::Plan(plan_ask(&switch)),
                     AnswerShape::Plan { switch },
@@ -1253,7 +1381,7 @@ impl State {
             }
             _ => {
                 let reason = match &asked.decision_reason {
-                    Some(reason) => reason.clone(),
+                    Some(reason) => without_terminal_codes(reason),
                     // Claude names the path a command would write even
                     // inside its folder, where it asks only because writes
                     // need asking; only a path beyond the folder is the
@@ -1274,11 +1402,14 @@ impl State {
                         )),
                         scopes: permission_scopes(&suggestions),
                         reason,
-                        description: written_opt(asked.description.as_deref())
-                            .or_else(|| written_opt(asked.title.as_deref()))
-                            .unwrap_or_default(),
+                        description: without_terminal_codes(
+                            &written_opt(asked.description.as_deref())
+                                .or_else(|| written_opt(asked.title.as_deref()))
+                                .unwrap_or_default(),
+                        ),
                         deny_stops: false,
                         deny_can_stop: true,
+                        default_to_no: asked.default_to_no == Some(true),
                         server: server.clone(),
                     }),
                     AnswerShape::Permission,
@@ -1299,6 +1430,7 @@ impl State {
                     })
                     .collect(),
                 shape,
+                agent: asked.agent_id.clone(),
             },
         );
         let drawn = self
@@ -1335,6 +1467,12 @@ impl State {
                 self.ask_settings(emit);
             }
             Some(Request::Mode(mode)) if ok => self.permission_mode = Some(mode),
+            Some(Request::StopJob(task)) if !ok => {
+                let error = response.response.error.as_deref().unwrap_or_default();
+                if let Some(jobs) = self.jobs.stop_refused(&task, without_terminal_codes(error)) {
+                    self.shared.set_jobs(jobs);
+                }
+            }
             Some(Request::Effort(Some(effort))) if ok => self.effort = Some(effort),
             Some(Request::Effort(None)) if ok => self.ask_settings(emit),
             Some(Request::Settings) if ok => {
@@ -1504,19 +1642,25 @@ fn server_health<'a>(
 }
 
 /// One window's use and reset as reported; a reset later than the one held
-/// means the window has reset, which ends the status stated for it.
+/// means the window has reset, which ends the status stated for it. A use
+/// or reset the report leaves out keeps the one held.
 fn report_window(meter: &mut UsageMeter, utilization: Option<f64>, resets_at_ms: Option<i64>) {
     if let (Some(held), Some(reported)) = (meter.resets_at_ms, resets_at_ms)
         && reported > held
     {
         meter.state = UsageState::Unknown as i32;
     }
-    meter.used_percent = utilization.unwrap_or(0.0) * 100.0;
-    meter.resets_at_ms = resets_at_ms;
+    if let Some(utilization) = utilization {
+        meter.used_percent = utilization * 100.0;
+        meter.used_unknown = false;
+    }
+    if resets_at_ms.is_some() {
+        meter.resets_at_ms = resets_at_ms;
+    }
 }
 
 /// The meter of the window Claude calls `name`, added the first time it
-/// is named.
+/// is named, its use unknown until a report gives it.
 fn claude_window<'a>(usage: &'a mut ClaudeUsage, name: &str) -> &'a mut UsageMeter {
     let at = match usage
         .windows
@@ -1530,7 +1674,10 @@ fn claude_window<'a>(usage: &'a mut ClaudeUsage, name: &str) -> &'a mut UsageMet
                 limit: limit as i32,
                 model: model.map(str::to_owned),
                 provider_name: name.to_owned(),
-                meter: Some(UsageMeter::default()),
+                meter: Some(UsageMeter {
+                    used_unknown: true,
+                    ..Default::default()
+                }),
             });
             usage.windows.len() - 1
         }

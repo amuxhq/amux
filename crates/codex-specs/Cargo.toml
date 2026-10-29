@@ -9,6 +9,7 @@ publish = false
 chrono = { workspace = true }
 codex = { path = "../codex" }
 codex-protocol.workspace = true
+pty-host.workspace = true
 redaction = { workspace = true }
 replay-support = { path = "../replay-support" }
 semver = { workspace = true }

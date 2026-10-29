@@ -1873,29 +1873,31 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     );
 
     // A stranger opening handshake after handshake at the desk's listener
-    // is cut off after ten a minute, before the desk spends anything on
-    // them, while the laptop's link stays up.
+    // is cut off after ten a minute, refused before the desk spends
+    // anything on them, while the laptop's link stays up.
     let desk_addr = edge(&net, "desk").lan_addr().unwrap();
     let mut answered = 0;
-    let mut ignored = 0;
+    let mut refused = 0;
     for _ in 0..12 {
-        match tokio::time::timeout(
+        let outcome = tokio::time::timeout(
             Duration::from_secs(1),
             edge(&net, "stranger").unpinned_channel(desk_addr),
         )
         .await
-        {
-            Ok(Ok(_)) | Ok(Err(_)) if ignored == 0 => answered += 1,
-            _ => ignored += 1,
+        .expect("each handshake is answered at once, if only to refuse it");
+        match outcome {
+            Err(error) if format!("{error:?}").contains("refused") => refused += 1,
+            _ if refused == 0 => answered += 1,
+            other => panic!("answered after the cut-off: {other:?}"),
         }
     }
-    assert!(ignored >= 2, "{answered} answered, {ignored} ignored");
+    assert!(refused >= 2, "{answered} answered, {refused} refused");
     assert_eq!(edge(&net, "laptop").via(desk).await, LiveRoute::Direct);
     peer_inventory_hosts(&edge(&net, "laptop"), desk)
         .await
         .expect("the laptop's link is untouched by the flood");
     println!(
-        "a flood of 12 handshakes: {answered} answered, {ignored} ignored; the link carries on"
+        "a flood of 12 handshakes: {answered} answered, {refused} refused; the link carries on"
     );
 
     net.shutdown().await.unwrap();
@@ -3125,14 +3127,14 @@ async fn a_host_behind_the_relay_rebinds_mid_stream_and_its_session_carries_on()
         .unwrap();
     net.open_gate("one").unwrap();
     until_item(&mut session, "before the move").await;
-    let downs = |host: &str, peer: uuid::Uuid| {
+    let downs = |net: &Net, host: &str, peer: uuid::Uuid| {
         net.link_log(host)
             .unwrap()
             .into_iter()
             .filter(|line| line.peer == peer && line.event == LinkTransition::Down)
             .count()
     };
-    let before = (downs("laptop", desk), downs("desk", laptop));
+    let before = (downs(&net, "laptop", desk), downs(&net, "desk", laptop));
 
     println!("{:?}", net.change_network("desk").unwrap());
     net.open_gate("two").unwrap();
@@ -3141,7 +3143,7 @@ async fn a_host_behind_the_relay_rebinds_mid_stream_and_its_session_carries_on()
         .await
         .expect("the laptop's calls reach the desk at its new address");
     assert_eq!(
-        (downs("laptop", desk), downs("desk", laptop)),
+        (downs(&net, "laptop", desk), downs(&net, "desk", laptop)),
         before,
         "the link between them never went down"
     );

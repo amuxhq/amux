@@ -39,6 +39,10 @@ pub struct AskCard {
     /// Stopping interrupts a running turn. Codex proposes a plan as its
     /// turn ends, so with its plan open there is no turn to stop.
     pub stops_turn: bool,
+    /// Approving must be deliberate: a keyboard view opens the card on its
+    /// refusal and takes no digit shortcut, and nothing pre-selects
+    /// approve.
+    pub default_to_no: bool,
     pub state: CardState,
 }
 
@@ -263,6 +267,16 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
             head,
             OpenAsk::Codex(wire::CodexAsk {
                 body: Some(codex_ask::Body::Plan(_)),
+                ..
+            })
+        ),
+        default_to_no: matches!(
+            head,
+            OpenAsk::Claude(wire::Ask {
+                body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
+                    default_to_no: true,
+                    ..
+                })),
                 ..
             })
         ),
@@ -690,6 +704,12 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
         .iter()
         .filter_map(|d| CodexDecision::try_from(*d).ok())
         .collect();
+    // Codex saves "always" on a tool server's call in the person's config:
+    // that tool, in every project.
+    let always: Vec<String> = match &ask.body {
+        Some(codex_ask::Body::McpTool(tool)) => vec![tool.tool.clone()],
+        _ => vec![],
+    };
     // `files`: what approving for the session covers, when it covers
     // only these files (a patch's) rather than everything like this ask.
     let decision_choices = |similar: Vec<String>, hosts: Vec<String>, files: Vec<String>| {
@@ -716,6 +736,13 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
                     },
                     CodexDecision::Deny => ChoiceOutcome::Deny { stops: false },
                     CodexDecision::Abort => ChoiceOutcome::DenyAndStop,
+                    CodexDecision::ApproveAlways => ChoiceOutcome::AllowAlways {
+                        subjects: always.clone(),
+                        directories: vec![],
+                        mode: String::new(),
+                        mode_name: String::new(),
+                        scope: Scope::User,
+                    },
                     CodexDecision::Unspecified => return None,
                 };
                 Some(choice(

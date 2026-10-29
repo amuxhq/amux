@@ -2,34 +2,34 @@
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 2 recorded 1: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue cfb4734d models=[default{low/medium/high/xhigh/max},opus[1m]{low/medium/high/xhigh/max},claude-fable-5[1m]{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku] commands=64 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue cfb4734d
-snapshot IDLE queue=[] working_on=- at=1787960940069 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+effect catalogue 8572d50d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=55 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 8572d50d
+snapshot IDLE queue=[] working_on=- at=1793267926316 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Reply with exactly CONTROL_OK and nothing else."
-item boundary:1 boundary final at=1787960940072 text="" BOUNDARY_KIND_STARTED session=- version=-
-item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1787960940072 text="Reply with exactly CONTROL_OK and nothing else."
-snapshot WORKING queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1787960940072 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+item boundary:1 boundary final at=1793267926318 text="" BOUNDARY_KIND_STARTED session=- version=-
+item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793267926318 text="Reply with exactly CONTROL_OK and nothing else."
+snapshot WORKING queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1793267926318 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 5 recorded 4: input stdin-3
 effect write "{\"request\":{\"mode\":\"acceptEdits\",\"subtype\":\"set_permission_mode\"},\"request_id\":\"amux-2\",\"type\":\"control_request\"}"
 effect reply stdin-3 accepted
-## 9 recorded 8: input stdin-4
+## 8 recorded 7: input stdin-4
 effect write "{\"request\":{\"model\":\"claude-haiku-4-5-20251001\",\"subtype\":\"set_model\"},\"request_id\":\"amux-3\",\"type\":\"control_request\"}"
 effect reply stdin-4 accepted
-## 11 recorded 10: fact Stream type=system subtype=status uuid=ef5b6543-8589-4648-a50b-85edbf3810da
-snapshot WORKING queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1787960940079 asks=[] session=? model=? model_name=? effort=? mode=acceptEdits context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 15 recorded 14: fact Stream type=system subtype=init uuid=c12365c8-816f-41f0-a66d-4e8c6666fb52
-item boundary:1 boundary final at=1787960940810 text="" BOUNDARY_KIND_STARTED session=156ce36e-fb1a-43a5-bd00-3fe6a7d6afcf version=2.1.247
-snapshot WORKING queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1787960940810 asks=[] session=156ce36e-fb1a-43a5-bd00-3fe6a7d6afcf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=acceptEdits context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 17 recorded 16: fact Stream type=rate_limit_event uuid=60d9d1b8-65f9-4128-8a30-fbf73425b806
-snapshot WORKING queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1787960940982 asks=[] session=156ce36e-fb1a-43a5-bd00-3fe6a7d6afcf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=acceptEdits context=? tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 51 recorded 50: fact Stream type=assistant uuid=3979b524-3956-4950-b356-9ccffd53cb01
-item msg_011CeW3MLa2xZvpfbdqnT7ye:0 thinking final at=1787960942156 text="The user is asking me to reply with exactly \"CONTROL_OK\" and nothing else. This appears to be a test or verification command. I should follow this instruction precisely."
-snapshot WORKING queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1787960942156 asks=[] session=156ce36e-fb1a-43a5-bd00-3fe6a7d6afcf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=acceptEdits context=27907/? tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 53 recorded 52: fact Stream type=assistant uuid=8688123e-9d26-4b73-b83a-3e62a9595984
-item msg_011CeW3MLa2xZvpfbdqnT7ye:1 message final at=1787960942171 text="CONTROL_OK"
-## 55 recorded 54: fact Stream type=result subtype=success uuid=42d0be24-bfbc-4b0e-b8fe-3be6b8c97f46
-item turn:1 turn final at=1787960942266 text="" #1 TURN_OUTCOME_COMPLETED started=1787960940795
-snapshot IDLE queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1787960942266 asks=[] session=156ce36e-fb1a-43a5-bd00-3fe6a7d6afcf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=acceptEdits context=27907/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-turn_end 1 last=msg_011CeW3MLa2xZvpfbdqnT7ye:1
+## 10 recorded 9: fact Stream type=system subtype=status uuid=9a208335-1c34-4f41-a8fe-9e951bec3e3b
+snapshot WORKING queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1793267926348 asks=[] session=? model=? model_name=? effort=? mode=acceptEdits context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 12 recorded 11: fact Stream type=system subtype=init uuid=7ac550ed-3ef4-4800-8518-ed638ee33ccc
+item boundary:1 boundary final at=1793267926439 text="" BOUNDARY_KIND_STARTED session=1da67650-924f-4846-b311-3c726f75235b version=2.1.312
+snapshot WORKING queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1793267926439 asks=[] session=1da67650-924f-4846-b311-3c726f75235b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=acceptEdits context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 16 recorded 15: fact Stream type=assistant uuid=c6e53c97-144e-45de-a87a-be8a155077dd
+item msg_011CgWLC5qw9RH1cLbqvad3s:0 thinking final at=1793267927819 text=""
+snapshot WORKING queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1793267927819 asks=[] session=1da67650-924f-4846-b311-3c726f75235b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=acceptEdits context=23721/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 18 recorded 17: fact Stream type=assistant uuid=f5cf5b91-4c0c-40eb-8348-f814bcf9a60e
+item msg_011CgWLC5qw9RH1cLbqvad3s:1 message final at=1793267927821 text="CONTROL_OK"
+## 20 recorded 19: fact Stream type=rate_limit_event uuid=dd4bb661-abc0-47eb-a953-18333d0a00e5
+snapshot WORKING queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1793267927824 asks=[] session=1da67650-924f-4846-b311-3c726f75235b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=acceptEdits context=23721/? tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 22 recorded 21: fact Stream type=result subtype=success uuid=da8aae8a-aae5-407b-aacc-fd99321aca4d
+item turn:1 turn final at=1793267927832 text="" #1 TURN_OUTCOME_COMPLETED started=1793267926350
+snapshot IDLE queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1793267927832 asks=[] session=1da67650-924f-4846-b311-3c726f75235b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=acceptEdits context=23721/200000 tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 1 last=msg_011CgWLC5qw9RH1cLbqvad3s:1

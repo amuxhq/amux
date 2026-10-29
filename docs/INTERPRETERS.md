@@ -155,9 +155,8 @@ Every snapshot body carries `BackgroundJobs`: each command or task the
 provider runs past the call that started it, with the key of that call's
 item, the command (or the task's description), when it started, and its
 kind (shell, subagent, monitor or other, unspecified while the interpreter
-does not say). The provider's own id for a job stays with the interpreter
-(the Claude interpreters track jobs by task id, Codex's by the command's
-item); no client needs it. The snapshot envelope carries how many there are, which the daemon
+does not say), and its key: the provider's own id for it (Claude's task id,
+the process id Codex lists), which a stop names. The snapshot envelope carries how many there are, which the daemon
 puts on the fleet row. The shared part holds the list and publishes it; each
 interpreter sets it from what its provider says:
 
@@ -185,6 +184,17 @@ ends their jobs; a provider killed alone can leave them running, orphaned,
 and terminal Claude's `/exit` can move the session and its jobs into
 Claude's own background. Once the provider has exited nothing reports on
 such jobs, so amux lists none.
+
+**Stopping one job.** `StopJob` names a job by its key and leaves the agent
+running. Headless Claude sends `stop_task` with the task id; Codex sends
+`thread/backgroundTerminals/terminate` with the thread and process id (ids
+`amux-stop-<key>`). The job reads `stopping` until the provider says it
+ended (Claude's task notification or a list without it; Codex's item
+completing); a refusal (Claude's error, Codex's error or `terminated:
+false`) clears `stopping` and sets `stop_error` in the provider's words,
+and the job can be stopped again. A key no running job has is refused
+unsupported. Terminal Claude has no way to stop one job, and its interpreter
+takes no `StopJob`; `ui_view` offers the stop only on the other two kinds.
 
 ## The catalogue
 
@@ -238,10 +248,10 @@ draw both from these facts alone.
 - **Claude, both kinds.** `ExitPlanMode` is drawn as its plan, keyed by the
   call, once its input carries the plan. The choices are start building,
   start switching permission, and keep planning. The switch is the one
-  Claude's own plan menu makes: auto mode where Claude offers it for the
-  running model, accept edits otherwise; for terminal Claude launched
-  allowing never ask, never ask. Terminal Claude's switch follows from its
-  launch arguments and the host's catalogue. The ask names the switch when
+  Claude's own plan menu makes, by one rule for both kinds: never ask where
+  Claude was launched allowing it, else auto mode where Claude offers it
+  for the running model, else accept edits. Terminal Claude's switch
+  follows from its launch arguments and the host's catalogue. The ask names the switch when
   it opens; an answer agreeing to it names no permission, so it can only
   agree to the one the person was shown. While Claude is in plan mode,
   its `Write`, `Edit`, `MultiEdit` and `NotebookEdit` calls draw nothing:
@@ -387,6 +397,12 @@ transcript row, in transcript order:
   arrives.
 - A prompt's row precedes the rows of the turn it began, so nothing waits for
   it.
+- The facts that end the main thread's work without saying how its asks
+  went (the `Stop` hook, a turn's duration row, a task's notification, an
+  interruption, a prompt typed outside amux) close its asks with their
+  outcome unknown, and spare those a subagent still running in the
+  background raised: Claude keeps that dialog open, so amux does, until the
+  subagent's `SubagentStop`.
 
 The rest of the items a chat shows for terminal Claude do not come from hooks
 either: the agent-message item is written when the interpreter accepts the
@@ -469,6 +485,18 @@ the permission set to auto and records it at once. A prompt sent while a
 plan waits refuses the plan on its hook, which ends the turn, and the prompt
 follows.
 
+The permission hook carries neither of Claude's flags
+(`suppress_always_allow_rule`, `default_to_no`). An answer goes back on
+the hook rather than typed into Claude's menu, so how the menu is laid
+out, or which row it opens on, changes nothing about where an answer
+lands. An ask Claude leaves only to a person comes with no suggestions in
+its hook, and its menu reads Yes / No, with no "don't ask again" row and
+no switch to auto mode (recorded live on Claude 2.1.312 for a write into
+its jobs folder): an ask with no suggestion offers no scope, the switch to
+auto included. A few flagged asks keep their suggestions (some tool-server
+policy and ask-rule paths, read from Claude's source rather than
+recorded), so amux offers a scope there that Claude's own menu leaves out.
+
 Terminal Claude offers no list of models, efforts or commands a program could
 read, so its catalogue, written when it launches, holds the models and
 commands its host's Claude offers in its folder (from `AgentSpec.offered`,
@@ -539,7 +567,11 @@ nothing is inferred.
   it names. The reason is Claude's own, else "outside the allowed
   directories" when the path it blocked is beyond the agent's folder;
   Claude names the path a command would write inside the folder too, and
-  that ask has no reason. An `elicitation` request opens a tool server's form or link, with
+  that ask has no reason. A request marked `suppress_always_allow_rule`
+  offers no scope, though it carries suggestions: Claude would narrow or
+  drop a rule sent back, so amux neither offers nor records one. One marked
+  `default_to_no` says so on the ask (`default_to_no`), and keyboard views
+  open it on its refusal. An `elicitation` request opens a tool server's form or link, with
   an item of its own. Answers go back as control responses. A control
   request of any other subtype is answered with an error.
 - **Offers.** The answer to the agent process's `initialize` request lists
@@ -568,21 +600,57 @@ nothing is inferred.
 - **Turns.** A turn starts with a submission or a `message_start`, and ends on
   the `result` line: completed, interrupted, or failed (with an error item
   for a non-success subtype), with its duration on the turn item.
-  The result dismisses any ask still open.
+  While a message amux handed Claude is unanswered, a result naming none
+  of amux's messages (`user_message_uuids`, `user_message_uuid`), or naming
+  none and not of a person's origin, ends work of Claude's own (a peer's
+  message, a task's notification) and changes nothing of the person's turn,
+  its asks or its calls; one naming amux's message ends the turn whatever
+  began it. The result dismisses the main thread's asks still open. An ask a
+  subagent still running in the background raised (one naming its task's
+  `agent_id`, or whose call hangs under its call) stays open, as do that
+  subagent's calls, which finish after the turn; its asks close when its
+  task's notification says it ended.
 - **Boundaries.** Claude repeats its `init` at every turn; only a process
-  start or a changed session id is a boundary, the latter a fork.
+  start, a reset or a changed session id is a boundary. A
+  `conversation_reset` (a `/clear`, leaving plan mode with its context
+  cleared, a fresh session, onboarding) draws a cleared boundary at once,
+  but its `new_conversation_id` is an id Claude makes up before it makes the
+  session, so nothing takes it: the next `init` names the new session, which
+  the boundary then shows, and which the agent saves (`ProviderSession`)
+  for the next incarnation to resume. A session id that changes with no
+  reset before it is a fork.
 - **Tasks.** A subagent or a shell in the background is reported as task
   events naming the call that started it. They are progress on that call:
   a subagent's steps on its Agent row, and the call stays running, across
   the end of the turn that launched it, until the task's notification ends
   it with the task's answer. A task whose call this interpreter never showed
   is an item of its own.
+- **Claude's words.** Claude says several of its fields may carry terminal
+  escapes. Every field made of its words (the status word, a fallback's
+  and a refusal's reason, a command's output, an ask's reason, description
+  and title, a denial's note, a tool server's message) goes through one
+  cleaner, which drops CSI and OSC sequences in either form, the other
+  escapes and every control character but a newline and a tab. Terminal
+  Claude's `!command` and command output go through the same one.
+- **Subagents' frames.** A frame naming a `parent_tool_use_id` is a
+  subagent's, and is checked for that first: it starts no turn, sets no
+  model or context, and draws no text, thinking, error or interruption of
+  the main thread's; its tool calls are drawn under the call that started
+  it, and its stream events are skipped. A permission ask naming an
+  `agent_id` hangs under that subagent's call too. So a subagent working
+  in the background holds no turn open, and the person's next prompt goes
+  in at once.
 - **Usage.** A `rate_limit_event` states one window's status (its
   `rateLimitType`) and every window's use (`unifiedWindows`). The named
   window takes the status; every other keeps the last status stated for it,
   so a person can see the weekly limit reached while the five-hour one is
   fine, until the window resets: a report whose reset for a window is later
-  than the one held drops the status stated for it, back to unknown. Windows are five-hour or weekly, and a weekly window that belongs to
+  than the one held drops the status stated for it, back to unknown. A
+  report can name a window without its use or reset (a window outside
+  `unifiedWindows` carries both only when Claude has them): a window seen
+  before keeps the use and reset it was last given, and a window first named
+  that way says its use is unknown (`used_unknown`) rather than empty.
+  Windows are five-hour or weekly, and a weekly window that belongs to
   one model carries the model as Claude's own labels name it
   (`seven_day_opus` Opus, `seven_day_sonnet` Sonnet,
   `seven_day_overage_included` Fable); a window amux does not recognise
@@ -640,8 +708,8 @@ answer.
   (following `nextCursor` to the last page, leaving hidden models out) and
   `skills/list`, once per server, and asks `skills/list` again on
   `skills/changed`; the catalogue carries the models with their reasoning
-  efforts, and as commands the slash commands amux runs followed by the
-  skills. A refused or missing answer leaves its list empty.
+  efforts, the slash commands amux runs as its commands, and the skills
+  apart from them. A refused or missing answer leaves its list empty.
 - **Slash commands.** Codex's server has no commands: each command Codex's
   own view offers is client code calling a server method, so amux runs the
   ones it offers itself, from a table in the interpreter (`COMMANDS`):
@@ -649,18 +717,24 @@ answer.
   | Command | What amux sends |
   |---|---|
   | `/compact` | `thread/compact/start`, which runs as a turn of its own |
-  | `/clear` | `thread/start` (ids `amux-clear-<n>`) in the agent's folder with the model and permission in force; the thread it answers becomes the agent's conversation, marked by a cleared boundary, named, and recorded for the next incarnation to resume. The new thread's first turn carries the mode and effort the agent ran with |
+  | `/clear` | `thread/start` (ids `amux-clear-<n>`) in the agent's folder with the model and permission in force; the thread it answers becomes the agent's conversation, marked by a cleared boundary, named, and recorded for the next incarnation to resume. The agent then unsubscribes from the old thread and the child threads it spawned (`thread/unsubscribe`), which Codex otherwise keeps loaded with their tool servers. The new thread's first turn carries the mode and effort the agent ran with |
   | `/review [instructions]` | `review/start` on the thread: the uncommitted changes, or the instructions given. The review runs as a turn |
   | `/init` | A turn with the prompt Codex's own `/init` sends (as Codex 0.161 words it), which writes an `AGENTS.md` unless one exists |
   | `/plan [prompt]` | Plan mode from the next turn, as choosing the mode does; the words after it, if any, are that turn's prompt |
 
-  The prompt's item shows what was typed. A skill named like one of these
-  commands is left out of the catalogue, since `/name` runs the command. A
-  `/` followed by any other skill's name goes to the model as written; any other `/word` (Codex's `/new` among
-  them, which means another conversation, so another agent) is refused as
-  unsupported rather than sent to the model as words. A command's name is a
+  The prompt's item shows what was typed. Any other `/word` (Codex's `/new`
+  among them, which means another conversation, so another agent) is refused
+  as unsupported rather than sent to the model as words; a skill's name after
+  a slash is refused with the mention to type instead. A command's name is a
   word with no further slash, so a prompt that starts with a path
   (`/Users/me/src/lib.rs has a bug`) is words and goes to the model.
+- **Skills** are mentioned, as in Codex's own app: `$name` anywhere in a
+  message or steer, the name a run of letters, digits, `_`, `-` and `:`. The
+  text goes as typed, followed by a `skill` input item (`name` and the
+  `path` of its `SKILL.md` from `skills/list`) for each skill it mentions,
+  once per name. Codex resolves a skill item by its path, so of two skills
+  that share a name (a user's and a repository's), the first `skills/list`
+  answers is the one selected; text alone would select neither.
 - **Asks** are the server's requests:
 
   | Request | Ask |
@@ -707,15 +781,41 @@ answer.
   `two_clients_approval` and `two_clients_steer` hold real sessions of two
   clients on one server; each line carries the client it belongs to, and
   the interpreter reads only amux's.
+- **Child threads' asks.** Codex sends a child thread's approval requests to
+  every client of the server. Each ask keeps the thread that asked: a
+  child's points at no row of the agent's turn (its work is drawn by the
+  child's own subagent row), a child's file-change ask shows the changes the
+  child's own items carried, and the agent's turn end leaves a child's asks
+  open. `serverRequest/resolved` closes an ask whichever thread it names. A
+  tool server's approval belongs to that server's running call (of the tool
+  Codex names, from codex-cli 0.163), else to the newest running call. A
+  child's request amux cannot answer is refused without a row.
 - **Streaming.** Agent-message, plan and reasoning deltas and command output
   are appends to their open items.
 - **Other notices.** A web search that opens a page or looks within one
   carries the page's address, as the step's text too, since Codex says
-  nothing else about it. `configWarning` (configuration Codex found and did
-  not apply) is an error item of kind `configWarning` in Codex's words. A
+  nothing else about it. Codex's warnings are error items of the kind Codex
+  sent them as, in Codex's words, as its own app shows them: `configWarning`
+  (configuration Codex found and did not apply), `deprecationNotice`,
+  `warning` (among them the one that says a request was routed to another
+  model; `model/rerouted` itself changes nothing, since a reroute covers one
+  request), `guardianWarning` (except an approved review's, which repeats
+  its verdict row), `model/verification`'s cybersecurity check (in Codex's
+  fixed words) and `autoApprovalReview/strictReviewRequired`.
+  `model/safetyBuffering/updated` is a safety-check item, hidden, which makes
+  the turn's activity "Running safety checks" while the check runs. A
+  review's `enteredReviewMode` and `exitedReviewMode` items are command-output
+  lines ("Code review started: …", "Code review finished"). A
   goal's progress (`thread/goal/updated`) draws nothing, like its clearing,
   and neither does a turn's moderation verdict (`turn/moderationMetadata`)
   or which turn Codex's own app last showed (`thread/readState/changed`).
+  Hook runs (`hook/started`, `hook/completed`) and hook-prompt items draw
+  nothing: a hook's effect reaches the conversation itself (a blocked call's
+  output names the hook), as for Claude. Nor do sub-agent activity, sleep
+  and function-call-output items. The notifications amux never draws
+  (`DROPPED_NOTIFICATIONS`: hooks, tool-call progress, patch updates, app
+  and environment changes, and the rest) are opted out of at `initialize`
+  (`optOutNotificationMethods`) and dropped should Codex send them anyway.
 - **Agent messages** go to Codex with `thread/inject_items`. Codex reports
   nothing about an injected item, so the interpreter writes the agent-message
   item itself, at acceptance. A probe of codex-cli 0.157.0 settled when the
@@ -784,7 +884,14 @@ cargo run -p codex-specs --bin codex-probe -- probe [--out <dir>]
 
 `claude-probe` runs the `claude` on your `PATH`, or the one named by
 `CLAUDE_REAL_PATH`; `codex-probe` runs `codex` and records with the model its
-specs pin (`CAPTURE_MODEL` in `crates/codex-specs/src/specs.rs`).
+specs pin (`CAPTURE_MODEL` in `crates/codex-specs/src/specs.rs`). A headless
+Claude capture reads only project and local settings and only the tool servers
+its spec names (`--setting-sources project,local --strict-mcp-config`, unless
+the spec names its own sources), so your own plugins, skills, agents,
+permission rules and connected accounts stay out of the recording. A terminal
+capture's transcript drops the rows that copy each API request and scrubs the
+attachments that carry your instructions, environment, attribution and what
+you have installed.
 
 `probe` runs every registered spec live and updates only the evidence its
 outcome permits. A spec that passes gets a verification (version, time, run

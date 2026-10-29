@@ -250,6 +250,15 @@ pub struct CanUseToolRequest {
     pub decision_reason_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requires_user_interaction: Option<bool>,
+    /// The subagent whose call this is; absent for the main thread's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    /// No persistent rule may be offered: Claude narrows or drops one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suppress_always_allow_rule: Option<bool>,
+    /// One stray keystroke must not approve the call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_to_no: Option<bool>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

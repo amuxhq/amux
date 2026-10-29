@@ -231,8 +231,8 @@ pub enum Step {
     /// Claude, Codex).
     Usage(Usage),
     /// The provider's credential is refused, and the turn fails on it:
-    /// headless Claude retries, says so in an error message and ends the
-    /// turn; Codex reconnects a few times and fails the turn.
+    /// headless Claude says so in an error message, without retrying, and
+    /// ends the turn; Codex reconnects a few times and fails the turn.
     AuthFailed { message: String },
     /// Play `steps` this many times in a row, as if written out: a flood
     /// of messages without a script the size of the flood. `{pass}` in the

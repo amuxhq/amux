@@ -469,7 +469,9 @@ Every UDP path leaves from the profile's one dual-stack link socket
 ([`link/socket.rs`](../crates/node/src/link/socket.rs)), which sits under
 quinn: quinn sends to a stand-in address per peer, and the socket puts each
 packet on that peer's carrying path, behind a header naming the other end
-when a forwarder carries it; byte-stream paths frame the same packets. Which
+when a forwarder carries it; byte-stream paths frame the same packets. Who
+each stand-in stands for and where each packet goes are decided in
+[`socket-core`](../crates/socket-core/README.md), with no I/O. Which
 path carries a link is the path machine's decision
 ([`path-core`](../crates/path-core/README.md), one per peer): it probes the
 candidates, moves the link to a better path that answers, keeps the relay's
@@ -629,6 +631,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`daemon-core`](../crates/daemon-core/README.md) | The daemon as one function of its state and an input; it owns the profile store. |
 | [`relay-core`](../crates/relay-core/README.md) | The relay's admission and forwarding decisions, built on the daemon core's link state. |
 | [`path-core`](../crates/path-core/README.md) | Which path one link's packets take: candidates, probes, the carrying path and its hold-down, and which paths the account's plan allows. |
+| [`socket-core`](../crates/socket-core/README.md) | Who the link socket's stand-ins stand for, where each peer's packets go, and where a dial's first flight goes again; the time is an input. |
 | [`agent-core`](../crates/agent-core/README.md) | The agent process around its interpreter: incarnation, timers, queue and the open ask. |
 | [`core-ring`](../crates/core-ring/src/lib.rs) | The bounded ring of a core's inputs since its last checkpoint, in segments beside their checkpoints; the agent process's facts ring is one. |
 | [`supervisor-core`](../crates/supervisor-core/README.md) | The supervisor's update decisions: which binary to fetch, start, set aside, go with or roll back to. |
@@ -711,10 +714,11 @@ The allowed sets encode the layering above:
 | `daemon-core` | at most `core-ring`, `journal`, `store`, `wire` | holds the store, reads journals, records its inputs |
 | `relay-core` | at most `daemon-core` | built from the daemon core's link and routing state |
 | `path-core` | at most `daemon-core` | names links and reports dumps as the daemon core does |
+| `socket-core` | at most `path-core` | names links and paths as the path machine does |
 | `agent-core` | at most `core-ring`, `interpret`, `journal`, `wire` | wraps the interpreter |
 | `supervisor-core` | at most `release`, `version-stamp` | reads release manifests and version stamps |
 | `agent` | `agent-core`, `agent-dir`, `attachments`, `claude`, `claude-protocol`, `codex`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `log-file`, `pty-host`, `wire` | the agent core's driver, and the only production crate that reads a provider |
-| `node` | `agent-dir`, `analytics`, `core-ring`, `daemon-core`, `git-facts`, `interpret`, `journal`, `log-file`, `path-core`, `relay-core`, `release`, `settings`, `store`, `supervisor-core`, `version-stamp`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the dump's per-kind redactor |
+| `node` | `agent-dir`, `analytics`, `core-ring`, `daemon-core`, `git-facts`, `interpret`, `journal`, `log-file`, `path-core`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `version-stamp`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the dump's per-kind redactor |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
 | `ui-state` → `model`, `wire`; `ui-view` → `attachments`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library |
 | `tui` | `attachments`, `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
@@ -722,7 +726,7 @@ The allowed sets encode the layering above:
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` | the daemon in the phone's process |
 | `app-ffi` | `app-embedded`, `app-runtime`, `client`, `model`, `node`, `ui-view` | the C ABI over both |
 | `amux` | `agent`, `agent-dir`, `analytics`, `claude`, `client`, `log-file`, `node`, `settings`, `store`, `tui`, `wire` | the one binary |
-| `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `store`, `supervisor-core`, `ui-state`, `wire` | the properties, explored over the real cores, store and session state |
+| `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `socket-core`, `store`, `supervisor-core`, `ui-state`, `wire` | the properties, explored over the real cores, store and session state |
 | `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `redaction`, `store`, `ui-state`, `ui-view`, `wire` | replays the four stages, judging the models' properties; a debugging tool nothing that ships links |
 | `xtask` | `release`, `version-stamp` | signs releases |
 | `ios-tools` | `app-runtime`, `model`, `ui-view`, `wire` | generates the Swift mirrors |

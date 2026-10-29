@@ -199,7 +199,7 @@ fn sign_in_problem_setup() -> SessionSetup {
     let mut setup = SessionSetup::new(HAIKU, "Reply with exactly PONG and nothing else.");
     setup.options.permission_mode = Some(PermissionMode::Default);
     // A key the API rejects takes precedence over the owner's own sign-in;
-    // two retries keep the recording short.
+    // two retries would keep the recording short, were it retried.
     setup.extra_env = vec![
         ("ANTHROPIC_API_KEY", "sk-ant-api03-amux-spec-invalid"),
         ("CLAUDE_CODE_MAX_RETRIES", "2"),
@@ -207,9 +207,10 @@ fn sign_in_problem_setup() -> SessionSetup {
     setup
 }
 
-/// A rejected credential shows as API errors that Claude retries with a
-/// growing delay, each naming the status and `authentication_failed`, and
-/// then a synthetic assistant message in place of an answer.
+/// A rejected credential is not retried (Claude 2.1.283 retried it, each
+/// retry naming the status and `authentication_failed`; 2.1.312 does not):
+/// a synthetic assistant message carrying the error stands in place of an
+/// answer.
 async fn sign_in_problem(session: &mut SpecSession) {
     let turn = session.turn().await;
     let frames = turn
@@ -229,12 +230,8 @@ async fn sign_in_problem(session: &mut SpecSession) {
         })
         .collect::<Vec<_>>();
     expect!(
-        retries
-            == [
-                (1, 401, "authentication_failed".to_owned()),
-                (2, 401, "authentication_failed".to_owned()),
-            ],
-        "each retry names its attempt, the status and the error: {retries:?}"
+        retries.is_empty(),
+        "a rejected credential is not retried: {retries:?}"
     );
     let synthetic = frames
         .iter()

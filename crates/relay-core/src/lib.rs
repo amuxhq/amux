@@ -82,28 +82,22 @@ impl DialOrder {
     }
 }
 
-/// What a direct link between two hosts' processes says of how it was
-/// made, for settling which link of the pair stays.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Direct {
-    pub order: DialOrder,
-    /// The life of the peer's process the link was opened by.
-    pub instance: [u8; 16],
-}
-
 /// Everything that can happen to the relay, decoded by the driver.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Input {
     /// A link authenticated: by a token naming its account and plan, or by
-    /// a pinned key, which no plan governs (`tier: None`). `direct` is set
-    /// for a host's own network link to a peer device, and `advertised` is
+    /// a pinned key, which no plan governs (`tier: None`). `instance` is
+    /// the life of the host's process that opened it; `direct`, set for a
+    /// host's own network link to a peer device, how that link was dialled,
+    /// for settling which link of a crossed dial stays; and `advertised`
     /// the neighbors its handshake listed to the peer.
     LinkUp {
         link: LinkId,
         user: UserId,
         host: HostId,
         tier: Option<Tier>,
-        direct: Option<Direct>,
+        instance: [u8; 16],
+        direct: Option<DialOrder>,
         advertised: Vec<HostId>,
     },
     /// The link is gone. Its pairs end with it, or move to another link
@@ -199,7 +193,8 @@ struct RelayLink {
     user: UserId,
     host: HostId,
     tier: Option<Tier>,
-    direct: Option<Direct>,
+    instance: [u8; 16],
+    direct: Option<DialOrder>,
     /// Its token expired and no fresh one has come.
     expired: bool,
 }
@@ -294,7 +289,8 @@ struct Arrival {
     user: UserId,
     host: HostId,
     tier: Option<Tier>,
-    direct: Option<Direct>,
+    instance: [u8; 16],
+    direct: Option<DialOrder>,
 }
 
 /// What the current step touched; cleared as each step begins.
@@ -404,6 +400,7 @@ impl Relay {
                 user,
                 host,
                 tier,
+                instance,
                 direct,
                 advertised,
             } => self.link_up(
@@ -412,6 +409,7 @@ impl Relay {
                     user,
                     host,
                     tier,
+                    instance,
                     direct,
                 },
                 &advertised,
@@ -441,8 +439,10 @@ impl Relay {
 
     /// A link came up. Of two direct links between the same two processes
     /// the preferred one stays, whichever came first; a link from a later
-    /// life of the peer's process replaces the earlier life's links, which
-    /// are dead whether or not they have closed yet.
+    /// life of a host's process replaces the earlier life's links, which
+    /// are dead whether or not they have closed yet: a host killed, its
+    /// links silent until they time out, is carried on its new links at
+    /// once.
     fn link_up(
         &mut self,
         link: LinkId,
@@ -454,6 +454,7 @@ impl Relay {
             user,
             host,
             tier,
+            instance,
             direct,
         } = arrival;
         let first = !self.adjacency.holds(user, host);
@@ -462,29 +463,35 @@ impl Relay {
         if let Some((again, partners)) = self.forget_link(link) {
             orphaned.push((again.user, again.host, link, partners));
         }
-        if let Some(direct) = direct {
-            let duplicates: Vec<(LinkId, Direct)> = self
-                .adjacency
-                .links_of(user, host)
-                .into_iter()
-                .filter_map(|other| Some((other, self.links.get(&other)?.direct?)))
-                .collect();
-            if duplicates.iter().any(|(_, held)| {
-                held.instance == direct.instance
-                    && (held.order == DialOrder::Preferred || held.order == direct.order)
-            }) {
-                out.push(Output::RefuseLink { link });
-                for (user, host, gone, partners) in orphaned {
-                    self.relink(user, host, gone, partners, out);
-                }
-                return;
+        let held: Vec<(LinkId, [u8; 16], Option<DialOrder>)> = self
+            .adjacency
+            .links_of(user, host)
+            .into_iter()
+            .filter_map(|other| {
+                let held = self.links.get(&other)?;
+                Some((other, held.instance, held.direct))
+            })
+            .collect();
+        if let Some(order) = direct
+            && held.iter().any(|(_, life, held)| {
+                *life == instance
+                    && held.is_some_and(|held| held == DialOrder::Preferred || held == order)
+            })
+        {
+            out.push(Output::RefuseLink { link });
+            for (user, host, gone, partners) in orphaned {
+                self.relink(user, host, gone, partners, out);
             }
-            for (displaced, _) in duplicates {
-                if let Some((gone, partners)) = self.forget_link(displaced) {
-                    orphaned.push((gone.user, gone.host, displaced, partners));
-                }
-                out.push(Output::Displace { link: displaced });
+            return;
+        }
+        for (displaced, life, held) in held {
+            if life == instance && (direct.is_none() || held.is_none()) {
+                continue;
             }
+            if let Some((gone, partners)) = self.forget_link(displaced) {
+                orphaned.push((gone.user, gone.host, displaced, partners));
+            }
+            out.push(Output::Displace { link: displaced });
         }
         let advertised: BTreeSet<HostId> = advertised.iter().copied().collect();
         let current = self.adjacency.neighbors(user);
@@ -510,6 +517,7 @@ impl Relay {
                 user,
                 host,
                 tier,
+                instance,
                 direct,
                 expired: false,
             },
@@ -517,6 +525,29 @@ impl Relay {
         self.adjacency.add(user, host, link);
         for (user, host, gone, partners) in orphaned {
             self.relink(user, host, gone, partners, out);
+        }
+        // Packets for the host go on its newest link, and so do the pairs
+        // its older links were in: a host opens another link here when it
+        // has given up on the last one, which may never send again to
+        // move them itself.
+        for older in self.adjacency.links_of(user, host) {
+            if older == link {
+                continue;
+            }
+            let partners = self.pairs.get(&older).cloned().unwrap_or_default();
+            for partner in partners {
+                if self.may_pair(partner, link).is_err() {
+                    continue;
+                }
+                self.unpair(partner, older);
+                out.push(Output::Unforward {
+                    a: partner,
+                    b: older,
+                    reason: ForwardRefusal::NoRoute,
+                    tell_both: false,
+                });
+                self.pair(partner, link, out);
+            }
         }
         match tier {
             Some(Tier::Pro) => self.ask_free_to_refresh(user, out),
@@ -565,6 +596,18 @@ impl Relay {
             }
         }
         partners
+    }
+
+    /// Removes the pair between `a` and `b` from the table.
+    fn unpair(&mut self, a: LinkId, b: LinkId) {
+        for (from, to) in [(a, b), (b, a)] {
+            if let Some(theirs) = self.pairs.get_mut(&from) {
+                theirs.remove(&to);
+                if theirs.is_empty() {
+                    self.pairs.remove(&from);
+                }
+            }
+        }
     }
 
     /// The pairs `gone`, a link of `host`, was in: each moves to the link
@@ -911,6 +954,7 @@ mod tests {
                 user,
                 host,
                 tier,
+                instance: [0; 16],
                 direct: None,
                 advertised,
             },
@@ -940,10 +984,8 @@ mod tests {
                 user: ALICE,
                 host,
                 tier: None,
-                direct: Some(Direct {
-                    order,
-                    instance: [instance; 16],
-                }),
+                instance: [instance; 16],
+                direct: Some(order),
                 advertised: advertised.to_vec(),
             },
         )
@@ -972,6 +1014,7 @@ mod tests {
                 user: ALICE,
                 host: LAPTOP,
                 tier: None,
+                instance: [0; 16],
                 direct: None,
                 advertised: vec![DESK],
             },
@@ -984,6 +1027,7 @@ mod tests {
                 user: ALICE,
                 host: LAPTOP,
                 tier: None,
+                instance: [0; 16],
                 direct: None,
                 advertised: vec![DESK],
             },
@@ -1010,6 +1054,7 @@ mod tests {
                 user: ALICE,
                 host: LAPTOP,
                 tier: None,
+                instance: [0; 16],
                 direct: None,
                 advertised: vec![PHONE, LAPTOP],
             },
@@ -1460,6 +1505,64 @@ mod tests {
             ]
         );
         assert_eq!(pairs(&relay), vec![(2, 9)]);
+    }
+
+    #[test]
+    fn a_hosts_link_from_its_next_life_replaces_the_dead_lifes_and_takes_its_pairs() {
+        let mut relay = relay();
+        up(&mut relay, 9, ALICE, LAPTOP, Some(Tier::Pro));
+        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
+        assert_eq!(packet(&mut relay, 9, DESK), vec![forward(9, 1)]);
+        // The desk is killed: its link stays silent here, and the desk
+        // starts again and links afresh.
+        let advertised = relay.neighbors(ALICE);
+        assert_eq!(
+            step(
+                &mut relay,
+                Input::LinkUp {
+                    link: LinkId(2),
+                    user: ALICE,
+                    host: DESK,
+                    tier: Some(Tier::Pro),
+                    instance: [1; 16],
+                    direct: None,
+                    advertised,
+                },
+            ),
+            vec![
+                Output::Displace { link: LinkId(1) },
+                unforward(9, 1, ForwardRefusal::NoRoute, false),
+                forward(9, 2),
+            ]
+        );
+        assert_eq!(pairs(&relay), vec![(2, 9)]);
+        // Another link of the same life is kept beside it, and the pairs
+        // move onto it at once rather than when it first sends.
+        let advertised = relay.neighbors(ALICE);
+        assert_eq!(
+            step(
+                &mut relay,
+                Input::LinkUp {
+                    link: LinkId(3),
+                    user: ALICE,
+                    host: DESK,
+                    tier: Some(Tier::Pro),
+                    instance: [1; 16],
+                    direct: None,
+                    advertised,
+                },
+            ),
+            vec![
+                unforward(9, 2, ForwardRefusal::NoRoute, false),
+                forward(9, 3)
+            ]
+        );
+        assert_eq!(pairs(&relay), vec![(3, 9)]);
+        assert_eq!(
+            step(&mut relay, Input::LinkDown { link: LinkId(2) }),
+            Vec::new(),
+            "the older link going takes nothing with it"
+        );
     }
 
     #[test]

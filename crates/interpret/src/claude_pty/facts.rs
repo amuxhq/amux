@@ -192,6 +192,10 @@ impl State {
                 }
                 return;
             }
+            AgentFact::ToolsWithheld => {
+                self.provider.tools_withheld = true;
+                return;
+            }
         };
         let provider = &mut self.provider;
         provider.version = (!version.is_empty()).then_some(version);
@@ -205,10 +209,7 @@ impl State {
     /// launched allowing it, else auto mode where its model offers it, else
     /// accept edits.
     fn plan_switch(&self) -> String {
-        if self.provider.never_ask {
-            return crate::claude_common::NEVER_ASK.to_owned();
-        }
-        crate::claude_common::plan_switch(self.offers_auto()).to_owned()
+        crate::claude_common::plan_switch(self.offers_auto(), self.provider.never_ask).to_owned()
     }
 
     /// A terminal offers nothing a program can read: its models and
@@ -350,12 +351,6 @@ impl State {
             }
             Payload::PostModelSwitch(_) | Payload::Notification(_) => {}
             Payload::Stop(stop) => {
-                let background: Vec<String> = stop
-                    .background_tasks
-                    .iter()
-                    .flatten()
-                    .map(|task| task.id.clone())
-                    .collect();
                 if let Some(tasks) = &stop.background_tasks {
                     let now = self.shared.now_ms();
                     let jobs = self.jobs.listed(
@@ -371,18 +366,7 @@ impl State {
                     self.shared.set_jobs(jobs);
                 }
                 self.running.clear();
-                // A subagent Claude still runs in the background keeps the
-                // dialog it raised open in Claude's own view: so does amux.
-                for key in self.open_ask_keys() {
-                    let in_background = self
-                        .asks
-                        .get(&key)
-                        .and_then(|meta| meta.agent.as_ref())
-                        .is_some_and(|agent| background.contains(agent));
-                    if !in_background {
-                        self.close(emit, &key, Decision::unknown());
-                    }
-                }
+                self.close_main_threads_asks(emit);
             }
             // A subagent finished: it leaves the background list, and a
             // dialog it left open is over.
@@ -584,7 +568,9 @@ impl State {
             _ => {
                 // Claude's own menu offers to switch to auto mode in
                 // manual mode, after the scope choices: so does the card.
-                if self.menu_offers_auto() {
+                // An ask it leaves only to a person comes with no
+                // suggestion, and its menu reads Yes / No alone.
+                if self.menu_offers_auto() && !offered.is_empty() {
                     offered.push(PermissionUpdate::SetMode {
                         mode: PermissionMode::Auto,
                         destination: PermissionUpdateDestination::Session,
@@ -604,6 +590,7 @@ impl State {
                         description: String::new(),
                         deny_stops: false,
                         deny_can_stop: true,
+                        default_to_no: false,
                         server: server.clone(),
                     }),
                     AnswerShape::Permission,
@@ -1430,7 +1417,7 @@ impl State {
         // after the hook that opened one, since rows are read by polling.
         // Any other prompt means the call under the ask is over.
         if self.shared.awaiting_reflection().is_empty() {
-            self.close_all_unknown(emit);
+            self.close_main_threads_asks(emit);
         }
         // The submission began a turn, but another may have run and ended
         // since: a background task's notification answered first.
@@ -1552,15 +1539,16 @@ impl State {
     /// Agent call that launched it and carries its answer; the model answers
     /// the notification in a turn of its own.
     fn task_notification(&mut self, emit: &mut Emit, text: &str, at_ms: Option<i64>) {
-        self.close_all_unknown(emit);
-        self.local_turn = false;
-        self.shared.turn_started();
-        // The task it reports on is over: it leaves the background list.
+        // The task it reports on is over: it leaves the background list,
+        // and the dialogs it left with the main thread's.
         if let Some(task) = between(text, "task-id")
             && let Some(jobs) = self.jobs.ended(task)
         {
             self.shared.set_jobs(jobs);
         }
+        self.close_main_threads_asks(emit);
+        self.local_turn = false;
+        self.shared.turn_started();
         let Some(id) = between(text, "tool-use-id") else {
             return;
         };
@@ -1591,7 +1579,7 @@ impl State {
 
     fn interrupted(&mut self, emit: &mut Emit, key: String, at_ms: Option<i64>) {
         self.running.clear();
-        self.close_all_unknown(emit);
+        self.close_main_threads_asks(emit);
         // Claude hands prompts still in its own queue back to its composer.
         self.shared.steers_lost();
         // A subagent in the background outlives the interrupted turn.
@@ -1804,7 +1792,7 @@ impl State {
                 {
                     return;
                 }
-                self.close_all_unknown(emit);
+                self.close_main_threads_asks(emit);
                 let duration = turn.duration_ms.map(|duration| duration as i64);
                 self.end_turn(emit, TurnOutcome::Completed, at_ms, duration);
             }

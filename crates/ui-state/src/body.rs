@@ -92,6 +92,9 @@ impl ItemBody {
             },
             ItemBody::Codex(kind) => match kind {
                 Codex::Prompt(_) => ItemClass::Prompt,
+                Codex::SafetyCheck(check) if check.running => ItemClass::SafetyCheck,
+                Codex::SafetyCheck(_) => ItemClass::Silent,
+                Codex::CommandOutput(_) => ItemClass::Other,
                 Codex::Steer(_) => ItemClass::Steer,
                 Codex::Message(text) | Codex::WorkingNote(text) => ItemClass::Prose {
                     complete: text.complete,
@@ -105,7 +108,7 @@ impl ItemBody {
                 Codex::Boundary(_) => ItemClass::Boundary,
                 Codex::AgentMessage(_) => ItemClass::AgentMessage,
                 Codex::McpStartup(_) | Codex::TurnDiff(_) => ItemClass::Silent,
-                Codex::Reroute(_) | Codex::Unrecognized(_) | Codex::Verdict(_) => ItemClass::Other,
+                Codex::Unrecognized(_) | Codex::Verdict(_) => ItemClass::Other,
                 Codex::Ask(_) | Codex::Plan(_) => ItemClass::Ask,
             },
             ItemBody::Undecodable => ItemClass::Other,
@@ -134,6 +137,8 @@ pub enum ItemClass {
     },
     Error,
     Compacting,
+    /// The provider holds the answer for a slower safety check.
+    SafetyCheck,
     Boundary,
     AgentMessage,
     /// An ask that is the work, or a plan put to the person. It is a
@@ -292,8 +297,10 @@ pub struct AgentState {
     /// The models the agent's catalogue offers, each with its efforts;
     /// empty until the catalogue is fetched, and always for terminal Claude.
     pub models: Vec<OfferedModel>,
-    /// The commands (Codex: skills) the agent's catalogue offers.
+    /// The commands the agent's catalogue offers.
     pub commands: Vec<OfferedCommand>,
+    /// The skills Codex's catalogue offers, mentioned as `$name`.
+    pub skills: Vec<wire::OfferedSkill>,
     /// The permissions and modes the agent's catalogue offers.
     pub permissions: Vec<wire::OfferedPermission>,
     pub modes: Vec<wire::OfferedMode>,

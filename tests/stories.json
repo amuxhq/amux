@@ -236,6 +236,11 @@
       "clients": ["phone", "terminal"]
     },
     {
+      "name": "chat.overview-stop",
+      "shows": "Stopping one background job from the overview: a window naming the job asks first and says the agent keeps running.",
+      "clients": ["phone", "terminal"]
+    },
+    {
       "name": "chat.settings",
       "shows": "Changing the agent's model, effort or permission from its chat.",
       "clients": ["phone", "terminal"]

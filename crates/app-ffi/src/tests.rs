@@ -1361,6 +1361,7 @@ fn a_new_agents_settings_and_picks_come_from_the_shared_view() {
         "commands": [],
         "permissions": [],
         "modes": [],
+        "skills": [],
     })
     .to_string());
     let chosen = c(r#"{"model": "astra", "effort": "high", "permission": null, "mode": null}"#);
@@ -1412,4 +1413,28 @@ fn a_forms_problems_come_from_the_shared_view() {
     let broken = c("{");
     // SAFETY: the strings live for the call.
     assert!(unsafe { amux_form_problems(fields.as_ptr(), broken.as_ptr()) }.is_null());
+}
+
+#[test]
+fn the_composers_rules_come_from_the_shared_view() {
+    let commands = c(&json!([
+        {"name": "compact", "description": "", "argument_hint": "", "source": "", "sigil": "/", "anywhere": false},
+        {"name": "autopilot", "description": "", "argument_hint": "", "source": "", "sigil": "$", "anywhere": true},
+    ])
+    .to_string());
+    let draft = c("please use $auto");
+    // SAFETY: the strings live for the call.
+    let matches = take(unsafe { amux_command_matches(commands.as_ptr(), draft.as_ptr()) });
+    assert_eq!(matches[0]["command"]["name"], json!("autopilot"));
+    assert_eq!(matches[0]["picked"], json!("please use $autopilot "));
+    let broken = c("{");
+    // SAFETY: the strings live for the call.
+    assert!(unsafe { amux_command_matches(broken.as_ptr(), draft.as_ptr()) }.is_null());
+    let long = c(&"line\n".repeat(8));
+    let short = c("two\nlines");
+    // SAFETY: the strings live for the call.
+    assert!(unsafe { amux_pastes_as_attachment(long.as_ptr()) });
+    // SAFETY: the strings live for the call.
+    assert!(!unsafe { amux_pastes_as_attachment(short.as_ptr()) });
+    assert_eq!(amux_attachment_limit(), wire::ATTACHMENT_SIZE_LIMIT as u64);
 }

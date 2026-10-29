@@ -46,7 +46,7 @@ const FIRST_SCREEN_WAIT: Duration = Duration::from_millis(500);
 /// The request ids of the agent's own Codex handshake; the interpreter's
 /// requests are numbered amux-N.
 const CODEX_INITIALIZE: &str = "agent-initialize";
-const CODEX_THREAD: &str = "agent-thread";
+const CODEX_THREAD: &str = interpret::codex::THREAD_REQUEST;
 /// The longest a starting Codex server is waited for to listen.
 const CODEX_LISTEN_WAIT: Duration = Duration::from_secs(30);
 /// How long a resume keeps asking for a thread another Codex server still
@@ -174,7 +174,15 @@ impl Provider {
         events: mpsc::Sender<ProviderEvent>,
     ) -> Result<Self, ProviderError> {
         let (session, resume) = claude_session(spec, dir)?;
-        let (args, settings) = claude_launch(spec, dir, false)?;
+        let (args, settings, withheld) = claude_launch(spec, dir, false)?;
+        if withheld {
+            let _ = events
+                .send(ProviderEvent::Fact(Fact {
+                    channel: Channel::Agent,
+                    payload: interpret::claude_pty::tools_withheld_fact(),
+                }))
+                .await;
+        }
         let mut command = tokio::process::Command::new(&spec.provider_command);
         command
             .args(&args)
@@ -207,6 +215,19 @@ impl Provider {
             source,
         })?;
         let pid = child.id();
+        // Claude finishes its turn after its input closes: tethered, it is
+        // asked to finish when the agent dies instead.
+        #[cfg(unix)]
+        let tether = match pty_host::Tether::new(&child) {
+            Ok(tether) => tether,
+            Err(source) => {
+                let _ = child.start_kill();
+                return Err(ProviderError::Spawn {
+                    command: "Claude's tether".to_owned(),
+                    source,
+                });
+            }
+        };
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
 
@@ -234,6 +255,8 @@ impl Provider {
                     child.wait().await
                 }
             };
+            #[cfg(unix)]
+            tether.release().await;
             let _ = tokio::time::timeout(TRAILING_OUTPUT, reader).await;
             let code = status.ok().and_then(|status| status.code());
             let _ = exited.send(ProviderEvent::Exited(code)).await;
@@ -308,7 +331,7 @@ impl Provider {
         let pid = child.id();
         #[cfg(unix)]
         let tether = match &listen {
-            codex::host::Listen::Unix(_) => match codex::host::Tether::new(&child) {
+            codex::host::Listen::Unix(_) => match pty_host::Tether::new(&child) {
                 Ok(tether) => Some(tether),
                 Err(source) => {
                     let _ = child.start_kill();
@@ -363,7 +386,7 @@ impl Provider {
                     result: Err(error),
                     ..
                 }) = &decoded
-                    && id == CODEX_THREAD
+                    && (id == CODEX_THREAD || id == interpret::codex::RESUME_REQUEST)
                     && error.message.contains("active writer")
                     && tokio::time::Instant::now() < writer_wait
                     && held.send(()).is_ok()
@@ -385,8 +408,7 @@ impl Provider {
                     // `/clear` started, is the session the next incarnation
                     // resumes.
                     Some((RequestId::String(id), Some(result)))
-                        if id == CODEX_THREAD
-                            || id.starts_with(interpret::codex::CLEAR_REQUEST) =>
+                        if interpret::codex::starts_a_thread(&id) =>
                     {
                         if let Ok(answer) = codex_protocol::result::<
                             codex_protocol::server::ThreadResponse,
@@ -457,6 +479,10 @@ impl Provider {
                     },
                     capabilities: Some(Capabilities {
                         experimental_api: Some(true),
+                        opt_out_notification_methods: interpret::codex::DROPPED_NOTIFICATIONS
+                            .iter()
+                            .map(|method| (*method).to_owned())
+                            .collect(),
                         extra: Default::default(),
                     }),
                     extra: Default::default(),
@@ -469,20 +495,29 @@ impl Provider {
             {
                 return;
             }
+            // The resume leaves the turns out, as Codex's own app does: a
+            // long thread's whole history can outgrow one message, and the
+            // interpreter needs only the thread.
             let start = match thread {
-                Some(thread_id) => ClientRequest::ThreadResume(ThreadResumeParams {
-                    thread_id,
-                    cwd: Some(cwd),
-                    model,
-                    ..Default::default()
-                }),
-                None => ClientRequest::ThreadStart(ThreadStartParams {
-                    cwd: Some(cwd),
-                    model,
-                    ..Default::default()
-                }),
+                Some(thread_id) => ClientMessage::request(
+                    RequestId::String(interpret::codex::RESUME_REQUEST.into()),
+                    ClientRequest::ThreadResume(ThreadResumeParams {
+                        thread_id,
+                        cwd: Some(cwd),
+                        model,
+                        exclude_turns: Some(true),
+                        ..Default::default()
+                    }),
+                ),
+                None => ClientMessage::request(
+                    RequestId::String(CODEX_THREAD.into()),
+                    ClientRequest::ThreadStart(ThreadStartParams {
+                        cwd: Some(cwd),
+                        model,
+                        ..Default::default()
+                    }),
+                ),
             };
-            let start = ClientMessage::request(RequestId::String(CODEX_THREAD.into()), start);
             let initialized = ClientMessage::notification(ClientNotification::Initialized(()));
             let _ = send_codex(&handshake, &codex_protocol::encode(&initialized)).await;
             let start = codex_protocol::encode(&start);
@@ -545,7 +580,15 @@ impl Provider {
             }))
             .await;
         let private = dir.join(dir::PRIVATE);
-        let (mut args, settings) = claude_launch(spec, dir, true)?;
+        let (mut args, settings, withheld) = claude_launch(spec, dir, true)?;
+        if withheld {
+            let _ = events
+                .send(ProviderEvent::Fact(Fact {
+                    channel: Channel::Agent,
+                    payload: interpret::claude_pty::tools_withheld_fact(),
+                }))
+                .await;
+        }
         args.extend([
             if resume { "--resume" } else { "--session-id" }.to_owned(),
             session.clone(),
@@ -682,21 +725,17 @@ impl Provider {
                 let request = codex_turn_input(&request, &attachments, &self.dir.join(dir::BLOBS))?;
                 self.write_line(&request).await
             }
+            Effect::ProviderSession { id } => {
+                self.adopt_session(&id).await;
+                Ok(())
+            }
             Effect::FollowTranscript { path } => {
                 let path = PathBuf::from(path);
                 // A transcript is named by its session. A new one (a
                 // `/clear`, or a resume Claude ran itself) is the session
                 // the next incarnation resumes.
                 if let Some(session) = path.file_stem().and_then(|stem| stem.to_str()) {
-                    let file = self.dir.join(dir::PRIVATE).join(dir::PROVIDER_SESSION);
-                    if std::fs::read_to_string(&file)
-                        .ok()
-                        .as_deref()
-                        .map(str::trim)
-                        != Some(session)
-                    {
-                        persist(&self.events, &file, session).await;
-                    }
+                    self.adopt_session(session).await;
                 }
                 self.follow(path);
                 Ok(())
@@ -776,19 +815,23 @@ impl Provider {
                     path,
                 } => {
                     prose.push_str(&element);
-                    let Some(Of::Image(blob)) = &attachment.of else {
+                    let Some(Of::Image(_)) = &attachment.of else {
                         continue;
                     };
                     // The element names the file, so a model can still
-                    // read an image whose bytes cannot be inlined.
+                    // read an image whose bytes cannot be inlined, or are
+                    // not an image Claude reads.
                     let Some(bytes) = path.and_then(|path| std::fs::read(path).ok()) else {
+                        continue;
+                    };
+                    let Some(media_type) = attachments::native_image(&bytes) else {
                         continue;
                     };
                     blocks.push(text_block(std::mem::take(&mut prose)));
                     blocks.push(ContentBlock::Image {
                         source: ImageSource {
                             r#type: ImageSourceType::Base64,
-                            media_type: blob.mime.clone(),
+                            media_type: media_type.to_owned(),
                             data: base64(&bytes),
                             extensions: Default::default(),
                         },
@@ -870,6 +913,22 @@ impl Provider {
             )),
             Input::Closed => Err(closed()),
         }
+    }
+
+    /// Claude's session is now `session`: the one the next incarnation
+    /// resumes, saved when it differs from the saved one, and the one later
+    /// user messages name.
+    async fn adopt_session(&mut self, session: &str) {
+        let file = self.dir.join(dir::PRIVATE).join(dir::PROVIDER_SESSION);
+        if std::fs::read_to_string(&file)
+            .ok()
+            .as_deref()
+            .map(str::trim)
+            != Some(session)
+        {
+            persist(&self.events, &file, session).await;
+        }
+        session.clone_into(&mut self.session);
     }
 
     /// Reads a transcript's rows as they are written. A transcript an
@@ -1091,14 +1150,16 @@ fn codex_turn_input(
             attachment,
             attachments::blob_path(attachment, blobs).as_deref(),
         )));
+        // Codex reads only some image types and swaps any other for a note
+        // the person never sees; the element names that file instead.
         if let Some(wire::attachment::Of::Image(blob)) = &attachment.of {
-            input.push(UserInput::LocalImage(LocalImageInput {
-                path: blobs
-                    .join(interpret::to_hex(&blob.hash))
-                    .to_string_lossy()
-                    .into_owned(),
-                extra: Default::default(),
-            }));
+            let path = blobs.join(interpret::to_hex(&blob.hash));
+            if attachments::native_image_at(&path).is_some() {
+                input.push(UserInput::LocalImage(LocalImageInput {
+                    path: path.to_string_lossy().into_owned(),
+                    extra: Default::default(),
+                }));
+            }
         }
     }
     Ok(codex_protocol::encode(&request))
@@ -1183,15 +1244,30 @@ fn closed() -> io::Error {
 
 /// Claude's launch arguments from the spec, less any `--settings`, plus
 /// amux's tool server, and the one settings value the agent passes
-/// instead: the user's settings with the agent's merged over them. Every
+/// instead: the user's settings with the agent's merged over them; and
+/// whether amux's tool server was left out because the organization
+/// manages Claude's MCP servers, so Claude would refuse to start with it. Every
 /// Claude accepts messages from other sessions at once, so a
 /// bypass-permissions agent does not hold an agent message behind an
 /// approval nobody is there to give, and runs amux's own tools without
 /// asking; terminal Claude also reports its hook events to the agent
 /// through the hook binary at the install path.
-fn claude_launch(spec: &AgentSpec, dir: &Path, hooks: bool) -> io::Result<(Vec<String>, String)> {
+fn claude_launch(
+    spec: &AgentSpec,
+    dir: &Path,
+    hooks: bool,
+) -> io::Result<(Vec<String>, String, bool)> {
     let mut args = spec.provider_args.clone();
-    let tools = tool_server(spec, dir);
+    let managed_folder = spec
+        .provider_env
+        .get(claude::launch::MANAGED_SETTINGS_PATH_ENV)
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os(claude::launch::MANAGED_SETTINGS_PATH_ENV).map(PathBuf::from));
+    let mut tools = tool_server(spec, dir);
+    let withheld = tools.is_some() && claude::launch::managed_mcp(managed_folder.as_deref());
+    if withheld {
+        tools = None;
+    }
     if let Some((command, server_args)) = &tools {
         args.extend([
             "--mcp-config".to_owned(),
@@ -1231,7 +1307,7 @@ fn claude_launch(spec: &AgentSpec, dir: &Path, hooks: bool) -> io::Result<(Vec<S
         ..Default::default()
     };
     let settings = claude::launch::merged_settings(user, &managed).into_value();
-    Ok((args, settings.to_string()))
+    Ok((args, settings.to_string(), withheld))
 }
 
 /// An absolute path as Claude's permission rules name it: Claude matches
@@ -1428,25 +1504,39 @@ fn provider_session(spec: &AgentSpec, dir: &Path) -> io::Result<(String, bool)> 
 }
 
 /// Claude's session for this agent, and whether this incarnation resumes
-/// it. Claude writes a session's transcript once the session begins; one
-/// that ended before (at its folder-trust dialog, or stopped before its
-/// first prompt) has none, and Claude refuses to resume it. It starts under
-/// the same id instead.
+/// it, in both modes. Claude writes a session's transcript at its first
+/// message; one that ended before (at its folder-trust dialog, or stopped
+/// before its first prompt) has none, and starts under the same id. One
+/// stopped as it wrote its first message can hold only metadata, which
+/// Claude neither resumes nor starts again under its id: a new id replaces
+/// it.
 fn claude_session(spec: &AgentSpec, dir: &Path) -> io::Result<(String, bool)> {
     let (session, resume) = provider_session(spec, dir)?;
-    if resume && !session_began(spec, &session) {
-        eprintln!(
-            "amux agent: Claude's session {session} never began; starting it rather than resuming"
-        );
+    if !resume {
         return Ok((session, false));
     }
-    Ok((session, resume))
+    match session_file(spec, &session) {
+        claude::history::SessionFile::Conversation => Ok((session, true)),
+        claude::history::SessionFile::Missing => {
+            eprintln!(
+                "amux agent: Claude's session {session} never began; starting it rather than resuming"
+            );
+            Ok((session, false))
+        }
+        claude::history::SessionFile::Empty => {
+            let (new, resume) = new_session(&dir.join(dir::PRIVATE).join(dir::PROVIDER_SESSION))?;
+            eprintln!(
+                "amux agent: Claude's session {session} holds no conversation; starting session {new} instead"
+            );
+            Ok((new, resume))
+        }
+    }
 }
 
-/// Whether Claude has a transcript for this session: resuming needs one.
-/// Claude keeps them under CLAUDE_CONFIG_DIR, as the spec or this process
-/// sets it, else ~/.claude.
-fn session_began(spec: &AgentSpec, session: &str) -> bool {
+/// What Claude has for this session. Claude keeps its transcripts under
+/// CLAUDE_CONFIG_DIR, as the spec or this process sets it, else ~/.claude;
+/// with neither known, the session is taken to have one.
+fn session_file(spec: &AgentSpec, session: &str) -> claude::history::SessionFile {
     const CONFIG_DIR: &str = "CLAUDE_CONFIG_DIR";
     let configured = spec
         .provider_env
@@ -1456,9 +1546,9 @@ fn session_began(spec: &AgentSpec, session: &str) -> bool {
     let Some(config) = configured
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".claude")))
     else {
-        return true;
+        return claude::history::SessionFile::Conversation;
     };
-    claude::history::find_session_file(&config, Path::new(&spec.cwd), session).is_some()
+    claude::history::session_file(&config, Path::new(&spec.cwd), session)
 }
 
 fn new_session(path: &Path) -> io::Result<(String, bool)> {
@@ -1533,7 +1623,9 @@ mod tests {
                 ))),
             },
         ];
-        let blobs = Path::new("/agents/a/blobs");
+        let dir = tempfile::tempdir().unwrap();
+        let blobs = dir.path();
+        std::fs::write(blobs.join("ab".repeat(32)), b"\x89PNG\r\n\x1a\n").unwrap();
         let request = br#"{"id":"amux-1","method":"turn/start","params":{"threadId":"t1","input":[{"type":"text","text":"read these","text_elements":[]}]}}"#;
         let written = super::codex_turn_input(request, &attachments, blobs).unwrap();
         let written: serde_json::Value = serde_json::from_slice(&written).unwrap();
@@ -1557,6 +1649,42 @@ mod tests {
         assert_eq!(
             input[3]["path"],
             blobs.join("ab".repeat(32)).display().to_string()
+        );
+    }
+
+    /// Codex gets a local image only for bytes it reads natively: an SVG
+    /// labelled an image goes as the file its element names.
+    #[test]
+    fn codex_gets_a_local_image_only_for_bytes_it_reads() {
+        let blobs = tempfile::tempdir().unwrap();
+        let image = |hash: u8, bytes: &[u8], name: &str, mime: &str| {
+            std::fs::write(blobs.path().join(interpret::to_hex(&[hash; 32])), bytes).unwrap();
+            wire::Attachment {
+                of: Some(wire::attachment::Of::Image(wire::BlobRef {
+                    hash: vec![hash; 32],
+                    name: name.into(),
+                    mime: mime.into(),
+                    size: bytes.len() as u64,
+                })),
+            }
+        };
+        let attachments = [
+            image(0xab, b"GIF89a a frame", "wave.gif", "image/gif"),
+            image(0xcd, b"<svg/>", "logo.svg", "image/svg+xml"),
+        ];
+        let request = br#"{"id":"amux-1","method":"turn/start","params":{"threadId":"t1","input":[{"type":"text","text":"look","text_elements":[]}]}}"#;
+        let written = super::codex_turn_input(request, &attachments, blobs.path()).unwrap();
+        let written: serde_json::Value = serde_json::from_slice(&written).unwrap();
+        let images: Vec<&str> = written["params"]["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|input| input["type"] == "localImage")
+            .map(|input| input["path"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            images,
+            [blobs.path().join("ab".repeat(32)).display().to_string()]
         );
     }
 
@@ -1645,7 +1773,7 @@ mod tests {
             cwd: std::env::temp_dir().to_string_lossy().into_owned(),
             ..Default::default()
         };
-        let (_, settings) = super::claude_launch(&spec, &dir, false).unwrap();
+        let (_, settings, _) = super::claude_launch(&spec, &dir, false).unwrap();
         let settings: serde_json::Value = serde_json::from_str(&settings).unwrap();
         let rule = format!("Read(/{}/**)", super::rule_path(&dir.join("blobs")));
         assert!(

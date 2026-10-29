@@ -1,7 +1,7 @@
 //! What both Claude fakes share: the launch flags they honour, ids and
 //! timestamps in Claude's formats.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
@@ -20,6 +20,7 @@ pub struct Args {
     pub include_partial_messages: bool,
     /// Every `--mcp-config` value, read from its file when it is a path.
     pub mcp_config: Vec<Value>,
+    pub strict_mcp_config: bool,
 }
 
 impl Args {
@@ -69,11 +70,38 @@ impl Args {
                 "--permission-mode" => parsed.permission_mode = value(),
                 "--replay-user-messages" => parsed.replay_user_messages = true,
                 "--include-partial-messages" => parsed.include_partial_messages = true,
+                "--strict-mcp-config" => parsed.strict_mcp_config = true,
                 _ => {}
             }
             index += 1;
         }
         parsed
+    }
+
+    /// Why Claude refuses to start where an organization's managed MCP
+    /// configuration is in force: it takes neither `--strict-mcp-config`
+    /// nor a server added on the command line. The fake reads only the
+    /// folder `CLAUDE_CODE_MANAGED_SETTINGS_PATH` names, never the
+    /// machine's own.
+    pub fn managed_refusal(&self) -> Option<&'static str> {
+        let folder = std::env::var_os("CLAUDE_CODE_MANAGED_SETTINGS_PATH")?;
+        if !Path::new(&folder).join("managed-mcp.json").exists() {
+            return None;
+        }
+        let added = self.mcp_config.iter().any(|config| {
+            config["mcpServers"]
+                .as_object()
+                .is_some_and(|servers| !servers.is_empty())
+        });
+        if self.strict_mcp_config {
+            Some("You cannot use --strict-mcp-config when an enterprise MCP config is present")
+        } else if added {
+            Some(
+                "You cannot dynamically configure MCP servers when an enterprise MCP config is present",
+            )
+        } else {
+            None
+        }
     }
 
     /// Every hook command registered for `event`, in settings order, as

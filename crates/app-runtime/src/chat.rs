@@ -323,9 +323,15 @@ impl Chat {
                     state,
                 })
             }
-            ui_view::Slash::Refused { command, offered } => {
-                CommandOutcome::Refused { command, offered }
-            }
+            ui_view::Slash::Refused {
+                command,
+                offered,
+                hint,
+            } => CommandOutcome::Refused {
+                command,
+                offered,
+                hint,
+            },
             ui_view::Slash::Unknown {
                 command,
                 value,
@@ -451,6 +457,11 @@ impl Chat {
 
     pub async fn interrupt(&self) -> ActOutcome {
         acted(self.session.interrupt().await)
+    }
+
+    /// Stops one background job by the key its `JobStop` gives.
+    pub async fn stop_job(&self, key: &str) -> ActOutcome {
+        acted(self.session.stop_job(key).await)
     }
 
     /// Takes the agent's own view back to its conversation after it

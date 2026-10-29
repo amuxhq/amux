@@ -1804,7 +1804,7 @@ impl ::prost::Name for ClaudeGrant {
 /// What Codex allows from now on.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CodexGrant {
-    #[prost(oneof = "codex_grant::Of", tags = "1, 2, 3")]
+    #[prost(oneof = "codex_grant::Of", tags = "1, 2, 3, 4")]
     pub of: ::core::option::Option<codex_grant::Of>,
 }
 /// Nested message and enum types in `CodexGrant`.
@@ -1820,6 +1820,10 @@ pub mod codex_grant {
         /// Network access to these hosts.
         #[prost(message, tag = "3")]
         NetworkHosts(super::NetworkHosts),
+        /// Calls like this one, saved in the person's Codex config: every
+        /// session from now on.
+        #[prost(message, tag = "4")]
+        Always(super::Empty),
     }
 }
 impl ::prost::Name for CodexGrant {
@@ -2075,6 +2079,10 @@ pub struct Catalogue {
     /// How it works; empty for Claude.
     #[prost(message, repeated, tag = "4")]
     pub modes: ::prost::alloc::vec::Vec<OfferedMode>,
+    /// Codex's skills, which a person mentions as "$name" anywhere in a
+    /// message; empty for Claude, whose skills are among its commands.
+    #[prost(message, repeated, tag = "5")]
+    pub skills: ::prost::alloc::vec::Vec<OfferedSkill>,
 }
 impl ::prost::Name for Catalogue {
     const NAME: &'static str = "Catalogue";
@@ -2084,6 +2092,28 @@ impl ::prost::Name for Catalogue {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Catalogue".into()
+    }
+}
+/// A skill Codex offers this session.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct OfferedSkill {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub description: ::prost::alloc::string::String,
+    /// Codex's scope word for where it lives (user, repo, system).
+    #[prost(string, tag = "3")]
+    pub source: ::prost::alloc::string::String,
+}
+impl ::prost::Name for OfferedSkill {
+    const NAME: &'static str = "OfferedSkill";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.OfferedSkill".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.OfferedSkill".into()
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
@@ -2265,6 +2295,11 @@ pub struct PermissionAsk {
     pub deny_can_stop: bool,
     #[prost(string, tag = "8")]
     pub server: ::prost::alloc::string::String,
+    /// The ask must not be approved by one stray keystroke: a keyboard view
+    /// opens it on deny and takes no digit shortcut, and nothing pre-selects
+    /// approve.
+    #[prost(bool, tag = "9")]
+    pub default_to_no: bool,
 }
 impl ::prost::Name for PermissionAsk {
     const NAME: &'static str = "PermissionAsk";
@@ -2662,6 +2697,10 @@ pub struct UsageMeter {
     /// the five-hour one.
     #[prost(enumeration = "UsageState", tag = "3")]
     pub state: i32,
+    /// The provider has named this window without saying how much of it is
+    /// used, so `used_percent` means nothing.
+    #[prost(bool, tag = "4")]
+    pub used_unknown: bool,
 }
 impl ::prost::Name for UsageMeter {
     const NAME: &'static str = "UsageMeter";
@@ -2765,6 +2804,17 @@ pub struct BackgroundJob {
     pub started_at_ms: i64,
     #[prost(enumeration = "BackgroundKind", tag = "4")]
     pub kind: i32,
+    /// The job's own key, which a stop names: Claude's task id or the
+    /// process id Codex lists.
+    #[prost(string, tag = "5")]
+    pub key: ::prost::alloc::string::String,
+    /// A stop was sent and the provider has not yet said the job ended.
+    #[prost(bool, tag = "6")]
+    pub stopping: bool,
+    /// Why the provider refused the last stop, in its words; empty when it
+    /// did not.
+    #[prost(string, tag = "7")]
+    pub stop_error: ::prost::alloc::string::String,
 }
 impl ::prost::Name for BackgroundJob {
     const NAME: &'static str = "BackgroundJob";
@@ -2774,6 +2824,23 @@ impl ::prost::Name for BackgroundJob {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.BackgroundJob".into()
+    }
+}
+/// Stops one background job by its key; the agent keeps running. Rejected
+/// REFUSAL_UNSUPPORTED when no running job has the key.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct StopJob {
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+}
+impl ::prost::Name for StopJob {
+    const NAME: &'static str = "StopJob";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.StopJob".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.StopJob".into()
     }
 }
 /// U+FFFC per attachment.
@@ -4803,7 +4870,7 @@ impl ::prost::Name for ClaudeSdkSnapshot {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClaudeSdkInput {
-    #[prost(oneof = "claude_sdk_input::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
+    #[prost(oneof = "claude_sdk_input::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
     pub of: ::core::option::Option<claude_sdk_input::Of>,
 }
 /// Nested message and enum types in `ClaudeSdkInput`.
@@ -4828,6 +4895,8 @@ pub mod claude_sdk_input {
         Effort(super::SetEffort),
         #[prost(message, tag = "9")]
         SendNow(super::SendQueuedNow),
+        #[prost(message, tag = "10")]
+        StopJob(super::StopJob),
     }
 }
 impl ::prost::Name for ClaudeSdkInput {
@@ -5067,7 +5136,7 @@ impl ::prost::Name for CodexCreateConfig {
 pub struct CodexItem {
     #[prost(
         oneof = "codex_item::Kind",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19"
     )]
     pub kind: ::core::option::Option<codex_item::Kind>,
 }
@@ -5097,8 +5166,6 @@ pub mod codex_item {
         AgentMessage(super::AgentMessage),
         #[prost(message, tag = "10")]
         Error(super::ApiError),
-        #[prost(message, tag = "11")]
-        Reroute(super::ModelSwitch),
         #[prost(message, tag = "12")]
         Unrecognized(super::Unrecognized),
         /// Working notes, marked apart from the final answer.
@@ -5115,6 +5182,15 @@ pub mod codex_item {
         /// The plan Codex proposed in plan mode.
         #[prost(message, tag = "17")]
         Plan(super::Plan),
+        /// A line from a command amux runs for Codex, as Codex's own app prints
+        /// it ("Code review started: current changes"); the line is the envelope
+        /// text.
+        #[prost(message, tag = "18")]
+        CommandOutput(super::SlashOutput),
+        /// Codex holding the turn's answer for a slower safety check; the
+        /// envelope text is Codex's words.
+        #[prost(message, tag = "19")]
+        SafetyCheck(super::SafetyCheck),
     }
 }
 impl ::prost::Name for CodexItem {
@@ -5125,6 +5201,22 @@ impl ::prost::Name for CodexItem {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.CodexItem".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SafetyCheck {
+    /// The check is still running.
+    #[prost(bool, tag = "1")]
+    pub running: bool,
+}
+impl ::prost::Name for SafetyCheck {
+    const NAME: &'static str = "SafetyCheck";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SafetyCheck".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.SafetyCheck".into()
     }
 }
 /// The summary is kept beside the full text, which is the envelope text.
@@ -5623,7 +5715,7 @@ impl ::prost::Name for McpToolApproval {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CodexInput {
-    #[prost(oneof = "codex_input::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
+    #[prost(oneof = "codex_input::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
     pub of: ::core::option::Option<codex_input::Of>,
 }
 /// Nested message and enum types in `CodexInput`.
@@ -5648,6 +5740,8 @@ pub mod codex_input {
         Effort(super::SetEffort),
         #[prost(message, tag = "9")]
         SendNow(super::SendQueuedNow),
+        #[prost(message, tag = "10")]
+        StopJob(super::StopJob),
     }
 }
 impl ::prost::Name for CodexInput {
@@ -5815,6 +5909,9 @@ pub enum Decision {
     ApproveSimilar = 5,
     /// Approve and add the ask's network rule.
     ApproveNetwork = 6,
+    /// Approve and save the approval in the person's Codex config: calls like
+    /// this one are allowed in every session from now on.
+    ApproveAlways = 7,
 }
 impl Decision {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -5830,6 +5927,7 @@ impl Decision {
             Self::Abort => "DECISION_ABORT",
             Self::ApproveSimilar => "DECISION_APPROVE_SIMILAR",
             Self::ApproveNetwork => "DECISION_APPROVE_NETWORK",
+            Self::ApproveAlways => "DECISION_APPROVE_ALWAYS",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -5842,6 +5940,7 @@ impl Decision {
             "DECISION_ABORT" => Some(Self::Abort),
             "DECISION_APPROVE_SIMILAR" => Some(Self::ApproveSimilar),
             "DECISION_APPROVE_NETWORK" => Some(Self::ApproveNetwork),
+            "DECISION_APPROVE_ALWAYS" => Some(Self::ApproveAlways),
             _ => None,
         }
     }

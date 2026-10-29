@@ -1195,11 +1195,12 @@ pub(crate) fn describe_usage_window(
         (wire::Limit::Unspecified, _) => unnamed(),
     };
     let meter = meter.unwrap_or_default();
-    format!(
-        " {label}:{:.0}%({})",
-        meter.used_percent,
-        describe_usage_state(meter.state)
-    )
+    let used = if meter.used_unknown {
+        "?".to_owned()
+    } else {
+        format!("{:.0}", meter.used_percent)
+    };
+    format!(" {label}:{used}%({})", describe_usage_state(meter.state))
 }
 
 /// A background job list as goldens print it: `?` while unknown, else each

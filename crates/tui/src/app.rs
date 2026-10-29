@@ -1427,6 +1427,13 @@ impl App {
                     )
                 })
             }),
+            ChatEffect::StopJob { key } => {
+                self.spawn(async move {
+                    session.stop_job(&key).await.err().map(|error| {
+                        AppEvent::Notice(format!("stop job {}", plain(error)), Tone::Warn)
+                    })
+                })
+            }
             ChatEffect::Interrupt => self.spawn(async move {
                 session
                     .interrupt()

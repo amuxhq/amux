@@ -224,6 +224,9 @@ message CodexGrant {
     CommandPrefix command_prefix = 2;
     // Network access to these hosts.
     NetworkHosts network_hosts = 3;
+    // Calls like this one, saved in the person's Codex config: every
+    // session from now on.
+    Empty always = 4;
   }
 }
 
@@ -370,6 +373,17 @@ message Catalogue {
   repeated OfferedPermission permissions = 3;
   // How it works; empty for Claude.
   repeated OfferedMode modes = 4;
+  // Codex's skills, which a person mentions as "$name" anywhere in a
+  // message; empty for Claude, whose skills are among its commands.
+  repeated OfferedSkill skills = 5;
+}
+
+// A skill Codex offers this session.
+message OfferedSkill {
+  string name = 1;
+  string description = 2;
+  // Codex's scope word for where it lives (user, repo, system).
+  string source = 3;
 }
 
 message OfferedPermission {
@@ -453,6 +467,10 @@ message PermissionAsk {
   // Deny can be sent with or without stopping the turn.
   bool deny_can_stop = 7;
   string server = 8;
+  // The ask must not be approved by one stray keystroke: a keyboard view
+  // opens it on deny and takes no digit shortcut, and nothing pre-selects
+  // approve.
+  bool default_to_no = 9;
 }
 
 // One scope the provider offered; answers name its index.
@@ -644,6 +662,9 @@ message UsageMeter {
   // This window's own state: a person can reach the weekly limit before
   // the five-hour one.
   UsageState state = 3;
+  // The provider has named this window without saying how much of it is
+  // used, so `used_percent` means nothing.
+  bool used_unknown = 4;
 }
 
 // A usage window's length, the same for every provider.
@@ -712,6 +733,20 @@ message BackgroundJob {
   string command = 2;
   int64 started_at_ms = 3;
   BackgroundKind kind = 4;
+  // The job's own key, which a stop names: Claude's task id or the
+  // process id Codex lists.
+  string key = 5;
+  // A stop was sent and the provider has not yet said the job ended.
+  bool stopping = 6;
+  // Why the provider refused the last stop, in its words; empty when it
+  // did not.
+  string stop_error = 7;
+}
+
+// Stops one background job by its key; the agent keeps running. Rejected
+// REFUSAL_UNSUPPORTED when no running job has the key.
+message StopJob {
+  string key = 1;
 }
 
 enum BackgroundKind {

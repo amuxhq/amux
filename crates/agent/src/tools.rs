@@ -60,6 +60,16 @@ const ATTACH: &str = "Attach a file from this host to your reply. Returns an amu
 element; put that element in your reply exactly as returned so every viewer can open the \
 file.";
 
+/// What the server tells the model at initialize. Claude defers MCP tools
+/// behind its tool search, naming them only, but always shows a server's
+/// instructions: these say what each tool is for in the words a search
+/// for it would use, and stay short, since Claude caps them.
+const INSTRUCTIONS: &str = "amux runs a fleet of coding agents, and you are one. Use these \
+tools to work with other agents: send a message to another agent, or reply to one that \
+messaged you (send); start a child agent, claude or codex, on this or another host (spawn); \
+stop a child agent (stop); list the agents in the fleet (agents) and the hosts they run on \
+(hosts); say what you are working on (status); and attach a file to your reply (attach).";
+
 /// How the tool server reaches the daemon; the defaults are the product's.
 #[derive(Clone, Debug)]
 pub struct ToolsConfig {
@@ -196,6 +206,7 @@ impl Server {
                         .unwrap_or(PROTOCOL_VERSION),
                     "capabilities": { "tools": { "listChanged": false } },
                     "serverInfo": { "name": interpret::AMUX_TOOL_SERVER, "version": crate::VERSION },
+                    "instructions": INSTRUCTIONS,
                 }),
             ),
             "ping" => rpc_result(id, json!({})),
@@ -563,15 +574,15 @@ impl Server {
         let hash = sha2::Sha256::digest(&bytes).to_vec();
         dir::write_blob(&self.dir, &hash, &bytes)
             .map_err(|error| format!("storing {}: {error}", path.display()))?;
-        let mime = mime_type(&path);
+        let image = attachments::native_image(&bytes);
         let blob = BlobRef {
             hash: hash.clone(),
             name,
-            mime: mime.to_owned(),
+            mime: image.unwrap_or_else(|| mime_type(&path)).to_owned(),
             size: bytes.len() as u64,
         };
         let attachment = Attachment {
-            of: Some(if mime.starts_with("image/") {
+            of: Some(if image.is_some() {
                 attachment::Of::Image(blob)
             } else {
                 attachment::Of::File(blob)
@@ -751,17 +762,14 @@ fn optional(arguments: &Value, name: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// The type a viewer opens the file as, from its extension.
+/// The type a viewer opens a file that is not a native image as, from its
+/// extension.
 fn mime_type(path: &Path) -> &'static str {
     let extension = path
         .extension()
         .map(|extension| extension.to_string_lossy().to_lowercase())
         .unwrap_or_default();
     match extension.as_str() {
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
         "svg" => "image/svg+xml",
         "pdf" => "application/pdf",
         "json" => "application/json",

@@ -519,12 +519,17 @@ fn answer(
                 .as_ref()
                 .and_then(|meta| meta.codex_approval_kind.as_deref());
             if approval_kind == Some("mcp_tool_call") {
-                let session = answered
+                let persist = answered
                     .meta
                     .as_ref()
-                    .is_some_and(|meta| meta.persist.as_deref() == Some("session"));
+                    .and_then(|meta| meta.persist.as_deref());
                 approve(match action {
-                    FormAction::Accept if session => wire::Decision::ApproveSession,
+                    FormAction::Accept if persist == Some("session") => {
+                        wire::Decision::ApproveSession
+                    }
+                    FormAction::Accept if persist == Some("always") => {
+                        wire::Decision::ApproveAlways
+                    }
                     FormAction::Accept => wire::Decision::Approve,
                     FormAction::Decline => wire::Decision::Deny,
                     _ => wire::Decision::Abort,

@@ -18,12 +18,20 @@ public struct ChatOverview: View {
     let now: Date
     /// The review page for the chosen comparison.
     let review: () -> Void
+    /// The background job the person asked to stop, while they confirm.
+    @State private var stopping: JobRow?
 
-    public init(model: ChatModel, subject: ChatSubject, now: Date, review: @escaping () -> Void) {
+    /// `confirming` opens on that job's stop question, for a catalogue
+    /// that shows it.
+    public init(
+        model: ChatModel, subject: ChatSubject, now: Date, confirming: JobRow? = nil,
+        review: @escaping () -> Void
+    ) {
         self.model = model
         self.subject = subject
         self.now = now
         self.review = review
+        _stopping = State(initialValue: confirming)
     }
 
     public var body: some View {
@@ -85,28 +93,106 @@ public struct ChatOverview: View {
 
     // MARK: Background
 
+    /// The jobs still running. One the agent's kind can stop alone is a
+    /// button; a tap opens a card under it that asks first, naming it. The
+    /// agent keeps running either way.
     private func background(_ jobs: [JobRow]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHead(title: String(localized: "Background"), trailing: "\(jobs.count)")
             ForEach(Array(jobs.enumerated()), id: \.offset) { index, job in
-                let ran = ChatWords.ran(since: job.startedAtMs, now: now)
-                HStack(spacing: 10) {
-                    Text(verbatim: ChatWords.firstLine(job.command))
-                        .designFont(.mono, design)
-                        .foregroundStyle(design.ink.color)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Spacer(minLength: 6)
+                if let key = Self.stopKey(job) {
+                    Button { stopping = stopping == job ? nil : job } label: { self.job(job, index: index) }
+                        .buttonStyle(.amuxControl)
+                        .accessibilityHint(Text(ChatWords.stopJob(job)))
+                    if stopping == job { confirm(job, key: key) }
+                } else {
+                    self.job(job, index: index)
+                }
+            }
+        }
+    }
+
+    /// "Stop cargo test? The agent keeps running.", with Stop and Cancel.
+    private func confirm(_ job: JobRow, key: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: ChatWords.stopJob(job))
+                    .designFont(.bodyEmphasis, design)
+                    .foregroundStyle(design.ink.color)
+                Text(verbatim: ChatWords.stopJobLeaves)
+                    .designFont(.caption, design)
+                    .foregroundStyle(design.inkMuted.color)
+            }
+            HStack(spacing: 10) {
+                Button {
+                    stopping = nil
+                    model.stopJob(key)
+                } label: {
+                    ActionLabel(String(localized: "Stop"), kind: .destructive, fill: true)
+                }
+                .buttonStyle(.amuxControl)
+                .identified("chat.overview.stop", label: String(localized: "Stop"))
+                Button { stopping = nil } label: {
+                    ActionLabel(String(localized: "Cancel"), kind: .quiet, fill: true)
+                }
+                .buttonStyle(.amuxControl)
+                .identified("chat.overview.stop-cancel", label: String(localized: "Cancel"))
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: design.metrics.cardRadius, style: .continuous)
+                .fill(design.raised.color))
+        .accessibilityElement(children: .contain)
+    }
+
+    /// The key a stop names, for a job the person can stop now.
+    private static func stopKey(_ job: JobRow) -> String? {
+        switch job.stop {
+        case .offered(let key), .refused(let key, _): key
+        case .unavailable, .stopping: nil
+        }
+    }
+
+    private func job(_ job: JobRow, index: Int) -> some View {
+        let ran = ChatWords.ran(since: job.startedAtMs, now: now)
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 10) {
+                Text(verbatim: ChatWords.firstLine(job.command))
+                    .designFont(.mono, design)
+                    .foregroundStyle(design.ink.color)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 6)
+                if case .stopping = job.stop {
+                    Text(verbatim: ChatWords.stoppingJob)
+                        .designFont(.caption, design)
+                        .foregroundStyle(design.inkMuted.color)
+                } else {
                     Text(verbatim: ran)
                         .designFont(.caption, design)
                         .foregroundStyle(design.inkFaint.color)
                         // How long a job has run moves with the clock.
                         .reported("chat.overview.job.\(index).age.volatile")
                 }
-                .accessibilityElement(children: .combine)
-                .identified("chat.overview.job.\(index)", label: job.command, value: ran)
+                if Self.stopKey(job) != nil {
+                    Image(systemName: "stop.circle")
+                        .foregroundStyle(design.inkMuted.color)
+                        .accessibilityHidden(true)
+                }
+            }
+            if case .refused(_, let error) = job.stop {
+                Text(verbatim: ChatWords.firstLine(error))
+                    .designFont(.caption, design)
+                    .foregroundStyle(design.accent.color)
+                    .lineLimit(2)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .identified("chat.overview.job.\(index)", label: job.command, value: ran)
     }
 
     // MARK: Changes

@@ -342,7 +342,7 @@ async fn record_pty_one(entry: SpecEntry) -> Result<(), Box<dyn std::error::Erro
     let mut capture = capture_pty(entry).await?;
     let run_id = Uuid::new_v4().to_string();
     stabilize_pty_transcript_paths(&mut capture.report.io)?;
-    scrub_personal_context(&mut capture.report.io)?;
+    claude_specs::scrub::transcript(&mut capture.report.io)?;
     let redaction = sanitize(
         &mut capture.report.io,
         &Redaction {
@@ -406,53 +406,6 @@ async fn record_pty_one(entry: SpecEntry) -> Result<(), Box<dyn std::error::Erro
         capture.report.provider_version,
         run_id,
     )?;
-    Ok(())
-}
-
-/// Transcript attachments that carry the recording machine owner's own
-/// context rather than anything the scenario did: their instruction files,
-/// account email and organisation, the full system prompt, and what their
-/// plugins and tool servers inject. Newer Claude Code versions write these into
-/// the transcript. The row and its attachment type stay so the stream keeps its
-/// shape; the payload and its rendered copy are replaced.
-const PERSONAL_ATTACHMENTS: &[&str] = &[
-    "instructions",
-    "session_context",
-    "credential_org",
-    "prompt_snapshot",
-    "mcp_instructions_delta",
-    "hook_additional_context",
-    "hook_success",
-];
-
-fn scrub_personal_context(events: &mut [replay_support::IoEvent]) -> io::Result<()> {
-    for event in events {
-        if event.transport_id.as_deref() != Some("transcript") {
-            continue;
-        }
-        let mut frame: serde_json::Value =
-            serde_json::from_str(&event.line).map_err(io::Error::other)?;
-        let Some(attachment) = frame.pointer_mut("/row/attachment") else {
-            continue;
-        };
-        let kind = attachment
-            .get("type")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        if PERSONAL_ATTACHMENTS.contains(&kind.as_str()) {
-            *attachment = serde_json::json!({"type": kind, "scrubbed": true});
-            // The rendered copy is what the model saw; it repeats the payload.
-            if let Some(serde_json::Value::Array(rendered)) = frame.pointer_mut("/row/rendered") {
-                for part in rendered {
-                    if let Some(content) = part.get_mut("content") {
-                        *content = serde_json::Value::String(String::new());
-                    }
-                }
-            }
-            event.line = serde_json::to_string(&frame).map_err(io::Error::other)?;
-        }
-    }
     Ok(())
 }
 
@@ -794,7 +747,7 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut events = replay_support::load_script(capture.join("io.jsonl"));
     if pty {
         stabilize_pty_transcript_paths(&mut events)?;
-        scrub_personal_context(&mut events)?;
+        claude_specs::scrub::transcript(&mut events)?;
     } else {
         scrub_settings(&mut events)?;
     }

@@ -18,10 +18,11 @@
 mod facts;
 mod recording;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use claude_protocol::stream::control::{
     ApplyFlagSettingsRequest, InterruptRequest, SetModelRequest, SetPermissionModeRequest,
+    StopTaskRequest,
 };
 use claude_protocol::stream::{
     self as claude_stream, ControlRequest, ControlRequestBody, ControlResponse, FlagSettings,
@@ -145,6 +146,9 @@ struct AskMeta {
     /// Each offered scope choice as Claude sent it, to send back.
     suggestions: Vec<String>,
     shape: AnswerShape,
+    /// The subagent that asked; None for the main thread.
+    #[serde(default)]
+    agent: Option<String>,
 }
 
 /// A control request the interpreter sent, awaiting its response.
@@ -158,6 +162,8 @@ enum Request {
     /// What Claude applied: the effort it runs at, which a model change
     /// can also move.
     Settings,
+    /// A stop for one background job, by its task id.
+    StopJob(String),
 }
 
 /// What a call's task has done so far, and whether it ended.
@@ -215,6 +221,10 @@ pub struct State {
     inits: u32,
     exited: bool,
     clients: BTreeMap<String, Client>,
+    /// The uuids of the messages amux handed Claude that no result has
+    /// answered yet.
+    #[serde(default)]
+    unanswered: BTreeSet<String>,
     /// The message being streamed, and its open blocks by index.
     stream: Option<String>,
     stream_tools: BTreeMap<u32, String>,
@@ -230,6 +240,10 @@ pub struct State {
     /// makes it: headless Claude reports its init only after it reads the
     /// first message. That init fills it in.
     early_boundary: Option<String>,
+    /// The cleared boundary drawn at a reset, until the next init names the
+    /// session it began: Claude's reset frame names an id it made up
+    /// before it made the session.
+    cleared: Option<String>,
     tasks: Option<Vec<Task>>,
     active_tasks: BTreeMap<String, TaskState>,
     context_tokens: Option<u64>,
@@ -239,6 +253,9 @@ pub struct State {
     usage: Option<ClaudeUsage>,
     #[serde(with = "serde_pb::opt_msg")]
     servers: Option<ToolServerHealth>,
+    /// Launched without amux's tool server, by organization policy.
+    #[serde(default)]
+    tools_withheld: bool,
     #[serde(with = "serde_pb::opt_msg")]
     sign_in: Option<SignIn>,
     /// Claude's background jobs; the shared part publishes them.
@@ -306,6 +323,7 @@ impl State {
             inits: 0,
             exited: false,
             clients: BTreeMap::new(),
+            unanswered: BTreeSet::new(),
             stream: None,
             stream_tools: BTreeMap::new(),
             blocks: BTreeMap::new(),
@@ -315,6 +333,7 @@ impl State {
             next_request: 0,
             next_boundary: 0,
             early_boundary: None,
+            cleared: None,
             tasks: None,
             active_tasks: BTreeMap::new(),
             context_tokens: None,
@@ -322,6 +341,7 @@ impl State {
             context_breakdown: Vec::new(),
             usage: None,
             servers: None,
+            tools_withheld: false,
             sign_in: None,
             jobs: Jobs::default(),
             slash: None,
@@ -392,11 +412,17 @@ impl State {
                 .map(|(id, task)| task.to_wire(id))
                 .collect(),
             usage: Some(self.usage.clone().unwrap_or_else(unknown::claude_usage)),
-            servers: Some(
-                self.servers
+            servers: Some({
+                let servers = self
+                    .servers
                     .clone()
-                    .unwrap_or_else(unknown::tool_server_health),
-            ),
+                    .unwrap_or_else(unknown::tool_server_health);
+                if self.tools_withheld {
+                    crate::claude_common::amux_tools_withheld(servers)
+                } else {
+                    servers
+                }
+            }),
             sign_in: Some(self.sign_in.clone().unwrap_or_else(unknown::sign_in)),
             background_jobs: Some(self.shared.jobs()),
             provider_session: self.session.clone(),
@@ -435,6 +461,7 @@ impl State {
                 message: true,
             },
         );
+        self.unanswered.insert(client_uuid(&envelope.id));
         self.shared.message_handed();
         emit.effect(Effect::Inject {
             id: envelope.id.clone(),
@@ -480,6 +507,23 @@ impl State {
             // A message at the default priority joins the running turn at
             // its next tool boundary. Priority "now" is not steering: it
             // abandons the rest of the turn.
+            // The job reads stopping until Claude says it ended, as a task
+            // notification or a list without it.
+            claude_sdk_input::Of::StopJob(stop) => {
+                let Some(jobs) = self.jobs.stop_sent(&stop.key) else {
+                    return self.shared.reject(emit, &id, Refusal::Unsupported);
+                };
+                self.shared.set_jobs(jobs);
+                self.control_request(
+                    emit,
+                    Request::StopJob(stop.key.clone()),
+                    ControlRequestBody::StopTask(StopTaskRequest {
+                        task_id: stop.key,
+                        extensions: Default::default(),
+                    }),
+                );
+                self.shared.accept(emit, &id, false);
+            }
             claude_sdk_input::Of::SendNow(send) => {
                 let running = self.shared.is_busy();
                 if let Some(entry) = self
@@ -495,6 +539,7 @@ impl State {
                             message: false,
                         },
                     );
+                    self.unanswered.insert(uuid.clone());
                     emit.effect(Effect::UserMessage {
                         uuid,
                         text,
@@ -662,6 +707,7 @@ impl State {
                 message: false,
             },
         );
+        self.unanswered.insert(uuid.clone());
         emit.effect(Effect::UserMessage {
             uuid: uuid.clone(),
             text: crate::shared::provider_text(&entry),
@@ -768,11 +814,94 @@ impl State {
         );
     }
 
-    /// Closes every open ask without an answer: the turn or the provider
-    /// ended under it.
+    /// Closes every open ask without an answer: the provider ended under
+    /// it.
     fn dismiss_asks(&mut self, emit: &mut Emit) {
         for ask in self.shared.close_all_asks() {
             self.dismissed(emit, &ask);
+        }
+    }
+
+    /// Closes the asks a turn's end is the end of, and those `ended` says
+    /// are over, without an answer. A subagent still running in the
+    /// background keeps the asks it raised.
+    fn dismiss_asks_but_background(&mut self, emit: &mut Emit) {
+        let keys: Vec<String> = self
+            .shared
+            .asks()
+            .open_asks()
+            .iter()
+            .map(|ask| ask.key.clone())
+            .filter(|key| !self.asked_in_background(key))
+            .collect();
+        for key in keys {
+            if let Some(ask) = self.shared.close_ask(&key) {
+                self.dismissed(emit, &ask);
+            }
+        }
+    }
+
+    /// Whether the ask keyed `key` is a subagent's that still runs: one
+    /// naming a task still running, or whose call hangs under one.
+    fn asked_in_background(&self, key: &str) -> bool {
+        let Some(meta) = self.asks.get(key) else {
+            return false;
+        };
+        meta.agent.as_ref().is_some_and(|agent| {
+            self.active_tasks
+                .get(agent)
+                .is_some_and(|task| task.state == wire::TaskState::Running as i32)
+        }) || self.under_running_task(&meta.tool_use_id)
+    }
+
+    /// Whether the call `id`, or a call it hangs under, is one whose task
+    /// still runs.
+    fn under_running_task(&self, id: &str) -> bool {
+        self.call_and_parents(id).iter().any(|id| {
+            self.tools[*id]
+                .task
+                .as_ref()
+                .is_some_and(|task| !task.finished)
+        })
+    }
+
+    /// The keys of the call `id` and of each call it hangs under, nearest
+    /// first, as far as they are held.
+    fn call_and_parents<'a>(&'a self, id: &'a str) -> Vec<&'a str> {
+        let mut chain = Vec::new();
+        let mut next = id;
+        // A chain of nested calls is short; the bound guards a cycle.
+        while let Some(tool) = self.tools.get(next)
+            && chain.len() < 16
+        {
+            chain.push(next);
+            next = &tool.parent_key;
+        }
+        chain
+    }
+
+    /// The task `task` started by the call `call` ended: the asks its
+    /// subagent raised are over, without an answer.
+    fn task_asks_over(&mut self, emit: &mut Emit, task: &str, call: &str) {
+        let keys: Vec<String> = self
+            .shared
+            .asks()
+            .open_asks()
+            .iter()
+            .map(|ask| ask.key.clone())
+            .filter(|key| {
+                self.asks.get(key).is_some_and(|meta| {
+                    meta.agent.as_deref() == Some(task)
+                        || (!call.is_empty()
+                            && meta.tool_use_id != call
+                            && self.call_and_parents(&meta.tool_use_id).contains(&call))
+                })
+            })
+            .collect();
+        for key in keys {
+            if let Some(ask) = self.shared.close_ask(&key) {
+                self.dismissed(emit, &ask);
+            }
         }
     }
 
@@ -1061,6 +1190,9 @@ impl Interpreter for ClaudeSdk {
         state.inits = 0;
         state.exited = false;
         state.early_boundary = None;
+        // The agent says again at each launch whether policy withholds
+        // amux's tools.
+        state.tools_withheld = false;
         state.effort = launch_arg(&spec.provider_args, "--effort");
         state.resume()
     }

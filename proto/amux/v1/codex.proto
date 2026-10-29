@@ -31,7 +31,6 @@ message CodexItem {
     Boundary boundary = 8;
     AgentMessage agent_message = 9;
     ApiError error = 10;
-    ModelSwitch reroute = 11;
     Unrecognized unrecognized = 12;
     // Working notes, marked apart from the final answer.
     Text working_note = 13;
@@ -42,7 +41,19 @@ message CodexItem {
     AskItem ask = 16;
     // The plan Codex proposed in plan mode.
     Plan plan = 17;
+    // A line from a command amux runs for Codex, as Codex's own app prints
+    // it ("Code review started: current changes"); the line is the envelope
+    // text.
+    SlashOutput command_output = 18;
+    // Codex holding the turn's answer for a slower safety check; the
+    // envelope text is Codex's words.
+    SafetyCheck safety_check = 19;
   }
+}
+
+message SafetyCheck {
+  // The check is still running.
+  bool running = 1;
 }
 
 // The summary is kept beside the full text, which is the envelope text.
@@ -276,6 +287,7 @@ message CodexInput {
     WithdrawQueued withdraw = 7;
     SetEffort effort = 8;
     SendQueuedNow send_now = 9;
+    StopJob stop_job = 10;
   }
 }
 
@@ -289,6 +301,9 @@ enum Decision {
   DECISION_APPROVE_SIMILAR = 5;
   // Approve and add the ask's network rule.
   DECISION_APPROVE_NETWORK = 6;
+  // Approve and save the approval in the person's Codex config: calls like
+  // this one are allowed in every session from now on.
+  DECISION_APPROVE_ALWAYS = 7;
 }
 
 // Rejected REFUSAL_CLOSED_ASK if ask_key is not open. An approval is rejected

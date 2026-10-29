@@ -33,6 +33,7 @@ pub type PermissionSuggestion = PermissionUpdate;
 
 /// One ordered item emitted by a Claude SDK session.
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum SdkEvent {
     Message(Message),
     PermissionRequest {

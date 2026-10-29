@@ -211,7 +211,8 @@ to attachments after that.
 
 When the agent waits on you, the ask takes over the composer's box, its edge in the attention ink; the draft waits
 behind it and comes back after. For half a second after an ask is first drawn, keys still go to the draft (Enter
-does nothing), so a digit or Enter typed as it appears never answers what was not read. The plan or the call it is
+does nothing), so a digit or Enter typed as it appears never answers what was not read. An ask the agent says must not
+be approved by one stray key opens on its refusal and takes no digit. The plan or the call it is
 about stays in the feed above. A typed answer or note shows its own line breaks, its last four lines at most.
 
 - **A permission** (`● Wants to run`, `Wants to edit`, `Wants to create`, `Wants to use`): the command, the file
@@ -255,11 +256,16 @@ turn`.
 `ctrl+o` opens the overview beside the chat (over it on a narrow terminal): what the agent has in flight, in
 sections like home's, each foldable: its tasks (`✓` done, `●` current, `○` to do); each background job still
 running, its command with how long it has run (a subagent or monitor the provider runs itself shows its
-description after `subagent` or `monitor`), which opens the step that started it; the changed files of the
+description after `subagent` or `monitor`), which opens the step that started it. On headless Claude and Codex,
+`x` on a job opens a Stop window naming it ("Stop `cargo test`? The agent keeps running.", Stop and Cancel); a job
+asked to stop reads `Stopping…` in place of its age until the provider says it ended, and a stop the provider
+refused shows its words under the job, which can be stopped again. Terminal Claude cannot stop one job, so its
+jobs offer no stop. Then the changed files of the
 comparison the header counts, root files first and then each folder with its files and their lines added and
 removed, each opening the review page at that file; its tool servers that need signing in or failed; and, near a
 usage limit, every usage window with its name (`5-hour limit`, `Weekly limit`, `Fable weekly limit`), how full it
-is, its state and when it resets, and Codex's credits. The changed files are asked for without a patch while the
+is (`—` when the provider has not said), its state and when it resets, and Codex's credits. A window whose use is
+unknown is never the one the composer names as nearest the limit or reached. The changed files are asked for without a patch while the
 overview shows, again when the row's totals move or the comparison changes. It stays open across chats until
 closed, and remembers its folds per agent.
 

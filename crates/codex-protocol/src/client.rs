@@ -21,12 +21,15 @@ method_enum! {
         "initialize" => Initialize(InitializeParams),
         "thread/start" => ThreadStart(ThreadStartParams),
         "thread/resume" => ThreadResume(ThreadResumeParams),
+        "thread/unarchive" => ThreadUnarchive(ThreadIdParams),
+        "thread/unsubscribe" => ThreadUnsubscribe(ThreadIdParams),
         "thread/name/set" => ThreadSetName(ThreadSetNameParams),
         "thread/read" => ThreadRead(ThreadReadParams),
         "thread/list" => ThreadList(ThreadListParams),
         "thread/compact/start" => ThreadCompactStart(ThreadIdParams),
         "thread/inject_items" => ThreadInjectItems(InjectItemsParams),
         "thread/backgroundTerminals/list" => BackgroundTerminalsList(BackgroundTerminalsListParams),
+        "thread/backgroundTerminals/terminate" => BackgroundTerminalsTerminate(BackgroundTerminalsTerminateParams),
         "turn/start" => TurnStart(TurnStartParams),
         "turn/steer" => TurnSteer(TurnSteerParams),
         "turn/interrupt" => TurnInterrupt(TurnInterruptParams),
@@ -68,6 +71,9 @@ pub struct ClientInfo {
 pub struct Capabilities {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub experimental_api: Option<bool>,
+    /// Notifications the server is not to send this client.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub opt_out_notification_methods: Vec<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -242,6 +248,17 @@ tagged_enum! {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CustomReview {
     pub instructions: String,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// Ends one command the thread runs in the background, by the process id
+/// its list gave.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackgroundTerminalsTerminateParams {
+    pub thread_id: String,
+    pub process_id: String,
     #[serde(flatten)]
     pub extra: Extra,
 }

@@ -131,6 +131,8 @@ pub enum ActivityKind {
         count: u32,
     },
     Compacting,
+    /// The provider holds the answer for a slower safety check.
+    SafetyCheck,
     Retrying {
         attempt: u32,
         max_attempts: u32,

@@ -347,8 +347,9 @@ pub(super) mod live {
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
-    use codex::host::{Connection, Listen, Tether};
+    use codex::host::{Connection, Listen};
     use codex::{Codex, CodexConfig};
+    use pty_host::Tether;
     use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
     use tokio::task::JoinHandle;
 

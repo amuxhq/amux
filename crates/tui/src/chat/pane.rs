@@ -10,7 +10,7 @@ use std::collections::HashSet;
 
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ui_view::{JobRow, Overview, TaskMark};
+use ui_view::{JobRow, JobStop, Overview, TaskMark};
 use wire::{BackgroundKind, UsageState};
 
 use crate::text::{self, pad_to, push};
@@ -86,6 +86,27 @@ pub enum PaneItem {
     Job(JobRow),
     /// A changed file, by its path.
     File(String),
+}
+
+impl PaneItem {
+    /// Whether two items are the same one across frames: a job stays itself
+    /// while its stop goes out and is answered.
+    pub fn same(&self, other: &PaneItem) -> bool {
+        match (self, other) {
+            (PaneItem::Job(a), PaneItem::Job(b)) => {
+                (&a.step, &a.command, a.started_at_ms) == (&b.step, &b.command, b.started_at_ms)
+            }
+            _ => self == other,
+        }
+    }
+}
+
+/// The key a stop names, for a job its provider can stop now.
+pub fn stop_key(job: &JobRow) -> Option<&str> {
+    match &job.stop {
+        JobStop::Offered { key } | JobStop::Refused { key, .. } => Some(key),
+        JobStop::Unavailable | JobStop::Stopping => None,
+    }
 }
 
 /// What the pane shows, read once a frame.
@@ -312,7 +333,13 @@ pub fn pane_lines(
                     // reads as words after a tag saying which it is. A
                     // click (or Enter on the focused one) opens the step
                     // that started it.
-                    let age = ran_for(now_ms - job.started_at_ms);
+                    // A job asked to stop says so in place of how long it
+                    // has run.
+                    let age = if job.stop == JobStop::Stopping {
+                        "Stopping…".to_owned()
+                    } else {
+                        ran_for(now_ms - job.started_at_ms)
+                    };
                     let mut line = Line::default();
                     let (tag, style) = match job.kind {
                         BackgroundKind::Subagent => (Some("subagent  "), theme.text()),
@@ -334,7 +361,22 @@ pub fn pane_lines(
                         card = Some(out.body.len());
                     }
                     out.item_lines.push((item.clone(), out.body.len()));
-                    push_line(&mut out, line, Some(entry), Some(PaneHit::Item(item)));
+                    push_line(
+                        &mut out,
+                        line,
+                        Some(entry),
+                        Some(PaneHit::Item(item.clone())),
+                    );
+                    // A stop the provider refused, in its words, under the
+                    // job; the job can be stopped again.
+                    if let JobStop::Refused { error, .. } = &job.stop {
+                        let mut line = Line::default();
+                        pad_to(&mut line, 2);
+                        let words =
+                            text::ellipsize(text::first_line(error), inner.saturating_sub(2));
+                        push(&mut line, words, theme.error(), inner);
+                        push_line(&mut out, line, Some(entry), Some(PaneHit::Item(item)));
+                    }
                     entry += 1;
                 }
             }
@@ -407,7 +449,9 @@ pub fn pane_lines(
                         UsageState::Ok => (Some("fine"), theme.muted()),
                         UsageState::Unknown => (None, theme.muted()),
                     };
-                    let used = format!("{:.0}% used", window.used_percent);
+                    let used = window
+                        .used_percent
+                        .map_or("—".to_owned(), |used| format!("{used:.0}% used"));
                     let mut line = Line::default();
                     let room = inner.saturating_sub(text::str_width(&used) + 2);
                     push(

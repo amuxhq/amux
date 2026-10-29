@@ -480,7 +480,7 @@ enum ComponentCatalog {
             composer("strip-claude-sdk", height: 220, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(
                 context: ContextView(usedTokens: 30_513, nearFull: false, percent: 16, windowTokens: 200_000),
                 model: "claude-opus-5-5", effort: "low", mode: "plan",
-                usage: UsageView(blocked: false, windows: [UsageWindowView(label: .fiveHour, usedPercent: 83, state: .nearLimit, resetsAtMs: nil)], credits: nil),
+                usage: UsageView(blocked: false, windows: [UsageWindowView(label: .fiveHour, state: .nearLimit, resetsAtMs: nil, usedPercent: 83)], credits: nil),
                 failedServers: [ServerView(name: "claude.ai Google Drive", error: "", needsAuth: true)],
                 background: 3)),
             composer("strip-codex", height: 220, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(
@@ -519,7 +519,7 @@ enum ComponentCatalog {
                 $0.attach(F.writtenReview())
             },
             composer("strip-trouble", height: 220, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(
-                model: "gpt-5", usage: UsageView(blocked: false, windows: [UsageWindowView(label: .fiveHour, usedPercent: 91, state: .nearLimit, resetsAtMs: nil)], credits: nil),
+                model: "gpt-5", usage: UsageView(blocked: false, windows: [UsageWindowView(label: .fiveHour, state: .nearLimit, resetsAtMs: nil, usedPercent: 91)], credits: nil),
                 failedServers: [ServerView(name: "github", error: "exited", needsAuth: false)])),
             composer("sign-in", height: 240, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(signIn: F.expiredSignIn)),
             // The settings card once per provider kind, from the settings
@@ -543,7 +543,7 @@ enum ComponentCatalog {
                 model.type("Why does this fail? " + (1...14).map { "error[E0308]: mismatched types at line \($0)" }.joined(separator: "\n"))
             },
             composer("usage-blocked", height: 200, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(
-                usage: UsageView(blocked: true, windows: [UsageWindowView(label: .weekly(model: nil), usedPercent: 100, state: .blocked, resetsAtMs: nil)], credits: nil))),
+                usage: UsageView(blocked: true, windows: [UsageWindowView(label: .weekly(model: nil), state: .blocked, resetsAtMs: nil, usedPercent: 100)], credits: nil))),
         ]
     }()
 
@@ -720,11 +720,14 @@ extension ComponentCatalog {
         typealias F = CatalogFixtures
         return [
             overview("overview", settlesLate: true) { F.surroundings },
+            overview("overview-stop", confirming: 0, settlesLate: true) { F.surroundings },
         ]
     }()
 
+    /// `confirming` opens the stop question on that background job.
     private static func overview(
-        _ id: String, comparison: Comparison = .uncommitted, settlesLate: Bool = false,
+        _ id: String, comparison: Comparison = .uncommitted, confirming: Int? = nil,
+        settlesLate: Bool = false,
         strip: @escaping @MainActor () -> ScriptedChat.Surroundings
     ) -> ComponentExample {
         ComponentExample(
@@ -736,7 +739,11 @@ extension ComponentCatalog {
                 rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .working),
                 strip: strip())
             ) { model in
-                ChatOverview(model: model, subject: CatalogFixtures.subject, now: CatalogFixtures.now) {}
+                let job = confirming.map { strip().overview.jobs[$0] }
+                ChatOverview(
+                    model: model, subject: CatalogFixtures.subject, now: CatalogFixtures.now,
+                    confirming: job
+                ) {}
                     .onAppear { model.compare(comparison) }
             }
         }
@@ -870,12 +877,12 @@ enum CatalogFixtures {
     static let withCommands: SettingsView = {
         var view = claudeSdkSettings()
         view.commands = [
-            CommandView(name: "clear", description: "Clear conversation history and free up context", argumentHint: "", source: ""),
-            CommandView(name: "compact", description: "Clear history but keep a summary in context", argumentHint: "<instructions>", source: ""),
-            CommandView(name: "context", description: "Show current context usage", argumentHint: "", source: ""),
-            CommandView(name: "cost", description: "Show the total cost and duration of the session", argumentHint: "", source: ""),
-            CommandView(name: "code-review:review", description: "Review the current diff for correctness bugs", argumentHint: "[level]", source: "code-review"),
-            CommandView(name: "init", description: "Initialize a new CLAUDE.md file", argumentHint: "", source: ""),
+            CommandView(name: "clear", description: "Clear conversation history and free up context", argumentHint: "", source: "", sigil: "/", anywhere: false),
+            CommandView(name: "compact", description: "Clear history but keep a summary in context", argumentHint: "<instructions>", source: "", sigil: "/", anywhere: false),
+            CommandView(name: "context", description: "Show current context usage", argumentHint: "", source: "", sigil: "/", anywhere: false),
+            CommandView(name: "cost", description: "Show the total cost and duration of the session", argumentHint: "", source: "", sigil: "/", anywhere: false),
+            CommandView(name: "code-review:review", description: "Review the current diff for correctness bugs", argumentHint: "[level]", source: "code-review", sigil: "/", anywhere: false),
+            CommandView(name: "init", description: "Initialize a new CLAUDE.md file", argumentHint: "", source: "", sigil: "/", anywhere: false),
         ]
         return view
     }()
@@ -999,15 +1006,15 @@ enum CatalogFixtures {
         let ms = Int64(now.timeIntervalSince1970 * 1_000)
         var strip = ScriptedChat.strip(
             usage: UsageView(blocked: false, windows: [
-                UsageWindowView(label: .fiveHour, usedPercent: 91, state: .nearLimit, resetsAtMs: nil),
-                UsageWindowView(label: .weekly(model: nil), usedPercent: 40, state: .ok, resetsAtMs: ms + 4 * 86_400_000),
-                UsageWindowView(label: .weekly(model: "Fable"), usedPercent: 84, state: .nearLimit, resetsAtMs: ms + 4 * 86_400_000),
+                UsageWindowView(label: .fiveHour, state: .nearLimit, resetsAtMs: nil, usedPercent: 91),
+                UsageWindowView(label: .weekly(model: nil), state: .ok, resetsAtMs: ms + 4 * 86_400_000, usedPercent: 40),
+                UsageWindowView(label: .weekly(model: "Fable"), state: .nearLimit, resetsAtMs: ms + 4 * 86_400_000, usedPercent: 84),
             ], credits: nil),
             failedServers: [ServerView(name: "github", error: "The token expired.", needsAuth: true)],
             git: git, changes: changes)
         strip.overview.jobs = [
-            JobRow(command: "npm run dev -- --port 5173", startedAtMs: ms - 14 * 60_000, kind: .shell, step: nil),
-            JobRow(command: "cargo watch -x 'test -p amux-ui'", startedAtMs: ms - 40_000, kind: .shell, step: nil),
+            JobRow(command: "npm run dev -- --port 5173", startedAtMs: ms - 14 * 60_000, kind: .shell, stop: .offered(key: "b1"), step: nil),
+            JobRow(command: "cargo watch -x 'test -p amux-ui'", startedAtMs: ms - 40_000, kind: .shell, stop: .stopping, step: nil),
         ]
         return strip
     }
@@ -1189,7 +1196,7 @@ enum CatalogFixtures {
         AskCard(
             kind: kind, key: "ask-1", itemKey: "x6", position: 1, count: count, body: body,
             choices: choices, questionNote: kind != .claudePty, questionSkip: kind != .claudePty,
-            questionReply: true, stopsTurn: true, state: state)
+            questionReply: true, stopsTurn: true, defaultToNo: false, state: state)
     }
 
     static let runningCommand = ScriptedChat.row("rc", 50, .command(
@@ -1489,7 +1496,8 @@ extension CatalogFixtures {
         modes: [
             OfferedMode(value: "default", displayName: "Default", normal: true, settable: true),
             OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true),
-        ])
+        ],
+        skills: [])
 
     static let claudeCatalogue = Catalogue(
         models: [
@@ -1503,7 +1511,8 @@ extension CatalogFixtures {
             OfferedPermission(value: "plan", displayName: "Plan", normal: false, neverAsks: false, settable: true, models: []),
             OfferedPermission(value: "bypassPermissions", displayName: "Bypass permissions", normal: false, neverAsks: true, settable: true, models: []),
         ],
-        modes: [])
+        modes: [],
+        skills: [])
 }
 
 private extension QuestionResponse {

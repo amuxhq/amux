@@ -96,7 +96,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         git: Git? = nil, changes: Changes? = nil
     ) -> Surroundings {
         let jobs = (0..<(background ?? 0)).map {
-            JobRow(command: "job \($0 + 1)", startedAtMs: 0, kind: .shell, step: nil)
+            JobRow(command: "job \($0 + 1)", startedAtMs: 0, kind: .shell, stop: .unavailable, step: nil)
         }
         return Surroundings(
             overview: Overview(
@@ -382,6 +382,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         }
     }
     public func interrupt() async -> ActOutcome? { .done }
+    public func stopJob(_ key: String) async -> ActOutcome? { .done }
 
     public func change(_ setting: SettingChange) async -> ActOutcome? {
         lock.withLock { changed.append(setting) }

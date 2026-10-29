@@ -686,6 +686,49 @@ pub unsafe extern "C" fn amux_form_problems(
     })
 }
 
+/// The agent's commands matching the word a draft ends in, as the shared
+/// view finds them: the settings view's `[CommandView]` as JSON and the
+/// draft's text give a JSON array of `CommandMatch`, each with the draft
+/// it leaves once picked; null when the commands do not parse. The caller
+/// frees the answer.
+///
+/// # Safety
+/// The strings are NUL-terminated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_command_matches(
+    commands: *const c_char,
+    draft: *const c_char,
+) -> *mut c_char {
+    // SAFETY: the caller's contract.
+    let commands: Option<Vec<ui_view::CommandView>> = unsafe { parse(commands) };
+    // SAFETY: the caller's contract.
+    let draft = unsafe { text(draft) }.unwrap_or_default();
+    guard(std::ptr::null_mut(), || match commands {
+        Some(commands) => owned(&ui_view::command_matches(&commands, draft)),
+        None => std::ptr::null_mut(),
+    })
+}
+
+/// Whether `pasted`, arriving in a draft in one paste, joins it as one
+/// text attachment rather than as words, by the rule every client's paste
+/// follows.
+///
+/// # Safety
+/// `pasted` is a NUL-terminated string that lives for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_pastes_as_attachment(pasted: *const c_char) -> bool {
+    // SAFETY: the caller's contract.
+    let pasted = unsafe { text(pasted) }.unwrap_or_default();
+    ui_view::pastes_as_attachment(pasted)
+}
+
+/// The most an attachment may hold, in bytes; the hosts refuse more, so a
+/// client can refuse it before reading or uploading anything.
+#[unsafe(no_mangle)]
+pub extern "C" fn amux_attachment_limit() -> u64 {
+    ui_view::ATTACHMENT_SIZE_LIMIT as u64
+}
+
 /// Starts the installation from a `StartConfig` as JSON, its transport
 /// on a thread of its own and its cores stepped by `amux_runtime_step`.
 /// Blocks, stepping them on the calling thread, until every profile's
@@ -2294,6 +2337,19 @@ pub unsafe extern "C" fn amux_session_discard(chat: *const AmuxChat, input_id: *
 pub unsafe extern "C" fn amux_session_interrupt(chat: *const AmuxChat) -> u64 {
     // SAFETY: the caller's contract.
     unsafe { act(chat, |chat| async move { chat.interrupt().await }) }
+}
+
+/// Stops one background job by the key its `JobStop` gives; the agent
+/// keeps running. The ticket answers an `ActOutcome`.
+///
+/// # Safety
+/// `chat` is from `amux_session_open`; `key` is a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_session_stop_job(chat: *const AmuxChat, key: *const c_char) -> u64 {
+    // SAFETY: the caller's contract.
+    let key = unsafe { text(key) }.unwrap_or_default().to_owned();
+    // SAFETY: the caller's contract.
+    unsafe { act(chat, |chat| async move { chat.stop_job(&key).await }) }
 }
 
 /// Takes terminal Claude's own view back to the agent's conversation

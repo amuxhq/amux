@@ -201,6 +201,9 @@ pub fn all() -> Vec<Story> {
         story("chat.overview", || {
             Scene::Chat(Box::new(tui::vocabulary::chat_overview()))
         }),
+        story("chat.overview-stop", || {
+            Scene::Chat(Box::new(tui::vocabulary::chat_overview_stop()))
+        }),
         story("chat.settings", || {
             Scene::Chat(Box::new(tui::vocabulary::chat_settings()))
         }),

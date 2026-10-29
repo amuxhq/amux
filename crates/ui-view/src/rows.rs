@@ -440,6 +440,9 @@ pub enum PermissionGrant {
     },
     /// Codex: approvals like this one, for the rest of the session.
     Session,
+    /// Codex: calls like this one, saved in the person's Codex config for
+    /// every project.
+    Always,
     /// Codex: commands starting with these words.
     CommandPrefix { words: Vec<String> },
     /// Codex: network access to these hosts.
@@ -629,6 +632,7 @@ fn decision_view(
         }
         Some(wire::tool_decision::Granted::Codex(grant)) => match &grant.of {
             Some(wire::codex_grant::Of::Session(_)) => Some(PermissionGrant::Session),
+            Some(wire::codex_grant::Of::Always(_)) => Some(PermissionGrant::Always),
             Some(wire::codex_grant::Of::CommandPrefix(prefix)) => {
                 Some(PermissionGrant::CommandPrefix {
                     words: crate::ask::shown_prefix(&prefix.words),
@@ -728,6 +732,8 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             Sdk::Ask(ask) => plain(ask_row(ask)),
         },
         ItemBody::Codex(kind) => match kind {
+            Codex::CommandOutput(s) => plain(slash(held, s)),
+            Codex::SafetyCheck(_) => plain(RowKind::Hidden),
             Codex::Prompt(_) => plain(RowKind::Prompt {
                 text: text(),
                 steered: false,
@@ -757,7 +763,6 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             Codex::Boundary(b) => plain(boundary(b)),
             Codex::AgentMessage(m) => plain(agent_message(held, m)),
             Codex::Error(e) => error(e),
-            Codex::Reroute(m) => plain(model_switch(m)),
             Codex::Unrecognized(u) => plain(unrecognized(u)),
             Codex::Verdict(v) => plain(RowKind::AutoReview {
                 status: v.status(),

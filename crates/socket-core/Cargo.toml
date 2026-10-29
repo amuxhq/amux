@@ -1,0 +1,17 @@
+[package]
+name = "socket-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Who a link socket's stand-ins stand for and where each peer's packets go, with no I/O"
+publish = false
+
+# Its tests are the node link socket's, which drive it through the socket
+# they serve, and the socket model's: none live here.
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+path-core = { workspace = true }
+uuid = { workspace = true }

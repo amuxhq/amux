@@ -71,58 +71,6 @@ pub fn spawn_server(mut command: Command, listen: &Listen) -> io::Result<Child> 
     command.spawn()
 }
 
-/// Ties a server on a socket to the process that started it. Over stdio
-/// the server ends at the end of its input, which the starter's death
-/// closes; on a socket nothing tells it, so it would serve on with no one
-/// to serve. The tether is a shell in the server's process group, reading a
-/// pipe only the starter holds: when the starter dies, however it dies, the
-/// pipe closes and the shell sends the group SIGTERM. A server that is
-/// still running `TETHER_GRACE_SECS` later (one with an approval open
-/// ignores SIGTERM, and would hold its thread from every later client) has
-/// its group killed. Being in the group, the shell keeps the group's id,
-/// and so the server's pid, from being reused while it waits.
-#[cfg(unix)]
-pub const TETHER_GRACE_SECS: u32 = 5;
-
-#[cfg(unix)]
-pub struct Tether {
-    shell: Child,
-}
-
-#[cfg(unix)]
-impl Tether {
-    /// Tethers the server `server` leads, which must not have been reaped.
-    pub fn new(server: &Child) -> io::Result<Tether> {
-        let group = server
-            .id()
-            .ok_or_else(|| io::Error::other("the server has already been reaped"))?;
-        // The shell ignores the SIGTERM it sends its own group.
-        let script = format!(
-            r#"trap '' TERM; read _; kill -TERM "-$1" 2>/dev/null; i=0
-while kill -0 "$1" 2>/dev/null; do
-  if [ "$i" -ge {TETHER_GRACE_SECS} ]; then kill -KILL "-$1" 2>/dev/null; exit 0; fi
-  sleep 1; i=$((i + 1))
-done"#
-        );
-        let shell = Command::new("/bin/sh")
-            .args(["-c", &script, "codex-tether"])
-            .arg(group.to_string())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .process_group(group as i32)
-            .spawn()?;
-        Ok(Tether { shell })
-    }
-
-    /// Lets go once the server has exited: whatever it left in its group
-    /// is sent SIGTERM, and the shell is reaped.
-    pub async fn release(mut self) {
-        self.shell.stdin.take();
-        let _ = self.shell.wait().await;
-    }
-}
-
 fn remove_stale(path: &Path) -> io::Result<()> {
     match std::fs::remove_file(path) {
         Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
@@ -271,6 +219,9 @@ fn closed() -> io::Error {
 
 #[cfg(unix)]
 mod socket {
+    /// The largest message or frame read from Codex.
+    const MAX_MESSAGE: usize = 128 * 1024 * 1024;
+
     use std::io;
     use std::path::Path;
     use std::time::Duration;
@@ -281,6 +232,7 @@ mod socket {
     use tokio::process::Child;
     use tokio_tungstenite::WebSocketStream;
     use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 
     use super::{ConnectError, Connection, Receiver, ReceiverOf, Sender, SenderOf};
 
@@ -315,10 +267,16 @@ mod socket {
             }
         };
         // The URL's host and path are what Codex's own clients send; the
-        // server reads neither for a client connection.
-        let (socket, _) = tokio_tungstenite::client_async("ws://localhost/rpc", stream)
-            .await
-            .map_err(io::Error::other)?;
+        // server reads neither for a client connection. One message can
+        // carry a turn's screenshots, past the library's 16 MiB frame and
+        // 64 MiB message defaults.
+        let config = WebSocketConfig::default()
+            .max_frame_size(Some(MAX_MESSAGE))
+            .max_message_size(Some(MAX_MESSAGE));
+        let (socket, _) =
+            tokio_tungstenite::client_async_with_config("ws://localhost/rpc", stream, Some(config))
+                .await
+                .map_err(io::Error::other)?;
         let (sink, stream) = socket.split();
         Ok(Connection {
             sender: Sender(SenderOf::Socket(sink)),
@@ -385,7 +343,7 @@ mod tests {
     use tokio::process::Command;
     use tokio_tungstenite::tungstenite::Message;
 
-    use super::{ConnectError, Connection, Listen, Tether, spawn_server};
+    use super::{ConnectError, Connection, Listen, spawn_server};
 
     const WAIT: Duration = Duration::from_secs(10);
 
@@ -435,6 +393,34 @@ mod tests {
         server.await.unwrap();
     }
 
+    /// A resumed thread's answer or a turn's item can carry screenshots well
+    /// past the websocket library's 16 MiB default frame; a 20 MiB one is
+    /// read whole.
+    #[tokio::test]
+    async fn a_frame_past_sixteen_mebibytes_is_read() {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("codex.sock");
+        let listen = Listen::Unix(path.clone());
+        let mut child = idle_server(&listen);
+        let listener = UnixListener::bind(&path).unwrap();
+        let big = format!(r#"{{"blob":"{}"}}"#, "a".repeat(20 * 1024 * 1024));
+        let sent = big.clone();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+            socket.send(Message::text(sent)).await.unwrap();
+            while let Some(Ok(_)) = socket.next().await {}
+        });
+        let connection = Connection::connect(&listen, &mut child, WAIT)
+            .await
+            .unwrap();
+        let (mut sender, mut receiver) = connection.into_split();
+        let read = receiver.next().await.expect("a frame").expect("read whole");
+        assert_eq!(read.len(), big.len());
+        sender.close().await.unwrap();
+        server.await.unwrap();
+    }
+
     #[tokio::test]
     async fn a_server_that_exits_before_listening_is_reported_at_once() {
         let folder = tempfile::tempdir().unwrap();
@@ -449,53 +435,6 @@ mod tests {
             Ok(_) => panic!("nothing listens"),
         }
         assert!(started.elapsed() < WAIT, "not left to time out");
-    }
-
-    /// Killing the starter, which is what closes the tether's pipe, asks
-    /// the server's whole group to finish.
-    #[tokio::test]
-    async fn a_tethered_server_finishes_when_its_starter_dies() {
-        let folder = tempfile::tempdir().unwrap();
-        let listen = Listen::Unix(folder.path().join("codex.sock"));
-        let started = folder.path().join("started");
-        let mut command = Command::new("/bin/sh");
-        // A child in the group that would outlive the server alone.
-        command.args(["-c", r#"sleep 30 & : > "$1"; wait"#, "sh"]);
-        command.arg(&started);
-        let mut server = spawn_server(command, &listen).unwrap();
-        let group = server.id().unwrap() as i32;
-        let tether = Tether::new(&server).unwrap();
-        // A signal sent while a process forks can miss the new child.
-        tokio::time::timeout(WAIT, async {
-            while !started.exists() {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("the server's child starts");
-        // The starter dying is its end of the pipe closing.
-        let Tether { mut shell } = tether;
-        drop(shell.stdin.take());
-        let status = tokio::time::timeout(WAIT, server.wait())
-            .await
-            .expect("the server is asked to finish")
-            .unwrap();
-        assert_eq!(
-            std::os::unix::process::ExitStatusExt::signal(&status),
-            Some(15)
-        );
-        let _ = shell.wait().await;
-        let gone = tokio::time::timeout(WAIT, async {
-            while group_lives(group) {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await;
-        assert!(gone.is_ok(), "nothing of the group lives on");
-    }
-
-    fn group_lives(group: i32) -> bool {
-        nix::sys::signal::killpg(nix::unistd::Pid::from_raw(group), None).is_ok()
     }
 
     #[tokio::test]

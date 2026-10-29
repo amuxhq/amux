@@ -5,48 +5,51 @@
 ## 16 recorded 15: input 0xff98779ef26e4be0be4a292bc0758421
   row    2 prompt:ff98779ef26e4be0be4a292bc0758421 Prompt { text: [Text("Use your tool for asking the user questions once, asking me two questions in that one call: 'Which colour?' with the options Red and Blue, and 'Which size?' with the options Small and Large. After I answer, use it once more to ask me one question, 'Which shape?' with the options Circle and Square. Then reply with the single word do…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 27 recorded 26: fact Rpc method=deprecationNotice
+  row    3 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
 ## 41 recorded 40: fact Rpc method=item/tool/requestUserInput
-  row    3 ask:0 [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Size", question: "Which …
+  row    4 ask:0 [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Size", question: "Which …
   ask 0 -> "ask:0" 1/1 Open
     choices 
     body Question([QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Size", question: "Which size?", multi_select: false, options: [OptionVie…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 43 recorded 42: input stdin-9
-  row    3 ask:0 [Answered: Colour = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView…
+  row    4 ask:0 [Answered: Colour = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView…
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 54 recorded 53: fact Rpc method=item/tool/requestUserInput
-  row    4 ask:1 [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Circle", preview: "", recommended: false }, OptionView { label: "Square", description: "Square", preview: "", recommended: false }], allow_other: true, secret: false }], answers: [], skipped: 0, reply: None, r…
+  row    5 ask:1 [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Circle", preview: "", recommended: false }, OptionView { label: "Square", description: "Square", preview: "", recommended: false }], allow_other: true, secret: false }], answers: [], skipped: 0, reply: None, r…
   ask 1 -> "ask:1" 1/1 Open
     choices 
     body Question([QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Circle", preview: "", recommended: false }, OptionView { label: "Square", description: "Square", preview: "", recommended: false }], allow_other: true, secret: false }])
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 56 recorded 55: input 0x2737deea7ca544238185bcd0c9b1428c
-  row    4 ask:1 [Replied: Shape = (skipped) skipped=1 reply="Never mind the shape. Reply with the single word done and nothing else."] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Circle", preview: "", recommended: false }, OptionView { label: "Square", description: "Square", preview: "",…
+  row    5 ask:1 [Replied: Shape = (skipped) skipped=1 reply="Never mind the shape. Reply with the single word done and nothing else."] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Circle", preview: "", recommended: false }, OptionView { label: "Square", description: "Square", preview: "",…
   ask none
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [39, 55, 222, 234, 124, 165, 68, 35, 129, 133, 188, 208, 201, 177, 66, 140], text: [Text("Never mind the shape. Reply with the single word done and nothing else.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 63 recorded 62: fact Rpc method=turn/completed
-  row    5 turn:1 TurnEnd { duration_ms: Some(6354), failed: false }
-  row    6 prompt:2737deea7ca544238185bcd0c9b1428c Prompt { text: [Text("Never mind the shape. Reply with the single word done and nothing else.")], steered: false }
+  row    6 turn:1 TurnEnd { duration_ms: Some(6354), failed: false }
+  row    7 prompt:2737deea7ca544238185bcd0c9b1428c Prompt { text: [Text("Never mind the shape. Reply with the single word done and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 75 recorded 74: fact Rpc method=item/started
-  row    7 msg_07dffb6507ba6b27016ac5bffecb5c8191bc6456d97fe7f405 Prose { text: [], streaming: true, working_note: false }
+  row    8 msg_07dffb6507ba6b27016ac5bffecb5c8191bc6456d97fe7f405 Prose { text: [], streaming: true, working_note: false }
 ## 77 recorded 76: fact Rpc method=item/agentMessage/delta
-  row    7 msg_07dffb6507ba6b27016ac5bffecb5c8191bc6456d97fe7f405 Prose { text: [Text("done")], streaming: true, working_note: false }
+  row    8 msg_07dffb6507ba6b27016ac5bffecb5c8191bc6456d97fe7f405 Prose { text: [Text("done")], streaming: true, working_note: false }
 ## 79 recorded 78: fact Rpc method=item/completed
-  row    7 msg_07dffb6507ba6b27016ac5bffecb5c8191bc6456d97fe7f405 Prose { text: [Text("done")], streaming: false, working_note: false }
+  row    8 msg_07dffb6507ba6b27016ac5bffecb5c8191bc6456d97fe7f405 Prose { text: [Text("done")], streaming: false, working_note: false }
 ## 85 recorded 84: fact Rpc method=turn/completed
-  row    8 turn:2 TurnEnd { duration_ms: Some(1872), failed: false }
+  row    9 turn:2 TurnEnd { duration_ms: Some(1872), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:ff98779ef26e4be0be4a292bc0758421 Prompt { text: [Text("Use your tool for asking the user questions once, asking me two questions in that one call: 'Which colour?' with the options Red and Blue, and 'Which size?' with the options Small and Large. After I answer, use it once more to ask me one question, 'Which shape?' with the options Circle and Square. Then reply with the single word do…
-     3 ask:0 [Answered: Colour = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView…
-     4 ask:1 [Replied: Shape = (skipped) skipped=1 reply="Never mind the shape. Reply with the single word done and nothing else."] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Circle", preview: "", recommended: false }, OptionView { label: "Square", description: "Square", preview: "",…
-     5 turn:1 TurnEnd { duration_ms: Some(6354), failed: false }
-     6 prompt:2737deea7ca544238185bcd0c9b1428c Prompt { text: [Text("Never mind the shape. Reply with the single word done and nothing else.")], steered: false }
-     7 msg_07dffb6507ba6b27016ac5bffecb5c8191bc6456d97fe7f405 Prose { text: [Text("done")], streaming: false, working_note: false }
-     8 turn:2 TurnEnd { duration_ms: Some(1872), failed: false }
+     3 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     4 ask:0 [Answered: Colour = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView…
+     5 ask:1 [Replied: Shape = (skipped) skipped=1 reply="Never mind the shape. Reply with the single word done and nothing else."] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Circle", preview: "", recommended: false }, OptionView { label: "Square", description: "Square", preview: "",…
+     6 turn:1 TurnEnd { duration_ms: Some(6354), failed: false }
+     7 prompt:2737deea7ca544238185bcd0c9b1428c Prompt { text: [Text("Never mind the shape. Reply with the single word done and nothing else.")], steered: false }
+     8 msg_07dffb6507ba6b27016ac5bffecb5c8191bc6456d97fe7f405 Prose { text: [Text("done")], streaming: false, working_note: false }
+     9 turn:2 TurnEnd { duration_ms: Some(1872), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 18337, window_tokens: Some(258400), percent: Some(7), near_full: false }) sign-in None
 == settings

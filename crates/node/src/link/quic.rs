@@ -181,11 +181,7 @@ impl LinkEndpoint {
         through: super::socket::LinkId,
         server_name: &str,
     ) -> Result<quinn::Connecting, quinn::ConnectError> {
-        let stand_in = self.socket.stand_in(peer);
-        if self.socket.path_of(stand_in).is_none() {
-            self.socket
-                .set_carrying(peer, super::socket::Path::Forwarded(through));
-        }
+        let stand_in = self.socket.dial_through(peer, through);
         config.token_store(self.tokens.for_server(Server::Host(peer)));
         self.endpoint.connect_with(config, stand_in, server_name)
     }
@@ -203,10 +199,7 @@ impl LinkEndpoint {
         through_relay: bool,
         server_name: &str,
     ) -> Result<quinn::Connecting, quinn::ConnectError> {
-        let stand_in = self.socket.stand_in(peer);
-        if self.socket.trusted_route(peer).is_none() {
-            self.socket.send_on_all(peer, paths, through_relay);
-        }
+        let stand_in = self.socket.dial_on_all(peer, paths, through_relay);
         config.token_store(self.tokens.for_server(Server::Host(peer)));
         self.endpoint.connect_with(config, stand_in, server_name)
     }
@@ -293,6 +286,8 @@ pub enum ConnectError {
     Setup(#[from] quinn::ConnectError),
     #[error("QUIC handshake failed: {0}")]
     Handshake(#[from] quinn::ConnectionError),
+    #[error("the link's Hello could not be written: {0}")]
+    Opening(#[source] io::Error),
 }
 
 impl ConnectError {
@@ -364,6 +359,52 @@ pub struct QuicCarrier {
     /// peer has acknowledged everything on it.
     finish_control: Mutex<Option<oneshot::Sender<oneshot::Sender<()>>>>,
     closed: watch::Sender<Option<pb::LinkCloseReason>>,
+    /// The neighbors the Hello the dial already wrote listed, until the
+    /// link takes them.
+    opened: Mutex<Option<Vec<crate::routing::Host>>>,
+}
+
+/// Closes a relay dial's connection when dropped, unless the dial won.
+struct CloseUnlessKept(Option<quinn::Connection>);
+
+impl CloseUnlessKept {
+    fn keep(mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for CloseUnlessKept {
+    fn drop(&mut self) {
+        if let Some(connection) = self.0.take() {
+            connection.close(0_u32.into(), b"another address answered first");
+        }
+    }
+}
+
+/// The Hello a link to the relay opens with and the neighbors it lists,
+/// written by the dial itself the moment it starts: a resumed dial sends it
+/// as early data on every address it tries, so whichever reaches the relay
+/// first answers within a round trip.
+#[derive(Clone, Debug)]
+pub(crate) struct Opening {
+    pub(crate) hello: pb::Message,
+    pub(crate) neighbors: Vec<crate::routing::Host>,
+    /// The forwarding link the profile's packets for other hosts go out
+    /// on through the relay, put on each attempt as it says its Hello:
+    /// the relay holds what it is sent until the Hello admits the link,
+    /// so a first flight goes with the Hello rather than a round trip
+    /// after it, whichever attempt the dial keeps.
+    pub(crate) forwarding: Option<EarlyForwarding>,
+}
+
+/// A forwarding link the dial points at its attempts until the dial is
+/// settled, when its owner points it at the attempt kept. Both point it
+/// while holding `settled`, so an attempt finishing late never takes it
+/// back from the one kept.
+#[derive(Clone, Debug)]
+pub(crate) struct EarlyForwarding {
+    pub(crate) link: super::socket::LinkId,
+    pub(crate) settled: Arc<Mutex<bool>>,
 }
 
 impl QuicCarrier {
@@ -460,6 +501,7 @@ impl QuicCarrier {
         host: &str,
         port: u16,
         config: quinn::ClientConfig,
+        opening: Option<&Opening>,
     ) -> Result<Self, ConnectError> {
         let addrs = tokio::net::lookup_host((host, port))
             .await
@@ -468,18 +510,24 @@ impl QuicCarrier {
                 port,
                 source,
             })?;
-        Self::connect_relay_candidates_with_config(endpoint, addrs, host, port, config).await
+        Self::connect_relay_candidates_with_config(endpoint, addrs, host, port, config, opening)
+            .await
     }
 
     /// Dials the relay at each of its addresses, both families, starting
     /// one more every [`RELAY_CANDIDATE_STAGGER`] with the families taking
-    /// turns, and keeps the first to finish its handshake.
+    /// turns, and keeps the first to finish its handshake. Each dial writes
+    /// `opening` at once, as early data where it resumed, so waiting for
+    /// the handshake costs nothing: the relay's answer comes no sooner. A
+    /// resumed dial that has written nothing yet, alone, is kept before its
+    /// handshake, for its caller's early data.
     pub(crate) async fn connect_relay_candidates_with_config(
         endpoint: &LinkEndpoint,
         addrs: impl IntoIterator<Item = SocketAddr>,
         server_name: &str,
         port: u16,
         config: quinn::ClientConfig,
+        opening: Option<&Opening>,
     ) -> Result<Self, ConnectError> {
         use futures_util::StreamExt as _;
 
@@ -490,6 +538,9 @@ impl QuicCarrier {
                 port,
             });
         }
+        // Early data going out says nothing of whether the address
+        // reaches the relay: only a finished handshake does.
+        let settle = opening.is_some() || candidates.len() > 1;
         let mut attempts = candidates
             .into_iter()
             .enumerate()
@@ -497,10 +548,38 @@ impl QuicCarrier {
                 let config = config.clone();
                 async move {
                     tokio::time::sleep(RELAY_CANDIDATE_STAGGER * turn as u32).await;
-                    let attempt = tokio::time::timeout(
-                        RELAY_QUIC_HANDSHAKE_TIMEOUT,
-                        Self::connect_relay_with_config(endpoint, addr, server_name, config),
-                    )
+                    let attempt = tokio::time::timeout(RELAY_QUIC_HANDSHAKE_TIMEOUT, async {
+                        let carrier =
+                            Self::connect_relay_with_config(endpoint, addr, server_name, config)
+                                .await?;
+                        // A dial that loses the race, or fails, may have
+                        // said its Hello: it is closed, so the relay holds
+                        // no second link for the host.
+                        let lost = CloseUnlessKept(Some(carrier.connection.clone()));
+                        if let Some(opening) = opening {
+                            carrier
+                                .open_with(opening)
+                                .await
+                                .map_err(ConnectError::Opening)?;
+                            if let Some(early) = &opening.forwarding
+                                && let Some(via) = carrier.remote_address()
+                            {
+                                let settled = early.settled.lock().expect("settled lock poisoned");
+                                if !*settled {
+                                    endpoint.socket.add_forwarding(
+                                        early.link,
+                                        via,
+                                        carrier.path_kind(),
+                                    );
+                                }
+                            }
+                        }
+                        if settle {
+                            carrier.handshake().await?;
+                        }
+                        lost.keep();
+                        Ok::<_, ConnectError>(carrier)
+                    })
                     .await;
                     (addr, attempt)
                 }
@@ -765,7 +844,25 @@ impl QuicCarrier {
             ))),
             finish_control: Mutex::new(Some(finish_control)),
             closed,
+            opened: Mutex::new(None),
         }
+    }
+
+    /// Writes `opening`'s Hello on the control stream, as early data where
+    /// the dial resumed.
+    async fn open_with(&self, opening: &Opening) -> io::Result<()> {
+        let (mut sink, source) = self.control();
+        let written = super::carrier::write_message(&mut sink, &opening.hello).await;
+        *self.control.lock().expect("control stream lock poisoned") = Some((sink, source));
+        written?;
+        *self.opened.lock().expect("opened lock poisoned") = Some(opening.neighbors.clone());
+        Ok(())
+    }
+
+    /// The neighbors the Hello this dial wrote listed, once: the link then
+    /// sends no Hello of its own.
+    pub(crate) fn take_opened(&self) -> Option<Vec<crate::routing::Host>> {
+        self.opened.lock().expect("opened lock poisoned").take()
     }
 }
 
@@ -1528,6 +1625,7 @@ mod tests {
             DEVICE_SERVER_NAME,
             server_addr.port(),
             client_config,
+            None,
         );
         let (server_connection, client) = tokio::join!(accept, connect);
 
@@ -1569,6 +1667,7 @@ mod tests {
                 DEVICE_SERVER_NAME,
                 server_addr.port(),
                 client_config,
+                None,
             ),
         );
         let (server_connection, client) = tokio::join!(accept, connect);
@@ -2138,19 +2237,26 @@ mod tests {
     ) -> (EarlyData, bool, pb::Message) {
         let addr = server.local_addr().unwrap();
         let dial = async {
+            let opening = Opening {
+                hello: hello_frame(),
+                neighbors: Vec::new(),
+                forwarding: None,
+            };
             let carrier = QuicCarrier::connect_relay_candidates_with_config(
                 client,
                 [addr],
                 "relay.test",
                 addr.port(),
                 config.clone(),
+                Some(&opening),
             )
             .await
             .expect("the relay dial");
-            let (mut control, _source) = carrier.control();
-            super::super::carrier::write_message(&mut control, &hello_frame())
-                .await
-                .unwrap();
+            assert_eq!(
+                carrier.take_opened(),
+                Some(Vec::new()),
+                "the dial wrote the Hello"
+            );
             let mut answer = carrier.accept_stream().await.expect("the relay's answer");
             let mut byte = [0];
             answer.read_exact(&mut byte).await.unwrap();
@@ -2189,6 +2295,49 @@ mod tests {
             assert_eq!(arrived_early, expected == EarlyData::Accepted);
             assert_eq!(hello, hello_frame(), "the Hello carries the relay token");
         }
+    }
+
+    /// A resumed dial to a relay at one address puts the profile's
+    /// forwarding on the attempt as it says its Hello, before the relay
+    /// has so much as taken the connection: a first flight through the
+    /// relay leaves with the Hello, not a round trip after it.
+    #[tokio::test]
+    async fn a_resumed_relay_dial_forwards_through_its_attempt_before_the_relay_answers() {
+        let (server_config, client_config) = relay_server_and_client();
+        let server = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), Some(server_config)).unwrap();
+        let client = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), None).unwrap();
+        link_to_relay(&client, &server, &client_config).await;
+        let relay = server.local_addr().unwrap();
+        let link = super::super::socket::LinkId(42);
+        let opening = Opening {
+            hello: hello_frame(),
+            neighbors: Vec::new(),
+            forwarding: Some(EarlyForwarding {
+                link,
+                settled: Arc::default(),
+            }),
+        };
+        let dial = QuicCarrier::connect_relay_candidates_with_config(
+            &client,
+            [relay],
+            "relay.test",
+            relay.port(),
+            client_config,
+            Some(&opening),
+        );
+        tokio::pin!(dial);
+        tokio::time::timeout(RELAY_QUIC_HANDSHAKE_TIMEOUT, async {
+            while client.socket.forwarded_kind(link).is_none() {
+                tokio::select! {
+                    done = &mut dial => panic!("the dial finished first: {:?}", done.err()),
+                    () = tokio::time::sleep(Duration::from_millis(5)) => {}
+                }
+            }
+        })
+        .await
+        .expect("forwarding is on the attempt while the relay has yet to answer");
+        let (carrier, _connection) = tokio::join!(dial, answer_early(&server.endpoint));
+        carrier.expect("the relay dial");
     }
 
     #[tokio::test]
@@ -2257,6 +2406,66 @@ mod tests {
         );
     }
 
+    /// A resumed dial to a relay with two addresses, the first of which
+    /// answers nothing (a family that black-holes), reaches the relay at
+    /// the second: the first's early data going out is no sign it works.
+    #[tokio::test]
+    async fn a_resumed_relay_dial_passes_over_an_address_nothing_answers() {
+        let (server_config, client_config) = relay_server_and_client();
+        let server = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), Some(server_config)).unwrap();
+        let client = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), None).unwrap();
+        link_to_relay(&client, &server, &client_config).await;
+        let silent = std::net::UdpSocket::bind(ANY_PORT).unwrap();
+        let relay = server.local_addr().unwrap();
+        let dial = QuicCarrier::connect_relay_candidates_with_config(
+            &client,
+            [silent.local_addr().unwrap(), relay],
+            "relay.test",
+            relay.port(),
+            client_config,
+            None,
+        );
+        let answer = answer_early(&server.endpoint);
+        let (carrier, _connection) =
+            tokio::time::timeout(RELAY_QUIC_HANDSHAKE_TIMEOUT * 2, async {
+                tokio::join!(dial, answer)
+            })
+            .await
+            .expect("the relay answered at its second address");
+        let carrier = carrier.expect("the relay reached at its second address");
+        assert_eq!(
+            carrier.connection.remote_address(),
+            client.socket.stand_in_at(relay)
+        );
+    }
+
+    /// A dial through a forwarder to a host whose last link went goes
+    /// through the forwarder, not on the path that link last used; one to
+    /// a host a live link carries keeps its path.
+    #[tokio::test]
+    async fn a_dial_through_a_forwarder_passes_over_a_gone_links_route() {
+        let (_server_config, client_config) = relay_server_and_client();
+        let client = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), None).unwrap();
+        let desk = HostId::new_v4();
+        let old: SocketAddr = "192.0.2.50:5000".parse().unwrap();
+        assert!(client.socket.name(client.socket.stand_in_at(old), desk));
+        let through = super::super::socket::LinkId(7);
+
+        drop(client.connect_through(client_config.clone(), desk, through, "relay.test"));
+        assert_eq!(
+            client.socket.trusted_route(desk),
+            Some(super::super::socket::Path::Direct(old)),
+            "a live link's path is kept"
+        );
+
+        client.socket.release(desk);
+        drop(client.connect_through(client_config, desk, through, "relay.test"));
+        assert_eq!(
+            client.socket.trusted_route(desk),
+            Some(super::super::socket::Path::Forwarded(through))
+        );
+    }
+
     #[tokio::test]
     async fn a_relay_ticket_kept_on_disk_resumes_after_the_client_restarts() {
         use crate::link::client_tickets::saved;
@@ -2282,6 +2491,7 @@ mod tests {
                     "relay.test",
                     addr.port(),
                     config,
+                    None,
                 )
                 .await
                 .expect("the relay dial");

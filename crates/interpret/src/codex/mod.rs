@@ -13,16 +13,19 @@
 //! What the agent offers comes from the server, never from a client
 //! catalogue: once the handshake's thread answer arrives, the interpreter
 //! asks `model/list` (following `nextCursor` to the last page; hidden
-//! models left out) and `skills/list` once per server, and the snapshot
-//! carries the models with their reasoning efforts and the skills as
-//! commands. A refused or missing answer leaves its list empty.
+//! models left out) and `skills/list` once per server, and the catalogue
+//! carries the models with their reasoning efforts and the skills. A
+//! refused or missing answer leaves its list empty.
 //!
 //! Codex's server has no slash commands: each command Codex's own view
 //! offers is client code calling a server method. The ones amux runs are
-//! [`COMMANDS`], each a request (or, for `/init`, Codex's fixed prompt);
-//! the catalogue lists them before the skills, and any other `/word` is
-//! refused rather than sent to the model as words. A skill's name after a
-//! slash goes to the model as written, as it always has.
+//! [`COMMANDS`], each a request (or, for `/init`, Codex's fixed prompt),
+//! and they are the catalogue's commands; any other `/word` is refused
+//! rather than sent to the model as words, with the mention to type when it
+//! names a skill. Codex selects a skill from a `$name` mention anywhere in a
+//! message: the text goes as typed, with a skill input item naming the
+//! file of each skill it mentions, as Codex's own app sends them, so two
+//! skills of one name still select one (the first Codex lists).
 //!
 //! An agent message goes to Codex with `thread/inject_items`. Codex reports
 //! nothing about an injected item, so the interpreter writes the
@@ -42,7 +45,7 @@ use codex_protocol::client::{
     ReviewTarget, ThreadIdParams, ThreadStartParams, TurnInterruptParams, TurnStartParams,
     TurnSteerParams, UserInputResponse,
 };
-use codex_protocol::items::{TextContent, UserInput};
+use codex_protocol::items::{NamedPath, TextContent, UserInput};
 use codex_protocol::server::{
     CommandDecision, FileSystemPermissions, NetworkPermissions, PermissionProfile,
 };
@@ -57,9 +60,9 @@ use serde_json::Value;
 use wire::{
     AgentSpec, AskClosed, AskItem, BackgroundJob, CodexAnswer, CodexAsk, CodexGrant, CodexItem,
     CodexSnapshot, CodexUsage, ContextMeter, Decision, DecisionOutcome, Envelope, FormAction,
-    Input, KindInput, OfferedCommand, OfferedMode, OfferedModel, OfferedPermission, QueuedInput,
-    Refusal, Rejected, Step, TaskList, TaskListEntry, ToolDecision, ToolServerHealth, Work,
-    codex_answer, codex_ask, codex_grant, codex_input, codex_item, tool_decision, work,
+    Input, KindInput, OfferedCommand, OfferedMode, OfferedModel, OfferedPermission, OfferedSkill,
+    QueuedInput, Refusal, Rejected, Step, TaskList, TaskListEntry, ToolDecision, ToolServerHealth,
+    Work, codex_answer, codex_ask, codex_grant, codex_input, codex_item, tool_decision, work,
 };
 
 use crate::claude_common::{clip, describe_tasks, or_dash};
@@ -149,6 +152,48 @@ pub const PROMPT_CHARS_MOST: usize = 1 << 20;
 /// agent process records for its next incarnation to resume.
 pub const CLEAR_REQUEST: &str = "amux-clear-";
 
+/// Notifications amux never draws: the agent asks Codex not to send them at
+/// `initialize`, and the interpreter drops them should an older Codex send
+/// them anyway. A hook's effect on the turn reaches the conversation itself
+/// (a blocked call's output names the hook), as it does for Claude.
+pub const DROPPED_NOTIFICATIONS: &[&str] = &[
+    "hook/started",
+    "hook/completed",
+    "item/mcpToolCall/progress",
+    "item/fileChange/patchUpdated",
+    "app/list/updated",
+    "thread/queue/changed",
+    "thread/environment/connected",
+    "thread/environment/disconnected",
+    "thread/attachment/updated",
+    "thread/prediction/updated",
+    "account/gatewayOAuth/changed",
+    "mcpServer/oauthLogin/completed",
+    "mcpServer/event/stream/notification",
+    "modelProvider/authRecoveryStarted",
+    "modelProvider/authRecoveryCompleted",
+    "windows/worldWritableWarning",
+    "windowsSandbox/setupCompleted",
+];
+
+/// The agent process's handshake request that starts the agent's first
+/// thread.
+pub const THREAD_REQUEST: &str = "agent-thread";
+
+/// The agent process's handshake request that resumes the thread a later
+/// incarnation continues, without its turns.
+pub const RESUME_REQUEST: &str = "agent-resume";
+
+/// The interpreter's request for a new thread when the one being resumed
+/// has no history left.
+pub const FRESH_THREAD_REQUEST: &str = "amux-fresh-thread";
+
+/// Whether the answer to request `id` names a thread the agent keeps as its
+/// conversation, which the next incarnation resumes.
+pub fn starts_a_thread(id: &str) -> bool {
+    id == THREAD_REQUEST || id == FRESH_THREAD_REQUEST || id.starts_with(CLEAR_REQUEST)
+}
+
 /// A slash command typed for Codex.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Command {
@@ -190,9 +235,8 @@ impl Command {
     }
 }
 
-/// What a catalogue offers as commands: [`COMMANDS`], then the skills. A
-/// skill named like a command is left out, since `/name` runs the command.
-fn offered_commands(skills: impl IntoIterator<Item = OfferedCommand>) -> Vec<OfferedCommand> {
+/// What a catalogue offers as commands: [`COMMANDS`].
+fn offered_commands() -> Vec<OfferedCommand> {
     COMMANDS
         .iter()
         .map(|(name, description, hint)| OfferedCommand {
@@ -201,11 +245,38 @@ fn offered_commands(skills: impl IntoIterator<Item = OfferedCommand>) -> Vec<Off
             argument_hint: (*hint).to_owned(),
             source: "codex".to_owned(),
         })
-        .chain(
-            skills
-                .into_iter()
-                .filter(|skill| !COMMANDS.iter().any(|(name, ..)| *name == skill.name)),
-        )
+        .collect()
+}
+
+/// A skill `skills/list` named, with the file a skill item names.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct ListedSkill {
+    name: String,
+    description: String,
+    source: String,
+    path: String,
+}
+
+impl ListedSkill {
+    fn offered(&self) -> OfferedSkill {
+        OfferedSkill {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            source: self.source.clone(),
+        }
+    }
+}
+
+/// The names `text` mentions as Codex reads them: a `$` and a run of
+/// letters, digits, `_`, `-` and `:`.
+fn mentions(text: &str) -> Vec<&str> {
+    let mention = |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | ':');
+    text.split('$')
+        .skip(1)
+        .filter_map(|after| {
+            let end = after.find(|c: char| !mention(c)).unwrap_or(after.len());
+            (end > 0).then(|| &after[..end])
+        })
         .collect()
 }
 
@@ -231,6 +302,14 @@ enum Request {
     Compact,
     /// `thread/start` for `/clear`.
     Clear,
+    /// `thread/unarchive` for the thread a resume found archived.
+    Unarchive,
+    /// `thread/resume` once that thread is unarchived.
+    Resume,
+    /// `thread/start` in place of a thread whose history is gone.
+    Fresh,
+    /// `thread/unsubscribe` from a thread the agent left.
+    Unsubscribe,
     /// `review/start` for `/review`.
     Review,
     Inject {
@@ -260,6 +339,11 @@ enum Request {
         #[serde(with = "serde_pb::msgs")]
         listed: Vec<BackgroundJob>,
     },
+    /// `thread/backgroundTerminals/terminate` for the job with this key,
+    /// Codex's process id.
+    StopJob {
+        key: String,
+    },
 }
 
 /// What answering an open ask needs beyond the wire ask.
@@ -275,6 +359,9 @@ struct AskMeta {
     questions: Vec<(String, Vec<String>)>,
     /// When it opened, for the item of an ask that is the work.
     at_ms: i64,
+    /// The thread that asked: the agent's own, or a child thread's on the
+    /// same server, which the agent's turn end leaves open.
+    thread: String,
 }
 
 /// A unit of work as last emitted.
@@ -424,9 +511,13 @@ pub fn host_catalogue(
 ) -> wire::Catalogue {
     wire::Catalogue {
         models: facts::offered_models(models),
-        commands: offered_commands(facts::offered_skills(skills)),
+        commands: offered_commands(),
         permissions: offered_permissions(),
         modes: offered_modes(),
+        skills: facts::listed_skills(skills)
+            .iter()
+            .map(ListedSkill::offered)
+            .collect(),
     }
 }
 
@@ -481,8 +572,7 @@ pub struct State {
     /// What `model/list` and `skills/list` answered, whole: the catalogue.
     #[serde(with = "serde_pb::msgs")]
     models: Vec<OfferedModel>,
-    #[serde(with = "serde_pb::msgs")]
-    commands: Vec<OfferedCommand>,
+    skills: Vec<ListedSkill>,
     /// This server was asked what it offers.
     offers_asked: bool,
     /// How many times `skills/list` was asked, which names each ask.
@@ -493,6 +583,10 @@ pub struct State {
     overrides: Overrides,
     /// The turn Codex reports running.
     active_turn: Option<String>,
+    /// The last turn Codex reported ended. Codex writes a turn's completion
+    /// and the answer to the request that started it from separate tasks,
+    /// so an answer naming this turn can come after it ended.
+    ended_turn: Option<String>,
     /// The running turn has reported its prompt: a later user message in
     /// it is a steer.
     turn_prompted: bool,
@@ -512,6 +606,10 @@ pub struct State {
     #[serde(with = "serde_pb::bytes_vec")]
     parked: Vec<Vec<u8>>,
     works: BTreeMap<String, WorkState>,
+    /// Child threads' file changes, by item id, which their approvals show:
+    /// the rest of a child's work is drawn by its own subagent row.
+    #[serde(with = "serde_pb::msg_map")]
+    child_changes: BTreeMap<String, wire::FileChangeWork>,
     /// When each amux send call started, so its completion keeps the time.
     sent: BTreeMap<String, i64>,
     streamed: BTreeMap<String, Streamed>,
@@ -591,7 +689,7 @@ impl State {
             // The mode the agent was created in, which its first turn sets.
             collaboration: created_mode.clone(),
             models: Vec::new(),
-            commands: Vec::new(),
+            skills: Vec::new(),
             offers_asked: false,
             skills_asked: 0,
             skills_stale: false,
@@ -600,6 +698,7 @@ impl State {
                 ..Overrides::default()
             },
             active_turn: None,
+            ended_turn: None,
             turn_prompted: false,
             interrupt_pending: false,
             interrupted_here: false,
@@ -609,6 +708,7 @@ impl State {
             held: Vec::new(),
             parked: Vec::new(),
             works: BTreeMap::new(),
+            child_changes: BTreeMap::new(),
             sent: BTreeMap::new(),
             streamed: BTreeMap::new(),
             asks: BTreeMap::new(),
@@ -711,6 +811,21 @@ impl State {
 
     /// A request under an id of its own choosing, outside the numbered run
     /// that turns and their controls take.
+    /// A new thread in the agent's folder, on its model and permission.
+    fn new_thread(&self) -> ThreadStartParams {
+        let named = self.permission_value().and_then(permission);
+        ThreadStartParams {
+            cwd: (!self.cwd.is_empty()).then(|| self.cwd.clone()),
+            model: self.model.clone(),
+            approval_policy: named
+                .map(|named| AskForApproval::Named(ApprovalPolicy::parse(named.approval_policy))),
+            approvals_reviewer: named
+                .map(|named| ApprovalsReviewer::parse(named.approvals_reviewer)),
+            sandbox: named.map(|named| SandboxMode::parse(named.sandbox)),
+            ..Default::default()
+        }
+    }
+
     fn request_as(&mut self, id: String, message: ClientRequest, request: Request) -> Vec<u8> {
         self.requests.insert(id.clone(), request);
         codex_protocol::encode(&ClientMessage::request(RequestId::String(id), message))
@@ -906,13 +1021,24 @@ impl State {
             _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
-            // A `/word` that is neither a command amux runs nor a skill
-            // would reach the model as words.
-            codex_input::Of::Prompt(prompt)
-                if Command::parse(&prompt.text) == Some(Err(()))
-                    && !self.names_skill(&prompt.text) =>
-            {
-                self.shared.reject(emit, &id, Refusal::Unsupported)
+            codex_input::Of::StopJob(stop) => self.stop_job(emit, &id, stop.key),
+            // A `/word` that is not a command amux runs would reach the
+            // model as words. A skill is mentioned as `$name` instead.
+            codex_input::Of::Prompt(prompt) if Command::parse(&prompt.text) == Some(Err(())) => {
+                match self.names_skill(&prompt.text) {
+                    Some(skill) => {
+                        let detail = format!("Codex takes a skill as a mention: type ${skill}");
+                        self.shared.refuse(
+                            emit,
+                            &id,
+                            Rejected {
+                                refusal: Refusal::Unsupported as i32,
+                                detail: Some(detail),
+                            },
+                        )
+                    }
+                    None => self.shared.reject(emit, &id, Refusal::Unsupported),
+                }
             }
             // Refused here, so the words go back to the composer.
             codex_input::Of::Prompt(prompt) if prompt.text.chars().count() > PROMPT_CHARS_MOST => {
@@ -1022,18 +1148,7 @@ impl State {
             Some(Command::Clear) => {
                 self.shared.reflect_prompt();
                 self.clears += 1;
-                let named = self.permission_value().and_then(permission);
-                let params = ThreadStartParams {
-                    cwd: (!self.cwd.is_empty()).then(|| self.cwd.clone()),
-                    model: self.model.clone(),
-                    approval_policy: named.map(|named| {
-                        AskForApproval::Named(ApprovalPolicy::parse(named.approval_policy))
-                    }),
-                    approvals_reviewer: named
-                        .map(|named| ApprovalsReviewer::parse(named.approvals_reviewer)),
-                    sandbox: named.map(|named| SandboxMode::parse(named.sandbox)),
-                    ..Default::default()
-                };
+                let params = self.new_thread();
                 let bytes = self.request_as(
                     format!("{CLEAR_REQUEST}{}", self.clears),
                     ClientRequest::ThreadStart(params),
@@ -1109,15 +1224,37 @@ impl State {
         );
     }
 
-    /// Whether `text` is a slash and the name of a skill Codex offers.
-    fn names_skill(&self, text: &str) -> bool {
+    /// The skill `text`, a slash and a name, names, if Codex offers one.
+    fn names_skill(&self, text: &str) -> Option<&str> {
         let name = text
             .trim()
             .trim_start_matches('/')
             .split(char::is_whitespace)
             .next()
             .unwrap_or_default();
-        self.commands.iter().any(|skill| skill.name == name)
+        self.skills
+            .iter()
+            .find(|skill| skill.name == name)
+            .map(|skill| skill.name.as_str())
+    }
+
+    /// What a message gives Codex: its text, then a skill item for each
+    /// skill it mentions, the first Codex lists of a name.
+    fn user_input(&self, text: &str) -> Vec<UserInput> {
+        let mut input = vec![UserInput::text(text)];
+        let mut named = BTreeSet::new();
+        for name in mentions(text) {
+            if let Some(skill) = self.skills.iter().find(|skill| skill.name == name)
+                && named.insert(name)
+            {
+                input.push(UserInput::Skill(NamedPath {
+                    name: skill.name.clone(),
+                    path: skill.path.clone(),
+                    extra: Default::default(),
+                }));
+            }
+        }
+        input
     }
 
     /// The permission Codex's settings make now, by its catalogue value.
@@ -1153,7 +1290,7 @@ impl State {
             input: if text.is_empty() {
                 Vec::new()
             } else {
-                vec![UserInput::text(text)]
+                self.user_input(text)
             },
             model: overrides.model,
             effort: overrides
@@ -1175,7 +1312,7 @@ impl State {
         let params = TurnSteerParams {
             thread_id: self.thread(),
             expected_turn_id: turn.to_owned(),
-            input: vec![UserInput::text(crate::shared::provider_text(&entry))],
+            input: self.user_input(&crate::shared::provider_text(&entry)),
             client_user_message_id: Some(client_message_id(&entry.input_id)),
             ..Default::default()
         };
@@ -1387,7 +1524,8 @@ impl State {
             Decision::Approve
             | Decision::ApproveSession
             | Decision::ApproveSimilar
-            | Decision::ApproveNetwork => DecisionOutcome::Allowed,
+            | Decision::ApproveNetwork
+            | Decision::ApproveAlways => DecisionOutcome::Allowed,
             Decision::Deny | Decision::Abort => DecisionOutcome::Denied,
             Decision::Unspecified => DecisionOutcome::Unknown,
         };
@@ -1933,6 +2071,12 @@ fn describe_item(body: &[u8]) -> ItemView {
         Some(Kind::Prompt(_)) => ("prompt", true, String::new()),
         Some(Kind::Message(text)) => ("message", text.complete, String::new()),
         Some(Kind::Plan(plan)) => ("plan", plan.complete, crate::shared::describe_plan(&plan)),
+        Some(Kind::CommandOutput(output)) => ("command_output", true, output.command),
+        Some(Kind::SafetyCheck(check)) => (
+            "safety_check",
+            !check.running,
+            format!("running={}", check.running),
+        ),
         Some(Kind::WorkingNote(text)) => ("working_note", text.complete, String::new()),
         Some(Kind::Reasoning(reasoning)) => (
             "reasoning",
@@ -1999,16 +2143,6 @@ fn describe_item(body: &[u8]) -> ItemView {
                 error.max_attempts,
             ),
         ),
-        Some(Kind::Reroute(switch)) => (
-            "reroute",
-            true,
-            format!(
-                "{} -> {} {}",
-                switch.from,
-                switch.to,
-                Value::String(switch.reason)
-            ),
-        ),
         Some(Kind::Unrecognized(unrecognized)) => (
             "unrecognized",
             true,
@@ -2067,8 +2201,10 @@ fn granted(decision: Decision, response: &ClientResponse) -> Option<CodexGrant> 
         },
         _ => None,
     };
-    of.or_else(|| {
-        (decision == Decision::ApproveSession).then_some(codex_grant::Of::Session(wire::Empty {}))
+    of.or(match decision {
+        Decision::ApproveSession => Some(codex_grant::Of::Session(wire::Empty {})),
+        Decision::ApproveAlways => Some(codex_grant::Of::Always(wire::Empty {})),
+        _ => None,
     })
     .map(|of| CodexGrant { of: Some(of) })
 }

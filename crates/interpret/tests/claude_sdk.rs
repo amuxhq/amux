@@ -33,6 +33,7 @@ goldens! {
     amuxs_own_tools_draw_a_message_or_nothing => "amux_tools",
     lifecycle_events_write_boundaries_and_interrupt => "lifecycle",
     permission_asks_keep_scopes_reason_and_description => "asks",
+    a_flagged_ask_offers_no_always_and_defaults_to_no => "flagged_ask",
     questions_and_plan_verdicts_are_asks => "verdicts",
     plans_are_items_with_their_verdict => "plans",
     a_stopped_question_is_dismissed => "question_stopped",
@@ -70,7 +71,7 @@ goldens! {
     recorded_background_shell => "recorded_background_shell",
     recorded_client_id => "recorded_client_id",
     recorded_elicitation_declined => "recorded_elicitation_declined",
-    recorded_elicitation_link_refused => "recorded_elicitation_link_refused",
+    recorded_elicitation_link_accepted => "recorded_elicitation_link_accepted",
     recorded_failed_tool_server => "recorded_failed_tool_server",
     recorded_failing_command => "recorded_failing_command",
     recorded_image => "recorded_image",
@@ -409,26 +410,40 @@ fn the_initialize_answer_lists_models_with_efforts_and_commands_with_sources() {
     let first = &snapshot.models[0];
     assert_eq!(first.value, "default");
     assert_eq!(first.display_name, "Default (recommended)");
-    assert!(first.description.starts_with("Opus 5 with 1M context"));
+    assert!(first.description.starts_with("Opus 5.5"));
     assert_eq!(first.efforts, ["low", "medium", "high", "xhigh", "max"]);
     let haiku = snapshot
         .models
         .iter()
-        .find(|model| model.value == "haiku")
+        .find(|model| model.value == "claude-haiku-4-5-20251001")
         .unwrap();
-    assert!(haiku.efforts.is_empty(), "Haiku takes no effort");
-    let plugin = snapshot
-        .commands
-        .iter()
-        .find(|command| command.name == "stripe:test-cards")
-        .unwrap();
-    assert_eq!(plugin.source, "stripe");
+    assert!(haiku.efforts.is_empty(), "Haiku 4.5 takes no effort");
     let own = snapshot
         .commands
         .iter()
         .find(|command| command.name == "compact")
         .unwrap();
     assert_eq!(own.source, "");
+}
+
+/// A plugin's command is named after its plugin, which is its source. The
+/// recordings run with no plugins of the machine's own, so the answer is
+/// written here.
+#[test]
+fn a_plugin_command_names_its_plugin_as_its_source() {
+    let mut state = started();
+    let stepped = ClaudeSdk::step(
+        &mut state,
+        stream(initialized(&["compact", "stripe:test-cards"])),
+    );
+    let (_, catalogue) =
+        written_catalogue(&stepped).expect("the initialize answer writes a catalogue");
+    let sources: Vec<_> = catalogue
+        .commands
+        .iter()
+        .map(|command| (command.name.as_str(), command.source.as_str()))
+        .collect();
+    assert_eq!(sources, [("compact", ""), ("stripe:test-cards", "stripe")]);
 }
 
 /// The attach tool's element in a finished reply becomes an attachment at
@@ -849,17 +864,17 @@ fn compacting_status_is_an_item() {
         kinds,
         [
             (
-                "00d461b3-c569-43f4-80ff-33ac9a87bfaf".to_owned(),
+                "335a34cf-0794-4ca4-8a83-3fa3e1d49ae7".to_owned(),
                 Kind::Status(wire::Status {
                     status: wire::SdkStatus::Compacting as i32,
                     word: "compacting".into(),
                 }),
             ),
             (
-                "115f463b-1a4e-4a07-bf00-88e995d814ac".to_owned(),
+                "be835eab-7b1e-4c04-927b-1f6e8dcdb955".to_owned(),
                 Kind::Compaction(wire::Compaction {
-                    tokens_before: Some(29_543),
-                    tokens_after: Some(2_963),
+                    tokens_before: Some(25_097),
+                    tokens_after: Some(4_034),
                     automatic: false,
                 }),
             ),
@@ -1244,4 +1259,853 @@ fn auto_mode_names_each_model_by_alias_and_by_the_model_it_resolves_to() {
         .find(|offered| offered.value == "auto")
         .expect("auto mode is offered");
     assert_eq!(auto.models, ["haiku", "claude-haiku-5-5"]);
+}
+
+/// The session and kind of every boundary a step writes.
+fn boundaries(stepped: &interpret::Stepped) -> Vec<(String, wire::BoundaryKind, String)> {
+    use prost::Message as _;
+    stepped
+        .step
+        .items
+        .iter()
+        .filter_map(
+            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_sdk_item::Kind::Boundary(boundary) => {
+                    Some((item.key.clone(), boundary.kind(), boundary.provider_session))
+                }
+                _ => None,
+            },
+        )
+        .collect()
+}
+
+fn snapshot_session(stepped: &interpret::Stepped) -> Option<String> {
+    use prost::Message as _;
+    stepped.step.snapshot.as_ref().and_then(|snapshot| {
+        wire::ClaudeSdkSnapshot::decode(&snapshot.body[..])
+            .unwrap()
+            .provider_session
+    })
+}
+
+/// Claude's reset frame names an id it made up before it made the new
+/// session; the next init names the real one. That one is adopted, drawn
+/// on the cleared boundary and saved for the next incarnation, with no
+/// fork, whatever started the reset.
+#[test]
+fn a_reset_adopts_and_saves_the_next_inits_session() {
+    for trigger in ["clear", "plan_mode_exit", "fresh_session", "onboarding"] {
+        let mut state = started();
+        let reset = ClaudeSdk::step(
+            &mut state,
+            stream(json!({
+                "type": "conversation_reset",
+                "new_conversation_id": "made-up",
+                "uuid": "made-up",
+                "session_id": "s",
+                "trigger": trigger,
+            })),
+        );
+        let init = ClaudeSdk::step(
+            &mut state,
+            stream(json!({"type": "system", "subtype": "init", "uuid": "i2", "session_id": "s2"})),
+        );
+        for stepped in [&reset, &init] {
+            assert!(
+                boundaries(stepped)
+                    .iter()
+                    .all(|(_, _, session)| session != "made-up")
+                    && snapshot_session(stepped).as_deref() != Some("made-up"),
+                "{trigger}: the made-up id is never used"
+            );
+            assert!(
+                boundaries(stepped)
+                    .iter()
+                    .all(|(_, kind, _)| *kind != wire::BoundaryKind::Forked),
+                "{trigger}: no fork"
+            );
+        }
+        let cleared: Vec<_> = boundaries(&reset)
+            .into_iter()
+            .chain(boundaries(&init))
+            .filter(|(_, kind, _)| *kind == wire::BoundaryKind::Cleared)
+            .collect();
+        assert_eq!(
+            cleared.last().map(|(_, _, session)| session.as_str()),
+            Some("s2"),
+            "{trigger}: the cleared boundary names the new session"
+        );
+        assert_eq!(snapshot_session(&init).as_deref(), Some("s2"), "{trigger}");
+        assert!(
+            init.effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::ProviderSession { id } if id == "s2")),
+            "{trigger}: the new session is saved: {:?}",
+            init.effects
+        );
+    }
+}
+
+/// Headless Claude, running `claude-root`, idle after its first init.
+fn idle_on_root() -> State {
+    let mut state = started();
+    ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "system", "subtype": "init", "uuid": "i1", "session_id": "s", "model": "claude-root"}),
+        ),
+    );
+    state
+}
+
+/// A frame from the subagent that `toolu_agent` started.
+fn subagent(mut frame: Value) -> Event {
+    frame["parent_tool_use_id"] = json!("toolu_agent");
+    frame["session_id"] = json!("s");
+    stream(frame)
+}
+
+fn subagent_assistant(uuid: &str, content: Value) -> Event {
+    subagent(json!({
+        "type": "assistant",
+        "uuid": uuid,
+        "message": {
+            "id": format!("msg-{uuid}"), "type": "message", "role": "assistant",
+            "model": "claude-sub", "content": content,
+            "usage": {"input_tokens": 1432, "output_tokens": 5},
+        },
+    }))
+}
+
+fn sdk_snapshot(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudeSdkSnapshot)> {
+    use prost::Message as _;
+    stepped.step.snapshot.as_ref().map(|snapshot| {
+        (
+            snapshot.phase(),
+            wire::ClaudeSdkSnapshot::decode(&snapshot.body[..]).unwrap(),
+        )
+    })
+}
+
+fn item_kinds(stepped: &interpret::Stepped) -> Vec<(String, String, String)> {
+    use prost::Message as _;
+    stepped
+        .step
+        .items
+        .iter()
+        .map(|item| {
+            let kind = wire::ClaudeSdkItem::decode(&item.body[..])
+                .ok()
+                .and_then(|body| body.kind);
+            let parent = match &kind {
+                Some(wire::claude_sdk_item::Kind::Tool(tool)) => tool.parent_key.clone(),
+                _ => String::new(),
+            };
+            let name = kind
+                .map(|kind| {
+                    format!("{kind:?}")
+                        .split('(')
+                        .next()
+                        .unwrap_or_default()
+                        .to_owned()
+                })
+                .unwrap_or_default();
+            (item.key.clone(), name, parent)
+        })
+        .collect()
+}
+
+/// A subagent's frames are its own: they start no turn, set no model or
+/// context, and draw nothing at the top level, not its text, thinking,
+/// error or interruption; its tool calls hang under the call that started
+/// it.
+#[test]
+fn a_subagents_frames_leave_the_main_thread_alone() {
+    let mut state = idle_on_root();
+    let frames = [
+        subagent(json!({
+            "type": "stream_event", "uuid": "se1",
+            "event": {"type": "message_start", "message": {
+                "id": "msg-sub-stream", "type": "message", "role": "assistant", "model": "claude-sub",
+                "content": [], "usage": {"input_tokens": 999},
+            }},
+        })),
+        subagent_assistant(
+            "sa1",
+            json!([
+                {"type": "thinking", "thinking": "the subagent thinks", "signature": ""},
+                {"type": "text", "text": "ONE TWO THREE"},
+                {"type": "tool_use", "id": "toolu_child", "name": "Bash", "input": {"command": "ls"}},
+            ]),
+        ),
+        subagent(json!({
+            "type": "assistant", "uuid": "sa2", "error": "authentication_failed",
+            "message": {
+                "id": "msg-sa2", "type": "message", "role": "assistant", "model": "claude-sub",
+                "content": [{"type": "text", "text": "Invalid API key"}],
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+            },
+        })),
+    ];
+    for frame in frames {
+        let stepped = ClaudeSdk::step(&mut state, frame);
+        if let Some((phase, snapshot)) = sdk_snapshot(&stepped) {
+            assert_ne!(phase, wire::Phase::Working, "no turn starts");
+            assert_eq!(snapshot.model.as_deref(), Some("claude-root"));
+            assert_ne!(
+                snapshot.context.as_ref().map(|meter| meter.used_tokens),
+                Some(1432)
+            );
+            assert_ne!(
+                snapshot.context.as_ref().map(|meter| meter.used_tokens),
+                Some(999)
+            );
+            assert_ne!(
+                snapshot.sign_in.as_ref().map(|sign_in| sign_in.state()),
+                Some(wire::SignInState::Failed)
+            );
+        }
+        for (key, kind, parent) in item_kinds(&stepped) {
+            assert!(
+                kind == "Tool" && parent == "toolu_agent",
+                "only the subagent's tool calls, under its call: {key} {kind} parent={parent:?}"
+            );
+        }
+    }
+}
+
+/// A subagent's interruption marker is not the person's: the turn that
+/// is running ends as it ends.
+#[test]
+fn a_subagents_interruption_does_not_mark_the_turn() {
+    let mut state = idle_on_root();
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "go".into(),
+        ..Default::default()
+    });
+    ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    ClaudeSdk::step(
+        &mut state,
+        subagent(json!({
+            "type": "user", "uuid": "su1",
+            "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user]"}]},
+        })),
+    );
+    let ended = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "result", "subtype": "success", "uuid": "r1", "session_id": "s",
+            "is_error": false, "duration_ms": 10, "num_turns": 1, "result": "done",
+        })),
+    );
+    use prost::Message as _;
+    let outcomes: Vec<_> = ended
+        .step
+        .items
+        .iter()
+        .filter_map(
+            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_sdk_item::Kind::Turn(turn) => Some(turn.outcome()),
+                _ => None,
+            },
+        )
+        .collect();
+    assert_eq!(outcomes, [wire::TurnOutcome::Completed]);
+}
+
+/// Claude names the subagent that asks: its call hangs under the call that
+/// started that subagent even before its own frame arrives.
+#[test]
+fn a_subagents_ask_hangs_under_its_task() {
+    let mut state = idle_on_root();
+    ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "count", "is_backgrounded": true,
+        })),
+    );
+    let asked = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "control_request", "request_id": "req-1",
+            "request": {
+                "subtype": "can_use_tool", "tool_name": "Bash", "input": {"command": "ls"},
+                "tool_use_id": "toolu_child", "agent_id": "a1",
+            },
+        })),
+    );
+    let child: Vec<_> = item_kinds(&asked)
+        .into_iter()
+        .filter(|(key, ..)| key == "toolu_child")
+        .collect();
+    assert!(!child.is_empty(), "{:?}", item_kinds(&asked));
+    assert!(
+        child.iter().all(|(_, _, parent)| parent == "toolu_agent"),
+        "{child:?}"
+    );
+}
+
+/// A subagent working in the background holds no turn open, so the
+/// person's prompt goes to Claude at once.
+#[test]
+fn a_prompt_goes_in_while_a_background_subagent_works() {
+    let mut state = idle_on_root();
+    ClaudeSdk::step(
+        &mut state,
+        subagent_assistant(
+            "sa1",
+            json!([{"type": "tool_use", "id": "toolu_child", "name": "Bash", "input": {"command": "ls"}}]),
+        ),
+    );
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "meanwhile".into(),
+        ..Default::default()
+    });
+    let sent = ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    assert!(
+        sent.effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::UserMessage { .. })),
+        "{:?}",
+        sent.effects
+    );
+}
+
+fn tool_states(stepped: &interpret::Stepped) -> Vec<(String, wire::ToolState)> {
+    use prost::Message as _;
+    stepped
+        .step
+        .items
+        .iter()
+        .filter_map(
+            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_sdk_item::Kind::Tool(tool) => Some((item.key.clone(), tool.state())),
+                _ => None,
+            },
+        )
+        .collect()
+}
+
+/// A subagent Claude runs in the background outlives the turn that
+/// started it: the turn's result leaves its calls and the ask it raised
+/// open, its calls still finish, and its asks close when its task ends.
+#[test]
+fn a_background_subagents_calls_and_asks_outlive_the_turn() {
+    let mut state = idle_on_root();
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "count in the background".into(),
+        ..Default::default()
+    });
+    ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    let root = |uuid: &str, content: Value| {
+        stream(json!({
+            "type": "assistant", "uuid": uuid, "session_id": "s", "parent_tool_use_id": null,
+            "message": {
+                "id": format!("msg-{uuid}"), "type": "message", "role": "assistant",
+                "model": "claude-root", "content": content,
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            },
+        }))
+    };
+    for event in [
+        root(
+            "ra1",
+            json!([{"type": "tool_use", "id": "toolu_agent", "name": "Agent",
+                "input": {"description": "count", "prompt": "Count.", "subagent_type": "general-purpose", "run_in_background": true}}]),
+        ),
+        stream(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "count", "is_backgrounded": true,
+        })),
+        subagent_assistant(
+            "sa1",
+            json!([{"type": "tool_use", "id": "toolu_child", "name": "Bash", "input": {"command": "ls"}}]),
+        ),
+        stream(json!({
+            "type": "control_request", "request_id": "req-1",
+            "request": {
+                "subtype": "can_use_tool", "tool_name": "Bash", "input": {"command": "rm -r build"},
+                "tool_use_id": "toolu_ask", "agent_id": "a1",
+            },
+        })),
+    ] {
+        ClaudeSdk::step(&mut state, event);
+    }
+    let ended = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "result", "subtype": "success", "uuid": "r1", "session_id": "s",
+            "is_error": false, "duration_ms": 10, "num_turns": 1, "result": "launched",
+        })),
+    );
+    // A step publishes a snapshot only when it changes.
+    let asks = sdk_snapshot(&ended).map_or(1, |(_, snapshot)| snapshot.asks.len());
+    assert_eq!(asks, 1, "the subagent's ask stays open");
+    assert!(
+        tool_states(&ended)
+            .iter()
+            .all(|(_, state)| *state != wire::ToolState::Cancelled),
+        "{:?}",
+        tool_states(&ended)
+    );
+    let finished = ClaudeSdk::step(
+        &mut state,
+        subagent(json!({
+            "type": "user", "uuid": "su1",
+            "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_child", "content": "a b c", "is_error": false},
+            ]},
+        })),
+    );
+    assert_eq!(
+        tool_states(&finished),
+        [("toolu_child".to_owned(), wire::ToolState::Succeeded)],
+        "a call the subagent made before the turn ended still finishes"
+    );
+    let notified = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "n1", "session_id": "s",
+            "task_id": "a1", "tool_use_id": "toolu_agent", "status": "completed",
+            "summary": "counted", "output_file": "",
+        })),
+    );
+    let (_, snapshot) = sdk_snapshot(&notified).expect("the ask closing changes the snapshot");
+    assert!(
+        snapshot.asks.is_empty(),
+        "its asks close when its task ends"
+    );
+}
+
+fn result_frame(uuid: &str, extra: Value) -> Event {
+    let mut frame = json!({
+        "type": "result", "subtype": "success", "uuid": uuid, "session_id": "s",
+        "is_error": false, "duration_ms": 10, "num_turns": 1, "result": "",
+    });
+    frame
+        .as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    stream(frame)
+}
+
+fn turn_outcomes(stepped: &interpret::Stepped) -> Vec<wire::TurnOutcome> {
+    use prost::Message as _;
+    stepped
+        .step
+        .items
+        .iter()
+        .filter_map(
+            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_sdk_item::Kind::Turn(turn) => Some(turn.outcome()),
+                _ => None,
+            },
+        )
+        .collect()
+}
+
+/// While a person's prompt is open, a result that answers none of amux's
+/// messages (Claude's own background work finishing) is not that prompt's:
+/// the turn, its asks and its calls carry on, and the prompt's own result
+/// ends the turn.
+#[test]
+fn a_result_that_answers_none_of_amuxs_messages_leaves_the_persons_turn() {
+    for (what, foreign) in [
+        (
+            "names other messages",
+            json!({"user_message_uuids": ["someone-else"], "origin": {"kind": "task-notification"}}),
+        ),
+        (
+            "names none and is not a person's",
+            json!({"origin": {"kind": "task-notification"}}),
+        ),
+    ] {
+        let mut state = idle_on_root();
+        let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+            text: "go".into(),
+            ..Default::default()
+        });
+        ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+        ClaudeSdk::step(
+            &mut state,
+            stream(json!({
+                "type": "control_request", "request_id": "req-1",
+                "request": {"subtype": "can_use_tool", "tool_name": "Bash", "input": {"command": "ls"}, "tool_use_id": "toolu_1"},
+            })),
+        );
+        let stray = ClaudeSdk::step(&mut state, result_frame("r-bg", foreign));
+        assert!(turn_outcomes(&stray).is_empty(), "{what}: the turn goes on");
+        if let Some((phase, snapshot)) = sdk_snapshot(&stray) {
+            assert_ne!(phase, wire::Phase::Idle, "{what}");
+            assert_eq!(snapshot.asks.len(), 1, "{what}: the ask stays open");
+        }
+        let ours = ClaudeSdk::step(
+            &mut state,
+            result_frame("r1", json!({"user_message_uuids": [client_uuid(b"p1")]})),
+        );
+        assert_eq!(
+            turn_outcomes(&ours),
+            [wire::TurnOutcome::Completed],
+            "{what}: the prompt's own result ends it"
+        );
+    }
+}
+
+/// A result naming amux's message ends its turn even when Claude's own
+/// work began that turn: the person's prompt folded into it.
+#[test]
+fn a_task_notifications_result_naming_amuxs_message_ends_the_turn() {
+    let mut state = idle_on_root();
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "go".into(),
+        ..Default::default()
+    });
+    ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    let ended = ClaudeSdk::step(
+        &mut state,
+        result_frame(
+            "r1",
+            json!({"user_message_uuids": [client_uuid(b"p1")], "origin": {"kind": "task-notification"}}),
+        ),
+    );
+    assert_eq!(turn_outcomes(&ended), [wire::TurnOutcome::Completed]);
+}
+
+/// Claude marks an ask that must offer no persistent rule and must not be
+/// approved by a stray key: amux offers no scope, though Claude sent a
+/// suggestion, and carries the second mark to the clients.
+#[test]
+fn a_flagged_ask_offers_no_scope_and_says_it_defaults_to_no() {
+    let mut state = idle_on_root();
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "clean".into(),
+        ..Default::default()
+    });
+    ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    let asked = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "control_request", "request_id": "req-1",
+            "request": {
+                "subtype": "can_use_tool", "tool_name": "Bash", "input": {"command": "rm -rf target"},
+                "tool_use_id": "t1",
+                "permission_suggestions": [{"type": "addRules", "behavior": "allow", "destination": "localSettings",
+                    "rules": [{"toolName": "Bash", "ruleContent": "rm -rf target"}]}],
+                "suppress_always_allow_rule": true, "default_to_no": true,
+            },
+        })),
+    );
+    let (_, snapshot) = sdk_snapshot(&asked).expect("a snapshot");
+    let Some(wire::ask::Body::Permission(permission)) = &snapshot.asks[0].body else {
+        panic!("{:?}", snapshot.asks);
+    };
+    assert!(permission.scopes.is_empty(), "{:?}", permission.scopes);
+    assert!(permission.default_to_no);
+}
+
+/// Whether encoded wire bytes hold a terminal escape or the one-character
+/// CSI. Lengths and tags make any single control byte ordinary there.
+fn holds_terminal_codes(bytes: &[u8]) -> bool {
+    bytes
+        .windows(2)
+        .any(|pair| matches!(pair, [0x1b, b'[' | b']'] | [0xc2, 0x9b]))
+}
+
+/// Whether text holds a control character but a newline or a tab.
+fn holds_controls(text: &str) -> bool {
+    text.chars()
+        .any(|c| c.is_control() && c != '\n' && c != '\t')
+}
+
+/// Claude's text that becomes a wire field reaches no client with its
+/// terminal escapes or other control characters: the status word, a
+/// fallback's and a refusal's words, a command's output, an ask's reason,
+/// description and title, a denial's note and a tool server's message.
+#[test]
+fn claudes_text_reaches_the_wire_without_terminal_codes() {
+    let red = |text: &str| {
+        format!("\u{1b}[31m{text}\u{1b}[0m\u{1b}]8;;https://x\u{7}link\u{1b}]8;;\u{7}\u{9b}1m")
+    };
+    let mut state = idle_on_root();
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "/cost".into(),
+        ..Default::default()
+    });
+    ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    let facts = [
+        json!({"type": "system", "subtype": "status", "status": red("thinking"), "uuid": "st1", "session_id": "s"}),
+        json!({"type": "system", "subtype": "model_refusal_fallback", "trigger": "refusal", "direction": "down",
+            "original_model": "a", "fallback_model": "b", "request_id": null,
+            "api_refusal_explanation": red("switched"), "content": "x", "uuid": "f1", "session_id": "s"}),
+        json!({"type": "system", "subtype": "model_refusal_no_fallback", "original_model": "a", "request_id": null,
+            "content": red("refused"), "uuid": "f2", "session_id": "s"}),
+        json!({"type": "system", "subtype": "local_command_output", "content": red("ok"), "uuid": "lc1", "session_id": "s"}),
+        json!({"type": "assistant", "uuid": "m1", "session_id": "s", "parent_tool_use_id": null, "message": {
+            "id": "m1", "type": "message", "role": "assistant", "model": "claude-root",
+            "content": [{"type": "tool_use", "id": "t9", "name": "Bash", "input": {"command": "ls"}}],
+            "usage": {"input_tokens": 1, "output_tokens": 1}}}),
+        json!({"type": "system", "subtype": "permission_denied", "tool_name": "Bash", "tool_use_id": "t9",
+            "decision_reason": red("denied"), "message": "m", "uuid": "pd1", "session_id": "s"}),
+        json!({"type": "control_request", "request_id": "req-1", "request": {
+            "subtype": "can_use_tool", "tool_name": "Bash", "input": {"command": "rm x"}, "tool_use_id": "t1",
+            "decision_reason": red("reason"), "description": red("description"), "title": red("title")}}),
+        json!({"type": "control_request", "request_id": "req-2", "request": {
+            "subtype": "elicitation", "mcp_server_name": "github", "message": red("Sign in"),
+            "mode": "url", "url": "https://github.com/login/device", "elicitation_id": "el-1"}}),
+    ];
+    let mut coded = Vec::new();
+    for fact in facts {
+        let what = fact["subtype"]
+            .as_str()
+            .or(fact["request"]["subtype"].as_str())
+            .unwrap_or("assistant")
+            .to_owned();
+        let stepped = ClaudeSdk::step(&mut state, stream(fact));
+        let snapshot = stepped
+            .step
+            .snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.body.clone());
+        if stepped
+            .step
+            .items
+            .iter()
+            .map(|item| item.body.as_slice())
+            .chain(snapshot.as_deref())
+            .any(holds_terminal_codes)
+            || stepped
+                .step
+                .items
+                .iter()
+                .any(|item| holds_controls(&item.text))
+        {
+            coded.push(what);
+        }
+    }
+    assert!(
+        coded.is_empty(),
+        "terminal codes reached the wire from {coded:?}"
+    );
+}
+
+/// Headless Claude's plan approval switches to never ask where Claude was
+/// launched allowing it, as terminal Claude's does: one rule for both.
+#[test]
+fn a_plan_approval_switches_to_never_ask_where_claude_offers_it() {
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        provider_args: vec!["--allow-dangerously-skip-permissions".into()],
+        ..Default::default()
+    };
+    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "system", "subtype": "init", "uuid": "i", "session_id": "s", "model": "claude-root"}),
+        ),
+    );
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "plan it".into(),
+        ..Default::default()
+    });
+    ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    let asked = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "control_request", "request_id": "req-1",
+            "request": {"subtype": "can_use_tool", "tool_name": "ExitPlanMode",
+                "input": {"plan": "1. Do it."}, "tool_use_id": "t1"},
+        })),
+    );
+    let (_, snapshot) = sdk_snapshot(&asked).expect("a snapshot");
+    let Some(wire::ask::Body::Plan(plan)) = &snapshot.asks[0].body else {
+        panic!("{:?}", snapshot.asks);
+    };
+    assert_eq!(plan.switch_permission, "bypassPermissions");
+}
+
+/// Claude can name a window without saying how much of it is used. A window
+/// seen before keeps the use and reset it was last given; a window first
+/// named that way reads unknown rather than empty.
+#[test]
+fn a_window_reported_without_its_use_keeps_what_was_held_or_reads_unknown() {
+    let mut state = idle_on_root();
+    let report = |info: Value| {
+        stream(
+            json!({"type": "rate_limit_event", "uuid": "rl", "session_id": "s", "rate_limit_info": info}),
+        )
+    };
+    ClaudeSdk::step(
+        &mut state,
+        report(
+            json!({"status": "allowed", "rateLimitType": "seven_day_opus",
+            "utilization": 0.9, "resetsAt": 1_800_000_000}),
+        ),
+    );
+    ClaudeSdk::step(
+        &mut state,
+        report(json!({"status": "allowed_warning", "rateLimitType": "seven_day_opus"})),
+    );
+    let stepped = ClaudeSdk::step(
+        &mut state,
+        report(json!({"status": "rejected", "rateLimitType": "overage"})),
+    );
+    let (_, snapshot) = sdk_snapshot(&stepped).expect("a snapshot");
+    let usage = snapshot.usage.expect("usage");
+    let meter = |name: &str| {
+        usage
+            .windows
+            .iter()
+            .find(|window| window.provider_name == name)
+            .and_then(|window| window.meter)
+            .unwrap_or_else(|| panic!("no {name} window in {usage:?}"))
+    };
+    let held = meter("seven_day_opus");
+    assert_eq!(held.used_percent, 90.0);
+    assert!(!held.used_unknown);
+    assert_eq!(held.resets_at_ms, Some(1_800_000_000_000));
+    assert_eq!(held.state(), wire::UsageState::NearLimit);
+    let new = meter("overage");
+    assert!(new.used_unknown, "{new:?}");
+    assert_eq!(new.state(), wire::UsageState::Blocked);
+}
+
+/// A person stops one background job: amux asks Claude to stop that task,
+/// the job reads stopping until Claude says it ended, a refusal shows on
+/// the job in Claude's words, and a key no running job has is refused.
+#[test]
+fn a_stopped_job_reads_stopping_until_claude_says_it_ended() {
+    let mut state = idle_on_root();
+    let mut jobs: Vec<wire::BackgroundJob> = Vec::new();
+    let mut step = |state: &mut State, event: Event| {
+        let stepped = ClaudeSdk::step(state, event);
+        if let Some((_, snapshot)) = sdk_snapshot(&stepped) {
+            jobs = snapshot.background_jobs.unwrap_or_default().jobs;
+        }
+        (stepped, jobs.clone())
+    };
+    step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "background_tasks_changed", "uuid": "l1", "session_id": "s",
+            "tasks": [
+                {"task_id": "b1", "task_type": "local_bash", "description": "cargo test"},
+                {"task_id": "b2", "task_type": "local_bash", "description": "npm run dev"},
+            ],
+        })),
+    );
+    let stop = |key: &str| wire::claude_sdk_input::Of::StopJob(wire::StopJob { key: key.into() });
+    let stop_requests = |stepped: &interpret::Stepped| -> Vec<Value> {
+        stepped
+            .effects
+            .iter()
+            .filter_map(|effect| match effect {
+                Effect::ProviderWrite(bytes) => serde_json::from_slice::<Value>(bytes).ok(),
+                _ => None,
+            })
+            .filter(|write| write["request"]["subtype"] == "stop_task")
+            .collect()
+    };
+    let verdict = |stepped: &interpret::Stepped, id: &[u8]| {
+        stepped.effects.iter().find_map(|effect| match effect {
+            Effect::Reply { input_id, verdict } if input_id == id => verdict.of.clone(),
+            _ => None,
+        })
+    };
+    let job = |jobs: &[wire::BackgroundJob], key: &str| {
+        jobs.iter()
+            .find(|job| job.key == key)
+            .cloned()
+            .unwrap_or_else(|| panic!("no job {key} in {jobs:?}"))
+    };
+
+    let (stopped, jobs) = step(&mut state, sdk_input(b"s1", stop("b1")));
+    assert!(
+        matches!(
+            verdict(&stopped, b"s1"),
+            Some(wire::send_input_response::Of::Accepted(_))
+        ),
+        "{:?}",
+        stopped.effects
+    );
+    let requests = stop_requests(&stopped);
+    assert_eq!(requests.len(), 1, "{:?}", stopped.effects);
+    assert_eq!(requests[0]["request"]["task_id"], "b1");
+    assert!(job(&jobs, "b1").stopping && !job(&jobs, "b2").stopping);
+
+    let (refused, _) = step(&mut state, sdk_input(b"s2", stop("b2")));
+    let request_id = stop_requests(&refused)[0]["request_id"].clone();
+    let (_, jobs) = step(
+        &mut state,
+        stream(json!({
+            "type": "control_response",
+            "response": {"subtype": "error", "request_id": request_id,
+                "error": "Task b2 is not running (status: completed)"},
+        })),
+    );
+    let b2 = job(&jobs, "b2");
+    assert!(!b2.stopping, "{b2:?}");
+    assert_eq!(b2.stop_error, "Task b2 is not running (status: completed)");
+
+    let (_, jobs) = step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "n1", "session_id": "s",
+            "task_id": "b1", "tool_use_id": "toolu_b1", "status": "stopped",
+            "summary": "", "output_file": "",
+        })),
+    );
+    assert!(jobs.iter().all(|job| job.key != "b1"), "{jobs:?}");
+
+    let (unknown, _) = step(&mut state, sdk_input(b"s3", stop("nope")));
+    assert!(
+        matches!(
+            verdict(&unknown, b"s3"),
+            Some(wire::send_input_response::Of::Rejected(_))
+        ),
+        "{:?}",
+        unknown.effects
+    );
+    assert!(stop_requests(&unknown).is_empty());
+}
+
+/// The notice that an organization's policy withholds amux's tools holds
+/// for the incarnation the agent said so for: one launched once the
+/// policy is gone reads amux's tool server as Claude reports it.
+#[test]
+fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
+    use prost::Message as _;
+    let failed = |step: &wire::Step| {
+        let snapshot = step.snapshot.as_ref().expect("a snapshot");
+        let body = wire::ClaudeSdkSnapshot::decode(&snapshot.body[..]).unwrap();
+        body.servers
+            .unwrap_or_default()
+            .servers
+            .iter()
+            .any(|server| server.status == wire::ToolServerStatus::Failed as i32)
+    };
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        ..Default::default()
+    };
+    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let withheld = ClaudeSdk::step(
+        &mut state,
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::tools_withheld_fact(),
+        }),
+    );
+    assert!(failed(&withheld.step), "the policy's incarnation says so");
+    let next = wire::AgentSpec {
+        incarnation: 2,
+        ..spec
+    };
+    let (_, step) = ClaudeSdk::reincarnate(state, &next, "test");
+    assert!(!failed(&step), "the next incarnation does not");
 }

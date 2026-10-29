@@ -61,6 +61,7 @@ pub enum Message {
     ConversationReset(ConversationResetMessage),
     CommandLifecycle(CommandLifecycleMessage),
     PeerMessageHold(PeerMessageHoldMessage),
+    SessionTitleChanged(SessionTitleChangedMessage),
     UnknownSystem(RawFrame),
     Unknown(RawFrame),
 }
@@ -124,6 +125,7 @@ impl Message {
             "permission_denied" => parse_known(raw, true).map(Self::PermissionDenied),
             "informational" => parse_known(raw, true).map(Self::Informational),
             "peer_message_hold" => parse_known(raw, true).map(Self::PeerMessageHold),
+            "session_title_changed" => parse_known(raw, true).map(Self::SessionTitleChanged),
             _ => Ok(Self::UnknownSystem(RawFrame::unknown("system frame", raw))),
         }
     }
@@ -169,6 +171,7 @@ impl Message {
             Self::ConversationReset(_) => "conversation_reset",
             Self::CommandLifecycle(_) => "command_lifecycle",
             Self::PeerMessageHold(_) => "system.peer_message_hold",
+            Self::SessionTitleChanged(_) => "system.session_title_changed",
             Self::UnknownSystem(v) => v
                 .field("subtype")
                 .and_then(|v| v.as_str())
@@ -224,6 +227,7 @@ impl Message {
             Self::ConversationReset(v) => Some(&v.session_id),
             Self::CommandLifecycle(v) => Some(&v.session_id),
             Self::PeerMessageHold(v) => Some(&v.session_id),
+            Self::SessionTitleChanged(v) => Some(&v.session_id),
         }
     }
 }
@@ -281,6 +285,7 @@ impl Serialize for Message {
             Self::ConversationReset(v) => env!(v, "conversation_reset", None),
             Self::CommandLifecycle(v) => env!(v, "command_lifecycle", None),
             Self::PeerMessageHold(v) => env!(v, "system", Some("peer_message_hold")),
+            Self::SessionTitleChanged(v) => env!(v, "system", Some("session_title_changed")),
             Self::UnknownSystem(v) | Self::Unknown(v) => v.serialize(serializer),
         }
     }
@@ -453,6 +458,9 @@ pub struct ResultCommon {
     pub queued_turn_count: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_message_uuid: Option<String>,
+    /// Every client uuid whose prompt this turn consumed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_message_uuids: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -460,8 +468,12 @@ pub struct ResultCommon {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fast_mode_disabled_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub origin: Option<serde_json::Value>,
+    pub origin: Option<ResultOrigin>,
 }
+// Who the turn a result ends was for: `human` for a person's prompt.
+wire_struct!(ResultOrigin {
+    #[serde(default,skip_serializing_if="Option::is_none")] pub kind: Option<String>,
+});
 wire_struct!(ResultSuccess {
     #[serde(flatten)] pub common:ResultCommon,#[serde(default="crate::absent::result")] pub result:String,
     #[serde(default,skip_serializing_if="Option::is_none")] pub structured_output:Option<serde_json::Value>,
@@ -668,6 +680,8 @@ wire_struct!(PeerMessageHoldMessage {
     #[serde(default,skip_serializing_if="Option::is_none")] pub cause:Option<String>,
     pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
 });
+// The session's title, as set by the caller's `title` option or changed since.
+wire_struct!(SessionTitleChangedMessage { pub title:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
 wire_struct!(ConversationResetMessage { pub new_conversation_id:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
 
 fn required_string<'a>(raw: &'a serde_json::Value, field: &str) -> Result<&'a str, ProtocolError> {

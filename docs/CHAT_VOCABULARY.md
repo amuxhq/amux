@@ -68,7 +68,7 @@ kind is the [`ui_view::RowKind`](../crates/ui-view/src/rows.rs) variant the view
 | Subagent | `Subagent { description, running, tool_count, last_tool, answer, duration_ms }` | Live while running ("12 tools · 48s · last: Read"), its answer once finished; its own steps are rows with a `parent`, collapsed under it. | partial | full | partial |
 | Background process | `Background { command, running }` | "Started in background npm run dev"; the running job is listed in the overview. | partial | partial | partial |
 | Image | `Image { image, path, generated }` | A thumbnail opening full size; Codex can report generated images. | partial | partial | full |
-| Slash command output | `SlashOutput { command, args, output }` | The command, then its output block. | partial | partial | n/a: skills run as prompts |
+| Slash command output | `SlashOutput { command, args, output }` | The command, then its output block. | partial | partial | partial: a review's notices |
 
 A call's `state` is a `CallPhase`, decided once in the view for both clients: `Asking` while an open ask points
 at the call and nothing has decided it (it runs only if the person allows it, and both clients mark it as
@@ -247,7 +247,7 @@ row or the row failed.
 | Field | Shown | claude_pty | claude_sdk | codex |
 |---|---|---|---|---|
 | `tasks` | "3/7 · Updating the pairing copy", opening to the list (Claude's task list, Codex's plan steps) | partial | partial | full |
-| `jobs` | Each background job still running: its command, when it started, and the step that started it | partial | partial | partial |
+| `jobs` | Each background job still running: its command, when it started, the step that started it, and its own stop where the kind has one (behind a confirm; `Stopping…`; the provider's refusal) | partial | partial | partial |
 | `failed_servers` | Only tool servers that failed to start or need signing in | none | full | full |
 | `usage_near_limit` | Nothing while fine; a warning near a limit; a foot card when blocked | none | full | full |
 | `changes` | The changed files by folder, root files first, once fetched with `GetDiff` and no patch (`changes(diff)`) | full | full | full |

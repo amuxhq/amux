@@ -392,6 +392,11 @@ impl Agent {
         *self.task.lock().unwrap() = Some(task);
     }
 
+    /// Claude's own directory for this agent's provider.
+    pub fn claude_config(&self) -> PathBuf {
+        self._root.path().join("claude")
+    }
+
     pub fn provider_session(&self) -> String {
         std::fs::read_to_string(self.dir.join(agent::PRIVATE).join("provider-session")).unwrap()
     }
@@ -933,6 +938,53 @@ impl Log {
                 .collect(),
             other => panic!("no snapshot reader for {other:?}"),
         }
+    }
+
+    /// The background jobs the newest snapshot lists.
+    pub fn background_jobs(&self) -> Vec<wire::BackgroundJob> {
+        let Some(snapshot) = self.snapshot() else {
+            return Vec::new();
+        };
+        let jobs = match snapshot.kind() {
+            Kind::ClaudeSdk => {
+                ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
+                    .unwrap()
+                    .background_jobs
+            }
+            Kind::ClaudePty => {
+                wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+                    .unwrap()
+                    .background_jobs
+            }
+            Kind::Codex => {
+                wire::CodexSnapshot::decode(snapshot.body.as_slice())
+                    .unwrap()
+                    .background_jobs
+            }
+            other => panic!("no snapshot reader for {other:?}"),
+        };
+        jobs.map(|jobs| jobs.jobs).unwrap_or_default()
+    }
+
+    /// The tool servers the newest Claude snapshot reports.
+    pub fn tool_servers(&self) -> Vec<wire::ToolServer> {
+        let Some(snapshot) = self.snapshot() else {
+            return Vec::new();
+        };
+        let servers = match snapshot.kind() {
+            Kind::ClaudeSdk => {
+                ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
+                    .unwrap()
+                    .servers
+            }
+            Kind::ClaudePty => {
+                wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+                    .unwrap()
+                    .servers
+            }
+            other => panic!("no snapshot reader for {other:?}"),
+        };
+        servers.map(|servers| servers.servers).unwrap_or_default()
     }
 
     pub fn open_asks(&self) -> usize {

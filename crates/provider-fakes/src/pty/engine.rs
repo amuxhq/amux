@@ -520,6 +520,12 @@ impl Engine {
             "permissionMode": self.mode,
             "sessionId": self.session,
         }));
+        // The new transcript holds the command's own echo, so it resumes.
+        self.row(json!({
+            "type": "user",
+            "message": { "role": "user", "content": "<command-name>/clear</command-name>" },
+            "sessionId": self.session,
+        }));
         self.screen("Claude Code (scripted)");
     }
 

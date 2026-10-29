@@ -331,7 +331,11 @@ Claude is started through `pty_host::spawn` with the spec's arguments plus:
   ones. The id is a UUID the agent makes up and keeps in
   `private/provider-session`. A session Claude never began (it exited at its
   folder-trust dialog, say) has no transcript and cannot be resumed, so it is
-  started again under the same id.
+  started again under the same id. One whose transcript holds no user or
+  assistant row (Claude stopped as it wrote its first message, leaving only
+  metadata) can neither be resumed nor started again under that id, so a new
+  id replaces it. The check looks where Claude does: a resume across the
+  projects Claude searches, a new session in this folder's project alone.
 - `--settings <json>`: the user's own settings with the agent's merged over
   them. The agent's part registers `<install path> internal hook claude`, as a
   program and its arguments with no shell between, as the hook command for
@@ -381,7 +385,13 @@ The agent runs the spec's command with the spec's arguments plus
 `--print --input-format stream-json --output-format stream-json --verbose
 --permission-prompt-tool stdio --replay-user-messages`, `--session-id <id>`
 or `--resume <id>` (kept in `private/provider-session` as for terminal
-Claude), `--settings <json>` and `--mcp-config`. Claude reports nothing until
+Claude, and replaced the same way), `--settings <json>` and `--mcp-config`.
+A reset gives Claude a new session, which the interpreter names once Claude's
+next `init` reports it; the agent saves it and names it on later user
+messages. Claude leads a process group of its own and finishes its turn
+after its input closes, so on Unix it is tethered as a Codex server on a
+socket is (see [Codex](#codex)): an agent that dies, however it dies, takes
+it with it. Claude reports nothing until
 asked, so the agent writes an `initialize` control request at once, built
 from `claude_protocol::stream` types like every line written to Claude; its
 answer is what says Claude takes input, and it lists the models and commands
@@ -395,6 +405,8 @@ and sending it SIGTERM. Its `initialize` declares `perTaskStopAffordance`:
 amux's interrupt ends the turn and leaves background work running on every
 kind, and Claude spares background subagents on an interrupt, as it spares
 background shells, only for a host that says it can stop each task itself.
+amux can: a person stops one job with `stop_task` (see
+[stopping one job](INTERPRETERS.md#background-jobs)).
 
 ### Codex
 
@@ -410,25 +422,36 @@ that exits first ends the incarnation with its exit code. On Windows the
 agent runs `--listen stdio://` and speaks JSON lines on the child's stdin and
 stdout instead. It performs the handshake itself, every
 message a `codex_protocol` value: `initialize` (client `amux`, experimental
-API on), `initialized`, then `thread/start`, or `thread/resume` with the
-thread id from `private/provider-session` for a later incarnation, with the
-spec's working directory and model. A killed agent's server, told to finish
+API on), `initialized`, then `thread/start` (id `agent-thread`), or for a
+later incarnation `thread/resume` (id `agent-resume`) with the thread id from
+`private/provider-session` and `excludeTurns`, as Codex's own app resumes, so
+a long thread's history never has to fit one message; both carry the spec's
+working directory and model. Messages from the server's socket may be up to
+128 MiB, past the websocket library's 16 MiB frame default, since one item can
+carry a turn's screenshots. A resume Codex refuses because the thread is
+archived is answered by the interpreter with `thread/unarchive` and a second
+resume; one refused because the thread's history is gone ("no rollout found")
+draws a notice and starts a new thread (`amux-fresh-thread`), which becomes
+the agent's conversation. A killed agent's server, told to finish
 by its tether, can take seconds to exit and holds the thread until it does,
 refusing anyone else's resume ("thread … already has an active writer"); the
 agent asks again every quarter of a second for up to 30 seconds before it
 hands the refusal on, and a refusal handed on ends the incarnation with
-Codex's words rather than leave it starting. The thread id the server answers with is written to
-`private/provider-session`, as is the thread a `/clear` starts (the
-interpreter's `thread/start`, ids `amux-clear-<n>`): from then on that thread
-is the agent's conversation. Straight after, the interpreter names the thread
+Codex's words rather than leave it starting. The thread id a `thread/start`
+answers with is written to `private/provider-session`, as is the thread a
+`/clear` starts (the interpreter's `thread/start`, ids `amux-clear-<n>`) and
+the one that replaces a thread with no history: from then on that thread is
+the agent's conversation. A resume keeps the thread it resumed. Straight after, the interpreter names the thread
 with the agent's name (`thread/name/set`), and names it again when the agent
 is renamed: the daemon tells a running Codex agent with a `rename` frame, and a
 resumed agent's spec carries its current name, so Codex's own app shows the
 name amux does. A thread that has not run a turn has nothing on disk, and
 Codex's own app, which resumes from what is on disk, cannot attach to it;
-naming does not change that. When the thread has no turns the interpreter
-also reads it with its turns (`thread/read`), which has Codex write it, so
-the app can attach before the first turn. Every message the server sends the agent is a fact; the
+naming does not change that. When a started thread has no turns the
+interpreter also reads it with its turns (`thread/read`), which has Codex
+write it, so the app can attach before the first turn; a resumed thread is
+already on disk, and its answer has no turns because the resume left them
+out. Every message the server sends the agent is a fact; the
 interpreter writes every request after the handshake with ids of its own
 (`amux-<n>`). A turn whose prompt carries attachments has them appended to
 its input, each as the element text the model reads (naming it and where it
@@ -607,7 +630,22 @@ install path, like any MCP server it is configured with; it is not the agent
 process. The agent only names it in the provider's launch (`--mcp-config`
 for Claude, `--config mcp_servers.amux.…` for Codex), and only when the
 spec's configuration has an install path. It speaks newline-delimited
-JSON-RPC over stdio.
+JSON-RPC over stdio. Its `initialize` answer carries short instructions
+saying what each tool is for: Claude defers MCP tools behind its tool
+search and shows the model only their names, but always shows a server's
+instructions, so they are worded the way a search for the tools would be.
+
+Where an organization manages Claude's MCP servers (a `managed-mcp.json` in
+the managed-settings folder: `/Library/Application Support/ClaudeCode`,
+`/etc/claude-code` or `C:\Program Files\ClaudeCode`, or the folder
+`CLAUDE_CODE_MANAGED_SETTINGS_PATH` names), Claude refuses a server added on
+its command line and does not start. The agent then launches Claude, either
+kind, without amux's tool server and tells its interpreter so on the agent
+channel; the agent's tool-server health lists `amux` as failed, saying the
+organization's policy turned amux's tools off. The agent says so at each
+launch, so an incarnation launched once the policy is gone reads amux's
+server as Claude reports it. The host's catalogue ask
+leaves out `--strict-mcp-config` there for the same reason.
 
 The fleet tools (agents, hosts, send, spawn, stop) dial the daemon at
 `<dir>/tools.sock`, a socket the daemon listens on for this agent alone, so

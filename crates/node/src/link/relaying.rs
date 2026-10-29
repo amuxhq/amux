@@ -650,6 +650,7 @@ mod tests {
             user,
             host: core(host),
             tier: Some(relay_core::Tier::Pro),
+            instance: [0; 16],
             direct: None,
             advertised: Vec::new(),
         }]);

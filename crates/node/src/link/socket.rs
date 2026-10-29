@@ -147,6 +147,13 @@ pub fn parse(datagram: &[u8]) -> Result<PacketKind<'_>, Malformed> {
     }
 }
 
+/// Whether a QUIC packet is an Initial: one of the first a handshake
+/// sends, either way.
+fn handshake(packet: &[u8]) -> bool {
+    // A long header with the fixed bit set and the Initial type (QUIC v1).
+    packet.first().is_some_and(|first| first & 0xf0 == 0xc0)
+}
+
 fn host_at(datagram: &[u8]) -> HostId {
     HostId::from_bytes(datagram[1..17].try_into().expect("sixteen bytes"))
 }
@@ -1464,11 +1471,24 @@ impl LinkSocket {
                     // A link someone dialled to us through a forwarder is
                     // answered the way it came until a route is chosen.
                     if let Some(link) = state.forwarder_of(arrival) {
-                        state.carried_by(Peer::Host(host), Path::Forwarded(link));
-                        state.arrived(Peer::Host(host), Path::Forwarded(link), now);
+                        let path = Path::Forwarded(link);
+                        state.carried_by(Peer::Host(host), path);
+                        state.arrived(Peer::Host(host), path, now);
                         let peer = state.peers.get_mut(&Peer::Host(host)).expect("stand-in");
-                        if matches!(peer.route, Route::Unset) {
-                            peer.route = Route::Carrying(Path::Forwarded(link));
+                        match peer.route {
+                            Route::Unset => peer.route = Route::Carrying(path),
+                            // So is a handshake through a forwarder while
+                            // another path carries the peer: the route is
+                            // its last link's, and a host started afresh (an
+                            // app opened again) may know no path to this one
+                            // but the forwarder, while its last link, dead,
+                            // has yet to time out here. The path machine
+                            // moves the link back once the other path
+                            // answers.
+                            Route::Carrying(carrying) if carrying != path && handshake(payload) => {
+                                state.set_route(host, Route::Carrying(path));
+                            }
+                            _ => {}
                         }
                     }
                     Some((stand_in, FORWARD_HEADER))

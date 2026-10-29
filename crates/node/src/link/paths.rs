@@ -142,11 +142,15 @@ impl PathDriver {
         let machine = state.machine(peer, now_ms);
         let first = machine.links.is_empty();
         machine.links.insert(link);
-        if !first {
-            return;
-        }
         machine.kind = Some(kind);
         let mut inputs = Vec::new();
+        if !first {
+            // Another link while the peer holds one: the peer may have
+            // started afresh or moved, its last link dead but yet to time
+            // out here, so what answered for that one says nothing of this
+            // one. Its paths are probed afresh, as when its last link goes.
+            inputs.push(Input::LinkDown);
+        }
         // A link through a paired daemon is carried on that daemon's
         // forwarding link, a path to this peer alone.
         if let Some(Path::Forwarded(through)) = path {

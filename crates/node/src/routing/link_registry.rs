@@ -336,10 +336,7 @@ impl LinkRegistry {
         // stays and what every link is told of its neighbors; it is asked
         // under the lock, so what it says and the writers held agree.
         let direct = match (role, carrier, direct_order) {
-            (LinkRole::Peer, CarrierKind::Direct, Some(order)) => Some(relay_core::Direct {
-                order,
-                instance: runtime_instance.bytes(),
-            }),
+            (LinkRole::Peer, CarrierKind::Direct, Some(order)) => Some(order),
             _ => None,
         };
         let out = self.relaying.step([relay_core::Input::LinkUp {
@@ -350,6 +347,7 @@ impl LinkRegistry {
                 LinkAdmission::PinnedKey => None,
                 LinkAdmission::CloudToken { tier } => Some(tier),
             },
+            instance: runtime_instance.bytes(),
             direct,
             advertised: advertised_snapshot.iter().copied().map(core_host).collect(),
         }]);

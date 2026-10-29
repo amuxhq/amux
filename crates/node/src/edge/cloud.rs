@@ -566,6 +566,10 @@ async fn run_cloud_connection_with_details(
     let quic_host = details.host.clone();
     let quic_port = details.port;
     let quic_client = client.clone();
+    // The dial writes the Hello itself on each address it tries, so a
+    // resumed one says it in its first flight and still wins only once the
+    // relay answers: QUIC's early data never outruns the TCP fallback.
+    let opening = crate::link::run::relay_opening(&ctx.connector, &details.token.token).await;
     let quic = async move {
         #[cfg(debug_assertions)]
         if std::env::var_os("AMUX_TEST_RELAY_UDP_BLOCKED").is_some() {
@@ -579,11 +583,19 @@ async fn run_cloud_connection_with_details(
                     &quic_host,
                     quic_port,
                     quic_client,
+                    Some(&opening),
                 )
                 .await
             }
             None => {
-                QuicCarrier::connect_relay(&quic_endpoint, &quic_host, quic_port, quic_client).await
+                QuicCarrier::connect_relay(
+                    &quic_endpoint,
+                    &quic_host,
+                    quic_port,
+                    quic_client,
+                    Some(&opening),
+                )
+                .await
             }
         }
         .map(Arc::new)

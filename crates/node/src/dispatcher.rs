@@ -10,7 +10,7 @@ use crate::driver::pairing::PairWindow as PairMode;
 use crate::identity::{self, IdentityError};
 use crate::link::link_log::PathKind;
 use crate::link::{InboundStream, LinkCtx, QuicCarrier, accepted_quic_bidi_stream, run_link};
-use crate::resource_limits::HandshakeAdmission;
+use crate::resource_limits::{Admitted, HandshakeAdmission};
 use crate::transport::{BoxedGrpcIo, Compressed, PreTrustPairingReachability, Replacing};
 use crate::trust::SharedTrustStore;
 
@@ -172,10 +172,13 @@ impl TunnelDispatcher {
                 // host dialled through a forwarder needs no Retry and counts
                 // against no source's limit: the forwarder names the sender,
                 // and carries only hosts it admitted.
-                let Some((incoming, permit)) =
-                    dispatcher
-                        .admission
-                        .admit(incoming, addr, forwarded.is_some())
+                let Some(Admitted {
+                    incoming,
+                    permit,
+                    spent,
+                }) = dispatcher
+                    .admission
+                    .admit(incoming, addr, forwarded.is_some())
                 else {
                     continue;
                 };
@@ -194,7 +197,14 @@ impl TunnelDispatcher {
                         return;
                     };
                     if let Err(error) = dispatcher
-                        .dispatch_quic(arrival, addr, path, through, &socket, connection_shutdown)
+                        .dispatch_quic(
+                            arrival,
+                            addr,
+                            (path, through),
+                            spent,
+                            &socket,
+                            connection_shutdown,
+                        )
                         .await
                     {
                         report_outcome(addr, error);
@@ -324,14 +334,14 @@ impl TunnelDispatcher {
         &self,
         arrival: Arrival,
         addr: std::net::SocketAddr,
-        path: PathKind,
-        through: Option<daemon_core::LinkId>,
+        (path, through): (PathKind, Option<daemon_core::LinkId>),
+        spent: Option<crate::resource_limits::Spent>,
         socket: &std::sync::Arc<crate::link::socket::LinkSocket>,
         shutdown_rx: watch::Receiver<bool>,
     ) -> Result<(), DispatchError> {
         let serve = |ctx: LinkCtx, connection| {
             run_link(
-                ctx.with_shutdown(shutdown_rx),
+                ctx.with_shutdown(shutdown_rx).refunding(spent),
                 std::sync::Arc::new(
                     QuicCarrier::from_accepted(connection)
                         .with_path(path)

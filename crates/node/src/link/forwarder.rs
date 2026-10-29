@@ -760,6 +760,7 @@ mod tests {
                 user,
                 host: core_host(host),
                 tier,
+                instance: [0; 16],
                 direct: None,
                 advertised: Vec::new(),
             });

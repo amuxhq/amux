@@ -1615,3 +1615,29 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
     let (_, step) = ClaudePty::reincarnate(state, &next, "test");
     assert!(!failed(&step), "the next incarnation does not");
 }
+
+/// An ask Claude 2.1.312 leaves only to a person (here a write into its
+/// jobs folder, recorded live) reads Yes / No: no "don't ask again" and no
+/// switch to auto mode, and its hook names no suggestion. The ask offers
+/// no scope, so the only keys amux types on it are Yes and Escape, both
+/// where Claude's menu has them.
+#[test]
+fn an_ask_claude_leaves_to_a_person_offers_no_scope() {
+    let mut state = claude_offering_auto();
+    let opened = ClaudePty::step(
+        &mut state,
+        hook(serde_json::json!({
+            "hook_event_name": "PermissionRequest", "session_id": "s1",
+            "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
+            "permission_mode": "default", "tool_name": "Bash",
+            "tool_input": {"command": "printf note > ~/.claude/jobs/amux-note.txt",
+                "description": "Write \"note\" to the amux-note file in Claude's jobs folder"},
+        })),
+    );
+    let (_, snapshot) = decoded(&opened).expect("a snapshot");
+    let ask = snapshot.asks.first().expect("the ask");
+    let Some(wire::ask::Body::Permission(permission)) = &ask.body else {
+        panic!("a permission ask: {ask:?}");
+    };
+    assert!(permission.scopes.is_empty(), "{:?}", permission.scopes);
+}

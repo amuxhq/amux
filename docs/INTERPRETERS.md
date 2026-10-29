@@ -465,6 +465,18 @@ mode, where Claude offers auto mode for the running model, its menu has
 knows, the card offers it as one more scope, a switch to auto, and choosing
 it types that entry and records the permission as auto at once.
 
+The permission hook carries neither of Claude's flags for an ask it leaves
+to a person (`suppress_always_allow_rule`, `default_to_no`). It needs none:
+Claude 2.1.312 sends such an ask's hook without suggestions, and its menu
+reads Yes / No, with no "don't ask again" row and no switch to auto mode
+(recorded live for a write into Claude's jobs folder). An ask with no
+suggestion offers no scope, so amux types only Yes or Escape on it, both
+where the menu has them. A menu Claude opens on its refusal
+(`default_to_no`, which Claude sets when auto mode has no classifier to
+ask) takes no digit, by Claude's own account: an allow from amux does not
+land there and the ask stays open in the terminal, while Escape still
+declines it.
+
 Terminal Claude offers no list of models, efforts or commands a program could
 read, so its catalogue, written when it launches, holds the models and
 commands its host's Claude offers in its folder (from `AgentSpec.offered`,

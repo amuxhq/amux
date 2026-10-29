@@ -23,10 +23,9 @@ pub(super) async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     #[cfg(unix)]
     if std::env::args().nth(1).as_deref() == Some(super::capture::HOOK) {
-        let command = std::env::args()
-            .nth(2)
-            .ok_or("a wrapped hook names its command")?;
-        return super::capture::hook(&command);
+        let mut command = std::env::args().skip(2);
+        let program = command.next().ok_or("a wrapped hook names its command")?;
+        return super::capture::hook(&program, &command.collect::<Vec<_>>());
     }
     if std::env::current_exe()?
         .file_stem()

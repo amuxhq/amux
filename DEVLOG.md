@@ -1,3 +1,5 @@
+2026-10-28 — **Test that a withheld tool server is not carried into the next incarnation.** Both Claude interpreters keep reading amux's tool server as withheld by policy after a relaunch that no longer says so.
+
 2026-10-28 — **The TUI's vocabulary goldens show a stopping job.** The shared vocabulary's second job is now stopping, so the overview's change goldens read "Stopping…" in place of its age.
 
 2026-10-28 — **A result's origin is typed.** `ResultCommon.origin` is a `ResultOrigin` with an optional `kind`, so the headless interpreter's foreign-result check reads it as a field instead of looking it up by name.

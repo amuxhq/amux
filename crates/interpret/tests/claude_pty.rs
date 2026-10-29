@@ -1578,3 +1578,40 @@ fn a_background_subagents_ask_survives_every_end_of_the_main_threads_work() {
     );
     assert_eq!(open_asks(&stopped), Some(0), "its own stop closes it");
 }
+
+/// The notice that an organization's policy withholds amux's tools holds
+/// for the incarnation the agent said so for: one launched once the
+/// policy is gone reads amux's tool server as Claude reports it.
+#[test]
+fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
+    use prost::Message as _;
+    let failed = |step: &wire::Step| {
+        let snapshot = step.snapshot.as_ref().expect("a snapshot");
+        let body = wire::ClaudePtySnapshot::decode(&snapshot.body[..]).unwrap();
+        body.servers
+            .unwrap_or_default()
+            .servers
+            .iter()
+            .any(|server| server.status == wire::ToolServerStatus::Failed as i32)
+    };
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        ..Default::default()
+    };
+    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let withheld = ClaudePty::step(
+        &mut state,
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::tools_withheld_fact(),
+        }),
+    );
+    assert!(failed(&withheld.step), "the policy's incarnation says so");
+    let next = wire::AgentSpec {
+        incarnation: 2,
+        ..spec
+    };
+    let (_, step) = ClaudePty::reincarnate(state, &next, "test");
+    assert!(!failed(&step), "the next incarnation does not");
+}

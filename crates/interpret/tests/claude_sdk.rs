@@ -2058,3 +2058,40 @@ fn a_stopped_job_reads_stopping_until_claude_says_it_ended() {
     );
     assert!(stop_requests(&unknown).is_empty());
 }
+
+/// The notice that an organization's policy withholds amux's tools holds
+/// for the incarnation the agent said so for: one launched once the
+/// policy is gone reads amux's tool server as Claude reports it.
+#[test]
+fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
+    use prost::Message as _;
+    let failed = |step: &wire::Step| {
+        let snapshot = step.snapshot.as_ref().expect("a snapshot");
+        let body = wire::ClaudeSdkSnapshot::decode(&snapshot.body[..]).unwrap();
+        body.servers
+            .unwrap_or_default()
+            .servers
+            .iter()
+            .any(|server| server.status == wire::ToolServerStatus::Failed as i32)
+    };
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        ..Default::default()
+    };
+    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let withheld = ClaudeSdk::step(
+        &mut state,
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::tools_withheld_fact(),
+        }),
+    );
+    assert!(failed(&withheld.step), "the policy's incarnation says so");
+    let next = wire::AgentSpec {
+        incarnation: 2,
+        ..spec
+    };
+    let (_, step) = ClaudeSdk::reincarnate(state, &next, "test");
+    assert!(!failed(&step), "the next incarnation does not");
+}

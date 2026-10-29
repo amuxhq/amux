@@ -1172,18 +1172,26 @@ impl LinkSocket {
                     }
                 }
             }
-            if state.forwarding.insert(link, (via, kind)).is_none() {
+            let previous = state.forwarding.insert(link, (via, kind));
+            if previous.is_none() {
                 state.tell(PathEvent::ForwardingUp { link, kind });
             }
+            // A forwarding link pointed somewhere new, as a relay dial
+            // moves it from the attempt that said its Hello first to the
+            // one it keeps, sends a first flight again there: what went to
+            // the old address may have gone nowhere.
+            let moved = previous.is_some_and(|(at, _)| at != via);
             let mut late = Vec::new();
             if relayed(kind) {
                 let path = Path::Forwarded(link);
                 for (peer, held) in &mut state.peers {
                     if let (Route::All(paths), Some(flight)) = (&mut held.route, &held.flight)
                         && flight.through_relay
-                        && !paths.contains(&path)
+                        && (moved || !paths.contains(&path))
                     {
-                        paths.push(path);
+                        if !paths.contains(&path) {
+                            paths.push(path);
+                        }
                         late.push((*peer, flight.sent.iter().cloned().collect::<Vec<_>>()));
                     }
                 }
@@ -2745,6 +2753,36 @@ mod tests {
         socket.set_carrying(peer, Path::Direct(lan));
         socket.try_send(&transmit(stand_in, QUIC)).unwrap();
         assert_eq!(fake.take_sent(), vec![(lan, QUIC.to_vec())]);
+    }
+
+    /// A relay dial moves the forwarding link from the attempt that said
+    /// its Hello first to the one it keeps: the first flight goes again
+    /// to the new address, since what went to the old may have gone
+    /// nowhere. The same address again sends nothing twice.
+    #[test]
+    fn socket_sends_a_first_flight_again_where_its_forwarding_moves() {
+        let (fake, socket, _own) = fake_socket();
+        let peer = HostId::new_v4();
+        let (first, kept): (SocketAddr, SocketAddr) = (
+            "[2001:db8::1]:9001".parse().unwrap(),
+            "198.51.100.1:9001".parse().unwrap(),
+        );
+        let stand_in = socket.stand_in(peer);
+        socket.send_on_all(peer, Vec::new(), true);
+        socket.add_forwarding(LinkId(7), socket.stand_in_at(first), PathKind::RelayUdp);
+        socket.try_send(&transmit(stand_in, b"\x40first")).unwrap();
+        assert_eq!(
+            fake.take_sent(),
+            vec![(first, encode_forwarded(peer, b"\x40first"))]
+        );
+
+        socket.add_forwarding(LinkId(7), socket.stand_in_at(kept), PathKind::RelayUdp);
+        assert_eq!(
+            fake.take_sent(),
+            vec![(kept, encode_forwarded(peer, b"\x40first"))]
+        );
+        socket.add_forwarding(LinkId(7), socket.stand_in_at(kept), PathKind::RelayUdp);
+        assert_eq!(fake.take_sent(), Vec::new());
     }
 
     #[test]

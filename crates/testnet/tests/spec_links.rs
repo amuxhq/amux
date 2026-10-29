@@ -1423,7 +1423,19 @@ async fn relaunch_of_a_killed_process_links_every_time() {
         net.kill_daemon("laptop").await.unwrap();
         let mark = net.link_log("laptop").unwrap().len();
         net.restart_daemon("laptop").await.unwrap();
-        links_soon(&net, "laptop", "desk", launch, mark).await;
+        // The relay's name, localhost, lists an address it does not
+        // listen at first: a first flight sent through that attempt goes
+        // again through the one kept, rather than waiting out a
+        // retransmit.
+        links_within(
+            &net,
+            "laptop",
+            "desk",
+            launch,
+            mark,
+            Duration::from_millis(750),
+        )
+        .await;
         tokio::time::sleep(Duration::from_secs(3)).await;
     }
     net.shutdown().await.unwrap();
@@ -1432,14 +1444,24 @@ async fn relaunch_of_a_killed_process_links_every_time() {
 /// Waits for `host`'s link log, past `mark`, to say its link to `peer` is
 /// up, and fails unless it was within a few seconds of the launch.
 async fn links_soon(net: &Net, host: &str, peer: &str, launch: u32, mark: usize) {
+    links_within(net, host, peer, launch, mark, Duration::from_secs(5)).await;
+}
+
+/// Asserts `host`'s link to `peer` comes up, after the line `mark` of its
+/// link log, within `within`.
+async fn links_within(
+    net: &Net,
+    host: &str,
+    peer: &str,
+    launch: u32,
+    mark: usize,
+    within: Duration,
+) {
     let began = std::time::Instant::now();
     let up = logged(net, host, peer, LinkTransition::Up, mark).await;
     let took = began.elapsed();
     println!("relaunch {launch}: up after {took:?}: {up:?}");
-    assert!(
-        took < Duration::from_secs(5),
-        "relaunch {launch} took {took:?} to link"
-    );
+    assert!(took < within, "relaunch {launch} took {took:?} to link");
 }
 
 /// Waits until a ticket the desk gave the laptop is on the laptop's disk.

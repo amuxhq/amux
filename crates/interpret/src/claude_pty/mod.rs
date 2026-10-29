@@ -63,7 +63,10 @@
 //!   which is not the row's. Claude writes rows in the order it draws
 //!   replies, so the next text row takes over the oldest reply not yet
 //!   written; a row that lands before its reply's first batch keeps its own
-//!   key and the late batch draws nothing.
+//!   key and the late batch draws nothing. Hooks and rows travel apart, so
+//!   a reply's last batch can also come after the row that ended its turn,
+//!   even after the next prompt; every hook names the prompt its turn
+//!   answers, and a batch for a prompt whose turn is over draws nothing.
 //! - Claude's first screen may ask whether its folder is trusted; the
 //!   agent process reports it before Claude counts as ready. It opens a
 //!   question with its own item, answered through amux with keys (no hook
@@ -101,7 +104,7 @@
 mod facts;
 mod recording;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
 use prost::Message as _;
@@ -541,10 +544,14 @@ pub struct State {
     /// stream that follows for each is already drawn.
     #[serde(default)]
     unstreamed: u32,
-    /// The turn ended and the next has not begun: a batch of a reply that
-    /// arrives now is the last of one already written, and draws nothing.
+    /// The prompts the running turn answers, and those of the last turns
+    /// over. Hooks and rows travel apart, so a reply's last batch can come
+    /// after the row that ended its turn, even after the next prompt; a
+    /// batch for a prompt whose turn is over draws nothing.
     #[serde(default)]
-    between_turns: bool,
+    turn_prompts: Vec<String>,
+    #[serde(default)]
+    ended_prompts: VecDeque<String>,
     /// Why auto mode refused a call whose row has not landed yet, by
     /// tool-use id.
     #[serde(default)]
@@ -628,7 +635,8 @@ impl State {
             announced: Vec::new(),
             streams: Vec::new(),
             unstreamed: 0,
-            between_turns: false,
+            turn_prompts: Vec::new(),
+            ended_prompts: VecDeque::new(),
             refused: BTreeMap::new(),
             bang: None,
         }
@@ -1090,13 +1098,24 @@ impl State {
     fn close_ask_item(&mut self, emit: &mut Emit, ask_key: &str, closed: AskClosed) {
         self.release(emit, ask_key);
         self.asks.remove(ask_key);
-        if let Some(mut ask) = self.shared.close_ask(ask_key) {
-            // Closed before the row it waited for: it lands now.
-            if ask.item_key.is_empty() {
-                ask.item_key = ask_item::key(ask_key);
-            }
-            self.emit_ask_item(emit, &ask, Some(closed));
+        if let Some(ask) = self.shared.close_ask(ask_key) {
+            self.emit_closed_ask_item(emit, ask_key, ask, closed);
         }
+    }
+
+    /// An ask closed before the row it waited for lands now, under its
+    /// own key.
+    fn emit_closed_ask_item(
+        &mut self,
+        emit: &mut Emit,
+        ask_key: &str,
+        mut ask: Ask,
+        closed: AskClosed,
+    ) {
+        if ask.item_key.is_empty() {
+            ask.item_key = ask_item::key(ask_key);
+        }
+        self.emit_ask_item(emit, &ask, Some(closed));
     }
 
     /// The open trust question, if any.
@@ -1484,7 +1503,7 @@ impl State {
             (Some(closed), _) => {
                 self.asks.remove(&key);
                 if let Some(ask) = answered {
-                    self.emit_ask_item(emit, &ask, Some(closed));
+                    self.emit_closed_ask_item(emit, &key, ask, closed);
                 }
             }
             (None, Some(decided)) => self.close(emit, &key, Decision::from(decided)),

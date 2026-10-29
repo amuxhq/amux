@@ -37,6 +37,8 @@ const REJECTED_NOTE: &str = "the user said:\n";
 const INTERRUPTED: &str = "[Request interrupted by user";
 /// The tool that starts a subagent.
 const AGENT_TOOL: &str = "Agent";
+/// How many ended turns' prompts a late reply batch is checked against.
+const ENDED_PROMPTS: usize = 8;
 const TRUST_QUESTION: &str = "Do you trust the files in this folder?";
 pub(super) const TRUST_YES: &str = "Trust this folder";
 const TRUST_NO: &str = "Exit";
@@ -282,13 +284,16 @@ impl State {
         {
             return self.subagent_hook(emit, agent, payload);
         }
+        if let Some(prompt) = &common.prompt_id
+            && !self.ended_prompts.contains(prompt)
+            && !self.turn_prompts.contains(prompt)
+        {
+            self.turn_prompts.push(prompt.clone());
+        }
         match payload {
             Payload::SessionStart(start) => self.session_start(emit, start),
             Payload::SessionEnd(_) => self.close_all_unknown(emit),
-            Payload::UserPromptSubmit(_) => {
-                self.between_turns = false;
-                self.shared.provider_started();
-            }
+            Payload::UserPromptSubmit(_) => self.shared.provider_started(),
             Payload::PreToolUse(call) => {
                 let (server, name) = split_tool_name(&call.tool_name);
                 if server.is_empty() && name == PLAN_TOOL {
@@ -798,9 +803,12 @@ impl State {
     /// Claude draws replies in the order it writes their rows, so a reply
     /// whose row came first is one already drawn.
     fn display(&mut self, emit: &mut Emit, display: &MessageDisplay) {
-        // Hooks and rows travel apart: the reply's last batch can come after
-        // the row that ended its turn.
-        if self.between_turns {
+        if display
+            .common
+            .prompt_id
+            .as_ref()
+            .is_some_and(|prompt| self.ended_prompts.contains(prompt))
+        {
             return;
         }
         self.shared.turn_started();
@@ -879,7 +887,6 @@ impl State {
     /// names it from here. The model is working, whether or not the row
     /// of the prompt that began the turn landed yet.
     fn pre_tool_use(&mut self, call: &PreToolUse) {
-        self.between_turns = false;
         self.shared.turn_started();
         self.announce(call, None);
         let (server, name) = split_tool_name(&call.tool_name);
@@ -1402,7 +1409,6 @@ impl State {
     /// A prompt sent into a turn that had no tool boundary left lands here
     /// too, as a turn of its own after that turn ended: an ordinary prompt.
     fn prompt_row(&mut self, emit: &mut Emit, key: String, text: String, at_ms: Option<i64>) {
-        self.between_turns = false;
         // A prompt amux submitted went in with no ask open, so its
         // reflection proves nothing about an ask open now: the row can land
         // after the hook that opened one, since rows are read by polling.
@@ -1610,7 +1616,10 @@ impl State {
         self.local_turn = false;
         self.running.clear();
         self.finish_streams(emit);
-        self.between_turns = true;
+        self.ended_prompts
+            .extend(std::mem::take(&mut self.turn_prompts));
+        let over = self.ended_prompts.len().saturating_sub(ENDED_PROMPTS);
+        self.ended_prompts.drain(..over);
         // A subagent's calls may outlive the turn, in the background.
         self.announced.retain(|call| call.agent.is_some());
         let Some(turn) = self.shared.turn_ended(emit, outcome) else {

@@ -80,6 +80,7 @@ goldens! {
     a_tool_servers_form_or_link_is_answered_through_its_hook => "elicitation",
     replies_stream_as_claude_draws_them => "streaming",
     another_conversations_hooks_are_let_go => "switched_away_hooks",
+    a_form_answered_before_its_calls_row_lands_on_its_own_key => "form_answered_before_its_row",
     a_refusal_claude_made_on_its_own_lands_on_the_call => "permission_denied",
     a_pasted_prompt_reads_as_what_was_sent => "pasted_prompt",
     recorded_question_skip_reply => "recorded_question_skip_reply",

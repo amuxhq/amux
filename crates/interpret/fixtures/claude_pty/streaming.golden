@@ -13,27 +13,27 @@ snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=cl
 item u1 prompt final at=1800000001000 text="write a short poem, then list the files"
 snapshot WORKING queue=[] working_on=- at=1800000000010 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
 ## 5 tick 1800000000100
-## 6 fact {"channel":"hook","json":{"cwd":"/w","delta":"The river carries the sky,\n","final":false,"hook_event_name":"MessageDisplay","index":0,"message_id":"d-a","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
+## 6 fact {"channel":"hook","json":{"cwd":"/w","delta":"The river carries the sky,\n","final":false,"hook_event_name":"MessageDisplay","index":0,"message_id":"d-a","permission_mode":"default","prompt_id":"q1","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
 item stream:d-a message open at=1800000000100 text="The river carries the sky,\n"
-## 7 fact {"channel":"hook","json":{"cwd":"/w","delta":"and the stones hum along.\n","final":false,"hook_event_name":"MessageDisplay","index":1,"message_id":"d-a","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
+## 7 fact {"channel":"hook","json":{"cwd":"/w","delta":"and the stones hum along.\n","final":false,"hook_event_name":"MessageDisplay","index":1,"message_id":"d-a","permission_mode":"default","prompt_id":"q1","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
 append stream:d-a "and the stones hum along.\n"
-## 8 fact {"channel":"hook","json":{"cwd":"/w","delta":"The sea waits.","final":true,"hook_event_name":"MessageDisplay","index":2,"message_id":"d-a","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
+## 8 fact {"channel":"hook","json":{"cwd":"/w","delta":"The sea waits.","final":true,"hook_event_name":"MessageDisplay","index":2,"message_id":"d-a","permission_mode":"default","prompt_id":"q1","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
 append stream:d-a "The sea waits."
 ## 9 fact {"channel":"transcript","json":{"message":{"content":[{"text":"The river carries the sky,\nand the stones hum along.\nThe sea waits.","type":"text"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:02.000Z","type":"assistant","uuid":"a1"}}
 item stream:d-a message final at=1800000002000 text="The river carries the sky,\nand the stones hum along.\nThe sea waits."
-## 10 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","session_id":"s1","tool_input":{"command":"ls"},"tool_name":"Bash","tool_use_id":"t1","transcript_path":"/t/s1.jsonl"}}
+## 10 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","prompt_id":"q1","session_id":"s1","tool_input":{"command":"ls"},"tool_name":"Bash","tool_use_id":"t1","transcript_path":"/t/s1.jsonl"}}
 snapshot WORKING queue=[] working_on=- at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t1 Bash since=1800000000100
 ## 11 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Listing them now.","type":"text"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:03.000Z","type":"assistant","uuid":"a2"}}
 item a2 message final at=1800000003000 text="Listing them now."
-## 12 fact {"channel":"hook","json":{"cwd":"/w","delta":"Listing them now.","final":true,"hook_event_name":"MessageDisplay","index":0,"message_id":"d-b","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
+## 12 fact {"channel":"hook","json":{"cwd":"/w","delta":"Listing them now.","final":true,"hook_event_name":"MessageDisplay","index":0,"message_id":"d-b","permission_mode":"default","prompt_id":"q1","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
 ## 13 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"command":"ls"},"name":"Bash","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:03.000Z","type":"assistant","uuid":"a3"}}
 item t1 tool final at=1800000003000 text="" Bash TOOL_STATE_RUNNING input=shell:"ls"
 ## 14 fact {"channel":"transcript","json":{"message":{"content":[{"content":"a.txt","is_error":false,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:04.000Z","toolUseResult":{"stderr":"","stdout":"a.txt"},"type":"user","uuid":"r1"}}
 item t1 tool final at=1800000003000 text="" Bash TOOL_STATE_SUCCEEDED ended=1800000004000 input=shell:"ls" out="a.txt"
 snapshot WORKING queue=[] working_on=- at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
-## 15 fact {"channel":"hook","json":{"cwd":"/w","duration_ms":20,"hook_event_name":"PostToolUse","permission_mode":"default","session_id":"s1","tool_input":{"command":"ls"},"tool_name":"Bash","tool_response":{"stdout":"a.txt"},"tool_use_id":"t1","transcript_path":"/t/s1.jsonl"}}
+## 15 fact {"channel":"hook","json":{"cwd":"/w","duration_ms":20,"hook_event_name":"PostToolUse","permission_mode":"default","prompt_id":"q1","session_id":"s1","tool_input":{"command":"ls"},"tool_name":"Bash","tool_response":{"stdout":"a.txt"},"tool_use_id":"t1","transcript_path":"/t/s1.jsonl"}}
 item t1 tool final at=1800000003000 text="" Bash TOOL_STATE_SUCCEEDED started=1800000003000 ended=1800000004000 input=shell:"ls" out="a.txt"
-## 16 fact {"channel":"hook","json":{"cwd":"/w","delta":"There is one file:\n","final":false,"hook_event_name":"MessageDisplay","index":0,"message_id":"d-c","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
+## 16 fact {"channel":"hook","json":{"cwd":"/w","delta":"There is one file:\n","final":false,"hook_event_name":"MessageDisplay","index":0,"message_id":"d-c","permission_mode":"default","prompt_id":"q1","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
 item stream:d-c message open at=1800000000100 text="There is one file:\n"
 ## 17 input {"id":"i1","interrupt":{}}
 effect terminal interrupt
@@ -44,8 +44,37 @@ item stream:d-c message final at=1800000000100 text="There is one file:\n"
 item turn:1 turn final at=1800000005000 text="" #1 TURN_OUTCOME_INTERRUPTED started=1800000000010
 snapshot IDLE queue=[] working_on=- at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
 turn_end 1 last=a2
-## 19 fact {"channel":"hook","json":{"cwd":"/w","delta":"","final":true,"hook_event_name":"MessageDisplay","index":1,"message_id":"d-c","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
+## 19 fact {"channel":"hook","json":{"cwd":"/w","delta":"","final":true,"hook_event_name":"MessageDisplay","index":1,"message_id":"d-c","permission_mode":"default","prompt_id":"q1","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
 ## 20 input {"id":"p2","prompt":{"text":"carry on"}}
 effect reply p2 accepted
 effect terminal prompt "carry on"
 snapshot IDLE queue=[] working_on="carry on" at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+## 21 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"UserPromptSubmit","permission_mode":"default","prompt":"carry on","prompt_id":"q2","session_id":"s1","transcript_path":"/t/s1.jsonl"}}
+## 22 fact {"channel":"transcript","json":{"message":{"content":"carry on","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:06.000Z","type":"user","uuid":"u3"}}
+item u3 prompt final input=p2 at=1800000006000 text="carry on"
+snapshot WORKING queue=[] working_on="carry on" at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+## 23 fact {"channel":"hook","json":{"cwd":"/w","delta":"Second reply.\n","final":false,"hook_event_name":"MessageDisplay","index":0,"message_id":"d-d","permission_mode":"default","prompt_id":"q2","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn-q2"}}
+item stream:d-d message open at=1800000000100 text="Second reply.\n"
+## 24 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Second reply.","type":"text"}],"id":"m5","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:07.000Z","type":"assistant","uuid":"a5"}}
+item stream:d-d message final at=1800000007000 text="Second reply."
+## 25 fact {"channel":"transcript","json":{"durationMs":1100,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:07.100Z","type":"system","uuid":"d2"}}
+item turn:2 turn final at=1800000007100 text="" #2 TURN_OUTCOME_COMPLETED started=1800000006000
+snapshot IDLE queue=[] working_on="carry on" at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+turn_end 2 last=stream:d-d
+## 26 input {"id":"p3","prompt":{"text":"and again"}}
+effect reply p3 accepted
+effect terminal prompt "and again"
+snapshot IDLE queue=[] working_on="and again" at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+## 27 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"UserPromptSubmit","permission_mode":"default","prompt":"and again","prompt_id":"q3","session_id":"s1","transcript_path":"/t/s1.jsonl"}}
+## 28 fact {"channel":"transcript","json":{"message":{"content":"and again","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:08.000Z","type":"user","uuid":"u4"}}
+item u4 prompt final input=p3 at=1800000008000 text="and again"
+snapshot WORKING queue=[] working_on="and again" at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+## 29 fact {"channel":"hook","json":{"cwd":"/w","delta":"","final":true,"hook_event_name":"MessageDisplay","index":1,"message_id":"d-d","permission_mode":"default","prompt_id":"q2","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn-q2"}}
+## 30 fact {"channel":"hook","json":{"cwd":"/w","delta":"Third reply.\n","final":false,"hook_event_name":"MessageDisplay","index":0,"message_id":"d-e","permission_mode":"default","prompt_id":"q3","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn-q3"}}
+item stream:d-e message open at=1800000000100 text="Third reply.\n"
+## 31 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Third reply.","type":"text"}],"id":"m6","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:09.000Z","type":"assistant","uuid":"a6"}}
+item stream:d-e message final at=1800000009000 text="Third reply."
+## 32 fact {"channel":"transcript","json":{"durationMs":1000,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:09.100Z","type":"system","uuid":"d3"}}
+item turn:3 turn final at=1800000009100 text="" #3 TURN_OUTCOME_COMPLETED started=1800000008100
+snapshot IDLE queue=[] working_on="and again" at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+turn_end 3 last=stream:d-e

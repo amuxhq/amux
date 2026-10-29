@@ -6,6 +6,10 @@ license.workspace = true
 description = "Agent multiplexer - CLI binary"
 publish = false
 
+# `store` is a dependency only so `bundled` can name its feature.
+[package.metadata.cargo-shear]
+ignored = ["store"]
+
 [features]
 default = []
 bundled = ["store/bundled"]
@@ -20,8 +24,6 @@ agent = { workspace = true }
 agent-dir = { workspace = true }
 analytics = { workspace = true }
 anyhow = { workspace = true }
-async-trait = { workspace = true }
-base64 = "0.22"
 claude = { workspace = true }
 client = { workspace = true }
 clap = { workspace = true }
@@ -29,7 +31,6 @@ crossterm = { workspace = true }
 hyper-util = { workspace = true }
 node = { workspace = true }
 qrcode = { workspace = true }
-quinn = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_ignored = { workspace = true }
@@ -55,16 +56,16 @@ libc = { workspace = true }
 libc = { workspace = true }
 
 [dev-dependencies]
+base64 = "0.22"
 release = { workspace = true, features = ["test-key"] }
 pty-host = { workspace = true }
 patience = { workspace = true }
 bytes = { workspace = true }
 http-body-util = { workspace = true }
 hyper = { workspace = true }
-jsonwebtoken = { workspace = true }
 rcgen = { workspace = true }
+ring = { workspace = true }
 agent = { workspace = true }
-interpret = { workspace = true }
 journal = { workspace = true }
 prost = { workspace = true }
 provider-fakes = { workspace = true }

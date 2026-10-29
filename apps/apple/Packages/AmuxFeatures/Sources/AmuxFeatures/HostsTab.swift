@@ -17,6 +17,49 @@ public enum HostsAction: Equatable, Sendable {
     /// is the only place a refused local network can be granted again. The app
     /// cannot ask a second time.
     case openSystemSettings
+    /// Offer the subscription that pairs a machine only the relay reaches.
+    case subscribe
+}
+
+/// What a card offers for a machine this phone has not paired, by how the
+/// phone reaches it: nearby, through a machine it is paired with, or only
+/// through the relay, which carries a pairing only for an account that buys
+/// it. The Hosts tab and the empty home screen draw the same card.
+struct PairOffer: Equatable {
+    let title: String
+    let detail: String
+    let button: String
+    /// Only the relay reaches it and the account does not buy the relay: no
+    /// code typed here gets a pairing through, and subscribing does.
+    let subscribe: Bool
+
+    init(_ host: HostView, pro: Bool?) {
+        let pairIt = String(localized: "Pair it to see its agents here")
+        if !host.addrs.isEmpty {
+            title = String(localized: "\(host.name) is nearby")
+            detail = pairIt
+            subscribe = false
+        } else if let through = host.through {
+            // Words that fit the card's one line beside its button, as
+            // "is nearby" does: the card is read at a glance.
+            title = String(localized: "\(host.name) is online")
+            detail = String(localized: "Pair it through \(through)")
+            subscribe = false
+        } else if host.relayOnly {
+            title = String(localized: "\(host.name) is online")
+            // Asked only once the relay has said the account is on the free
+            // plan: a plan not heard yet is no reason to sell one.
+            subscribe = pro == false
+            detail = subscribe
+                ? String(localized: "Pro pairs it from anywhere")
+                : String(localized: "Pair it from anywhere")
+        } else {
+            title = String(localized: "\(host.name) can be paired")
+            detail = pairIt
+            subscribe = false
+        }
+        button = subscribe ? String(localized: "Subscribe") : String(localized: "Pair")
+    }
 }
 
 /// The machines agents run on.
@@ -29,9 +72,11 @@ public enum HostsAction: Equatable, Sendable {
 /// so on its row, and its page says why and what that means for its agents.
 ///
 /// Machines this phone has found and not paired with are cards above the
-/// list, as on the agent list: what there is to do with one is pair it.
-/// Signing in adds the relay's machines to what can be found; it is not what
-/// makes finding possible.
+/// list, as on the agent list: what there is to do with one is pair it, or,
+/// for one only the relay reaches on the free plan, subscribe. Signing in
+/// adds the relay's machines to what can be found, and pairing adds the
+/// machines each paired one is paired with; neither is what makes finding
+/// possible.
 public struct HostsTab: View {
     @Environment(\.design) private var design
     private let model: HostsStore
@@ -124,15 +169,13 @@ public struct HostsTab: View {
     private var callouts: [Callout<HostsAction>] {
         model.discovered.compactMap { host in
             guard let id = host.id else { return nil }
-            let nearby = host.group == .onThisNetwork
+            let offer = PairOffer(host, pro: model.account?.pro)
             return Callout(
                 id: "pair.\(host.name)", glyph: "plus.circle",
-                title: nearby
-                    ? String(localized: "\(host.name) is nearby")
-                    : String(localized: "\(host.name) can be paired"),
-                detail: String(localized: "Pair it to see its agents here"),
-                button: String(localized: "Pair"), act: .pair(id),
-                identifier: "hosts.pair.\(key(host))")
+                title: offer.title, detail: offer.detail, button: offer.button,
+                act: offer.subscribe ? .subscribe : .pair(id),
+                identifier: offer.subscribe
+                    ? "hosts.subscribe.\(key(host))" : "hosts.pair.\(key(host))")
         }
     }
 

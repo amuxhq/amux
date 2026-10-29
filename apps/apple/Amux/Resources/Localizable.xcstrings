@@ -2726,25 +2726,13 @@
       }
     },
     "Continue as %@" : {
-      "comment" : "Button keeping the account a sign-in came back as when another was asked for; %@ is its address. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
+      "comment" : "Button keeping the account a sign-in came back as when another was asked for; %@ is its address. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SigningIn.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Continue as %@"
-          }
-        }
-      }
-    },
-    "Continue on %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continue on %@"
           }
         }
       }
@@ -3134,7 +3122,7 @@
       }
     },
     "Done" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
+      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -4681,18 +4669,6 @@
         }
       }
     },
-    "Opening %@…" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opening %@…"
-          }
-        }
-      }
-    },
     "Opening this chat" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxShell/Sources/AmuxShell/Shell.swift.",
       "extractionState" : "manual",
@@ -4701,18 +4677,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opening this chat"
-          }
-        }
-      }
-    },
-    "Opens %@ in Safari" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opens %@ in Safari"
           }
         }
       }
@@ -6134,7 +6098,7 @@
       }
     },
     "Sign In" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift, apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift, apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -6153,30 +6117,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sign Out"
-          }
-        }
-      }
-    },
-    "Sign back in as %@." : {
-      "comment" : "Sign-in page explanation when signing back into an account this phone lists; %@ is its address. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign back in as %@."
-          }
-        }
-      }
-    },
-    "Sign in" : {
-      "comment" : "Heading on the sign-in screen.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign in"
           }
         }
       }
@@ -6218,7 +6158,7 @@
       }
     },
     "Sign-in did not finish" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
+      "comment" : "Title of the alert raised when amux.sh refused a sign-in. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SigningIn.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -6253,20 +6193,8 @@
         }
       }
     },
-    "Signed in as %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Signed in as %@"
-          }
-        }
-      }
-    },
     "Signed in as another account" : {
-      "comment" : "Headline when signing back into one account returned a different one. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
+      "comment" : "Title of the dialog raised when signing back into one account returned a different one. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SigningIn.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -7238,7 +7166,7 @@
       }
     },
     "Try Again" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
+      "comment" : "Alert button that signs in again after a refusal. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SigningIn.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -7826,7 +7754,7 @@
       }
     },
     "You signed in as %@, not %@." : {
-      "comment" : "Explains which account came back and which was asked for; addresses substituted. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
+      "comment" : "Explains which account came back and which was asked for; addresses substituted. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SigningIn.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -8721,18 +8649,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "gave up after %@ tries"
-          }
-        }
-      }
-    },
-    "handing off" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "handing off"
           }
         }
       }
@@ -10778,7 +10694,7 @@
       }
     },
     "An account lets this phone reach your hosts from anywhere, and a subscription bought on %@ carries over." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
+      "comment" : "Caption under the first Sign In in Settings; %@ is the account service's host. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -11097,6 +11013,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stopping…"
+          }
+        }
+      }
+    },
+    "Pair it through %@" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair it through %@"
+          }
+        }
+      }
+    },
+    "%@ is online" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is online"
+          }
+        }
+      }
+    },
+    "Pair it from anywhere" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair it from anywhere"
+          }
+        }
+      }
+    },
+    "Pro pairs it from anywhere" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro pairs it from anywhere"
+          }
+        }
+      }
+    },
+    "Signing in…" : {
+      "comment" : "What a Sign In says in its own place while its sign-in is under way. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SigningIn.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signing in…"
           }
         }
       }

@@ -13,7 +13,6 @@ futures-util = { workspace = true }
 hyper-util = { workspace = true }
 prost = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
 wire = { workspace = true, features = ["grpc"] }
@@ -22,3 +21,4 @@ wire = { workspace = true, features = ["grpc"] }
 patience = { workspace = true }
 provider-fakes = { workspace = true }
 testnet = { workspace = true }
+tokio = { workspace = true }

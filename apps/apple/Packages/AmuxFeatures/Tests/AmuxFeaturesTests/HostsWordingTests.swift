@@ -13,8 +13,8 @@ final class HostsWordingTests: XCTestCase {
     ) -> HostView {
         HostView(
             hostId: studio.bytes, name: "studio", local: false, trusted: true, candidate: false,
-            reach: reach, addrs: addrs, current: true, providers: [], lastDialError: nil,
-            platform: platform, signedIn: nil, version: nil)
+            reach: reach, addrs: addrs, relayOnly: false, current: true, providers: [], lastDialError: nil,
+            platform: platform, signedIn: nil, through: nil, version: nil)
     }
 
     private func tab(_ hosts: [HostView], clock: @escaping @MainActor () -> Date = { Date() })
@@ -96,5 +96,44 @@ final class HostsWordingTests: XCTestCase {
             "Its agents report their state as unknown until it is back.",
             "a host found here that no link reaches points at the network")
         XCTAssertNil(page([host(reach: .offline(.revoked))]).meaning(host(reach: .offline(.revoked))))
+    }
+
+    private func candidate(addrs: [String] = [], relayOnly: Bool = false, through: String? = nil)
+        -> HostView
+    {
+        HostView(
+            hostId: studio.bytes, name: "nova", local: false, trusted: false, candidate: true,
+            reach: .online(.unspecified), addrs: addrs, relayOnly: relayOnly, current: false,
+            providers: [], lastDialError: nil, platform: .linux, signedIn: nil, through: through,
+            version: nil)
+    }
+
+    /// A machine nobody paired is offered by how the phone reaches it, and
+    /// only one the relay alone reaches on the free plan is sold a
+    /// subscription in place of a pairing.
+    func testAPairingCardSaysHowTheMachineIsReachedAndSellsOnlyWhatPairsIt() {
+        let nearby = PairOffer(candidate(addrs: ["10.0.0.9:7"]), pro: false)
+        XCTAssertEqual(nearby.title, "nova is nearby")
+        XCTAssertFalse(nearby.subscribe)
+
+        let through = PairOffer(candidate(through: "studio"), pro: false)
+        XCTAssertEqual(through.title, "nova is online")
+        XCTAssertEqual(through.detail, "Pair it through studio")
+        XCTAssertEqual(through.button, "Pair")
+        XCTAssertFalse(through.subscribe, "a paired machine forwards on any plan")
+
+        let free = PairOffer(candidate(relayOnly: true), pro: false)
+        XCTAssertEqual(free.title, "nova is online")
+        XCTAssertEqual(free.detail, "Pro pairs it from anywhere")
+        XCTAssertEqual(free.button, "Subscribe")
+        XCTAssertTrue(free.subscribe)
+
+        let paid = PairOffer(candidate(relayOnly: true), pro: true)
+        XCTAssertEqual(paid.button, "Pair")
+        XCTAssertEqual(paid.detail, "Pair it from anywhere")
+        XCTAssertFalse(paid.subscribe)
+
+        let unheard = PairOffer(candidate(relayOnly: true), pro: nil)
+        XCTAssertFalse(unheard.subscribe, "a plan not heard yet is no reason to sell one")
     }
 }

@@ -1,7 +1,7 @@
 //! Host words shared by the fleet rows and the hosts overlay: how each host
 //! is reached, every trusted host whatever its presence and every candidate
-//! discovery currently sees, and the one banner line a reachability problem
-//! earns.
+//! discovery sees or a neighbor announces, and the one banner line a
+//! reachability problem earns.
 
 use ratatui::text::{Line, Span};
 use ui_state::FleetState;
@@ -68,7 +68,27 @@ pub(crate) fn shell_target(target: &str) -> String {
     }
 }
 
-/// The trusted hosts, then what discovery found, each by name.
+/// Where a host nobody paired was found, then the command that pairs it:
+/// nearby, through a paired host that announces it, or only through the
+/// relay, which carries a pairing only on a paid plan.
+fn candidate_words(entry: &HostEntry, name: &str) -> String {
+    let pair = format!("amux pair {}", shell_target(name));
+    let Some(candidate) = entry.candidate() else {
+        return pair;
+    };
+    if candidate.nearby() {
+        return format!("found nearby · {pair}");
+    }
+    if let Some(through) = candidate.through_paired().next() {
+        return format!("through {} · {pair}", through.name);
+    }
+    if candidate.relay_only() {
+        return format!("on your account · Pro pairs it through the relay · {pair}");
+    }
+    pair
+}
+
+/// The trusted hosts, then the hosts nobody paired, each by name.
 pub fn listed(fleet: &FleetState) -> Vec<&HostEntry> {
     let mut hosts: Vec<&HostEntry> = fleet.hosts().collect();
     hosts.sort_by(|a, b| {
@@ -82,8 +102,8 @@ pub fn listed(fleet: &FleetState) -> Vec<&HostEntry> {
 
 /// The hosts modal's rows: one line per host, its name (this machine said
 /// so), then how it is reached ("direct", "relay") or why not ("away · not
-/// signed in"); what discovery found, faint, with the command that pairs
-/// it; and a faint footer on pairing another.
+/// signed in"); the hosts nobody paired, faint, with where they were found
+/// and the command that pairs them; and a faint footer on pairing another.
 pub fn modal_rows(fleet: &FleetState, local_host: &[u8], theme: Theme) -> Vec<Line<'static>> {
     let hosts = listed(fleet);
     let names: Vec<String> = hosts
@@ -119,7 +139,7 @@ pub fn modal_rows(fleet: &FleetState, local_host: &[u8], theme: Theme) -> Vec<Li
                 .trim_start_matches('·')
                 .to_owned()
         } else {
-            format!("found nearby · amux pair {}", shell_target(&name))
+            candidate_words(entry, &name)
         };
         line.spans.push(Span::styled(
             words,

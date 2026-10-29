@@ -30,7 +30,7 @@ use std::fmt;
 
 use daemon_core::{HostId, LinkId, StepBudget};
 use relay_core::{
-    ASKS_ONLY_FREE_LINKS, DialOrder, Direct, FORWARDS_ONLY_PAID_PAIRS, Input, LAPSE_TELLS_BOTH,
+    ASKS_ONLY_FREE_LINKS, DialOrder, FORWARDS_ONLY_PAID_PAIRS, Input, LAPSE_TELLS_BOTH,
     NOTHING_BEFORE_ADMISSION, Output, Relay, Tier, UserId,
 };
 
@@ -170,9 +170,10 @@ struct Link {
     /// The plan its last token carried; `None` for a pinned key.
     tier: Option<Tier>,
     expired: bool,
-    /// How a daemon's own link to the host was dialled, and in which life
-    /// of the host's process.
-    direct: Option<Direct>,
+    /// The life of the host's process that opened it.
+    life: u8,
+    /// How a daemon's own link to the host was dialled.
+    direct: Option<DialOrder>,
 }
 
 impl Link {
@@ -314,18 +315,19 @@ impl State {
 
     /// The direct links of one life of `host` the core holds up, besides
     /// `link`.
-    fn same_life(&self, link: LinkId) -> Vec<(LinkId, Direct)> {
+    fn same_life(&self, link: LinkId) -> Vec<(LinkId, DialOrder)> {
         let Some(this) = self.links.get(&link) else {
             return Vec::new();
         };
-        let Some(direct) = this.direct else {
+        if this.direct.is_none() {
             return Vec::new();
-        };
+        }
         self.links
             .iter()
-            .filter(|(id, other)| **id != link && other.admitted && other.host == this.host)
+            .filter(|(id, other)| {
+                **id != link && other.admitted && other.host == this.host && other.life == this.life
+            })
             .filter_map(|(id, other)| Some((*id, other.direct?)))
-            .filter(|(_, other)| other.instance == direct.instance)
             .collect()
     }
 }
@@ -402,11 +404,9 @@ impl RelayModel {
                     s.refused = true;
                     let refused = s.links.get(&link).and_then(|link| link.direct);
                     let kept = s.same_life(link);
-                    if refused.is_some_and(|refused| refused.order == DialOrder::Preferred)
+                    if refused == Some(DialOrder::Preferred)
                         && !kept.is_empty()
-                        && kept
-                            .iter()
-                            .all(|(_, direct)| direct.order == DialOrder::Fallback)
+                        && kept.iter().all(|(_, order)| *order == DialOrder::Fallback)
                         && s.kept_fallback.is_none()
                     {
                         s.kept_fallback = Some(format!("refused link {} on {label}", link.0));
@@ -430,12 +430,9 @@ impl RelayModel {
                 Output::Displace { link } => {
                     s.displaced = true;
                     let kept = s.same_life(link);
-                    if let Some(displaced) = s.links.get(&link).and_then(|link| link.direct)
-                        && displaced.order == DialOrder::Preferred
+                    if s.links.get(&link).and_then(|link| link.direct) == Some(DialOrder::Preferred)
                         && !kept.is_empty()
-                        && kept
-                            .iter()
-                            .all(|(_, direct)| direct.order == DialOrder::Fallback)
+                        && kept.iter().all(|(_, order)| *order == DialOrder::Fallback)
                         && s.kept_fallback.is_none()
                     {
                         s.kept_fallback = Some(format!("displaced link {} on {label}", link.0));
@@ -609,10 +606,6 @@ impl Machine for RelayModel {
                 let id = LinkId(next.next_link);
                 next.next_link += 1;
                 let life = next.lives.get(host).copied().unwrap_or_default();
-                let direct = order.map(|order| Direct {
-                    order,
-                    instance: [life; 16],
-                });
                 next.links.insert(
                     id,
                     Link {
@@ -621,7 +614,8 @@ impl Machine for RelayModel {
                         held: BTreeSet::new(),
                         tier: None,
                         expired: false,
-                        direct,
+                        life,
+                        direct: *order,
                     },
                 );
             }
@@ -653,11 +647,12 @@ impl Machine for RelayModel {
                 link.admitted = true;
                 link.tier = tier;
                 let direct = link.direct;
+                let life = link.life;
                 let held = std::mem::take(&mut link.held);
                 if direct.is_some_and(|direct| {
                     next.same_life(*id)
                         .iter()
-                        .any(|(_, other)| other.order != direct.order)
+                        .any(|(_, other)| *other != direct)
                 }) {
                     next.crossed = true;
                 }
@@ -668,6 +663,7 @@ impl Machine for RelayModel {
                         user,
                         host,
                         tier,
+                        instance: [life; 16],
                         direct,
                         advertised,
                     },
@@ -767,25 +763,18 @@ impl Machine for RelayModel {
                 s.forwarded && !s.table.is_empty()
             }),
             Property::always(
-                "a host holds at most one direct link here, of its process's latest life",
+                "a host holds at most one direct link here, and none of an earlier life beside one of its latest",
                 |_, s: &State| {
                     HOSTS.iter().all(|host| {
-                        let up: Vec<Direct> = s
+                        let up: Vec<&Link> = s
                             .links
                             .values()
                             .filter(|link| link.host == *host && link.admitted)
-                            .filter_map(|link| link.direct)
                             .collect();
                         let life = s.lives.get(host).copied().unwrap_or_default();
-                        up.len() <= 1
-                            && up.iter().all(|direct| {
-                                direct.instance == [life; 16]
-                                    || !s.links.values().any(|link| {
-                                        link.host == *host
-                                            && link.admitted
-                                            && link.direct.is_some_and(|d| d.instance == [life; 16])
-                                    })
-                            })
+                        up.iter().filter(|link| link.direct.is_some()).count() <= 1
+                            && (up.iter().all(|link| link.life == life)
+                                || !up.iter().any(|link| link.life == life))
                     })
                 },
             ),

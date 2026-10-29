@@ -24,6 +24,18 @@ final class HostsStoreTests: XCTestCase {
         XCTAssertEqual(hosts.known(found)?.addrs, ["10.0.0.9:7"])
     }
 
+    /// A machine nobody paired that no address reaches was announced by the
+    /// relay or a paired machine, and pairing goes through it: it is not on
+    /// this network.
+    func testACandidateNoAddressReachesIsThroughTheRelay() {
+        let announced = Cards.host(
+            found, name: "nova", trusted: false, candidate: true, relayOnly: true)
+        XCTAssertEqual(announced.group, .throughTheRelay)
+        let nearby = Cards.host(
+            found, name: "den", trusted: false, candidate: true, addrs: ["10.0.0.9:7"])
+        XCTAssertEqual(nearby.group, .onThisNetwork)
+    }
+
     func testGroupsFollowTheRouteAndTheReach() {
         XCTAssertEqual(Cards.host(reach: .online(.direct)).group, .onThisNetwork)
         XCTAssertEqual(Cards.host(reach: .online(.relay)).group, .throughTheRelay)

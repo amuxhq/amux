@@ -246,6 +246,9 @@ pub struct LinkCtx {
     /// On a relay: the socket whose senders' addresses a paid host is told
     /// it is seen at.
     observes: Option<Arc<super::socket::LinkSocket>>,
+    /// The attempt this link's handshake spent of its source's limit,
+    /// given back once the link is accepted.
+    refund: Option<crate::resource_limits::Spent>,
 }
 
 /// A link resuming a session, served before its handshake has finished.
@@ -287,6 +290,7 @@ impl LinkCtx {
             shutdown_rx: None,
             refresh_rx: None,
             observes: None,
+            refund: None,
         }
     }
 
@@ -360,6 +364,21 @@ impl LinkCtx {
         socket.address_of(carrier.remote_address()?)
     }
 
+    /// Gives `spent` back to its source's handshake limit once the link is
+    /// accepted: the link proves the dialler a peer, not a stranger.
+    pub(crate) fn refunding(mut self, spent: Option<crate::resource_limits::Spent>) -> Self {
+        self.refund = spent;
+        self
+    }
+
+    /// Gives this link's handshake back to its source's limit, before the
+    /// peer hears it was accepted and may dial again.
+    fn refund(&mut self) {
+        if let Some(spent) = self.refund.take() {
+            spent.refund();
+        }
+    }
+
     pub(crate) fn with_shutdown(mut self, shutdown_rx: watch::Receiver<bool>) -> Self {
         self.shutdown_rx = Some(shutdown_rx);
         self
@@ -418,9 +437,17 @@ pub async fn run_link(
     let mut held_ack = None;
     let ((peer_host, peer_instance), peer_neighbors, snapshot) = match role {
         crate::routing::ConnectRole::Connector => {
-            let snapshot = neighbor_snapshot(&ctx, carrier.as_ref()).await;
+            // A dial to the relay wrote its Hello itself, as it started.
+            let opened = carrier.take_opened();
+            let wrote = opened.is_some();
+            let snapshot = match opened {
+                Some(neighbors) => neighbors,
+                None => neighbor_snapshot(&ctx, carrier.as_ref()).await,
+            };
             let answered = async {
-                write_message(&mut sink, &connector_hello(&ctx, &snapshot, &own)).await?;
+                if !wrote {
+                    write_message(&mut sink, &connector_hello(&ctx, &snapshot, &own)).await?;
+                }
                 tracing::debug!(path = %carrier.path_stats(), "sent Hello");
                 let first = read_first(&mut source, "HelloAck").await?;
                 tracing::debug!(path = %carrier.path_stats(), "received the first message after Hello");
@@ -526,8 +553,10 @@ pub async fn run_link(
                 let user = authenticated.user();
                 let authenticator = authenticated.authenticator.clone();
                 let observes = ctx.observes.take();
+                let refund = ctx.refund.take();
                 ctx = provider.context_for(&user).await;
                 ctx.observes = observes;
+                ctx.refund = refund;
                 session = Some(LinkAuthSession::new(user, authenticator));
             }
             let snapshot = neighbor_snapshot(&ctx, carrier.as_ref()).await;
@@ -551,6 +580,7 @@ pub async fn run_link(
             if ctx.resumed.is_some() {
                 held_ack = Some(ack);
             } else {
+                ctx.refund();
                 write_message(&mut sink, &ack).await?;
                 handshake
                     .acceptor_ack_sent()
@@ -647,7 +677,7 @@ async fn authenticate_hello(
 }
 
 async fn run_established(
-    ctx: LinkCtx,
+    mut ctx: LinkCtx,
     carrier: Arc<QuicCarrier>,
     mut sink: super::ControlSink,
     mut source: super::ControlSource,
@@ -778,6 +808,7 @@ async fn run_established(
                 carrier.close(wire::pb::LinkCloseReason::UserRevoked);
                 return Ok(());
             }
+            ctx.refund();
             write_message(&mut sink, &ack).await?;
             handshake
                 .acceptor_ack_sent()
@@ -1241,6 +1272,26 @@ fn accept_peer_hello_ack(
         neighbors_from_wire(accepted.neighbors)?,
         runtime_instance,
     ))
+}
+
+/// What a host's link to the relay opens with, for its dial to write the
+/// moment it starts: the Hello presenting `token`, listing no addresses
+/// (punching needs only what the relay sees), and the neighbors it lists.
+pub(crate) async fn relay_opening(
+    ctx: &LinkCtx,
+    token: &str,
+    forwarding: Option<super::quic::EarlyForwarding>,
+) -> super::quic::Opening {
+    let neighbors = ctx.links.neighbor_snapshot().await;
+    let mut hello = connector_hello(ctx, &neighbors, &crate::routing::OwnAddresses::default());
+    if let Some(wire::pb::message::Body::Hello(opening)) = hello.body.as_mut() {
+        opening.auth_token = Some(token.to_owned());
+    }
+    super::quic::Opening {
+        hello,
+        neighbors,
+        forwarding,
+    }
 }
 
 fn connector_hello(

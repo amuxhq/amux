@@ -17,17 +17,16 @@ final class RoutePagesTests: XCTestCase {
     /// to compile here until it is listed, and so tested.
     private func every() -> [Route] {
         let agent = AgentKey(host: machine, agent: UUID())
-        // Signing in and subscribing are pushed from Agents here: pushed from
-        // Settings they open inside its sheet, a presentation of its own whose
-        // elements never reach the root this test reads. The pages are the
-        // same either way.
+        // Subscribing is pushed from Agents here: pushed from Settings it
+        // opens inside its sheet, a presentation of its own whose elements
+        // never reach the root this test reads. The page is the same either
+        // way.
         let routes: [Route] = [
-            .conversation(agent), .changes(agent), .host(machine), .signIn(.agents),
-            .paywall(.agents),
+            .conversation(agent), .changes(agent), .host(machine), .paywall(.agents),
         ]
         for route in routes {
             switch route {
-            case .conversation, .changes, .host, .signIn, .paywall:
+            case .conversation, .changes, .host, .paywall:
                 break
             }
         }

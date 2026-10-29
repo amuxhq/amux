@@ -647,27 +647,43 @@ impl Theme {
 
 #[derive(Deserialize)]
 struct RawThemeFile {
+    /// The scheme's name: `name` in the tinted-theming layout, `scheme` in
+    /// the older one.
+    name: Option<String>,
     scheme: Option<String>,
     variant: Option<Variant>,
     #[serde(default)]
     tokens: BTreeMap<String, String>,
+    /// The tinted-theming layout's colours.
+    #[serde(default)]
+    palette: BTreeMap<String, String>,
+    /// The older layout's colours, at the top level, among metadata of any
+    /// shape (`system`, `author`, `description`, ...).
     #[serde(flatten)]
-    remaining: BTreeMap<String, String>,
+    remaining: BTreeMap<String, yaml_serde::Value>,
 }
 
-/// Parse the conventional top-level base16/base24 YAML shape. Metadata fields
-/// other than `scheme` and `variant` are ignored; `base00` through `base17`
-/// are retained for validation and resolution.
+/// Parse a base16/base24 YAML scheme, in either published layout: the
+/// tinted-theming one, with the colours under `palette:`, or the older one,
+/// with them at the top level. Metadata other than the name and `variant` is
+/// ignored; `base00` through `base17` are retained for validation and
+/// resolution.
 pub fn parse_theme_file(yaml: &str) -> Result<ThemeFile, ThemeError> {
     let raw: RawThemeFile =
-        serde_yaml::from_str(yaml).map_err(|error| ThemeError::Yaml(error.to_string()))?;
-    let base = raw
+        yaml_serde::from_str(yaml).map_err(|error| ThemeError::Yaml(error.to_string()))?;
+    let top_level = raw
         .remaining
         .into_iter()
+        .filter_map(|(key, value)| match value {
+            yaml_serde::Value::String(value) => Some((key, value)),
+            _ => None,
+        });
+    let base = top_level
+        .chain(raw.palette)
         .filter_map(|(key, value)| normalize_base_key(&key).map(|key| (key, value)))
         .collect();
     Ok(ThemeFile {
-        scheme: raw.scheme,
+        scheme: raw.name.or(raw.scheme),
         base,
         tokens: raw.tokens,
         variant: raw.variant,
@@ -1328,6 +1344,7 @@ mod tests {
 
     const BASE16_SAMPLE: &str = include_str!("../tests/themes/base16-sample.yaml");
     const BASE24_SAMPLE: &str = include_str!("../tests/themes/base24-sample.yaml");
+    const BASE16_PALETTE_SAMPLE: &str = include_str!("../tests/themes/base16-palette-sample.yaml");
 
     fn render_named(state: Named, theme: Theme) -> Buffer {
         state.render(theme)
@@ -1564,6 +1581,18 @@ mod tests {
                 .any(|cell| cell.fg == Color::Rgb(0xab, 0xcd, 0xef)),
             "an ask's box should paint its edge from the direct attention override"
         );
+    }
+
+    /// Schemes published today put their colours under `palette:` and name
+    /// themselves with `name:`; one reads the same as the older layout.
+    #[test]
+    fn a_tinted_theming_scheme_reads_like_the_older_layout() {
+        let palette = parse_theme_file(BASE16_PALETTE_SAMPLE).expect("parse palette fixture");
+        let top_level = parse_theme_file(BASE16_SAMPLE).expect("parse base16 fixture");
+        assert_eq!(palette.scheme.as_deref(), Some("amux base16 sample"));
+        assert_eq!(palette.variant, Some(Variant::Dark));
+        assert_eq!(palette.base, top_level.base);
+        assert_eq!(palette.base.len(), 16);
     }
 
     #[test]

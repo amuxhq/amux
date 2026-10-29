@@ -1,20 +1,21 @@
 shell |  | you | 0,62,402,778
 home |  | signed-out | 0,174,402,617
 you |  | none | 0,132,402,708
-you.signIn | Sign In |  | 16,156,370,59
-you.appearance |  | system | 16,257,370,50
-you.appearance.light | Light | not chosen | 205,259,51,46
-you.appearance.dark | Dark | not chosen | 256,259,49,46
-you.appearance.system | System | chosen | 305,259,65,46
-you.shareUsage |  | on | 16,307,370,55
-you.autoReports |  | off | 16,362,370,71
-you.notifications | Notifications | Off | 16,434,370,46
+you.signIn | Sign In |  | 16,156,370,47
+you.signIn.caption |  |  | 16,211,363,48
+you.appearance |  | system | 16,300,370,50
+you.appearance.light | Light | not chosen | 205,302,51,46
+you.appearance.dark | Dark | not chosen | 256,302,49,46
+you.appearance.system | System | chosen | 305,302,65,46
+you.shareUsage |  | on | 16,351,370,55
+you.autoReports |  | off | 16,406,370,71
+you.notifications | Notifications | Off | 16,477,370,46
 you.name | <volatile>
 you.fingerprint | <volatile>
-you.support | Contact Support |  | 16,649,370,46
-you.report | Report a Problem |  | 16,696,370,46
-you.dump | Export Diagnostics |  | 16,742,370,46
-you.help.caption |  |  | 16,795,310,32
+you.support | Contact Support |  | 16,693,370,46
+you.report | Report a Problem |  | 16,739,370,46
+you.dump | Export Diagnostics |  | 16,785,370,46
+you.help.caption |  |  | 16,839,310,32
 you.close | Close |  | 326,82,56,36
  | Pair your first host |  | 16,204,214,32
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
@@ -37,22 +38,23 @@ you.close | Close |  | 326,82,56,36
  | Hosts |  | 197,795,94,54
  | Hosts |  | 230,830,29,12
  | ACCOUNTS |  | 18,132,74,16
- | Sign In, Reach your agents from anywhere |  | 16,156,370,59
- | THIS PHONE |  | 18,233,78,16
- | Appearance |  | 30,272,90,20
- | Light |  | 205,259,51,46
- | Dark |  | 256,259,49,46
- | System |  | 305,259,65,46
- | Share Usage, Counts and choices, never what you type | 1 | 30,316,342,37
- | Send Automatic Reports, When amux catches its own bug, send what it saw, chats included | 0 | 30,371,342,53
- | Notifications, Off |  | 16,434,370,46
- | Name, <device> |  | 16,480,370,46
- | Fingerprint, <key> |  | 30,538,312,58
- | HELP |  | 18,625,34,16
- | Contact Support |  | 16,649,370,46
- | Report a Problem |  | 16,696,370,46
- | Export Diagnostics |  | 16,742,370,46
- | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,795,282,32
+ | Sign In |  | 16,156,370,47
+ | An account lets this phone reach your hosts from anywhere, and a subscription bought on amux.sh carries over. |  | 30,211,335,48
+ | THIS PHONE |  | 18,276,78,16
+ | Appearance |  | 30,316,90,20
+ | Light |  | 205,302,51,46
+ | Dark |  | 256,302,49,46
+ | System |  | 305,302,65,46
+ | Share Usage, Counts and choices, never what you type | 1 | 30,360,342,37
+ | Send Automatic Reports, When amux catches its own bug, send what it saw, chats included | 0 | 30,415,342,53
+ | Notifications, Off |  | 16,477,370,46
+ | Name, <device> |  | 16,523,370,46
+ | Fingerprint, <key> |  | 30,582,312,58
+ | HELP |  | 18,669,34,16
+ | Contact Support |  | 16,693,370,46
+ | Report a Problem |  | 16,739,370,46
+ | Export Diagnostics |  | 16,785,370,46
+ | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,839,282,32
  | Settings |  | 167,89,68,21
  | Close |  | 326,82,56,36
  | Agents | selected | 111,795,94,54

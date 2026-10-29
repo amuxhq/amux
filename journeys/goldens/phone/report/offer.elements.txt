@@ -6,7 +6,7 @@ home.chip.working | Working | off | 163,172,76,44
 home.row.<desk-work> | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,218,370,64
 home.row.<desk-work>.age.volatile | <volatile>
 home.newAgent | New Agent |  | 338,62,44,44
-home.accounts | Switch account |  | 19,69,30,30
+home.accounts | Switch account |  | 20,66,44,36
 report.prompt | Report |  | 101,689,104,45
  | Report |  | 101,689,104,45
  | All |  | 16,172,44,44
@@ -14,7 +14,7 @@ report.prompt | Report |  | 101,689,104,45
  | Working |  | 163,172,76,44
  | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,218,370,64
  | Agents |  | 16,127,116,42
- | Switch account |  | 19,69,30,30
+ | Switch account |  | 20,66,44,36
  | New Agent |  | 338,62,44,44
  | Search |  | 16,175,370,0
  | Agents |  | 111,795,94,54

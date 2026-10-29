@@ -589,7 +589,7 @@ impl World for SimNet {
         Err(NetError::Unsupported("a router in a simulated net"))
     }
 
-    fn change_network(&self, _: &str) -> Result<Ack, NetError> {
+    fn change_network(&mut self, _: &str) -> Result<Ack, NetError> {
         Err(NetError::Unsupported(
             "changing a host's network in a simulated net",
         ))

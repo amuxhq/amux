@@ -261,8 +261,6 @@ final class DoorHost {
             router.select(.hosts)
         case "you", "settings": router.setPath([], for: .you); router.select(.you)
         case "new-agent": router.composing = true
-        case "sign-in":
-            composition.handle(.signIn)
         case "paywall":
             composition.handle(.subscribe)
         case "pin":

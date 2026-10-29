@@ -730,6 +730,7 @@ impl Install {
     ) -> Result<Vec<u8>, String> {
         let agent = self
             .client
+            .agents
             .clone()
             .create_agent(CreateAgentRequest {
                 agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
@@ -751,12 +752,12 @@ impl Install {
         let log = Arc::new(Mutex::new(Log::default()));
         let task = tokio::spawn({
             let log = log.clone();
-            let mut client = self.client.clone();
+            let mut client = self.client.sessions.clone();
             let agent = agent.to_vec();
             async move {
                 loop {
                     let stream = client
-                        .subscribe(SubscribeSessionRequest {
+                        .subscribe_session(SubscribeSessionRequest {
                             agent_id: agent.clone(),
                             tail: 1000,
                         })
@@ -828,6 +829,7 @@ impl Install {
     async fn input(&self, agent: &[u8], of: wire::KindInput) -> Result<(), String> {
         let response = self
             .client
+            .sessions
             .clone()
             .send_input(SendInputRequest {
                 agent_id: agent.to_vec(),

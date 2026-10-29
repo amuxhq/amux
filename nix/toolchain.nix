@@ -8,7 +8,8 @@ let
   # this list cannot disagree about the version, components or targets.
   rust = pkgs.rust-bin.fromRustupToolchainFile ../rust-toolchain.toml;
 
-  # The dated nightly that `just fmt`, `just fmt-check` and `just miri` use.
+  # The dated nightly that `just fmt`, `just fmt-check`, `just miri` and
+  # `just sanitize` use.
   # Keep the date in step with the justfile's `nightly_cargo`.
   nightly = pkgs.rust-bin.nightly."2026-08-30".minimal.override {
     extensions = [ "miri" "rust-src" "rustfmt" ];
@@ -25,6 +26,8 @@ in
 [
   rust
   cargoNightly
+  pkgs.cargo-deny
+  pkgs.cargo-shear
   pkgs.git
   pkgs.gitleaks
   pkgs.just

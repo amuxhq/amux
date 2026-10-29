@@ -47,7 +47,9 @@ public enum HomeAction: Equatable, Sendable {
 /// navigation bar's: a large title that shrinks as the list scrolls, with
 /// glass buttons, the way a chat app's list reads.
 public struct AgentsHome: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.design) private var design
+    @Environment(\.displayScale) private var displayScale
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.photographed) private var photographed
     @Environment(\.reducesMotion) private var reducesMotion
@@ -62,6 +64,9 @@ public struct AgentsHome: View {
     /// Whether to offer notifications above the list: iOS has not asked,
     /// and nobody has put the offer away.
     private let offerNotifications: Bool
+    /// Whether a sign-in is under way, so the Sign In this screen offers says
+    /// so in its place rather than looking as if the press was dropped.
+    private let signingIn: Bool
     private let actions: @MainActor (HomeAction) -> Void
     /// The fold is view state, not fleet state: opening it is a thing this
     /// screen is doing, and coming back to the screen starts it closed again.
@@ -78,18 +83,21 @@ public struct AgentsHome: View {
     /// they are offline in between flashes a card that is gone before it can
     /// be read.
     @State private var dialling = true
+    @State private var discs = AccountDiscs()
 
     public init(
         model: FleetStore,
         accounts: AccountRegistry,
         hosts: HostsStore,
         offerNotifications: Bool = false,
+        signingIn: Bool = false,
         actions: @escaping @MainActor (HomeAction) -> Void
     ) {
         self.model = model
         self.accounts = accounts
         self.hosts = hosts
         self.offerNotifications = offerNotifications
+        self.signingIn = signingIn
         self.actions = actions
         // Picked up from the fleet so the list comes back narrowed as it was
         // left, rather than with an empty field over a filtered list.
@@ -144,10 +152,9 @@ public struct AgentsHome: View {
             ToolbarItem(placement: .topBarLeading) {
                 accountMenu
             }
-            // The disc is its own glass, as the + is; the bar's ring
-            // around it would draw a second one.
-            .sharedBackgroundVisibility(
-                reducesTransparency || accounts.selectedAccount != nil ? .hidden : .automatic)
+            // The bar's own glass, as under the + across from it; with less
+            // transparency asked for, the item draws its own surface.
+            .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
             if canStartAnAgent {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { actions(.newAgent) } label: { Image(systemName: "plus").foregroundStyle(design.onAccent.color) }
@@ -220,62 +227,63 @@ public struct AgentsHome: View {
         }
     }
 
-    /// The accounts, in the system's own menu hung from the disc: each by
-    /// name with what this phone knows of it under, the one on screen
-    /// ticked, and a signed-out one offering to sign back in; then Settings.
-    /// Always there, since it is also the way to the settings.
+    /// The accounts, in the system's own menu hung from the disc: each by its
+    /// own disc and name, with what this phone knows of it under where the
+    /// system draws a second line, the one on screen ticked, and a signed-out
+    /// one dimmed and offering to sign back in; then Settings. The discs are
+    /// what make the accounts read as people rather than as more commands,
+    /// and keep them in one column: without them, the one account not ticked
+    /// sits out at the menu's edge where its title would be. Always there,
+    /// since it is also the way to the settings.
     ///
-    /// The disc is the bar's other circle: the account's initials on the same
-    /// accent glass as the + across from it, and the same size, so the two
-    /// read as a pair. With no account signed in there is nobody to name, so
-    /// it is a person on the bar's plain glass: hollow rather than absent,
-    /// because not having a usable account yet is a state, not a hole.
+    /// The disc is the account on the bar's plain glass, the same circle as
+    /// the + across from it: its picture, or its initials on the accent until
+    /// that arrives or where it has none. The glass is the menu's, which
+    /// grows into the menu and shrinks back from it, so the account sits
+    /// inside it rather than painted over it. With no account signed in
+    /// there is nobody to name, so it is a person on the same glass: hollow
+    /// rather than absent, because not having a usable account yet is a
+    /// state, not a hole.
     @ViewBuilder
     private var accountMenu: some View {
         if let entry = accounts.selectedAccount {
             accountMenu {
-                Text(InitialsDisc.initials(of: entry.name))
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(design.onAccent.color)
-                    .fixedSize()
-                    .frame(width: 30, height: 30)
-                    // The picture covers the whole button, glass and all:
-                    // a face in a coloured ring would be a badge, not a person.
-                    .overlay { AccountPicture(url: entry.account.picture, size: Self.barButton) }
+                disc(entry).accessibilityLabel("Switch account")
             }
-            .menuStyle(.button)
-            .prominentBarButton()
-            .buttonBorderShape(.circle)
-            .tint(design.accent.color)
-            // The bar keeps room for the ring it would have drawn round a
-            // menu; without that ring the disc would sit this far in from the
-            // margin the + keeps on the other side.
-            .padding(.leading, -Space.s)
+            .barItemSurface()
         } else {
             accountMenu { Image(systemName: "person").accessibilityLabel("Switch account") }
                 .barItemSurface()
         }
     }
 
-    /// A bar button's size: the system draws its glass buttons this large.
-    static let barButton: CGFloat = 44
+    /// A toggle rather than a picker for its tick beside the disc: every tap
+    /// reaches it, the ticked account's too, which signs back in when it is
+    /// signed out.
+    private func accountRow(_ entry: AccountEntry) -> some View {
+        let picked = Binding(
+            get: { entry.id == accounts.selected },
+            set: { _ in switcher(entry.signedIn ? .select(entry.id) : .signIn(entry.id)) })
+        let line = entry.signedIn ? entry.line : String(localized: "Signed out · tap to sign in")
+        return Toggle(isOn: picked) {
+            Label {
+                Text(entry.name)
+                Text(line)
+            } icon: {
+                disc(entry)
+            }
+        }
+        .identified("account.\(entry.account.email)", label: entry.name)
+    }
+
+    private func disc(_ entry: AccountEntry) -> Image {
+        Image(uiImage: discs.image(of: entry, design: design, scheme: colorScheme, scale: displayScale))
+    }
 
     private func accountMenu(@ViewBuilder label: () -> some View) -> some View {
         Menu {
             Section {
-                ForEach(accounts.accounts) { entry in
-                    Button {
-                        switcher(entry.signedIn ? .select(entry.id) : .signIn(entry.id))
-                    } label: {
-                        Label {
-                            Text(entry.name)
-                            Text(entry.signedIn ? entry.line : String(localized: "Signed out · tap to sign in"))
-                        } icon: {
-                            if entry.id == accounts.selected { Image(systemName: "checkmark") }
-                        }
-                    }
-                    .identified("account.\(entry.account.email)", label: entry.name)
-                }
+                ForEach(accounts.accounts) { entry in accountRow(entry) }
             }
             Button { switcher(.add) } label: { Label("Add Account", systemImage: "plus") }
                 .identified("accounts.add", label: "Add Account")
@@ -287,6 +295,9 @@ public struct AgentsHome: View {
             }
         } label: {
             label()
+        }
+        .task(id: accounts.accounts.compactMap(\.account.picture)) {
+            await discs.load(accounts.accounts.compactMap(\.account.picture))
         }
         .accessibilityLabel("Switch account")
         .identified("home.accounts", label: "Switch account")
@@ -665,16 +676,17 @@ public struct AgentsHome: View {
     private var callouts: [Callout<HomeAction>] {
         var callouts = found.compactMap { host -> Callout<HomeAction>? in
             guard let id = host.id else { return nil }
+            let offer = PairOffer(host, pro: hosts.account?.pro)
             return Callout(
                 id: "pair.\(host.name)", glyph: "plus.circle",
-                title: String(localized: "\(host.name) is nearby"),
-                detail: String(localized: "Pair it to see its agents here"),
-                button: String(localized: "Pair"), act: .pair(id))
+                title: offer.title, detail: offer.detail, button: offer.button,
+                act: offer.subscribe ? .subscribe : .pair(id))
         }
         if let exceptions {
             callouts.append(Callout(
                 id: "exceptions", glyph: glyph(for: exceptions.act), title: exceptions.text,
-                detail: nil, button: nil, act: exceptions.act))
+                detail: nil, button: nil, act: exceptions.act,
+                working: exceptions.act == .signIn && signingIn))
         }
         if offerNotifications {
             callouts.append(Callout(
@@ -728,9 +740,10 @@ public struct AgentsHome: View {
                         .identified("home.empty.explain")
                 }
                 .padding(.horizontal, design.metrics.gutter)
-                // A machine that can be paired is one this phone can reach,
-                // and one it can reach is one it has found: the cards are the
-                // whole of what there is to pair with.
+                // A machine that can be paired is one this phone can reach:
+                // found on this network, or announced by the relay or a paired
+                // machine. The cards are the whole of what there is to pair
+                // with.
                 if !pairable.isEmpty {
                     CalloutStrip(callouts: pairable, act: actions)
                 } else {
@@ -756,17 +769,17 @@ public struct AgentsHome: View {
         .scrollIndicators(.hidden)
     }
 
-    /// Every machine this phone has found and not paired, as the Hosts tab
-    /// offers them.
+    /// Every machine this phone knows of and has not paired, as the Hosts
+    /// tab offers them.
     private var pairable: [Callout<HomeAction>] {
         found.compactMap { host in
             guard let id = host.id else { return nil }
+            let offer = PairOffer(host, pro: hosts.account?.pro)
             return Callout(
                 id: "pair.\(host.name)", glyph: "plus.circle",
-                title: String(localized: "\(host.name) is nearby"),
-                detail: String(localized: "Pair it to see its agents here"),
-                button: String(localized: "Pair"), act: .pair(id),
-                identifier: "home.pair.\(id)")
+                title: offer.title, detail: offer.detail, button: offer.button,
+                act: offer.subscribe ? .subscribe : .pair(id),
+                identifier: offer.subscribe ? "home.subscribe.\(id)" : "home.pair.\(id)")
         }
     }
 
@@ -834,21 +847,30 @@ public struct AgentsHome: View {
 
     /// An account, offered under pairing as what it adds rather than as a
     /// step: amux is free on the network this phone is on.
+    ///
+    /// Sign In opens the browser itself, and says it is signing in where it
+    /// was until the sign-in has ended.
     private var haveAnAccount: some View {
         HStack(spacing: 4) {
             Text("Have an amux account?")
                 .designFont(.detail, design)
                 .foregroundStyle(design.inkMuted.color)
-            Button { actions(.signIn) } label: {
-                Text("Sign In")
-                    .designFont(.detail, design)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(design.accent.color)
-                    .thumbTarget(y: 13)
+            if signingIn {
+                SigningIn(font: .detail)
+                    .frame(minHeight: 44)
+                    .identified("home.empty.signIn", label: SigningIn.title, value: "signing in", enabled: false)
+            } else {
+                Button { actions(.signIn) } label: {
+                    Text("Sign In")
+                        .designFont(.detail, design)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(design.accent.color)
+                        .thumbTarget(y: 13)
+                }
+                .buttonStyle(.amuxControl)
+                .identified("home.empty.signIn", label: "Sign In")
+                .reclaimingThumbTarget(y: 13)
             }
-            .buttonStyle(.amuxControl)
-            .identified("home.empty.signIn", label: "Sign In")
-            .reclaimingThumbTarget(y: 13)
         }
     }
 
@@ -888,10 +910,10 @@ public struct AgentsHome: View {
         .scrollIndicators(.hidden)
     }
 
-    /// The machines on this network this phone has found and not paired with,
-    /// offered above the list as well as on the Hosts tab: this is where
-    /// somebody is standing when one turns up.
-    private var found: [HostView] { hosts.candidates(.onThisNetwork) }
+    /// The machines this phone knows of and has not paired with, offered
+    /// above the list as well as on the Hosts tab: this is where somebody is
+    /// looking when one turns up.
+    private var found: [HostView] { hosts.discovered }
 }
 
 extension FleetGate {
@@ -1257,6 +1279,9 @@ struct Callout<Action: Equatable>: Identifiable, Equatable {
     /// Putting the callout away, for one the person may decline; drawn as a
     /// close mark at its end.
     var dismiss: Action? = nil
+    /// Whether what it asks for is under way: its mark breathes in place of
+    /// its glyph and a second press does nothing.
+    var working = false
 }
 
 /// The callouts: one takes the full width; more than one narrow so the next
@@ -1288,6 +1313,80 @@ struct CalloutStrip<Action: Equatable>: View {
 }
 
 /// The fleet's search field, there only while there is a fleet to search.
+/// Each account's disc, drawn into an image: its picture, or its initials on
+/// the accent until that arrives or where it has none, dimmed while it is
+/// signed out.
+///
+/// An image is the one label the bar sets in a glass circle the size of its
+/// other buttons. Text or a drawn view gets a capsule sized to it, and a menu
+/// grows out of that glass and shrinks back into it, so a disc as a view
+/// shows as an oblong, and one painted over the glass leaves the glass's own
+/// colour showing on every open and close. A menu row takes an image as its
+/// icon too, so the menu's discs are the same pictures.
+@MainActor @Observable
+final class AccountDiscs {
+    /// The widest image the bar still sets in its 44-point circle; past this
+    /// the glass widens into a capsule.
+    static let size: CGFloat = 32
+
+    private struct Drawn: Equatable {
+        let initials: String
+        let picture: URL?
+        let signedIn: Bool
+        let scheme: ColorScheme
+        let scale: CGFloat
+    }
+
+    private var pictures: [URL: UIImage] = [:]
+    /// The last disc drawn for each account and what it was drawn from: the
+    /// screen is drawn again on every fleet update, and a disc almost never
+    /// changes.
+    @ObservationIgnored private var drawn: [AccountId: (of: Drawn, image: UIImage)] = [:]
+
+    func image(of entry: AccountEntry, design: Design, scheme: ColorScheme, scale: CGFloat) -> UIImage {
+        let picture = entry.account.picture.flatMap { pictures[$0] }
+        let wanted = Drawn(
+            initials: InitialsDisc.initials(of: entry.name),
+            picture: picture == nil ? nil : entry.account.picture,
+            signedIn: entry.signedIn, scheme: scheme, scale: scale)
+        if let drawn = drawn[entry.id], drawn.of == wanted { return drawn.image }
+        let renderer = ImageRenderer(content: face(wanted, picture: picture, design: design)
+            .environment(\.colorScheme, scheme))
+        renderer.scale = scale
+        let image = (renderer.uiImage ?? UIImage()).withRenderingMode(.alwaysOriginal)
+        drawn[entry.id] = (wanted, image)
+        return image
+    }
+
+    /// Fetches the accounts' pictures; until one arrives, or where it cannot,
+    /// its disc keeps the initials.
+    func load(_ urls: [URL]) async {
+        for url in urls where pictures[url] == nil {
+            guard let (data, _) = try? await URLSession.shared.data(from: url),
+                  let image = UIImage(data: data)
+            else { continue }
+            pictures[url] = image
+        }
+    }
+
+    private func face(_ drawn: Drawn, picture: UIImage?, design: Design) -> some View {
+        Group {
+            if let picture {
+                Image(uiImage: picture).resizable().scaledToFill()
+            } else {
+                Text(drawn.initials)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(design.onAccent.color)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(design.accent.color)
+            }
+        }
+        .frame(width: Self.size, height: Self.size)
+        .clipShape(Circle())
+        .opacity(drawn.signedIn ? 1 : 0.5)
+    }
+}
+
 private struct FleetSearch: ViewModifier {
     let shown: Bool
     @Binding var words: String
@@ -1335,7 +1434,12 @@ private struct CalloutCard<Action: Equatable>: View {
             .frame(minHeight: 60)
             .background(surface)
         } else {
-            Button { act(callout.act) } label: {
+            Button {
+                // Under way already: a second press would only be refused,
+                // and a card dimmed to say so cannot be read.
+                guard !callout.working else { return }
+                act(callout.act)
+            } label: {
                 face
                     .padding(.horizontal, Space.m)
                     .frame(minHeight: 60)
@@ -1343,7 +1447,9 @@ private struct CalloutCard<Action: Equatable>: View {
                     .contentShape(RoundedRectangle(cornerRadius: design.metrics.controlRadius))
             }
             .buttonStyle(.amuxControl)
-            .identified(identifier, label: callout.title)
+            .identified(
+                identifier, label: callout.title, value: callout.working ? "working" : nil,
+                enabled: !callout.working)
         }
     }
 
@@ -1353,10 +1459,16 @@ private struct CalloutCard<Action: Equatable>: View {
 
     private var face: some View {
         HStack(spacing: Space.m) {
-            Image(systemName: callout.glyph)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(design.inkMuted.color)
-                .frame(width: 24)
+            Group {
+                if callout.working {
+                    StateMark(state: .working).accessibilityHidden(true)
+                } else {
+                    Image(systemName: callout.glyph)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(design.inkMuted.color)
+                }
+            }
+            .frame(width: 24)
             VStack(alignment: .leading, spacing: Space.xxs) {
                 Text(callout.title)
                     .designFont(.bodyEmphasis, design)

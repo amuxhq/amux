@@ -1,0 +1,9 @@
+# Reports the thread sanitizer makes that are not races, read by
+# scripts/sanitize.py.
+#
+# tokio's I/O driver reaches a socket's readiness record through epoll: the
+# thread that registers the socket hands the kernel the record's address, and
+# the driver's thread gets it back from epoll_wait. The sanitizer cannot see
+# that handoff through the kernel, so every first touch of the record by the
+# driver reads as a race with the thread that made it.
+race:tokio::runtime::io::driver::dispatch_event

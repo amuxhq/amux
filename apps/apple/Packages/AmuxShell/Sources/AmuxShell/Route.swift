@@ -36,13 +36,10 @@ public enum Route: Hashable, Sendable {
     /// The changes one agent has made, opened from its conversation.
     case changes(AgentKey)
     case host(HostId)
-    /// Signing in, pushed onto whichever stack asked for it. The Agents list
+    /// Subscribing, pushed onto whichever stack asked for it. The Agents list
     /// and the settings sheet both offer it, so where it was opened from is a
     /// fact about the push rather than about the screen — and it is what the
     /// back button is allowed to name.
-    case signIn(Tab)
-    /// Subscribing, pushed onto whichever stack asked for it, for the same
-    /// reason signing in is.
     case paywall(Tab)
 
     /// Which tab this page belongs under. A route opened from elsewhere takes
@@ -51,17 +48,7 @@ public enum Route: Hashable, Sendable {
         switch self {
         case .conversation, .changes: .agents
         case .host: .hosts
-        case .signIn(let from), .paywall(let from): from
-        }
-    }
-
-    /// Whether the page stays when the account on screen changes: it shows no
-    /// one account's machines or agents.
-    public var outlivesAccount: Bool {
-        switch self {
-        case .signIn: true
-        case .conversation, .changes, .host, .paywall:
-            false
+        case .paywall(let from): from
         }
     }
 
@@ -72,7 +59,6 @@ public enum Route: Hashable, Sendable {
         case .conversation: "conversation"
         case .changes: "changes"
         case .host: "host"
-        case .signIn: "sign-in"
         case .paywall: "paywall"
         }
     }

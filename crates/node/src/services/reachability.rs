@@ -269,7 +269,7 @@ impl ReachabilityLinkConnector {
     }
 
     pub fn spawn_pair_time_link(&self, peer: HostId, reachability: Reachability) {
-        if matches!(reachability, Reachability::Cloud) {
+        if matches!(reachability, Reachability::Cloud | Reachability::Forwarded) {
             return;
         }
         let Some(task) = self.spawn_attempt(ReachabilityLinkAttempt {
@@ -862,7 +862,7 @@ async fn establish_reachability_link(
     shutdown_rx: watch::Receiver<bool>,
 ) -> Option<tokio::time::Instant> {
     match attempt.reachability.clone() {
-        Reachability::Cloud => None,
+        Reachability::Cloud | Reachability::Forwarded => None,
         Reachability::Direct { addrs } => {
             // Each address's failure, so the person learns why every one
             // of them was refused and not only the last.

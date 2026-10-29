@@ -11,7 +11,7 @@ Provider output, names, paths, commands and the person's own text stay verbatim.
 Use Title Case for navigation titles, tabs, buttons, menu items and settings
 rows: **New Agent**, **Sign In**, **Add to Review**, **Remove from This Phone**. Small
 words within a title stay lowercase, and names keep their spelling, as in
-**Start on Studio** and **Continue on amux.sh**.
+**Start on Studio** and **Continue as ada@example.com**.
 
 Use sentence case for headlines, section heads, descriptions, captions,
 placeholders and status lines: **No hosts yet**, **Needs you**, **Message

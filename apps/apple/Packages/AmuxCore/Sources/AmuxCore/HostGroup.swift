@@ -52,13 +52,15 @@ extension HostView: Identifiable {
     /// Where the hosts screen lists this host, from how the runtime says
     /// this phone reaches it.
     ///
-    /// A candidate is found on this network by definition. A trusted host
+    /// A candidate is on this network when discovery found it there, and
+    /// through the relay otherwise: a paired machine or the relay announced
+    /// it, and pairing goes through that. A trusted host
     /// online is grouped by the route its link runs over. Away is kept for
     /// a host the relay refused to connect for the account's free plan; one
     /// that no longer trusts this phone, or that only a signed-out phone
     /// cannot reach, is offline here.
     public var group: HostGroup {
-        if candidate { return .onThisNetwork }
+        if candidate { return addrs.isEmpty ? .throughTheRelay : .onThisNetwork }
         switch reach {
         case .online(let via):
             return via == .direct ? .onThisNetwork : .throughTheRelay

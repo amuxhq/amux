@@ -12,7 +12,6 @@ analytics = { workspace = true }
 app-runtime = { workspace = true }
 client = { workspace = true }
 node = { workspace = true }
-futures-util = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -28,5 +27,4 @@ provider-fakes = { workspace = true }
 tempfile = { workspace = true }
 testnet = { workspace = true }
 tracing = { workspace = true }
-ui-runtime = { workspace = true }
 ui-view = { workspace = true }

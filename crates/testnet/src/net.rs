@@ -271,6 +271,10 @@ struct Host {
     /// The running daemon listens on a LAN socket a test handed it, which
     /// stays bound for as long as the test holds it.
     lan_handed: bool,
+    /// The imitated router in front of the host's link socket, kept across
+    /// the daemon's restarts, and the running daemon's socket on it.
+    router: Option<Arc<Router>>,
+    attached: Option<Arc<crate::router::Attached>>,
     /// How a process host runs; none for one in the net's process.
     process: Option<ProcessHost>,
     /// A process host's daemon is up as far as the net's verbs know.
@@ -1722,6 +1726,8 @@ impl Net {
                 boot: 1,
                 checkpoint: None,
                 lan_handed: false,
+                router: None,
+                attached: None,
                 process,
                 running: false,
                 commands: Commands {
@@ -1938,7 +1944,11 @@ impl Net {
         host.daemon = Some(std::sync::Mutex::new(daemon));
         host.lan_handed = handed;
         if let Some(kind) = host.decl.router {
-            self.put_behind_router(name, kind)?;
+            let router = match &host.router {
+                Some(router) if router.kind() == kind => router.clone(),
+                _ => Router::new(kind, ROUTER_IDLE)?,
+            };
+            self.put_behind(name, router)?;
         }
         Ok(())
     }
@@ -2170,14 +2180,21 @@ impl Net {
             .decl
             .router = Some(kind);
         if self.is_up(host) {
-            self.put_behind_router(host, kind)?;
+            self.put_behind(host, Router::new(kind, ROUTER_IDLE)?)?;
         }
         Ok(self.ack(format!("{host} behind a {kind:?} router")))
     }
 
-    fn put_behind_router(&self, host: &str, kind: RouterKind) -> Result<(), NetError> {
-        let router = Router::new(kind, ROUTER_IDLE)?;
-        self.edge(host)?.rebind(router)?;
+    /// Puts the running daemon of `host` behind `router`, cutting off the
+    /// socket it had on any earlier one.
+    fn put_behind(&mut self, host: &str, router: Arc<Router>) -> Result<(), NetError> {
+        let attached = crate::router::Attached::new(router.clone());
+        self.edge(host)?.rebind(attached.clone())?;
+        let held = self.hosts.get_mut(host).expect("the host");
+        if let Some(earlier) = held.attached.replace(attached) {
+            earlier.cut();
+        }
+        held.router = Some(router);
         Ok(())
     }
 
@@ -2185,19 +2202,27 @@ impl Net {
     /// link socket is rebound to a fresh port, or behind a fresh router of
     /// the same kind with new public ports, its links migrate, and its path
     /// machines are told as a phone's are. In-process hosts that run only.
-    pub fn change_network(&self, host: &str) -> Result<Ack, NetError> {
+    pub fn change_network(&mut self, host: &str) -> Result<Ack, NetError> {
         self.in_process(host, "changing the network under the link socket")?;
         let edge = self.edge(host)?;
-        let own = &self.hosts[host];
-        let substrate: Arc<dyn node::socket::Datagrams> = match own.decl.router {
-            Some(kind) => Router::new(kind, ROUTER_IDLE)?,
-            None => node::socket::LinkSocket::bind_dual_stack(
-                SocketAddr::new(loopback(&own.decl), 0),
-                None,
-            )?,
+        let decl = self.hosts[host].decl.clone();
+        let to = match decl.router {
+            Some(kind) => {
+                let router = Router::new(kind, ROUTER_IDLE)?;
+                let to = node::socket::Datagrams::local_addr(router.as_ref())?;
+                self.put_behind(host, router)?;
+                to
+            }
+            None => {
+                let substrate = node::socket::LinkSocket::bind_dual_stack(
+                    SocketAddr::new(loopback(&decl), 0),
+                    None,
+                )?;
+                let to = substrate.local_addr()?;
+                edge.rebind(substrate)?;
+                to
+            }
         };
-        let to = substrate.local_addr()?;
-        edge.rebind(substrate)?;
         // As a phone's runtime hears from its path monitor: every path
         // machine probes its paths again from the new network.
         let told = edge.network_changed()?;
@@ -2327,6 +2352,10 @@ impl Net {
             .into_inner()
             .unwrap_or_else(|poison| poison.into_inner());
         host.runtime = Weak::new();
+        // Whatever of the daemon outlives it in this process hears and
+        // sends nothing on its router from now on: a crash at once, a clean
+        // stop once its last words are out.
+        let attached = host.attached.take();
         for ((a, b), link) in &mut self.links {
             if a == name || b == name {
                 link.live = None;
@@ -2336,7 +2365,13 @@ impl Net {
             daemon.profiles().iter().map(Arc::downgrade).collect();
         if clean {
             daemon.shutdown().await?;
+            if let Some(attached) = attached {
+                attached.cut();
+            }
         } else {
+            if let Some(attached) = attached {
+                attached.cut();
+            }
             drop(daemon);
         }
         observe::until(&format!("{name}'s runtime to be gone"), || {

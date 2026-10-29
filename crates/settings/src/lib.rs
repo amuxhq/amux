@@ -536,10 +536,11 @@ impl InstallationConfig {
     /// [`ignored`](Self::ignored).
     pub fn from_toml(text: &str) -> Result<Self, ConfigError> {
         let mut ignored = Vec::new();
-        let mut config: Self = serde_ignored::deserialize(toml::Deserializer::new(text), |key| {
-            ignored.push(key.to_string())
-        })
-        .map_err(|error| ConfigError::Invalid(error.to_string()))?;
+        let invalid = |error: toml::de::Error| ConfigError::Invalid(error.to_string());
+        let document = toml::Deserializer::parse(text).map_err(invalid)?;
+        let mut config: Self =
+            serde_ignored::deserialize(document, |key| ignored.push(key.to_string()))
+                .map_err(invalid)?;
         config.ignored = ignored;
         config.updates()?;
         Ok(config)
@@ -841,10 +842,10 @@ mod tests {
         assert_eq!(
             config.ignored,
             [
-                "prevent_idle_sleep",
-                "retention",
                 "agent.facts_ring_segments",
                 "new_agent.claude.flavour",
+                "prevent_idle_sleep",
+                "retention",
             ]
         );
         assert!(

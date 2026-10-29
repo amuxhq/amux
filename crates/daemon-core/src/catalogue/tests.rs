@@ -290,3 +290,182 @@ fn a_trusted_host_the_relay_claims_is_remembered_as_on_the_account() {
     linked(&mut daemon, 1, numbered(1), CarrierKind::Direct, &[DESK]);
     assert!(!reachable(&daemon));
 }
+
+const NAS: HostId = HostId([3; 16]);
+
+fn candidate(daemon: &Daemon, id: HostId) -> wire::Candidate {
+    entry(daemon, id)
+        .candidate()
+        .cloned()
+        .expect("the host is a candidate")
+}
+
+fn announcers(candidate: &wire::Candidate) -> Vec<(HostId, bool)> {
+    candidate
+        .announced_by
+        .iter()
+        .map(|host| {
+            (
+                HostId::from_slice(&host.host_id).expect("an id"),
+                host.is_cloud_relay(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_host_the_relay_announces_and_nobody_paired_is_a_candidate_only_the_relay_reaches() {
+    let mut daemon = daemon(&[DESK]);
+    linked(&mut daemon, 1, RELAY, CarrierKind::Relay, &[DESK, NAS]);
+
+    let nas = candidate(&daemon, NAS);
+    assert_eq!(announcers(&nas), vec![(RELAY, true)]);
+    assert!(nas.relay_only());
+    assert_eq!(entry(&daemon, NAS).version(), Some("1.2.3"));
+    assert!(
+        entry(&daemon, DESK).trusted().is_some(),
+        "a paired host stays trusted"
+    );
+    assert!(
+        !daemon
+            .host_set()
+            .iter()
+            .any(|entry| entry.host_id() == RELAY.0),
+        "the relay is no host to pair with"
+    );
+}
+
+#[test]
+fn a_paired_host_announcing_a_candidate_comes_before_the_relay_and_pairs_it_on_any_plan() {
+    let mut daemon = daemon(&[DESK]);
+    linked(&mut daemon, 1, RELAY, CarrierKind::Relay, &[DESK, NAS]);
+    linked(&mut daemon, 2, DESK, CarrierKind::Direct, &[NAS, RELAY]);
+
+    let nas = candidate(&daemon, NAS);
+    assert_eq!(announcers(&nas), vec![(DESK, false), (RELAY, true)]);
+    assert!(!nas.relay_only());
+    assert_eq!(nas.through_paired().count(), 1);
+    assert!(
+        !daemon
+            .host_set()
+            .iter()
+            .any(|entry| entry.host_id() == RELAY.0),
+        "a relay a neighbor names is no candidate"
+    );
+
+    // The relay going leaves the paired host's word.
+    step(
+        &mut daemon,
+        Input::LinkDown {
+            link: LinkId(1),
+            reason: wire::LinkCloseReason::UserShutdown,
+        },
+    );
+    assert_eq!(announcers(&candidate(&daemon, NAS)), vec![(DESK, false)]);
+}
+
+#[test]
+fn whether_an_announcer_is_the_cloud_relay_is_how_its_link_was_admitted_not_what_it_says() {
+    let mut daemon = daemon(&[]);
+    // RELAY's handshake says it serves as a cloud relay, but this host
+    // dialled it as a peer: it forwards without asking for a plan.
+    linked(&mut daemon, 1, RELAY, CarrierKind::Direct, &[NAS]);
+    assert_eq!(announcers(&candidate(&daemon, NAS)), vec![(RELAY, false)]);
+}
+
+#[test]
+fn a_phone_a_neighbor_announces_is_no_candidate_since_it_shows_no_pairing_code() {
+    let phone = HostId([4; 16]);
+    let mut daemon = daemon(&[]);
+    step(
+        &mut daemon,
+        Input::LinkUp {
+            link: LinkId(1),
+            peer: RELAY,
+            kind: CarrierKind::Relay,
+            resumed: None,
+        },
+    );
+    step(
+        &mut daemon,
+        Input::LinkControl {
+            link: LinkId(1),
+            frame: Message {
+                body: Some(Body::Hello(Hello {
+                    host: Some(host(RELAY)),
+                    neighbors: vec![
+                        host(NAS),
+                        wire::Host {
+                            platform: wire::Platform::Ios as i32,
+                            ..host(phone)
+                        },
+                    ],
+                    ..Default::default()
+                })),
+            },
+        },
+    );
+    assert!(
+        daemon
+            .host_set()
+            .iter()
+            .any(|entry| entry.host_id() == NAS.0)
+    );
+    assert!(
+        !daemon
+            .host_set()
+            .iter()
+            .any(|entry| entry.host_id() == phone.0),
+        "a phone only joins a pairing, so nothing here could pair with it"
+    );
+}
+
+#[test]
+fn a_candidate_goes_when_its_last_announcer_takes_it_back() {
+    let mut daemon = daemon(&[]);
+    linked(&mut daemon, 1, RELAY, CarrierKind::Relay, &[NAS]);
+    assert!(
+        daemon
+            .host_set()
+            .iter()
+            .any(|entry| entry.host_id() == NAS.0)
+    );
+    step(
+        &mut daemon,
+        Input::LinkControl {
+            link: LinkId(1),
+            frame: Message {
+                body: Some(Body::NeighborDown(wire::NeighborDown {
+                    host_id: NAS.0.to_vec(),
+                })),
+            },
+        },
+    );
+    assert!(
+        !daemon
+            .host_set()
+            .iter()
+            .any(|entry| entry.host_id() == NAS.0)
+    );
+}
+
+#[test]
+fn a_host_discovery_finds_and_the_relay_announces_is_one_nearby_candidate() {
+    let mut daemon = daemon(&[]);
+    step(
+        &mut daemon,
+        Input::Candidates {
+            found: vec![crate::host_set::Candidate {
+                host: NAS,
+                name: "nas".into(),
+                addrs: vec!["192.168.1.9:4000".into()],
+            }],
+        },
+    );
+    linked(&mut daemon, 1, RELAY, CarrierKind::Relay, &[NAS]);
+    let nas = candidate(&daemon, NAS);
+    assert_eq!(nas.addrs, vec!["192.168.1.9:4000".to_owned()]);
+    assert_eq!(announcers(&nas), vec![(RELAY, true)]);
+    assert!(nas.nearby() && !nas.relay_only());
+    assert_eq!(entry(&daemon, NAS).name(), "nas");
+}

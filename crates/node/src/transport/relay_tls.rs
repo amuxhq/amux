@@ -52,11 +52,9 @@ fn parse_server_identity(
     cert_pem: &[u8],
     key_pem: &[u8],
 ) -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)> {
-    use std::io::BufReader;
+    use rustls::pki_types::pem::{self, PemObject};
 
-    use rustls_pemfile::{certs, private_key};
-
-    let certs = certs(&mut BufReader::new(cert_pem))
+    let certs = CertificateDer::pem_slice_iter(cert_pem)
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|error| TransportError::Config(format!("Failed to parse certificate: {error}")))?;
     if certs.is_empty() {
@@ -64,8 +62,11 @@ fn parse_server_identity(
             "No certificates found in PEM".to_string(),
         ));
     }
-    let key = private_key(&mut BufReader::new(key_pem))
-        .map_err(|error| TransportError::Config(format!("Failed to parse private key: {error}")))?
-        .ok_or_else(|| TransportError::Config("No private key found in PEM".to_string()))?;
+    let key = PrivateKeyDer::from_pem_slice(key_pem).map_err(|error| match error {
+        pem::Error::NoItemsFound => {
+            TransportError::Config("No private key found in PEM".to_string())
+        }
+        error => TransportError::Config(format!("Failed to parse private key: {error}")),
+    })?;
     Ok((certs, key))
 }

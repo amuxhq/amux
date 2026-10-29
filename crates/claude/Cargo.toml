@@ -23,9 +23,5 @@ tokio.workspace = true
 toml = { workspace = true, optional = true }
 uuid.workspace = true
 
-[[bin]]
-name = "claude-hook"
-path = "src/bin/claude_hook.rs"
-
 [dev-dependencies]
 tempfile = { workspace = true }

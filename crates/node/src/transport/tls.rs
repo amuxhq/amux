@@ -1,8 +1,6 @@
 //! The WebPKI client a host reaches the relay with: TLS on TCP where UDP is
 //! blocked, and the QUIC connection's configuration.
 
-#[cfg(any(debug_assertions, test))]
-use std::io::BufReader;
 use std::sync::Arc;
 
 use rustls::pki_types::ServerName;
@@ -53,8 +51,11 @@ fn add_debug_cloud_root(root_store: &mut rustls::RootCertStore) -> Result<()> {
             "failed to read AMUX_CLOUD_TLS_CA from {path}: {error}"
         ))
     })?;
+    use rustls::pki_types::CertificateDer;
+    use rustls::pki_types::pem::PemObject;
+
     let mut added = 0;
-    for cert in rustls_pemfile::certs(&mut BufReader::new(pem.as_slice())) {
+    for cert in CertificateDer::pem_slice_iter(&pem) {
         let cert = cert.map_err(|error| {
             TransportError::Config(format!("failed to parse AMUX_CLOUD_TLS_CA {path}: {error}"))
         })?;

@@ -28,6 +28,8 @@ pub(crate) enum BoxedGrpcAuth {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PreTrustPairingReachability {
     Cloud,
+    /// Through a paired host forwarding for both.
+    Forwarded,
     /// Dialled directly from this address. A host dials from the same QUIC
     /// endpoint it listens on, so the address it was seen at is where it
     /// can be dialled back.

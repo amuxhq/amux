@@ -147,6 +147,13 @@ pub fn parse(datagram: &[u8]) -> Result<PacketKind<'_>, Malformed> {
     }
 }
 
+/// Whether a QUIC packet is an Initial: one of the first a handshake
+/// sends, either way.
+fn handshake(packet: &[u8]) -> bool {
+    // A long header with the fixed bit set and the Initial type (QUIC v1).
+    packet.first().is_some_and(|first| first & 0xf0 == 0xc0)
+}
+
 fn host_at(datagram: &[u8]) -> HostId {
     HostId::from_bytes(datagram[1..17].try_into().expect("sixteen bytes"))
 }
@@ -626,15 +633,21 @@ impl State {
     /// path machine probes a path before it carries the link there, and a
     /// packet it sends on a path to another of this host's addresses may
     /// leave from another of its own, which this host must know it by
-    /// before the link's packets follow. An address a connection is still
-    /// unnamed at, a dial this host made there, keeps its packets until
-    /// that connection's handshake names it: quinn would drop its answers
-    /// arriving as the host's.
+    /// before the link's packets follow. An address a dial this host made
+    /// is still unnamed at keeps its packets until that connection's
+    /// handshake names it: quinn would drop its answers arriving as the
+    /// host's. One that only sent this host something unnamed does not:
+    /// a host started afresh hears from its peer's last connection to its
+    /// last run at the address that peer then probes from.
     fn probed_from(&mut self, host: HostId, arrival: Arrival) {
+        let dialled = |state: &PeerState| !matches!(state.expiry, Expiry::Unnamed { .. });
         if let Arrival::Udp(addr) = arrival
             && self.peers.contains_key(&Peer::Host(host))
             && self.by_addr.get(&addr) != Some(&host)
-            && !self.peers.contains_key(&Peer::Unnamed(Path::Direct(addr)))
+            && !self
+                .peers
+                .get(&Peer::Unnamed(Path::Direct(addr)))
+                .is_some_and(dialled)
         {
             self.learn(host, Path::Direct(addr));
         }
@@ -692,30 +705,28 @@ impl State {
     /// or not the flight named it, since it is where the peer answers (a
     /// host known at another address, or dialling this host itself while
     /// its dial found no candidate).
-    fn carried_by(&mut self, peer: Peer, path: Path) {
-        let Some(held) = self.peers.get_mut(&peer) else {
-            return;
+    ///
+    /// Answers the flight sent so far when the flight never named that
+    /// path, to be sent again on it: what went out only on the others,
+    /// such as through a relay address nothing answers at, would otherwise
+    /// wait out a retransmit. The packet that moved the route may not even
+    /// be the dial's own, but the stray of a connection the peer still
+    /// holds from this host's last run.
+    fn carried_by(&mut self, peer: Peer, path: Path) -> Option<Vec<Vec<u8>>> {
+        let held = self.peers.get_mut(&peer)?;
+        let Route::All(paths) = &held.route else {
+            return None;
         };
-        let carrying = match &held.route {
-            Route::All(paths) => Some(
-                paths
-                    .iter()
-                    .copied()
-                    .find(|candidate| match (candidate, path) {
-                        (
-                            Path::Direct(a) | Path::Punched(a),
-                            Path::Direct(b) | Path::Punched(b),
-                        ) => *a == b,
-                        (candidate, path) => *candidate == path,
-                    })
-                    .unwrap_or(path),
-            ),
-            _ => None,
-        };
-        if let Some(carrying) = carrying {
-            held.route = Route::Carrying(carrying);
-            held.flight = None;
-        }
+        let named = paths
+            .iter()
+            .copied()
+            .find(|candidate| match (candidate, path) {
+                (Path::Direct(a) | Path::Punched(a), Path::Direct(b) | Path::Punched(b)) => *a == b,
+                (candidate, path) => *candidate == path,
+            });
+        held.route = Route::Carrying(named.unwrap_or(path));
+        let flight = held.flight.take()?;
+        named.is_none().then(|| flight.sent.into())
     }
 
     /// No route takes `gone` any more. A host carried only on it is left
@@ -1159,18 +1170,26 @@ impl LinkSocket {
                     }
                 }
             }
-            if state.forwarding.insert(link, (via, kind)).is_none() {
+            let previous = state.forwarding.insert(link, (via, kind));
+            if previous.is_none() {
                 state.tell(PathEvent::ForwardingUp { link, kind });
             }
+            // A forwarding link pointed somewhere new, as a relay dial
+            // moves it from the attempt that said its Hello first to the
+            // one it keeps, sends a first flight again there: what went to
+            // the old address may have gone nowhere.
+            let moved = previous.is_some_and(|(at, _)| at != via);
             let mut late = Vec::new();
             if relayed(kind) {
                 let path = Path::Forwarded(link);
                 for (peer, held) in &mut state.peers {
                     if let (Route::All(paths), Some(flight)) = (&mut held.route, &held.flight)
                         && flight.through_relay
-                        && !paths.contains(&path)
+                        && (moved || !paths.contains(&path))
                     {
-                        paths.push(path);
+                        if !paths.contains(&path) {
+                            paths.push(path);
+                        }
                         late.push((*peer, flight.sent.iter().cloned().collect::<Vec<_>>()));
                     }
                 }
@@ -1182,6 +1201,17 @@ impl LinkSocket {
                 if let Err(error) = self.send_on(peer, Path::Forwarded(link), &packet) {
                     self.dropped_send(via, &error);
                 }
+            }
+        }
+    }
+
+    /// Sends `peer`'s first flight again on `path`, the path an arrival
+    /// moved its route to.
+    fn send_again(&self, peer: Peer, path: Path, stranded: Option<Vec<Vec<u8>>>) {
+        for packet in stranded.into_iter().flatten() {
+            if let Err(error) = self.send_on(peer, path, &packet) {
+                self.drops.sends.fetch_add(1, Ordering::Relaxed);
+                tracing::debug!(?path, %error, "link socket dropped a first flight sent again");
             }
         }
     }
@@ -1432,8 +1462,10 @@ impl LinkSocket {
                     Arrival::Udp(addr) => Path::Direct(addr),
                     Arrival::Framed(id) => Path::Framed(id),
                 };
-                state.carried_by(peer, path);
+                let stranded = state.carried_by(peer, path);
                 state.arrived(peer, path, now);
+                drop(state);
+                self.send_again(peer, path, stranded);
                 Some((stand_in, 0))
             }
             PacketKind::Probe { from, nonce } => {
@@ -1461,15 +1493,35 @@ impl LinkSocket {
                     let mut state = self.lock();
                     state.sweep(now);
                     let stand_in = state.heard(Peer::Host(host), now, Expiry::Silent);
+                    let mut stranded = None;
                     // A link someone dialled to us through a forwarder is
                     // answered the way it came until a route is chosen.
                     if let Some(link) = state.forwarder_of(arrival) {
-                        state.carried_by(Peer::Host(host), Path::Forwarded(link));
-                        state.arrived(Peer::Host(host), Path::Forwarded(link), now);
+                        let path = Path::Forwarded(link);
+                        stranded = state
+                            .carried_by(Peer::Host(host), path)
+                            .map(|sent| (path, sent));
+                        state.arrived(Peer::Host(host), path, now);
                         let peer = state.peers.get_mut(&Peer::Host(host)).expect("stand-in");
-                        if matches!(peer.route, Route::Unset) {
-                            peer.route = Route::Carrying(Path::Forwarded(link));
+                        match peer.route {
+                            Route::Unset => peer.route = Route::Carrying(path),
+                            // So is a handshake through a forwarder while
+                            // another path carries the peer: the route is
+                            // its last link's, and a host started afresh (an
+                            // app opened again) may know no path to this one
+                            // but the forwarder, while its last link, dead,
+                            // has yet to time out here. The path machine
+                            // moves the link back once the other path
+                            // answers.
+                            Route::Carrying(carrying) if carrying != path && handshake(payload) => {
+                                state.set_route(host, Route::Carrying(path));
+                            }
+                            _ => {}
                         }
+                    }
+                    drop(state);
+                    if let Some((path, sent)) = stranded {
+                        self.send_again(Peer::Host(host), path, Some(sent));
                     }
                     Some((stand_in, FORWARD_HEADER))
                 }
@@ -2020,6 +2072,26 @@ mod tests {
         fake.push(third, QUIC);
         assert_ne!(receive(&socket).map(|(at, _)| at), Some(stand_in));
         assert_eq!(socket.peer_of(socket.stand_in_at(third)), None);
+    }
+
+    /// A known host probing from an address that so far only sent this
+    /// host packets it could not name, as a peer's dead connection to this
+    /// host's last run does, is known there from then on.
+    #[test]
+    fn socket_knows_a_host_probing_from_where_strays_came_from() {
+        let (fake, socket, _own) = fake_socket();
+        let peer = HostId::new_v4();
+        let punched: SocketAddr = "192.168.1.9:7000".parse().unwrap();
+        socket.set_carrying(peer, Path::Forwarded(LinkId(3)));
+        let stand_in = socket.stand_in(peer);
+        fake.push(punched, QUIC);
+        let (stray, _) = receive(&socket).unwrap();
+        assert_ne!(stray, stand_in);
+
+        fake.push(punched, &encode_probe(peer, 7));
+        assert_eq!(receive(&socket), None);
+        fake.push(punched, QUIC);
+        assert_eq!(receive(&socket).map(|(at, _)| at), Some(stand_in));
     }
 
     /// A known host probing from an address this host is still dialling
@@ -2699,6 +2771,87 @@ mod tests {
         socket.set_carrying(peer, Path::Direct(lan));
         socket.try_send(&transmit(stand_in, QUIC)).unwrap();
         assert_eq!(fake.take_sent(), vec![(lan, QUIC.to_vec())]);
+    }
+
+    /// A relay dial moves the forwarding link from the attempt that said
+    /// its Hello first to the one it keeps: the first flight goes again
+    /// to the new address, since what went to the old may have gone
+    /// nowhere. The same address again sends nothing twice.
+    #[test]
+    fn socket_sends_a_first_flight_again_where_its_forwarding_moves() {
+        let (fake, socket, _own) = fake_socket();
+        let peer = HostId::new_v4();
+        let (first, kept): (SocketAddr, SocketAddr) = (
+            "[2001:db8::1]:9001".parse().unwrap(),
+            "198.51.100.1:9001".parse().unwrap(),
+        );
+        let stand_in = socket.stand_in(peer);
+        socket.send_on_all(peer, Vec::new(), true);
+        socket.add_forwarding(LinkId(7), socket.stand_in_at(first), PathKind::RelayUdp);
+        socket.try_send(&transmit(stand_in, b"\x40first")).unwrap();
+        assert_eq!(
+            fake.take_sent(),
+            vec![(first, encode_forwarded(peer, b"\x40first"))]
+        );
+
+        socket.add_forwarding(LinkId(7), socket.stand_in_at(kept), PathKind::RelayUdp);
+        assert_eq!(
+            fake.take_sent(),
+            vec![(kept, encode_forwarded(peer, b"\x40first"))]
+        );
+        socket.add_forwarding(LinkId(7), socket.stand_in_at(kept), PathKind::RelayUdp);
+        assert_eq!(fake.take_sent(), Vec::new());
+    }
+
+    /// A host started again dials its peer only through the relay, at an
+    /// address nothing answers at, while the peer's link from the last run
+    /// still probes the address this run took over. Once that link's
+    /// packets carry the dial, the flight goes again where they came from,
+    /// and only there: what went out so far would otherwise wait out a
+    /// retransmit.
+    #[test]
+    fn socket_sends_a_first_flight_again_where_an_arrival_moves_it() {
+        let (fake, socket, _own) = fake_socket();
+        let peer = HostId::new_v4();
+        let (relay, punched): (SocketAddr, SocketAddr) = (
+            "[2001:db8::1]:9001".parse().unwrap(),
+            "192.168.1.9:7000".parse().unwrap(),
+        );
+        let stand_in = socket.stand_in(peer);
+        socket.send_on_all(peer, Vec::new(), true);
+        socket.add_forwarding(LinkId(7), socket.stand_in_at(relay), PathKind::RelayUdp);
+        socket.try_send(&transmit(stand_in, b"\x40first")).unwrap();
+        assert_eq!(
+            fake.take_sent(),
+            vec![(relay, encode_forwarded(peer, b"\x40first"))]
+        );
+
+        fake.push(punched, &encode_probe(peer, 1));
+        assert!(receive(&socket).is_none());
+        assert_eq!(
+            fake.take_sent(),
+            vec![(punched, encode_probe_answer(socket.own, 1).to_vec())]
+        );
+        fake.push(punched, QUIC);
+        assert_eq!(receive(&socket).unwrap().0, stand_in);
+        assert_eq!(fake.take_sent(), vec![(punched, b"\x40first".to_vec())]);
+        socket.try_send(&transmit(stand_in, QUIC)).unwrap();
+        assert_eq!(fake.take_sent(), vec![(punched, QUIC.to_vec())]);
+    }
+
+    /// An arrival on a path the flight already took sends nothing twice.
+    #[test]
+    fn socket_sends_no_first_flight_again_where_it_already_went() {
+        let (fake, socket, _own) = fake_socket();
+        let peer = HostId::new_v4();
+        let lan: SocketAddr = "192.0.2.10:5000".parse().unwrap();
+        let stand_in = socket.stand_in(peer);
+        socket.send_on_all(peer, vec![Path::Direct(lan)], true);
+        socket.try_send(&transmit(stand_in, b"\x40first")).unwrap();
+        assert_eq!(fake.take_sent(), vec![(lan, b"\x40first".to_vec())]);
+        fake.push(lan, QUIC);
+        assert_eq!(receive(&socket).unwrap().0, stand_in);
+        assert_eq!(fake.take_sent(), Vec::new());
     }
 
     #[test]

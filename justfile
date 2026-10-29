@@ -86,9 +86,12 @@ spec *ARGS:
 test-tui *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo test --locked -p tui --features fixtures "$@"
 
-# Lint every workspace target with warnings denied.
+# Lint every workspace target with warnings denied. The qualification
+# features only decide which targets build, so they are on here: the live
+# tests and the perf binaries run by hand, never in CI, and this is what
+# keeps them compiling.
 lint:
-    {{bounded}} 1200 cargo clippy --locked --workspace --all-targets {{desktop_features}} -- -D warnings
+    {{bounded}} 1200 cargo clippy --locked --workspace --all-targets {{desktop_features}} --features qualification/live,qualification/perf -- -D warnings
 
 # Format all Rust sources with the pinned nightly toolchain.
 fmt:
@@ -242,6 +245,14 @@ fuzz-smoke *ARGS:
 miri *ARGS:
     {{bounded}} 1500 {{nightly_cargo}} miri test --locked -p app-ffi "$@"
 
+# Run the tests that reach unsafe code and C under the pinned nightly's
+# AddressSanitizer (`just sanitize address`) or ThreadSanitizer (`just
+# sanitize thread`, Linux only), with the standard library rebuilt under it;
+# crate names after the kind narrow the run. scripts/sanitize.py says which
+# suites run and what goes unchecked. Needs the nightly's rust-src component.
+sanitize KIND *CRATES:
+    {{bounded}} 2400 scripts/py scripts/sanitize.py --cargo "{{nightly_cargo}}" "$@"
+
 # Fail when any state-machine core's dependency graph contains tokio, or any
 # core source contains a lock, a spawned task, an async fn or an await.
 cores-check:
@@ -250,6 +261,19 @@ cores-check:
 # Enforce production and test-infrastructure dependency boundaries.
 dependency-policy:
     {{bounded}} 60 scripts/py scripts/check-dependency-policy.py
+
+# Check every dependency against deny.toml with cargo-deny: no open security
+# advisory or yanked release, only the licences it lists, and only crates.io
+# and the rustls patch as sources. Fetches the advisory database. Needs
+# `cargo install cargo-deny`.
+deny:
+    {{bounded}} 600 cargo deny --locked check
+
+# Fail on any dependency no crate's code uses, so unused ones do not pile up
+# again. A crate lists what the code cannot show it needs under
+# `[package.metadata.cargo-shear]`. Needs `cargo install cargo-shear`.
+shear:
+    {{bounded}} 300 cargo shear --locked --deny-warnings
 
 # Warm the product and ordinary test build graphs used by new worktrees.
 warm: build test-build
@@ -323,7 +347,7 @@ no-update-flags:
     scripts/no-update-flags.sh
 
 # Run the same task sequence exercised across continuous-integration jobs.
-ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-policy cores-check typed-provider-check docs-check tests-check script-tests test contracts-check doctest release-check embedded-check embedded-test mobile-check
+ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test contracts-check doctest release-check embedded-check embedded-test mobile-check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,

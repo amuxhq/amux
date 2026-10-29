@@ -336,10 +336,7 @@ impl LinkRegistry {
         // stays and what every link is told of its neighbors; it is asked
         // under the lock, so what it says and the writers held agree.
         let direct = match (role, carrier, direct_order) {
-            (LinkRole::Peer, CarrierKind::Direct, Some(order)) => Some(relay_core::Direct {
-                order,
-                instance: runtime_instance.bytes(),
-            }),
+            (LinkRole::Peer, CarrierKind::Direct, Some(order)) => Some(order),
             _ => None,
         };
         let out = self.relaying.step([relay_core::Input::LinkUp {
@@ -350,6 +347,7 @@ impl LinkRegistry {
                 LinkAdmission::PinnedKey => None,
                 LinkAdmission::CloudToken { tier } => Some(tier),
             },
+            instance: runtime_instance.bytes(),
             direct,
             advertised: advertised_snapshot.iter().copied().map(core_host).collect(),
         }]);
@@ -737,18 +735,6 @@ impl LinkRegistry {
                 && writer.role == LinkRole::Peer
                 && writer.carrier == CarrierKind::Direct
         })
-    }
-
-    /// Whether any live link to `peer` is the authenticated cloud link.
-    /// Pairing route selection keys on the link role, never on the peer's
-    /// self-asserted capabilities.
-    pub(crate) async fn has_cloud_relay_link_to(&self, peer: HostId) -> bool {
-        self.state
-            .read()
-            .await
-            .writers
-            .values()
-            .any(|writer| writer.host.id == peer && writer.role == LinkRole::CloudRelay)
     }
 
     pub(crate) async fn send_link_close_to_all(&self, reason: pb::LinkCloseReason) {

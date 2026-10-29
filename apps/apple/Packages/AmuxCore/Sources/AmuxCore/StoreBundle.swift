@@ -308,7 +308,7 @@ public final class StoreBundle {
     public func pair(digits typed: String) -> Bool {
         pairing.enter(typed)
         guard let request = pairing.request else { return false }
-        begin(request, relayOnly: pairing.machine.map { $0.addrs.isEmpty } ?? true)
+        begin(request, relayOnly: pairing.machine?.relayOnly ?? true)
         return true
     }
 

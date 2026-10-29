@@ -103,7 +103,9 @@ other.
 
 Discovery is **never trust or presence**. An unpaired result is only a pairing
 candidate, listed in the inventory as a host entry whose standing is
-`Candidate`, carrying the addresses pairing will dial. A result claiming a paired host's id is
+`Candidate`, carrying the addresses pairing will dial. A neighbor announcing an
+unpaired host makes it a candidate the same way ([chapter 3](#chapter-3-presence)).
+A result claiming a paired host's id is
 only a dial hint; the pinned handshake must still present that host's key. A
 paired host is online only after a link succeeds. Discovery is queried again
 at startup, after the machine wakes (a monotonic gap of more than 30 seconds),
@@ -136,9 +138,14 @@ contains JSON `{host_id, secret, addrs, cloud_url?}` inside an
 `amux://pair?payload=...` deep link (URL-safe base64, no padding); `secret` is
 a one-shot 256-bit value and `addrs` let pairing work when multicast is
 unavailable. A found advertisement, a typed address, the QR addresses, SSH, or
-a relay can all lead to the same exchange. Direct candidates are tried with a
-two-second QUIC dial each, so a silent address does not prevent trying the
-next one; the relay is tried after them when the other host has a cloud route.
+a neighbor that forwards can all lead to the same exchange. Direct candidates
+are tried with a two-second QUIC dial each, so a silent address does not
+prevent trying the next one. After them, each neighbor announcing the other
+host is tried, paired hosts before the cloud relay: a paired host forwards a
+pairing on any plan, and the cloud relay only for a paid account, refusing a
+free one with `PAYMENT_REQUIRED`, which the joiner's `BeginPair` answers with
+the same reason. A host that answers a pairing forwarded by a paired host
+keeps no address for it: that host announcing it is the route.
 
 SPAKE2 follows RFC 9382 over edwards25519, responder B and initiator A, with
 messages B to A then A to B. Both sides hash the big-endian
@@ -195,9 +202,22 @@ adjacent peer.
 
 A route is a derivation, not an independent assertion: a host is reachable
 through a relay when that relay says it has an adjacent link to the host. This
-can make an untrusted host a pairing candidate, but does not grant authority or
+makes an untrusted host a pairing candidate, but does not grant authority or
 make a discovery result online. A trusted host stays in the inventory whatever
 its presence, and only untrusting it removes it.
+
+The cloud relay and a paired daemon announce the same way and forward the
+same way; they differ only in how they admit a link (a token with a plan, or a
+pinned key) and so in whether a plan decides what they carry. Every untrusted
+host a neighbor announces is a candidate whose entry lists those neighbors in
+`announced_by`, paired hosts first, so a client can say how pairing would reach
+it: nearby, through a paired host on any plan, or only through the cloud relay,
+which needs a paid account. Whether an announcer is the cloud relay comes from
+how this host admitted the link, not from the capabilities the neighbor
+claimed. A cloud relay a neighbor names is never a candidate, and nor is a
+phone, which shows no pairing code and only joins a pairing another host
+offers. Announcements go
+one hop: a neighbor lists only the hosts it holds links to.
 
 A trusted host's presence follows from the links up to it, decided in one
 place, the daemon core's presence state (`crates/daemon-core/src/presence.rs`):

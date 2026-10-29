@@ -262,6 +262,58 @@ impl Datagrams for Router {
     }
 }
 
+/// One daemon's socket on its host's router. The router outlives the
+/// daemon, as a home router outlives an app: a daemon started again finds
+/// its old public ports, and a peer still sending to one reaches it. A
+/// daemon killed in the net's process can leave tasks holding its socket;
+/// cut off, that socket hears nothing more and sends nowhere, as a dead
+/// process's would.
+pub struct Attached {
+    router: Arc<Router>,
+    cut: std::sync::atomic::AtomicBool,
+}
+
+impl Attached {
+    pub fn new(router: Arc<Router>) -> Arc<Self> {
+        Arc::new(Self {
+            router,
+            cut: std::sync::atomic::AtomicBool::new(false),
+        })
+    }
+
+    pub fn cut(&self) {
+        self.cut.store(true, Ordering::Relaxed);
+    }
+
+    fn is_cut(&self) -> bool {
+        self.cut.load(Ordering::Relaxed)
+    }
+}
+
+impl Datagrams for Attached {
+    fn send_to(&self, buf: &[u8], to: SocketAddr) -> io::Result<()> {
+        if self.is_cut() {
+            return Ok(());
+        }
+        self.router.send_to(buf, to)
+    }
+
+    fn poll_recv(
+        &self,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<(usize, SocketAddr)>> {
+        if self.is_cut() {
+            return Poll::Pending;
+        }
+        self.router.poll_recv(cx, buf)
+    }
+
+    fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.router.local_addr()
+    }
+}
+
 fn bind_public(now: Instant) -> io::Result<Mapping> {
     let send = std::net::UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))?;
     send.set_nonblocking(true)?;

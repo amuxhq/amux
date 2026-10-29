@@ -1,7 +1,7 @@
 //! The one host set the inventory carries: this host, every host the
 //! profile trusts with its presence and the generation this store last
-//! recorded for it, and the machines discovery has found in this profile's
-//! scope that nobody has paired, as candidates.
+//! recorded for it, and as candidates the machines nobody has paired that
+//! discovery has found in this profile's scope or a neighbor announces.
 //!
 //! A trusted host is in every snapshot whatever its presence; only
 //! untrusting it removes it, so no reconnect can make a client forget an
@@ -9,7 +9,8 @@
 //! longer trusts this one reads offline, whatever route still reaches it:
 //! the relay keeps saying it is online, which pairing again needs and a
 //! client must not read as a working host. Candidates come and go with
-//! discovery.
+//! discovery and with the neighbors announcing them: the relay announces
+//! every host of the account, a paired host the others it is paired with.
 //!
 //! A step that moves anything an entry is made of recomputes the set as it
 //! ends and tells every inventory stream what changed, so an opening and
@@ -183,32 +184,8 @@ impl Daemon {
                 },
             );
         }
-        for candidate in &self.host_set.candidates {
-            let id = candidate.host.0.to_vec();
-            if id == own_host
-                || fresh.contains_key(&id)
-                || self
-                    .trust
-                    .store()
-                    .entry(Uuid::from_bytes(candidate.host.0))
-                    .is_some()
-            {
-                continue;
-            }
-            fresh.insert(
-                id.clone(),
-                HostEntry {
-                    host: Some(wire::Host {
-                        host_id: id,
-                        name: candidate.name.clone(),
-                        ..wire::Host::default()
-                    }),
-                    standing: Some(Standing::Candidate(wire::Candidate {
-                        addrs: candidate.addrs.clone(),
-                    })),
-                    ..HostEntry::default()
-                },
-            );
+        for (id, entry) in self.candidate_entries(&own_host) {
+            fresh.entry(id).or_insert(entry);
         }
         // This host is always trusted, online and current to itself.
         let mut own = self.host_set.own.clone().unwrap_or_default();
@@ -220,6 +197,95 @@ impl Daemon {
         }));
         fresh.insert(own_host, own);
         fresh
+    }
+
+    /// Every host this profile does not trust that discovery finds or a
+    /// neighbor announces, by id. A cloud relay a neighbor names is not one,
+    /// and nor is a phone: nothing pairs with a relay, and a phone shows no
+    /// pairing code, so it only ever joins a pairing another host offers.
+    fn candidate_entries(&self, own_host: &[u8]) -> BTreeMap<Vec<u8>, HostEntry> {
+        let untrusted = |host: HostId| {
+            host.0.as_slice() != own_host
+                && self.trust.store().entry(Uuid::from_bytes(host.0)).is_none()
+        };
+        let mut found = BTreeMap::new();
+        for candidate in &self.host_set.candidates {
+            if !untrusted(candidate.host) {
+                continue;
+            }
+            found.entry(candidate.host.0.to_vec()).or_insert(HostEntry {
+                host: Some(wire::Host {
+                    host_id: candidate.host.0.to_vec(),
+                    name: candidate.name.clone(),
+                    ..wire::Host::default()
+                }),
+                standing: Some(Standing::Candidate(wire::Candidate {
+                    addrs: candidate.addrs.clone(),
+                    announced_by: Vec::new(),
+                })),
+                ..HostEntry::default()
+            });
+        }
+        for (host, said, relays) in self.routing.catalogue.claimed() {
+            if !untrusted(host) || said.cloud_relay || said.platform == wire::Platform::Ios {
+                continue;
+            }
+            let mut announced_by: Vec<wire::Host> =
+                relays.iter().map(|relay| self.announcer(*relay)).collect();
+            // Nearest route first, as calls take them: a paired host
+            // forwards on any plan, the cloud relay only on a paid one.
+            announced_by.sort_by_key(wire::Host::is_cloud_relay);
+            let entry = found.entry(host.0.to_vec()).or_insert_with(|| HostEntry {
+                standing: Some(Standing::Candidate(wire::Candidate::default())),
+                ..HostEntry::default()
+            });
+            // What the host said of itself in its announcement is fuller
+            // than what discovery's advertisement carries.
+            let name = entry
+                .host
+                .as_ref()
+                .map(|host| host.name.clone())
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| said.name.clone());
+            entry.host = Some(wire::Host {
+                host_id: host.0.to_vec(),
+                name,
+                version: said.version.clone(),
+                capabilities: Some(said.capabilities()),
+                platform: said.platform as i32,
+                account_signed_in: said.signed_in,
+            });
+            if let Some(Standing::Candidate(candidate)) = &mut entry.standing {
+                candidate.announced_by = announced_by;
+            }
+        }
+        found
+    }
+
+    /// A neighbor announcing a candidate, as a client is told of it: a
+    /// paired host by the name its trust entry keeps. Whether it is the
+    /// cloud relay comes from how this host admitted the link, never from
+    /// what the neighbor said, since that decides whether the plan matters.
+    fn announcer(&self, relay: HostId) -> wire::Host {
+        let said = self.routing.catalogue.said(relay);
+        let name = self
+            .trust
+            .store()
+            .entry(Uuid::from_bytes(relay.0))
+            .map(|trusted| trusted.name.clone())
+            .or_else(|| said.map(|said| said.name.clone()))
+            .unwrap_or_default();
+        wire::Host {
+            host_id: relay.0.to_vec(),
+            name,
+            version: said.map(|said| said.version.clone()).unwrap_or_default(),
+            capabilities: Some(wire::Capabilities {
+                cloud_relay: self.routing.links.is_relay(relay),
+                kinds: said.map(|said| said.kinds.clone()).unwrap_or_default(),
+            }),
+            platform: said.map_or(wire::Platform::Unspecified, |said| said.platform) as i32,
+            account_signed_in: said.and_then(|said| said.signed_in),
+        }
     }
 
     /// The kind of route calls to `host` take now, however it reads:

@@ -25,6 +25,12 @@
       "why": "Only the phone has accounts on screen; the terminal signs in with amux login."
     },
     {
+      "name": "fleet.first-run-on-the-account-free",
+      "shows": "Nothing paired on the free plan, with a machine on the account only the relay reaches, offered a subscription in place of a pairing.",
+      "clients": ["phone"],
+      "why": "The terminal does not look for machines from its agent list; the account's machines show in its hosts window."
+    },
+    {
       "name": "fleet.no-agents",
       "shows": "A phone paired with a machine that runs no agents yet.",
       "clients": ["phone"],
@@ -90,6 +96,12 @@
       "shows": "Hosts with nothing found because this phone was refused the local network.",
       "clients": ["phone"],
       "why": "Only the phone asks for the local network."
+    },
+    {
+      "name": "hosts.on-the-account-free",
+      "shows": "Hosts on the free plan with a machine on the account only the relay reaches, offered a subscription in place of a pairing.",
+      "clients": ["phone"],
+      "why": "The terminal's hosts window draws every unpaired machine as one line of words, as hosts.list shows; it has no card to sell from."
     },
     {
       "name": "hosts.large-text",
@@ -285,12 +297,6 @@
       "shows": "Settings on a phone with no account signed in.",
       "clients": ["phone"],
       "why": "The terminal has no settings screen; it is set up with amux on its command line."
-    },
-    {
-      "name": "settings.sign-in",
-      "shows": "Signing in: what an account adds, and continuing on amux.sh.",
-      "clients": ["phone"],
-      "why": "The terminal signs in with amux login."
     },
     {
       "name": "settings.paywall",

@@ -1,0 +1,58 @@
+# What `just deny` holds the dependency graph to: no crate with an open
+# security advisory, a licence outside the list below, or a source other than
+# crates.io and the rustls patch.
+
+[graph]
+# Every feature and every target, so the phone's, Windows' and the release
+# build's dependencies are all checked, not only the host's.
+all-features = true
+
+[advisories]
+yanked = "deny"
+# Each entry says why the advisory does not reach amux. One that does is
+# fixed by updating or replacing the crate, never listed here.
+ignore = [
+    # Unmaintained, with no known flaw. syntect decodes its own bundled
+    # syntax definitions with bincode.
+    { id = "RUSTSEC-2025-0141", reason = "bincode reads only syntect's bundled syntaxes" },
+    # Unmaintained, with no known flaw. fontdue reads the fonts the test
+    # screenshot renderer ships with; nothing shipped renders a font.
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser reads only the test renderer's own fonts" },
+]
+
+[licenses]
+# Licences that permit amux's FSL and Apache-2.0 distribution of the
+# binaries and the app. MPL-2.0 is cbindgen, which only runs at build time to
+# write the phone's C header.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+[licenses.private]
+# amux's own crates (every one is `publish = false`) carry FSL-1.1-ALv2,
+# which LICENSE and docs/LICENSING.md govern.
+ignore = true
+
+[bans]
+# Duplicate versions are a build-size question, not one this check answers.
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+# The rustls patch in the root Cargo.toml.
+allow-git = ["https://github.com/amuxhq/rustls"]

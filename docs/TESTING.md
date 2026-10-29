@@ -185,6 +185,8 @@ just live codex attach                     # Codex's own app co-driving a fresh 
 just perf                                  # performance qualification (see Performance)
 just coverage                              # every workspace test with line coverage per crate
 just fuzz-smoke                            # each fuzz target for 30 s; fails on a crash
+just sanitize address                      # the unsafe code's tests under the address sanitizer
+just sanitize thread                       # the same under the thread sanitizer (Linux only)
 ```
 
 `just coverage` writes `tests/coverage.md`: line coverage per crate and the commit it measured. Each crate's lines
@@ -198,6 +200,16 @@ targets live in `fuzz/`, a workspace of their own built on the pinned nightly wi
 from seeds cut from the recorded provider captures and journal fixtures and runs for 30 seconds (`--seconds N`;
 target names narrow the run); its corpus and any crashing input stay under `target/fuzz/`, and a crash prints the
 command that replays it. The recipe's comment names the tool it needs installed.
+
+`just sanitize address` and `just sanitize thread` run the tests that reach amux's unsafe code and C: the phone's C
+ABI and runtime, the store over SQLite, the journal, the pty host, the agent socket, and the library tests of the node
+and the terminal client. Each builds on the pinned nightly with the standard library under the sanitizer, in
+`target/sanitize/<kind>`, along with the `amux` and fake providers the tests' nets start, so their agents run under it
+too. The address sanitizer fails on an access outside an allocation, a use after free or a double free, the thread
+sanitizer on a data race. The C itself is not instrumented, so a race inside SQLite goes unseen, but a bad free in
+it does not. The app-ffi tests `just miri` leaves out (an installation, a tokio runtime) run here. The thread sanitizer runs
+on Linux only; [`scripts/sanitize.py`](../scripts/sanitize.py) says what it got wrong on macOS, and
+[`scripts/sanitize-thread.supp`](../scripts/sanitize-thread.supp) lists the reports it makes that are not races.
 
 `just tests-list` gives the focused recipe for every suite. Recipes carry outer timeouts; a timeout that fires is a
 hang to diagnose, not a limit to raise. On macOS a freshly built test binary can stall before its first

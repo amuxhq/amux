@@ -961,6 +961,18 @@
         }
       }
     },
+    "Fleet · first run, on the account, free" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/AppPreviews.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fleet · first run, on the account, free"
+          }
+        }
+      }
+    },
     "Fleet · first run, signed out, one found" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/AppPreviews.swift.",
       "extractionState" : "manual",
@@ -1233,6 +1245,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hosts · network refused"
+          }
+        }
+      }
+    },
+    "Hosts · on the account, free" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/HostsPreviews.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hosts · on the account, free"
           }
         }
       }
@@ -4353,6 +4377,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "laptop"
+          }
+        }
+      }
+    },
+    "nova-test" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nova-test"
           }
         }
       }

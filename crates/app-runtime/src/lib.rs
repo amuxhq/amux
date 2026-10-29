@@ -230,6 +230,12 @@ impl AppRuntime {
                     .candidate()
                     .map(|candidate| candidate.addrs.clone())
                     .unwrap_or_default(),
+                through: host
+                    .candidate()
+                    .filter(|candidate| !candidate.nearby())
+                    .and_then(|candidate| candidate.through_paired().next())
+                    .map(|through| through.name.clone()),
+                relay_only: host.candidate().is_some_and(wire::Candidate::relay_only),
                 signed_in: host.account_signed_in(),
                 current: host.current(),
                 providers: host

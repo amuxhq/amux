@@ -1366,7 +1366,7 @@ tests = [
 [[contract]]
 id = "relay-one-direct-link-latest-life"
 source = "model"
-property = { crate = "models", machine = "relay forwarding", sentence = "a host holds at most one direct link here, of its process's latest life" }
+property = { crate = "models", machine = "relay forwarding", sentence = "a host holds at most one direct link here, and none of an earlier life beside one of its latest" }
 checker = "models/relay::every_relay_forwarding_promise_holds_for_a_daemon_forwarding_at_ci_bounds"
 tests = [
   "node/lib::routing::link_registry::tests::a_link_from_a_new_runtime_instance_replaces_the_old_one_in_either_direction",

@@ -566,6 +566,27 @@ async fn run_cloud_connection_with_details(
     let quic_host = details.host.clone();
     let quic_port = details.port;
     let quic_client = client.clone();
+    // The dial writes the Hello itself on each address it tries, so a
+    // resumed one says it in its first flight and still wins only once the
+    // relay answers: QUIC's early data never outruns the TCP fallback.
+    // The connection carries data before the relay admits it, so links'
+    // first flights go through it at once: the relay holds what they send
+    // until it has. Each attempt takes them as it says its Hello, and the
+    // one kept takes them once the dial settles; once admitted, the link
+    // is named afresh.
+    let socket = ctx.transport.quic_endpoint.socket.clone();
+    let link = crate::routing::LinkId::new(crate::HostId::nil()).core();
+    let settled = Arc::new(Mutex::new(false));
+    let _forwarding = Unforward(socket.clone(), Some(link));
+    let opening = crate::link::run::relay_opening(
+        &ctx.connector,
+        &details.token.token,
+        Some(crate::link::quic::EarlyForwarding {
+            link,
+            settled: settled.clone(),
+        }),
+    )
+    .await;
     let quic = async move {
         #[cfg(debug_assertions)]
         if std::env::var_os("AMUX_TEST_RELAY_UDP_BLOCKED").is_some() {
@@ -579,11 +600,19 @@ async fn run_cloud_connection_with_details(
                     &quic_host,
                     quic_port,
                     quic_client,
+                    Some(&opening),
                 )
                 .await
             }
             None => {
-                QuicCarrier::connect_relay(&quic_endpoint, &quic_host, quic_port, quic_client).await
+                QuicCarrier::connect_relay(
+                    &quic_endpoint,
+                    &quic_host,
+                    quic_port,
+                    quic_client,
+                    Some(&opening),
+                )
+                .await
             }
         }
         .map(Arc::new)
@@ -628,16 +657,14 @@ async fn run_cloud_connection_with_details(
         reset_backoff: false,
     })?;
     let connected_at = std::time::Instant::now();
-    // The connection carries data before the relay admits it, so links'
-    // first flights go through it at once: the relay holds what they send
-    // until it has. Once admitted, the link is named afresh.
-    let socket = ctx.transport.quic_endpoint.socket.clone();
-    let forwarding = carrier.remote_address().map(|via| {
-        let link = crate::routing::LinkId::new(crate::HostId::nil()).core();
-        socket.add_forwarding(link, via, carrier.path_kind());
-        link
-    });
-    let _forwarding = Unforward(socket, forwarding);
+    {
+        let mut settled = settled.lock().unwrap_or_else(|e| e.into_inner());
+        *settled = true;
+        match carrier.remote_address() {
+            Some(via) => socket.add_forwarding(link, via, carrier.path_kind()),
+            None => socket.remove_forwarding(link),
+        }
+    }
     let tier = details.token.tier;
     let kept = details.kept;
     let refresh_status = ctx.status.clone();

@@ -711,9 +711,9 @@ fn signed_out(fleet: &FleetState, local_host: &[u8]) -> bool {
 
 /// How this machine reaches `host`. Its own host is always online. What the
 /// host itself said comes first: a host that no longer trusts this machine
-/// is offline for that reason. A candidate was found on this network,
-/// where pairing reaches it, so it reads online with no route yet. A host
-/// this machine knows nothing about is offline.
+/// is offline for that reason. A candidate is one pairing reaches, found
+/// nearby or announced by a neighbor, so it reads online with no route yet.
+/// A host this machine knows nothing about is offline.
 pub fn reach(fleet: &FleetState, local_host: &[u8], host: &[u8]) -> Reach {
     let entry = fleet.host(host);
     if host == local_host {

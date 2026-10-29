@@ -39,6 +39,7 @@ pub const HOST_CAP: usize = 1000;
 /// What a host said of itself in a handshake or a neighbor's claim.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Said {
+    pub name: String,
     pub version: String,
     pub cloud_relay: bool,
     pub kinds: Vec<i32>,
@@ -50,6 +51,7 @@ impl Said {
     pub fn from_wire(host: &wire::Host) -> Self {
         let capabilities = host.capabilities.clone().unwrap_or_default();
         Self {
+            name: host.name.clone(),
             version: host.version.clone(),
             cloud_relay: capabilities.cloud_relay,
             kinds: capabilities.kinds,
@@ -116,6 +118,14 @@ impl Catalogue {
             .get(&host)
             .map(|direct| &direct.said)
             .or_else(|| self.claims.get(&host).map(|claimed| &claimed.said))
+    }
+
+    /// Every host a neighbor claims, with what it said of itself and the
+    /// neighbors claiming it, in claim order.
+    pub fn claimed(&self) -> impl Iterator<Item = (HostId, &Said, &[HostId])> {
+        self.claims
+            .iter()
+            .map(|(host, claimed)| (*host, &claimed.said, claimed.relays.as_slice()))
     }
 
     /// The neighbors claiming `host`, in claim order.

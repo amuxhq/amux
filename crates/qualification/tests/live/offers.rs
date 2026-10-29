@@ -7,7 +7,7 @@
 
 use prost::Message as _;
 use wire::{
-    CodexCreateConfig, CodexInput, Empty, GetBlobRequest, GetCatalogueRequest, Kind, codex_input,
+    CodexCreateConfig, CodexInput, GetBlobRequest, GetCatalogueRequest, Kind, codex_input,
     inventory_event,
 };
 
@@ -125,6 +125,7 @@ impl Install {
     ) -> Result<(Vec<u8>, wire::Catalogue), String> {
         let blob = self
             .client
+            .agents
             .clone()
             .get_catalogue(GetCatalogueRequest {
                 host_id,
@@ -146,6 +147,7 @@ impl Install {
     ) -> Result<wire::Catalogue, String> {
         let blob = self
             .client
+            .agents
             .clone()
             .get_blob(GetBlobRequest { agent_id, hash })
             .await
@@ -193,7 +195,7 @@ impl Install {
             Kind::ClaudePty => {
                 let host = self.host_entry().await?;
                 let (_, copy) = self
-                    .host_catalogue_of(host.host_id, wire::Provider::Claude)
+                    .host_catalogue_of(host.host_id().to_vec(), wire::Provider::Claude)
                     .await?;
                 (
                     Some(wire::Catalogue {
@@ -228,7 +230,7 @@ impl Install {
         };
         let host = self.host_entry().await?;
         let (hash, catalogue) = self
-            .host_catalogue_of(host.host_id.clone(), provider)
+            .host_catalogue_of(host.host_id().to_vec(), provider)
             .await?;
         if catalogue.models.is_empty() || catalogue.permissions.is_empty() {
             return Err(format!("the host offers {:?}", Offered::of(&catalogue)));
@@ -254,6 +256,7 @@ impl Install {
     async fn host_entry(&self) -> Result<wire::HostEntry, String> {
         let mut inventory = self
             .client
+            .agents
             .clone()
             .subscribe_inventory(wire::SubscribeInventoryRequest {})
             .await

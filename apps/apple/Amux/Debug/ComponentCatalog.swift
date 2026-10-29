@@ -1444,16 +1444,16 @@ extension CatalogFixtures {
         let hosts = HostsStore()
         hosts.show([HostView(
             hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false,
-            reach: .online(.direct), addrs: [], current: true,
+            reach: .online(.direct), addrs: [], relayOnly: false, current: true,
             providers: [
                 ProviderSignIn(provider: .claude, signedIn: signedIn),
                 ProviderSignIn(provider: .codex, signedIn: true),
             ],
-            lastDialError: nil, platform: .macos, signedIn: nil, version: nil),
+            lastDialError: nil, platform: .macos, signedIn: nil, through: nil, version: nil),
         HostView(
             hostId: Array(repeating: 8, count: 16), name: "laptop", local: false, trusted: true,
-            candidate: false, reach: .away, addrs: [], current: false, providers: [],
-            lastDialError: nil, platform: .macos, signedIn: nil, version: nil)])
+            candidate: false, reach: .away, addrs: [], relayOnly: false, current: false, providers: [],
+            lastDialError: nil, platform: .macos, signedIn: nil, through: nil, version: nil)])
         let store = NewAgentStore()
         store.open(on: desk)
         store.listed(.success(Directories(
@@ -1535,6 +1535,11 @@ extension ComponentCatalog {
         hostsList("list") { _ in },
         hostsList("empty", hosts: []) { _ in },
         hostsList("network-refused", hosts: []) { $0.sawLocalNetwork(.denied) },
+        // A machine on the account only the relay reaches, on the free plan:
+        // its card sells what pairs it rather than a code that cannot.
+        hostsList("on-the-account-free", hosts: CatalogFixtures.machines + [CatalogFixtures.accountServer]) {
+            $0.show(CatalogFixtures.account(pro: false))
+        },
         hostsList("large-text", size: .accessibility3) { _ in },
         hostPage("page", host: CatalogFixtures.deskHost),
         hostPage("revoked", host: CatalogFixtures.oldLaptop),
@@ -1650,13 +1655,19 @@ extension ComponentCatalog {
 extension ComponentCatalog {
     // MARK: - Settings
 
-    /// The settings sheet with two accounts and with none, and every page it
-    /// opens: signing in, subscribing, and deleting an account. Removing one
-    /// asks in the system's dialog, which a flat capture cannot hold; it has
-    /// a preview of its own.
+    /// The settings sheet with two accounts and with none, signing in from
+    /// it, and every page it opens: subscribing and deleting an account.
+    /// Removing one, and what a sign-in asks when it is refused or comes back
+    /// as somebody else, are the system's dialogs, which a flat capture
+    /// cannot hold; they have previews of their own.
     fileprivate static let settings: [ComponentExample] = [
         sheet("two-accounts") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 2) }.settings },
         sheet("signed-out") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 0) }.settings },
+        sheet("signing-in") {
+            StoryApp(settingsOpen: true, signIn: SignInStore(phase: .handingOff)) {
+                StoryFleet.busy(accounts: 0)
+            }.settings
+        },
         sheet("notifications") { StoryApp(settingsOpen: true, notifications: .on).settings },
         // Tall enough to hold the whole sheet, down to its help rows.
         sheet("large-text", size: .accessibility3, height: 2600) { StoryApp(settingsOpen: true).settings },
@@ -1685,17 +1696,6 @@ extension ComponentCatalog {
                     asking: AccountId("ada"), typed: "ada@example.com", phase: .failed("amux.sh did not answer")),
                 actions: { _ in }
             ) { YouScreen(accounts: stores.accounts) { _ in } }
-        },
-        sheet("sign-in") { SignIn(model: SignInStore()) { _ in } },
-        sheet("sign-in-waiting") { SignIn(model: SignInStore(phase: .handingOff)) { _ in } },
-        sheet("sign-in-failed") {
-            SignIn(model: SignInStore(phase: .failed("amux.sh did not answer"))) { _ in }
-        },
-        sheet("sign-in-mismatched") {
-            SignIn(
-                model: SignInStore(
-                    phase: .mismatched(wanted: CatalogFixtures.ada, got: CatalogFixtures.lovelace),
-                    intent: .returning(CatalogFixtures.ada))) { _ in }
         },
         sheet("paywall") { Paywall(model: PaywallStore(plans: CatalogFixtures.plans)) { _ in } },
         sheet("paywall-confirming") {
@@ -1831,8 +1831,10 @@ extension CatalogFixtures {
 }
 
 extension CatalogFixtures {
-    static let nearbyLaptop = machine(5, "laptop", platform: .macos, reach: .online(.direct), trusted: false, candidate: true, version: nil, providers: [])
-    static let relayLaptop = machine(5, "laptop", platform: .macos, reach: .online(.relay), trusted: false, candidate: true, version: nil, providers: [])
+    static let nearbyLaptop = machine(5, "laptop", platform: .macos, reach: .online(.direct), trusted: false, candidate: true, addrs: ["192.168.1.24:4433"], version: nil, providers: [])
+    static let relayLaptop = machine(5, "laptop", platform: .macos, reach: .online(.relay), trusted: false, candidate: true, relayOnly: true, version: nil, providers: [])
+    /// A machine on the account nobody paired, which only the relay reaches.
+    static let accountServer = machine(7, "nova-test", platform: .linux, reach: .online(.unspecified), trusted: false, candidate: true, relayOnly: true, version: nil, providers: [])
     static let pendingLaptop = PendingPair(
         token: [1, 2, 3], hostId: nearbyLaptop.hostId, name: "laptop", fingerprint: fingerprint(5),
         expiresAtMs: Int64((now.timeIntervalSince1970 + 4 * 60 + 12) * 1000), via: .direct)
@@ -1847,15 +1849,15 @@ extension CatalogFixtures {
 extension CatalogFixtures {
     static func machine(
         _ index: UInt8, _ name: String, platform: Platform?, reach: Reach, trusted: Bool = true,
-        candidate: Bool = false, addrs: [String] = [], version: String? = "0.8.0",
+        candidate: Bool = false, addrs: [String] = [], relayOnly: Bool = false, version: String? = "0.8.0",
         providers: [ProviderSignIn] = [
             ProviderSignIn(provider: .claude, signedIn: true), ProviderSignIn(provider: .codex, signedIn: false),
         ]
     ) -> HostView {
         HostView(
             hostId: Array(repeating: index, count: 16), name: name, local: false, trusted: trusted,
-            candidate: candidate, reach: reach, addrs: addrs, current: false, providers: providers,
-            lastDialError: nil, platform: platform, signedIn: nil, version: version)
+            candidate: candidate, reach: reach, addrs: addrs, relayOnly: relayOnly, current: false, providers: providers,
+            lastDialError: nil, platform: platform, signedIn: nil, through: nil, version: version)
     }
 
     static let deskHost = machine(1, "desk", platform: .macos, reach: .online(.direct), addrs: ["192.168.1.20:4433", "[fe80::1c2b:9aff:fe31:7d10]:4433"])
@@ -1866,8 +1868,13 @@ extension CatalogFixtures {
         machine(3, "mini", platform: .macos, reach: .away),
         machine(4, "garage-pi", platform: .linux, reach: .offline(.plain)),
         oldLaptop,
-        machine(5, "laptop", platform: .macos, reach: .online(.direct), trusted: false, candidate: true, version: nil, providers: []),
+        machine(5, "laptop", platform: .macos, reach: .online(.direct), trusted: false, candidate: true, addrs: ["192.168.1.24:4433"], version: nil, providers: []),
     ]
+
+    static func account(pro: Bool) -> AccountView {
+        AccountView(
+            binding: .signedIn, email: "ada@example.com", name: "Ada", picture: "", relay: .connected, pro: pro)
+    }
 
     static func hostsStore(_ hosts: [HostView]) -> HostsStore {
         let store = HostsStore(clock: { now })

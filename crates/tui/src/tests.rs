@@ -1341,7 +1341,9 @@ enum Reads {
 fn host(id: &[u8], name: &str, reads: Reads) -> wire::inventory_event::Of {
     use wire::trusted::Reach;
     wire::inventory_event::Of::Host(match reads {
-        Reads::Candidate => wire::HostEntry::candidate_host(id, name, Vec::new()),
+        Reads::Candidate => {
+            wire::HostEntry::candidate_host(id, name, vec!["192.168.1.9:4000".into()])
+        }
         Reads::Online => {
             wire::HostEntry::trusted_host(id, name, Reach::Online(wire::RouteKind::Direct as i32))
         }
@@ -1352,12 +1354,35 @@ fn host(id: &[u8], name: &str, reads: Reads) -> wire::inventory_event::Of {
     })
 }
 
+/// A host nobody paired that the named neighbors announce, each with
+/// whether this machine admitted it as the cloud relay.
+fn announced(id: &[u8], name: &str, by: &[(&str, bool)]) -> wire::inventory_event::Of {
+    let by = by
+        .iter()
+        .map(|(name, relay)| wire::Host {
+            host_id: name.as_bytes().to_vec(),
+            name: (*name).to_owned(),
+            capabilities: Some(wire::Capabilities {
+                cloud_relay: *relay,
+                kinds: Vec::new(),
+            }),
+            ..wire::Host::default()
+        })
+        .collect();
+    wire::inventory_event::Of::Host(wire::HostEntry::announced_host(id, name, by))
+}
+
 #[test]
 fn the_hosts_overlay_draws_trusted_hosts_and_candidates() {
     let mut fleet = FleetState::new();
     inventory(&mut fleet, host(b"a", "studio", Reads::Online));
     inventory(&mut fleet, host(b"b", "laptop", Reads::Offline));
     inventory(&mut fleet, host(b"c", "den mac", Reads::Candidate));
+    inventory(&mut fleet, announced(b"d", "nova", &[("s1.amux.sh", true)]));
+    inventory(
+        &mut fleet,
+        announced(b"e", "nas", &[("studio", false), ("s1.amux.sh", true)]),
+    );
     let lines = crate::hosts::modal_rows(&fleet, b"a", theme());
     let screen: Vec<String> = lines
         .iter()
@@ -1381,6 +1406,14 @@ fn the_hosts_overlay_draws_trusted_hosts_and_candidates() {
     assert!(
         row("den mac").ends_with("found nearby · amux pair 'den mac'"),
         "{screen}"
+    );
+    assert!(
+        row("nova").ends_with("on your account · Pro pairs it through the relay · amux pair nova"),
+        "{screen}"
+    );
+    assert!(
+        row("nas").ends_with("through studio · amux pair nas"),
+        "a paired host pairs it on any plan: {screen}"
     );
     let studio = screen.find("studio").unwrap();
     let candidate = screen.find("den mac").unwrap();

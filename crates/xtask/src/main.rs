@@ -9,34 +9,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             xtask::proto_compat::main(&std::env::args().skip(2).collect::<Vec<_>>())
         }
         Some("release") => release::main(&std::env::args().skip(2).collect::<Vec<_>>()),
-        Some("restamp") => restamp(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
             eprintln!(
-                "usage: xtask <codegen|proto-compat [REF]|restamp FROM TO [VERSION]|release <key generate|key public|cut VERSION|deploy VERSION [--channel C] [--rollout N]>>"
+                "usage: xtask <codegen|proto-compat [REF]|release <key generate|key public|cut VERSION|deploy VERSION [--channel C] [--rollout N]>>"
             );
             std::process::exit(2);
         }
     }
-}
-
-/// Copies the amux binary at FROM to TO stamped with VERSION, by default
-/// one just below its own, to play the previous release in overlap tests.
-fn restamp(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let (Some(from), Some(to)) = (args.first(), args.get(1)) else {
-        return Err("usage: xtask restamp FROM TO [VERSION]".into());
-    };
-    let (from, to) = (Path::new(from), Path::new(to));
-    let version = match args.get(2) {
-        Some(version) => version.clone(),
-        None => {
-            let own = version_stamp::read_file(from)?;
-            version_stamp::previous(&own)
-                .ok_or_else(|| format!("{own} has a prerelease; name the version to stamp"))?
-        }
-    };
-    version_stamp::restamp(from, to, &version)?;
-    println!("{} reports {version}", to.display());
-    Ok(())
 }
 
 /// Wire types a view value holds.

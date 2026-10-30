@@ -623,6 +623,10 @@ async fn run_cloud_connection_with_details(
     let fixture_transport = ctx.transport.tcp_override;
     let tcp_endpoint = ctx.transport.quic_endpoint.clone();
     let tcp = async move {
+        #[cfg(debug_assertions)]
+        if std::env::var_os("AMUX_TEST_RELAY_TCP_BLOCKED").is_some() {
+            return Err("relay TCP blocked by test fixture".to_string());
+        }
         let stream = cloud_routing_stream(&tcp_host, tcp_port, fixture_transport)
             .await
             .map_err(|error| error.to_string())?;

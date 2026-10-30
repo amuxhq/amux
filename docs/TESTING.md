@@ -215,7 +215,9 @@ just sanitize thread                       # the same under the thread sanitizer
 its argument, one run after another (50 by default), and stops at the first failure with that run's output.
 `--load` keeps every core busy meanwhile, as a full parallel run or a slow CI runner does, which is where most
 timing failures show; a failure that `--load` cannot bring back but a full run can is contention with other tests
-rather than with the CPU.
+rather than with the CPU. To see what the net's in-process hosts did in a failing test, set `RUST_LOG`
+(`RUST_LOG=warn,daemon_core=debug,node=info`): their tracing goes to the test's standard error, which nextest shows
+for a test that failed. Hosts the net runs as processes do not inherit it; their daemon logs are theirs.
 
 `just coverage` writes `tests/coverage.md`: line coverage per crate and the commit it measured. Each crate's lines
 count whichever tests ran them, so a core's figure includes what the models and the testnet reach. It is a reading

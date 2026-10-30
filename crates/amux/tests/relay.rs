@@ -200,6 +200,9 @@ fn free_port() -> u16 {
     }
 }
 
+/// The daemon dials TLS too once QUIC has had a moment, and on a busy
+/// machine that dial can win; here it fails, so the link says QUIC works.
+/// Which carrier wins the race is the race's own unit tests'.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_signed_in_daemon_links_to_the_relay_over_quic() {
     assert_eq!(link_through_relay(true).await, RelayCarrier::Quic);
@@ -215,7 +218,8 @@ async fn a_signed_in_daemon_links_to_the_relay_over_tls_when_quic_is_away() {
 /// Starts the relay as its deployment does, signs a daemon in to the
 /// stand-in cloud, waits for its cloud link to connect through the relay,
 /// and says which carrier it took. `quic` puts the relay's QUIC listener on
-/// the port tokens name; otherwise on another one.
+/// the port tokens name and has the daemon's TLS dial fail; otherwise the
+/// QUIC listener is on another port.
 async fn link_through_relay(quic: bool) -> RelayCarrier {
     let dir = tempfile::tempdir().unwrap();
     let rcgen::CertifiedKey { cert, signing_key } =
@@ -275,12 +279,12 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
         "http://127.0.0.1:1",
         vec![],
     );
-    let started = desk
-        .command(&["server", "start"])
-        .env("AMUX_CLOUD_TLS_CA", &cert_path)
-        .output()
-        .await
-        .unwrap();
+    let mut start = desk.command(&["server", "start"]);
+    start.env("AMUX_CLOUD_TLS_CA", &cert_path);
+    if quic {
+        start.env("AMUX_TEST_RELAY_TCP_BLOCKED", "1");
+    }
+    let started = start.output().await.unwrap();
     assert!(
         started.status.success(),
         "{}",

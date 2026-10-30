@@ -23,10 +23,20 @@ static INSTALL: Once = Once::new();
 
 /// Captures the link log from this process's trace from now on, unless
 /// something else already owns the process's subscriber; that one should
-/// carry [`layer`].
+/// carry [`layer`]. The rest of the in-process hosts' trace is printed to
+/// stderr when RUST_LOG asks, which the test runner keeps for a test that
+/// failed.
 pub(crate) fn install() {
     INSTALL.call_once(|| {
-        let _ = tracing_subscriber::registry().with(layer()).try_init();
+        let printed = std::env::var_os("RUST_LOG").is_some().then(|| {
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_filter(tracing_subscriber::EnvFilter::from_default_env())
+        });
+        let _ = tracing_subscriber::registry()
+            .with(printed)
+            .with(layer())
+            .try_init();
     });
 }
 

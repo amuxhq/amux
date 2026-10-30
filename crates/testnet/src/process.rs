@@ -55,6 +55,9 @@ impl ProcessHost {
             .env("AMUX_TEST_INTERFACES", "")
             .env_remove("AMUX_LOG")
             .env_remove("AMUX_CONFIG")
+            // The net reads the link log out of the daemon's log, which a
+            // filter meant for the net's own trace would thin.
+            .env_remove("RUST_LOG")
             .stdin(std::process::Stdio::null())
             .kill_on_drop(true);
         if self.relay_ca.is_file() {

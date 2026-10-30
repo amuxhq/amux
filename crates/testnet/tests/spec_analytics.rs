@@ -174,4 +174,6 @@ async fn pairing_counts_on_both_sides_and_a_prompt_counts_where_it_was_sent() {
         ],
         "the forwarded prompt is the laptop's, not the desk's"
     );
+
+    net.shutdown().await.unwrap();
 }

@@ -3515,7 +3515,10 @@ impl Net {
             }
         }
         // Agents of hosts that were down at the end have no daemon to
-        // stop them.
+        // stop them. Only Unix finds them by command line; elsewhere the
+        // daemons' own kills above are all there is, and an agent that
+        // outlives the net is reported by the test runner as a leak.
+        #[cfg(unix)]
         kill_agents_under(self.root.path()).await?;
         Ok(())
     }

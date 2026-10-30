@@ -351,7 +351,10 @@ mod tests {
     /// plays the server itself.
     fn idle_server(listen: &Listen) -> tokio::process::Child {
         let mut command = Command::new("/bin/sh");
-        command.args(["-c", "sleep 30", "sh"]).kill_on_drop(true);
+        // `exec`, so the child killed on drop is the sleep itself: a shell
+        // that forks it (dash does) would leave it holding the test's
+        // output for half a minute.
+        command.args(["-c", "exec sleep 30", "sh"]).kill_on_drop(true);
         spawn_server(command, listen).unwrap()
     }
 

@@ -120,7 +120,7 @@
         "asks": [],
         "items": [],
         "effects": [
-          "hook 1 answered {\"hookSpecificOutput\":{\"decision\":{\"behavior\":\"allow\",\"updatedInput\":{\"command\":\"cargo test\"},\"updatedPermissions\":[{\"behavior\":\"allow\",\"destination\":\"localSettings\",\"rules\":[{\"ruleContent\":\"cargo test:*\",\"toolName\":\"Bash\"}],\"type\":\"addRules\"}]},\"hookEventName\":\"PermissionRequest\"}}",
+          "hook 1 answered {\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"allow\",\"updatedInput\":{\"command\":\"cargo test\"},\"updatedPermissions\":[{\"type\":\"addRules\",\"rules\":[{\"toolName\":\"Bash\",\"ruleContent\":\"cargo test:*\"}],\"behavior\":\"allow\",\"destination\":\"localSettings\"}]}}}",
           "reply a1 accepted"
         ]
       },
@@ -297,7 +297,7 @@
         "reply": "accepted",
         "asks": [],
         "effects": [
-          "hook 2 answered {\"hookSpecificOutput\":{\"decision\":{\"behavior\":\"deny\",\"interrupt\":false,\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\\nuse cargo clean\"},\"hookEventName\":\"PermissionRequest\"}}",
+          "hook 2 answered {\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"deny\",\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\\nuse cargo clean\",\"interrupt\":false}}}",
           "reply a4 accepted"
         ]
       }
@@ -412,7 +412,7 @@
       "expect": {
         "reply": "accepted",
         "effects": [
-          "hook 3 answered {\"hookSpecificOutput\":{\"decision\":{\"behavior\":\"allow\",\"updatedInput\":{\"plan\":\"# Plan\\n\\n- Edit README.md\"},\"updatedPermissions\":[{\"destination\":\"session\",\"mode\":\"acceptEdits\",\"type\":\"setMode\"}]},\"hookEventName\":\"PermissionRequest\"}}",
+          "hook 3 answered {\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"allow\",\"updatedInput\":{\"plan\":\"# Plan\\n\\n- Edit README.md\"},\"updatedPermissions\":[{\"type\":\"setMode\",\"mode\":\"acceptEdits\",\"destination\":\"session\"}]}}}",
           "reply a5 accepted"
         ]
       }
@@ -489,7 +489,7 @@
       "expect": {
         "reply": "accepted",
         "effects": [
-          "hook 4 answered {\"hookSpecificOutput\":{\"decision\":{\"behavior\":\"deny\",\"interrupt\":false,\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\\nexplain why\"},\"hookEventName\":\"PermissionRequest\"}}",
+          "hook 4 answered {\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"deny\",\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\\nexplain why\",\"interrupt\":false}}}",
           "reply a6 accepted"
         ]
       }

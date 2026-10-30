@@ -354,7 +354,7 @@
         "asks": [],
         "effects": [
           "terminal interrupt",
-          "hook 102 answered {\"hookSpecificOutput\":{\"action\":\"cancel\",\"hookEventName\":\"Elicitation\"}}",
+          "hook 102 answered {\"hookSpecificOutput\":{\"hookEventName\":\"Elicitation\",\"action\":\"cancel\"}}",
           "reply i1 accepted"
         ]
       }

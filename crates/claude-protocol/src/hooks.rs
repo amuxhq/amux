@@ -11,7 +11,9 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::stream::{Extensions, PermissionMode, PermissionUpdate};
+use crate::stream::{
+    ElicitationResult, Extensions, PermissionMode, PermissionResult, PermissionUpdate,
+};
 use crate::strictness::tagged_enum;
 use crate::{DecodeError, Drift, decoding};
 
@@ -256,6 +258,23 @@ pub struct Elicitation {
     pub requested_schema: Option<Value>,
     #[serde(flatten)]
     pub extensions: Extensions,
+}
+
+/// What a hook Claude waits on prints as its decision.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HookOutput {
+    pub hook_specific_output: HookDecision,
+}
+
+/// The decision itself, named by the event it answers.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "hookEventName")]
+pub enum HookDecision {
+    /// A permission request's decision, as a control reply would carry it.
+    PermissionRequest { decision: PermissionResult },
+    /// A tool server's form or link: the action and the form's content.
+    Elicitation(ElicitationResult),
 }
 
 /// Lines of the assistant's reply as Claude draws them: `delta` holds the

@@ -25,7 +25,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000200 asks=[ask:1->ask:ask:1
 ## 11 input {"answer":{"answer":{"allow":{}},"ask":"ask:1"},"id":"x2"}
 effect reply x2 rejected:UNSUPPORTED
 ## 12 input {"answer":{"answer":{"form":{"action":"accept","content":{"repo":"ada/amux"}}},"ask":"ask:1"},"id":"x1"}
-effect hook 101 answered {"hookSpecificOutput":{"action":"accept","content":{"repo":"ada/amux"},"hookEventName":"Elicitation"}}
+effect hook 101 answered {"hookSpecificOutput":{"hookEventName":"Elicitation","action":"accept","content":{"repo":"ada/amux"}}}
 effect reply x1 accepted
 item ask:ask:1 ask final at=1800000000200 text="" form github ASK_OUTCOME_ANSWERED fields=["repo"]
 snapshot WORKING queue=[] working_on=- at=1800000000200 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t1 create_issue since=1800000000100
@@ -49,7 +49,7 @@ item ask:ask:2 ask final at=1800000030100 text="" link docs open
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000030100 asks=[ask:2->ask:ask:2 link:docs "docs needs your input" https://docs.example/sign-in] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t2 sign_in since=1800000030100
 ## 22 input {"id":"i1","interrupt":{}}
 effect terminal interrupt
-effect hook 102 answered {"hookSpecificOutput":{"action":"cancel","hookEventName":"Elicitation"}}
+effect hook 102 answered {"hookSpecificOutput":{"hookEventName":"Elicitation","action":"cancel"}}
 effect reply i1 accepted
 item ask:ask:2 ask final at=1800000030100 text="" link docs ASK_OUTCOME_CANCELLED
 snapshot WORKING queue=[] working_on=- at=1800000030100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t2 sign_in since=1800000030100

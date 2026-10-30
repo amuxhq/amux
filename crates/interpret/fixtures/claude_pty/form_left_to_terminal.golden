@@ -58,7 +58,7 @@ item t3 tool final at=1800000030300 text="" github·create_issue TOOL_STATE_RUNN
 item ask:ask:3 ask final at=1800000030300 text="" form github open
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000030300 asks=[ask:3->ask:ask:3 form:github "github needs your input"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t3 create_issue since=1800000030300
 ## 26 input {"answer":{"answer":{"form":{"action":"accept","content":{"repo":"ada/amux"}}},"ask":"ask:3"},"id":"x2"}
-effect hook 103 answered {"hookSpecificOutput":{"action":"accept","content":{"repo":"ada/amux"},"hookEventName":"Elicitation"}}
+effect hook 103 answered {"hookSpecificOutput":{"hookEventName":"Elicitation","action":"accept","content":{"repo":"ada/amux"}}}
 effect reply x2 accepted
 item ask:ask:3 ask final at=1800000030300 text="" form github ASK_OUTCOME_ANSWERED fields=["repo"]
 snapshot WORKING queue=[] working_on=- at=1800000030300 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t3 create_issue since=1800000030300

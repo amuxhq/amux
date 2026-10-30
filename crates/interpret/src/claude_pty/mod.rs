@@ -1688,19 +1688,17 @@ impl State {
 
 /// The output of the hook Claude waits on that hands it `answer`.
 fn hook_output(answer: claude_answers::Answer) -> Vec<u8> {
-    let output = match answer {
-        claude_answers::Answer::Permission(decision) => serde_json::json!({
-            "hookEventName": "PermissionRequest",
-            "decision": decision,
-        }),
-        claude_answers::Answer::Elicitation(result) => {
-            let mut output = serde_json::to_value(result).expect("a form's answer serializes");
-            output["hookEventName"] = "Elicitation".into();
-            output
+    use claude_protocol::hooks::{HookDecision, HookOutput};
+    let hook_specific_output = match answer {
+        claude_answers::Answer::Permission(decision) => {
+            HookDecision::PermissionRequest { decision }
         }
+        claude_answers::Answer::Elicitation(result) => HookDecision::Elicitation(result),
     };
-    serde_json::to_vec(&serde_json::json!({ "hookSpecificOutput": output }))
-        .expect("a hook's output serializes")
+    serde_json::to_vec(&HookOutput {
+        hook_specific_output,
+    })
+    .expect("a hook's output serializes")
 }
 
 impl Checkpoint for State {

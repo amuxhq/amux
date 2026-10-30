@@ -240,7 +240,7 @@
           "t1"
         ],
         "effects": [
-          "hook 1 answered {\"hookSpecificOutput\":{\"decision\":{\"behavior\":\"deny\",\"interrupt\":true,\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file).\"},\"hookEventName\":\"PermissionRequest\"}}",
+          "hook 1 answered {\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"deny\",\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file).\",\"interrupt\":true}}}",
           "reply p2 queued"
         ]
       },

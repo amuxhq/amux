@@ -56,7 +56,7 @@ pub struct FleetView {
     /// Agents across the whole fleet that need the person, and that are
     /// working or starting: counted by agent, not by family, whatever is
     /// folded or filtered out of the sections. An agent whose host is out
-    /// of reach is not counted: its row says only that.
+    /// of reach is not counted: its row is only as it last said.
     pub need_you: u32,
     pub working: u32,
 }
@@ -114,8 +114,6 @@ pub enum SecondLine {
     /// Idle, and cannot go on until the person acts.
     Stuck(StuckReason),
     Exited(ExitCause),
-    /// The agent's host is out of reach; the agent is only as it last said.
-    HostAway,
     /// The agent's host no longer trusts this machine: it will not come
     /// back on its own, only by pairing again. The agent is only as it last
     /// said.
@@ -374,7 +372,12 @@ fn attachment_name(attachment: &wire::Attachment) -> Option<String> {
 /// The row's second line: the state comes from the inventory row, so it
 /// agrees with the section; the words come from the agent's session. How an
 /// agent ended comes before its host's reach: an exited agent's row is
-/// history, whatever its host is doing now.
+/// history, whatever its host is doing now. A host out of reach changes
+/// nothing here: the row says what this machine last held of the agent,
+/// and each client marks the host's reach from `FleetCard::host_reach`.
+/// Spelling it out put the same words on every row of that host in place
+/// of what they said. A host that no longer trusts this machine is the
+/// exception, since only pairing again brings it back.
 fn second_line(
     fleet: &FleetState,
     local_host: &[u8],
@@ -385,10 +388,8 @@ fn second_line(
     if attention == Attention::Exited {
         return SecondLine::Exited(ui_state::exit_cause(agent));
     }
-    match reach(fleet, local_host, &agent.host_id) {
-        Reach::Online(_) => {}
-        Reach::Offline(Offline::Revoked) => return SecondLine::HostRevoked,
-        Reach::Away | Reach::Offline(_) => return SecondLine::HostAway,
+    if reach(fleet, local_host, &agent.host_id) == Reach::Offline(Offline::Revoked) {
+        return SecondLine::HostRevoked;
     }
     let Some(line) = line else {
         return SecondLine::Blank;

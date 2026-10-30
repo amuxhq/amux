@@ -2489,7 +2489,12 @@ fn each_row_says_what_its_state_calls_for() {
     );
     assert_eq!(said["newer"], SecondLine::Exited(ExitCause::Ended));
     assert_eq!(said["newer-value"], SecondLine::Exited(ExitCause::Ended));
-    assert_eq!(said["far"], SecondLine::HostAway);
+    // A host out of reach leaves the row as it last was: running `make`.
+    assert!(
+        matches!(said["far"], SecondLine::Step(_)),
+        "{:?}",
+        said["far"]
+    );
     assert_eq!(said["far-done"], SecondLine::Exited(ExitCause::Ended));
     let far = fleet_card(&fleet, b"a", b"far-done").unwrap();
     assert_eq!(
@@ -3293,7 +3298,7 @@ fn a_rows_last_said_line_reads_markdown_as_plain_words() {
 }
 
 /// The header's counts are of agents this machine can see as they are: an
-/// agent on a host that is away or offline is shown "host is away", so it
+/// agent on a host that is away or offline is only as it last said, so it
 /// is not counted as working or needing the person.
 #[test]
 fn header_counts_leave_out_agents_whose_host_is_out_of_reach() {
@@ -3307,12 +3312,10 @@ fn header_counts_leave_out_agents_whose_host_is_out_of_reach() {
     fleet.update(fleet_row("laptop", "far-working", Phase::Working, None, 2));
     fleet.update(fleet_row("laptop", "far-asking", Phase::NeedsYou, None, 3));
     let view = fleet_view(&fleet, b"desk", &no_sessions(), &HashSet::new(), &|_| true);
-    let said = second_lines(&view);
-    assert_eq!(said["far-working"], SecondLine::HostAway);
     assert_eq!(
         (view.working, view.need_you),
         (1, 0),
-        "the header counts agents whose rows say their host is away"
+        "the header counts agents whose host is out of reach"
     );
     // The sections agree with the header: an agent whose host is away does
     // not wait in Needs you while the header says nobody does.
@@ -3732,10 +3735,10 @@ fn agents_on_a_host_that_no_longer_trusts_this_machine_do_not_read_away() {
     fleet.update(fleet_row("laptop", "far", Phase::Working, None, 1));
     let view = fleet_view(&fleet, b"desk", &no_sessions(), &HashSet::new(), &|_| true);
     let said = second_lines(&view);
-    assert_ne!(
+    assert_eq!(
         said["far"],
-        SecondLine::HostAway,
-        "the agent of a host that revoked this machine reads as merely away"
+        SecondLine::HostRevoked,
+        "the agent of a host that revoked this machine says so"
     );
 }
 

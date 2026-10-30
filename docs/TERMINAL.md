@@ -67,7 +67,8 @@ attention ink when it needs you), its name, its branch when it works in a reposi
 the right how long it has been in its state. Short of room, the folder is cut from the left down to its last name,
 then the host goes, then the agent. The second line says what the agent's state calls for: what it asks (`wants to
 run cargo test -p auth`), the step it is running, what it last said, or why it cannot go on (`signed out of
-Codex`, `usage limit reached`); why it exited (`finished`, a crash in red); that its host is away. A starting
+Codex`, `usage limit reached`); why it exited (`finished`, a crash in red). An agent on a host that is away keeps
+the line it last had, its faint mark saying the host is out of reach. A starting
 agent has no second line. A folded family whose member needs you says that member's name and what it asks. The
 highlighted row is tinted, with half a line of the tint above and below; under the pointer or the
 keys alike, and it shows `[x]` in place of its age to stop the agent, or delete it once it has exited, after asking.

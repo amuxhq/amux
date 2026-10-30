@@ -147,12 +147,11 @@ enum StoryFleet {
             row(9, "bisect-hang", on: desk, .exited, minutes: 300, exit: .failed("Exited with status 1"),
                 .exited(.failed("Exited with status 1"))),
         ]
-        var sections = [
+        let sections = [
             FleetSection(kind: .needsYou, families: 2, foldedByDefault: false, rows: needs),
             FleetSection(kind: .live, families: 5, foldedByDefault: false, rows: live),
             FleetSection(kind: .exited, families: 2, foldedByDefault: true, rows: stopped),
         ]
-        if away { sections[0].rows[1].secondLine = .hostAway }
         let view = FleetView(sections: sections, needYou: 2, working: 3)
         var studio = studio
         if away { studio.reach = .away }

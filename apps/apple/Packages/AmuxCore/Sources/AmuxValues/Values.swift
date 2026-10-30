@@ -3224,7 +3224,7 @@ public struct FleetView: Codable, Hashable, Sendable {
     /// Agents across the whole fleet that need the person, and that are
     /// working or starting: counted by agent, not by family, whatever is
     /// folded or filtered out of the sections. An agent whose host is out
-    /// of reach is not counted: its row says only that.
+    /// of reach is not counted: its row is only as it last said.
     public var needYou: UInt32
     public var working: UInt32
 
@@ -5923,8 +5923,6 @@ public enum SecondLine: Codable, Hashable, Sendable {
     /// Idle, and cannot go on until the person acts.
     case stuck(StuckReason)
     case exited(ExitCause)
-    /// The agent's host is out of reach; the agent is only as it last said.
-    case hostAway
     /// The agent's host no longer trusts this machine: it will not come
     /// back on its own, only by pairing again. The agent is only as it last
     /// said.
@@ -5945,7 +5943,6 @@ public enum SecondLine: Codable, Hashable, Sendable {
            let _name = try? _single.decode(String.self)
         {
             switch _name {
-            case "HostAway": self = .hostAway
             case "HostRevoked": self = .hostRevoked
             case "Blank": self = .blank
             default:
@@ -5992,9 +5989,6 @@ public enum SecondLine: Codable, Hashable, Sendable {
         case .exited(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .exited)
-        case .hostAway:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("HostAway")
         case .hostRevoked:
             var _container = encoder.singleValueContainer()
             try _container.encode("HostRevoked")

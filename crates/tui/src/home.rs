@@ -2228,13 +2228,6 @@ fn second_words(
         SecondLine::Exited(ExitCause::Failed(cause)) => {
             (format!("exited · {cause}"), theme.error())
         }
-        SecondLine::HostAway => {
-            let host = match row.card.host.as_str() {
-                "" => "its host",
-                host => host,
-            };
-            (format!("{host} is away"), theme.faint())
-        }
         SecondLine::HostRevoked => {
             let host = match row.card.host.as_str() {
                 "" => "its host",
@@ -2269,10 +2262,7 @@ fn agent_lines(
     let target = Target::Agent(card.agent.clone());
     let quiet = card.attention == Attention::Exited;
     // A live agent on a host out of reach is only as it last said.
-    let unreached = matches!(
-        row.second_line,
-        SecondLine::HostAway | SecondLine::HostRevoked
-    );
+    let unreached = !card.host_reach.online();
     let indent = 2 * row.depth as usize;
     // Text sits a margin inside the card's edge, on the right as on the left.
     let end = width - 2 * MARGIN;

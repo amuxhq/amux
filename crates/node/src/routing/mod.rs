@@ -25,11 +25,10 @@ pub use link_registry::{LinkRegistry, LinkRole};
 pub use types::{Capabilities, Host, LinkId, LiveRoute, Route, host_to_wire};
 pub(crate) use types::{core_host, host_from_core, host_from_wire};
 
-pub(crate) use crate::link::run::{
-    AuthenticatedLinkContextProvider, LinkConnectorRefreshReceiver, LinkConnectorRefreshRequest,
-    LinkCtx, spawn_connector,
-};
 pub use crate::link::run::{
     AuthenticatedLinkUser, LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher,
     LinkTokenAuthenticator,
+};
+pub(crate) use crate::link::run::{
+    LinkConnectorRefreshReceiver, LinkConnectorRefreshRequest, LinkCtx, spawn_connector,
 };

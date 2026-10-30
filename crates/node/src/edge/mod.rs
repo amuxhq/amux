@@ -34,6 +34,7 @@ use account::Binding;
 pub(crate) use account::{Account, AccountCredentials};
 pub use cloud::{FREE_TIER_REFRESH_INTERVAL, UDP_BLOCKED_MEMORY};
 use futures_util::stream;
+pub(crate) use relay_server::Accounts;
 pub use relay_server::{CloudLinkServer, JwtCloudLinkAuthenticator, RelayIdentity, RelayServing};
 pub use status::{Cloud, Relay, RelayCarrier};
 pub use token::RELAY_TOKEN_FILE;

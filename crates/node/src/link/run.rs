@@ -58,11 +58,6 @@ pub trait LinkTokenAuthenticator: Send + Sync + 'static {
 }
 
 #[tonic::async_trait]
-pub(crate) trait AuthenticatedLinkContextProvider: Send + Sync + 'static {
-    async fn context_for(&self, user: &AuthenticatedLinkUser) -> LinkCtx;
-}
-
-#[tonic::async_trait]
 impl<T> LinkTokenAuthenticator for Arc<T>
 where
     T: LinkTokenAuthenticator + ?Sized,
@@ -235,7 +230,9 @@ pub struct LinkCtx {
     link_role: LinkRole,
     acceptor_session: Option<LinkAuthSession>,
     authenticator: Option<Arc<dyn LinkTokenAuthenticator>>,
-    authenticated_context_provider: Option<Arc<dyn AuthenticatedLinkContextProvider>>,
+    /// On a relay: the accounts whose registry a link joins once its
+    /// token names its account.
+    accounts: Option<Arc<crate::edge::Accounts>>,
     clock: Arc<dyn Clock>,
     connector_auth: Option<LinkConnectorAuth>,
     established_tx: Option<Arc<StdRwLock<Option<EstablishmentSender>>>>,
@@ -275,7 +272,7 @@ impl LinkCtx {
             link_role: LinkRole::Peer,
             acceptor_session: None,
             authenticator: None,
-            authenticated_context_provider: None,
+            accounts: None,
             clock: Arc::new(SystemClock),
             connector_auth: None,
             established_tx: None,
@@ -318,11 +315,6 @@ impl LinkCtx {
     /// `handshaken` turns true once the connection's handshake is over.
     pub(crate) fn with_resumed(mut self, key: Vec<u8>, handshaken: watch::Receiver<bool>) -> Self {
         self.resumed = Some(Resumed { key, handshaken });
-        self
-    }
-
-    pub fn with_link_role(mut self, role: LinkRole) -> Self {
-        self.link_role = role;
         self
     }
 
@@ -402,11 +394,9 @@ impl LinkCtx {
         self
     }
 
-    pub(crate) fn with_authenticated_context_provider(
-        mut self,
-        provider: Arc<dyn AuthenticatedLinkContextProvider>,
-    ) -> Self {
-        self.authenticated_context_provider = Some(provider);
+    /// A relay's link, which joins the account its token names.
+    pub(crate) fn joining(mut self, accounts: Arc<crate::edge::Accounts>) -> Self {
+        self.accounts = Some(accounts);
         self
     }
 
@@ -534,7 +524,7 @@ pub async fn run_link(
                 auth_token: None,
                 ..hello.clone()
             }));
-            let mut session = match authenticate_hello(&ctx, &hello).await {
+            let session = match authenticate_hello(&ctx, &hello).await {
                 Ok(session) => session,
                 Err(status) => {
                     tracing::warn!(%status, "the link's hello was refused");
@@ -543,17 +533,11 @@ pub async fn run_link(
                     return Ok(());
                 }
             };
-            if let (Some(provider), Some(authenticated)) =
-                (ctx.authenticated_context_provider.clone(), session.as_ref())
-            {
-                let user = authenticated.user();
-                let authenticator = authenticated.authenticator.clone();
-                let observes = ctx.observes.take();
-                let refund = ctx.refund.take();
-                ctx = provider.context_for(&user).await;
-                ctx.observes = observes;
-                ctx.refund = refund;
-                session = Some(LinkAuthSession::new(user, authenticator));
+            if let (Some(accounts), Some(session)) = (ctx.accounts.clone(), session.as_ref()) {
+                let (links, incoming) = accounts.account(session.user().user_id).await;
+                ctx.links = links;
+                ctx.incoming_streams_tx = Some(incoming);
+                ctx.link_role = LinkRole::CloudRelay;
             }
             let snapshot = neighbor_snapshot(&ctx, carrier.as_ref()).await;
             let peer = match accept_peer_hello(&ctx, hello) {

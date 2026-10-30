@@ -48,14 +48,15 @@ pub(crate) struct Ids {
 }
 
 /// The core's state with its own numbering made canonical, and how the
-/// calls it made and the jobs it asked for were renumbered, so a checker
-/// can carry the same renumbering to the calls and jobs it holds for the
-/// core.
+/// calls it made, the jobs it asked for and the dials it sent were
+/// renumbered, so a checker can carry the same renumbering to the calls,
+/// jobs and dials it holds for the core.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Fingerprint {
     pub state: Vec<u8>,
     pub calls: BTreeMap<CallId, CallId>,
     pub jobs: BTreeMap<JobId, JobId>,
+    pub attempts: BTreeMap<AttemptId, AttemptId>,
 }
 
 impl Daemon {
@@ -118,6 +119,7 @@ impl Daemon {
             state: postcard::to_allocvec(&core).expect("the core's state serializes"),
             calls: ids.calls.ranks,
             jobs: ids.jobs.ranks,
+            attempts: attempts.ranks,
         }
     }
 }

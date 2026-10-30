@@ -125,7 +125,9 @@ A [TestNet](TESTNET.md) story is written once against the harness's verbs and ru
 
 The simulated net is the composed-net machine walked by seed, so the checker and the simulator explore one
 definition; a story is decided entirely by its seed, runs in milliseconds, and checks the cores' invariants after
-every step. What it does not have (the relay, the LAN, process hosts, real providers) it refuses at start. Suites
+every step. Its links come up only on the cores' own dials, as on a real net, and while a story waits with nothing
+left to deliver, link time runs on to the cores' next redial, within the wait's patience, as it does in real time on
+the real net. What it does not have (the relay, the LAN, process hosts, real providers) it refuses at start. Suites
 whose stories run in both modes say so in the catalogue's `modes`.
 
 ```sh

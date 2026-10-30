@@ -6,11 +6,11 @@ use models::net::agent_id;
 use models::{Bounds, ComposedNet, Machine as _, check, walk};
 
 /// How many states the three exhaustive runs together may explore: their
-/// count at these bounds (33,025, 9,935 and 216,320 on 2026-10-23) with two
+/// count at these bounds (32,752, 9,935 and 202,965 on 2026-10-30) with two
 /// percent over, since the count moves by a few dozen states with the
 /// threads. A run past it says the bounds have outgrown their place; a run
 /// that hangs is the test harness's bound to catch.
-const BUDGET_STATES: u64 = 264_500;
+const BUDGET_STATES: u64 = 250_600;
 
 #[test]
 fn every_composed_promise_holds_at_ci_bounds() {
@@ -87,6 +87,45 @@ fn a_kill_keeps_the_generation_and_an_unclean_reboot_takes_the_next_and_the_agen
         Some(first),
         "the restarted daemon adopted a process that did not survive the reboot"
     );
+}
+
+#[test]
+fn links_come_up_on_the_cores_dials_and_a_cut_one_on_the_redial_waiting_for_it() {
+    let model = ComposedNet::quiet();
+    let mut state = model.init();
+    let net = &mut state.net;
+    let settle = |net: &mut models::net::Net| {
+        for _ in 0..10_000 {
+            let Some(&lane) = net.deliverable().first() else {
+                break;
+            };
+            net.deliver(lane);
+        }
+        assert!(net.failure().is_none(), "{:?}", net.failure());
+    };
+    assert!(net.is_live(0), "the hosts dialled each other at start");
+
+    // Cut, the link is noticed gone only after it lived: each end redials
+    // at once, and the dial waits on the cut link rather than failing.
+    let at = net.now_ms();
+    net.sever(0);
+    settle(net);
+    assert!(!net.is_live(0));
+    net.restore(0);
+    settle(net);
+    assert!(net.is_live(0), "the redial waiting on the link took it");
+    assert_eq!(net.now_ms(), at, "with no clock moved");
+    assert!(net.reads_direct(0, 1) && net.reads_direct(1, 0));
+
+    // A host that starts again dials the other, which the other's own
+    // pause would not have done yet.
+    net.stop_host(1);
+    settle(net);
+    assert!(!net.is_live(0));
+    net.start_host(1, [3; 32]);
+    settle(net);
+    assert!(net.is_live(0), "the started host dialled its peer");
+    assert!(net.reads_direct(0, 1) && net.reads_direct(1, 0));
 }
 
 /// The nightly bounds, run by hand or by the nightly recipe: minutes on the

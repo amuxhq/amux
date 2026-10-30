@@ -18,6 +18,13 @@
 //! or a seed's. A call's message may be lost on its way, which breaks the
 //! call as a reset stream does.
 //!
+//! Every host trusts the hosts it is linked with at an address of its own
+//! in the net, and its core decides when to dial them, as on a real
+//! network: a dial is answered with a link when the link between the two
+//! is whole and both ends run, and is silence otherwise, until the link
+//! can carry it or the core gives up on it. Nothing brings a link up but a
+//! dial.
+//!
 //! Time is the net's clock and moves only when it is advanced: a timer
 //! armed for now is a delivery at once, one armed for later fires when the
 //! clock passes it. Jobs are carried out by fakes: nothing outside the
@@ -38,9 +45,10 @@ use daemon_core::payload::{
     Answer, CallError, CarrierKind, ClientRequest, GitRefusal, JobResult, MessageFrom,
     MessageRefusal, PeerFailure, PeerReply, PeerRequest, Response, Status,
 };
+use daemon_core::reach::{AttemptOutcome, Dialling};
 use daemon_core::{
-    AgentId, CallId, Daemon, Ended, Fingerprint, HostId, Input, Job, JobId, LinkId, Output,
-    Presence, Settings, StartOptions, StepBudget, TimerId,
+    AgentId, AttemptId, CallId, Daemon, Ended, Fingerprint, HostId, Input, Job, JobId, LinkId,
+    Output, Presence, Settings, StartOptions, StepBudget, TimerId,
 };
 use interpret::testkind::TestKind;
 use prost::Message as _;
@@ -245,8 +253,10 @@ pub struct HostState {
     /// What the last start recorded of its run, as the installation keeps
     /// it beside the store, synced.
     run: Option<RunRecord>,
-    ticked: Option<u64>,
-    /// Timers its core armed for later, by when they fall due.
+    /// The clocks its core was last told: the net's and link time.
+    ticked: Option<(u64, u64)>,
+    /// Timers its core armed for later, by when they fall due on the
+    /// net's clock.
     timers: BTreeMap<TimerId, u64>,
     /// The ids its driver gives calls arriving from clients and peers.
     next_call: u64,
@@ -394,6 +404,9 @@ fn agent(p: usize, input: agent_core::Input) -> Delivery {
 #[derive(Clone, Debug)]
 struct World {
     now_ms: u64,
+    /// How far link time runs ahead of the net's clock: it runs with it,
+    /// and on by itself while a cut link goes unnoticed.
+    link_ahead_ms: u64,
     hosts: Vec<HostState>,
     links: Vec<Link>,
     processes: Vec<Process>,
@@ -404,6 +417,9 @@ struct World {
     /// Where each agent's interpreter stood when its last process ended.
     resumes: BTreeMap<AgentId, Vec<u8>>,
     lanes: BTreeMap<Lane, VecDeque<Delivery>>,
+    /// The dials out, from a host to the host it dials, each under its
+    /// core's attempt; a core has one out to a host at a time.
+    dialling: BTreeMap<(usize, usize), AttemptId>,
     outgoing: BTreeMap<(usize, CallId), Outgoing>,
     /// Calls a host serves for a peer: the caller and its id for each.
     served: BTreeMap<(usize, CallId), (usize, CallId)>,
@@ -438,6 +454,7 @@ pub struct Net {
 #[derive(PartialEq, Eq, Hash)]
 struct Canon<'a> {
     now_ms: u64,
+    link_ahead_ms: u64,
     hosts: Vec<HostCanon<'a>>,
     links: &'a [Link],
     processes: Vec<ProcessCanon<'a>>,
@@ -445,6 +462,8 @@ struct Canon<'a> {
     specs: &'a BTreeMap<AgentId, Dbg<wire::AgentSpec>>,
     resumes: &'a BTreeMap<AgentId, Vec<u8>>,
     lanes: Vec<(Lane, Vec<DeliveryCanon<'a>>)>,
+    /// Without the attempts: each is the one its core has out to the host.
+    dialling: Vec<(usize, usize)>,
     outgoing: Vec<((usize, CallId), &'a Outgoing)>,
     served: Vec<((usize, CallId), (usize, CallId))>,
     clients: &'a BTreeMap<(usize, CallId), ClientCall>,
@@ -461,7 +480,7 @@ struct HostCanon<'a> {
     up: bool,
     boot: u32,
     run: Option<RunRecord>,
-    ticked: Option<u64>,
+    ticked: Option<(u64, u64)>,
     timers: &'a BTreeMap<TimerId, u64>,
     journals: &'a BTreeMap<AgentId, Journal>,
 }
@@ -488,6 +507,8 @@ enum DeliveryCanon<'a> {
     Job(usize, JobId, &'a Dbg<Job>),
     /// A job's result, under the job's canonical id.
     JobDone(usize, JobId, DbgRef<'a, JobResult>),
+    /// How a dial ended, under the attempt's canonical id.
+    AttemptEnded(usize, HostId, AttemptId, DbgRef<'a, AttemptOutcome>),
 }
 
 /// A borrowed value hashed by how it reads.
@@ -515,6 +536,15 @@ impl World {
                 print.jobs.get(&job).copied().unwrap_or(JobId(u64::MAX))
             })
         };
+        let attempt = |h: usize, attempt: AttemptId| {
+            self.hosts[h].print.as_ref().map_or(attempt, |print| {
+                print
+                    .attempts
+                    .get(&attempt)
+                    .copied()
+                    .unwrap_or(AttemptId(u64::MAX))
+            })
+        };
         let lane = |lane: Lane| match lane {
             Lane::Request(h, c) => Lane::Request(h, call(h, c)),
             Lane::Answer(h, c) => Lane::Answer(h, call(h, c)),
@@ -535,6 +565,16 @@ impl World {
                         Delivery::Host(h, Dbg(Input::JobDone { job: j, result })) => {
                             DeliveryCanon::JobDone(*h, job(*h, *j), DbgRef(result))
                         }
+                        Delivery::Host(
+                            h,
+                            Dbg(Input::AttemptEnded {
+                                host,
+                                attempt: a,
+                                outcome,
+                            }),
+                        ) => {
+                            DeliveryCanon::AttemptEnded(*h, *host, attempt(*h, *a), DbgRef(outcome))
+                        }
                         other => DeliveryCanon::As(other),
                     })
                     .collect();
@@ -550,6 +590,7 @@ impl World {
         outgoing.sort_by_key(|(key, _)| *key);
         Canon {
             now_ms: self.now_ms,
+            link_ahead_ms: self.link_ahead_ms,
             hosts: self
                 .hosts
                 .iter()
@@ -584,6 +625,7 @@ impl World {
             specs: &self.specs,
             resumes: &self.resumes,
             lanes,
+            dialling: self.dialling.keys().copied().collect(),
             outgoing,
             served: self
                 .served
@@ -675,6 +717,7 @@ impl Net {
             }),
             w: World {
                 now_ms: START_MS,
+                link_ahead_ms: 0,
                 hosts: Vec::new(),
                 links: Vec::new(),
                 processes: Vec::new(),
@@ -683,6 +726,7 @@ impl Net {
                 resumes: BTreeMap::new(),
                 played: BTreeMap::new(),
                 lanes: BTreeMap::new(),
+                dialling: BTreeMap::new(),
                 outgoing: BTreeMap::new(),
                 served: BTreeMap::new(),
                 clients: BTreeMap::new(),
@@ -1044,19 +1088,22 @@ impl Net {
         });
     }
 
-    /// Cuts the link: both ends hear it go, and it stays down.
+    /// Cuts the link: both ends hear it go once its keepalives have gone
+    /// unanswered, and it stays down.
     pub fn sever(&mut self, l: usize) {
         self.transition(|t| {
             t.w.links[l].severed = true;
+            t.pass_link_time(NOTICED_AFTER_MS);
             t.link_down(l);
         });
     }
 
-    /// Lets the link come back, up again at once if both ends run.
+    /// Lets the link come back: a dial waiting on it is answered at once,
+    /// if both ends run, and otherwise the link waits for the next.
     pub fn restore(&mut self, l: usize) {
         self.transition(|t| {
             t.w.links[l].severed = false;
-            t.link_up(l);
+            t.answer_dials(l);
         });
     }
 
@@ -1086,6 +1133,28 @@ impl Net {
     /// was armed for.
     pub fn advance(&mut self, by_ms: u64) {
         self.transition(|t| t.advance(by_ms));
+    }
+
+    /// Link time: the net's clock and what has run on beside it.
+    pub fn link_ms(&self) -> u64 {
+        self.w.now_ms + self.w.link_ahead_ms
+    }
+
+    /// When the next timer armed in link time falls due, in link time.
+    pub fn next_link_due(&self) -> Option<u64> {
+        self.w
+            .hosts
+            .iter()
+            .flat_map(|host| host.timers.iter())
+            .filter(|(id, _)| id.on_link_clock())
+            .map(|(_, at)| at + self.w.link_ahead_ms)
+            .min()
+    }
+
+    /// Link time runs on by `by_ms` while the net's clock stands, as it
+    /// does on a real net while a driver waits.
+    pub fn run_link_time(&mut self, by_ms: u64) {
+        self.transition(|t| t.pass_link_time(by_ms));
     }
 
     /// Whether a timer armed for later waits that is not a host's
@@ -1138,6 +1207,31 @@ impl Net {
 
 /// Where a host's core is told its agents' directories live whenever it
 /// is taken back, so its checkpoint names the same place on every thread.
+/// How long a cut link goes unnoticed at the least: its keepalives must go
+/// unanswered first, so a link that was cut never reads as one that
+/// dropped as soon as it came up, which its host pauses before dialling
+/// again.
+const NOTICED_AFTER_MS: u64 = daemon_core::reach::SHORT_LINK_MS;
+
+/// Trust in each of `trusted` at its address in the net.
+fn trust_of(trusted: Vec<HostId>) -> daemon_core::trust::TrustStore {
+    let mut trust = daemon_core::trust::TrustStore::of_hosts(trusted.iter().copied());
+    for host in trusted {
+        let uuid = uuid::Uuid::from_bytes(host.0);
+        let mut entry = trust.entry(uuid).cloned().expect("the host is trusted");
+        entry.direct = vec![address_of(host)];
+        trust.insert_for_test(uuid, entry);
+    }
+    trust
+}
+
+/// Where a host listens in the net: an address of its own, made from its
+/// id, which only the net's links reach.
+fn address_of(host: HostId) -> std::net::SocketAddr {
+    let [a, b, ..] = host.0;
+    std::net::SocketAddr::from(([10, 0, a, b], 7700))
+}
+
 fn agents_home(id: HostId) -> PathBuf {
     PathBuf::from(format!("/net/{}/agents", interpret::to_hex(&id.0)))
 }
@@ -1395,12 +1489,13 @@ impl Transition<'_> {
         if !host.up {
             return;
         }
+        let link = now + self.w.link_ahead_ms;
         let mut inputs = Vec::with_capacity(2);
-        if host.ticked != Some(now) {
-            host.ticked = Some(now);
+        if host.ticked != Some((now, link)) {
+            host.ticked = Some((now, link));
             inputs.push(Input::Tick {
                 now_ms: now,
-                link_ms: now,
+                link_ms: link,
             });
         }
         inputs.push(input);
@@ -1422,9 +1517,10 @@ impl Transition<'_> {
         let id = plan.id;
         let home = host_home(id);
         let agents = agents_home(id);
+        let link = now + self.w.link_ahead_ms;
         let host = &mut self.w.hosts[h];
         host.up = true;
-        host.ticked = Some(now);
+        host.ticked = Some((now, link));
         // As the installation decides it at start, and records it synced
         // before anything is served.
         let boot_id = |boot: u32| format!("boot-{boot}");
@@ -1507,12 +1603,12 @@ impl Transition<'_> {
                     daemon,
                     Input::Tick {
                         now_ms: now,
-                        link_ms: now,
+                        link_ms: link,
                     },
                 );
                 step(daemon, Input::Configure(settings));
                 step(daemon, Input::Entropy(entropy));
-                daemon.trust_for_test(daemon_core::trust::TrustStore::of_hosts(trusted));
+                daemon.trust_for_test(trust_of(trusted));
                 step(daemon, Input::Started);
                 step(daemon, Input::OwnHost(Box::new(entry)));
                 let live: Vec<AgentId> = daemon
@@ -1533,6 +1629,8 @@ impl Transition<'_> {
                     }
                 }
                 step(daemon, Input::Swept);
+                // The edge is up: the core dials what it trusts.
+                step(daemon, Input::Dialling(Dialling::All));
                 out
             },
         );
@@ -1550,9 +1648,10 @@ impl Transition<'_> {
             .map(|output| rehome(output, &scratch, &agents))
             .collect();
         self.carry_out(h, out);
+        // Dials waiting on the host are answered now that it listens.
         for l in 0..self.w.links.len() {
             if self.w.links[l].a == h || self.w.links[l].b == h {
-                self.link_up(l);
+                self.answer_dials(l);
             }
         }
     }
@@ -1570,6 +1669,7 @@ impl Transition<'_> {
         host.print = None;
         host.ticked = None;
         host.timers.clear();
+        self.w.dialling.retain(|(near, _), _| *near != h);
         for l in 0..self.w.links.len() {
             if self.w.links[l].a == h || self.w.links[l].b == h {
                 self.link_down(l);
@@ -1660,6 +1760,52 @@ impl Transition<'_> {
                 ),
             );
         }
+    }
+
+    /// `near`'s core dials `to` under `attempt`: answered with the link
+    /// when the link can carry it, silence until then.
+    fn dial(&mut self, near: usize, to: HostId, attempt: AttemptId) {
+        let Some(far) = self.host_index(to) else {
+            return;
+        };
+        self.w.dialling.insert((near, far), attempt);
+        if let Some(l) = self.link_between(near, far) {
+            self.answer_dials(l);
+        }
+    }
+
+    /// Brings the link up if a dial waits on it at either end, and answers
+    /// each such dial with it once it is up.
+    fn answer_dials(&mut self, l: usize) {
+        let (a, b) = (self.w.links[l].a, self.w.links[l].b);
+        let waiting = |near, far| self.w.dialling.contains_key(&(near, far));
+        if !waiting(a, b) && !waiting(b, a) {
+            return;
+        }
+        self.link_up(l);
+        if self.w.links[l].live.is_none() {
+            return;
+        }
+        for (near, far) in [(a, b), (b, a)] {
+            let Some(attempt) = self.w.dialling.remove(&(near, far)) else {
+                continue;
+            };
+            let ended = Input::AttemptEnded {
+                host: self.plan.hosts[far].id,
+                attempt,
+                outcome: AttemptOutcome::Linked { addr: None },
+            };
+            // Behind the link's coming up, as the driver reports it.
+            self.push(Lane::Link(near, far), host(near, ended));
+        }
+    }
+
+    /// The link between the two hosts, if the net declares one.
+    fn link_between(&self, near: usize, far: usize) -> Option<usize> {
+        self.w
+            .links
+            .iter()
+            .position(|link| (link.a, link.b) == (near, far) || (link.a, link.b) == (far, near))
     }
 
     /// The link goes as a dead connection does: each end that runs hears
@@ -1913,6 +2059,10 @@ impl Transition<'_> {
         for output in out {
             match output {
                 Output::ArmTimer { id, at_ms } => {
+                    let at_ms = match id.on_link_clock() {
+                        true => at_ms.saturating_sub(self.w.link_ahead_ms),
+                        false => at_ms,
+                    };
                     self.w.lanes.remove(&Lane::Timer(h, id));
                     if at_ms <= self.w.now_ms {
                         self.w.hosts[h].timers.remove(&id);
@@ -1967,6 +2117,12 @@ impl Transition<'_> {
                         "{name}'s core asked for a dump: {reason:?}"
                     )));
                 }
+                Output::Dial { host, attempt, .. } => self.dial(h, host, attempt),
+                Output::Abandon { host, .. } => {
+                    if let Some(far) = self.host_index(host) {
+                        self.w.dialling.remove(&(h, far));
+                    }
+                }
                 // Channels are the links' own here: a call is carried
                 // whenever its link is up. Pairing, relays and the shell's
                 // bookkeeping have no part in a net of cores.
@@ -1974,9 +2130,7 @@ impl Transition<'_> {
                 | Output::ChannelRefused { .. }
                 | Output::CloseChannel { .. }
                 | Output::DropRoute { .. }
-                | Output::Dial { .. }
                 | Output::DialRelay { .. }
-                | Output::Abandon { .. }
                 | Output::Rediscover
                 | Output::LinkControl { .. }
                 | Output::SendFile { .. }
@@ -2430,6 +2584,18 @@ impl Transition<'_> {
     }
 
     // --- time -------------------------------------------------------------
+
+    /// Link time runs on by `by_ms` while the net's clock stands: the
+    /// timers armed in link time fall due that much sooner.
+    fn pass_link_time(&mut self, by_ms: u64) {
+        self.w.link_ahead_ms += by_ms;
+        for host in &mut self.w.hosts {
+            for (_, at) in host.timers.iter_mut().filter(|(id, _)| id.on_link_clock()) {
+                *at = at.saturating_sub(by_ms);
+            }
+        }
+        self.advance(0);
+    }
 
     fn advance(&mut self, by_ms: u64) {
         self.w.now_ms = self.w.now_ms.saturating_add(by_ms);

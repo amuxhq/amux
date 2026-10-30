@@ -17,14 +17,17 @@ if [ -n "${TESTNET_BINARIES-}" ]; then
     exit 0
 fi
 
-# The workspace run's desktop SQLite linkage, so this build reuses what the
-# test build compiled rather than unifying features of its own.
+# The desktop SQLite linkage, named as the workspace run names it.
 cargo build --locked --features bundled \
     -p amux -p provider-fakes -p fake-amux -p agent --bins --example amux_stand_in
 
+# The tests read the directory as a native path: on Windows, Git's sh
+# spells the working directory /d/a/..., which a Windows process cannot
+# open, and `pwd -W` spells it D:/a/....
+here=$(pwd -W 2>/dev/null || pwd)
 target=${CARGO_TARGET_DIR:-target}
 case "$target" in
-    /*) ;;
-    *) target="$PWD/$target" ;;
+    /* | [A-Za-z]:*) ;;
+    *) target="$here/$target" ;;
 esac
 echo "TESTNET_BINARIES=$target/debug" >> "$NEXTEST_ENV"

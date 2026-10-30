@@ -89,6 +89,11 @@ pub enum AttemptOutcome {
     Failed(String),
     /// The host refused this one's certificate: it no longer trusts it.
     Revoked,
+    /// Something answered on `path` that ended the attempt before any other
+    /// path could: a machine with another key where the host used to be,
+    /// or a listener refusing the connection. It says nothing of the other
+    /// paths.
+    TurnedAway { path: DialPath, error: String },
 }
 
 /// Every host being reached, and whether the driver dials at all.
@@ -114,6 +119,9 @@ struct Reaching {
     pause: Option<Pause>,
     /// Since when a link of the host's own has been up, while one is.
     linked_since_ms: Option<u64>,
+    /// The paths that turned an attempt away, with what each answered:
+    /// left out of every attempt until one links or the run of them fails.
+    turned_away: BTreeMap<DialPath, String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -300,6 +308,17 @@ impl Daemon {
         plan
     }
 
+    /// What the next attempt to `host` dials: its plan, less the paths
+    /// that turned this run of attempts away.
+    fn attempt_plan(&self, host: HostId) -> Plan {
+        let mut plan = self.dial_plan(host);
+        if let Some(reaching) = self.routing.reach.hosts.get(&host) {
+            plan.paths
+                .retain(|path| !reaching.turned_away.contains_key(path));
+        }
+        plan
+    }
+
     fn every_path(&self, host: HostId) -> Plan {
         let mut paths = Vec::new();
         let direct = |addr: SocketAddr, paths: &mut Vec<DialPath>| {
@@ -361,9 +380,23 @@ impl Daemon {
     }
 
     fn dial(&mut self, host: HostId, out: &mut Vec<Output>) {
-        let plan = self.dial_plan(host);
+        if self.dial_within(host, None, out) {
+            let at_ms = self.timers.link_ms.saturating_add(ATTEMPT_DEADLINE_MS);
+            self.arm(TimerId::Attempt(host), at_ms, out);
+        }
+    }
+
+    /// Sends an attempt to `host` on its attempt plan, if that has a path,
+    /// under the deadline already armed for it; `turned` names what turned
+    /// the last one away, for the dial error when no path is left.
+    fn dial_within(&mut self, host: HostId, turned: Option<String>, out: &mut Vec<Output>) -> bool {
+        let plan = self.attempt_plan(host);
         if plan.is_empty() {
-            return;
+            if let Some(error) = turned {
+                self.cancel(TimerId::Attempt(host), out);
+                self.failed(host, error, out);
+            }
+            return false;
         }
         let early = self.first_calls(host);
         let reach = &mut self.routing.reach;
@@ -374,14 +407,13 @@ impl Daemon {
             plan: plan.clone(),
             refused: BTreeSet::new(),
         });
-        let at_ms = self.timers.link_ms.saturating_add(ATTEMPT_DEADLINE_MS);
-        self.arm(TimerId::Attempt(host), at_ms, out);
         out.push(Output::Dial {
             host,
             attempt: id,
             plan,
             early,
         });
+        true
     }
 
     /// The calls this host makes of `host` as it begins following it, to
@@ -412,7 +444,7 @@ impl Daemon {
             .get(&host)
             .and_then(|reaching| reaching.attempt.as_ref())
             .is_some_and(|attempt| {
-                self.wanted(host) && self.dial_plan(host).adds_to(&attempt.plan)
+                self.wanted(host) && self.attempt_plan(host).adds_to(&attempt.plan)
             });
         if stale {
             self.abandon(host, out);
@@ -467,11 +499,23 @@ impl Daemon {
         outcome: AttemptOutcome,
         out: &mut Vec<Output>,
     ) {
+        let wanted = self.wanted(host);
         let reaching = self.routing.reach.hosts.entry(host).or_default();
         if reaching.attempt.as_ref().map(|out| out.id) != Some(attempt) {
             return;
         }
         reaching.attempt = None;
+        let outcome = match outcome {
+            AttemptOutcome::TurnedAway { path, error } if wanted => {
+                // The rest of the paths go again at once, within the
+                // deadline.
+                reaching.turned_away.insert(path, error.clone());
+                self.dial_within(host, Some(error), out);
+                return;
+            }
+            outcome => outcome,
+        };
+        reaching.turned_away.clear();
         self.cancel(TimerId::Attempt(host), out);
         match outcome {
             AttemptOutcome::Linked { addr } => {
@@ -490,6 +534,8 @@ impl Daemon {
                 self.peer_revoked(host);
                 self.failed(host, crate::payload::TRUST_REVOKED.to_owned(), out);
             }
+            // Not wanted any more: the run ends as any failure would.
+            AttemptOutcome::TurnedAway { error, .. } => self.failed(host, error, out),
         }
     }
 
@@ -517,6 +563,9 @@ impl Daemon {
     /// and a host still wanted is tried again after its pause.
     fn failed(&mut self, host: HostId, error: String, out: &mut Vec<Output>) {
         self.dial_error(host, Some(error));
+        if let Some(reaching) = self.routing.reach.hosts.get_mut(&host) {
+            reaching.turned_away.clear();
+        }
         if !self.wanted(host) {
             return;
         }
@@ -536,10 +585,26 @@ impl Daemon {
             return;
         }
         self.abandon(host, out);
-        let error = format!(
+        let silent = format!(
             "no path answered within {} seconds",
             ATTEMPT_DEADLINE_MS / 1000
         );
+        // What turned the run away earlier is the more telling half.
+        let turned: Vec<String> = self
+            .routing
+            .reach
+            .hosts
+            .get(&host)
+            .map(|reaching| reaching.turned_away.values().cloned().collect())
+            .unwrap_or_default();
+        let error = match turned.is_empty() {
+            true => silent,
+            false => format!(
+                "{}; no other path answered within {} seconds",
+                turned.join("; "),
+                ATTEMPT_DEADLINE_MS / 1000
+            ),
+        };
         self.failed(host, error, out);
     }
 

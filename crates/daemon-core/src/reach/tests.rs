@@ -613,3 +613,104 @@ fn a_host_that_loses_its_link_while_an_attempt_is_out_has_it_restarted_on_what_w
             .contains(&DialPath::Through(LinkId(2)))
     );
 }
+
+#[test]
+fn a_path_that_turns_an_attempt_away_is_left_out_of_the_next_sent_at_once_within_the_deadline() {
+    let mut daemon = daemon(trusting());
+    found(&mut daemon, DESK, &["192.168.1.9:7000"]);
+    let (first, plan) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);
+    let stranger = DialPath::Direct(addr("192.168.1.9:7000"));
+    assert!(plan.paths.contains(&stranger));
+
+    at(&mut daemon, 300);
+    let out = ended(
+        &mut daemon,
+        DESK,
+        first,
+        AttemptOutcome::TurnedAway {
+            path: stranger.clone(),
+            error: "invalid peer certificate".into(),
+        },
+    );
+    let (second, plan) = dial_of(&out, DESK);
+    assert_ne!(second, first);
+    assert_eq!(plan.paths, vec![DialPath::Direct(addr("10.0.0.1:7000"))]);
+    assert_eq!(
+        armed(&out, TimerId::Attempt(DESK)),
+        None,
+        "the deadline holds"
+    );
+    assert_eq!(armed(&out, TimerId::Retry(DESK)), None, "no pause");
+    assert_eq!(daemon.last_dial_error(DESK), None);
+
+    // Found there again, it is no new path for this run.
+    assert_eq!(
+        dials(&found(&mut daemon, DESK, &["192.168.1.9:7000"])),
+        Vec::new()
+    );
+}
+
+#[test]
+fn a_run_with_every_path_turned_away_fails_with_the_last_answer_and_the_next_run_tries_them_all() {
+    let mut daemon = daemon(trusting());
+    let (first, _) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);
+    let out = ended(
+        &mut daemon,
+        DESK,
+        first,
+        AttemptOutcome::TurnedAway {
+            path: DialPath::Direct(addr("10.0.0.1:7000")),
+            error: "the server refused to accept a new connection".into(),
+        },
+    );
+    assert_eq!(dials(&out), Vec::new());
+    assert!(out.contains(&Output::CancelTimer {
+        id: TimerId::Attempt(DESK)
+    }));
+    let due = armed(&out, TimerId::Retry(DESK)).expect("a pause after the run");
+    assert_eq!(
+        daemon.last_dial_error(DESK),
+        Some("the server refused to accept a new connection")
+    );
+
+    at(&mut daemon, due);
+    let out = step(
+        &mut daemon,
+        Input::Timer {
+            id: TimerId::Retry(DESK),
+        },
+    );
+    assert_eq!(
+        dial_of(&out, DESK).1.paths,
+        vec![DialPath::Direct(addr("10.0.0.1:7000"))]
+    );
+}
+
+#[test]
+fn a_run_whose_other_paths_stay_silent_names_what_turned_it_away() {
+    let mut daemon = daemon(trusting());
+    found(&mut daemon, DESK, &["192.168.1.9:7000"]);
+    let (first, _) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);
+    ended(
+        &mut daemon,
+        DESK,
+        first,
+        AttemptOutcome::TurnedAway {
+            path: DialPath::Direct(addr("192.168.1.9:7000")),
+            error: "192.168.1.9:7000: invalid peer certificate".into(),
+        },
+    );
+    at(&mut daemon, ATTEMPT_DEADLINE_MS);
+    step(
+        &mut daemon,
+        Input::Timer {
+            id: TimerId::Attempt(DESK),
+        },
+    );
+    assert_eq!(
+        daemon.last_dial_error(DESK),
+        Some(
+            "192.168.1.9:7000: invalid peer certificate; no other path answered within 10 seconds"
+        )
+    );
+}

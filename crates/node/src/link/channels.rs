@@ -57,6 +57,12 @@ pub enum ChannelError {
     LinkUnavailable { host_id: HostId },
     #[error("channel handshake failed: {0}")]
     Handshake(String),
+    /// What answered on one path ended the dial before the others could.
+    #[error("channel handshake failed: {error}")]
+    TurnedAway {
+        path: super::socket::Path,
+        error: String,
+    },
     #[error(transparent)]
     Identity(#[from] IdentityError),
     #[error("channel TLS failed: {0}")]

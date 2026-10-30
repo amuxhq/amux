@@ -26,8 +26,10 @@ Reaching paired hosts is the core's as well (`reach`). It holds one attempt
 per host at a time, from its `Output::Dial` until its `Input::AttemptEnded`,
 each on every path it knows the host by: where discovery found it and where
 it last answered, its SSH destination, the paired hosts and the relay that
-claim it. An attempt has ten seconds; one that ends without a link is
-followed by a pause (one second doubling to thirty) that a new path or a call
+claim it. An attempt has ten seconds. A path that turns it away (a
+machine with another key, an endpoint refusing connections) is left out and
+the rest are dialled again at once within the same ten seconds; an attempt
+that ends without a link otherwise is followed by a pause (one second doubling to thirty) that a new path or a call
 wanting the host cuts short, and a host whose link dropped within a second
 waits out the rest of that second before the next; a host that refused
 this one as no longer trusted is not dialled until something says it may have

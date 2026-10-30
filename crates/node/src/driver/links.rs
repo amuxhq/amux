@@ -124,6 +124,7 @@ pub(crate) fn core_error(error: &ChannelError) -> payload::ChannelError {
         ChannelError::Refused(refusal) => payload::ChannelError::Refused(*refusal),
         ChannelError::NoPairingRoute
         | ChannelError::Handshake(_)
+        | ChannelError::TurnedAway { .. }
         | ChannelError::Identity(_)
         | ChannelError::Tls(_)
         | ChannelError::Revoked => payload::ChannelError::Handshake(error.to_string()),

@@ -4,15 +4,16 @@
 use models::{Bounds, SocketModel, check};
 
 /// How many states each exhaustive run may explore: its count at these
-/// bounds on 2026-10-29 with two percent over, as the other models allow
-/// for counts that move with the threads (this one's did not, on 4 and 12).
+/// bounds on 2026-10-29 (loss and relay-down on 2026-10-30) with two
+/// percent over, as the other models allow for counts that move with the
+/// threads (this one's did not, on 4 and 12).
 /// A run past it says the bounds have outgrown their place; a run that
 /// hangs is the test harness's bound to catch.
 const RELAUNCH_STATES: u64 = 3_602_400;
 const LAN_DOWN_STATES: u64 = 52;
-const LOSS_STATES: u64 = 253_300;
+const LOSS_STATES: u64 = 260_200;
 const DUPLICATE_STATES: u64 = 106_900;
-const RELAY_DOWN_STATES: u64 = 39_200;
+const RELAY_DOWN_STATES: u64 = 40_800;
 const TIME_STATES: u64 = 148_400;
 
 fn holds_within_budget(model: &SocketModel, budget: u64) {

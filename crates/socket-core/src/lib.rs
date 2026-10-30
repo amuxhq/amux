@@ -654,8 +654,8 @@ impl<K: Forwarding> Peers<K> {
     /// connection still sends goes out, but no dial trusts it: the next
     /// dial's first flight goes out on every candidate rather than only on
     /// the path the old link last used, which may be dead, and a connection
-    /// from the host on any path names it afresh. Its next link, or any
-    /// route set, takes the release back.
+    /// from the host on any path names it afresh. Its next link, or a
+    /// route set on one path, takes the release back.
     pub fn release(&mut self, host: HostId) {
         if let Some(held) = self.peers.get_mut(&Peer::Host(host)) {
             held.released = true;
@@ -1340,6 +1340,11 @@ impl<K: Forwarding> Peers<K> {
     /// Carries `host` on `route`. Addresses its earlier routes took still
     /// lead to it, so packets still in flight on a path it switched from
     /// arrive as its own.
+    ///
+    /// A first flight's route is a guess until a link comes up on it: the
+    /// path it settles on is the first to answer, which may be something
+    /// turning the dial away (an endpoint left by the host's last run, a
+    /// machine with another key), so no later dial trusts it alone.
     fn set_route(&mut self, host: HostId, route: Route, now_ms: u64) {
         self.claim(Peer::Host(host), now_ms);
         for path in route.paths() {
@@ -1349,11 +1354,12 @@ impl<K: Forwarding> Peers<K> {
             .peers
             .get_mut(&Peer::Host(host))
             .expect("stand-in just made");
-        if !matches!(route, Route::All(_)) {
+        let flight = matches!(route, Route::All(_));
+        if !flight {
             peer.flight = None;
         }
         peer.route = route;
-        peer.released = false;
+        peer.released = flight;
     }
 
     /// A packet from `peer` arrived on `path` while its first flight goes

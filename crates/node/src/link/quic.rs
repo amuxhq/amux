@@ -286,6 +286,14 @@ pub enum ConnectError {
     Setup(#[from] quinn::ConnectError),
     #[error("QUIC handshake failed: {0}")]
     Handshake(#[from] quinn::ConnectionError),
+    /// A first flight's handshake ended on an answer from one of its paths,
+    /// before any other path could answer.
+    #[error("{}: QUIC handshake failed: {source}", turned_on(path))]
+    TurnedAway {
+        path: super::socket::Path,
+        #[source]
+        source: quinn::ConnectionError,
+    },
     #[error("the link's Hello could not be written: {0}")]
     Opening(#[source] io::Error),
 }
@@ -294,8 +302,50 @@ impl ConnectError {
     /// The far host closed the handshake refusing this host's certificate
     /// as no longer trusted.
     pub(crate) fn refused_as_revoked(&self) -> bool {
-        matches!(self, ConnectError::Handshake(error) if refused_as_revoked(error))
+        match self {
+            ConnectError::Handshake(error) | ConnectError::TurnedAway { source: error, .. } => {
+                refused_as_revoked(error)
+            }
+            _ => false,
+        }
     }
+}
+
+/// A path as a turned-away dial's error names it.
+fn turned_on(path: &super::socket::Path) -> String {
+    match path {
+        super::socket::Path::Direct(addr) | super::socket::Path::Punched(addr) => addr.to_string(),
+        super::socket::Path::Forwarded(link) => format!("through link {}", link.0),
+        super::socket::Path::Framed(id) => format!("byte stream {}", id.0),
+    }
+}
+
+/// A first flight's handshake that something answered and ended, named by
+/// the path the answer came on: the first packet back settles the
+/// stand-in's route on its path.
+fn turned_away(
+    socket: &super::socket::LinkSocket,
+    stand_in: SocketAddr,
+    error: ConnectError,
+) -> ConnectError {
+    match error {
+        ConnectError::Handshake(source) if answered(&source) => match socket.path_of(stand_in) {
+            Some(path) => ConnectError::TurnedAway { path, source },
+            None => ConnectError::Handshake(source),
+        },
+        error => error,
+    }
+}
+
+/// Whether the handshake ended on something the far end sent, or the
+/// local end made of it, rather than on silence or this end giving up.
+fn answered(error: &quinn::ConnectionError) -> bool {
+    !matches!(
+        error,
+        quinn::ConnectionError::TimedOut
+            | quinn::ConnectionError::LocallyClosed
+            | quinn::ConnectionError::CidsExhausted
+    )
 }
 
 /// Whether the far end closed the connection with TLS's
@@ -480,7 +530,10 @@ impl QuicCarrier {
         let config = endpoint.client_config(identity, &trust_store, peer)?;
         let connecting =
             endpoint.connect_on_all(config, peer, paths, through_relay, DEVICE_SERVER_NAME)?;
-        let (connection, early) = handshake(connecting, deadline).await?;
+        let stand_in = connecting.remote_address();
+        let (connection, early) = handshake(connecting, deadline)
+            .await
+            .map_err(|error| turned_away(&endpoint.socket, stand_in, error))?;
         let control = open_control(&connection, early.as_ref()).await?;
         Ok(Self::new(connection, CarrierKind::Direct, Some(control))
             .following(endpoint.socket.clone())
@@ -729,10 +782,16 @@ impl QuicCarrier {
     /// sent before it, or why it failed. A link dialled with no ticket has
     /// finished its handshake already.
     pub(crate) async fn handshake(&self) -> Result<EarlyData, ConnectError> {
-        match &self.early {
-            Some(early) => early.handshake().await.map_err(ConnectError::from),
-            None => Ok(EarlyData::None),
-        }
+        let Some(early) = &self.early else {
+            return Ok(EarlyData::None);
+        };
+        early.handshake().await.map_err(|error| {
+            let error = ConnectError::from(error);
+            match &self.follows {
+                Some(socket) => turned_away(socket, self.connection.remote_address(), error),
+                None => error,
+            }
+        })
     }
 
     fn alone(mut self) -> Self {

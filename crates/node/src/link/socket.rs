@@ -1303,6 +1303,38 @@ mod tests {
         assert_eq!(fake.take_sent(), vec![(elsewhere, QUIC.to_vec())]);
     }
 
+    /// The path a first flight settles on is only the first to answer:
+    /// until a link comes up on it no dial trusts it, so the next goes out
+    /// on every candidate again rather than only where it was turned away.
+    #[test]
+    fn socket_trusts_a_first_flights_path_only_once_a_link_comes_up_on_it() {
+        let (fake, socket, _own) = fake_socket();
+        let peer = HostId::new_v4();
+        let (refusing, real): (SocketAddr, SocketAddr) = (
+            "192.168.1.9:7000".parse().unwrap(),
+            "192.168.1.10:7000".parse().unwrap(),
+        );
+        let stand_in = socket.dial_on_all(
+            peer,
+            vec![Path::Direct(refusing), Path::Direct(real)],
+            false,
+        );
+        fake.push(refusing, QUIC);
+        receive(&socket);
+        assert_eq!(socket.carrying(peer), Some(Path::Direct(refusing)));
+        assert_eq!(socket.trusted_route(peer), None, "nothing linked on it");
+
+        fake.take_sent();
+        socket.dial_on_all(peer, vec![Path::Direct(real)], false);
+        socket.try_send(&transmit(stand_in, QUIC)).unwrap();
+        assert_eq!(fake.take_sent(), vec![(real, QUIC.to_vec())]);
+
+        fake.push(real, QUIC);
+        receive(&socket);
+        socket.reclaim(peer);
+        assert_eq!(socket.trusted_route(peer), Some(Path::Direct(real)));
+    }
+
     #[test]
     fn socket_largest_datagram_fits_ipv6_behind_the_header() {
         let (_fake, socket, _own) = fake_socket();

@@ -342,6 +342,7 @@ async fn attempt_on(
 ) -> AttemptOutcome {
     let mut paths = Vec::new();
     let mut ssh = None;
+    let planned = plan.paths.clone();
     for path in plan.paths {
         match path {
             DialPath::Direct(addr) => paths.push(Path::Direct(addr)),
@@ -392,6 +393,22 @@ async fn attempt_on(
     {
         return AttemptOutcome::Revoked;
     }
+    // A path of the plan that turned the dial away is the core's to leave
+    // out; one it did not name (a link to the relay) is a failure like any.
+    let turned = failures.iter().find_map(|failure| match failure {
+        DialFailure::TurnedAway { path, error } => {
+            let path = match *path {
+                Path::Direct(addr) => DialPath::Direct(addr),
+                Path::Forwarded(link) => DialPath::Through(link),
+                _ => return None,
+            };
+            planned.contains(&path).then(|| (path, error.clone()))
+        }
+        _ => None,
+    });
+    if let Some((path, error)) = turned {
+        return AttemptOutcome::TurnedAway { path, error };
+    }
     let said: Vec<String> = failures.iter().map(ToString::to_string).collect();
     AttemptOutcome::Failed(if said.is_empty() {
         "nothing to dial".to_owned()
@@ -410,6 +427,11 @@ enum Either {
 enum DialFailure {
     /// The host refused this one's certificate: it no longer trusts it.
     Revoked,
+    /// What answered on `path` ended the dial before the other paths could.
+    TurnedAway {
+        path: Path,
+        error: String,
+    },
     Failed(String),
 }
 
@@ -417,7 +439,9 @@ impl std::fmt::Display for DialFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DialFailure::Revoked => f.write_str(crate::link::TRUST_REVOKED),
-            DialFailure::Failed(error) => f.write_str(error),
+            DialFailure::TurnedAway { error, .. } | DialFailure::Failed(error) => {
+                f.write_str(error)
+            }
         }
     }
 }
@@ -426,6 +450,7 @@ impl From<ChannelError> for DialFailure {
     fn from(error: ChannelError) -> Self {
         match error {
             ChannelError::Revoked => DialFailure::Revoked,
+            ChannelError::TurnedAway { path, error } => DialFailure::TurnedAway { path, error },
             error => DialFailure::Failed(error.to_string()),
         }
     }
@@ -689,31 +714,46 @@ impl ForwardedDialer {
             return Err(ChannelError::Revoked);
         }
         // The core asked for the attempt before it answered, so it is out.
-        let over = attempt.and_then(|attempt| {
-            inner
-                .attempts
-                .lock()
-                .unwrap()
-                .get(&peer)
-                .filter(|running| running.attempt == attempt)
-                .map(|running| running.over.clone())
-        });
-        drop(inner);
-        let ended = match over {
-            Some(mut over) => tokio::time::timeout(WANT_PATIENCE, over.wait_for(Option::is_some))
+        // One turned away by a path is followed at once by another on the
+        // rest, which the call waits for too.
+        let patience = tokio::time::Instant::now() + WANT_PATIENCE;
+        let mut attempt = attempt;
+        let ended = loop {
+            let over = attempt.and_then(|attempt| {
+                inner
+                    .attempts
+                    .lock()
+                    .unwrap()
+                    .get(&peer)
+                    .filter(|running| running.attempt == attempt)
+                    .map(|running| running.over.clone())
+            });
+            let Some(mut over) = over else {
+                break None;
+            };
+            let ended = tokio::time::timeout_at(patience, over.wait_for(Option::is_some))
                 .await
                 .ok()
                 .and_then(Result::ok)
-                .and_then(|ended| ended.clone()),
-            None => None,
+                .and_then(|ended| ended.clone());
+            if !matches!(ended, Some(AttemptOutcome::TurnedAway { .. })) {
+                break ended;
+            }
+            attempt = core
+                .look(move |daemon| daemon.reach().attempt(core_host(peer)))
+                .await
+                .flatten();
         };
+        drop(inner);
         match ended {
             Some(AttemptOutcome::Revoked) => Err(ChannelError::Revoked),
             Some(AttemptOutcome::Linked { .. }) => Ok(()),
-            Some(AttemptOutcome::Failed(_)) | None => match registry.last_refusal(peer) {
-                Some(reason) => Err(ChannelError::Refused(reason)),
-                None => Ok(()),
-            },
+            Some(AttemptOutcome::Failed(_) | AttemptOutcome::TurnedAway { .. }) | None => {
+                match registry.last_refusal(peer) {
+                    Some(reason) => Err(ChannelError::Refused(reason)),
+                    None => Ok(()),
+                }
+            }
         }
     }
 
@@ -797,10 +837,13 @@ impl ForwardedDial for ForwardedDialer {
 /// A dial's error, a refusal of this host's certificate read as the host
 /// saying it no longer trusts this one.
 fn dial_failed(error: &crate::link::quic::ConnectError) -> ChannelError {
-    if error.refused_as_revoked() {
-        ChannelError::Revoked
-    } else {
-        ChannelError::Handshake(error.to_string())
+    match error {
+        _ if error.refused_as_revoked() => ChannelError::Revoked,
+        crate::link::quic::ConnectError::TurnedAway { path, .. } => ChannelError::TurnedAway {
+            path: *path,
+            error: error.to_string(),
+        },
+        _ => ChannelError::Handshake(error.to_string()),
     }
 }
 

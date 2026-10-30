@@ -666,8 +666,9 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
     net.discovery()
         .announce(advert(&net, "desk", impostor_addr, "home"));
     // The dialer checks the answering key before it presents its own, so
-    // the stranger never sees the laptop's certificate. One dial tries the
-    // desk's old address beside the claimed one, so its error names both.
+    // the stranger never sees the laptop's certificate. The dial goes to
+    // the desk's old address beside the claimed one; what turned it away at
+    // the claimed one is the error the laptop keeps.
     let refused = until(
         "the laptop to dial the claimed address and meet the wrong key",
         || async {

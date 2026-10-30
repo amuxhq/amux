@@ -108,6 +108,90 @@ final class TranscriptListTests: XCTestCase {
             "the newest row stayed where it was and is now under the standing area")
     }
 
+    func testGoingToTheNewestRowFromItLeavesTheBottomKept() {
+        // A send asks for the newest row while the list already shows it.
+        // The animated scroll this once was had nowhere to go, so UIKit
+        // never said it had finished, and the list stopped keeping its
+        // bottom for the rest of the visit: the keyboard then covered the
+        // newest row.
+        let chat = StubChat(rows: (0..<40).map { row("m\($0)", UInt64($0)) }, hasOlder: false)
+        let model = ChatModel(source: chat)
+        let moving = environment(photographed: false, reducesMotion: false)
+        let list = FeedCoordinator(model: model, environment: moving, reported: ReportedElements())
+        list.view.frame = CGRect(x: 0, y: 0, width: 390, height: 600)
+        let items = model.ids.map { ListItem.row($0) }
+        list.update(
+            items: items, notices: [], environment: moving, revision: model.revision,
+            toNewest: model.toNewest, insets: EdgeInsets())
+        list.view.layoutIfNeeded()
+
+        model.jumpToNewest()
+        list.update(
+            items: items, notices: [], environment: moving, revision: model.revision,
+            toNewest: model.toNewest, insets: EdgeInsets())
+        list.update(
+            items: items, notices: [], environment: moving, revision: model.revision,
+            toNewest: model.toNewest, insets: EdgeInsets(top: 0, leading: 0, bottom: 300, trailing: 0))
+        list.view.layoutIfNeeded()
+
+        XCTAssertTrue(model.following)
+        XCTAssertEqual(
+            list.view.contentOffset.y, list.view.bottomOffset, accuracy: 0.5,
+            "the newest row is under the keyboard")
+    }
+
+    func testInHistoryTheSpaceBelowKeepsTheReadersDistanceFromTheBottom() {
+        // The keyboard coming up under a reader in history lifts the rows
+        // they were reading, as it lifts the composer; going down, it
+        // lowers them again.
+        let chat = StubChat(rows: (0..<40).map { row("m\($0)", UInt64($0)) }, hasOlder: false)
+        let model = ChatModel(source: chat)
+        let list = FeedCoordinator(model: model, environment: environment(), reported: ReportedElements())
+        list.view.frame = CGRect(x: 0, y: 0, width: 390, height: 600)
+        let items = model.ids.map { ListItem.row($0) }
+        list.update(
+            items: items, notices: [], environment: environment(), revision: model.revision,
+            toNewest: model.toNewest, insets: EdgeInsets())
+        list.view.layoutIfNeeded()
+        model.reading(atNewest: false)
+        list.view.contentOffset.y = list.view.bottomOffset - 400
+        list.view.layoutIfNeeded()
+        let distance = list.view.bottomOffset - list.view.contentOffset.y
+
+        for bottom: CGFloat in [300, 0] {
+            list.update(
+                items: items, notices: [], environment: environment(), revision: model.revision,
+                toNewest: model.toNewest, insets: EdgeInsets(top: 0, leading: 0, bottom: bottom, trailing: 0))
+            list.view.layoutIfNeeded()
+            XCTAssertFalse(model.following)
+            XCTAssertEqual(
+                list.view.bottomOffset - list.view.contentOffset.y, distance, accuracy: 0.5,
+                "with \(bottom) pt under the rows, the reader's rows moved within the screen")
+        }
+    }
+
+    func testAMoveThatIsNotTheReadersFollowsOnlyByLandingOnTheBottom() {
+        // UIKit putting a reader in history on the bottom, as it does when
+        // the rows under them shrink, follows again. A move passing near it,
+        // the status bar's animation to the top on its way out, does not:
+        // following there would keep the bottom against the animation.
+        let chat = StubChat(rows: (0..<40).map { row("m\($0)", UInt64($0)) }, hasOlder: false)
+        let model = ChatModel(source: chat)
+        let list = FeedCoordinator(model: model, environment: environment(), reported: ReportedElements())
+        list.view.frame = CGRect(x: 0, y: 0, width: 390, height: 600)
+        list.update(
+            items: model.ids.map { .row($0) }, notices: [], environment: environment(),
+            revision: model.revision, toNewest: model.toNewest, insets: EdgeInsets())
+        list.view.layoutIfNeeded()
+        model.reading(atNewest: false)
+        list.view.contentOffset.y = list.view.bottomOffset - 400
+        list.view.contentOffset.y = list.view.bottomOffset - 10
+        XCTAssertFalse(model.following, "a move near the bottom followed")
+
+        list.view.contentOffset.y = list.view.bottomOffset
+        XCTAssertTrue(model.following, "the list is on its bottom and does not follow")
+    }
+
     func testALongReplyIsPlacedAsTallAsItsCellDrawsIt() {
         // The turn's caption is drawn over the last lines of a long reply on
         // the phone: the reply's row is placed at the height it was measured
@@ -152,9 +236,11 @@ final class TranscriptListTests: XCTestCase {
     }
 }
 
-private func environment(typeSize: DynamicTypeSize = .large, photographed: Bool = true) -> CellEnvironment {
+private func environment(
+    typeSize: DynamicTypeSize = .large, photographed: Bool = true, reducesMotion: Bool = true
+) -> CellEnvironment {
     CellEnvironment(
-        design: .app, photographed: photographed, reducesMotion: true, reducesTransparency: true,
+        design: .app, photographed: photographed, reducesMotion: reducesMotion, reducesTransparency: true,
         reportsElements: false, reportedPrefix: nil,
         reportsGeometry: false, dynamicTypeSize: typeSize)
 }

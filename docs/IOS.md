@@ -838,21 +838,28 @@ What the leaf owns, and what stays in `ChatModel`:
   at the same position on screen before anything is drawn, so nothing the
   reader is looking at moves. A reader following the newest row is kept at
   the bottom in every layout pass instead: rows arriving, rows measured,
-  the keyboard, a notice or a card changing the space under the rows.
-  `ChatFeedTests` holds rows
+  the keyboard, a notice or a card changing the space under the rows. In
+  history the same changes keep the reader's distance from the bottom, so
+  the keyboard lifts the rows being read instead of covering them, except
+  under a finger. `ChatFeedTests` holds rows
   still to the pixel under a landing page and under arrivals, holds the
   bottom while following, and shows a streamed chat exactly as the same
   rows open.
-- Where the reader is. A drag away from the bottom stops following at
-  once, so rows arriving meanwhile are held by the session and New
-  activity shows; a drag or deceleration coming to rest within 24 pt of
-  the bottom follows again. `ChatModel` is told each time that changes
-  and tells the session. A cell among the first twenty coming on screen
-  asks the model for the page before the oldest row.
+- Where the reader is. Following is read from the scroll view at each
+  move, never from the callbacks that end one, which UIKit skips whenever
+  something else stops the movement. The reader moving the list away from
+  the bottom stops following at once, so rows arriving meanwhile are held
+  by the session and New activity shows; the reader bringing the bottom
+  within 24 pt follows again at once, mid-flick included. Any other move
+  follows only by landing on the bottom, as UIKit does when the rows under
+  a reader shrink, so the status bar's scroll to the top is not held back.
+  The list's own moves change neither. `ChatModel` is told each time that changes and
+  tells the session. A cell among the first twenty coming on screen asks
+  the model for the page before the oldest row.
 - Going to the newest row. `ChatModel.toNewest` is bumped when somebody
   asks for it (a send, a resume, a reset, New activity), never on an
-  arrival; the leaf scrolls there, animated unless the screen is being
-  photographed or motion is reduced.
+  arrival; the leaf goes to the bottom at once with the move that keeps
+  it, which is nothing when the list is already there.
 - What the door reads. Each hosted cell reports the elements it declared
   to the leaf, which moves their frames from the cell to the window and
   publishes the union in row order as the same preference the door reads

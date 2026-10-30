@@ -131,13 +131,13 @@ private struct ListView: UIViewRepresentable {
 
 /// The scroll view, keeping the reader's place in every layout pass.
 ///
-/// While the reader follows, the bottom is kept: rows arriving, cells
-/// taking their measured height, the keyboard or a card changing the
-/// space, all land with the newest row in view and nothing to catch up on
-/// a frame later. In history, the row at the top of the reader's view is
-/// kept where it is on screen: cells above it taking their measured height
-/// move it within the rows, and the list scrolls by as much in the same
-/// pass.
+/// A chat is read from its bottom. While the reader follows, the bottom is
+/// kept: rows arriving, cells taking their measured height, the keyboard
+/// or a card changing the space, all land with the newest row in view and
+/// nothing to catch up on a frame later. In history, the row at the top of
+/// the reader's view is kept where it is on screen: cells above it taking
+/// their measured height move it within the rows, and the list scrolls by
+/// as much in the same pass.
 ///
 /// The rows' heights are the leaf's own (`FeedLayout`), not UIKit's
 /// self-sizing: that measured on demand from estimates, kept what it
@@ -151,8 +151,6 @@ final class FeedView: UICollectionView {
     /// each layout rather than handed down through SwiftUI, which would
     /// arrive a turn after a drag left the bottom and pin it again meanwhile.
     var following: () -> Bool = { false }
-    /// The animated scroll to the newest row lands there itself.
-    var animatingToNewest = false
     /// The list is moving itself to the bottom: not the reader.
     private(set) var pinning = false
     /// The reader's row before the cells are placed, and putting it back.
@@ -174,13 +172,13 @@ final class FeedView: UICollectionView {
 
     /// The bottom is set before the cells are placed, so the rows at the
     /// top are never displayed on the way to the bottom and never taken
-    /// for the reader reaching them. Nobody moving the list means not a
-    /// finger, not a deceleration, not the animated scroll.
+    /// for the reader reaching them. A reader moving the list is not
+    /// pulled down meanwhile; the pass after they let go is.
     override func layoutSubviews() {
         var held: FeedCoordinator.Held?
         if following() {
             carried = nil
-            if !isTracking, !isDragging, !isDecelerating, !animatingToNewest {
+            if !readerMoving {
                 let bottom = bottomOffset
                 if abs(contentOffset.y - bottom) > 0.5 {
                     pinning = true
@@ -213,9 +211,22 @@ final class FeedView: UICollectionView {
         return max(-inset.top, height + inset.bottom - bounds.height)
     }
 
+    /// How far above the bottom the reader is, in points.
+    var aboveBottom: CGFloat {
+        bottomOffset - contentOffset.y
+    }
+
     /// Whether the bottom is within a thumb's slack of the view.
     var atBottom: Bool {
-        contentOffset.y >= bottomOffset - 24
+        aboveBottom <= 24
+    }
+
+    /// A finger on the list, or the list still moving from one. Read from
+    /// the scroll view itself each time, never kept from its callbacks:
+    /// UIKit skips the one that ends a movement whenever something else
+    /// stops it, and a flag waiting for it stays set.
+    var readerMoving: Bool {
+        isTracking || isDragging || isDecelerating
     }
 }
 
@@ -355,12 +366,6 @@ final class FeedCoordinator: NSObject, UICollectionViewDelegate {
     /// reaches it as it reaches the cells.
     private let measurer = UIHostingController<AnyView>(rootView: AnyView(EmptyView()))
     private var measurements = 0
-    /// The reader has a finger on the list or it is still moving from one.
-    private var userScrolling = false
-    /// Whether the bottom was in view at the last scroll: only its coming
-    /// into view follows again, so a chat that fits on screen, always at
-    /// its bottom, is not followed again by every move of the list.
-    private var wasAtBottom = true
     /// The list is being moved by this code, not by the reader.
     private var moving = false
     /// What each cell on screen declared, with the cell, whose place in the
@@ -474,14 +479,23 @@ final class FeedCoordinator: NSObject, UICollectionViewDelegate {
         environment: CellEnvironment, revision: Int, toNewest: Int, insets: EdgeInsets
     ) {
         if self.insets != insets {
+            let grown = insets.bottom - (self.insets?.bottom ?? insets.bottom)
             self.insets = insets
             moving = true
             view.contentInset = UIEdgeInsets(
                 top: insets.top + 8, left: 0, bottom: insets.bottom, right: 0)
+            // The keyboard, a notice or a taller card changing the space under
+            // the rows. A reader following the newest row keeps it above
+            // them, which the next layout pass does. A reader in history keeps
+            // their distance from the bottom, as the rows they were reading
+            // are lifted with the composer rather than covered by it; not
+            // under a finger, which the rows stay with.
+            if !model.following, grown != 0, !view.isTracking {
+                view.carried = nil
+                let top = -view.adjustedContentInset.top
+                view.contentOffset.y = max(top, min(view.contentOffset.y + grown, view.bottomOffset))
+            }
             moving = false
-            // The keyboard, a notice or a taller card growing the space under
-            // the rows: a reader following the newest row keeps it above
-            // them, which the next layout pass does.
             if model.following { view.setNeedsLayout() }
         }
         var reconfigure: [ListItem] = []
@@ -623,56 +637,54 @@ final class FeedCoordinator: NSObject, UICollectionViewDelegate {
         moving = false
     }
 
+    /// A send, a reset or the reader asking: the model follows again, and
+    /// the list is at the bottom now, from the middle of a flick too. Going
+    /// there is the same move that keeps the bottom, so asking while
+    /// already there is nothing.
     private func scrollToNewest() {
-        guard let last = items.last, let path = dataSource.indexPath(for: last) else { return }
-        let animated = !environment.photographed && !environment.reducesMotion
-        if animated {
-            view.animatingToNewest = true
-            view.scrollToItem(at: path, at: .bottom, animated: true)
-        } else {
-            view.layoutIfNeeded()
-            move(to: view.bottomOffset)
-        }
+        view.layoutIfNeeded()
+        move(to: view.bottomOffset)
     }
 
     // MARK: - Where the reader is
 
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        userScrolling = true
-    }
-
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         // A scroll is followed by a layout pass, which publishes the moved
-        // frames. A move the list made itself (the bottom kept, an inset
-        // changing) says nothing about where the reader wants to be.
+        // frames. A move the list made itself (the bottom kept, a place
+        // held, an inset changing) says nothing about where the reader
+        // wants to be.
         stale = true
         guard !moving, !view.pinning else { return }
-        let atBottom = view.atBottom
-        defer { wasAtBottom = atBottom }
-        if userScrolling {
-            // A reader dragging away from the newest row stops following
-            // at once, so rows arriving meanwhile are held, not drawn.
-            if !atBottom { model.reading(atNewest: false) }
-        } else if atBottom, !wasAtBottom {
+        // The reader bringing the bottom within a thumb's slack follows
+        // again at once, mid-flick too: by the time they get there, not once
+        // the list comes to rest. Any other move follows only by landing on
+        // the bottom itself, as UIKit does when the rows under a reader
+        // shrink; an animation leaving it, the status bar's to the top,
+        // passes through the slack first.
+        if view.readerMoving ? view.atBottom : view.aboveBottom <= 0.5 {
             model.reading(atNewest: true)
+        } else if view.readerMoving {
+            // Only the reader leaves the bottom: rows arriving meanwhile
+            // are held, not drawn.
+            model.reading(atNewest: false)
         }
     }
 
+    /// A tap on the status bar is the reader leaving the bottom too, by an
+    /// animation rather than a finger, which the bottom would otherwise be
+    /// kept against.
+    func scrollViewShouldScrollToTop(_ scrollView: UIScrollView) -> Bool {
+        model.reading(atNewest: false)
+        return true
+    }
+
+    /// The list at rest again: rows that arrived while the reader moved
+    /// it are placed, the bottom kept if they follow.
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate: Bool) {
-        if !willDecelerate { cameToRest() }
+        if !willDecelerate { view.setNeedsLayout() }
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        cameToRest()
-    }
-
-    private func cameToRest() {
-        userScrolling = false
-        model.reading(atNewest: view.atBottom)
-    }
-
-    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
-        view.animatingToNewest = false
         view.setNeedsLayout()
     }
 

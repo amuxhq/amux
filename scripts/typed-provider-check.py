@@ -35,6 +35,7 @@ SOURCES = [
     "crates/interpret/src/claude_sdk",
     "crates/interpret/src/claude_pty",
     "crates/interpret/src/claude_common.rs",
+    "crates/interpret/src/claude_answers.rs",
     "crates/agent/src/provider.rs",
     "crates/claude/src/messaging.rs",
 ]
@@ -96,9 +97,9 @@ EXEMPTIONS = [
         "a task tool's input, kept as text on its call, read back for the task list",
     ),
     Exemption(
-        "crates/interpret/src/claude_sdk/mod.rs",
-        "sdk_answer",
-        r"from_str::<Value>\(&meta\.input\)|Value::Object\(input\)",
+        "crates/interpret/src/claude_answers.rs",
+        "decide",
+        r"from_str::<Value>\(input\)|Value::Object\(input\)",
         "AskUserQuestion's input is handed back to the tool with the answers added",
     ),
     Exemption(
@@ -108,8 +109,8 @@ EXEMPTIONS = [
         "ExitPlanMode's input is handed back to the tool unchanged when the plan is approved",
     ),
     Exemption(
-        "crates/interpret/src/claude_sdk/mod.rs",
-        "sdk_answer",
+        "crates/interpret/src/claude_answers.rs",
+        "decide",
         r"Value::Object\(serde_json::Map::new\(\)\)",
         "a tool server's form content is whatever its schema asks for",
     ),
@@ -142,6 +143,12 @@ EXEMPTIONS = [
         "read",
         r"from_str::<serde_json::Value>\(written\)",
         "a recorded line becomes the fact's payload as written; it is decoded through the types beside it",
+    ),
+    Exemption(
+        "crates/interpret/src/claude_pty/mod.rs",
+        "bind_asks_for",
+        r"from_str::<Value>\(&meta\.input\)",
+        "a tool's input, kept as text on its ask, compared with the call's to bind them",
     ),
     Exemption(
         "crates/interpret/src/claude_pty/recording.rs",

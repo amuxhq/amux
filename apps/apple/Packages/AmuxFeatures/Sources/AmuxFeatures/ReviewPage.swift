@@ -22,7 +22,6 @@ public enum ReviewAction: Equatable, Sendable {
 /// it was written against.
 public struct ReviewPage: View {
     @Environment(\.design) private var design
-    @Environment(\.reducesTransparency) private var reducesTransparency
     let model: ReviewModel
     /// What the changes are counted against, as the overview words it:
     /// "Uncommitted", "vs main".
@@ -105,16 +104,13 @@ public struct ReviewPage: View {
         ToolbarItem(placement: .topBarLeading) {
             BarBack(identifier: "review.back") { actions(.back) }
         }
-        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
         ToolbarSpacer(.fixed, placement: .topBarLeading)
         ToolbarItem(placement: .topBarLeading) {
             title
         }
-        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
         ToolbarItem(placement: .topBarTrailing) {
             files
         }
-        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
     }
 
     /// "Review" over "+7 −4 · Uncommitted"; the files are counted in the
@@ -148,7 +144,6 @@ public struct ReviewPage: View {
             .padding(.horizontal, Space.m)
             .frame(maxWidth: 220, alignment: .leading)
             .frame(height: 36)
-            .barItemSurface()
         }
         .accessibilityLabel(ChatWords.changes(
             files: model.doc.files.count, added: model.doc.added, removed: model.doc.removed))
@@ -173,7 +168,6 @@ public struct ReviewPage: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(design.ink.color)
                 .frame(width: 36, height: 36)
-                .barItemSurface()
         }
     }
 

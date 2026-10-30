@@ -391,7 +391,7 @@ public enum AskBody: Codable, Hashable, Sendable {
     /// The plan's title and body, as its row has them.
     case plan(body: String, title: String?)
     case form(server: String, message: String, fields: [FormField])
-    case link(server: String, message: String, url: String)
+    case link(server: String, message: String, url: String, localPage: Bool)
     case access(reason: String, read: [String], write: [String], network: Bool, hosts: [String])
     /// The provider asks something this build cannot read: the only ways out
     /// are Stop and attaching a terminal.
@@ -448,6 +448,7 @@ public enum AskBody: Codable, Hashable, Sendable {
         case server
         case message
         case url
+        case localPage = "local_page"
     }
 
     private enum AccessKeys: String, CodingKey {
@@ -519,7 +520,8 @@ public enum AskBody: Codable, Hashable, Sendable {
             self = .link(
                 server: try _fields.decode(String.self, forKey: .server),
                 message: try _fields.decode(String.self, forKey: .message),
-                url: try _fields.decode(String.self, forKey: .url))
+                url: try _fields.decode(String.self, forKey: .url),
+                localPage: try _fields.decode(Bool.self, forKey: .localPage))
         case .access:
             let _fields = try _container.nestedContainer(
                 keyedBy: AccessKeys.self, forKey: .access)
@@ -577,12 +579,13 @@ public enum AskBody: Codable, Hashable, Sendable {
             try _fields.encode(server, forKey: .server)
             try _fields.encode(message, forKey: .message)
             try _fields.encode(fields, forKey: .fields)
-        case .link(let server, let message, let url):
+        case .link(let server, let message, let url, let localPage):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: LinkKeys.self, forKey: .link)
             try _fields.encode(server, forKey: .server)
             try _fields.encode(message, forKey: .message)
             try _fields.encode(url, forKey: .url)
+            try _fields.encode(localPage, forKey: .localPage)
         case .access(let reason, let read, let write, let network, let hosts):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: AccessKeys.self, forKey: .access)
@@ -612,13 +615,11 @@ public struct AskCard: Codable, Hashable, Sendable {
     public var body: AskBody
     /// The likely choice first. Only what this agent offers.
     public var choices: [Choice]
-    /// A note may go out with each question's answer. Terminal Claude has
-    /// no place to type one, so it takes none.
+    /// A note may go out with each question's answer. Not for the
+    /// provider's own dialogs, answered on its screen.
     public var questionNote: Bool
-    /// A question may be left unanswered. Terminal Claude's form takes one
-    /// only when it asks several questions: it then ends in Claude's review
-    /// screen, which submits with some unanswered, while a lone question is
-    /// submitted by answering it.
+    /// A question may be left unanswered. Not for the provider's own
+    /// dialogs either.
     public var questionSkip: Bool
     /// The person may reply in their own words instead of answering the
     /// questions. Not for the provider's own dialogs, outside any turn.
@@ -3224,7 +3225,7 @@ public struct FleetView: Codable, Hashable, Sendable {
     /// Agents across the whole fleet that need the person, and that are
     /// working or starting: counted by agent, not by family, whatever is
     /// folded or filtered out of the sections. An agent whose host is out
-    /// of reach is not counted: its row says only that.
+    /// of reach is not counted: its row is only as it last said.
     public var needYou: UInt32
     public var working: UInt32
 
@@ -5923,8 +5924,6 @@ public enum SecondLine: Codable, Hashable, Sendable {
     /// Idle, and cannot go on until the person acts.
     case stuck(StuckReason)
     case exited(ExitCause)
-    /// The agent's host is out of reach; the agent is only as it last said.
-    case hostAway
     /// The agent's host no longer trusts this machine: it will not come
     /// back on its own, only by pairing again. The agent is only as it last
     /// said.
@@ -5945,7 +5944,6 @@ public enum SecondLine: Codable, Hashable, Sendable {
            let _name = try? _single.decode(String.self)
         {
             switch _name {
-            case "HostAway": self = .hostAway
             case "HostRevoked": self = .hostRevoked
             case "Blank": self = .blank
             default:
@@ -5992,9 +5990,6 @@ public enum SecondLine: Codable, Hashable, Sendable {
         case .exited(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .exited)
-        case .hostAway:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("HostAway")
         case .hostRevoked:
             var _container = encoder.singleValueContainer()
             try _container.encode("HostRevoked")

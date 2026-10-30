@@ -23,16 +23,16 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 14 input {"id":"p2","prompt":{"text":"Sign in to the tracker."}}
   composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 50], text: [Text("Sign in to the tracker.")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
-## 16 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"Notification","message":"Claude Code needs your input","notification_type":"elicitation_dialog","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl"}}
-  row    5 ask:ask:1 Ask(Unanswerable { reason: "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.", resolution: Open }) attention
+## 16 fact {"channel":"hook","json":{"amux_reply":101,"cwd":"/w","hook_event_name":"Elicitation","mcp_server_name":"tracker","message":"tracker needs your input","mode":"form","permission_mode":"default","requested_schema":{"properties":{"repo":{"type":"string"}},"required":["repo"],"type":"object"},"session_id":"s1","transcript_path":"/t/s1.jsonl"}}
+  row    5 ask:ask:1 Ask(Form { server: "tracker", message: "tracker needs your input", fields: [], resolution: Open }) attention
   ask ask:1 -> "ask:ask:1" 1/1 Open
-    choices 
-    body Unanswerable { reason: "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent." }
+    choices Submit*, Decline
+    body Form { server: "tracker", message: "tracker needs your input", fields: [FormField { name: "repo", title: "repo", description: "", required: true, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
 ## 17 fact {"channel":"transcript","json":{"message":{"content":"Sign in to the tracker.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:05.500Z","type":"user","uuid":"u2"}}
   row    6 u2 Prompt { text: [Text("Sign in to the tracker.")], steered: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 18 input {"id":"i1","interrupt":{}}
-  row    5 ask:ask:1 Ask(Unanswerable { reason: "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.", resolution: Cancelled })
+  row    5 ask:ask:1 Ask(Form { server: "tracker", message: "tracker needs your input", fields: [], resolution: Cancelled })
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 19 fact {"channel":"transcript","json":{"message":{"content":"[Request interrupted by user]","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:06.100Z","type":"user","uuid":"u3"}}
@@ -59,7 +59,7 @@
      2 u1 Prompt { text: [Text("Check the deployment once.")], steered: false }
      3 t1 Command { command: "deploy --check", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(800) } run[t1..t1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
      4 turn:1 TurnEnd { duration_ms: Some(2090), failed: false }
-     5 ask:ask:1 Ask(Unanswerable { reason: "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.", resolution: Cancelled })
+     5 ask:ask:1 Ask(Form { server: "tracker", message: "tracker needs your input", fields: [], resolution: Cancelled })
      6 u2 Prompt { text: [Text("Sign in to the tracker.")], steered: false }
      7 u3 Hidden collapsed
      8 turn:2 Stopped

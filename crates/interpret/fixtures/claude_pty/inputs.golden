@@ -6,7 +6,7 @@ snapshot STARTING queue=[p1] working_on=- at=1800000000000 asks=[] session=? mod
 ## 2 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
 effect follow "/t/s1.jsonl"
 effect terminal prompt "first"
-item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=s1 version=- keymap=-
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=s1 version=-
 snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 3 fact {"channel":"transcript","json":{"message":{"content":"first","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
 item u1 prompt final input=p1 at=1800000000010 text="first"
@@ -40,7 +40,7 @@ effect terminal prompt "/compact"
 item u3 slash final input=p3 at=1800000000030 text="" /compact args=""
 snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=acceptEdits context=? tasks=? background=?
 ## 13 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"compact","transcript_path":"/t/s1.jsonl"}}
-item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_COMPACTED session=s1 version=- keymap=-
+item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_COMPACTED session=s1 version=-
 snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=acceptEdits context=? tasks=? background=?
 ## 14 fact {"channel":"transcript","json":{"message":{"content":"<local-command-stdout>Compacted</local-command-stdout>","role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.040Z","type":"user","uuid":"u4"}}
 item u3 slash final input=p3 at=1800000000030 text="Compacted" /compact args=""

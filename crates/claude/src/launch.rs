@@ -59,9 +59,6 @@ pub struct McpServerConfig {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ManagedSettings {
     pub hook_command: Vec<String>,
-    /// The hook events the command is registered for; a default set when
-    /// empty.
-    pub hook_events: Vec<String>,
     pub mcp_servers: Vec<McpServerConfig>,
     pub permissions_allow: Vec<String>,
     /// Let messages from other sessions on the messaging socket through at
@@ -116,10 +113,7 @@ pub fn load_user_settings(cwd: &Path, sources: &[String]) -> Result<Option<Value
 pub fn merged_settings(user: Option<Value>, managed: &ManagedSettings) -> MergedSettings {
     let mut merged = user.unwrap_or_else(|| Value::Object(serde_json::Map::new()));
     if !managed.hook_command.is_empty() {
-        deep_merge(
-            &mut merged,
-            managed_hook_settings(&managed.hook_command, &managed.hook_events),
-        );
+        deep_merge(&mut merged, managed_hook_settings(&managed.hook_command));
     }
     if !managed.mcp_servers.is_empty() {
         let servers = managed
@@ -264,40 +258,47 @@ fn deep_merge(destination: &mut Value, addition: Value) {
     }
 }
 
-/// The hook events registered when a caller names none.
-const DEFAULT_HOOK_EVENTS: &[&str] = &[
+/// The hook events terminal Claude reports to the agent. MessageDisplay
+/// streams the reply as Claude draws it; PermissionRequest and Elicitation
+/// are answered (see [`crate::hooks::ANSWERED_EVENTS`]).
+pub const HOOK_EVENTS: &[&str] = &[
     "SessionStart",
     "SessionEnd",
+    "UserPromptSubmit",
     "PermissionRequest",
+    "PermissionDenied",
     "PreToolUse",
     "PostToolUse",
+    "PostToolUseFailure",
     "Stop",
-    "Notification",
+    "SubagentStop",
+    "Elicitation",
+    "MessageDisplay",
+    "PostModelSwitch",
 ];
 
-fn managed_hook_settings(command: &[String], events: &[String]) -> Value {
-    let command = command
+/// How long Claude waits on a hook amux answers before giving up on it
+/// and leaving the question to its own dialog: a week, so an ask left
+/// overnight can still be answered from any client.
+const ANSWER_TIMEOUT_SECS: u64 = 7 * 24 * 60 * 60;
+
+/// The command runs as given, with no shell between Claude and it.
+fn managed_hook_settings(command: &[String]) -> Value {
+    let (program, args) = command.split_first().expect("a hook command");
+    let hooks: serde_json::Map<String, Value> = HOOK_EVENTS
         .iter()
-        .map(|part| shell_words::quote(part))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let registration = || {
-        serde_json::json!([{"hooks": [{
-            "type": "command",
-            "command": command
-        }]}])
-    };
-    let hooks: serde_json::Map<String, Value> = if events.is_empty() {
-        DEFAULT_HOOK_EVENTS
-            .iter()
-            .map(|event| ((*event).to_owned(), registration()))
-            .collect()
-    } else {
-        events
-            .iter()
-            .map(|event| (event.clone(), registration()))
-            .collect()
-    };
+        .map(|event| {
+            let mut hook = serde_json::json!({
+                "type": "command",
+                "command": program,
+                "args": args,
+            });
+            if crate::hooks::ANSWERED_EVENTS.contains(event) {
+                hook["timeout"] = ANSWER_TIMEOUT_SECS.into();
+            }
+            ((*event).to_owned(), serde_json::json!([{"hooks": [hook]}]))
+        })
+        .collect();
     serde_json::json!({ "hooks": hooks })
 }
 
@@ -324,16 +325,19 @@ mod tests {
             }],
             permissions_allow: vec!["Read(/managed/artifacts/**)".into()],
             accept_cross_session: true,
-            ..Default::default()
         };
         let settings = merged_settings(Some(user), &managed).into_value();
         assert_eq!(settings["theme"], "dark");
         assert_eq!(settings["crossSessionInbound"], "accept");
         assert_eq!(settings["mcpServers"]["amux"]["command"], "/bin/amux");
         assert_eq!(settings["hooks"]["Stop"].as_array().unwrap().len(), 2);
+        let start = &settings["hooks"]["SessionStart"][0]["hooks"][0];
+        assert_eq!(start["command"], "/Applications/amux tool");
+        assert_eq!(start["args"], serde_json::json!(["hooks", "claude"]));
+        assert!(start.get("timeout").is_none());
         assert_eq!(
-            settings["hooks"]["SessionStart"][0]["hooks"][0]["command"],
-            "'/Applications/amux tool' hooks claude"
+            settings["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"],
+            ANSWER_TIMEOUT_SECS
         );
         assert!(settings["hooks"]["PreToolUse"].is_array());
         assert!(settings["hooks"]["PostToolUse"].is_array());

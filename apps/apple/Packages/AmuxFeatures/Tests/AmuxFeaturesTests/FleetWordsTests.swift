@@ -76,7 +76,6 @@ final class FleetWordsTests: XCTestCase {
     func testWhatTheStateWordAlreadySaysIsNotSaidAgain() {
         XCTAssertNil(said(.exited(.finished)))
         XCTAssertNil(said(.exited(.ended)))
-        XCTAssertNil(said(.hostAway))
         XCTAssertNil(said(.blank))
         XCTAssertNil(said(.lastSaid("")))
         let failed = FleetWords.secondLine(.exited(.failed("code 1")), kind: .codex, now: now)

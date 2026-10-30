@@ -2,24 +2,26 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 10 recorded 8: fact Transcript type=user uuid=66d78e2f-df01-44d6-aa07-59fb3c141ce7
-  row    2 66d78e2f-df01-44d6-aa07-59fb3c141ce7 Prompt { text: [Text("Reply exactly PTY_SPEC_PROMPT_OK and nothing else.")], steered: false }
+## 13 recorded 11: fact Transcript type=user uuid=3f63746e-8a40-4bc4-ae6c-20d544aee4f5
+  row    2 3f63746e-8a40-4bc4-ae6c-20d544aee4f5 Prompt { text: [Text("Reply exactly PTY_SPEC_PROMPT_OK and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 22 recorded 20: fact Transcript type=assistant uuid=dbaffd9d-6b72-4d5f-a3ff-e37a673c448f
-  row    3 dbaffd9d-6b72-4d5f-a3ff-e37a673c448f Thinking { text: "", open: false, duration_ms: Some(1213) }
-## 24 recorded 22: fact Transcript type=assistant uuid=2d999060-1734-4832-8136-8e519f159482
-  row    4 2d999060-1734-4832-8136-8e519f159482 Prose { text: [Text("PTY_SPEC_PROMPT_OK")], streaming: false, working_note: false }
-## 26 recorded 24: fact Transcript type=system subtype=turn_duration uuid=4330a98c-55bf-4741-976c-d3364d43101b
-  row    5 turn:1 TurnEnd { duration_ms: Some(1292), failed: false }
+## 35 recorded 33: fact Hook hook_event_name=MessageDisplay
+  row    3 stream:8ef7f140-6579-4247-b806-fa67426a6ec2 Prose { text: [Text("PTY_SPEC_PROMPT_OK")], streaming: true, working_note: false }
+## 39 recorded 37: fact Transcript type=assistant uuid=6cb0cd6f-dd8d-4bbc-a193-910bfe1f803c
+  row    4 6cb0cd6f-dd8d-4bbc-a193-910bfe1f803c Thinking { text: "", open: false, duration_ms: Some(184) }
+## 40 recorded 38: fact Transcript type=assistant uuid=a34018f9-3024-4961-88fa-a74a7e4f9024
+  row    3 stream:8ef7f140-6579-4247-b806-fa67426a6ec2 Prose { text: [Text("PTY_SPEC_PROMPT_OK")], streaming: false, working_note: false }
+## 44 recorded 42: fact Transcript type=system subtype=turn_duration uuid=be1ad089-789e-449a-81c5-021d9a05da01
+  row    5 turn:1 TurnEnd { duration_ms: Some(1423), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 66d78e2f-df01-44d6-aa07-59fb3c141ce7 Prompt { text: [Text("Reply exactly PTY_SPEC_PROMPT_OK and nothing else.")], steered: false }
-     3 dbaffd9d-6b72-4d5f-a3ff-e37a673c448f Thinking { text: "", open: false, duration_ms: Some(1213) }
-     4 2d999060-1734-4832-8136-8e519f159482 Prose { text: [Text("PTY_SPEC_PROMPT_OK")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(1292), failed: false }
+     2 3f63746e-8a40-4bc4-ae6c-20d544aee4f5 Prompt { text: [Text("Reply exactly PTY_SPEC_PROMPT_OK and nothing else.")], steered: false }
+     3 stream:8ef7f140-6579-4247-b806-fa67426a6ec2 Prose { text: [Text("PTY_SPEC_PROMPT_OK")], streaming: false, working_note: false }
+     4 6cb0cd6f-dd8d-4bbc-a193-910bfe1f803c Thinking { text: "", open: false, duration_ms: None }
+     5 turn:1 TurnEnd { duration_ms: Some(1423), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 34310, window_tokens: None, percent: None, near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 34724, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings
   model* unlisted claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
   permission* "default" "Ask" normal unsettable

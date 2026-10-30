@@ -18,7 +18,7 @@
 - [Provider crates](PROVIDER_CRATES.md) — each provider's protocol, host and client layers, who uses each, and
   the checks that hold them to the recordings.
 - [Interpreters](INTERPRETERS.md) — how terminal Claude, headless Claude and Codex output becomes chat items:
-  the step rule, checkpoints, redaction, keymaps, provider crates, recordings and the coverage test.
+  the step rule, checkpoints, redaction, provider crates, recordings and the coverage test.
 - [Journal and store](JOURNAL_AND_STORE.md) — journal segments, commit and revisions, durability, ingest, the
   store schema, own and replica rows, retention and disk-full.
 - [The wire](WIRE.md) — the amux.v1 service: subscriptions, items and appends, inputs and the queue, blobs,

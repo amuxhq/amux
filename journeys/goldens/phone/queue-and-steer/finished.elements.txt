@@ -14,10 +14,10 @@ chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
-chat.title | worker | worker | 96,66,160,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
+chat.title | worker | worker | 80,66,152,36
  | Attach |  | 23,779,44,44
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
@@ -28,7 +28,7 @@ chat.title | worker | worker | 96,66,160,36
  | 1 command |  | 16,229,370,44
  | Also log the peak., steered |  | 16,275,370,62
  | The run finished. |  | 16,349,370,20
- | Worked <t> |  | 16,377,74,16
- | Back |  | 20,66,56,36
- | worker, /t/a/n/d/work · desk |  | 96,66,160,36
- | More |  | 342,66,36,36
+ | Worked <t> |  | 16,377,62,16
+ | Back |  | 20,66,40,36
+ | worker, /t/a/n/d/work · desk |  | 80,66,152,36
+ | More |  | 350,66,28,36

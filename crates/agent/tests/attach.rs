@@ -115,6 +115,63 @@ fn two_clients_read_terminal_claude_from_its_files_and_type_into_it() {
     });
 }
 
+/// The interpreter hears when the first client shows Claude's terminal
+/// and when the last stops, by leaving or by going to its fleet: Claude draws a tool server's form
+/// only once its hook returns, so amux lets go of that hook for whoever
+/// is watching.
+#[test]
+fn the_interpreter_hears_when_the_first_client_shows_claudes_terminal_and_the_last_stops() {
+    terminal_test(async {
+        let agent = Agent::start(Setup {
+            kind: Kind::ClaudePty,
+            ..Setup::sdk()
+        })
+        .await;
+        let _daemon = agent.dial().await;
+        agent.ready().await;
+        let watched = |agent: &Agent| -> Vec<bool> {
+            agent
+                .facts()
+                .iter()
+                .filter(|entry| entry["channel"] == "agent")
+                .filter_map(|entry| entry["text"].as_str())
+                .filter_map(|text| serde_json::from_str::<serde_json::Value>(text).ok())
+                .filter(|fact| fact["type"] == "watched")
+                .filter_map(|fact| fact["watched"].as_bool())
+                .collect()
+        };
+        let until = |want: &'static [bool]| {
+            let agent = &agent;
+            async move {
+                let waited = tokio::time::timeout(PATIENCE, async {
+                    while watched(agent) != want {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await;
+                assert!(
+                    waited.is_ok(),
+                    "watched facts {:?}, not {want:?}",
+                    watched(agent)
+                );
+            }
+        };
+
+        let mut first = Screen::attach(&agent).await;
+        let second = Screen::attach(&agent).await;
+        until(&[true]).await;
+        drop(second);
+        // A client that goes to its fleet keeps its connection but no
+        // longer shows Claude's screen.
+        first.attached.shown(false).await.unwrap();
+        until(&[true, false]).await;
+        first.attached.shown(true).await.unwrap();
+        until(&[true, false, true]).await;
+        drop(first);
+        until(&[true, false, true, false]).await;
+    });
+}
+
 /// `/clear` typed at terminal Claude starts a new session: the next
 /// incarnation resumes that one, not the conversation the clear left.
 #[test]

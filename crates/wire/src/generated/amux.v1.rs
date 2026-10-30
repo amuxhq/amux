@@ -1898,9 +1898,6 @@ pub struct Boundary {
     pub cause: i32,
     #[prost(string, optional, tag = "5")]
     pub cause_detail: ::core::option::Option<::prost::alloc::string::String>,
-    /// The keymap the agent process resolved for the observed provider version.
-    #[prost(string, tag = "6")]
-    pub keymap: ::prost::alloc::string::String,
 }
 impl ::prost::Name for Boundary {
     const NAME: &'static str = "Boundary";
@@ -14157,7 +14154,7 @@ impl ::prost::Name for Verdict {
 /// the view ended (the agent exited, or a Codex view's process did).
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PtyFrame {
-    #[prost(oneof = "pty_frame::Of", tags = "1, 2, 3, 4, 5, 6")]
+    #[prost(oneof = "pty_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7")]
     pub of: ::core::option::Option<pty_frame::Of>,
 }
 /// Nested message and enum types in `PtyFrame`.
@@ -14183,6 +14180,12 @@ pub mod pty_frame {
         /// Agent to client, last frame: why the connection ends.
         #[prost(string, tag = "6")]
         Closed(::prost::alloc::string::String),
+        /// Client to agent: whether this client's terminal shows the agent's
+        /// screen now. A client shows it from the hello until it says false, as
+        /// a terminal client does when it leaves the screen for its fleet with
+        /// the connection kept, and true again when it comes back.
+        #[prost(bool, tag = "7")]
+        Shown(bool),
     }
 }
 impl ::prost::Name for PtyFrame {

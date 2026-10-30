@@ -19,7 +19,7 @@ final class RoundingImageDiffTests: XCTestCase {
 
     func testRoundingEverywhereSpendsNoneOfTheAllowance() throws {
         let reference = try image(flat(pixels: 200))
-        let actual = try image(flat(pixels: 200, moving: 200, by: 1))
+        let actual = try image(flat(pixels: 200, moving: 200, by: UInt8(RoundingImageDiff.rounding)))
         XCTAssertEqual(RoundingImageDiff.measure(reference, actual), .init(pixels: 0, largest: 0))
         XCTAssertNil(diffing.diffV2(reference, actual))
     }
@@ -37,7 +37,8 @@ final class RoundingImageDiffTests: XCTestCase {
 
     func testOnePixelMoreThanTheAllowanceFails() throws {
         let reference = try image(flat(pixels: 200))
-        let actual = try image(flat(pixels: 200, moving: RoundingImageDiff.strayPixels + 1, by: 2))
+        let actual = try image(flat(
+            pixels: 200, moving: RoundingImageDiff.strayPixels + 1, by: UInt8(RoundingImageDiff.rounding) + 1))
         XCTAssertNotNil(diffing.diffV2(reference, actual))
     }
 

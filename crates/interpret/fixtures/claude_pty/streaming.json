@@ -1,0 +1,613 @@
+{
+  "about": "Terminal Claude draws a reply as it writes it and hands each batch of finished lines to the MessageDisplay hook. The first batch opens the reply as a message still being written, later ones extend it, and the transcript row the reply becomes takes it over, whole. Claude writes rows in the order it draws replies, so a row whose reply was not drawn yet lands under its own key and that reply's late batch draws nothing. A reply cut short ends as it was drawn. A batch for a prompt whose turn ended draws nothing, even once the next prompt began its turn.",
+  "spec": {
+    "created_at_ms": 1800000000000
+  },
+  "events": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch",
+          "version": "2.1.312"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "SessionStart",
+          "source": "startup",
+          "model": "claude-opus-5-5"
+        }
+      }
+    },
+    {
+      "tick": 1800000000010
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "sessionId": "s1",
+          "type": "user",
+          "uuid": "u1",
+          "timestamp": "2027-01-15T08:00:01.000Z",
+          "origin": {
+            "kind": "human"
+          },
+          "promptSource": "typed",
+          "message": {
+            "role": "user",
+            "content": "write a short poem, then list the files"
+          },
+          "promptId": "q1"
+        }
+      }
+    },
+    {
+      "tick": 1800000000100
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "MessageDisplay",
+          "turn_id": "turn1",
+          "message_id": "d-a",
+          "index": 0,
+          "final": false,
+          "delta": "The river carries the sky,\n",
+          "prompt_id": "q1"
+        }
+      },
+      "expect": {
+        "items": [
+          "stream:d-a"
+        ],
+        "phase": "WORKING"
+      },
+      "note": "the first batch of a reply opens it, still being written"
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "MessageDisplay",
+          "turn_id": "turn1",
+          "message_id": "d-a",
+          "index": 1,
+          "final": false,
+          "delta": "and the stones hum along.\n",
+          "prompt_id": "q1"
+        }
+      },
+      "expect": {
+        "items": []
+      },
+      "note": "later batches append to it"
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "MessageDisplay",
+          "turn_id": "turn1",
+          "message_id": "d-a",
+          "index": 2,
+          "final": true,
+          "delta": "The sea waits.",
+          "prompt_id": "q1"
+        }
+      },
+      "expect": {
+        "items": []
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "sessionId": "s1",
+          "type": "assistant",
+          "uuid": "a1",
+          "timestamp": "2027-01-15T08:00:02.000Z",
+          "message": {
+            "id": "m1",
+            "role": "assistant",
+            "model": "claude-opus-5-5",
+            "content": [
+              {
+                "type": "text",
+                "text": "The river carries the sky,\nand the stones hum along.\nThe sea waits."
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "items": [
+          "stream:d-a"
+        ]
+      },
+      "note": "the row takes over the drawn reply, whole"
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "PreToolUse",
+          "tool_use_id": "t1",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          },
+          "prompt_id": "q1"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "sessionId": "s1",
+          "type": "assistant",
+          "uuid": "a2",
+          "timestamp": "2027-01-15T08:00:03.000Z",
+          "message": {
+            "id": "m2",
+            "role": "assistant",
+            "model": "claude-opus-5-5",
+            "content": [
+              {
+                "type": "text",
+                "text": "Listing them now."
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "items": [
+          "a2"
+        ]
+      },
+      "note": "a row whose reply was not drawn yet lands under its own key"
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "MessageDisplay",
+          "turn_id": "turn1",
+          "message_id": "d-b",
+          "index": 0,
+          "final": true,
+          "delta": "Listing them now.",
+          "prompt_id": "q1"
+        }
+      },
+      "expect": {
+        "items": []
+      },
+      "note": "its late batch draws nothing"
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "sessionId": "s1",
+          "type": "assistant",
+          "uuid": "a3",
+          "timestamp": "2027-01-15T08:00:03.000Z",
+          "message": {
+            "id": "m2",
+            "role": "assistant",
+            "model": "claude-opus-5-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "t1",
+                "name": "Bash",
+                "input": {
+                  "command": "ls"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "sessionId": "s1",
+          "type": "user",
+          "uuid": "r1",
+          "timestamp": "2027-01-15T08:00:04.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "t1",
+                "content": "a.txt",
+                "is_error": false
+              }
+            ]
+          },
+          "toolUseResult": {
+            "stdout": "a.txt",
+            "stderr": ""
+          },
+          "promptId": "q1"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "PostToolUse",
+          "tool_use_id": "t1",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          },
+          "tool_response": {
+            "stdout": "a.txt"
+          },
+          "duration_ms": 20,
+          "prompt_id": "q1"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "MessageDisplay",
+          "turn_id": "turn1",
+          "message_id": "d-c",
+          "index": 0,
+          "final": false,
+          "delta": "There is one file:\n",
+          "prompt_id": "q1"
+        }
+      },
+      "expect": {
+        "items": [
+          "stream:d-c"
+        ]
+      }
+    },
+    {
+      "input": {
+        "id": "i1",
+        "interrupt": {}
+      },
+      "expect": {
+        "reply": "accepted"
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "sessionId": "s1",
+          "type": "user",
+          "uuid": "u2",
+          "timestamp": "2027-01-15T08:00:05.000Z",
+          "origin": {
+            "kind": "human"
+          },
+          "promptSource": "typed",
+          "message": {
+            "role": "user",
+            "content": "[Request interrupted by user]"
+          },
+          "promptId": "q1"
+        }
+      },
+      "expect": {
+        "phase": "IDLE"
+      },
+      "note": "a reply cut short ends as it was drawn"
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "MessageDisplay",
+          "turn_id": "turn1",
+          "message_id": "d-c",
+          "index": 1,
+          "final": true,
+          "delta": "",
+          "prompt_id": "q1"
+        }
+      },
+      "expect": {
+        "items": [],
+        "phase": "IDLE"
+      },
+      "note": "the reply's last batch after its turn ended draws nothing and starts no turn"
+    },
+    {
+      "input": {
+        "id": "p2",
+        "prompt": {
+          "text": "carry on"
+        }
+      },
+      "expect": {
+        "reply": "accepted"
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "UserPromptSubmit",
+          "prompt_id": "q2",
+          "prompt": "carry on"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "sessionId": "s1",
+          "type": "user",
+          "uuid": "u3",
+          "timestamp": "2027-01-15T08:00:06.000Z",
+          "origin": {
+            "kind": "human"
+          },
+          "promptSource": "typed",
+          "message": {
+            "role": "user",
+            "content": "carry on"
+          },
+          "promptId": "q2"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "MessageDisplay",
+          "prompt_id": "q2",
+          "turn_id": "turn-q2",
+          "message_id": "d-d",
+          "index": 0,
+          "final": false,
+          "delta": "Second reply.\n"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "sessionId": "s1",
+          "type": "assistant",
+          "uuid": "a5",
+          "timestamp": "2027-01-15T08:00:07.000Z",
+          "message": {
+            "id": "m5",
+            "role": "assistant",
+            "model": "claude-opus-5-5",
+            "content": [
+              {
+                "type": "text",
+                "text": "Second reply."
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "items": [
+          "stream:d-d"
+        ]
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "sessionId": "s1",
+          "type": "system",
+          "uuid": "d2",
+          "timestamp": "2027-01-15T08:00:07.100Z",
+          "subtype": "turn_duration",
+          "durationMs": 1100
+        }
+      }
+    },
+    {
+      "input": {
+        "id": "p3",
+        "prompt": {
+          "text": "and again"
+        }
+      },
+      "expect": {
+        "reply": "accepted"
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "UserPromptSubmit",
+          "prompt_id": "q3",
+          "prompt": "and again"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "sessionId": "s1",
+          "type": "user",
+          "uuid": "u4",
+          "timestamp": "2027-01-15T08:00:08.000Z",
+          "origin": {
+            "kind": "human"
+          },
+          "promptSource": "typed",
+          "message": {
+            "role": "user",
+            "content": "and again"
+          },
+          "promptId": "q3"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "MessageDisplay",
+          "prompt_id": "q2",
+          "turn_id": "turn-q2",
+          "message_id": "d-d",
+          "index": 1,
+          "final": true,
+          "delta": ""
+        }
+      },
+      "expect": {
+        "items": []
+      },
+      "note": "a reply's last batch can come after the next prompt began its turn: it is matched to its prompt, whose turn is over, and draws nothing"
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "hook_event_name": "MessageDisplay",
+          "prompt_id": "q3",
+          "turn_id": "turn-q3",
+          "message_id": "d-e",
+          "index": 0,
+          "final": false,
+          "delta": "Third reply.\n"
+        }
+      },
+      "expect": {
+        "items": [
+          "stream:d-e"
+        ],
+        "phase": "WORKING"
+      },
+      "note": "the next prompt's reply streams as before"
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "sessionId": "s1",
+          "type": "assistant",
+          "uuid": "a6",
+          "timestamp": "2027-01-15T08:00:09.000Z",
+          "message": {
+            "id": "m6",
+            "role": "assistant",
+            "model": "claude-opus-5-5",
+            "content": [
+              {
+                "type": "text",
+                "text": "Third reply."
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "items": [
+          "stream:d-e"
+        ]
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "sessionId": "s1",
+          "type": "system",
+          "uuid": "d3",
+          "timestamp": "2027-01-15T08:00:09.100Z",
+          "subtype": "turn_duration",
+          "durationMs": 1000
+        }
+      },
+      "expect": {
+        "phase": "IDLE"
+      }
+    }
+  ]
+}

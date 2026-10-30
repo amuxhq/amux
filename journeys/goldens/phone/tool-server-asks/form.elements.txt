@@ -11,10 +11,10 @@ ask.field.team |  |  | 275,647,99,34
 ask.field.estimate |  |  | 28,716,346,42
 ask.submit | Submit |  | 28,770,169,44 (disabled)
 ask.choice.1 | Decline |  | 205,770,169,44
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
-chat.title | filer | filer | 96,66,160,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
+chat.title | filer | filer | 80,66,152,36
  | linear needs details |  | 62,487,145,20
  | More |  | 338,474,44,44
  | Linear needs a few details before it can create the issue. |  | 28,522,313,37
@@ -31,6 +31,6 @@ chat.title | filer | filer | 96,66,160,36
  | File the reconnect flake. |  | 16,158,370,40
  | 1 call |  | 16,198,370,44
  | linear needs details |  | 16,228,370,44
- | Back |  | 20,66,56,36
- | filer, /t/a/n/d/work · desk |  | 96,66,160,36
- | More |  | 342,66,36,36
+ | Back |  | 20,66,40,36
+ | filer, /t/a/n/d/work · desk |  | 80,66,152,36
+ | More |  | 350,66,28,36

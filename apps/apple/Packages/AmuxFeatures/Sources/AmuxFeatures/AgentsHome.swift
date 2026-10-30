@@ -53,7 +53,6 @@ public struct AgentsHome: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.photographed) private var photographed
     @Environment(\.reducesMotion) private var reducesMotion
-    @Environment(\.reducesTransparency) private var reducesTransparency
     @Environment(\.scenePhase) private var phase
     private let model: FleetStore
     private let accounts: AccountRegistry
@@ -77,12 +76,8 @@ public struct AgentsHome: View {
     /// the chip chosen under it.
     @State private var words = ""
     @State private var only: FleetOnly?
-    /// Whether the phone is still dialling its hosts after coming on screen.
-    /// A reopened app lists its hosts as it last saw them, every one
-    /// unreached, and reaches them a few hundred milliseconds later; saying
-    /// they are offline in between flashes a card that is gone before it can
-    /// be read.
-    @State private var dialling = true
+    /// The offer that has stood long enough to be made; see `offer`.
+    @State private var offered: Offer?
     @State private var discs = AccountDiscs()
 
     public init(
@@ -117,7 +112,8 @@ public struct AgentsHome: View {
                 // decides this: a phone that is signed out and paired with a
                 // machine on its own network has a fleet worth reading, and a
                 // phone that remembers agents it cannot refresh has one too.
-                // What it cannot do is said on the exceptions line.
+                // A machine it cannot reach is marked on its rows, and an
+                // account that would reach it is offered above them.
                 //
                 // Without agents, what is worth saying depends on whether this
                 // phone has a machine at all. One that has paired is not a
@@ -152,33 +148,24 @@ public struct AgentsHome: View {
             ToolbarItem(placement: .topBarLeading) {
                 accountMenu
             }
-            // The bar's own glass, as under the + across from it; with less
-            // transparency asked for, the item draws its own surface.
-            .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
             if canStartAnAgent {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { actions(.newAgent) } label: { Image(systemName: "plus").foregroundStyle(design.onAccent.color) }
-                        .prominentBarButton()
+                        .buttonStyle(.glassProminent)
                         .tint(design.accent.color)
                         .accessibilityLabel("New Agent")
                         .identified("home.newAgent", label: "New Agent")
                 }
-                // The bar sets its buttons on glass of its own; with less
-                // transparency asked for, the button's own fill is enough.
-                .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
             }
         }
         .onAppear { actions(.refresh) }
-        // Put away, the phone lets go of every link, so coming back dials
-        // them all again.
-        .task(id: phase) {
-            switch phase {
-            case .background: dialling = true
-            case .active where dialling:
-                try? await Task.sleep(for: .seconds(1))
-                if !Task.isCancelled { dialling = false }
-            default: break
-            }
+        // An offer is made once it has stood for a while on screen. Put
+        // away, the phone lets go of every link, so coming back waits again.
+        .task(id: OfferWait(offer: offer, active: phase == .active)) {
+            offered = nil
+            guard let offer, phase == .active else { return }
+            try? await Task.sleep(for: Self.offerPatience)
+            if !Task.isCancelled { offered = offer }
         }
         // Ages count while the list is on screen, as the terminal's do. A
         // compared picture holds its clock still.
@@ -250,10 +237,8 @@ public struct AgentsHome: View {
             accountMenu {
                 disc(entry).accessibilityLabel("Switch account")
             }
-            .barItemSurface()
         } else {
             accountMenu { Image(systemName: "person").accessibilityLabel("Switch account") }
-                .barItemSurface()
         }
     }
 
@@ -639,31 +624,57 @@ public struct AgentsHome: View {
         .identified("home.fold.\(section.id)", label: "\(title), \(names)", value: names)
     }
 
-    /// The one line a home is allowed above the list.
+    /// What this account could do to reach a machine it cannot: subscribe,
+    /// for a machine the relay would carry if the plan paid for it, or sign
+    /// in, on a phone with no account and a machine out of reach.
     ///
-    /// It is not a summary — a summary is a card that must be filled, so it
-    /// fills itself with counts nobody asked for. It is an exceptions line: it
-    /// appears only when something is actually wrong, it takes one row when it
-    /// does, and when everything is fine the top of the screen is the list.
-    ///
-    /// The order is the one the desktop's banner follows, and for the same
-    /// reason: a connection that is down outranks everything, then a machine
-    /// the relay can see and this account may not reach, then a machine
-    /// nothing can reach on a phone with no account, and last the plain fact
-    /// that a machine is offline. A phone that can reach every machine it owns
-    /// shows none of it and is never asked for an account.
-    private var exceptions: (text: String, act: HomeAction)? {
-        if dialling && !photographed { return nil }
+    /// An offer waits `offerPatience` before it is made. A free account at
+    /// home reads its machine away for the moment between the relay refusing
+    /// and the local network's link coming up, and a reopened app reads every
+    /// machine unreached until it has dialled them; an offer made then would
+    /// be gone before it could be read, or be wrong.
+    private var offer: Offer? {
+        if signedIn { return model.awayHost.map(Offer.subscribe) }
+        return model.unreachableHost.map(Offer.signIn)
+    }
+
+    /// Longer than a link on the local network takes to come up, by a margin.
+    static let offerPatience: Duration = .seconds(5)
+
+    /// The offer to show: a captured screen shows its state at once.
+    private var shownOffer: Offer? {
+        photographed ? offer : offered.flatMap { $0 == offer ? $0 : nil }
+    }
+
+    /// Above the list, only what the person can do something about. A
+    /// machine out of reach is not one: its ring says so on its rows, the
+    /// composer says so in its chats and the hosts tab says why, and a card
+    /// for it came and went at every launch while the phone dialled.
+    private var notice: Callout<HomeAction>? {
         if signedIn, let trouble = model.relayTrouble {
-            return (trouble, model.relay == .signInAgain ? .signIn : .openExceptions)
+            let act: HomeAction = model.relay == .signInAgain ? .signIn : .openExceptions
+            return Callout(
+                id: "exceptions", glyph: glyph(for: act), title: trouble, detail: nil,
+                button: nil, act: act, working: act == .signIn && signingIn)
         }
-        if let away = model.awayHost {
-            return ("\(away) is away · subscribe to reach your agents from anywhere", .subscribe)
+        switch shownOffer {
+        case .subscribe(let host)?:
+            return Callout(
+                id: "subscribe", glyph: glyph(for: .subscribe),
+                title: String(localized: "\(host) is away"),
+                detail: String(localized: "Pro reaches it from anywhere"),
+                button: String(localized: "Subscribe"), act: .subscribe,
+                identifier: "home.subscribe")
+        case .signIn(let host)?:
+            return Callout(
+                id: "signIn", glyph: glyph(for: .signIn),
+                title: String(localized: "\(host) is out of reach"),
+                detail: String(localized: "Sign in to reach it from anywhere"),
+                button: String(localized: "Sign In"), act: .signIn,
+                identifier: "home.signIn", working: signingIn)
+        case nil:
+            return nil
         }
-        guard signedIn else {
-            return model.unreachableHost == nil ? nil : (SignInCopy.caption, .signIn)
-        }
-        return model.exceptions.map { ($0, .openExceptions) }
     }
 
     /// What the list asks of the person before its rows: pairing a machine
@@ -682,12 +693,7 @@ public struct AgentsHome: View {
                 title: offer.title, detail: offer.detail, button: offer.button,
                 act: offer.subscribe ? .subscribe : .pair(id))
         }
-        if let exceptions {
-            callouts.append(Callout(
-                id: "exceptions", glyph: glyph(for: exceptions.act), title: exceptions.text,
-                detail: nil, button: nil, act: exceptions.act,
-                working: exceptions.act == .signIn && signingIn))
-        }
+        if let notice { callouts.append(notice) }
         if offerNotifications {
             callouts.append(Callout(
                 id: "notifications", glyph: "bell",
@@ -1005,15 +1011,14 @@ struct AgentRowView: View {
         return false
     }
 
-    /// The agent's own words, or the state's where it has none: a machine
-    /// that is out of reach says so first, and a stopped agent says how it
-    /// ended.
+    /// The agent's own words, or the state's where it has none: a stopped
+    /// agent says how it ended. A machine out of reach changes nothing here:
+    /// the row keeps what this phone last held, and the dashed ring is what
+    /// says the machine is not answering. Spelling it out too put the same
+    /// "offline" on every row of that machine in place of what they said.
     private var preview: (text: String, ink: FleetWords.Ink)? {
-        if state.namesTheHost, let word = state.word {
-            let rest = second?.text ?? state.elaboration
-            return ([word, rest].compactMap { $0 }.joined(separator: " · "), .quiet)
-        }
         if let second { return second }
+        if state.namesTheHost { return nil }
         switch state {
         case .exited, .unsupported, .starting:
             let words = [state.word, state.elaboration].compactMap { $0 }
@@ -1261,6 +1266,22 @@ enum MarkMotion {
     }
 }
 
+
+// MARK: - Offers
+
+/// What the home may offer a person whose account cannot reach a machine.
+enum Offer: Equatable {
+    /// The relay would carry it on a paid plan.
+    case subscribe(String)
+    /// This phone has no account, and the machine is out of reach.
+    case signIn(String)
+}
+
+/// What an offer waits on: the offer itself, and the app on screen.
+private struct OfferWait: Equatable {
+    let offer: Offer?
+    let active: Bool
+}
 
 // MARK: - Callouts
 

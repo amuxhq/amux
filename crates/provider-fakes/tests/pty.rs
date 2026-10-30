@@ -1,6 +1,7 @@
-//! fake-claude-pty driven through a real terminal with the keys the
-//! claude-2.1 keymap types: what it reports lands in the transcript and on
-//! the hook commands, and every row and payload has a recorded shape.
+//! fake-claude-pty driven through a real terminal with the keys a person
+//! types into Claude's own menus: what it reports lands in the transcript
+//! and on the hook commands, and every row and payload has a recorded
+//! shape.
 
 // Unix only: Windows does not host terminal Claude. ConPTY re-renders the
 // child's output in its own escape sequences, and Claude's messaging socket and
@@ -52,7 +53,7 @@ impl Terminal {
             "PermissionRequest",
             "Stop",
             "SessionEnd",
-            "Notification",
+            "Elicitation",
         ];
         let token = root.join("token");
         let mut hooks_settings: serde_json::Map<String, Value> = events
@@ -516,7 +517,7 @@ async fn a_prompt_typed_mid_turn_folds_at_the_next_tool_and_escape_interrupts() 
 }
 
 #[tokio::test]
-async fn a_tool_server_dialog_is_announced_by_notification_and_held_until_escape_or_its_end() {
+async fn a_tool_server_dialog_runs_the_elicitation_hook_and_is_held_until_escape_or_its_end() {
     let probe = tempfile::tempdir().unwrap();
     let answered = probe.path().join("answered");
     let terminal = Terminal::started(json!({"steps": [
@@ -528,10 +529,10 @@ async fn a_tool_server_dialog_is_announced_by_notification_and_held_until_escape
     ]}))
     .await;
     terminal.prompt("File it").await;
-    let form = terminal.hook("Notification").await;
-    // Claude 2.1.283's field names; the message is the same for every dialog.
-    assert_eq!(form["notification_type"], "elicitation_dialog");
-    assert_eq!(form["message"], "Claude Code needs your input");
+    let form = terminal.hook("Elicitation").await;
+    // Claude 2.1.312's field names.
+    assert_eq!(form["mcp_server_name"], "github");
+    assert_eq!(form["mode"], "form");
     assert_eq!(form["session_id"], SESSION);
     // Held open: the call has no result until the dialog ends. A window: a
     // result that must not come leaves no mark to wait on.
@@ -544,8 +545,9 @@ async fn a_tool_server_dialog_is_announced_by_notification_and_held_until_escape
     std::fs::write(&answered, "").unwrap();
     let post = terminal.hook("PostToolUse").await;
     assert_eq!(post["tool_name"], "mcp__github__create_issue");
-    let link = terminal.hooks_of("Notification", 2).await.remove(1);
-    assert_eq!(link["notification_type"], "elicitation_url_dialog");
+    let link = terminal.hooks_of("Elicitation", 2).await.remove(1);
+    assert_eq!(link["mode"], "url");
+    assert_eq!(link["mcp_server_name"], "docs");
     // The interrupt key cancels the dialog; the turn goes on.
     terminal.keys(b"\x1b").await;
     let stop = terminal.hook("Stop").await;
@@ -561,10 +563,10 @@ async fn a_tool_server_dialog_is_announced_by_notification_and_held_until_escape
             "assistant text Done",
         ]
     );
-    // No terminal recording carries a Notification hook or a tool server's
+    // No terminal recording carries an Elicitation hook or a tool server's
     // call: the sessions were recorded before amux registered the hook, and
     // without tool servers.
-    terminal.check_shapes_but(&["Notification", "PostToolUse"]);
+    terminal.check_shapes_but(&["Elicitation", "PostToolUse"]);
     assert_eq!(terminal.exit_code().await, 0);
 }
 

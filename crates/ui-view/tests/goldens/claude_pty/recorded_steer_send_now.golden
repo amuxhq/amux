@@ -2,29 +2,29 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 13 recorded 11: fact Transcript type=user uuid=be72659b-51ae-4705-82a8-3595513903c7
-  row    2 be72659b-51ae-4705-82a8-3595513903c7 Prompt { text: [Text("I am testing how follow-up messages reach you while a command runs. Use Bash, not in the background, to run exactly: python3 -c 'import time; time.sleep(30)'; echo S1. Then reply with the word PTY_STEER_NOW, and also follow any follow-up message I send while the command runs.")], steered: false }
+## 13 recorded 11: fact Transcript type=user uuid=d26f04fb-9758-4516-a57b-9bbf9caa145b
+  row    2 d26f04fb-9758-4516-a57b-9bbf9caa145b Prompt { text: [Text("I am testing how follow-up messages reach you while a command runs. Use Bash, not in the background, to run exactly: python3 -c 'import time; time.sleep(30)'; echo S1. Then reply with the word PTY_STEER_NOW, and also follow any follow-up message I send while the command runs.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 40 recorded 38: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01NG2nrg9ukVCrHuC45fehtJ
-  composer Send activity=Some(Running { key: "toolu_01NG2nrg9ukVCrHuC45fehtJ" }) queue=[] underway=[] refused=[]
-## 42 recorded 40: fact Transcript type=assistant uuid=f41c7fd7-d400-45fe-9697-53f1e7176f57
-  row    3 f41c7fd7-d400-45fe-9697-53f1e7176f57 Thinking { text: "", open: false, duration_ms: Some(2123) }
-## 43 recorded 41: fact Transcript type=assistant uuid=dec67a35-5eac-42c7-9060-e366b98e337c
-  row    4 toolu_01NG2nrg9ukVCrHuC45fehtJ Command { command: "python3 -c 'import time; time.sleep(30)'; echo S1", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_01NG2nrg9ukVCrHuC45fehtJ..toolu_01NG2nrg9ukVCrHuC45fehtJ x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-## 48 recorded 46: fact Transcript type=user uuid=b785e6c1-4ef3-4a9e-9b50-a923f598b807
-  row    4 toolu_01NG2nrg9ukVCrHuC45fehtJ Command { command: "python3 -c 'import time; time.sleep(30)'; echo S1", state: Succeeded, exit_code: None, output_head: ["Command was moved to the background (ID: ba4rtox6w) so that a message that arrived while it was running can reach you; it was not interrupted. Output is being written to: /private<MACHINE_PATH> You will be notified when it completes. To check…
+## 36 recorded 34: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01Pyawzs2PBmY4Y3RvwKY86S
+  composer Send activity=Some(Running { key: "toolu_01Pyawzs2PBmY4Y3RvwKY86S" }) queue=[] underway=[] refused=[]
+## 40 recorded 38: fact Transcript type=assistant uuid=d6b5f240-4c34-44db-8ecd-ac98e9ac38e5
+  row    3 d6b5f240-4c34-44db-8ecd-ac98e9ac38e5 Thinking { text: "", open: false, duration_ms: Some(1596) }
+## 41 recorded 39: fact Transcript type=assistant uuid=a27ab5a7-241c-47ad-97bd-42261c116af6
+  row    4 toolu_01Pyawzs2PBmY4Y3RvwKY86S Command { command: "python3 -c 'import time; time.sleep(30)'; echo S1", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_01Pyawzs2PBmY4Y3RvwKY86S..toolu_01Pyawzs2PBmY4Y3RvwKY86S x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+## 50 recorded 48: fact Transcript type=user uuid=a45d1cec-d65a-47e8-91b7-267474d60d44
+  row    4 toolu_01Pyawzs2PBmY4Y3RvwKY86S Command { command: "python3 -c 'import time; time.sleep(30)'; echo S1", state: Succeeded, exit_code: None, output_head: ["Command was moved to the background (ID: bwuecvyt4) so that a message that arrived while it was running can reach you; it was not interrupted. Output is being written to: /private<MACHINE_PATH> You will be notified when it completes. It is ru…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 52 recorded 50: fact Transcript type=user uuid=c9bd22e9-7222-47ec-a1b0-3a78e7ed9913
-  row    4 toolu_01NG2nrg9ukVCrHuC45fehtJ Command { command: "python3 -c 'import time; time.sleep(30)'; echo S1", state: Succeeded, exit_code: None, output_head: ["Command was moved to the background (ID: ba4rtox6w) so that a message that arrived while it was running can reach you; it was not interrupted. Output is being written to: /private<MACHINE_PATH> You will be notified when it completes. To check…
-  row    5 c9bd22e9-7222-47ec-a1b0-3a78e7ed9913 Prompt { text: [Text("Also append the word DURIAN.")], steered: false }
+## 55 recorded 53: fact Transcript type=user uuid=9bf7a9bb-f68d-4ae3-99dd-c265c1af20f4
+  row    4 toolu_01Pyawzs2PBmY4Y3RvwKY86S Command { command: "python3 -c 'import time; time.sleep(30)'; echo S1", state: Succeeded, exit_code: None, output_head: ["Command was moved to the background (ID: bwuecvyt4) so that a message that arrived while it was running can reach you; it was not interrupted. Output is being written to: /private<MACHINE_PATH> You will be notified when it completes. It is ru…
+  row    5 9bf7a9bb-f68d-4ae3-99dd-c265c1af20f4 Prompt { text: [Text("Also append the word DURIAN.")], steered: false }
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 be72659b-51ae-4705-82a8-3595513903c7 Prompt { text: [Text("I am testing how follow-up messages reach you while a command runs. Use Bash, not in the background, to run exactly: python3 -c 'import time; time.sleep(30)'; echo S1. Then reply with the word PTY_STEER_NOW, and also follow any follow-up message I send while the command runs.")], steered: false }
-     3 f41c7fd7-d400-45fe-9697-53f1e7176f57 Thinking { text: "", open: false, duration_ms: Some(2123) }
-     4 toolu_01NG2nrg9ukVCrHuC45fehtJ Command { command: "python3 -c 'import time; time.sleep(30)'; echo S1", state: Succeeded, exit_code: None, output_head: ["Command was moved to the background (ID: ba4rtox6w) so that a message that arrived while it was running can reach you; it was not interrupted. Output is being written to: /private<MACHINE_PATH> You will be notified when it completes. To check…
-     5 c9bd22e9-7222-47ec-a1b0-3a78e7ed9913 Prompt { text: [Text("Also append the word DURIAN.")], steered: false }
-== overview Overview { tasks: None, jobs: [JobRow { step: Some("toolu_01NG2nrg9ukVCrHuC45fehtJ"), command: "python3 -c 'import time; time.sleep(30)'; echo S1", started_at_ms: 1790396286474, kind: Shell, stop: Unavailable }], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 43591, window_tokens: None, percent: None, near_full: false }) sign-in None
+     2 d26f04fb-9758-4516-a57b-9bbf9caa145b Prompt { text: [Text("I am testing how follow-up messages reach you while a command runs. Use Bash, not in the background, to run exactly: python3 -c 'import time; time.sleep(30)'; echo S1. Then reply with the word PTY_STEER_NOW, and also follow any follow-up message I send while the command runs.")], steered: false }
+     3 d6b5f240-4c34-44db-8ecd-ac98e9ac38e5 Thinking { text: "", open: false, duration_ms: Some(1596) }
+     4 toolu_01Pyawzs2PBmY4Y3RvwKY86S Command { command: "python3 -c 'import time; time.sleep(30)'; echo S1", state: Succeeded, exit_code: None, output_head: ["Command was moved to the background (ID: bwuecvyt4) so that a message that arrived while it was running can reach you; it was not interrupted. Output is being written to: /private<MACHINE_PATH> You will be notified when it completes. It is ru…
+     5 9bf7a9bb-f68d-4ae3-99dd-c265c1af20f4 Prompt { text: [Text("Also append the word DURIAN.")], steered: false }
+== overview Overview { tasks: None, jobs: [JobRow { step: Some("toolu_01Pyawzs2PBmY4Y3RvwKY86S"), command: "python3 -c 'import time; time.sleep(30)'; echo S1", started_at_ms: 1793309293260, kind: Shell, stop: Unavailable }], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 34783, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings
   model* unlisted claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
   permission  "default" "Ask" normal unsettable

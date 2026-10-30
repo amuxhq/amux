@@ -5,10 +5,10 @@ paywall.title |  | Reach your agents anywhere | 16,124,218,64
 paywall.explanation |  | A subscription reaches your hosts from anywhere. Hosts on this network work without one. | 16,194,367,39
 paywall.subscribed |  | App Store | 16,255,370,98
 paywall.manage | Manage Subscription |  | 26,774,350,44
-paywall.back | Back |  | 20,66,56,36
+paywall.back | Back |  | 20,66,40,36
  | Reach your agents
 anywhere |  | 16,124,218,64
  | A subscription reaches your hosts from anywhere. Hosts on this network work without one. |  | 16,194,367,39
  | Subscribed in the App Store, Manage your subscription in the App Store., Your other devices follow within a few minutes. |  | 16,269,319,70
  | Manage Subscription |  | 26,774,350,44
- | Back |  | 20,66,56,36
+ | Back |  | 20,66,40,36

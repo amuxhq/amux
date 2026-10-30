@@ -11,10 +11,10 @@ chat.attach | Attach | closed | 23,779,44,44
 chat.model | gpt-fake · medium |  | 71,779,144,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,161,36
-chat.title | decision-codex | decision-codex | 96,66,161,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,153,36
+chat.title | decision-codex | decision-codex | 80,66,153,36
  | Attach |  | 23,779,44,44
  | gpt-fake |  | 71,779,144,44
  | Dictate |  | 287,779,44,44
@@ -23,7 +23,7 @@ chat.title | decision-codex | decision-codex | 96,66,161,36
  | Check the deployment once. |  | 16,158,370,40
  | 1 command |  | 16,198,370,44
  | The deploy check passed. |  | 16,244,370,20
- | Worked <t> |  | 16,271,74,16
- | Back |  | 20,66,56,36
- | decision-codex, /t/a/n/d/work · desk |  | 96,66,161,36
- | More |  | 342,66,36,36
+ | Worked <t> |  | 16,271,62,16
+ | Back |  | 20,66,40,36
+ | decision-codex, /t/a/n/d/work · desk |  | 80,66,153,36
+ | More |  | 350,66,28,36

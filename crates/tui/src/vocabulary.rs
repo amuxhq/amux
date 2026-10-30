@@ -64,8 +64,8 @@ pub const FRAMES: &[(&str, &str)] = &[
         "A headless Claude chat on the desk read from the laptop: the header with its folder and the way to the diff and home, the first turn, the composer with its model and mode, and its keys.",
     ),
     (
-        "ask_escape",
-        "A terminal Claude on the desk showing a tool server's sign-in dialog in its own terminal, read from the laptop: the escape in the composer's box, its reason sending the person to Claude's own terminal (a remote agent's terminal is not offered here) and ctrl+x to interrupt, with the conversation still above it: the prompt, the text that introduced the tool server's call, and the call folded.",
+        "tool_form",
+        "A terminal Claude on the desk asking for a tool server's sign-in form, read from the laptop: the form in the composer's box, a step per field, with the conversation still above it: the prompt, the text that introduced the tool server's call, and the call folded.",
     ),
     (
         "running_call",
@@ -2099,6 +2099,25 @@ fn cards() -> Vec<CardSet> {
                     server: "linear".into(),
                     message: "Sign in to Linear".into(),
                     url: "https://linear.app/oauth/authorize".into(),
+                    local_page: false,
+                },
+                vec![
+                    choice(ChoiceOutcome::OpenLink),
+                    choice(ChoiceOutcome::Decline),
+                ],
+            ),
+            false,
+            vec![],
+        ),
+        (
+            "ask_link_local",
+            "A tool server's link to a page on the agent's own machine.",
+            card(
+                AskBody::Link {
+                    server: "docs".into(),
+                    message: "Sign in to finish connecting docs".into(),
+                    url: "http://localhost:8765/oauth/start".into(),
+                    local_page: true,
                 },
                 vec![
                     choice(ChoiceOutcome::OpenLink),

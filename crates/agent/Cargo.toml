@@ -12,7 +12,7 @@ log-file = { workspace = true }
 agent-core = { workspace = true }
 agent-dir = { workspace = true }
 attachments = { workspace = true }
-claude = { workspace = true, features = ["pty"] }
+claude = { workspace = true }
 claude-protocol = { workspace = true }
 codex = { workspace = true }
 codex-protocol = { workspace = true }

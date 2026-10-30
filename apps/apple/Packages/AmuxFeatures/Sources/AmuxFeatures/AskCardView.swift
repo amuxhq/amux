@@ -480,9 +480,14 @@ private struct AskBodyView: View {
             EmptyView()
         case .form(_, let message, _):
             if !message.isEmpty { why(message) }
-        case .link(_, let message, let url):
+        case .link(_, let message, let url, let localPage):
             if !message.isEmpty { why(message) }
             SubjectBox(text: url, lines: 2)
+            // The phone reads `localhost` as itself: the page opens only on
+            // the agent's machine.
+            if localPage {
+                why(String(localized: "This page is on the agent’s machine. Open the link in a browser there."))
+            }
         case .access(let reason, let read, let write, let network, let hosts):
             if !reason.isEmpty { why(reason) }
             VStack(spacing: 0) {
@@ -569,7 +574,7 @@ private struct AskBodyView: View {
         case .plan: planButtons
         case .access: accessButtons
         case .form(_, _, let asked): formButtons(asked)
-        case .link(_, _, let url): linkButtons(url)
+        case .link(_, _, let url, let localPage): linkButtons(url, opensHere: !localPage)
         case .unanswerable:
             choiceButton(String(localized: "Interrupt"), kind: .outline, id: "ask.stop") {
                 act(.stop)
@@ -773,11 +778,11 @@ private struct AskBodyView: View {
     }
 
     /// Open the link, then say it is done.
-    private func linkButtons(_ url: String) -> some View {
+    private func linkButtons(_ url: String, opensHere: Bool) -> some View {
         let done = card.choices.indices.filter { card.choices[$0].outcome == .openLink }
         let rest = card.choices.indices.filter { !done.contains($0) }
         return VStack(spacing: 8) {
-            if let link = URL(string: url), !opened {
+            if opensHere, let link = URL(string: url), !opened {
                 choiceButton(String(localized: "Open link"), kind: .primary, id: "ask.open") {
                     opened = true
                     openURL(link)

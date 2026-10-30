@@ -97,13 +97,11 @@ public enum ChatOverlay: String, Equatable, Sendable {
 /// and where it runs. Exactly one thing stands at the bottom: a card being
 /// asked about the agent itself, the head ask docked where the composer
 /// was, a card saying why the agent cannot take a message, or the composer
-/// with the queue and the facts strip above it. The draft outlives all of
-/// them.
+/// with the dock above it. The draft outlives all of them.
 public struct ChatScreen: View {
     @Environment(\.design) private var design
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.photographed) private var photographed
-    @Environment(\.reducesTransparency) private var reducesTransparency
     let model: ChatModel
     let subject: ChatSubject
     let family: FamilyHeader?
@@ -116,8 +114,12 @@ public struct ChatScreen: View {
     /// card may grow.
     @State private var screenHeight: CGFloat?
     @State private var screenWidth: CGFloat?
-    /// How wide the bar's trailing pill is, which the title gives way to.
-    @State private var trailingWidth: CGFloat = 44
+    /// How wide the two items of the bar's trailing pill are.
+    @State private var changesWidth: CGFloat = 0
+    @State private var moreWidth: CGFloat = 44
+    /// How wide the bar's trailing pill is, which the title gives way to:
+    /// the changes, when there are any, and the menu.
+    private var trailingWidth: CGFloat { (model.changes == nil ? 0 : changesWidth) + moreWidth }
     @State private var headerHeight: CGFloat = 0
 
     public init(
@@ -217,9 +219,7 @@ public struct ChatScreen: View {
     /// The bar does not shrink an item to fit. Given items wider than
     /// itself, it folds every one of them into its own overflow menu, the
     /// way back with them, so a long name or a long exit reason took the
-    /// way back off the screen. It spaces its items further apart when
-    /// their shared glass is hidden, as it is with less transparency, so
-    /// what it spends besides the pills is counted for that case.
+    /// way back off the screen.
     private var titleWidth: CGFloat {
         guard let screenWidth else { return Self.widestTitle }
         return min(Self.widestTitle, max(Self.narrowestTitle, screenWidth - trailingWidth - Self.barSpends))
@@ -228,7 +228,7 @@ public struct ChatScreen: View {
     private static let widestTitle: CGFloat = 220
     private static let narrowestTitle: CGFloat = 96
     /// The bar's margins, the way back and the gaps between the three
-    /// pieces, measured on a 402-point phone with less transparency.
+    /// pieces, measured on a 402-point phone.
     private static let barSpends: CGFloat = 160
 
     private var detached: Bool { model.frame?.waiting == .detached }
@@ -260,23 +260,25 @@ public struct ChatScreen: View {
                 actions(.back)
             }
         }
-        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
         // The way back is a circle of its own; the bar would otherwise set
         // it and the title on one piece of glass.
         ToolbarSpacer(.fixed, placement: .topBarLeading)
         ToolbarItem(placement: .topBarLeading) {
             title
         }
-        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
-        ToolbarItem(placement: .topBarTrailing) {
-            HStack(spacing: 0) {
-                if let changes = model.changes { changesButton(changes) }
-                overflow
+        // Two items, which the bar sets on one piece of glass. One item
+        // holding both would be one button to the bar: VoiceOver read it
+        // out unnamed, and the menu inside it never opened for a tap.
+        if let changes = model.changes {
+            ToolbarItem(placement: .topBarTrailing) {
+                changesButton(changes)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { changesWidth = $0 }
             }
-            .barItemSurface()
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { trailingWidth = $0 }
+            }
+        ToolbarItem(placement: .topBarTrailing) {
+            overflow
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { moreWidth = $0 }
         }
-        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
     }
 
     /// The agent's name over where it runs; tapping it opens the agent's
@@ -310,7 +312,6 @@ public struct ChatScreen: View {
             .padding(.horizontal, Space.m)
             .modifier(Capped(width: titleWidth))
             .frame(height: 36)
-            .barItemSurface()
         }
         .accessibilityLabel("\(subject.name), \(placeLine)")
         .accessibilityHint("Opens the overview")
@@ -351,41 +352,54 @@ public struct ChatScreen: View {
             value: model.comparison.rawValue)
     }
 
+    /// The system's own menu, as the home's account menu is. The app's
+    /// `MenuButton` lays a UIKit button over its label, and in the bar a
+    /// finger never reaches that button: only an accessibility activation
+    /// opened it, so the menu worked under VoiceOver and the drivers and did
+    /// nothing for a tap.
     private var overflow: some View {
         let running = model.frame.map({ if case .exited = $0.phase { false } else { true } }) ?? false
-        var items = [
-            MenuItem(title: String(localized: "Overview"), systemImage: "list.bullet.rectangle") {
-                overviewOpen = true
-            },
-            MenuItem(title: String(localized: "Rename"), systemImage: "pencil") { showing = .rename },
-            MenuItem(title: String(localized: "Copy Address"), systemImage: "doc.on.doc") {
-                actions(.copyAddress)
-            },
-        ]
-        // A live agent is stopped, which keeps it to resume; only an exited
-        // one is deleted, so nothing live is ever removed from here.
-        if running && subject.stopHeld {
-            items.append(MenuItem(title: String(localized: "Cancel Stop"), systemImage: "arrow.uturn.backward") {
-                actions(.cancelStop)
-            })
-        } else if running {
-            items.append(MenuItem(
-                title: String(localized: "Stop Agent"), systemImage: "stop.circle", destructive: true
-            ) { showing = .stop })
-        } else {
-            items.append(MenuItem(
-                title: String(localized: "Delete Agent"), systemImage: "trash", destructive: true
-            ) { showing = .delete })
-        }
-        return MenuButton(
-            name: String(localized: "More"), identifier: "chat.more", items: items,
-            opened: { putDown += 1 }
-        ) {
+        return Menu {
+            Button { choose { overviewOpen = true } } label: {
+                Label("Overview", systemImage: "list.bullet.rectangle")
+            }
+            Button { choose { showing = .rename } } label: { Label("Rename", systemImage: "pencil") }
+            Button { choose { actions(.copyAddress) } } label: {
+                Label("Copy Address", systemImage: "doc.on.doc")
+            }
+            // A live agent is stopped, which keeps it to resume; only an
+            // exited one is deleted, so nothing live is ever removed from here.
+            if running && subject.stopHeld {
+                Button { choose { actions(.cancelStop) } } label: {
+                    Label("Cancel Stop", systemImage: "arrow.uturn.backward")
+                }
+            } else if running {
+                Button(role: .destructive) { choose { showing = .stop } } label: {
+                    Label("Stop Agent", systemImage: "stop.circle")
+                }
+            } else {
+                Button(role: .destructive) { choose { showing = .delete } } label: {
+                    Label("Delete Agent", systemImage: "trash")
+                }
+            }
+        } label: {
+            // A bare image named on itself, as the account menu's disc is:
+            // the bar makes a menu with an image label its own button, sized
+            // and named from the image. Framed or restyled, the label stays
+            // a view of ours, and the button the bar puts over it has no name.
             Image(systemName: "ellipsis")
-                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(design.ink.color)
-                .frame(width: 36, height: 36)
+                .accessibilityLabel("More")
         }
+        .accessibilityLabel("More")
+        .identified("chat.more", label: String(localized: "More"))
+    }
+
+    /// A row of the menu, with the keyboard put down first: what each opens
+    /// is a page or a card the keyboard would cover.
+    private func choose(_ action: () -> Void) {
+        putDown += 1
+        action()
     }
 
     // MARK: - The rows
@@ -509,7 +523,7 @@ struct FeedNoticeView: View {
 /// What stands at the bottom of a chat, one thing at a time: a card about
 /// the agent itself, the head ask docked where the composer was, a card
 /// saying why the agent cannot take a message, or the composer with the
-/// queue and the facts strip above it. The draft outlives all of them.
+/// dock above it. The draft outlives all of them.
 public struct ChatStanding: View {
     @Environment(\.design) private var design
     @Environment(\.photographed) private var photographed
@@ -526,7 +540,7 @@ public struct ChatStanding: View {
     /// The most height an ask card docked here may take; past it the card's
     /// content scrolls under its pinned buttons.
     let askRoom: CGFloat?
-    /// Opens what runs around the chat, from the facts strip.
+    /// Opens what runs around the chat, from the dock's background row.
     let openOverview: () -> Void
     let actions: (ChatAction) -> Void
     @FocusState private var focused: Bool
@@ -698,11 +712,11 @@ public struct ChatStanding: View {
     @ViewBuilder
     private var composerStack: some View {
         if showing != .plus {
-            ChatDock(model: model, children: children, host: subject.host, expanded: dockExpanded) {
+            ChatDock(
+                model: model, children: children, host: subject.host, expanded: dockExpanded,
+                openOverview: openOverview
+            ) {
                 actions(.open($0))
-            }
-            if let overview = model.overview {
-                StripLine(context: model.frame?.context, overview: overview, open: openOverview)
             }
         }
         let matches = model.slashMatches
@@ -731,9 +745,12 @@ public struct ChatStanding: View {
     private var placeholder: String {
         var working = false
         if case .working? = model.frame?.phase { working = true }
+        let limit = model.overview?.usageNearLimit.flatMap {
+            $0.blocked ? ChatWords.limitReached($0, now: Date()) : nil
+        }
         return ChatWords.placeholder(
             model.frame?.composer.mode, agent: subject.name, host: subject.host,
-            reach: subject.reach, working: working)
+            reach: subject.reach, working: working, limit: limit)
     }
 
     private var activitySubject: String? {

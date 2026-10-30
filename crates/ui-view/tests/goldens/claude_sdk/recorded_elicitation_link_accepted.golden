@@ -25,12 +25,12 @@
   row    5 ask:a1146865-4b3b-4a66-b233-cc35b94ca1af Ask(Link { server: "external", message: "Open the page to confirm.", url: "https://example.com/confirm", resolution: Open }) attention
   ask a1146865-4b3b-4a66-b233-cc35b94ca1af -> "ask:a1146865-4b3b-4a66-b233-cc35b94ca1af" 1/1 Open
     choices OpenLink*, Decline
-    body Link { server: "external", message: "Open the page to confirm.", url: "https://example.com/confirm" }
+    body Link { server: "external", message: "Open the page to confirm.", url: "https://example.com/confirm", local_page: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 19 recorded 18: input stdin-4
   ask a1146865-4b3b-4a66-b233-cc35b94ca1af -> "ask:a1146865-4b3b-4a66-b233-cc35b94ca1af" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
     choices OpenLink*, Decline
-    body Link { server: "external", message: "Open the page to confirm.", url: "https://example.com/confirm" }
+    body Link { server: "external", message: "Open the page to confirm.", url: "https://example.com/confirm", local_page: false }
 ## 21 recorded 20: fact Stream type=user uuid=8dd80a85-eb9b-4174-bf8e-13025c951012
   row    4 toolu_016GeyC8ZiAdxUhKBfrtahpP ToolCall { server: "external", tool: "ask_the_operator", fact: "LINK", state: Succeeded, result: "LINK" } run[toolu_016GeyC8ZiAdxUhKBfrtahpP..toolu_016GeyC8ZiAdxUhKBfrtahpP x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false }
 ## 23 recorded 22: fact Stream type=assistant uuid=51eae968-97f8-4552-b70a-937d973f4259

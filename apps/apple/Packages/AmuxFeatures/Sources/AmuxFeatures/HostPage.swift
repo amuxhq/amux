@@ -61,13 +61,11 @@ public struct HostPage: View {
             ToolbarItem(placement: .topBarLeading) {
                 BarBack(identifier: "host.back") { actions(.back) }
             }
-            .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
         }
         .accessibilityElement(children: .contain)
         .identified("host", value: model.host(host)?.name ?? "")
     }
 
-    @Environment(\.reducesTransparency) private var reducesTransparency
 
     private func content(_ view: HostView) -> some View {
         VStack(alignment: .leading, spacing: 18) {

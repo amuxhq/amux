@@ -28,7 +28,7 @@
   │                                                                                                        │
   │ › 1. Yes                                                                                               │
   │   2. Yes, and allow access to /tmp/journey/aj-xxxxxxxx/net/desk/work for this session                  │
-  │   3. No, and stop  esc · tab to add a note                                                             │
+  │   3. No  esc · tab to add a note                                                                       │
   ╰─────────────────────────────────────────────────────────────────────────────────────────────── Fake 1 ─╯
 
   enter choose   ctrl+x interrupt   ctrl+a more

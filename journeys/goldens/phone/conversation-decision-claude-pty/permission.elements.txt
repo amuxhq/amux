@@ -8,10 +8,10 @@ ask.subject | deploy --check |  | 28,630,346,40
 ask.choice.1 | Allow access for this session in /private/tmp/amux-phone-journey/net/desk/work |  | 28,682,346,76
 ask.choice.0 | Allow |  | 28,770,169,44
 ask.deny | Deny… |  | 205,770,169,44
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
-chat.title | decision-pty | decision-pty | 96,66,160,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
+chat.title | decision-pty | decision-pty | 80,66,152,36
  | Wants to run a command |  | 62,594,189,20
  | More |  | 338,582,44,44
  | deploy --check |  | 28,630,346,40
@@ -20,6 +20,6 @@ chat.title | decision-pty | decision-pty | 96,66,160,36
  | Deny… |  | 205,770,169,44
  | Started |  | 16,124,370,34
  | Check the deployment once. |  | 16,158,370,40
- | Back |  | 20,66,56,36
- | decision-pty, /t/a/n/d/work · desk |  | 96,66,160,36
- | More |  | 342,66,36,36
+ | Back |  | 20,66,40,36
+ | decision-pty, /t/a/n/d/work · desk |  | 80,66,152,36
+ | More |  | 350,66,28,36

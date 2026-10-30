@@ -4,11 +4,11 @@ chat.row.boundary | Started |  | 16,124,370,34
 chat.row.prompt | hello |  | 16,158,370,40
 chat.row.prose | Ready. | final | 16,210,370,20
 chat.prose.render |  | rendered | 16,210,370,20
-chat.row.turn-end | Worked <t> |  | 16,237,74,16
+chat.row.turn-end | Worked <t> |  | 16,237,62,16
 chat.row.prompt | Are you there? |  | 16,267,370,40
 chat.row.prose | Only this account reaches me. | final | 16,319,370,20
 chat.prose.render |  | rendered | 16,319,370,20
-chat.row.turn-end | Worked <t> |  | 16,347,74,16
+chat.row.turn-end | Worked <t> |  | 16,347,62,16
 chat.dock |  | folded | 12,668,378,60
 chat.underway.0 | Still there? | held · sends when desk is back | 12,668,378,60
 chat.underway.0.cancel | Cancel |  | 344,676,40,44
@@ -17,10 +17,10 @@ chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | desk · this phone is signed out | detached | 96,66,215,36
-chat.title | guarded | guarded | 96,66,215,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | desk · this phone is signed out | detached | 80,66,225,36
+chat.title | guarded | guarded | 80,66,225,36
  | Clock |  | 30,691,14,14
  | Still there? |  | 58,679,78,20
  | held · sends when desk is back |  | 58,701,178,16
@@ -32,10 +32,10 @@ chat.title | guarded | guarded | 96,66,215,36
  | Started |  | 16,124,370,34
  | hello |  | 16,158,370,40
  | Ready. |  | 16,210,370,20
- | Worked <t> |  | 16,237,74,16
+ | Worked <t> |  | 16,237,62,16
  | Are you there? |  | 16,267,370,40
  | Only this account reaches me. |  | 16,319,370,20
- | Worked <t> |  | 16,347,74,16
- | Back |  | 20,66,56,36
- | guarded, desk · this phone is signed out |  | 96,66,215,36
- | More |  | 342,66,36,36
+ | Worked <t> |  | 16,347,62,16
+ | Back |  | 20,66,40,36
+ | guarded, desk · this phone is signed out |  | 80,66,225,36
+ | More |  | 350,66,28,36

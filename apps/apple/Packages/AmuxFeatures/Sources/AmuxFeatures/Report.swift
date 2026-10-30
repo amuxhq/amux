@@ -156,7 +156,6 @@ public enum ReportAction: Equatable, Sendable {
 /// means the same place to whoever reads the bundle on a Mac.
 public struct ReportScreen: View {
     @Environment(\.design) private var design
-    @Environment(\.reducesTransparency) private var reducesTransparency
     private let model: ReportStore
     /// Whether an account is signed in to send this to. A report is filed
     /// under the person's own account, so with nobody signed in there is
@@ -229,7 +228,6 @@ public struct ReportScreen: View {
         ToolbarItem(placement: .cancellationAction) {
             BarButton("xmark", label: closeTitle, identifier: "report.cancel") { actions(.cancel) }
         }
-        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
         if sending {
             ToolbarItem(placement: .confirmationAction) {
                 StateMark(state: .working)
@@ -240,13 +238,12 @@ public struct ReportScreen: View {
         } else if !isSent {
             ToolbarItem(placement: .confirmationAction) {
                 Button { actions(.send) } label: { Image(systemName: sendSymbol).foregroundStyle(design.onAccent.color) }
-                    .prominentBarButton()
+                    .buttonStyle(.glassProminent)
                     .tint(design.accent.color)
                     .disabled(!sendable)
                     .accessibilityLabel(sendTitle)
                     .identified("report.send", label: sendTitle, enabled: sendable)
             }
-            .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
         }
     }
 

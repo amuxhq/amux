@@ -7,7 +7,7 @@
   ▾ Live 1 ─────────────────────────────────────────────────────────────────────────────────────────────────
 
   › ○ guarded  Claude · /tmp/j╭─ Hosts ───────────────────────────────────────╮                        [x]
-      desk is away            │                                               │
+      Only this account reache│                                               │
                               │ desk     offline · this machine is signed out │
                               │ laptop   this machine                         │
                               │                                               │

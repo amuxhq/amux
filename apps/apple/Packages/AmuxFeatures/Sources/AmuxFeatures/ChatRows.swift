@@ -311,7 +311,7 @@ public struct ChatRowView: View {
         return ChatWords.firstLine(note)
     }
 
-    /// "exit 101 · 4.2s": a failure names its code where the agent gives one.
+    /// "exit 101 · 5s": a failure names its code where the agent gives one.
     private func commandMeta(_ state: CallPhase, exitCode: Int32?, durationMs: Int64?) -> [String] {
         var meta: [String] = []
         if let exitCode, exitCode != 0 {
@@ -659,7 +659,7 @@ struct RowLine: Layout {
     }
 
     /// The most of a contested line the trailing meta may hold: enough for
-    /// "exit 101 · 4.2s" or "12s · this session" beside a long command.
+    /// "exit 101 · 5s" or "12s · this session" beside a long command.
     static let metaShare: CGFloat = 0.6
     /// Between the verb and the subject.
     private let spacing: CGFloat = 7

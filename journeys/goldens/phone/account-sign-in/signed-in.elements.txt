@@ -20,17 +20,12 @@ you.support | Contact Support |  | 16,922,370,46
 you.report | Report a Problem |  | 16,968,370,46
 you.dump | Export Diagnostics |  | 16,1014,370,46
 you.help.caption |  |  | 16,1068,310,32
-you.close | Close |  | 326,82,56,36
+you.close | Close |  | 342,82,40,36
  | Pair your first host |  | 16,204,214,32
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
- | Looking on this network… |  | 36,305,174,18
- | 1 |  | 25,351,5,16
- | On your computer, install amux from amux.sh. |  | 52,348,231,39
- | Send Link |  | 52,400,106,44
- | 2 |  | 24,464,7,16
- | Run amux pair --qr on it and scan the code with the Camera app. |  | 52,461,325,39
+ | desk is online, Pair it from anywhere, Pair |  | 16,305,370,60
  | Agents |  | 16,127,116,42
- | Switch account |  | 20,66,44,36
+ | Switch account |  | 20,66,36,36
  | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
  | Hosts |  | 197,795,94,54
@@ -63,6 +58,6 @@ you.close | Close |  | 326,82,56,36
  | Export Diagnostics |  | 16,1014,370,46
  | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,1068,282,32
  | Settings |  | 167,89,68,21
- | Close |  | 326,82,56,36
+ | Close |  | 342,82,40,36
  | Agents | selected | 111,795,94,54
  | Hosts |  | 197,795,94,54

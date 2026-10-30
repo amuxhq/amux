@@ -17,14 +17,14 @@ you.support | Contact Support |  | 16,1510,370,69
 you.report | Report a Problem |  | 16,1580,370,69
 you.dump | Export Diagnostics |  | 16,1650,370,112
 you.help.caption |  |  | 16,1769,366,106
-you.close | Close |  | 326,82,56,36
+you.close | Close |  | 342,82,40,36
  | All |  | 16,185,60,44
  | Needs you |  | 84,185,165,44
  | Working |  | 257,185,140,44
  | decision-sdk, Idle, The deploy check passed., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,231,370,150
  | Agents |  | 16,124,174,62
- | Switch account |  | 21,66,42,36
- | New Agent |  | 338,62,44,44
+ | Switch account |  | 21,66,34,36
+ | New Agent |  | 348,66,33,36
  | Search |  | 16,188,370,0
  | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
@@ -53,6 +53,6 @@ you.close | Close |  | 326,82,56,36
  | Export Diagnostics |  | 16,1650,370,112
  | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,1769,338,106
  | Settings |  | 161,88,80,25
- | Close |  | 326,82,56,36
+ | Close |  | 342,82,40,36
  | Agents | selected | 111,795,94,54
  | Hosts |  | 197,795,94,54

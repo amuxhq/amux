@@ -18,10 +18,10 @@ ask.addNote.0 | Add a note |  | 28,658,94,44
 ask.skip | Skip |  | 28,714,169,44
 ask.next | Next |  | 205,714,169,44 (disabled)
 ask.reply | Reply instead |  | 28,770,114,44
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
-chat.title | asker | asker | 96,66,160,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
+chat.title | asker | asker | 80,66,152,36
  | 3 questions |  | 62,199,87,20
  | More |  | 338,187,44,44
  | Layout |  | 28,235,63,44
@@ -43,6 +43,6 @@ Keys     │ |  | 38,352,265,51
  | Started |  | 16,59,370,34
  | Add a settings screen. |  | 16,93,370,40
  | Asking, 3 questions |  | 16,145,370,20
- | Back |  | 20,66,56,36
- | asker, /t/a/n/d/work · desk |  | 96,66,160,36
- | More |  | 342,66,36,36
+ | Back |  | 20,66,40,36
+ | asker, /t/a/n/d/work · desk |  | 80,66,152,36
+ | More |  | 350,66,28,36

@@ -705,16 +705,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "claude-protocol",
- "pty-host",
  "semver",
  "serde",
  "serde_json",
- "sha2",
- "shell-words",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
- "toml",
  "uuid",
 ]
 
@@ -742,10 +738,12 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tokio-util",
+ "toml",
  "uuid",
 ]
 

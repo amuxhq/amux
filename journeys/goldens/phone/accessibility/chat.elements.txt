@@ -5,14 +5,14 @@ chat.model | claude-fake-1 · medium |  | 28,726,342,48
 chat.attach | Attach | closed | 23,779,44,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,169,36
-chat.title | decision-sdk | decision-sdk | 96,66,169,36
+chat.more | More |  | 347,66,33,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,161,36
+chat.title | decision-sdk | decision-sdk | 80,66,161,36
  | claude-fake-1 · medium |  | 28,726,342,48
  | Attach |  | 23,779,44,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Back |  | 20,66,56,36
- | decision-sdk, /t/a/n/d/work · desk |  | 96,66,169,36
- | More |  | 342,66,36,36
+ | Back |  | 20,66,40,36
+ | decision-sdk, /t/a/n/d/work · desk |  | 80,66,161,36
+ | More |  | 347,66,33,36

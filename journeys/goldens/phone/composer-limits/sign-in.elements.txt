@@ -11,10 +11,10 @@ chat.row.turn-end | <volatile>
 chat.foot.sign-in | Claude needs you to sign in | Sign-in failed · fake@example.com
 Failed to authenticate. API Error: 401 OAuth token has expired. Please obtain a new token or refresh your existing token.
 Run claude and sign in with /login on desk. | 12,684,378,146
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
-chat.title | expired | expired | 96,66,160,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
+chat.title | expired | expired | 80,66,152,36
  | Error |  | 29,701,17,17
  | Claude needs you to sign in |  | 58,700,204,20
  | Sign-in failed · fake@example.com
@@ -23,10 +23,10 @@ Run claude and sign in with /login on desk. |  | 58,722,306,92
  | Started |  | 16,124,370,34
  | Tidy the pairing section. |  | 16,158,370,40
  | Tidied. |  | 16,210,370,20
- | Worked <t> |  | 16,237,74,16
+ | Worked <t> |  | 16,237,62,16
  | Check the links. |  | 16,267,370,40
  | authentication_failed, Failed to authenticate. API Error: 401 OAuth token has expired. Please obtain a new token or refresh your existing token. |  | 16,307,370,98
- | Worked <t> · failed |  | 16,403,113,16
- | Back |  | 20,66,56,36
- | expired, /t/a/n/d/work · desk |  | 96,66,160,36
- | More |  | 342,66,36,36
+ | Worked <t> · failed |  | 16,403,101,16
+ | Back |  | 20,66,40,36
+ | expired, /t/a/n/d/work · desk |  | 80,66,152,36
+ | More |  | 350,66,28,36

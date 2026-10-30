@@ -9,16 +9,7 @@
         "channel": "agent",
         "json": {
           "type": "launch",
-          "version": "2.1.282",
-          "keymap": "claude-2.1",
-          "permission_menus": {
-            "per_suggestion": [
-              1
-            ],
-            "folded": [
-              2
-            ]
-          }
+          "version": "2.1.282"
         }
       }
     },
@@ -76,6 +67,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 1,
           "hook_event_name": "PermissionRequest",
           "tool_name": "Bash",
           "tool_input": {
@@ -211,6 +203,21 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "hook_event_name": "PreToolUse",
+          "tool_use_id": "t2",
+          "tool_name": "Write",
+          "tool_input": {
+            "file_path": "notes.md",
+            "content": "x"
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "amux_reply": 2,
           "hook_event_name": "PermissionRequest",
           "tool_name": "Write",
           "tool_input": {
@@ -312,6 +319,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 3,
           "hook_event_name": "PermissionRequest",
           "tool_name": "Edit",
           "tool_input": {
@@ -427,6 +435,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 4,
           "hook_event_name": "PermissionRequest",
           "tool_name": "Bash",
           "tool_input": {

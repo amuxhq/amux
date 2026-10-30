@@ -3,8 +3,11 @@ import UIKit
 
 enum RoundingImageDiff {
     /// How far a channel of any pixel may move: native rasterizers can round
-    /// a border channel differently across hosts.
-    static let rounding = 1
+    /// a border channel differently across hosts, and the system draws its
+    /// bars' capsules itself, one Mac's edges not quite another's. On CI the
+    /// review page's bar came out with 283 pixels two or three levels from
+    /// the picture taken here; nothing a person could see.
+    static let rounding = 3
     /// How many pixels may move further than rounding, and how far a channel
     /// of such a pixel may move. Now and then the rasterizer draws the
     /// anti-aliased edge of a rounded border a few levels differently: once

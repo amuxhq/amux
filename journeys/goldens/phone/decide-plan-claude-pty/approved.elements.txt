@@ -12,10 +12,10 @@ chat.attach | Attach | closed | 23,779,44,44
 chat.model | Fake 1 |  | 71,779,73,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
-chat.title | planner-pty | planner-pty | 96,66,160,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
+chat.title | planner-pty | planner-pty | 80,66,152,36
  | Attach |  | 23,779,44,44
  | Fake 1 |  | 71,779,73,44
  | Dictate |  | 287,779,44,44
@@ -25,7 +25,7 @@ chat.title | planner-pty | planner-pty | 96,66,160,36
  | Plan sent back, “Check the copy before switching.” |  | 16,198,370,65
  | Plan approved, Move the journal |  | 16,249,370,44
  | Moving the journal as planned. |  | 16,295,370,20
- | Worked <t> |  | 16,323,72,16
- | Back |  | 20,66,56,36
- | planner-pty, /t/a/n/d/work · desk |  | 96,66,160,36
- | More |  | 342,66,36,36
+ | Worked <t> |  | 16,323,64,16
+ | Back |  | 20,66,40,36
+ | planner-pty, /t/a/n/d/work · desk |  | 80,66,152,36
+ | More |  | 350,66,28,36

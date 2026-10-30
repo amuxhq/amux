@@ -177,7 +177,7 @@ fn read_lines(path: &Path) -> Vec<serde_json::Value> {
 }
 
 /// What the agent process told its interpreter about the provider it
-/// launched (terminal Claude's version and keymap), from the agent's facts
+/// launched (terminal Claude's version), from the agent's facts
 /// ring: a terminal recording replays after it.
 pub fn launch_facts(root: &Path, agent: &[u8]) -> Vec<serde_json::Value> {
     let Ok(id) = uuid::Uuid::from_slice(agent) else {

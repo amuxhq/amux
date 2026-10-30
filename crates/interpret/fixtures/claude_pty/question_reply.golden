@@ -1,12 +1,12 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.282"}}
+## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.282"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 2 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
 effect follow "/t/s1.jsonl"
-item boundary:1 boundary final at=0 text="" BOUNDARY_KIND_STARTED session=s1 version=2.1.282 keymap=claude-2.1
+item boundary:1 boundary final at=0 text="" BOUNDARY_KIND_STARTED session=s1 version=2.1.282
 snapshot IDLE queue=[] working_on=- at=0 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 3 input {"id":"p1","prompt":{"text":"test it"}}
 effect reply p1 accepted
@@ -17,25 +17,22 @@ item u1 prompt final input=p1 at=1800000000010 text="test it"
 snapshot WORKING queue=[] working_on="test it" at=0 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 5 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick tools"}]},"tool_name":"AskUserQuestion","tool_use_id":"t1"}}
 snapshot WORKING queue=[] working_on="test it" at=0 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t1 AskUserQuestion since=0
-## 6 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick tools"}]},"tool_name":"AskUserQuestion"}}
+## 6 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick tools"}]},"tool_name":"AskUserQuestion"}}
 snapshot NEEDS_YOU queue=[] working_on="test it" at=0 asks=[ask:1->- question:2+other,2m+other] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t1 AskUserQuestion since=0
-## 7 input {"answer":{"answer":{"notes":["warm is better",null],"selected":[0,[1]]},"ask":"ask:1"},"id":"a2"}
-effect reply a2 rejected:UNSUPPORTED
-## 8 input {"answer":{"answer":{"reply":{"selected":[],"text":"Use the old palette."}},"ask":"ask:1"},"id":"a3"}
-effect terminal interrupt
-effect reply a3 queued
-snapshot WORKING queue=[a3] working_on="test it" at=0 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t1 AskUserQuestion since=0
-## 9 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick tools"}]},"name":"AskUserQuestion","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.020Z","type":"assistant","uuid":"a1"}}
+## 7 input {"answer":{"answer":{"reply":{"selected":[],"text":"Use the old palette."}},"ask":"ask:1"},"id":"a3"}
+effect hook 1 answered {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Use the old palette.","interrupt":false}}}
+effect reply a3 accepted
+snapshot WORKING queue=[] working_on="test it" at=0 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t1 AskUserQuestion since=0
+## 8 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick tools"}]},"name":"AskUserQuestion","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.020Z","type":"assistant","uuid":"a1"}}
 item t1 ask final at=1800000000020 text="" question×2 ASK_OUTCOME_REPLIED answered 0 of 2 [(skipped); (skipped)] reply="Use the old palette."
-## 10 fact {"channel":"transcript","json":{"message":{"content":[{"content":"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.","is_error":true,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.025Z","toolUseResult":"User rejected tool use","type":"user","uuid":"r1"}}
-snapshot WORKING queue=[a3] working_on="test it" at=0 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
-## 11 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user for tool use]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.026Z","type":"user","uuid":"i1"}}
-effect terminal prompt "Use the old palette."
+## 9 fact {"channel":"transcript","json":{"message":{"content":[{"content":"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.","is_error":true,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.025Z","toolUseResult":"User rejected tool use","type":"user","uuid":"r1"}}
+snapshot WORKING queue=[] working_on="test it" at=0 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
+## 10 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user for tool use]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.026Z","type":"user","uuid":"i1"}}
 item i1 interruption final at=1800000000026 text=""
 item turn:1 turn final at=1800000000026 text="" #1 TURN_OUTCOME_INTERRUPTED started=0
-snapshot IDLE queue=[] working_on="Use the old palette." at=0 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
+snapshot IDLE queue=[] working_on="test it" at=0 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 turn_end 1 last=-
-## 12 fact {"channel":"transcript","json":{"durationMs":17,"isMeta":false,"messageCount":4,"parentUuid":"i1","sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.027Z","type":"system","uuid":"d1"}}
-## 13 fact {"channel":"transcript","json":{"message":{"content":"Use the old palette.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.040Z","type":"user","uuid":"u2"}}
-item u2 prompt final input=a3 at=1800000000040 text="Use the old palette."
-snapshot WORKING queue=[] working_on="Use the old palette." at=0 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
+## 11 fact {"channel":"transcript","json":{"durationMs":17,"isMeta":false,"messageCount":4,"parentUuid":"i1","sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.027Z","type":"system","uuid":"d1"}}
+## 12 fact {"channel":"transcript","json":{"message":{"content":"Use the old palette.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.040Z","type":"user","uuid":"u2"}}
+item u2 prompt final at=1800000000040 text="Use the old palette."
+snapshot WORKING queue=[] working_on="test it" at=0 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?

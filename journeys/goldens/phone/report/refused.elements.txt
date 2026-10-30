@@ -5,27 +5,27 @@ home.chip.needsYou | Needs you | off | 68,172,87,44
 home.chip.working | Working | off | 163,172,76,44
 home.row.<desk-work> | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,218,370,64
 home.row.<desk-work>.age.volatile | <volatile>
-home.newAgent | New Agent |  | 338,62,44,44
-home.accounts | Switch account |  | 20,66,44,36
+home.newAgent | New Agent |  | 350,66,27,36
+home.accounts | Switch account |  | 20,66,36,36
 report.screen |  | failed | 0,62,402,778
 report.frame |  | 0 marked | 80,123,242,526
 report.refusal | Not sent | amux.sh could not take this report | 16,693,298,18
 report.note | What went wrong? | The desk's agent is listed twice. | 16,726,370,85
-report.cancel | Cancel |  | 20,66,56,36
-report.send | Retry |  | 338,62,44,44
+report.cancel | Cancel |  | 20,66,40,36
+report.send | Retry |  | 350,66,27,36
  | Drag a box around anything wrong. Each box takes a note. |  | 16,663,342,16
  | Not sent: amux.sh could not take this report |  | 16,693,298,18
  | Includes this screen and the available session and host records. |  | 16,824,295,32
- | Cancel |  | 20,66,56,36
+ | Cancel |  | 20,66,40,36
  | Report a Problem |  | 131,73,140,21
- | Retry |  | 338,62,44,44
+ | Retry |  | 351,66,27,36
  | All |  | 16,172,44,44
  | Needs you |  | 68,172,87,44
  | Working |  | 163,172,76,44
  | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,218,370,64
  | Agents |  | 16,127,116,42
- | Switch account |  | 20,66,44,36
- | New Agent |  | 338,62,44,44
+ | Switch account |  | 20,66,36,36
+ | New Agent |  | 350,66,27,36
  | Search |  | 16,175,370,0
  | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12

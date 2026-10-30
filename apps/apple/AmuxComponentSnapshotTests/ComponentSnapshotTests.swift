@@ -210,15 +210,6 @@ final class ComponentSnapshotTests: XCTestCase {
             }
             guard let settled = picture else { return }
             if reading { await Self.assertReadable(name, in: window) }
-            let frosted = Self.frostedLayers(in: window.layer)
-            guard frosted == 0 else {
-                XCTFail(
-                    "\(name) holds \(frosted) Liquid Glass or material layer(s) when photographed: "
-                        + "a surface drew glass or material without going through the "
-                        + "reduce-transparency flag, and the comparison holds only flat pictures"
-                )
-                return
-            }
             var strategy: Snapshotting<UIViewController, UIImage> = .image(
                 drawHierarchyInKeyWindow: true,
                 precision: 1,
@@ -293,6 +284,7 @@ final class ComponentSnapshotTests: XCTestCase {
             value.timeZone = TimeZone(secondsFromGMT: 0)!
             return value
         }()
+        Self.systemReducesTransparency(reducesTransparency)
         let content = ComponentExampleView(
             example: example, appearance: appearance.colorScheme,
             reducesTransparency: reducesTransparency)
@@ -449,6 +441,22 @@ final class ComponentSnapshotTests: XCTestCase {
     /// so a slower machine (a CI runner has taken over one and a half times
     /// as long as this Mac to draw) still shows it inside the window.
     private static let quiet: TimeInterval = 1
+
+    /// Turns the system's own Reduce Transparency setting on or off, as a
+    /// person does in Settings, so the system's glass — the bars' capsules,
+    /// its buttons — is drawn flat by the system itself when a flat picture
+    /// is taken, and the app draws nothing in its place. The setting has no
+    /// public switch; this is the one Settings calls.
+    private static func systemReducesTransparency(_ on: Bool) {
+        typealias Set = @convention(c) (Bool) -> Void
+        guard let library = dlopen("/usr/lib/libAccessibility.dylib", RTLD_NOW),
+              let symbol = dlsym(library, "_AXSSetEnhanceBackgroundContrastEnabled")
+        else {
+            XCTFail("the system's Reduce Transparency switch was not found")
+            return
+        }
+        unsafeBitCast(symbol, to: Set.self)(on)
+    }
 
     /// How many layers under `layer` are a frosted surface's glass or
     /// material: a layer carrying Liquid Glass's filter, or a backdrop layer

@@ -1,21 +1,21 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.283"}}
+## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.312"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
-item boundary:1 boundary final at=1790397584385 text="" BOUNDARY_KIND_STARTED session=6230cfb1-9b52-4c80-85f4-60ad45f09cc1 version=2.1.283 keymap=claude-2.1
-snapshot IDLE queue=[] working_on=- at=1790397584385 asks=[] session=6230cfb1-9b52-4c80-85f4-60ad45f09cc1 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
-## 6 recorded 4: fact Transcript type=permission-mode
-snapshot IDLE queue=[] working_on=- at=1790397584385 asks=[] session=6230cfb1-9b52-4c80-85f4-60ad45f09cc1 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
-## 12 recorded 10: fact Transcript type=user uuid=937c32da-2f1c-431f-badd-91838d542dd9
-item 937c32da-2f1c-431f-badd-91838d542dd9 prompt final at=1790397584723 text="Reply exactly PTY_SPEC_API_ERROR and nothing else."
-snapshot WORKING queue=[] working_on=- at=1790397584433 asks=[] session=6230cfb1-9b52-4c80-85f4-60ad45f09cc1 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
-## 32 recorded 30: fact Transcript type=assistant uuid=26397c9d-41a4-4483-818e-956b132a2a9b
-item 26397c9d-41a4-4483-818e-956b132a2a9b api_error final at=1790397586478 text="" server_error "API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)" retry=false 0/0
-## 33 recorded 31: fact Transcript type=system subtype=turn_duration uuid=6e0c5064-0783-4624-80cf-8a5a474523c6
-item turn:1 turn final at=1790397586485 text="" #1 TURN_OUTCOME_COMPLETED started=1790397584714
-snapshot IDLE queue=[] working_on=- at=1790397586082 asks=[] session=6230cfb1-9b52-4c80-85f4-60ad45f09cc1 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
+item boundary:1 boundary final at=1793309191916 text="" BOUNDARY_KIND_STARTED session=f0ff34c8-28c3-4379-a7c3-5994a4baeffb version=2.1.312
+snapshot IDLE queue=[] working_on=- at=1793309191916 asks=[] session=f0ff34c8-28c3-4379-a7c3-5994a4baeffb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
+## 4 recorded 2: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793309191916 asks=[] session=f0ff34c8-28c3-4379-a7c3-5994a4baeffb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
+## 11 recorded 9: fact Transcript type=user uuid=53d70f05-9455-468a-8b5a-9fe24936d464
+item 53d70f05-9455-468a-8b5a-9fe24936d464 prompt final at=1793309191944 text="Reply exactly PTY_SPEC_API_ERROR and nothing else."
+snapshot WORKING queue=[] working_on=- at=1793309191944 asks=[] session=f0ff34c8-28c3-4379-a7c3-5994a4baeffb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
+## 32 recorded 30: fact Transcript type=assistant uuid=8da88e3c-98e2-43bf-843c-7111c72c5ba6
+item 8da88e3c-98e2-43bf-843c-7111c72c5ba6 api_error final at=1793309193844 text="" server_error "API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)" retry=false 0/0
+## 33 recorded 31: fact Transcript type=system subtype=turn_duration uuid=cef450ac-502d-47f1-9a46-419f1e890b9c
+item turn:1 turn final at=1793309193848 text="" #1 TURN_OUTCOME_COMPLETED started=1793309191934
+snapshot IDLE queue=[] working_on=- at=1793309193802 asks=[] session=f0ff34c8-28c3-4379-a7c3-5994a4baeffb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
 turn_end 1 last=-

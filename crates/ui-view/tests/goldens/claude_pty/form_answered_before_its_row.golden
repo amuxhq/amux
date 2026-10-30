@@ -1,0 +1,36 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 2 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"SessionStart","model":"claude-opus-5-5","permission_mode":"default","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
+  row    1 boundary:1 Boundary { kind: Started, cause: "" }
+## 4 fact {"channel":"transcript","json":{"message":{"content":"file the crash","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
+  row    2 u1 Prompt { text: [Text("file the crash")], steered: false }
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 6 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","session_id":"s1","tool_input":{"title":"Crash on launch"},"tool_name":"mcp__github__create_issue","tool_use_id":"t1","transcript_path":"/t/s1.jsonl"}}
+  composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
+## 7 fact {"channel":"hook","json":{"amux_reply":101,"cwd":"/w","hook_event_name":"Elicitation","mcp_server_name":"github","message":"github needs your input","mode":"form","permission_mode":"default","requested_schema":{"properties":{"repo":{"type":"string"}},"required":["repo"],"type":"object"},"session_id":"s1","transcript_path":"/t/s1.jsonl"}}
+  ask ask:1 -> "" 1/1 Open
+    choices Submit*, Decline
+    body Form { server: "github", message: "github needs your input", fields: [FormField { name: "repo", title: "repo", description: "", required: true, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 8 input {"answer":{"answer":{"form":{"action":"accept","content":{"repo":"ada/amux"}}},"ask":"ask:1"},"id":"x1"}
+  row    3 ask:ask:1 Ask(Form { server: "github", message: "github needs your input", fields: ["repo"], resolution: Answered })
+  ask none
+  composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
+## 9 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"title":"Crash on launch"},"name":"mcp__github__create_issue","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.100Z","type":"assistant","uuid":"a1"}}
+  row    4 t1 ToolCall { server: "github", tool: "create_issue", fact: "Crash on launch", state: Running, result: "" } run[t1..t1 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 u1 Prompt { text: [Text("file the crash")], steered: false }
+     3 ask:ask:1 Ask(Form { server: "github", message: "github needs your input", fields: ["repo"], resolution: Answered })
+     4 t1 ToolCall { server: "github", tool: "create_issue", fact: "Crash on launch", state: Running, result: "" } run[t1..t1 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context None sign-in None
+== settings
+  model* unlisted claude-opus-5-5 "Opus 5.5" efforts=[]
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Opus 5.5") effort=None permission=None mode=None

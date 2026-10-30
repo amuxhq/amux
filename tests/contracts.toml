@@ -559,7 +559,8 @@ source = "testing page"
 section = "Boundaries"
 claim = "Provider adapter: real provider bytes and hooks reach the interpreter; semantic commands produce the right provider writes; agent messages go to the provider's own injection channel, the provider's acceptance being the verdict."
 tests = [
-  "agent/integration::providers::terminal_claude_replays_a_prompt_a_denial_with_feedback_and_its_end",
+  "agent/integration::providers::a_terminal_claude_agent_types_its_prompt_and_hears_its_hooks",
+  "agent/integration::providers::terminal_claude_denies_on_the_menu_that_offers_auto_mode",
   "agent/integration::providers::headless_claude_replays_initialization_a_control_reply_and_the_end_of_input",
   "agent/integration::providers::codex_replays_the_handshake_an_approval_and_the_end_of_input",
   "agent/integration::providers::headless_claude_replays_transport_loss_mid_turn",
@@ -1143,15 +1144,14 @@ tests = [
 id = "questions-skip-note-reply"
 source = "invariant"
 section = "Plans and asks"
-claim = "A question can be skipped, noted and replied to instead, for every kind; terminal Claude takes no note and a skip only on a form of several questions, whose review screen submits with some unanswered."
+claim = "A question can be skipped, noted and replied to instead, for every kind, a lone question too; the provider's own dialogs, such as terminal Claude's folder trust, take neither."
 tests = [
   "interpret/integration::claude_sdk::questions_are_skipped_noted_or_replied_to",
   "interpret/integration::codex::questions_are_skipped_noted_or_replied_to",
   "interpret/integration::claude_pty::a_question_of_several_can_be_skipped",
   "interpret/integration::claude_pty::a_question_takes_a_reply_instead",
-  "claude/lib::pty::keymap::interpret::a_lone_question_cannot_be_skipped",
-  "agent/integration::providers::terminal_claude_takes_a_skipped_question_through_its_review_screen",
-  "tui/lib::tests::terminal_claude_offers_skip_only_on_a_form_of_several_questions",
+  "agent/integration::providers::terminal_claude_leaves_a_skipped_question_out_of_its_answers",
+  "tui/lib::tests::terminal_claude_takes_a_skip_and_a_note_on_any_question",
   "tui/lib::tests::a_question_is_noted_with_tab_and_the_next_skipped",
   "tui/lib::tests::a_question_is_replied_to_instead_with_what_was_answered_so_far",
   "journey:terminal/answer-questions",

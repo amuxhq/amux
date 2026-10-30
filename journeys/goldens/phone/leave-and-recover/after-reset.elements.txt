@@ -19,10 +19,10 @@ chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,117,44
 chat.dictate | Dictate | idle | 228,779,44,44
 chat.resume | Resume |  | 276,779,103,44 (disabled)
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | Exited · while the daemon was away | live | 96,66,216,36
-chat.title | keeper | keeper | 96,66,216,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | Exited · while the daemon was away | live | 80,66,221,36
+chat.title | keeper | keeper | 80,66,221,36
  | Exited · while the daemon was away, desk |  | 29,720,345,20
  | Attach |  | 23,779,44,44
  | claude-fake-1 |  | 71,779,117,44
@@ -31,13 +31,13 @@ chat.title | keeper | keeper | 96,66,216,36
  | Started |  | 16,124,370,34
  | Remember this recovery turn. |  | 16,158,370,40
  | The recovery state is safely stored. |  | 16,210,370,20
- | Worked <t> |  | 16,237,74,16
+ | Worked <t> |  | 16,237,62,16
  | Carry on. |  | 16,267,370,40
  | A second turn arrived while you were away. |  | 16,319,370,20
- | Worked <t> |  | 16,347,74,16
+ | Worked <t> |  | 16,347,62,16
  | Pick up where we left off. |  | 16,377,370,40
  | Back after the restart. |  | 16,428,370,20
- | Worked <t> |  | 16,456,74,16
- | Back |  | 20,66,56,36
- | keeper, Exited · while the daemon was away |  | 96,66,216,36
- | More |  | 342,66,36,36
+ | Worked <t> |  | 16,456,62,16
+ | Back |  | 20,66,40,36
+ | keeper, Exited · while the daemon was away |  | 80,66,221,36
+ | More |  | 350,66,28,36

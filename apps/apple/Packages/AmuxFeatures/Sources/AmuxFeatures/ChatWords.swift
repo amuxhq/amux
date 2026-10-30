@@ -7,7 +7,6 @@ import Foundation
 public enum ChatWords {
     // MARK: - Numbers
 
-    /// "1m 42s", "8s", "4.2s", "850ms".
     /// Why a typed agent name will not do.
     public static func nameProblem(_ problem: AgentNameProblem) -> String {
         switch problem {
@@ -36,19 +35,15 @@ public enum ChatWords {
         }
     }
 
+    /// "4s", "1m 42s", "2h": whole seconds, rounded up. A tenth of a
+    /// second is precision nobody reads a chat for, and rounding up keeps a
+    /// turn that ran at all from claiming it took nothing.
     public static func duration(_ ms: Int64) -> String {
-        let ms = max(0, ms)
-        if ms < 1_000 { return "\(ms)ms" }
-        let secs = ms / 1_000
-        if secs < 60 {
-            if ms < 10_000, ms % 1_000 != 0 {
-                return String(format: "%.1fs", Double(ms) / 1_000)
-            }
-            return "\(secs)s"
-        }
+        let secs = (max(0, ms) + 999) / 1_000
+        if secs < 60 { return "\(secs)s" }
         let mins = secs / 60
-        if mins < 60 { return "\(mins)m \(secs % 60)s" }
-        return "\(mins / 60)h \(mins % 60)m"
+        if mins < 60 { return secs % 60 == 0 ? "\(mins)m" : "\(mins)m \(secs % 60)s" }
+        return mins % 60 == 0 ? "\(mins / 60)h" : "\(mins / 60)h \(mins % 60)m"
     }
 
     /// "148k", "1.2M", "812".
@@ -387,11 +382,15 @@ public enum ChatWords {
 
     /// What the empty field says: who a message goes to, or why sending
     /// waits while the draft is kept.
+    /// `limit` is a usage limit reached, said where the next message would
+    /// be typed, which is the one place it changes anything.
     public static func placeholder(
-        _ composer: Composer?, agent: String, host: String, reach: Reach, working: Bool
+        _ composer: Composer?, agent: String, host: String, reach: Reach, working: Bool,
+        limit: String? = nil
     ) -> String {
         switch composer {
         case .send?, nil:
+            if let limit { return limit }
             return working
                 ? String(localized: "Queue a message")
                 : String(localized: "Message \(agent)")
@@ -482,39 +481,27 @@ public enum ChatWords {
         lines == 1 ? String(localized: "Comment on 1 line") : String(localized: "Comment on \(lines) lines")
     }
 
-    // MARK: - The strip
+    // MARK: - Around the composer
 
-    /// The facts strip's parts, in order; each only while it is true. The
-    /// task list is not one of them: it docks as its own card.
-    public static func strip(
-        context: ContextView?, overview: Overview, now: Date
-    ) -> [(text: String, warn: Bool)] {
-        var parts: [(String, Bool)] = []
-        if let usage = overview.usageNearLimit, usage.blocked {
-            parts.append((limitReached(usage, now: now), true))
+    /// "92% context", while the context is near its end: said on the model
+    /// pill, because it is the session's standing rather than news.
+    public static func contextLeft(_ context: ContextView?) -> String? {
+        guard let context, context.nearFull, let percent = context.percent else { return nil }
+        return String(localized: "\(percent)% context")
+    }
+
+    /// "184k of 200k tokens", or the tokens alone where the window is not
+    /// known.
+    public static func contextUsed(_ context: ContextView) -> String {
+        guard let window = context.windowTokens else {
+            return String(localized: "\(tokens(context.usedTokens)) tokens")
         }
-        if let context, context.nearFull, let percent = context.percent {
-            parts.append((String(localized: "\(percent)% context"), true))
-        }
-        if !overview.jobs.isEmpty {
-            parts.append((String(localized: "\(overview.jobs.count) in background"), false))
-        }
-        if let usage = overview.usageNearLimit, !usage.blocked {
-            let near = usage.windows
-                .compactMap { window in
-                    window.usedPercent.map { "\(usageLabel(window.label)) \(Int($0.rounded()))%" }
-                }
-                .joined(separator: " · ")
-            parts.append((
-                near.isEmpty
-                    ? String(localized: "Near the usage limit")
-                    : String(localized: "Near the usage limit · \(near)"),
-                true))
-        }
-        for server in overview.failedServers {
-            parts.append((failed(server), true))
-        }
-        return parts
+        return String(localized: "\(tokens(context.usedTokens)) of \(tokens(window)) tokens")
+    }
+
+    /// "2 in background": the dock's row for what still runs after a turn.
+    public static func inBackground(_ count: Int) -> String {
+        String(localized: "\(count) in background")
     }
 
     /// "5-hour limit reached · resets 23:24": the window of a usage limit
@@ -692,12 +679,13 @@ public enum ChatWords {
 
     /// The model chip's words, from the controls the view sums up: the
     /// model by the one name the view gives it, its effort, and the
-    /// permission and mode only while they are not the agent's normal ones.
-    /// Nil when nothing is reported.
-    public static func chip(_ controls: ControlsSummary)
+    /// permission and mode only while they are not the agent's normal ones,
+    /// and the context while it is near its end. Nil when nothing is
+    /// reported.
+    public static func chip(_ controls: ControlsSummary, context: ContextView? = nil)
         -> (model: String, detail: String, unusual: [String])?
     {
-        let unusual = [controls.permission.map(permission), controls.mode.map(mode)]
+        let unusual = [controls.permission.map(permission), controls.mode.map(mode), contextLeft(context)]
             .compactMap { $0 }
         let model = controls.model ?? ""
         let detail = controls.effort ?? ""
@@ -809,7 +797,7 @@ public enum ChatWords {
         case .question: return String(localized: "Question")
         case .plan: return String(localized: "Plan ready")
         case .form(let server, _, _): return String(localized: "\(server) needs details")
-        case .link(let server, _, _): return String(localized: "\(server) wants you to open a link")
+        case .link(let server, _, _, _): return String(localized: "\(server) wants you to open a link")
         case .access: return String(localized: "Wants more access")
         case .unanswerable: return String(localized: "Can’t answer this here")
         }

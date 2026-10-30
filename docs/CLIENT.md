@@ -502,8 +502,9 @@ Each row's second line goes by the state the inventory row says, in words its se
 when it needs you; the step it is running (the chat's activity line, with the step's command or file) when
 working; when idle, why it is stuck (signed out, a spent usage window) or else the first line of what it last
 said, its markdown read as words; nothing while starting or before its session opens; how it ended once exited,
-whatever its host is doing; that its host is away when the host is out of reach (`HostAway`), or that the host no
-longer trusts this machine (`HostRevoked`), which only pairing again undoes. The header's working and needs-you
+whatever its host is doing; or that its host no longer trusts this machine (`HostRevoked`), which only pairing
+again undoes. A host out of reach otherwise changes nothing in the line: the row says what this machine last held,
+and each client marks the host's reach from the card's `host_reach`. The header's working and needs-you
 counts leave out agents whose host is out of reach, as their rows do. Names reach the row without direction
 controls, so a right-to-left override cannot make one read as something else. How an agent ended is typed from the row's `ExitCause`
 (`ui_state::exit_cause`): finished for `FINISHED`; ended for a stop, for `UNSPECIFIED` and for a cause this build

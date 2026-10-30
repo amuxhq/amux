@@ -20,7 +20,7 @@ mod supervise;
 mod ui;
 mod verbs;
 
-use std::io::Read as _;
+use std::io::{Read as _, Write as _};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -608,7 +608,8 @@ pub(crate) fn plain(status: tonic::Status) -> anyhow::Error {
 }
 
 /// Forwards the payload on stdin to the agent's hook socket, which the
-/// agent names in the environment it gives Claude.
+/// agent names in the environment it gives Claude, and prints the agent's
+/// answer, which Claude reads as the hook's decision.
 fn claude_hook() -> std::io::Result<()> {
     let socket = std::env::var_os(claude::hooks::HOOK_SOCKET_ENV)
         .map(PathBuf::from)
@@ -617,7 +618,8 @@ fn claude_hook() -> std::io::Result<()> {
         })?;
     let mut payload = Vec::new();
     std::io::stdin().read_to_end(&mut payload)?;
-    claude::hooks::forward_from_env(&payload, &socket)
+    let answer = claude::hooks::forward_from_env(&payload, &socket)?;
+    std::io::stdout().write_all(&answer)
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 {
-  "about": "A form of two questions, the first skipped through the keymap's skip step and the second answered; then a second form cancelled with the interrupt key and words typed instead as the next prompt.",
+  "about": "A form of two questions, the first skipped in Claude's form and the second answered; then a second form cancelled with the interrupt key and words typed instead as the next prompt.",
   "spec": {
     "created_at_ms": 0
   },
@@ -9,16 +9,7 @@
         "channel": "agent",
         "json": {
           "type": "launch",
-          "version": "2.1.292",
-          "keymap": "claude-2.1",
-          "permission_menus": {
-            "per_suggestion": [
-              1
-            ],
-            "folded": [
-              2
-            ]
-          }
+          "version": "2.1.312"
         }
       }
     }

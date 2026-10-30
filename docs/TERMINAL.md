@@ -67,7 +67,8 @@ attention ink when it needs you), its name, its branch when it works in a reposi
 the right how long it has been in its state. Short of room, the folder is cut from the left down to its last name,
 then the host goes, then the agent. The second line says what the agent's state calls for: what it asks (`wants to
 run cargo test -p auth`), the step it is running, what it last said, or why it cannot go on (`signed out of
-Codex`, `usage limit reached`); why it exited (`finished`, a crash in red); that its host is away. A starting
+Codex`, `usage limit reached`); why it exited (`finished`, a crash in red). An agent on a host that is away keeps
+the line it last had, its faint mark saying the host is out of reach. A starting
 agent has no second line. A folded family whose member needs you says that member's name and what it asks. The
 highlighted row is tinted, with half a line of the tint above and below; under the pointer or the
 keys alike, and it shows `[x]` in place of its age to stop the agent, or delete it once it has exited, after asking.
@@ -229,9 +230,8 @@ about stays in the feed above. A typed answer or note shows its own line breaks,
   description`; several picks are `[ ]` boxes under `Select all that apply`; options with previews show the
   highlighted one's preview beside them. `Something else · enter to type` opens a field for an answer of your own.
   Secret answers type as dots. `Skip` leaves a question unanswered and Tab adds a note to it, each where the agent
-  takes one; `Reply instead` sends your own words in place of the answers. Terminal Claude takes no note, and a
-  skip only when it asks several questions: Claude's own form has a review screen only then, and submits a lone
-  question as soon as it is answered.
+  takes one; `Reply instead` sends your own words in place of the answers. Claude's own folder-trust question takes
+  neither.
 - **A tool server's form** (`● linear needs details`): its message, then each field as a step in the server's
   order (a choice, Yes / No, boxes, or a typed value), starting from the server's defaults with Yes / No on No,
   required ones marked, and a review with Submit; `Decline` is the way out. A value the form cannot take says
@@ -239,9 +239,10 @@ about stays in the feed above. A typed answer or note shows its own line breaks,
   form back.
 - **A tool server's link** (`● grafana sent a link`): the server's own message and the address, `1. Open the
   link` (the box stays), `2. Done`, and `Decline`. The provider says nothing of what a link is for, so the
-  record after it (`Opened grafana's link`) carries the message's first line.
+  record after it (`Opened grafana's link`) carries the message's first line. A link to `localhost` adds that
+  the page is on the agent's machine, to open in a browser there.
 - **Wider access** (Codex): what it wants and why, `Allow for this turn`, `Allow for this session`, `No`.
-- **What this client cannot answer** (a dialog only Claude's own terminal shows): the reason, and `Open Claude's
+- **What this client cannot answer** (an ask from an agent this build cannot read): the reason, and `Open Claude's
   terminal` where that terminal can be attached here.
 - **Sign-in**: when the agent's account needs signing in again, the box says so with the provider's message and
   where to do it (`Run claude and sign in with /login on desk`); nothing here can sign in, so it offers no choice.

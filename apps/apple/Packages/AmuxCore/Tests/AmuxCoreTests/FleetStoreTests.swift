@@ -188,18 +188,19 @@ final class FleetStoreTests: XCTestCase {
         XCTAssertEqual(fleet.subtitle, "1 need you · 3 agents")
     }
 
-    func testAnOfflineHostIsTheExceptionAndTheRelayOutranksIt() {
+    func testOnlyARelayLinkThePersonMustMendIsTrouble() {
         let fleet = FleetStore(now: Cards.now)
         fleet.show(Cards.view([Cards.row(1, "a")]), hosts: [Cards.host(reach: .offline(.plain))])
-        XCTAssertEqual(fleet.exceptions, "desk offline")
         XCTAssertEqual(fleet.unreachableHost, "desk")
+        XCTAssertNil(fleet.relayTrouble, "an offline machine is its rows' to show")
         fleet.relay(.signInAgain)
-        XCTAssertEqual(fleet.exceptions, "Sign in again to reach your hosts through the relay")
+        XCTAssertEqual(fleet.relayTrouble, "Sign in again to reach your hosts through the relay")
+        fleet.relay(.versionMismatch)
+        XCTAssertEqual(fleet.relayTrouble, "Update amux to reach your hosts through the relay")
         fleet.relay(.connecting)
-        XCTAssertNil(fleet.relayTrouble, "a link coming up for the first time is not trouble")
-        XCTAssertEqual(fleet.exceptions, "desk offline")
+        XCTAssertNil(fleet.relayTrouble, "a link coming up is not trouble")
         fleet.relay(.retrying)
-        XCTAssertEqual(fleet.exceptions, "Reconnecting to the relay")
+        XCTAssertNil(fleet.relayTrouble, "nor is one coming back")
     }
 
     func testAKindThisBuildCannotOpenIsListedButNotReadable() {

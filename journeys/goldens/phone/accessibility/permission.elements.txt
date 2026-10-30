@@ -9,10 +9,10 @@ ask.subject | deploy --check |  | 28,438,346,62
 ask.choice.1 | Always allow Bash In this project, from now on |  | 28,512,346,225
 ask.choice.0 | Allow |  | 28,749,169,65
 ask.deny | Deny… |  | 205,749,169,65
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,169,36
-chat.title | decision-sdk | decision-sdk | 96,66,169,36
+chat.more | More |  | 347,66,33,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,161,36
+chat.title | decision-sdk | decision-sdk | 80,66,161,36
  | Wants to run a command |  | 62,340,218,86
  | More |  | 338,361,44,44
  | deploy --check |  | 28,438,346,62
@@ -22,6 +22,6 @@ chat.title | decision-sdk | decision-sdk | 96,66,169,36
  | Started |  | 16,124,370,54
  | Check the deployment once. |  | 16,178,370,106
  | Wants to run, deploy --check |  | 16,295,370,80
- | Back |  | 20,66,56,36
- | decision-sdk, /t/a/n/d/work · desk |  | 96,66,169,36
- | More |  | 342,66,36,36
+ | Back |  | 20,66,40,36
+ | decision-sdk, /t/a/n/d/work · desk |  | 80,66,161,36
+ | More |  | 347,66,33,36

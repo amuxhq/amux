@@ -76,7 +76,7 @@
   row    7 ask:req-4 Ask(Link { server: "github", message: "Sign in to GitHub", url: "https://github.com/login/device", resolution: Open }) attention
   ask req-4 -> "ask:req-4" 1/1 Open
     choices OpenLink*, Decline
-    body Link { server: "github", message: "Sign in to GitHub", url: "https://github.com/login/device" }
+    body Link { server: "github", message: "Sign in to GitHub", url: "https://github.com/login/device", local_page: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 20 input {"answer":{"answer":{"link":{"action":"accept"}},"ask":"req-4"},"id":"a4"}
   row    7 ask:req-4 Ask(Link { server: "github", message: "Sign in to GitHub", url: "https://github.com/login/device", resolution: Answered })
@@ -96,7 +96,7 @@
   row    9 ask:req-6 Ask(Link { server: "linear", message: "Authorize", url: "https://linear.app/oauth?elicitation=el-6", resolution: Open }) attention
   ask req-6 -> "ask:req-6" 1/1 Open
     choices OpenLink*, Decline
-    body Link { server: "linear", message: "Authorize", url: "https://linear.app/oauth?elicitation=el-6" }
+    body Link { server: "linear", message: "Authorize", url: "https://linear.app/oauth?elicitation=el-6", local_page: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 24 fact {"channel":"stream","json":{"elicitation_id":"el-6","mcp_server_name":"linear","subtype":"elicitation_complete","type":"system","uuid":"ec6"}}
   row    9 ask:req-6 Ask(Link { server: "linear", message: "Authorize", url: "https://linear.app/oauth?elicitation=el-6", resolution: Answered })

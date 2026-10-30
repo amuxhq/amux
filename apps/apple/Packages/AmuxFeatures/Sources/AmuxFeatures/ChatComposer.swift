@@ -60,7 +60,7 @@ struct ComposerBox: View {
             // At an accessibility text size the model's words get a line of
             // their own: beside the buttons there is room for a few letters.
             if typeSize.isAccessibilitySize, let controls = model.frame?.controls,
-               let chip = ChatWords.chip(controls) {
+               let chip = ChatWords.chip(controls, context: model.frame?.context) {
                 modelChip(chip, warns: controls.permission?.neverAsks == true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -82,7 +82,7 @@ struct ComposerBox: View {
                 .accessibilityLabel("Attach")
                 .identified("chat.attach", label: String(localized: "Attach"), value: plusOpen ? "open" : "closed")
                 if !typeSize.isAccessibilitySize, let controls = model.frame?.controls,
-                   let chip = ChatWords.chip(controls) {
+                   let chip = ChatWords.chip(controls, context: model.frame?.context) {
                     modelChip(chip, warns: controls.permission?.neverAsks == true)
                 }
                 Spacer(minLength: 4)
@@ -294,6 +294,9 @@ struct ComposerBox: View {
                 id: "chat.send", enabled: model.canSend
             ) {
                 model.send()
+                // What comes next is reading the reply, which the keyboard
+                // would cover half of.
+                focused.wrappedValue = false
             }
         }
     }
@@ -506,8 +509,9 @@ struct ActivityLine: View {
 }
 
 /// What docks above the composer: the agent's task list as one chip that
-/// opens to the list and the agents this one started, then the queued
-/// prompts and this phone's prompts not yet in the chat. Parts stack in one
+/// opens to the list and the agents this one started, what still runs in
+/// the background, then the queued prompts and this phone's prompts not yet
+/// in the chat. Parts stack in one
 /// card with hairlines between them; the card goes when all are empty.
 struct ChatDock: View {
     @Environment(\.design) private var design
@@ -516,16 +520,19 @@ struct ChatDock: View {
     let children: [FleetCard]
     /// The agent's host, which a prompt waits for while the link is down.
     let host: String
+    /// The overview, which lists the background jobs the dock counts.
+    let openOverview: () -> Void
     let open: (AgentKey) -> Void
     @State private var expanded: Bool
 
     init(
         model: ChatModel, children: [FleetCard], host: String = "", expanded: Bool = false,
-        open: @escaping (AgentKey) -> Void
+        openOverview: @escaping () -> Void = {}, open: @escaping (AgentKey) -> Void
     ) {
         self.model = model
         self.children = children
         self.host = host
+        self.openOverview = openOverview
         self.open = open
         _expanded = State(initialValue: expanded)
     }
@@ -534,8 +541,9 @@ struct ChatDock: View {
         let tasks = model.overview?.tasks
         let queue = model.frame?.queue ?? []
         let underway = model.landingInQueue
+        let jobs = model.overview?.jobs.count ?? 0
         let head = tasks != nil || !children.isEmpty
-        if head || !queue.isEmpty || !underway.isEmpty {
+        if head || jobs > 0 || !queue.isEmpty || !underway.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 if head {
                     if expanded {
@@ -550,12 +558,16 @@ struct ChatDock: View {
                     }
                     chip(tasks)
                 }
+                if jobs > 0 {
+                    if head { rule }
+                    background(jobs)
+                }
                 ForEach(Array(queue.enumerated()), id: \.offset) { index, row in
-                    if head || index > 0 { rule }
+                    if head || jobs > 0 || index > 0 { rule }
                     queued(row, index: index)
                 }
                 ForEach(Array(underway.enumerated()), id: \.offset) { index, prompt in
-                    if head || !queue.isEmpty || index > 0 { rule }
+                    if head || jobs > 0 || !queue.isEmpty || index > 0 { rule }
                     onItsWay(prompt, index: index)
                 }
             }
@@ -689,6 +701,35 @@ struct ChatDock: View {
             }
         }
         .padding(.bottom, 6)
+    }
+
+    // MARK: In the background
+
+    /// What runs on after a turn, counted; the overview names each one.
+    private func background(_ count: Int) -> some View {
+        let words = ChatWords.inBackground(count)
+        return Button(action: openOverview) {
+            HStack(spacing: 10) {
+                Image(systemName: "gearshape.2")
+                    .font(.system(size: 13))
+                    .foregroundStyle(design.inkMuted.color)
+                    .frame(width: 18)
+                Text(verbatim: words)
+                    .designFont(.body, design)
+                    .foregroundStyle(design.ink.color)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(design.inkFaint.color)
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.amuxControl)
+        .accessibilityHint("Opens the overview")
+        .identified("chat.background", label: words)
     }
 
     // MARK: Prompts on their way
@@ -868,53 +909,6 @@ struct PlusCard: View {
         }
         .buttonStyle(.amuxControl)
         .identified(id, label: title)
-    }
-}
-
-/// The facts strip above the composer: a usage limit reached and when it
-/// resets, context near its end, what runs in the background, a usage
-/// limit coming, a tool server that failed.
-/// Each part shows only while it is true.
-///
-/// The parts are one run of text that wraps rather than a row of labels that
-/// truncate: at a phone's width three facts side by side each cut to a few
-/// letters, and a fact nobody can read is not shown at all.
-///
-/// A tap opens the overview, which lists what the strip counts.
-struct StripLine: View {
-    @Environment(\.design) private var design
-    let context: ContextView?
-    let overview: Overview
-    let open: () -> Void
-
-    var body: some View {
-        let parts = ChatWords.strip(context: context, overview: overview, now: Date())
-        if !parts.isEmpty {
-            Button(action: open) { line(parts) }
-                .buttonStyle(.amuxControl)
-                .accessibilityHint("Opens the overview")
-                .identified("chat.strip", label: parts.map(\.text).joined(separator: ", "))
-        }
-    }
-
-    private func line(_ parts: [(text: String, warn: Bool)]) -> some View {
-        HStack(spacing: 0) {
-            parts.enumerated().reduce(Text(verbatim: "")) { line, item in
-                let (index, part) = item
-                let fact = Text(verbatim: part.text)
-                    .foregroundStyle(part.warn ? design.accent.color : design.inkMuted.color)
-                guard index > 0 else { return line + fact }
-                return line + Text(verbatim: " · ").foregroundStyle(design.inkFaint.color) + fact
-            }
-            .designFont(.caption, design)
-            .lineLimit(3)
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
-        .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous), as: .glass)
-        .accessibilityElement(children: .combine)
     }
 }
 

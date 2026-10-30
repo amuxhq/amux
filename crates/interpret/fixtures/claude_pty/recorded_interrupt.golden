@@ -1,30 +1,30 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.251"}}
+## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.312"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
-effect follow "<MACHINE_PATH>"
-item boundary:1 boundary final at=1788071343906 text="" BOUNDARY_KIND_STARTED session=dda06765-9e59-4a3c-ac40-310f97ba0499 version=2.1.251 keymap=claude-2.1
-snapshot IDLE queue=[] working_on=- at=1788071343906 asks=[] session=dda06765-9e59-4a3c-ac40-310f97ba0499 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
-## 6 recorded 4: fact Transcript type=permission-mode
-snapshot IDLE queue=[] working_on=- at=1788071343966 asks=[] session=dda06765-9e59-4a3c-ac40-310f97ba0499 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=?
-## 11 recorded 9: fact Transcript type=user uuid=e270cef7-2013-4662-9819-d79c196a59df
-item e270cef7-2013-4662-9819-d79c196a59df prompt final at=1788071344069 text="Use Bash to run exactly: python3 -c 'import select; select.select([], [], [], 30)'; printf SHOULD_NOT_FINISH. Do not do anything else."
-snapshot WORKING queue=[] working_on=- at=1788071344069 asks=[] session=dda06765-9e59-4a3c-ac40-310f97ba0499 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=?
-## 22 recorded 20: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_011sqpyfi3W1ULow63dEXrhs
-snapshot WORKING queue=[] working_on=- at=1788071347418 asks=[] session=dda06765-9e59-4a3c-ac40-310f97ba0499 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=? running=toolu_011sqpyfi3W1ULow63dEXrhs Bash since=1788071347418
-## 24 recorded 22: fact Transcript type=assistant uuid=f08bc37e-03c3-4f7b-af02-f331434a1f69
-item f08bc37e-03c3-4f7b-af02-f331434a1f69 thinking final at=1788071347372 text=""
-snapshot WORKING queue=[] working_on=- at=1788071347578 asks=[] session=dda06765-9e59-4a3c-ac40-310f97ba0499 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34248 tasks=? background=? running=toolu_011sqpyfi3W1ULow63dEXrhs Bash since=1788071347418
-## 25 recorded 23: fact Transcript type=assistant uuid=76f964e3-7c06-4aee-9f48-e7ccfc507f04
-item toolu_011sqpyfi3W1ULow63dEXrhs tool final at=1788071347544 text="" Bash TOOL_STATE_RUNNING input=shell:"python3 -c 'import select; select.select([], [], [], 30)'; p…"
-## 27 recorded 25: fact Transcript type=user uuid=6b0c800f-b309-48a7-b0b6-d6699fbc72db
-item toolu_011sqpyfi3W1ULow63dEXrhs tool final at=1788071347544 text="" Bash TOOL_STATE_CANCELLED ended=1788071348075 input=shell:"python3 -c 'import select; select.select([], [], [], 30)'; p…" out="The user doesn't want to proceed with this tool use. The too…"
-snapshot WORKING queue=[] working_on=- at=1788071347991 asks=[] session=dda06765-9e59-4a3c-ac40-310f97ba0499 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34248 tasks=? background=?
-## 28 recorded 26: fact Transcript type=user uuid=a24093e0-38fb-480c-9893-768a023c63b7
-item a24093e0-38fb-480c-9893-768a023c63b7 interruption final at=1788071348076 text=""
-item turn:1 turn final at=1788071348076 text="" #1 TURN_OUTCOME_INTERRUPTED started=1788071344069
-snapshot IDLE queue=[] working_on=- at=1788071347991 asks=[] session=dda06765-9e59-4a3c-ac40-310f97ba0499 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34248 tasks=? background=?
+effect follow "<TRANSCRIPT_1>"
+item boundary:1 boundary final at=1793309025226 text="" BOUNDARY_KIND_STARTED session=55cacab2-8400-4582-b1a6-1eae81ed95bf version=2.1.312
+snapshot IDLE queue=[] working_on=- at=1793309025226 asks=[] session=55cacab2-8400-4582-b1a6-1eae81ed95bf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
+## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793309025252 asks=[] session=55cacab2-8400-4582-b1a6-1eae81ed95bf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=?
+## 13 recorded 11: fact Transcript type=user uuid=d3863719-5b5a-4cc6-8534-b35548ab6a57
+item d3863719-5b5a-4cc6-8534-b35548ab6a57 prompt final at=1793309025445 text="Use Bash to run exactly: python3 -c 'import select; select.select([], [], [], 30)'; printf SHOULD_NOT_FINISH. Do not do anything else."
+snapshot WORKING queue=[] working_on=- at=1793309025445 asks=[] session=55cacab2-8400-4582-b1a6-1eae81ed95bf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=?
+## 35 recorded 33: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01KoJ2dKV5HwLLhD1G1aNB2a
+snapshot WORKING queue=[] working_on=- at=1793309029204 asks=[] session=55cacab2-8400-4582-b1a6-1eae81ed95bf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=? running=toolu_01KoJ2dKV5HwLLhD1G1aNB2a Bash since=1793309029204
+## 38 recorded 36: fact Transcript type=assistant uuid=63e49029-d509-46b6-b66d-192266852cff
+item 63e49029-d509-46b6-b66d-192266852cff thinking final at=1793309028923 text=""
+snapshot WORKING queue=[] working_on=- at=1793309029360 asks=[] session=55cacab2-8400-4582-b1a6-1eae81ed95bf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34745 tasks=? background=? running=toolu_01KoJ2dKV5HwLLhD1G1aNB2a Bash since=1793309029204
+## 39 recorded 37: fact Transcript type=assistant uuid=91e5a2c4-c9ce-4c5a-adc4-b22925704446
+item toolu_01KoJ2dKV5HwLLhD1G1aNB2a tool final at=1793309029391 text="" Bash TOOL_STATE_RUNNING input=shell:"python3 -c 'import select; select.select([], [], [], 30)'; p…"
+## 41 recorded 39: fact Transcript type=user uuid=6bc09a6c-80c5-4476-bcef-a9fd2884b6ff
+item toolu_01KoJ2dKV5HwLLhD1G1aNB2a tool final at=1793309029391 text="" Bash TOOL_STATE_CANCELLED ended=1793309029532 input=shell:"python3 -c 'import select; select.select([], [], [], 30)'; p…" out="The user doesn't want to proceed with this tool use. The too…"
+snapshot WORKING queue=[] working_on=- at=1793309029464 asks=[] session=55cacab2-8400-4582-b1a6-1eae81ed95bf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34745 tasks=? background=?
+## 45 recorded 43: fact Transcript type=user uuid=be7be0a0-9dca-408a-8cd4-d5ee6f025fe6
+item be7be0a0-9dca-408a-8cd4-d5ee6f025fe6 interruption final at=1793309029533 text=""
+item turn:1 turn final at=1793309029533 text="" #1 TURN_OUTCOME_INTERRUPTED started=1793309025445
+snapshot IDLE queue=[] working_on=- at=1793309029487 asks=[] session=55cacab2-8400-4582-b1a6-1eae81ed95bf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34745 tasks=? background=?
 turn_end 1 last=-

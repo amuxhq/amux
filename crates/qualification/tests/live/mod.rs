@@ -455,7 +455,6 @@ fn recording_dir(fixture: &Path) -> Option<PathBuf> {
 /// project, the operator's own provider login.
 struct Install {
     kind: Kind,
-    tag: &'static str,
     root: tempfile::TempDir,
     amux: PathBuf,
     env: Vec<(String, OsString)>,
@@ -553,7 +552,6 @@ impl Install {
             .collect();
         Ok(Install {
             kind: driver.kind,
-            tag: driver.tag(),
             root,
             amux,
             env,
@@ -623,22 +621,23 @@ impl Install {
         Ok(dir)
     }
 
-    /// `amux create`, named after the scenario, in its own project.
+    /// `amux new`, named after the scenario, in its own project.
     async fn create(&self, scenario: Scenario) -> Result<Vec<u8>, String> {
         self.create_with(scenario, &[]).await
     }
 
-    /// `amux create` with more of the provider's own arguments.
+    /// `amux new` with more of the provider's own arguments. Claude runs in
+    /// a terminal for its own interface and headless for amux's.
     async fn create_with(&self, scenario: Scenario, extra: &[&str]) -> Result<Vec<u8>, String> {
         let cwd = self.project(scenario)?.to_string_lossy().into_owned();
-        let mut args = vec![
-            "create",
-            self.tag,
-            "--name",
-            scenario.name(),
-            "--cwd",
-            cwd.as_str(),
-        ];
+        let agent: &[&str] = match self.kind {
+            Kind::ClaudePty => &["claude", "--in", "native"],
+            Kind::Codex => &["codex"],
+            _ => &["claude", "--in", "amux"],
+        };
+        let mut args = vec!["new"];
+        args.extend(agent);
+        args.extend(["--name", scenario.name(), "--cwd", cwd.as_str()]);
         if self.kind != Kind::Codex {
             // Only amux's own tool server and no settings but the
             // project's (it has none): the operator's MCP servers and

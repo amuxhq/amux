@@ -2,9 +2,8 @@
 //! bytes: prompts, interrupts, mode cycling and answers to the asks Claude
 //! shows in its terminal.
 
+use claude::version::ClaudeVersion;
 use serde::{Deserialize, Serialize};
-
-use crate::version::ClaudeVersion;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -124,7 +123,7 @@ pub enum InputError {
     UnknownAsk(AskId),
     #[error("unverified keymap shape for {program:?}: {reason}")]
     UnverifiedShape {
-        program: crate::pty::keymap::ProgramName,
+        program: super::keymap::ProgramName,
         reason: String,
     },
     #[error("unsafe PTY input text: {reason}")]
@@ -134,7 +133,7 @@ pub enum InputError {
     #[error("no keymap for Claude {version} can answer {program:?}")]
     NoKeymap {
         version: ClaudeVersion,
-        program: crate::pty::keymap::ProgramName,
+        program: super::keymap::ProgramName,
     },
     #[error("PTY input failed: {0}")]
     Pty(#[from] pty_host::PtyError),

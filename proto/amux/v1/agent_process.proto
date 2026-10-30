@@ -215,6 +215,11 @@ message PtyFrame {
     PtyResize resize = 5;
     // Agent to client, last frame: why the connection ends.
     string closed = 6;
+    // Client to agent: whether this client's terminal shows the agent's
+    // screen now. A client shows it from the hello until it says false, as
+    // a terminal client does when it leaves the screen for its fleet with
+    // the connection kept, and true again when it comes back.
+    bool shown = 7;
   }
 }
 

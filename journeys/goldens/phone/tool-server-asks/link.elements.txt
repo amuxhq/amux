@@ -10,10 +10,10 @@ ask.subject | https://grafana.example.com/login |  | 28,666,346,40
 ask.open | Open link |  | 28,718,346,44
 ask.choice.0 | I’m done |  | 28,770,169,44
 ask.choice.1 | Decline |  | 205,770,169,44
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
-chat.title | linker | linker | 96,66,160,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
+chat.title | linker | linker | 80,66,152,36
  | grafana wants you to open a link |  | 62,581,239,20
  | More |  | 338,569,44,44
  | Grafana needs you to sign in before I can read its dashboards. |  | 28,617,332,37
@@ -25,6 +25,6 @@ chat.title | linker | linker | 96,66,160,36
  | Check the relay's error rate. |  | 16,158,370,40
  | 1 call |  | 16,198,370,44
  | Link from, grafana |  | 16,228,370,44
- | Back |  | 20,66,56,36
- | linker, /t/a/n/d/work · desk |  | 96,66,160,36
- | More |  | 342,66,36,36
+ | Back |  | 20,66,40,36
+ | linker, /t/a/n/d/work · desk |  | 80,66,152,36
+ | More |  | 350,66,28,36

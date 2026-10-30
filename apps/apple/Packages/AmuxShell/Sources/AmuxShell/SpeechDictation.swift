@@ -5,6 +5,13 @@ import Speech
 /// Owns microphone access for the chat on screen. Recognition runs on the
 /// device only: with no local recogniser, dictation says it is unavailable
 /// rather than sending audio anywhere.
+///
+/// Speech and audio call back on threads of their own: the permission answer
+/// and the recognition results on Speech's queue, each buffer on the audio
+/// engine's render thread. A closure written in this main-actor class is the
+/// main actor's unless it says otherwise, and Swift checks that at run time
+/// by stopping the app. So each callback is `@Sendable`, touches nothing of
+/// the main actor's and hops back to it for anything else.
 @MainActor
 final class SpeechDictation {
     private var engine: AVAudioEngine?
@@ -31,7 +38,7 @@ final class SpeechDictation {
             guard let self, let store else { return }
             if speechPermission == .notAsked {
                 _ = await withCheckedContinuation { continuation in
-                    SFSpeechRecognizer.requestAuthorization { status in
+                    SFSpeechRecognizer.requestAuthorization { @Sendable status in
                         continuation.resume(returning: status == .authorized)
                     }
                 }
@@ -63,13 +70,13 @@ final class SpeechDictation {
                 }
                 self.engine = engine
                 self.request = request
-                input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+                input.installTap(onBus: 0, bufferSize: 1024, format: format) { @Sendable buffer, _ in
                     request.append(buffer)
                 }
                 engine.prepare()
                 try engine.start()
                 store.dictation.began(draft: store.draft)
-                recognition = recognizer.recognitionTask(with: request) { [weak self, weak store] result, error in
+                recognition = recognizer.recognitionTask(with: request) { @Sendable [weak self, weak store] result, error in
                     let text = result?.bestTranscription.formattedString
                     let final = result?.isFinal == true
                     let failed = error != nil

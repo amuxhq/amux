@@ -14,10 +14,10 @@ ask.review.1 |  | answered | 28,610,346,40
 ask.review.2 |  | skipped | 28,662,346,40
 ask.send | Send answers |  | 28,714,346,44
 ask.reply | Reply instead |  | 28,770,114,44
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
-chat.title | asker | asker | 96,66,160,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
+chat.title | asker | asker | 80,66,152,36
  | 3 questions |  | 62,448,87,20
  | More |  | 338,436,44,44
  | Layout |  | 28,484,80,44
@@ -32,6 +32,6 @@ chat.title | asker | asker | 96,66,160,36
  | Started |  | 16,124,370,34
  | Add a settings screen. |  | 16,158,370,40
  | Asking, 3 questions |  | 16,210,370,20
- | Back |  | 20,66,56,36
- | asker, /t/a/n/d/work · desk |  | 96,66,160,36
- | More |  | 342,66,36,36
+ | Back |  | 20,66,40,36
+ | asker, /t/a/n/d/work · desk |  | 80,66,152,36
+ | More |  | 350,66,28,36

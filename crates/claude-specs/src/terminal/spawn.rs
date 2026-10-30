@@ -3,8 +3,8 @@
 use std::ffi::OsString;
 use std::path::Path;
 
-use crate::hooks::HOOK_SOCKET_ENV;
-use crate::launch::{Launch, pty_spawn_args};
+use claude::hooks::HOOK_SOCKET_ENV;
+use claude::launch::{Launch, pty_spawn_args};
 
 /// Start Claude Code in a PTY of `size`, with the launch's arguments and
 /// environment scrub, `env` added to its environment, and its hooks

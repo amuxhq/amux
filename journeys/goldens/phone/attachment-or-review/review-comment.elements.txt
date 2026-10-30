@@ -8,11 +8,11 @@ chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44
-chat.changes | +2 −1 | Uncommitted | 295,4,51,36
-chat.more | More |  | 346,4,36,36
-chat.back | Back |  | 0,0,56,36
-chat.header | /t/a/n/d/work · desk | live | 4,4,160,36
-chat.title | reviewer | reviewer | 4,4,160,36
+chat.changes | +2 −1 | Uncommitted | 277,4,51,36
+chat.more | More |  | 344,4,38,36
+chat.back | Back |  | 0,0,40,36
+chat.header | /t/a/n/d/work · desk | live | 4,4,152,36
+chat.title | reviewer | reviewer | 4,4,152,36
 review |  | 1 | 0,116,402,724
 review.line.0.0.0 | #!/bin/sh |  | 0,157,402,19
 review.line.0.0.1 | echo deploying |  | 0,176,402,19
@@ -22,10 +22,10 @@ review.comment.thread | Why --delete here? |  | 0,233,402,36
 review.line.0.0.4 | echo done |  | 0,269,402,19
 review.file.0 | deploy.sh | open | 0,116,402,41
 review.attach | Attach Review · 1 comment |  | 16,782,370,50
-review.files | Files |  | 338,62,44,44
-review.back | Back |  | 20,66,56,36
-review.summary | 1 file, 2 added, 1 removed |  | 96,66,173,36
-review.against | Uncommitted |  | 163,86,84,16
+review.files | Files |  | 346,66,36,36
+review.back | Back |  | 20,66,40,36
+review.summary | 1 file, 2 added, 1 removed |  | 80,66,165,36
+review.against | Uncommitted |  | 143,86,84,16
  | Attach Review · 1 comment |  | 16,782,370,50
  | deploy.sh | Open | 0,116,402,41
  | Line 1, #!/bin/sh |  | 0,157,402,19
@@ -34,6 +34,6 @@ review.against | Uncommitted |  | 163,86,84,16
  | Added line 3, rsync --delete build/ prod:/srv |  | 0,214,402,19
  | Why --delete here? |  | 0,233,402,36
  | Added line 4, echo done |  | 0,269,402,19
- | Back |  | 20,66,56,36
- | 1 file, 2 added, 1 removed |  | 96,66,173,36
- | Files |  | 338,62,44,44
+ | Back |  | 20,66,40,36
+ | 1 file, 2 added, 1 removed |  | 80,66,165,36
+ | Files |  | 346,66,36,36

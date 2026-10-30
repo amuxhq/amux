@@ -86,7 +86,6 @@ struct LocalNetworkRefused: View {
 /// sheet over Hosts, as New Agent is, and closing it at any point writes no
 /// trust.
 struct PairingChrome: ViewModifier {
-    @Environment(\.reducesTransparency) private var reducesTransparency
     let title: String
     let subtitle: String?
     let close: @MainActor () -> Void
@@ -100,7 +99,6 @@ struct PairingChrome: ViewModifier {
                 ToolbarItem(placement: .topBarLeading) {
                     BarButton("xmark", label: String(localized: "Close"), identifier: "pair.close") { close() }
                 }
-                .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
             }
     }
 }

@@ -105,6 +105,7 @@ final class AccessibilityAuditTests: XCTestCase {
                 complaints += fault(
                     control, on: name, laidOut: laidOut, judgeSize: !inline && !inBar)
             }
+            complaints += barMenusOpenToATouch(app, on: name)
             XCTAssertGreaterThan(found, 0, "\(name) has no controls at all")
             audited += found
             try JSONSerialization.data(withJSONObject: ["controls": found])
@@ -140,6 +141,43 @@ final class AccessibilityAuditTests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.2)
         }
         throw DoorLines.Failure("the driver brought no page \(index) up within \(Int(Self.patience)) s")
+    }
+
+    // MARK: - Menus in the bar
+
+    /// The bar's menus, each with a row its menu always offers.
+    static let barMenus = ["chat.more": "Overview", "home.accounts": "Add Account"]
+
+    /// Each bar menu on the page, opened with a touch and put away again.
+    ///
+    /// The drivers open a menu by activating it, as VoiceOver does, and a
+    /// control can answer that and still ignore a finger: the chat's menu did
+    /// for a month, a UIKit button laid over its label that the bar never
+    /// handed a touch to. XCUITest's tap is a touch, so it is the one check
+    /// that a person can open the menu at all.
+    private func barMenusOpenToATouch(_ app: XCUIApplication, on page: String) -> [String] {
+        var complaints: [String] = []
+        for (identifier, row) in Self.barMenus.sorted(by: { $0.key < $1.key }) {
+            let control = app.navigationBars.buttons[identifier]
+            guard control.exists, control.isHittable else { continue }
+            control.tap()
+            let item = app.buttons[row]
+            guard item.waitForExistence(timeout: 3) else {
+                complaints.append("\(page): \(identifier) did not open its menu for a tap")
+                continue
+            }
+            // A tap outside a menu puts it away and goes no further. Low on
+            // the leading edge, because a bar menu drops from the top and
+            // reaches past the middle: a tap there chooses one of its rows.
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.06, dy: 0.72)).tap()
+            let gone = NSPredicate(format: "exists == false")
+            let closed = XCTWaiter().wait(
+                for: [XCTNSPredicateExpectation(predicate: gone, object: item)], timeout: 3)
+            if closed != .completed {
+                complaints.append("\(page): \(identifier)'s menu did not close for a tap outside it")
+            }
+        }
+        return complaints
     }
 
     // MARK: - Reading the tree

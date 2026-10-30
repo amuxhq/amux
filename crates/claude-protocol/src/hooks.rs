@@ -11,7 +11,9 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::stream::{Extensions, PermissionMode, PermissionUpdate};
+use crate::stream::{
+    ElicitationResult, Extensions, PermissionMode, PermissionResult, PermissionUpdate,
+};
 use crate::strictness::tagged_enum;
 use crate::{DecodeError, Drift, decoding};
 
@@ -25,7 +27,11 @@ tagged_enum! {
         "PermissionRequest" => PermissionRequest(PermissionRequest),
         "PostToolUse" => PostToolUse(PostToolUse),
         "PostToolUseFailure" => PostToolUseFailure(PostToolUseFailure),
+        "PermissionDenied" => PermissionDenied(PermissionDenied),
         "Notification" => Notification(Notification),
+        "Elicitation" => Elicitation(Elicitation),
+        "MessageDisplay" => MessageDisplay(MessageDisplay),
+        "PostModelSwitch" => PostModelSwitch(PostModelSwitch),
         "Stop" => Stop(Stop),
         "SubagentStop" => SubagentStop(SubagentStop),
     }
@@ -47,7 +53,11 @@ impl Payload {
             Self::PermissionRequest(payload) => &payload.common,
             Self::PostToolUse(payload) => &payload.common,
             Self::PostToolUseFailure(payload) => &payload.common,
+            Self::PermissionDenied(payload) => &payload.common,
             Self::Notification(payload) => &payload.common,
+            Self::Elicitation(payload) => &payload.common,
+            Self::MessageDisplay(payload) => &payload.common,
+            Self::PostModelSwitch(payload) => &payload.common,
             Self::Stop(payload) => &payload.common,
             Self::SubagentStop(payload) => &payload.common,
             Self::Unknown(_) => return None,
@@ -197,6 +207,21 @@ pub struct PostToolUseFailure {
     pub extensions: Extensions,
 }
 
+/// Auto mode refused a call; `reason` names the rule, as Claude words it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PermissionDenied {
+    #[serde(flatten)]
+    pub common: Common,
+    pub tool_name: String,
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub tool_input: Value,
+    pub tool_use_id: String,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Notification {
     #[serde(flatten)]
@@ -208,6 +233,83 @@ pub struct Notification {
     /// (`elicitation_url_dialog`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notification_type: Option<String>,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
+/// A tool server asking the person for input: a form (`mode` `form` or
+/// absent) or a link to open (`url`). Claude shows its own dialog only
+/// once this hook has returned without answering.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Elicitation {
+    #[serde(flatten)]
+    pub common: Common,
+    #[serde(default)]
+    pub mcp_server_name: String,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elicitation_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_schema: Option<Value>,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
+/// What a hook Claude waits on prints as its decision.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HookOutput {
+    pub hook_specific_output: HookDecision,
+}
+
+/// The decision itself, named by the event it answers.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "hookEventName")]
+pub enum HookDecision {
+    /// A permission request's decision, as a control reply would carry it.
+    PermissionRequest { decision: PermissionResult },
+    /// A tool server's form or link: the action and the form's content.
+    Elicitation(ElicitationResult),
+}
+
+/// Lines of the assistant's reply as Claude draws them: `delta` holds the
+/// lines completed since the last batch of the same `message_id`, and
+/// `final` marks the message's last batch, which may be empty. The ids are
+/// Claude's display ids, not the transcript's.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageDisplay {
+    #[serde(flatten)]
+    pub common: Common,
+    #[serde(default)]
+    pub turn_id: String,
+    #[serde(default)]
+    pub message_id: String,
+    #[serde(default)]
+    pub index: u64,
+    #[serde(default, rename = "final")]
+    pub last: bool,
+    #[serde(default)]
+    pub delta: String,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
+/// The session's model changed: a switch the person asked for, a fallback,
+/// or plan mode's own model (`source` `auto`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostModelSwitch {
+    #[serde(flatten)]
+    pub common: Common,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_model: Option<String>,
+    pub to_model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

@@ -21,7 +21,6 @@ use wire::{
 };
 
 use crate::Effect;
-use crate::claude_pty::QuestionShape;
 
 /// Built-in tools that only look, each by what it looks at: views fold runs
 /// of them together and name each by this verb.
@@ -129,20 +128,10 @@ pub(crate) fn plan_item(input: &str, verdict: &Verdict) -> Option<(String, wire:
 
 /// The ask item of an AskUserQuestion call: its questions, and how they
 /// were answered once they were. None until the call's input carries them.
-/// In Claude's terminal a question with previews takes no typed answer.
-pub(crate) fn question_item(
-    input: &str,
-    closed: Option<wire::AskClosed>,
-    terminal: bool,
-) -> Option<wire::AskItem> {
-    let (mut asked, shapes) = question_ask_text(input);
+pub(crate) fn question_item(input: &str, closed: Option<wire::AskClosed>) -> Option<wire::AskItem> {
+    let asked = question_ask_text(input);
     if asked.questions.is_empty() {
         return None;
-    }
-    if terminal {
-        for (question, shape) in asked.questions.iter_mut().zip(&shapes) {
-            question.allow_other = !shape.previews;
-        }
     }
     Some(wire::AskItem {
         ask: Some(wire::ask_item::Ask::Question(asked)),
@@ -317,6 +306,11 @@ pub(crate) fn split_tool_name(name: &str) -> (String, String) {
     }
     (String::new(), name.to_owned())
 }
+
+/// The field the agent process adds to a terminal Claude hook payload
+/// Claude waits on for a decision, numbering the connection the decision
+/// goes back on (`Effect::HookAnswer`).
+pub const HOOK_ANSWER_FIELD: &str = "amux_reply";
 
 /// The source of the notebook cell an edit replaces. Claude's request names
 /// only the cell, so the host reads the cell from the notebook when Claude
@@ -760,9 +754,8 @@ pub(crate) struct QuestionOptionItem {
     pub preview: String,
 }
 
-/// The question form AskUserQuestion's input describes, and each
-/// question's shape.
-pub(crate) fn question_ask(input: &Value) -> (QuestionAsk, Vec<QuestionShape>) {
+/// The question form AskUserQuestion's input describes.
+pub(crate) fn question_ask(input: &Value) -> QuestionAsk {
     questions_asked(
         QuestionInput::deserialize(input)
             .map(|input| input.questions)
@@ -771,7 +764,7 @@ pub(crate) fn question_ask(input: &Value) -> (QuestionAsk, Vec<QuestionShape>) {
 }
 
 /// The same, from the input kept as text on its call.
-pub(crate) fn question_ask_text(input: &str) -> (QuestionAsk, Vec<QuestionShape>) {
+pub(crate) fn question_ask_text(input: &str) -> QuestionAsk {
     questions_asked(
         serde_json::from_str::<QuestionInput>(input)
             .map(|input| input.questions)
@@ -779,18 +772,7 @@ pub(crate) fn question_ask_text(input: &str) -> (QuestionAsk, Vec<QuestionShape>
     )
 }
 
-fn questions_asked(questions: Vec<QuestionItem>) -> (QuestionAsk, Vec<QuestionShape>) {
-    let shapes = questions
-        .iter()
-        .map(|question| QuestionShape {
-            options: question.options.len() as u32,
-            multi_select: question.multi_select,
-            previews: question
-                .options
-                .iter()
-                .any(|option| !option.preview.is_empty()),
-        })
-        .collect();
+fn questions_asked(questions: Vec<QuestionItem>) -> QuestionAsk {
     let questions = questions
         .into_iter()
         .map(|question| Question {
@@ -807,19 +789,14 @@ fn questions_asked(questions: Vec<QuestionItem>) -> (QuestionAsk, Vec<QuestionSh
                     recommended: false,
                 })
                 .collect(),
-            // Every question takes a typed answer; terminal Claude's side-by-side
-            // preview layout withdraws it.
             allow_other: true,
             secret: false,
         })
         .collect();
-    (
-        QuestionAsk {
-            questions,
-            provider_dialog: false,
-        },
-        shapes,
-    )
+    QuestionAsk {
+        questions,
+        provider_dialog: false,
+    }
 }
 
 /// What a decision granted, as goldens print it.

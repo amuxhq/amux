@@ -294,14 +294,10 @@ words.
   the words as the reason and leaves the turn running, so the model reads
   them as the call's result. A question answered or dismissed elsewhere
   takes its record from the call's result.
-- **Terminal Claude.** The same item. Claude's form has nowhere to type a
-  note, so a note is refused. A form of several questions ends in Claude's
-  review screen, which submits with some unanswered: the keymap moves past a
-  skipped question with Tab and Claude leaves it out of its answers. A lone
-  question has no review screen, since Claude submits it as soon as it is
-  answered, so its skip is refused; the shared card offers Skip only where
-  the form takes one. A reply cancels the menu with the interrupt key, which
-  stops the turn, and queues the words as the next prompt.
+- **Terminal Claude.** The same item, answered the same way: the answer goes
+  back on the `PermissionRequest` hook Claude waits on, built by the same
+  code as headless Claude's control reply, so skips, notes and a reply
+  behave as they do there.
 - **Codex.** `item/tool/requestUserInput` is the ask. A skipped question goes
   back with no answers, as Codex's own form sends it, and a note is one more
   answer, `user_note: <note>`. A reply interrupts the turn and sends the
@@ -344,14 +340,17 @@ changes nothing.
 `claude_pty` reads four kinds of fact: rows of Claude's transcript file
 (decoded as `claude_protocol::transcript::Row`), hook payloads
 (`claude_protocol::hooks::Payload`), the agent process's own facts (the launch
-with Claude's version and keymap, the folder-trust dialog, and "ready"), and
-the terminal's exit. Nothing is read off Claude's screen beyond its first.
-Transcript rows arrive whole, so nothing here streams: every item is emitted
-complete and revised by re-emission.
+with Claude's version, the folder-trust dialog, and "ready"), and the
+terminal's exit. Nothing is read off Claude's screen beyond its first.
+Transcript rows arrive whole; a reply streams from the `MessageDisplay` hook
+until its row lands, and every other item is emitted complete and revised by
+re-emission.
 
-Terminal Claude has no protocol for its asks, so this is the one interpreter
-that infers them. Every inference rule is written down in the module's own
-documentation at the top of
+Terminal Claude's asks arrive on hooks that wait for amux's decision, but a
+person can also answer one in Claude's own terminal, which reports nothing
+until the call's row or result lands, so how an ask ends is inferred. Every
+inference rule is written down in the module's own documentation at the top
+of
 [`claude_pty/mod.rs`](../crates/interpret/src/claude_pty/mod.rs); change the
 rules there and here together.
 
@@ -376,7 +375,8 @@ transcript row, in transcript order:
   view), a slash command, the provider's exit or a stop clears it; a
   one-shot child in that state stays idle until one of those comes.
 - An assistant row's blocks become message, thinking and tool-call items,
-  keyed by the row's uuid (`<uuid>#<index>` for the second block on).
+  keyed by the row's uuid (`<uuid>#<index>` for the second block on). A
+  reply Claude already drew keeps the key it streamed under.
 - A `tool_use` block opens a call, running, keyed by its tool-use id. The
   `tool_result` in a later user row lands it: succeeded, failed, denied or
   cancelled, with its output, any images it read (written as blobs), and its
@@ -418,11 +418,14 @@ Hooks carry only what the transcript never does:
 | Hook | What it does |
 |---|---|
 | `SessionStart` | Names the session and the transcript path, and the interpreter asks the agent to follow that file. It marks the session boundary (started, resumed, cleared or compacted), and it means input is live. A `resume` of a session that is not the agent's means Claude's own view switched to another conversation: the snapshot says so (`switched_away`), prompts are refused, the other session's hooks are ignored, and switching back types `/resume <the agent's session>`. A clear is the agent's own conversation starting afresh. |
-| `PermissionRequest` | Opens the permission card: an ask carrying the hook's tool, input and scope suggestions (or a question or plan ask for `AskUserQuestion` and `ExitPlanMode`). The hook names no tool-use id, and Claude writes a gated call's row only once the call is decided, so the card points at no row until a row with the same tool and input lands, and then at that row. |
+| `PermissionRequest` | Opens the permission card: an ask carrying the hook's tool, input and scope suggestions (or a question or plan ask for `AskUserQuestion` and `ExitPlanMode`), answered on the hook itself (see [asks and answers](#asks-and-answers)). The hook names no tool-use id; the call the `PreToolUse` before it announced is the one it gates. Claude writes a gated call's row only once the call is decided, so the card points at no row until that call's row lands. |
+| `PermissionDenied` | Auto mode refused a call without asking anyone: the call's row reads denied, with the reason, whichever side of the row the hook lands. |
+| `Elicitation` | A tool server asks for a form or a link while one of its calls runs. Claude waits on the hook before drawing its own dialog, so the ask, a form or link with an item of its own, is answered on the hook. Someone at Claude's own terminal must see the dialog: while a terminal client shows Claude's screen, the hook is let go as it arrives, and one that comes to the screen lets go of the hook that waits. Claude then draws its dialog, and the open ask is an unanswerable one saying it is answered there, while its item keeps the form or link. It closes cancelled on an interrupt through amux (which cancels it on the hook too), and dismissed, releasing the hook, on that call's result, a row from a later assistant message, or any fact that closes every ask. |
+| `MessageDisplay` | A batch of finished lines of the reply Claude is drawing. The first opens a message item keyed `stream:<message id>`, later ones append to it, and the reply's transcript row takes the item over, whole. The hook's message id is not the row's, but Claude writes rows in the order it draws replies, so the oldest reply not yet written is the next text row's; a row that lands before its reply's first batch keeps its own key, and the late batch draws nothing. Hooks and rows travel apart, so a reply's last batch can come after the row that ended its turn, even after the next prompt began; every hook names the prompt its turn answers, and a batch for a prompt whose turn is over draws nothing. A reply's first batch can also come before the row of the prompt it answers: a turn's batches wait from its prompt's `UserPromptSubmit` until a user row of that prompt lands, so the reply is drawn below the prompt. Likewise a reply can open after a call's `PostToolUse` but before the call's row is read (a gated call's row is written only once it is decided): a new reply's batches wait until the row of every call whose `PostToolUse` came first lands, so the reply is drawn below the call. A reply cut short with no row ends as drawn when the turn ends. |
+| `PostModelSwitch` | The model Claude switched to, as when plan mode moves to a bigger model, shown until the next assistant row names the model it ran. |
 | `Stop` | Lists the background jobs still running (see [background jobs](#background-jobs)), clears the running marks, and closes every ask still open with its outcome unknown, drawn dismissed until the call's result says how it went, except one raised by a subagent still running in the background, whose dialog Claude keeps open. It does **not** end the turn. |
 | `SubagentStop` | A subagent finished: it leaves the background jobs, and any ask it left open closes with its outcome unknown. |
-| `Notification` | For a tool server's form or link that Claude shows in its own terminal (notification types `elicitation_dialog` and `elicitation_url_dialog`), opens an unanswerable ask with an item of its own, pointing at the call that was running. No hook can answer it: it closes cancelled on an interrupt through amux, and dismissed on that call's result, a row from a later assistant message, or any fact that closes every ask. Other notification types draw nothing. |
-| `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | Mark a call running, and then not running, for the snapshot's running calls (the activity line while the call's row is on the way). They never make a row. `PostToolUse`'s duration gives the call the time it began running, after any wait for approval (`started_at_ms`), which the call's result row carries. |
+| `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | Mark a call running, and then not running, for the snapshot's running calls (the activity line while the call's row is on the way); `PreToolUse` also names the call an ask that follows is raised for. They never make a row, except `ExitPlanMode`'s, which opens the plan from its `PreToolUse` since Claude writes the plan's row only once it is decided. `PostToolUse`'s duration gives the call the time it began running, after any wait for approval (`started_at_ms`), which the call's result row carries. |
 | `UserPromptSubmit` | Input is live. |
 | `SessionEnd` | Closes every open ask with its outcome unknown. |
 
@@ -433,10 +436,13 @@ turn, as interrupted. A slash command that runs no model turn ends when its
 output row lands, without a turn end, since no turn happened. The provider
 exiting cuts a turn short with no turn end at all.
 
-Besides the session boundary `SessionStart` marks, the unanswerable dialog is
-the only item a hook makes. When the call it was raised under has only been
-announced by `PreToolUse` and its row has not landed, the dialog's item
-waits for that row, so it sits below the call.
+Besides the session boundary `SessionStart` marks, a tool server's dialog,
+a streamed reply and a plan are the only items hooks make. When the call a
+dialog was raised under has only been announced by `PreToolUse` and its row
+has not landed, the dialog's item waits for that row, so it sits below the
+call. Recordings made before amux registered `PreToolUse` carry none, so an
+ask with no announced call is the oldest one for the same tool and input
+when that call's row lands.
 
 A subagent's calls reach the hooks socket carrying its agent id and never
 reach the followed transcript. They are counted as steps on the Agent row
@@ -453,37 +459,43 @@ prompt, an interruption, the turn's end, a session change, the provider
 exiting, or a row from a later assistant message. Nothing else closes one; a
 tick never does.
 
-An answer through amux is checked against the open ask's shape, then typed
-into the terminal's menu as a semantic `TerminalInput`: allow once, allow
-with the scope at an index of the offered suggestions, deny with a note, a
-plan choice, one answer per question, or trusting the folder. An answer the
-menu cannot express is refused before anything is typed. A scope is offered
-only for the permission menus the resolved keymap can type (its verified menu
-shapes); on any other menu the card offers allow once and deny. In manual
-mode, where Claude offers auto mode for the running model, its menu has
-"Yes, and switch to auto mode" after the scope entries: on a menu the keymap
-knows, the card offers it as one more scope, a switch to auto, and choosing
-it types that entry and records the permission as auto at once.
+Claude runs the hook command for `PermissionRequest` and `Elicitation` and
+reads what it prints as the decision; the agent process holds the hook's
+connection until the interpreter answers (see
+[the agent process](AGENT_PROCESS.md)). An answer through amux is checked
+against the open ask's shape and goes back on that hook as the decision
+headless Claude's control reply would carry, built by the same code
+([`claude_answers.rs`](../crates/interpret/src/claude_answers.rs)): allow,
+with the suggestion a scope names applied exactly as offered; deny, with a
+note Claude reads as the reason and a choice to stop the turn; a plan
+approved with the permission to leave plan for (Claude ignores a bare allow
+of a plan) or sent back with a note; the answers to each question, with
+skips and notes; a form's action and content. An answer that does not fit
+the ask is refused. An ask whose hook amux does not hold, as in a
+recording, refuses every answer.
+
+A permission request's dialog stays usable in Claude's own terminal while its
+hook waits: a terminal answer wins, the hook's late answer is ignored, and
+the ask closes on the call's row or result as above, releasing the hook with
+no decision. A tool server's form is drawn only once its hook returns, so
+while amux holds it, only amux can answer it. The hook waits up to seven
+days. In manual mode, where Claude offers auto mode for the running model,
+the card offers one more scope, a switch to auto, which allows the call with
+the permission set to auto and records it at once. A prompt sent while a
+plan waits refuses the plan on its hook, which ends the turn, and the prompt
+follows.
 
 The permission hook carries neither of Claude's flags
-(`suppress_always_allow_rule`, `default_to_no`). For the common flagged
-ask it needs neither: an ask Claude leaves only to a person comes with no
-suggestions in its hook, and its menu reads Yes / No, with no "don't ask
-again" row and no switch to auto mode (recorded live on Claude 2.1.312
-for a write into its jobs folder). An ask with no suggestion offers no
-scope, so amux types only Yes or Escape on it, both where the menu has
-them. Two rarer cases remain, both read from Claude's source rather than
-recorded:
-
-- a few flagged asks keep their suggestions (some tool-server policy and
-  ask-rule paths), so amux offers a scope for a row the menu leaves out,
-  and the digit it types lands on a later row, No on a Yes / No menu;
-- a menu Claude opens on its refusal (`default_to_no`, set on several
-  person-only and auto-mode fallback paths) takes no digit, so an allow
-  from amux does not land: amux closes its ask as allowed while Claude's
-  menu stays open in the terminal. Escape still declines either way.
-
-Neither can approve what the person declined.
+(`suppress_always_allow_rule`, `default_to_no`). An answer goes back on
+the hook rather than typed into Claude's menu, so how the menu is laid
+out, or which row it opens on, changes nothing about where an answer
+lands. An ask Claude leaves only to a person comes with no suggestions in
+its hook, and its menu reads Yes / No, with no "don't ask again" row and
+no switch to auto mode (recorded live on Claude 2.1.312 for a write into
+its jobs folder): an ask with no suggestion offers no scope, the switch to
+auto included. A few flagged asks keep their suggestions (some tool-server
+policy and ask-rule paths, read from Claude's source rather than
+recorded), so amux offers a scope there that Claude's own menu leaves out.
 
 Terminal Claude offers no list of models, efforts or commands a program could
 read, so its catalogue, written when it launches, holds the models and
@@ -491,8 +503,8 @@ commands its host's Claude offers in its folder (from `AgentSpec.offered`,
 empty when the host could not be asked) and Claude's permissions, each
 marked not settable. It takes no model or effort input: a person types
 `/model <name>` or `/effort <level>` as a prompt.
-The model is what Claude's newest assistant row ran, or, from `/model`'s
-output ("Set model to …") until such a row, the model it names; the effort
+The model is what Claude's newest assistant row ran, or, from a
+`PostModelSwitch` hook until such a row, the model it names; the effort
 is the one the newest assistant row ran with. The permission changes only
 by cycling. amux knows Claude's cycle (default, accept edits, plan, then
 never ask where Claude was launched allowing it and auto mode where its
@@ -506,75 +518,31 @@ launched with runs, else its default. Its inputs are
 prompt, withdraw, send now, interrupt, clear, the permission-mode cycle,
 switch back, and answer.
 
-### Keys as programs
+### Keys
 
-The interpreter never produces bytes for the terminal. It emits a semantic
-`TerminalInput`, and the agent process turns it into keystrokes with a
-keymap: versioned data that parameterizes a fixed set of programs, in
-[`crates/claude/src/pty/keymap.rs`](../crates/claude/src/pty/keymap.rs).
+The interpreter never produces bytes for the terminal. Everything with a
+hook is answered on the hook, so what it emits as a semantic `TerminalInput`
+is only what has none: a prompt, send now, interrupt, clear, the
+permission-mode cycle and the folder-trust dialog Claude shows before any
+hook runs. The agent process types fixed keys for each
+([`crates/agent/src/terminal.rs`](../crates/agent/src/terminal.rs)): a prompt
+as bracketed pastes of at most 700 characters, which Claude keeps as typed
+rather than wrapping as pasted content, then Enter; interrupt as Escape; the
+cycle as Shift+Tab; trusting the folder as Down then Enter. These keys are
+Claude's own and have not changed across the versions amux hosts. Send now
+types the prompt's keys while the turn runs, which Claude takes at the
+turn's next tool boundary (the `steer_queued` and `steer_send_now`
+recordings, from 2.1.283).
 
-The keymaps are TOML files under
-[`crates/claude/keymaps/`](../crates/claude/keymaps/claude-2.1.toml), baked
-into the binary (`BAKED_KEYMAPS`). The shipped one is `claude-2.1`, with
-`applies_to = ">=2.1.228, <2.2.0"`. A keymap holds:
-
-- named key bytes (`[keys]`) and bounded delays (`[delays]`);
-- menu entry positions (`[menus.permission.entries]`, `[menus.plan.entries]`);
-- verified menu shapes (`[verified_shapes.permission_menu]`): the permission
-  suggestion counts whose menu is verified to have one scoped entry per
-  suggestion, and those verified to put every suggestion into one entry;
-- the steps of seven fixed programs, `prompt`, `send_now`, `interrupt`,
-  `mode_cycle`, `permission_menu`, `plan_menu` and `question_form`, each
-  marked `stable` or `menu` and optionally bounded below by `since`, the
-  first Claude version it is verified against, and the fixed table from
-  intent to program;
-- `[provenance]`: the Claude version, model, dates and specs it was
-  transcribed from;
-- `verified`: the evidence list, one entry per Claude version, probe run id
-  and spec that passed live.
-
-A program is built from a closed step vocabulary (`key`, `paste`, `type`,
-`digit`, `delay`, `repeat`, `for_each`, `if`, `move_to`, `call`) whose counts
-and branches come only from the typed ask and answer. There is no general
-loop, no shell, no screen query. A data file can repair keys, timing, menus
-and already-modelled shapes; adding an intent, a condition or a step means
-changing the amux binary.
-
-At every start the agent process asks Claude for its version and resolves a
-keymap for it, so an updated Claude gets the right map without another spec:
-
-1. a keymap with a verified entry for exactly that version (basis
-   `Verified`);
-2. among keymaps that have no verified entry yet, the newest whose range
-   contains the version (`InRange`);
-3. otherwise, extrapolation from the nearest verified version below, or above
-   when none is below (`Extrapolated`);
-4. otherwise the newest keymap (`Unknown`).
-
-`stable` programs run on any basis. `menu` programs extrapolate only within
-the same minor version of Claude, and refuse outside it or on an unknown
-basis. A program whose `since` is newer than the Claude observed is refused
-whatever the basis. The resolved keymap's name is recorded on the boundary
-item beside Claude's version.
-
-Send now is its own program: typed while a turn runs, a prompt is what
-Claude 2.1.283 hands the model at the turn's next tool boundary (the
-`steer_queued` and `steer_send_now` recordings), and what Enter means
-mid-turn is Claude's choice rather than a fixed key. `claude-2.1` gives it
-the prompt's keys, `since = "2.1.283"` and `menu` stability. When the
-resolved keymap refuses it, the launch fact carries the refusal, and the
-interpreter rejects a send-now with that sentence (for example "Send now
-needs Claude 2.1.283 or later; this agent runs Claude 2.1.251") rather than
-typing anything.
-
-Only the Claude probe appends to `verified`, and only after the spec passes
-live (see [re-recording](#re-recording)). The test
-[`crates/claude-specs/tests/keymap_provenance.rs`](../crates/claude-specs/tests/keymap_provenance.rs)
-requires every verified entry in a baked keymap to name a registered PTY spec
-whose recording's manifest carries the same version and run id, as the
-recording itself or as a verification. The resolver also refuses a keymap
-from outside the binary that claims verified versions; the agent process
-resolves against the baked keymaps only.
+The recording harness still answers Claude's menus with keys, as a person at
+its terminal does, so recordings keep covering asks answered in Claude's own
+view. Its versioned keymaps, the programs that interpret them and the
+evidence each carries live in
+[`crates/claude-specs/src/terminal/keymap.rs`](../crates/claude-specs/src/terminal/keymap.rs),
+and
+[`keymap_provenance.rs`](../crates/claude-specs/tests/keymap_provenance.rs)
+requires every verified entry to name a recording with the same version and
+run id.
 
 ## Headless Claude
 
@@ -868,7 +836,7 @@ The messages themselves are in the protocol crates, described with these in
 
 | Crate | What it holds | Who uses it |
 |---|---|---|
-| [`claude`](../crates/claude/src/lib.rs) | Hosting Claude Code: hook forwarding over the hook socket (`hooks`), launch settings and the environment scrub (`launch`), the messaging socket client (`messaging`), keymaps and their program interpreter (`pty`, behind the `pty` feature), transcript tailing (`transcript`), session files (`history`) and version probing (`version`) | The agent process (hooks, launch, messaging, keymaps, version, session files), `amux internal hook claude`, and `claude-specs` |
+| [`claude`](../crates/claude/src/lib.rs) | Hosting Claude Code: hook forwarding over the hook socket (`hooks`), launch settings and the environment scrub (`launch`), the messaging socket client (`messaging`), transcript tailing (`transcript`), session files (`history`) and version probing (`version`) | The agent process (hooks, launch, messaging, version, session files), `amux internal hook claude`, and `claude-specs` |
 | [`codex`](../crates/codex/src/lib.rs) | Hosting the Codex app server and a client for it: spawn, initialize, threads, turns, approvals, notifications, all on `codex-protocol` types | `codex-specs`, which drives Codex to record scenarios. The agent process and the interpreter write `codex-protocol` messages themselves |
 | [`pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal hosting: spawn in a process group, one output stream, input, resize, process-group signals, graceful termination | The agent process (terminal Claude and Codex views) and `claude-specs` |
 
@@ -916,19 +884,19 @@ cargo run -p codex-specs --bin codex-probe -- probe [--out <dir>]
 
 `claude-probe` runs the `claude` on your `PATH`, or the one named by
 `CLAUDE_REAL_PATH`; `codex-probe` runs `codex` and records with the model its
-specs pin (`CAPTURE_MODEL` in `crates/codex-specs/src/specs.rs`). A headless
-Claude capture reads only project and local settings and only the tool servers
-its spec names (`--setting-sources project,local --strict-mcp-config`, unless
-the spec names its own sources), so your own plugins, skills, agents,
-permission rules and connected accounts stay out of the recording. A terminal
-capture's transcript drops the rows that copy each API request and scrubs the
+specs pin (`CAPTURE_MODEL` in `crates/codex-specs/src/specs.rs`). A Claude
+capture, terminal or headless, reads only project and local settings and only
+the tool servers its spec names (`--setting-sources project,local
+--strict-mcp-config`, unless the spec names its own sources), so your own
+plugins, skills, agents, permission rules, default mode and connected accounts
+stay out of the recording. A terminal capture's transcript drops the rows that copy each API request and scrubs the
 attachments that carry your instructions, environment, attribution and what
 you have installed.
 
 `probe` runs every registered spec live and updates only the evidence its
 outcome permits. A spec that passes gets a verification (version, time, run
 id) appended to its manifest; for a terminal Claude spec, the same version,
-run id and spec name are appended to the baked keymap's `verified` list. A
+run id and spec name are appended to the harness keymap's `verified` list. A
 spec that fails live is recorded again, and reported failed if recording
 fails too. Each run writes `probe.json` (every spec's
 outcome) and `drift.json` (how the live shapes differ from the recorded

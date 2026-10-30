@@ -1702,6 +1702,10 @@ fn render_effect(effect: &Effect, catalogue: Option<&[u8]>) -> String {
         }
         Effect::Exit { cause } => format!("exit {}", Value::String(cause.clone())),
         Effect::Terminal(input) => format!("terminal {input}"),
+        Effect::HookAnswer { id, answer } if answer.is_empty() => format!("hook {id} released"),
+        Effect::HookAnswer { id, answer } => {
+            format!("hook {id} answered {}", String::from_utf8_lossy(answer))
+        }
         Effect::FollowTranscript { path } => format!("follow {}", Value::String(path.clone())),
         Effect::ProviderSession { id } => format!("session {}", Value::String(id.clone())),
         Effect::UserMessage {

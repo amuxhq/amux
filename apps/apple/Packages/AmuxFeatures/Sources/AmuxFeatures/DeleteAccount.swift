@@ -7,8 +7,9 @@ public enum DeleteAccountAction: Equatable, Sendable {
     case cancel
     /// Delete it, with the address that has been typed.
     case confirm
-    /// Leave for wherever the subscription is billed, to stop it renewing.
-    case manageBilling(URL)
+    /// Go to wherever the subscription is billed, to stop it renewing: the
+    /// App Store's own sheet, or amux.sh's billing page at `URL`.
+    case manageBilling(EntitlementSource, URL)
 }
 
 /// Giving up an account, with what that actually does spelled out.
@@ -108,7 +109,7 @@ struct DeleteAccountCard: View {
     @ViewBuilder
     private var trouble: some View {
         switch model.phase {
-        case .blocked(let source, let manageURL):
+        case .blocked(let source, _):
             VStack(alignment: .leading, spacing: 8) {
                 Text("Cancel renewal first")
                     .designFont(.bodyEmphasis, design)
@@ -185,7 +186,7 @@ struct DeleteAccountCard: View {
             if case .blocked(let source, let manageURL) = model.phase {
                 choiceButton(
                     String(localized: "Cancel Renewal in \(source.place)"), kind: .primary, id: "delete.manage"
-                ) { actions(.manageBilling(manageURL)) }
+                ) { actions(.manageBilling(source, manageURL)) }
             } else {
             // Until the address is this account's, the one press that cannot
             // be undone is not available at all — greyed rather than hidden,

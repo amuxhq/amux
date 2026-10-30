@@ -134,19 +134,11 @@ enum Command {
     Pair {
         target: Option<String>,
         /// Show a QR code for the phone instead of a PIN.
-        #[arg(long, conflicts_with_all = ["target", "link", "cancel"])]
+        #[arg(long, conflicts_with_all = ["target", "cancel"])]
         qr: bool,
         /// With --qr, print the QR code's link too, to paste into a simulator.
         #[arg(long = "print-link", requires = "qr", hide = true)]
         print_link: bool,
-        /// Pair with the host whose QR code carries this amux://pair link.
-        #[arg(
-            long,
-            value_name = "LINK",
-            conflicts_with_all = ["target", "cancel"],
-            hide = true
-        )]
-        link: Option<String>,
         /// Close this host's pairing mode.
         #[arg(long, conflicts_with = "target", hide = true)]
         cancel: bool,
@@ -158,7 +150,7 @@ enum Command {
         #[arg(
             long,
             requires_all = ["pin", "for"],
-            conflicts_with_all = ["target", "qr", "link", "cancel"],
+            conflicts_with_all = ["target", "qr", "cancel"],
             hide = true
         )]
         demo: bool,
@@ -469,7 +461,6 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 target,
                 qr,
                 print_link,
-                link,
                 cancel,
                 demo: _,
                 pin,
@@ -481,8 +472,6 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                     pairing::cancel(admin).await
                 } else if let (Some(pin), Some(ttl)) = (pin, r#for) {
                     pairing::demo(admin, pin, ttl).await
-                } else if let Some(link) = link {
-                    pairing::pair_with_link(admin, &link).await
                 } else if let Some(target) = target {
                     let mut client = connect::client_of(&selected).await?;
                     let target = pairing::Target::parse(&target)?;

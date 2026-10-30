@@ -728,18 +728,20 @@ publishing half of that check. A manifest is at most 1 MiB and an
 artifact's signed size at most 256 MiB
 ([Parameters](PARAMETERS.md)); more is refused unread.
 
-The public key is compiled into the binary from `AMUX_RELEASE_PUBLIC_KEY`, 64
-hex digits, set in the environment at build time:
+The public keys are compiled into the binary from `AMUX_RELEASE_PUBLIC_KEYS`,
+comma-separated keys of 64 hex digits each, set in the environment at build
+time. A manifest is accepted when its signature verifies against any of
+them:
 
-| Build | Key it trusts |
+| Build | Keys it trusts |
 | --- | --- |
-| `AMUX_RELEASE_PUBLIC_KEY` set | That key |
+| `AMUX_RELEASE_PUBLIC_KEYS` set | Those keys |
 | Debug build without it | `TEST_RELEASE_KEY`, whose private half lives in the test suites |
 | Release build without it | None. It restarts its daemon but installs nothing, and `amux update` says so. |
 
-The Release workflow sets it, so every published binary trusts the release
-key; a release build made by hand trusts nothing and is replaced the way it
-was installed.
+The Release workflow sets it to the release key and its backup, so every
+published binary trusts both; a release build made by hand trusts nothing and
+is replaced the way it was installed.
 
 The supervisor tests sign releases with the test key and serve manifests
 from a local server
@@ -748,17 +750,26 @@ from a local server
 
 ### The release key
 
-The private key is a 32-byte seed that exists in one place: the login
-keychain of the Mac that cuts releases, as the generic password item with
-service `amux-release-key`. It is never in this repository, never on GitHub
-and never on amux.sh. That is the point of signing at all: the machines
-that install a release verify it against a key compiled into the binary
-they already run, so the server that hands out manifests cannot make
-them install something else. A compromised amux.sh can serve a stale
-manifest or none, and nothing worse. A GitHub token stolen after a deploy
-can tag and build what it likes and re-upload any asset, and none of it
-reaches a machine either: a manifest needs the key, and a swapped asset
-fails the hash the key signed.
+The private key is a 32-byte seed that exists in one place: a keychain of
+its own on the Mac that cuts releases, `amux-release.keychain`, as the
+generic password item with service `amux-release-key`. It is never in this
+repository, never on GitHub and never on amux.sh. That is the point of
+signing at all: the machines that install a release verify it against a key
+compiled into the binary they already run, so the server that hands out
+manifests cannot make them install something else. A compromised amux.sh can
+serve a stale manifest or none, and nothing worse. A GitHub token stolen
+after a deploy can tag and build what it likes and re-upload any asset, and
+none of it reaches a machine either: a manifest needs the key, and a swapped
+asset fails the hash the key signed.
+
+The keychain has a password of its own, not the login password, and locks
+again a minute after use and when the Mac sleeps. Its item names no
+application allowed to read it, so every read, the release tool's own
+included, asks for that password: a process running as the operator, such
+as a dependency's build script during `just deploy`, cannot take the seed
+without a prompt. A deploy asks twice: once to unlock the keychain, once to
+let `security` read the item. Answer the second with **Allow**, never
+**Always Allow**, which would add `security` to the item's readers for good.
 
 What the key does not vouch for is the build itself. The binaries are
 built by the Release workflow on GitHub's runners, and `just deploy`
@@ -772,19 +783,33 @@ deploy prove each asset came from the workflow at the tagged commit
 before signing it, leaving only a compromised runner.
 
 `just release-key generate` makes a seed from the system's randomness,
-stores it in the keychain and prints the public half; it refuses when an
-item is already there, so a key is rotated deliberately by deleting the
-old item first (`security delete-generic-password -s amux-release-key`).
-`just release-key public` prints the public half again. The public half
-is committed as `AMUX_RELEASE_PUBLIC_KEY` in
-[`.github/workflows/release.yml`](../.github/workflows/release.yml), and
-the manifest tool refuses to sign when the keychain's key is not the one
-the workflow compiles in, because the binaries would refuse the result.
+makes the keychain when there is none (asking for its new password), stores
+the seed and prints the public half; it refuses when an item is already
+there, so a key is rotated deliberately by deleting the old item first
+(`security delete-generic-password -s amux-release-key amux-release.keychain`).
+A deploy names the keychain key's public half when the workflow does not list
+it.
 
-Rotating the key means every installed binary stops trusting new
-manifests until it has been replaced by hand with one built under the new
-key: publish the last release under the old key with the new public key
-compiled in, then switch.
+**The backup key.** A second seed, made once by `just release-key generate
+--file PATH`, which writes it to a new file only its owner can read and prints its
+public half. It does not stay on the Mac: it is moved somewhere offline and
+the file deleted. Its public half is listed in
+`AMUX_RELEASE_PUBLIC_KEYS` beside the release key's, so every binary trusts
+it already. If the release key leaks or the Mac is lost, the backup signs the
+release that drops the old key and adds a new one
+(`just deploy VERSION --key-file PATH`), and installed machines take it
+without anyone reinstalling.
+
+Both public halves are committed as `AMUX_RELEASE_PUBLIC_KEYS` in
+[`.github/workflows/release.yml`](../.github/workflows/release.yml). The
+release tool refuses to cut or deploy when the workflow lists fewer than two
+keys, and refuses to sign with a seed whose public half it does not list,
+because the binaries would refuse the result.
+
+Rotating the key without the backup means every installed binary stops
+trusting new manifests until it has been replaced by hand with one built
+under the new key: publish the last release under the old key with the new
+public key compiled in, then switch.
 
 ### Deploying a release
 
@@ -797,8 +822,8 @@ just deploy 0.8.0 --rollout 10          # stable, a tenth of the machines; later
 `xtask release deploy` waits until the tagged GitHub Release holds
 `checksums.txt` (the workflow may still be building after a cut; it gives
 up after 45 minutes), reads the checksums, signs each target's hash with
-the keychain's seed, verifies the signature against the key the workflow
-compiles in, writes the channel's manifest with each entry's URL pointing
+the keychain's seed (or the backup's, with `--key-file PATH`), verifies the
+signature against the keys the workflow compiles in, writes the channel's manifest with each entry's URL pointing
 at the release's own asset (a copy stays in `target/release-manifests/`),
 and uploads `<channel>.json` to that same release, replacing one already
 there. So:

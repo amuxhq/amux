@@ -878,7 +878,7 @@ fn choose_installs_only_a_newer_unrejected_build_inside_the_rollout() {
 
 #[test]
 fn the_manifest_is_verified_whole_and_the_artifact_against_its_entry() {
-    let key = release::TEST_RELEASE_KEY;
+    let key = [release::TEST_RELEASE_KEY];
     let bytes = b"a build".to_vec();
     let entry = Release {
         version: "2.0.0".into(),
@@ -900,6 +900,21 @@ fn the_manifest_is_verified_whole_and_the_artifact_against_its_entry() {
     assert_eq!(release::verify_manifest(&good, "stable", &key), Ok(()));
     assert_eq!(
         release::verify_manifest(&signed(&OTHER_SEED, "stable", Some(10)), "stable", &key),
+        Err(VerifyError::Signature)
+    );
+    // A build trusts every key it was given: the backup signs as well as
+    // the key it stands behind.
+    let backup = release::public_key(&OTHER_SEED);
+    assert_eq!(
+        release::verify_manifest(
+            &signed(&OTHER_SEED, "stable", Some(10)),
+            "stable",
+            &[release::TEST_RELEASE_KEY, backup]
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        release::verify_manifest(&good, "stable", &[]),
         Err(VerifyError::Signature)
     );
     // A build deployed to preview does not pass as stable.

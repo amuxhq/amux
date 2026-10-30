@@ -4,9 +4,7 @@ use std::time::Duration;
 use claude_specs::specs::{
     MINIMUM_SUPPORTED, SpecSource, fixtures_root, pty_registry, run, sdk_registry,
 };
-use replay_support::{
-    ReplayOptions, below_minimum, load_recording, orphan_recordings, strict_replay,
-};
+use replay_support::{below_minimum, load_recording, orphan_recordings, strict_replay};
 use semver::Version;
 
 const SPEC_TIMEOUT: Duration = Duration::from_secs(30);
@@ -111,7 +109,7 @@ mod sdk_replays {
         let error = run(
             entry,
             SpecSource::Recorded {
-                replay: strict_replay(&recording, ReplayOptions::default()),
+                replay: strict_replay(&recording),
                 transport_order: Vec::new(),
                 session_ids: recording.manifest.session_ids,
             },
@@ -246,7 +244,7 @@ async fn replay_pty_recording(
         entry.name,
         recording.manifest.recorded.model
     );
-    let replay = strict_replay(&recording, ReplayOptions::default());
+    let replay = strict_replay(&recording);
     let report = tokio::time::timeout(
         SPEC_TIMEOUT,
         claude_specs::specs::pty::run(
@@ -306,7 +304,7 @@ async fn replay(name: &str) {
         .filter_map(|event| event.transport_id.clone())
         .filter(|transport| seen.insert(transport.clone()))
         .collect::<Vec<_>>();
-    let replay = strict_replay(&recording, ReplayOptions::default());
+    let replay = strict_replay(&recording);
     let controller = replay.controller.clone();
     let outcome = match tokio::time::timeout(
         SPEC_TIMEOUT,

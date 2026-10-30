@@ -9,18 +9,6 @@ use crate::{IoDirection, IoEvent, Recording};
 
 const DEFAULT_TRANSPORT_ID: &str = "<default>";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ReplayTiming {
-    #[default]
-    Immediate,
-    Recorded,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct ReplayOptions {
-    pub timing: ReplayTiming,
-}
-
 #[derive(Debug, Clone)]
 struct ReadEntry {
     us: u64,
@@ -30,7 +18,6 @@ struct ReadEntry {
 
 #[derive(Debug, Clone)]
 struct WriteEntry {
-    us: u64,
     line: String,
     transport_id: String,
 }
@@ -50,10 +37,6 @@ struct ReplayState {
     trailing_writes: Vec<String>,
     write_mismatches: Vec<ReplayWriteMismatch>,
     read_delivery_failures: Vec<String>,
-    skipped_notifications: Vec<serde_json::Value>,
-    explicit_ignores: Vec<ReplayNotificationIgnore>,
-    replay_us: Option<u64>,
-    timing: ReplayTiming,
     open_writers: usize,
 }
 
@@ -65,16 +48,9 @@ pub struct ReplayWriteMismatch {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReplayNotificationIgnore {
-    pub notification: serde_json::Value,
-    pub reason: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplayReport {
     pub validated_writes: usize,
     pub delivered_reads: usize,
-    pub explicit_ignores: Vec<ReplayNotificationIgnore>,
     pub remaining_reads: usize,
     pub remaining_writes: usize,
     pub unused_transports: Vec<String>,
@@ -82,7 +58,6 @@ pub struct ReplayReport {
     pub trailing_output: Option<String>,
     pub write_mismatches: Vec<ReplayWriteMismatch>,
     pub read_delivery_failures: Vec<String>,
-    pub skipped_notifications: Vec<serde_json::Value>,
 }
 
 impl ReplayReport {
@@ -94,7 +69,6 @@ impl ReplayReport {
             && self.trailing_output.is_none()
             && self.write_mismatches.is_empty()
             && self.read_delivery_failures.is_empty()
-            && self.skipped_notifications.is_empty()
     }
 }
 
@@ -108,14 +82,13 @@ impl std::fmt::Display for ReplayError {
         let report = &self.report;
         write!(
             formatter,
-            "replay incomplete: {} unread, {} unwritten, {} unused transports, {} trailing writes, {} write mismatches, {} read delivery failures, {} undeclared skipped notifications",
+            "replay incomplete: {} unread, {} unwritten, {} unused transports, {} trailing writes, {} write mismatches, {} read delivery failures",
             report.remaining_reads,
             report.remaining_writes,
             report.unused_transports.len(),
             report.trailing_writes.len() + usize::from(report.trailing_output.is_some()),
             report.write_mismatches.len(),
             report.read_delivery_failures.len(),
-            report.skipped_notifications.len(),
         )
     }
 }
@@ -130,7 +103,7 @@ pub enum ReplayAdvance {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReplayPeek {
+enum ReplayPeek {
     Ready { event_us: u64 },
     BlockedOnWrite,
     Exhausted,
@@ -139,14 +112,8 @@ pub enum ReplayPeek {
 #[derive(Debug, Clone)]
 pub struct ReplayController {
     state: Arc<Mutex<ReplayState>>,
-    outputs: ReplayOutputs,
+    outputs: BTreeMap<String, Arc<tokio::sync::Mutex<DuplexStream>>>,
     progress: Arc<tokio::sync::Notify>,
-}
-
-#[derive(Debug, Clone)]
-enum ReplayOutputs {
-    Single(Arc<tokio::sync::Mutex<DuplexStream>>),
-    Named(BTreeMap<String, Arc<tokio::sync::Mutex<DuplexStream>>>),
 }
 
 pub struct ReplayTransport {
@@ -167,68 +134,19 @@ pub struct ReplayClock {
 
 #[derive(Debug, Default)]
 struct ReplayClockState {
-    controllers: Vec<ReplayController>,
+    controller: Option<ReplayController>,
     current_us: Option<u64>,
-}
-
-/// Create a replay reader/writer pair from a script of IO events.
-pub fn replay_transport(
-    script: Vec<IoEvent>,
-) -> (
-    impl AsyncBufRead + Unpin + Send + 'static,
-    impl AsyncWrite + Unpin + Send + 'static,
-) {
-    replay_transport_with_options(script, ReplayOptions::default())
-}
-
-/// Create a replay reader/writer pair with an explicit controller.
-pub fn replay_transport_with_controller(
-    script: Vec<IoEvent>,
-    options: ReplayOptions,
-) -> (BufReader<DuplexStream>, ReplayWriter, ReplayController) {
-    let state = replay_state(script, options, 1);
-    let (read_half, write_half) = tokio::io::duplex(1024 * 1024);
-    let output = Arc::new(tokio::sync::Mutex::new(write_half));
-    let progress = Arc::new(tokio::sync::Notify::new());
-    let controller = ReplayController {
-        state: Arc::clone(&state),
-        outputs: ReplayOutputs::Single(output),
-        progress: Arc::clone(&progress),
-    };
-
-    (
-        BufReader::new(read_half),
-        ReplayWriter {
-            state,
-            transport_id: None,
-            progress,
-        },
-        controller,
-    )
-}
-
-/// Create a replay reader/writer pair with explicit replay options.
-pub fn replay_transport_with_options(
-    script: Vec<IoEvent>,
-    options: ReplayOptions,
-) -> (
-    impl AsyncBufRead + Unpin + Send + 'static,
-    impl AsyncWrite + Unpin + Send + 'static,
-) {
-    let (reader, writer, controller) = replay_transport_with_controller(script, options);
-    tokio::spawn(drive_replay(controller));
-    (reader, writer)
 }
 
 /// Build a strict replay with one independently owned I/O pair per named
 /// transport in the recording.
-pub fn strict_replay(recording: &Recording, options: ReplayOptions) -> StrictReplay {
+pub fn strict_replay(recording: &Recording) -> StrictReplay {
     let transport_ids = recording
         .io
         .iter()
         .map(event_transport_id)
         .collect::<BTreeSet<_>>();
-    let state = replay_state(recording.io.clone(), options, transport_ids.len());
+    let state = replay_state(recording.io.clone(), transport_ids.len());
     let progress = Arc::new(tokio::sync::Notify::new());
     let mut outputs = BTreeMap::new();
     let mut transports = BTreeMap::new();
@@ -245,7 +163,7 @@ pub fn strict_replay(recording: &Recording, options: ReplayOptions) -> StrictRep
                 reader: Box::new(BufReader::new(read_half)),
                 writer: Box::new(ReplayWriter {
                     state: Arc::clone(&state),
-                    transport_id: Some(transport_id),
+                    transport_id,
                     progress: Arc::clone(&progress),
                 }),
             },
@@ -254,11 +172,11 @@ pub fn strict_replay(recording: &Recording, options: ReplayOptions) -> StrictRep
 
     let controller = ReplayController {
         state,
-        outputs: ReplayOutputs::Named(outputs),
+        outputs,
         progress,
     };
     let clock = ReplayClock::new(None);
-    clock.register(controller.clone());
+    clock.inner.lock().expect("replay clock lock").controller = Some(controller.clone());
 
     StrictReplay {
         transports,
@@ -267,16 +185,7 @@ pub fn strict_replay(recording: &Recording, options: ReplayOptions) -> StrictRep
     }
 }
 
-async fn drive_replay(controller: ReplayController) {
-    controller.drive().await;
-}
-
-fn replay_state(
-    script: Vec<IoEvent>,
-    options: ReplayOptions,
-    open_writers: usize,
-) -> Arc<Mutex<ReplayState>> {
-    let replay_us = script.first().map(|event| event.us);
+fn replay_state(script: Vec<IoEvent>, open_writers: usize) -> Arc<Mutex<ReplayState>> {
     let (expected_writes, read_groups, declared_transports) = split_script(script);
     let matched_writes = vec![false; expected_writes.len()];
     Arc::new(Mutex::new(ReplayState {
@@ -293,10 +202,6 @@ fn replay_state(
         trailing_writes: Vec::new(),
         write_mismatches: Vec::new(),
         read_delivery_failures: Vec::new(),
-        skipped_notifications: Vec::new(),
-        explicit_ignores: Vec::new(),
-        replay_us,
-        timing: options.timing,
         open_writers,
     }))
 }
@@ -314,7 +219,6 @@ fn split_script(script: Vec<IoEvent>) -> (Vec<WriteEntry>, Vec<Vec<ReadEntry>>, 
             IoDirection::Write => {
                 read_groups.push(std::mem::take(&mut current_reads));
                 expected_writes.push(WriteEntry {
-                    us: event.us,
                     line: event.line,
                     transport_id,
                 });
@@ -362,38 +266,22 @@ impl ReplayController {
     /// Controllers and clocks may remain alive for final accounting without
     /// keeping simulated processes waiting for their output streams to close.
     pub async fn close_reads(&self) -> io::Result<()> {
-        match &self.outputs {
-            ReplayOutputs::Single(output) => output.lock().await.shutdown().await,
-            ReplayOutputs::Named(outputs) => {
-                for output in outputs.values() {
-                    output.lock().await.shutdown().await?;
-                }
-                Ok(())
-            }
+        for output in self.outputs.values() {
+            output.lock().await.shutdown().await?;
         }
+        Ok(())
     }
 
-    pub fn peek_next(&self) -> ReplayPeek {
+    fn peek_next(&self) -> ReplayPeek {
         let state = self.state.lock().expect("replay state lock");
         peek_next_locked(&state)
     }
 
     pub async fn advance_one(&self) -> ReplayAdvance {
-        let (entry, delay) = {
+        let entry = {
             let mut state = self.state.lock().expect("replay state lock");
             match peek_next_locked(&state) {
-                ReplayPeek::Ready { .. } => {
-                    let entry = take_next_locked(&mut state);
-                    let delay = entry.as_ref().map_or(Duration::ZERO, |entry| {
-                        let delay_us = entry.us.saturating_sub(state.replay_us.unwrap_or(entry.us));
-                        state.replay_us = Some(entry.us);
-                        match state.timing {
-                            ReplayTiming::Immediate => Duration::ZERO,
-                            ReplayTiming::Recorded => Duration::from_micros(delay_us),
-                        }
-                    });
-                    (entry, delay)
-                }
+                ReplayPeek::Ready { .. } => take_next_locked(&mut state),
                 ReplayPeek::BlockedOnWrite => return ReplayAdvance::BlockedOnWrite,
                 ReplayPeek::Exhausted => return ReplayAdvance::Exhausted,
             }
@@ -403,11 +291,7 @@ impl ReplayController {
             return ReplayAdvance::Exhausted;
         };
 
-        if !delay.is_zero() {
-            tokio::time::sleep(delay).await;
-        }
-
-        let Some(output) = self.output_for(&entry.transport_id) else {
+        let Some(output) = self.outputs.get(&entry.transport_id).cloned() else {
             self.state
                 .lock()
                 .expect("replay state lock")
@@ -437,40 +321,7 @@ impl ReplayController {
         ReplayAdvance::Advanced { event_us: entry.us }
     }
 
-    fn output_for(&self, transport_id: &str) -> Option<Arc<tokio::sync::Mutex<DuplexStream>>> {
-        match &self.outputs {
-            ReplayOutputs::Single(output) => Some(Arc::clone(output)),
-            ReplayOutputs::Named(outputs) => outputs.get(transport_id).cloned(),
-        }
-    }
-
-    /// Record a notification discarded without an explicit ignore declaration.
-    /// Such a skip makes [`Self::finish`] fail.
-    pub fn record_skipped_notification(&self, notification: serde_json::Value) {
-        self.state
-            .lock()
-            .expect("replay state lock")
-            .skipped_notifications
-            .push(notification);
-    }
-
-    /// Record a deliberately ignored notification and why it is outside the
-    /// current assertion. An empty reason remains an undeclared skip.
-    pub fn ignore_notification(&self, notification: serde_json::Value, reason: impl Into<String>) {
-        let reason = reason.into();
-        let mut state = self.state.lock().expect("replay state lock");
-        if reason.trim().is_empty() {
-            state.skipped_notifications.push(notification);
-        } else {
-            state.explicit_ignores.push(ReplayNotificationIgnore {
-                notification,
-                reason,
-            });
-        }
-    }
-
-    /// Prove that every recorded event and notification obligation was
-    /// accounted for.
+    /// Prove that every recorded event was accounted for.
     #[allow(
         clippy::result_large_err,
         reason = "ReplayError intentionally carries the complete public accounting report"
@@ -481,7 +332,6 @@ impl ReplayController {
         let report = ReplayReport {
             validated_writes: state.validated_writes,
             delivered_reads: state.delivered_reads,
-            explicit_ignores: state.explicit_ignores.clone(),
             remaining_reads: total_reads.saturating_sub(state.delivered_reads),
             remaining_writes: state
                 .expected_writes
@@ -496,7 +346,6 @@ impl ReplayController {
             trailing_output: trailing_output(&state.write_buffers),
             write_mismatches: state.write_mismatches.clone(),
             read_delivery_failures: state.read_delivery_failures.clone(),
-            skipped_notifications: state.skipped_notifications.clone(),
         };
 
         if report.is_complete() {
@@ -530,40 +379,28 @@ impl ReplayClock {
     pub fn new(start_us: Option<u64>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(ReplayClockState {
-                controllers: Vec::new(),
+                controller: None,
                 current_us: start_us,
             })),
         }
-    }
-
-    pub fn register(&self, controller: ReplayController) {
-        self.inner
-            .lock()
-            .expect("replay clock lock")
-            .controllers
-            .push(controller);
     }
 
     pub fn current_us(&self) -> Option<u64> {
         self.inner.lock().expect("replay clock lock").current_us
     }
 
+    fn controller(&self) -> Option<ReplayController> {
+        self.inner
+            .lock()
+            .expect("replay clock lock")
+            .controller
+            .clone()
+    }
+
     pub async fn advance_one(&self) -> ReplayAdvance {
-        let (current_us, controllers) = {
-            let inner = self.inner.lock().expect("replay clock lock");
-            (inner.current_us, inner.controllers.clone())
+        let Some(controller) = self.controller() else {
+            return ReplayAdvance::Exhausted;
         };
-
-        if let Some(controller) = choose_due_controller(&controllers, current_us) {
-            return controller.advance_one().await;
-        }
-
-        let controller = choose_next_controller(&controllers);
-
-        let Some(controller) = controller else {
-            return aggregate_status(&controllers);
-        };
-
         let result = controller.advance_one().await;
         if let ReplayAdvance::Advanced { event_us } = result {
             let mut inner = self.inner.lock().expect("replay clock lock");
@@ -585,37 +422,36 @@ impl ReplayClock {
             inner.current_us = Some(target_us);
             target_us
         };
+        let Some(controller) = self.controller() else {
+            return ReplayAdvance::Exhausted;
+        };
 
-        let mut last_result =
-            aggregate_status(&self.inner.lock().expect("replay clock lock").controllers);
+        let mut last_result = status(controller.peek_next());
         loop {
-            let controllers = self
-                .inner
-                .lock()
-                .expect("replay clock lock")
-                .controllers
-                .clone();
-
-            let Some(controller) = choose_due_controller(&controllers, Some(target_us)) else {
-                return last_result;
-            };
-
+            match controller.peek_next() {
+                ReplayPeek::Ready { event_us } if event_us <= target_us => {}
+                _ => return last_result,
+            }
             let result = controller.advance_one().await;
             match result {
-                ReplayAdvance::Advanced { .. } => {
-                    last_result = result;
-                }
-                ReplayAdvance::BlockedOnWrite | ReplayAdvance::Exhausted => {
-                    return result;
-                }
+                ReplayAdvance::Advanced { .. } => last_result = result,
+                ReplayAdvance::BlockedOnWrite | ReplayAdvance::Exhausted => return result,
             }
         }
     }
 }
 
-pub struct ReplayWriter {
+/// What a clock reports when it delivers nothing.
+fn status(peek: ReplayPeek) -> ReplayAdvance {
+    match peek {
+        ReplayPeek::BlockedOnWrite => ReplayAdvance::BlockedOnWrite,
+        ReplayPeek::Ready { .. } | ReplayPeek::Exhausted => ReplayAdvance::Exhausted,
+    }
+}
+
+struct ReplayWriter {
     state: Arc<Mutex<ReplayState>>,
-    transport_id: Option<String>,
+    transport_id: String,
     progress: Arc<tokio::sync::Notify>,
 }
 
@@ -626,16 +462,11 @@ impl AsyncWrite for ReplayWriter {
         buf: &[u8],
     ) -> std::task::Poll<io::Result<usize>> {
         let this = self.get_mut();
-        let buffer_key = this
-            .transport_id
-            .as_deref()
-            .unwrap_or(DEFAULT_TRANSPORT_ID)
-            .to_string();
         this.state
             .lock()
             .expect("replay state lock")
             .write_buffers
-            .entry(buffer_key)
+            .entry(this.transport_id.clone())
             .or_default()
             .extend_from_slice(buf);
         std::task::Poll::Ready(Ok(buf.len()))
@@ -646,16 +477,14 @@ impl AsyncWrite for ReplayWriter {
         _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<io::Result<()>> {
         let this = self.get_mut();
-        let buffer_key = this
-            .transport_id
-            .as_deref()
-            .unwrap_or(DEFAULT_TRANSPORT_ID)
-            .to_string();
         let mut state = this.state.lock().expect("replay state lock");
 
         loop {
             let line_bytes = {
-                let buffer = state.write_buffers.entry(buffer_key.clone()).or_default();
+                let buffer = state
+                    .write_buffers
+                    .entry(this.transport_id.clone())
+                    .or_default();
                 let Some(pos) = buffer.iter().position(|&b| b == b'\n') else {
                     break;
                 };
@@ -677,9 +506,7 @@ impl AsyncWrite for ReplayWriter {
             let write_idx = state.validated_writes;
             let candidates = concurrent_writes_from(&state, write_idx);
             let mut transport_candidates = candidates.iter().copied().filter(|&candidate| {
-                this.transport_id.as_ref().is_none_or(|transport_id| {
-                    state.expected_writes[candidate].transport_id == *transport_id
-                })
+                state.expected_writes[candidate].transport_id == this.transport_id
             });
             let expected_idx = transport_candidates.clone().next().unwrap_or(write_idx);
             let Some(hit) = transport_candidates
@@ -708,7 +535,6 @@ impl AsyncWrite for ReplayWriter {
             {
                 state.validated_writes += 1;
             }
-            state.replay_us = Some(expected.us);
             this.progress.notify_one();
         }
 
@@ -835,112 +661,5 @@ fn take_next_locked(state: &mut ReplayState) -> Option<ReadEntry> {
         let entry = group[state.next_read_idx].clone();
         state.next_read_idx += 1;
         return Some(entry);
-    }
-}
-
-fn choose_next_controller(controllers: &[ReplayController]) -> Option<ReplayController> {
-    controllers
-        .iter()
-        .filter_map(|controller| match controller.peek_next() {
-            ReplayPeek::Ready { event_us } => Some((event_us, controller.clone())),
-            ReplayPeek::BlockedOnWrite | ReplayPeek::Exhausted => None,
-        })
-        .min_by_key(|(event_us, _)| *event_us)
-        .map(|(_, controller)| controller)
-}
-
-fn choose_due_controller(
-    controllers: &[ReplayController],
-    current_us: Option<u64>,
-) -> Option<ReplayController> {
-    let current_us = current_us?;
-
-    controllers
-        .iter()
-        .filter_map(|controller| match controller.peek_next() {
-            ReplayPeek::Ready { event_us } if event_us <= current_us => {
-                Some((event_us, controller.clone()))
-            }
-            ReplayPeek::Ready { .. } | ReplayPeek::BlockedOnWrite | ReplayPeek::Exhausted => None,
-        })
-        .min_by_key(|(event_us, _)| *event_us)
-        .map(|(_, controller)| controller)
-}
-
-fn aggregate_status(controllers: &[ReplayController]) -> ReplayAdvance {
-    if controllers
-        .iter()
-        .any(|controller| controller.peek_next() == ReplayPeek::BlockedOnWrite)
-    {
-        ReplayAdvance::BlockedOnWrite
-    } else {
-        ReplayAdvance::Exhausted
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-
-    use super::*;
-
-    fn event(us: u64, direction: IoDirection, line: &str) -> IoEvent {
-        IoEvent {
-            us,
-            direction,
-            line: line.to_owned(),
-            transport_id: None,
-            session_id: None,
-        }
-    }
-
-    #[tokio::test]
-    async fn convenience_transport_keeps_controller_alive_and_drives_reads() {
-        let script = vec![
-            event(1, IoDirection::Read, "first"),
-            event(2, IoDirection::Write, "request"),
-            event(3, IoDirection::Read, "second"),
-        ];
-        let (mut reader, mut writer) = replay_transport(script);
-        let mut line = String::new();
-
-        tokio::time::timeout(Duration::from_secs(1), reader.read_line(&mut line))
-            .await
-            .expect("first replay read timed out")
-            .expect("first replay read failed");
-        assert_eq!(line, "first\n");
-
-        writer.write_all(b"request\n").await.unwrap();
-        writer.flush().await.unwrap();
-        line.clear();
-        tokio::time::timeout(Duration::from_secs(1), reader.read_line(&mut line))
-            .await
-            .expect("second replay read timed out")
-            .expect("second replay read failed");
-        assert_eq!(line, "second\n");
-    }
-
-    #[tokio::test]
-    async fn convenience_transport_applies_recorded_timing() {
-        let script = vec![
-            event(1_000, IoDirection::Read, "first"),
-            event(51_000, IoDirection::Read, "second"),
-        ];
-        let (mut reader, _writer) = replay_transport_with_options(
-            script,
-            ReplayOptions {
-                timing: ReplayTiming::Recorded,
-            },
-        );
-        let mut line = String::new();
-
-        reader.read_line(&mut line).await.unwrap();
-        assert_eq!(line, "first\n");
-        line.clear();
-        let started = tokio::time::Instant::now();
-        reader.read_line(&mut line).await.unwrap();
-
-        assert_eq!(line, "second\n");
-        assert!(started.elapsed() >= Duration::from_millis(25));
     }
 }

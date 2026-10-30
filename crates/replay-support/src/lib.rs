@@ -15,10 +15,8 @@ pub use manifest::{
 pub use registry::{RegistryRow, SpecEntry, below_minimum, orphan_recordings, registry_rows};
 pub use sanitize::sanitize;
 pub use transport::{
-    ReplayAdvance, ReplayClock, ReplayController, ReplayError, ReplayNotificationIgnore,
-    ReplayOptions, ReplayPeek, ReplayReport, ReplayTiming, ReplayTransport, ReplayWriteMismatch,
-    StrictReplay, replay_transport, replay_transport_with_controller,
-    replay_transport_with_options, strict_replay,
+    ReplayAdvance, ReplayClock, ReplayController, ReplayError, ReplayReport, ReplayTransport,
+    ReplayWriteMismatch, StrictReplay, strict_replay,
 };
 
 /// A single IO event from a recorded session.

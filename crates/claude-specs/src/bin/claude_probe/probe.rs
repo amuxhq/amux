@@ -265,8 +265,7 @@ async fn record_pty_one(entry: SpecEntry) -> Result<(), Box<dyn std::error::Erro
     write_manifest(&stage.join("manifest.json"), &manifest)?;
 
     let recording = load_recording(&stage)?;
-    let replay =
-        replay_support::strict_replay(&recording, replay_support::ReplayOptions::default());
+    let replay = replay_support::strict_replay(&recording);
     claude_specs::specs::pty::run(
         &entry,
         claude_specs::specs::pty::Source::Recorded {

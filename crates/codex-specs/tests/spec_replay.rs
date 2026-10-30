@@ -1,7 +1,5 @@
 use codex_specs::specs::{MINIMUM_SUPPORTED, SpecSource, fixtures_root, registry, run};
-use replay_support::{
-    ReplayOptions, below_minimum, load_recording, orphan_recordings, strict_replay,
-};
+use replay_support::{below_minimum, load_recording, orphan_recordings, strict_replay};
 use semver::Version;
 
 #[tokio::test]
@@ -18,7 +16,7 @@ async fn every_registered_specification_replays_strictly() {
             entry.name,
             recording.manifest.recorded.model
         );
-        let replay = strict_replay(&recording, ReplayOptions::default());
+        let replay = strict_replay(&recording);
         let controller = replay.controller.clone();
         run(entry, SpecSource::Recorded(replay))
             .await

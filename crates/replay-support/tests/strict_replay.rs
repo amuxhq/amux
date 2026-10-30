@@ -6,7 +6,7 @@ use chrono::DateTime;
 use redaction::RedactionSummary;
 use replay_support::{
     IoDirection, IoEvent, MANIFEST_SCHEMA_VERSION, Manifest, Recorded, Recording, ReplayAdvance,
-    ReplayClock, ReplayOptions, replay_transport_with_controller, strict_replay,
+    ReplayController, ReplayTransport, strict_replay,
 };
 use semver::Version;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
@@ -42,6 +42,16 @@ fn recording(io: Vec<IoEvent>) -> Recording {
     }
 }
 
+/// The strict replay of a script whose events are all on `session-a`.
+fn session(script: Vec<IoEvent>) -> (ReplayTransport, ReplayController) {
+    let mut replay = strict_replay(&recording(script));
+    let transport = replay
+        .transports
+        .remove("session-a")
+        .expect("the script's transport");
+    (transport, replay.controller)
+}
+
 #[tokio::test]
 async fn strict_replay_reports_complete_consumption() {
     let script = vec![
@@ -54,29 +64,29 @@ async fn strict_replay_reports_complete_consumption() {
         ),
         event(30, IoDirection::Read, r#"{"done":true}"#, "session-a"),
     ];
-    let (mut reader, mut writer, controller) =
-        replay_transport_with_controller(script, ReplayOptions::default());
+    let (mut transport, controller) = session(script);
 
     assert_eq!(
         controller.advance_one().await,
         ReplayAdvance::Advanced { event_us: 10 }
     );
     let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
+    transport.reader.read_line(&mut line).await.unwrap();
     assert_eq!(line, "{\"ready\":true}\n");
 
-    writer
+    transport
+        .writer
         .write_all(b"{\"id\":7,\"request\":\"turn\"}\n")
         .await
         .unwrap();
-    writer.flush().await.unwrap();
+    transport.writer.flush().await.unwrap();
 
     assert_eq!(
         controller.advance_one().await,
         ReplayAdvance::Advanced { event_us: 30 }
     );
     line.clear();
-    reader.read_line(&mut line).await.unwrap();
+    transport.reader.read_line(&mut line).await.unwrap();
     assert_eq!(line, "{\"done\":true}\n");
 
     let report = controller.finish().unwrap();
@@ -87,10 +97,7 @@ async fn strict_replay_reports_complete_consumption() {
 
 #[test]
 fn strict_replay_rejects_leftover_reads() {
-    let (_, _, controller) = replay_transport_with_controller(
-        vec![event(10, IoDirection::Read, "unread", "session-a")],
-        ReplayOptions::default(),
-    );
+    let (_, controller) = session(vec![event(10, IoDirection::Read, "unread", "session-a")]);
 
     let error = controller.finish().unwrap_err();
     assert_eq!(error.report.remaining_reads, 1);
@@ -98,10 +105,7 @@ fn strict_replay_rejects_leftover_reads() {
 
 #[test]
 fn strict_replay_rejects_unwritten_expectations() {
-    let (_, _, controller) = replay_transport_with_controller(
-        vec![event(10, IoDirection::Write, "expected", "session-a")],
-        ReplayOptions::default(),
-    );
+    let (_, controller) = session(vec![event(10, IoDirection::Write, "expected", "session-a")]);
 
     let error = controller.finish().unwrap_err();
     assert_eq!(error.report.remaining_writes, 1);
@@ -109,11 +113,15 @@ fn strict_replay_rejects_unwritten_expectations() {
 
 #[tokio::test]
 async fn strict_replay_rejects_trailing_writes() {
-    let (_, mut writer, controller) =
-        replay_transport_with_controller(Vec::new(), ReplayOptions::default());
+    let (mut transport, controller) =
+        session(vec![event(10, IoDirection::Write, "expected", "session-a")]);
 
-    writer.write_all(b"unexpected\n").await.unwrap();
-    assert!(writer.flush().await.is_err());
+    transport
+        .writer
+        .write_all(b"expected\nunexpected\n")
+        .await
+        .unwrap();
+    assert!(transport.writer.flush().await.is_err());
 
     let error = controller.finish().unwrap_err();
     assert_eq!(error.report.trailing_writes, vec!["unexpected"]);
@@ -121,10 +129,10 @@ async fn strict_replay_rejects_trailing_writes() {
 
 #[tokio::test]
 async fn strict_replay_rejects_partial_trailing_output() {
-    let (_, mut writer, controller) =
-        replay_transport_with_controller(Vec::new(), ReplayOptions::default());
+    let (mut transport, controller) =
+        session(vec![event(10, IoDirection::Write, "expected", "session-a")]);
 
-    writer.write_all(b"partial").await.unwrap();
+    transport.writer.write_all(b"partial").await.unwrap();
 
     let error = controller.finish().unwrap_err();
     assert_eq!(error.report.trailing_output.as_deref(), Some("partial"));
@@ -132,76 +140,44 @@ async fn strict_replay_rejects_partial_trailing_output() {
 
 #[test]
 fn strict_replay_rejects_unused_transports() {
-    let (_, _, controller) = replay_transport_with_controller(
-        vec![event(10, IoDirection::Read, "unread", "unused-session")],
-        ReplayOptions::default(),
-    );
+    let replay = strict_replay(&recording(vec![event(
+        10,
+        IoDirection::Read,
+        "unread",
+        "unused-session",
+    )]));
 
-    let error = controller.finish().unwrap_err();
+    let error = replay.controller.finish().unwrap_err();
     assert_eq!(error.report.unused_transports, vec!["unused-session"]);
 }
 
-#[test]
-fn strict_replay_rejects_undeclared_skipped_notifications() {
-    let (_, _, controller) = replay_transport_with_controller(Vec::new(), ReplayOptions::default());
-    controller.record_skipped_notification(serde_json::json!({"kind": "progress"}));
-
-    let error = controller.finish().unwrap_err();
-    assert_eq!(
-        error.report.skipped_notifications,
-        vec![serde_json::json!({"kind": "progress"})]
-    );
-}
-
-#[test]
-fn strict_replay_allows_explicit_notification_ignores() {
-    let (_, _, controller) = replay_transport_with_controller(Vec::new(), ReplayOptions::default());
-    controller.ignore_notification(
-        serde_json::json!({"kind": "heartbeat"}),
-        "heartbeat is outside this journey",
-    );
-
-    let report = controller.finish().unwrap();
-    assert_eq!(report.explicit_ignores.len(), 1);
-    assert_eq!(
-        report.explicit_ignores[0].reason,
-        "heartbeat is outside this journey"
-    );
-}
-
 #[tokio::test]
-async fn strict_replay_scheduling_is_deterministic_across_transports() {
-    let (mut slow_reader, _, slow) = replay_transport_with_controller(
-        vec![event(20, IoDirection::Read, "slow", "slow")],
-        ReplayOptions::default(),
-    );
-    let (mut fast_reader, _, fast) = replay_transport_with_controller(
-        vec![event(10, IoDirection::Read, "fast", "fast")],
-        ReplayOptions::default(),
-    );
-    let clock = ReplayClock::new(None);
-    clock.register(slow.clone());
-    clock.register(fast.clone());
+async fn the_clock_delivers_what_falls_due_as_it_advances() {
+    let mut replay = strict_replay(&recording(vec![
+        event(10, IoDirection::Read, "fast", "fast"),
+        event(20, IoDirection::Read, "slow", "slow"),
+    ]));
+    let mut fast = replay.transports.remove("fast").unwrap();
+    let mut slow = replay.transports.remove("slow").unwrap();
 
     assert_eq!(
-        clock.advance_one().await,
+        replay.clock.advance_one().await,
         ReplayAdvance::Advanced { event_us: 10 }
     );
     let mut line = String::new();
-    fast_reader.read_line(&mut line).await.unwrap();
+    fast.reader.read_line(&mut line).await.unwrap();
     assert_eq!(line, "fast\n");
 
     assert_eq!(
-        clock.advance_for(Duration::from_micros(10)).await,
+        replay.clock.advance_for(Duration::from_micros(10)).await,
         ReplayAdvance::Advanced { event_us: 20 }
     );
     line.clear();
-    slow_reader.read_line(&mut line).await.unwrap();
+    slow.reader.read_line(&mut line).await.unwrap();
     assert_eq!(line, "slow\n");
 
-    assert_eq!(clock.current_us(), Some(20));
-    slow.finish().unwrap();
-    fast.finish().unwrap();
+    assert_eq!(replay.clock.current_us(), Some(20));
+    replay.controller.finish().unwrap();
 }
 
 #[tokio::test]
@@ -222,29 +198,30 @@ async fn strict_replay_accepts_concurrent_writes_in_either_order() {
         ),
         event(40, IoDirection::Read, r#"{"done":true}"#, "session-a"),
     ];
-    let (mut reader, mut writer, controller) =
-        replay_transport_with_controller(script, ReplayOptions::default());
+    let (mut transport, controller) = session(script);
 
     controller.advance_one().await;
     let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
+    transport.reader.read_line(&mut line).await.unwrap();
 
-    writer
+    transport
+        .writer
         .write_all(b"{\"type\":\"control_response\",\"response\":{\"request_id\":\"r1\"}}\n")
         .await
         .unwrap();
-    writer
+    transport
+        .writer
         .write_all(b"{\"type\":\"user\",\"message\":\"hello\"}\n")
         .await
         .unwrap();
-    writer.flush().await.unwrap();
+    transport.writer.flush().await.unwrap();
 
     assert_eq!(
         controller.advance_one().await,
         ReplayAdvance::Advanced { event_us: 40 }
     );
     line.clear();
-    reader.read_line(&mut line).await.unwrap();
+    transport.reader.read_line(&mut line).await.unwrap();
     assert_eq!(line, "{\"done\":true}\n");
     controller.finish().unwrap();
 }
@@ -256,11 +233,14 @@ async fn strict_replay_rejects_a_write_that_crosses_a_read() {
         event(20, IoDirection::Read, r#"{"between":true}"#, "session-a"),
         event(30, IoDirection::Write, r#"{"second":true}"#, "session-a"),
     ];
-    let (_, mut writer, controller) =
-        replay_transport_with_controller(script, ReplayOptions::default());
+    let (mut transport, controller) = session(script);
 
-    writer.write_all(b"{\"second\":true}\n").await.unwrap();
-    assert!(writer.flush().await.is_err());
+    transport
+        .writer
+        .write_all(b"{\"second\":true}\n")
+        .await
+        .unwrap();
+    assert!(transport.writer.flush().await.is_err());
     assert!(controller.finish().is_err());
 }
 
@@ -280,26 +260,24 @@ async fn strict_replay_rejects_reordering_writes_from_one_origin() {
             "session-a",
         ),
     ];
-    let (_, mut writer, controller) =
-        replay_transport_with_controller(script, ReplayOptions::default());
+    let (mut transport, controller) = session(script);
 
-    writer
+    transport
+        .writer
         .write_all(b"{\"type\":\"control_request\",\"request\":{\"subtype\":\"reload_skills\"}}\n")
         .await
         .unwrap();
-    assert!(writer.flush().await.is_err());
+    assert!(transport.writer.flush().await.is_err());
     assert!(controller.finish().is_err());
 }
 
 #[tokio::test]
 async fn strict_replay_reports_write_mismatch_without_panicking() {
-    let (_, mut writer, controller) = replay_transport_with_controller(
-        vec![event(10, IoDirection::Write, "expected", "session-a")],
-        ReplayOptions::default(),
-    );
+    let (mut transport, controller) =
+        session(vec![event(10, IoDirection::Write, "expected", "session-a")]);
 
-    writer.write_all(b"actual\n").await.unwrap();
-    assert!(writer.flush().await.is_err());
+    transport.writer.write_all(b"actual\n").await.unwrap();
+    assert!(transport.writer.flush().await.is_err());
 
     let mismatch = &controller.finish().unwrap_err().report.write_mismatches[0];
     assert_eq!(mismatch.index, 0);
@@ -309,13 +287,10 @@ async fn strict_replay_reports_write_mismatch_without_panicking() {
 
 #[tokio::test]
 async fn strict_replay_builds_named_transports_over_a_recording() {
-    let mut replay = strict_replay(
-        &recording(vec![
-            event(10, IoDirection::Read, "alpha-ready", "alpha"),
-            event(20, IoDirection::Read, "beta-ready", "beta"),
-        ]),
-        ReplayOptions::default(),
-    );
+    let mut replay = strict_replay(&recording(vec![
+        event(10, IoDirection::Read, "alpha-ready", "alpha"),
+        event(20, IoDirection::Read, "beta-ready", "beta"),
+    ]));
     assert_eq!(
         replay.transports.keys().cloned().collect::<Vec<_>>(),
         vec!["alpha", "beta"]
@@ -344,13 +319,10 @@ async fn strict_replay_builds_named_transports_over_a_recording() {
 
 #[tokio::test]
 async fn strict_replay_validates_named_transport_writes_in_recorded_order() {
-    let mut replay = strict_replay(
-        &recording(vec![
-            event(10, IoDirection::Write, "alpha-write", "alpha"),
-            event(20, IoDirection::Write, "beta-write", "beta"),
-        ]),
-        ReplayOptions::default(),
-    );
+    let mut replay = strict_replay(&recording(vec![
+        event(10, IoDirection::Write, "alpha-write", "alpha"),
+        event(20, IoDirection::Write, "beta-write", "beta"),
+    ]));
     let mut alpha = replay.transports.remove("alpha").unwrap();
     let mut beta = replay.transports.remove("beta").unwrap();
 
@@ -365,13 +337,10 @@ async fn strict_replay_validates_named_transport_writes_in_recorded_order() {
 
 #[tokio::test]
 async fn strict_replay_validates_named_transport_writes_in_reverse_order() {
-    let mut replay = strict_replay(
-        &recording(vec![
-            event(10, IoDirection::Write, "alpha-write", "alpha"),
-            event(20, IoDirection::Write, "beta-write", "beta"),
-        ]),
-        ReplayOptions::default(),
-    );
+    let mut replay = strict_replay(&recording(vec![
+        event(10, IoDirection::Write, "alpha-write", "alpha"),
+        event(20, IoDirection::Write, "beta-write", "beta"),
+    ]));
     let mut alpha = replay.transports.remove("alpha").unwrap();
     let mut beta = replay.transports.remove("beta").unwrap();
 
@@ -386,13 +355,10 @@ async fn strict_replay_validates_named_transport_writes_in_reverse_order() {
 
 #[tokio::test]
 async fn strict_replay_named_transport_mismatch_reports_its_own_expectation() {
-    let mut replay = strict_replay(
-        &recording(vec![
-            event(10, IoDirection::Write, "alpha-write", "alpha"),
-            event(20, IoDirection::Write, "beta-write", "beta"),
-        ]),
-        ReplayOptions::default(),
-    );
+    let mut replay = strict_replay(&recording(vec![
+        event(10, IoDirection::Write, "alpha-write", "alpha"),
+        event(20, IoDirection::Write, "beta-write", "beta"),
+    ]));
     let mut beta = replay.transports.remove("beta").unwrap();
 
     beta.writer.write_all(b"wrong-beta-write\n").await.unwrap();
@@ -408,13 +374,10 @@ async fn strict_replay_named_transport_mismatch_reports_its_own_expectation() {
 
 #[tokio::test]
 async fn closing_named_replay_reads_delivers_eof_while_clock_stays_alive() {
-    let mut replay = strict_replay(
-        &recording(vec![
-            event(1, IoDirection::Read, "terminal", "pty"),
-            event(2, IoDirection::Read, "hook", "hook"),
-        ]),
-        ReplayOptions::default(),
-    );
+    let mut replay = strict_replay(&recording(vec![
+        event(1, IoDirection::Read, "terminal", "pty"),
+        event(2, IoDirection::Read, "hook", "hook"),
+    ]));
     replay.controller.drive().await;
     replay.controller.close_reads().await.unwrap();
     for (name, expected) in [("pty", "terminal\n"), ("hook", "hook\n")] {
@@ -435,17 +398,18 @@ async fn closing_named_replay_reads_delivers_eof_while_clock_stays_alive() {
 
 #[tokio::test]
 async fn closing_replay_reads_preserves_missing_write_failures() {
-    let (mut reader, _writer, controller) = replay_transport_with_controller(
-        vec![event(1, IoDirection::Write, "required", "pty")],
-        ReplayOptions::default(),
-    );
+    let (mut transport, controller) =
+        session(vec![event(1, IoDirection::Write, "required", "session-a")]);
     controller.close_reads().await.unwrap();
     let mut line = String::new();
     assert_eq!(
-        tokio::time::timeout(Duration::from_secs(1), reader.read_line(&mut line))
-            .await
-            .unwrap()
-            .unwrap(),
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            transport.reader.read_line(&mut line)
+        )
+        .await
+        .unwrap()
+        .unwrap(),
         0
     );
     assert_eq!(controller.finish().unwrap_err().report.remaining_writes, 1);
@@ -453,13 +417,10 @@ async fn closing_replay_reads_preserves_missing_write_failures() {
 
 #[tokio::test]
 async fn replay_driver_waits_for_expected_writes_then_resumes() {
-    let (mut reader, mut writer, controller) = replay_transport_with_controller(
-        vec![
-            event(1, IoDirection::Write, "request", "pty"),
-            event(2, IoDirection::Read, "response", "pty"),
-        ],
-        ReplayOptions::default(),
-    );
+    let (mut transport, controller) = session(vec![
+        event(1, IoDirection::Write, "request", "session-a"),
+        event(2, IoDirection::Read, "response", "session-a"),
+    ]);
     let driver = controller.drive();
     tokio::pin!(driver);
     assert!(
@@ -469,14 +430,18 @@ async fn replay_driver_waits_for_expected_writes_then_resumes() {
         .await
         .is_pending()
     );
-    writer.write_all(b"request\n").await.unwrap();
-    writer.flush().await.unwrap();
+    transport.writer.write_all(b"request\n").await.unwrap();
+    transport.writer.flush().await.unwrap();
     tokio::time::timeout(Duration::from_secs(1), driver)
         .await
         .unwrap();
     controller.close_reads().await.unwrap();
     let mut received = String::new();
-    reader.read_to_string(&mut received).await.unwrap();
+    transport
+        .reader
+        .read_to_string(&mut received)
+        .await
+        .unwrap();
     assert_eq!(received, "response\n");
     assert!(controller.finish().unwrap().is_complete());
 }

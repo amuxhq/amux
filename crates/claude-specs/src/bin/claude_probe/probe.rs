@@ -214,7 +214,6 @@ async fn capture_pty(entry: SpecEntry) -> Result<PtyCapture, Box<dyn std::error:
         &entry,
         claude_specs::specs::pty::Source::Live {
             launch,
-            keymaps: claude_specs::terminal::keymap::KeymapSources::default(),
             size: pty_host::PtySize {
                 rows: 40,
                 cols: 120,
@@ -275,7 +274,6 @@ async fn record_pty_one(entry: SpecEntry) -> Result<(), Box<dyn std::error::Erro
         claude_specs::specs::pty::Source::Recorded {
             replay,
             manifest: Box::new(recording.manifest),
-            keymaps: claude_specs::terminal::keymap::KeymapSources::default(),
         },
     )
     .await?;

@@ -18,7 +18,6 @@ use crate::driver::pty::{
     AskAnswer, AskFacts, AskKind, Intent, PermissionAnswer, PlanAnswer, PtyEvent, QuestionAnswer,
     QuestionResponse, RelinkReason,
 };
-use crate::terminal::keymap::KeymapSources;
 
 const DEFAULT_WAIT: Duration = Duration::from_secs(600);
 const WAIT_ENV: &str = "CLAUDE_PTY_SPEC_TIMEOUT_SECS";
@@ -213,13 +212,11 @@ pub fn prepare_launch(entry: &SpecEntry, launch: &mut Launch) -> Result<(), Spec
 pub enum Source {
     Live {
         launch: Launch,
-        keymaps: KeymapSources,
         size: pty_host::PtySize,
     },
     Recorded {
         replay: StrictReplay,
         manifest: Box<Manifest>,
-        keymaps: KeymapSources,
     },
 }
 
@@ -236,11 +233,7 @@ pub async fn run(entry: &SpecEntry, source: Source) -> Result<RunReport, SpecFai
     let definition = definition_for(entry)?;
     let wait = claim_wait(entry)?;
     let (session, capture, controller, provider_version, model, session_id) = match source {
-        Source::Live {
-            mut launch,
-            keymaps,
-            size,
-        } => {
+        Source::Live { mut launch, size } => {
             prepare_launch(entry, &mut launch)?;
             let model = launch
                 .args
@@ -260,7 +253,7 @@ pub async fn run(entry: &SpecEntry, source: Source) -> Result<RunReport, SpecFai
                 .iter()
                 .map(|(name, value)| ((*name).into(), (*value).into()))
                 .collect::<Vec<_>>();
-            let session = crate::driver::pty::spawn(&launch, &keymaps, size, &env)
+            let session = crate::driver::pty::spawn(&launch, size, &env)
                 .await
                 .map_err(|error| failure(entry, error.to_string()))?;
             (
@@ -275,11 +268,10 @@ pub async fn run(entry: &SpecEntry, source: Source) -> Result<RunReport, SpecFai
         Source::Recorded {
             mut replay,
             manifest,
-            keymaps,
         } => {
             let manifest = *manifest;
             let controller = replay.controller.clone();
-            let session = crate::driver::pty::from_recording(&mut replay, &manifest, &keymaps)
+            let session = crate::driver::pty::from_recording(&mut replay, &manifest)
                 .map_err(|error| failure(entry, error.to_string()))?;
             if !replay.transports.is_empty() {
                 return Err(failure(entry, "recording has undeclared extra transports"));

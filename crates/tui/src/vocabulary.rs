@@ -772,20 +772,14 @@ fn text(words: &str) -> Vec<Segment> {
 const CLOSED: RowState = RowState {
     focused: false,
     expanded: false,
-    rail: false,
-    joined: false,
 };
 const OPEN: RowState = RowState {
     focused: false,
     expanded: true,
-    rail: false,
-    joined: false,
 };
 const FOCUSED: RowState = RowState {
     focused: true,
     expanded: false,
-    rail: false,
-    joined: false,
 };
 
 /// What the layout would look up for an authored row: the first edit's

@@ -1,7 +1,6 @@
 //! Chat rows as terminal lines. Each row is one line of glyph, verb, subject
-//! and ` · ` meta; consecutive tool rows hang off one rail in the gutter,
-//! and rows that open show their detail below when the reader expands
-//! them. Wording lives here; the facts come from `ui_view::Row`.
+//! and ` · ` meta; rows that open show their detail below when the reader
+//! expands them. Wording lives here; the facts come from `ui_view::Row`.
 
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
@@ -16,16 +15,12 @@ const INDENT: usize = 4;
 /// Lines of an opened body before it is cut with a count.
 pub const OPEN_LINES: usize = 40;
 
-/// How the reader has this row, and where it sits among its neighbours.
+/// How the reader has this row.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RowState {
     pub focused: bool,
     /// The row is open, or its run is expanded.
     pub expanded: bool,
-    /// A tool row beside another: it hangs off the rail in the gutter.
-    pub rail: bool,
-    /// The next row continues the rail, so no blank line separates them.
-    pub joined: bool,
 }
 
 /// What a row shows beyond its own view value, looked up by the layout.
@@ -46,38 +41,12 @@ impl Default for RowFacts {
     }
 }
 
-/// Whether a row is a tool row: one that joins its neighbours' rail.
-pub fn on_rail(row: &Row) -> bool {
-    matches!(
-        row.kind,
-        RowKind::Explore { .. }
-            | RowKind::Command { .. }
-            | RowKind::ToolCall { .. }
-            | RowKind::Child { .. }
-            | RowKind::FileChange { .. }
-            | RowKind::Background { .. }
-            | RowKind::Subagent { .. }
-    )
-}
-
 /// The lines one row draws at `width`, its trailing blank separator
-/// included unless the next row joins its rail. A row the view marks
-/// collapsed draws nothing.
+/// included. A row the view marks collapsed draws nothing.
 pub fn row_lines(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'static>> {
     let mut lines = body(row, state, width, theme);
     if lines.is_empty() {
         return lines;
-    }
-    if state.rail {
-        for line in &mut lines {
-            if let Some(first) = line.spans.first_mut()
-                && first.content.starts_with(' ')
-            {
-                let rest = first.content[1..].to_owned();
-                *first = Span::styled(rest, first.style);
-                line.spans.insert(0, Span::styled("│", theme.muted()));
-            }
-        }
     }
     let bar = if state.focused {
         Some(Span::styled("▌", theme.focus_bar()))
@@ -98,9 +67,7 @@ pub fn row_lines(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<
             line.spans.insert(0, bar.clone());
         }
     }
-    if !state.joined {
-        lines.push(Line::default());
-    }
+    lines.push(Line::default());
     lines
 }
 

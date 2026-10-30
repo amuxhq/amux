@@ -15,7 +15,7 @@ use ui_state::{Fold, ItemClass, Key, SessionState};
 use ui_view::{ChatOptions, LIVE_STEPS, Row, RunCounts, ToolRows, chat_rows_for};
 
 use super::feed::{self, Header, LineHits, Placement};
-use super::rows::{RowFacts, RowState, on_rail, row_lines};
+use super::rows::{RowFacts, RowState, row_lines};
 use crate::theme::Theme;
 
 /// How a chat draws its runs of tool steps: the person's choice, kept for
@@ -179,18 +179,6 @@ impl Frame<'_> {
         Some((shown, child_open))
     }
 
-    /// Whether the nearest row drawn beside `order`, older or newer, is a
-    /// tool row.
-    fn tool_beside(&self, state: &SessionState, order: u64, older: bool) -> bool {
-        let beside = |held: &ui_state::Held| self.shown(state, held.item.order);
-        let row = if older {
-            before(state, order).rev().find_map(beside)
-        } else {
-            after(state, order).find_map(beside)
-        };
-        row.is_some_and(|(row, _)| on_rail(&row))
-    }
-
     /// The row for one held order, or None when it draws nothing here.
     fn block(&self, state: &SessionState, order: u64) -> Option<Block> {
         self.feed_block(state, order)
@@ -201,13 +189,9 @@ impl Frame<'_> {
     fn row_block(&self, state: &SessionState, order: u64) -> Option<Block> {
         let (shown, child_open) = self.shown(state, order)?;
         let expanded = self.expanded.contains(&shown.id);
-        let tool = on_rail(&shown);
-        let joined = tool && self.tool_beside(state, order, false);
         let row_state = RowState {
             focused: self.focus == Some(&shown.id),
             expanded,
-            rail: joined || (tool && self.tool_beside(state, order, true)),
-            joined,
         };
         let mut lines = row_lines(&shown, row_state, self.width, self.theme);
         if child_open {

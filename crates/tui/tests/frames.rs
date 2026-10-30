@@ -807,7 +807,6 @@ async fn a_draft_left_in_a_chat_is_in_its_composer_when_the_chat_opens_again() {
         version: String::new(),
         local_host: net.host("desk").unwrap().host_id.as_bytes().to_vec(),
         layout: None,
-        reports: None,
         chat_in: settings::ChatInSetting::Amux,
         defaults: settings::NewAgentSettings::default(),
     };
@@ -882,7 +881,6 @@ async fn desk_of(names: &[&str]) -> (Net, std::sync::Arc<dyn client::Client>, tu
         version: String::new(),
         local_host: net.host("desk").unwrap().host_id.as_bytes().to_vec(),
         layout: None,
-        reports: None,
         chat_in: settings::ChatInSetting::Amux,
         defaults: settings::NewAgentSettings::default(),
     };
@@ -1347,7 +1345,6 @@ async fn raw_attach_from_a_far_agents_chat_does_not_say_enter_opens_its_chat() {
         version: String::new(),
         local_host: net.host("laptop").unwrap().host_id.as_bytes().to_vec(),
         layout: None,
-        reports: None,
         chat_in: settings::ChatInSetting::Amux,
         defaults: settings::NewAgentSettings::default(),
     };
@@ -1411,7 +1408,6 @@ async fn far_chat_via(
         version: String::new(),
         local_host: net.host("desk").unwrap().host_id.as_bytes().to_vec(),
         layout: None,
-        reports: None,
         chat_in: settings::ChatInSetting::Amux,
         defaults: settings::NewAgentSettings::default(),
     };

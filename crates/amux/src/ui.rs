@@ -86,7 +86,6 @@ async fn open(
         version: node::version().to_owned(),
         local_host: attacher.local_host().to_vec(),
         layout: Some(config.root.join("tui").join("layout.json")),
-        reports: Some(config.root.join("reports")),
         chat_in: config.ui.chat_in,
         defaults: config.new_agent.clone(),
     };

@@ -1047,7 +1047,6 @@ fn raw_attach_to_a_stopped_agent_says_it_is_stopped() {
         version: String::new(),
         local_host: b"a".to_vec(),
         layout: None,
-        reports: None,
         chat_in: settings::ChatInSetting::Amux,
         defaults: settings::NewAgentSettings::default(),
     };

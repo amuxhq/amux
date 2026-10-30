@@ -56,9 +56,6 @@ pub struct TuiConfig {
     /// Where this client keeps its layout between runs; None keeps it for
     /// this run only.
     pub layout: Option<std::path::PathBuf>,
-    /// Where a report of a problem is written: the installation's reports
-    /// directory. None writes it beside the dump it carries.
-    pub reports: Option<std::path::PathBuf>,
     /// Where the person chats with their agents: in amux, or in each
     /// agent's own terminal, attached on start.
     pub chat_in: settings::ChatInSetting,
@@ -1771,12 +1768,7 @@ impl App {
         }
         if self.leader_pending && self.chat.is_none() {
             let mut line = Line::from(Span::raw("  "));
-            let words = if self.chat.is_some() {
-                "h home · n new agent · p hosts · d detach · r review · k/j focus · o open · y copy"
-            } else {
-                "leader: nothing here"
-            };
-            push(&mut line, words, theme.muted(), width);
+            push(&mut line, "leader: nothing here", theme.muted(), width);
             return Some(line);
         }
         let (words, tone, _) = self.notice.as_ref()?;

@@ -611,7 +611,7 @@ mod tests {
 
     use super::*;
     use crate::Tier;
-    use crate::link::run::spawn_connector_with_auth_establishment_and_shutdown;
+    use crate::link::run::spawn_connector;
     use crate::link::socket::LinkId;
     use crate::routing::{LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher};
 
@@ -740,12 +740,10 @@ mod tests {
             None,
         );
         let (shutdown, shutdown_rx) = watch::channel(false);
-        let (task, established) = spawn_connector_with_auth_establishment_and_shutdown(
-            ctx,
+        let (task, established) = spawn_connector(
+            ctx.with_connector_auth(auth, None)
+                .with_shutdown(shutdown_rx),
             carrier,
-            auth,
-            shutdown_rx,
-            None,
         );
         established.await.unwrap().unwrap();
         (task, shutdown)

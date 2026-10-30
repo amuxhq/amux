@@ -77,31 +77,6 @@ impl Discovery for ScriptedDiscovery {
         }
     }
 
-    fn hand_over(&self, found: Vec<Advertisement>) {
-        let handed: HashMap<HostId, Advertisement> = found
-            .into_iter()
-            .map(|advert| (advert.host_id, advert))
-            .collect();
-        let gone: Vec<HostId> = self
-            .bus
-            .active
-            .lock()
-            .unwrap()
-            .keys()
-            .filter(|host_id| !handed.contains_key(host_id))
-            .copied()
-            .collect();
-        for host_id in gone {
-            self.withdraw_host(host_id);
-        }
-        for advert in handed.into_values() {
-            // Announced again even when it has not changed: an advertisement
-            // is a dial hint with a lifetime, and repeating it is how a
-            // browser says the machine is still there.
-            self.announce(advert);
-        }
-    }
-
     fn browse(&self) -> broadcast::Receiver<DiscoveryEvent> {
         self.bus.events.subscribe()
     }

@@ -1213,7 +1213,6 @@ mod tests {
         use std::sync::atomic::AtomicUsize;
         use std::time::Duration;
 
-        use tokio::sync::watch;
         use tonic::{Request, Response, Status};
         use wire::peer_agent_service_server::PeerAgentService;
         use wire::peer_session_service_server::PeerSessionService;
@@ -1448,9 +1447,12 @@ mod tests {
                             continue;
                         };
                         let links = Arc::new(LinkRegistry::new(local.id));
-                        let ctx = crate::link::LinkCtx::new(local.clone(), links)
-                            .with_authenticated_peer(peer)
-                            .with_incoming_streams(inbound_tx.clone());
+                        let ctx = crate::link::LinkCtx::new_live(
+                            LiveLocalHost::new(local.clone()),
+                            links,
+                        )
+                        .with_authenticated_peer(peer)
+                        .with_incoming_streams(inbound_tx.clone());
                         tokio::spawn(crate::link::run_link(
                             ctx,
                             Arc::new(QuicCarrier::from_accepted(connection)),
@@ -1500,17 +1502,13 @@ mod tests {
                         .await
                         .map_err(|error| ChannelError::Handshake(error.to_string()))?,
                     );
-                    let ctx = crate::link::run::LinkConnectorCtx::new_live(
+                    let ctx = crate::link::LinkCtx::new_live(
                         LiveLocalHost::new(self.local.clone()),
                         self.links.clone(),
                     )
                     .with_expected_peer(peer);
                     let (_task, established) =
-                        crate::routing::spawn_connector_with_establishment_and_shutdown(
-                            ctx,
-                            carrier.clone(),
-                            watch::channel(false).1,
-                        );
+                        crate::routing::spawn_connector(ctx, carrier.clone());
                     let links = self.links.clone();
                     let up = Box::pin(async move {
                         established

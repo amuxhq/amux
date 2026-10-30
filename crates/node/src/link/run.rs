@@ -259,17 +259,11 @@ struct Resumed {
     handshaken: watch::Receiver<bool>,
 }
 
-pub(crate) type LinkConnectorCtx = LinkCtx;
 type ConnectorTask = tokio::task::JoinHandle<Result<(), tonic::Status>>;
 type EstablishmentSender = oneshot::Sender<Result<Host, tonic::Status>>;
 pub(crate) type EstablishmentReceiver = oneshot::Receiver<Result<Host, tonic::Status>>;
 
 impl LinkCtx {
-    #[cfg(test)]
-    pub fn new(local_host: Host, links: Arc<LinkRegistry>) -> Self {
-        Self::new_live(LiveLocalHost::new(local_host), links)
-    }
-
     pub(crate) fn new_live(local_host: LiveLocalHost, links: Arc<LinkRegistry>) -> Self {
         Self {
             local_host,
@@ -375,6 +369,18 @@ impl LinkCtx {
         if let Some(spent) = self.refund.take() {
             spent.refund();
         }
+    }
+
+    /// Presents `auth` to the relay this connector dials, refreshing it
+    /// when `refresh_rx` asks.
+    pub(crate) fn with_connector_auth(
+        mut self,
+        auth: LinkConnectorAuth,
+        refresh_rx: Option<LinkConnectorRefreshReceiver>,
+    ) -> Self {
+        self.connector_auth = Some(auth);
+        self.refresh_rx = refresh_rx;
+        self
     }
 
     pub(crate) fn with_shutdown(mut self, shutdown_rx: watch::Receiver<bool>) -> Self {
@@ -550,7 +556,7 @@ pub async fn run_link(
                 session = Some(LinkAuthSession::new(user, authenticator));
             }
             let snapshot = neighbor_snapshot(&ctx, carrier.as_ref()).await;
-            let peer = match accept_peer_hello(&ctx, hello, session.as_ref()) {
+            let peer = match accept_peer_hello(&ctx, hello) {
                 Ok(peer) => peer,
                 Err(error) => {
                     write_message(&mut sink, &error_hello_ack(error)).await?;
@@ -1155,7 +1161,6 @@ async fn handle_control_body(
 fn accept_peer_hello(
     ctx: &LinkCtx,
     hello: wire::pb::Hello,
-    _auth_session: Option<&LinkAuthSession>,
 ) -> Result<(Host, Vec<Host>, RuntimeInstance), wire::pb::Error> {
     if !hello
         .supported_protocol_versions
@@ -1462,44 +1467,15 @@ fn signal_establishment(sender: Option<EstablishmentSender>, result: Result<Host
     }
 }
 
-pub fn spawn_connector_with_establishment(
-    ctx: LinkConnectorCtx,
+/// Runs the dialling side of a link over `carrier`, answering once the
+/// link is established or has failed to be.
+pub(crate) fn spawn_connector(
+    mut ctx: LinkCtx,
     carrier: Arc<QuicCarrier>,
-) -> (ConnectorTask, EstablishmentReceiver) {
-    spawn_connector(ctx, carrier, None, None, None)
-}
-
-pub(crate) fn spawn_connector_with_establishment_and_shutdown(
-    ctx: LinkConnectorCtx,
-    carrier: Arc<QuicCarrier>,
-    shutdown_rx: watch::Receiver<bool>,
-) -> (ConnectorTask, EstablishmentReceiver) {
-    spawn_connector(ctx, carrier, None, Some(shutdown_rx), None)
-}
-
-pub(crate) fn spawn_connector_with_auth_establishment_and_shutdown(
-    ctx: LinkConnectorCtx,
-    carrier: Arc<QuicCarrier>,
-    auth: LinkConnectorAuth,
-    shutdown_rx: watch::Receiver<bool>,
-    refresh_rx: Option<LinkConnectorRefreshReceiver>,
-) -> (ConnectorTask, EstablishmentReceiver) {
-    spawn_connector(ctx, carrier, Some(auth), Some(shutdown_rx), refresh_rx)
-}
-
-fn spawn_connector(
-    mut ctx: LinkConnectorCtx,
-    carrier: Arc<QuicCarrier>,
-    auth: Option<LinkConnectorAuth>,
-    shutdown_rx: Option<watch::Receiver<bool>>,
-    refresh_rx: Option<LinkConnectorRefreshReceiver>,
 ) -> (ConnectorTask, EstablishmentReceiver) {
     let (established_tx, established_rx) = oneshot::channel();
     let established = Arc::new(StdRwLock::new(Some(established_tx)));
-    ctx.connector_auth = auth;
     ctx.established_tx = Some(established.clone());
-    ctx.shutdown_rx = shutdown_rx;
-    ctx.refresh_rx = refresh_rx;
     let task = tokio::spawn(async move {
         let result = run_link(ctx, carrier, crate::routing::ConnectRole::Connector)
             .await
@@ -1702,19 +1678,24 @@ mod tests {
             let from = server.address_of(connection.remote_address());
             QuicCarrier::from_accepted(connection).with_path(PathKind::of_addr(from))
         };
-        let dial = QuicCarrier::connect_direct(
+        let dial = QuicCarrier::first_flight(
             &client,
-            server.local_addr().unwrap(),
+            vec![crate::link::socket::Path::Direct(
+                server.local_addr().unwrap(),
+            )],
+            false,
             &dialler,
             trust_for(&listener),
             listener.host_id,
+            Duration::from_secs(5),
         );
         let (accepted, dialled) = tokio::join!(accept, dial);
         let dialled = dialled.unwrap();
 
         let (local, peer) = (host_for(&listener), host_for(&dialler));
         let links = Arc::new(LinkRegistry::new(local.id));
-        let ctx = LinkCtx::new(local.clone(), links.clone()).with_authenticated_peer(peer.id);
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local.clone()), links.clone())
+            .with_authenticated_peer(peer.id);
         let task = tokio::spawn(run_link(
             ctx,
             Arc::new(accepted),
@@ -1770,19 +1751,24 @@ mod tests {
             let from = server.address_of(connection.remote_address());
             QuicCarrier::from_accepted(connection).with_path(PathKind::of_addr(from))
         };
-        let dial = QuicCarrier::connect_direct(
+        let dial = QuicCarrier::first_flight(
             &client,
-            server.local_addr().unwrap(),
+            vec![crate::link::socket::Path::Direct(
+                server.local_addr().unwrap(),
+            )],
+            false,
             &dialler,
             trust_for(&listener),
             listener.host_id,
+            Duration::from_secs(5),
         );
         let (accepted, dialled) = tokio::join!(accept, dial);
         let dialled = dialled.unwrap();
 
         let (local, peer) = (host_for(&listener), host_for(&dialler));
         let links = Arc::new(LinkRegistry::new(local.id));
-        let ctx = LinkCtx::new(local.clone(), links.clone()).with_authenticated_peer(peer.id);
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local.clone()), links.clone())
+            .with_authenticated_peer(peer.id);
         let task = tokio::spawn(run_link(
             ctx,
             Arc::new(accepted),
@@ -1835,7 +1821,7 @@ mod tests {
             crate::Tier::Free,
         );
         let (connector_carrier, acceptor_carrier) = carrier_pair().await;
-        let ctx = LinkCtx::new(local, links.clone())
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local), links.clone())
             .with_authenticated_peer(peer.id)
             .with_token_authenticator(Arc::new(FixedAuthenticator(user)));
         let task = tokio::spawn(run_link(
@@ -1881,7 +1867,8 @@ mod tests {
         let session = LinkAuthSession::new(initial, FixedAuthenticator(other_user));
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = carrier_pair().await;
-        let mut ctx = LinkCtx::new(local, links).with_authenticated_peer(peer.id);
+        let mut ctx =
+            LinkCtx::new_live(LiveLocalHost::new(local), links).with_authenticated_peer(peer.id);
         ctx.acceptor_session = Some(session.clone());
         let task = tokio::spawn(run_link(
             ctx,
@@ -1919,7 +1906,8 @@ mod tests {
         let peer = host(2);
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = carrier_pair().await;
-        let ctx = LinkCtx::new(local, links.clone()).with_authenticated_peer(peer.id);
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local), links.clone())
+            .with_authenticated_peer(peer.id);
         let task = tokio::spawn(run_link(
             ctx,
             acceptor_carrier.clone(),
@@ -1965,7 +1953,8 @@ mod tests {
         let peer = host(2);
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = carrier_pair().await;
-        let ctx = LinkCtx::new(local, links.clone()).with_authenticated_peer(peer.id);
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local), links.clone())
+            .with_authenticated_peer(peer.id);
         let task = tokio::spawn(run_link(
             ctx,
             acceptor_carrier.clone(),

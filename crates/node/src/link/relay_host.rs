@@ -19,7 +19,7 @@ use wire::pb;
 use super::framed::{FramedKind, StreamOnly};
 use super::quic::LinkEndpoint;
 use super::resumption::SessionTickets;
-use super::run::spawn_connector_with_auth_establishment_and_shutdown;
+use super::run::spawn_connector;
 use super::socket::LinkSocket;
 use super::{ByteStream, LinkCtx, QuicCarrier};
 use crate::identity::DeviceIdentity;
@@ -159,12 +159,10 @@ impl RelayHost {
             None,
         );
         let (shutdown, shutdown_rx) = watch::channel(false);
-        let (relay_link, established) = spawn_connector_with_auth_establishment_and_shutdown(
-            ctx,
+        let (relay_link, established) = spawn_connector(
+            ctx.with_connector_auth(auth, None)
+                .with_shutdown(shutdown_rx),
             relay.clone(),
-            auth,
-            shutdown_rx,
-            None,
         );
         established
             .await

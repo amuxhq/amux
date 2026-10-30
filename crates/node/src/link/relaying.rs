@@ -122,15 +122,6 @@ impl Relaying {
             .map(|forwarding| forwarding.forwarder.counts())
     }
 
-    /// The core this relays with, for a test that must make it ask for a
-    /// dump.
-    #[cfg(test)]
-    fn with_relay(own: HostId, relay: Relay) -> Arc<Self> {
-        let relaying = Self::new(own);
-        *lock(&relaying.core) = relay;
-        relaying
-    }
-
     /// Steps each input in turn, through the forwarder where there is one,
     /// and reports the dumps the core asks for. Every other output is
     /// returned for the caller to act on.
@@ -1123,12 +1114,10 @@ mod tests {
     fn a_dump_the_relay_core_asks_for_is_a_file_of_its_state_and_inputs() {
         let reports = tempfile::tempdir().unwrap();
         let own = HostId::new_v4();
-        let relaying = Relaying::with_relay(
-            own,
-            Relay::with_budget(
-                daemon_core::HostId(own.into_bytes()),
-                daemon_core::StepBudget { micros: 0 },
-            ),
+        let relaying = Relaying::new(own);
+        *lock(&relaying.core) = Relay::with_budget(
+            daemon_core::HostId(own.into_bytes()),
+            daemon_core::StepBudget { micros: 0 },
         );
         relaying.report_to(reports.path().to_owned(), analytics::Analytics::off());
         let written = || {

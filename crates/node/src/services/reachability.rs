@@ -10,7 +10,6 @@
 //! call's need for a link to a host it has none to.
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -230,10 +229,6 @@ impl ReachabilityLinkConnector {
         self.inner
             .connections
             .candidates(self.inner.found_hosts.candidates());
-    }
-
-    pub fn found_addrs(&self, peer: HostId) -> Vec<SocketAddr> {
-        self.inner.found_hosts.addrs_for(peer)
     }
 
     /// Stops dialling: the core is told, every attempt out is dropped, and

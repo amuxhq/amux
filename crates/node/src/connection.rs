@@ -209,32 +209,6 @@ impl ConnectionManager {
         }
     }
 
-    /// The neighbors announcing `peer`, nearest route first, each with
-    /// whether this host admitted it as the cloud relay: what a pairing goes
-    /// through when no address answers. A paired host forwards on any plan,
-    /// the cloud relay only on a paid one.
-    pub(crate) async fn pairing_forwarders(&self, peer: HostId) -> Vec<(HostId, bool)> {
-        let host = core_host(peer);
-        self.look(move |core| {
-            let links = core.links();
-            links
-                .routes_to(host)
-                .into_iter()
-                .filter_map(|route| match route {
-                    daemon_core::Route::Via(forwarder) => {
-                        Some((forwarder, links.is_relay(forwarder)))
-                    }
-                    daemon_core::Route::Direct(_) => None,
-                })
-                .collect::<Vec<_>>()
-        })
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(forwarder, relay)| (host_from_core(forwarder), relay))
-        .collect()
-    }
-
     /// A channel to `peer`'s pairing service through `forwarder`.
     pub(crate) async fn pairing_channel_through(
         &self,

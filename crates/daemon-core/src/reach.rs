@@ -786,10 +786,12 @@ impl Daemon {
     }
 }
 
+mod pairing_dial;
 mod relay;
 #[cfg(test)]
 mod tests;
 
+pub use pairing_dial::{PAIRING_DIAL_MS, PAIRING_SHORT_TRY_MS, PairingDial};
 pub use relay::{
     RELAY_LIVED_MS, RELAY_RETRY_FIRST_MS, RELAY_RETRY_MAX_MS, RelayCarriers, RelayOutcome,
     RelayReach, TCP_HEAD_START_MS, UDP_BLOCKED_MS,

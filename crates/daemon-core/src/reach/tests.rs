@@ -949,3 +949,29 @@ fn the_relay_pause_takes_jitter_from_the_cores_entropy() {
     assert!((750..=6_250).contains(&pause), "{pause}");
     assert_ne!(pause, 1_000);
 }
+
+#[test]
+fn a_pairing_dial_takes_the_found_addresses_first_then_the_requested_then_the_forwarders() {
+    let mut daemon = daemon(trusting());
+    found(&mut daemon, LAPTOP, &["192.168.1.7:7000"]);
+    up(&mut daemon, 1, RELAY, CarrierKind::Relay);
+    claims(&mut daemon, 1, &[LAPTOP]);
+    let plan = daemon.pairing_dial(
+        Some(LAPTOP),
+        &[addr("10.0.0.9:7000"), addr("192.168.1.7:7000")],
+    );
+    assert_eq!(
+        plan.addrs,
+        vec![
+            (addr("192.168.1.7:7000"), true),
+            (addr("10.0.0.9:7000"), false)
+        ]
+    );
+    assert_eq!(plan.short_try_ms, PAIRING_SHORT_TRY_MS);
+    assert_eq!(plan.deadline_ms, PAIRING_DIAL_MS);
+    assert_eq!(plan.forwarders, vec![(RELAY, true)]);
+
+    let named = daemon.pairing_dial(None, &[addr("10.0.0.9:7000")]);
+    assert_eq!(named.addrs, vec![(addr("10.0.0.9:7000"), false)]);
+    assert_eq!(named.forwarders, Vec::new());
+}

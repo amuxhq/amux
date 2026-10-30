@@ -54,6 +54,12 @@ clean close or a link that lived thirty seconds; a refused kept token is
 replaced at once, and a refusal of the credentials or the version stops it
 until the profile signs in again.
 
+A host to pair with is dialled on the plan `Daemon::pairing_dial` gives:
+every address at once, those discovery found the host at before those the
+request named, an earlier one preferred over a later answer while within its
+two-second short try, each with five seconds in all; then the forwarders that
+claim the host, paired hosts before the relay.
+
 What belongs inside: anything whose interleaving with the core's state can
 matter is in the core; anything that only produces a result is a job the
 driver runs and reports back as an input; transport and codec are the

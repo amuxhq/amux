@@ -206,16 +206,6 @@ impl FoundHosts {
         hosts.into_iter().map(|host| host.advert).collect()
     }
 
-    /// Returns the latest resolved socket addresses for `host_id`.
-    pub fn addrs_for(&self, host_id: HostId) -> Vec<SocketAddr> {
-        self.hosts
-            .read()
-            .unwrap()
-            .get(&host_id)
-            .map(|host| host.advert.addrs.clone())
-            .unwrap_or_default()
-    }
-
     fn record(&self, advert: Advertisement, last_seen: Instant) {
         self.hosts
             .write()

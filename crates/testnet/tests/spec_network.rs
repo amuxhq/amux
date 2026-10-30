@@ -2812,6 +2812,84 @@ async fn until_link(net: &Net, a: &str, b: &str, up: bool, within: Duration) {
     .unwrap_or_else(|stuck| panic!("{stuck:?}"));
 }
 
+/// A pairing request naming an address nothing answers at before the
+/// desk's real one pairs on the real one, the silent address holding it up
+/// by its short try at most, not by the dial's whole deadline.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_silent_first_pairing_address_costs_only_its_short_try() {
+    let net = Net::start(
+        Topology::new()
+            .host_decl(lan_host("desk", "home"))
+            .host_decl(lan_host("laptop", "home")),
+    )
+    .await
+    .unwrap();
+    let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
+    let silent = testnet::UdpGate::bind(None).unwrap();
+    silent.block(true);
+    let began = std::time::Instant::now();
+    let pending = begin_pair(
+        &net,
+        "laptop",
+        None,
+        begin_pair_request::Secret::Pin(pin_of(&started)),
+        vec![silent.addr().to_string(), started.addrs[0].clone()],
+    )
+    .await
+    .expect("the desk's own address answers");
+    let took = began.elapsed();
+    assert_eq!(
+        pending.peer.unwrap().host_id,
+        host_id(&net, "desk").as_bytes()
+    );
+    assert!(
+        took < Duration::from_millis(daemon_core::reach::PAIRING_DIAL_MS),
+        "the silent address held the pairing up {took:?}"
+    );
+    println!("paired past a silent first address in {took:?}");
+
+    net.shutdown().await.unwrap();
+}
+
+/// A pairing dial whose first packets are lost, as on a busy machine or a
+/// poor network, still pairs: the dial waits out QUIC sending them again
+/// (at about one second, then three) rather than giving up on the address.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pairing_dial_whose_first_packets_are_lost_still_pairs() {
+    let net = Net::start(
+        Topology::new()
+            .host_decl(lan_host("desk", "home"))
+            .host_decl(lan_host("laptop", "home")),
+    )
+    .await
+    .unwrap();
+    let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
+    let listener = started.addrs[0].parse().unwrap();
+    let gate = std::sync::Arc::new(testnet::UdpGate::bind(Some(listener)).unwrap());
+    gate.block(true);
+    let lossy = gate.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        lossy.block(false);
+    });
+    let pending = begin_pair(
+        &net,
+        "laptop",
+        None,
+        begin_pair_request::Secret::Pin(pin_of(&started)),
+        vec![gate.addr().to_string()],
+    )
+    .await
+    .expect("the dial waits for the packets sent again");
+    assert_eq!(
+        pending.peer.unwrap().host_id,
+        host_id(&net, "desk").as_bytes()
+    );
+    println!("the laptop reached the desk though its first one and a half seconds were lost");
+
+    net.shutdown().await.unwrap();
+}
+
 /// A host keeps dialling a paired peer's last working direct address,
 /// backing off, while the peer is away, whether or not anything discovers
 /// it. Here the host that answered the pairing restarts: it stored no way

@@ -27,12 +27,12 @@ use interpret::{Replayed, replay};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use serde::Deserialize;
+use settings::ChatInSetting;
 use tui::Theme;
 use tui::chat::ChatView;
 use tui::chat::review::ReviewPage;
 use tui::report::Report;
 use tui::sessions::{Committer, agent, caught_up};
-use tui::setup::ChatIn;
 use tui::vocabulary::{ChatScene, HomeScene};
 use ui_state::{Connection, FleetMsg, FleetState, InputOutcome, Msg, PhaseView, SessionState};
 use wire::Kind;
@@ -172,7 +172,7 @@ pub fn all() -> Vec<Story> {
         }),
         story("new-agent.terminal", || {
             let mut home = tui::vocabulary::authored_home();
-            home.chat_in = ChatIn::Native;
+            home.chat_in = ChatInSetting::Native;
             home.key(KeyCode::Char('n'));
             Scene::Home(Box::new(home))
         }),
@@ -452,7 +452,7 @@ fn first_run() -> HomeScene {
         fleet,
         lines: Default::default(),
         now: 1_800_000_000_000,
-        chat_in: ChatIn::Amux,
+        chat_in: ChatInSetting::Amux,
     }
 }
 

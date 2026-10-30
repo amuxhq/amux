@@ -61,9 +61,9 @@ pub struct TuiConfig {
     pub reports: Option<std::path::PathBuf>,
     /// Where the person chats with their agents: in amux, or in each
     /// agent's own terminal, attached on start.
-    pub chat_in: crate::setup::ChatIn,
+    pub chat_in: settings::ChatInSetting,
     /// What each agent starts with: its model, effort and mode.
-    pub defaults: crate::setup::Defaults,
+    pub defaults: settings::NewAgentSettings,
 }
 
 /// How this client lays its screens out, kept between runs: a person's
@@ -1290,7 +1290,7 @@ impl App {
                 attachments,
                 open,
             } => {
-                let attach = setup.chat_in == crate::setup::ChatIn::Native;
+                let attach = setup.chat_in == settings::ChatInSetting::Native;
                 self.spawn(async move {
                     // An agent used in its own terminal gets its first
                     // prompt there.
@@ -1942,13 +1942,13 @@ fn sibling_setup(
     state: &ui_state::SessionState,
     agent: Option<&wire::Agent>,
     local_host: &[u8],
-    defaults: &crate::setup::Defaults,
+    defaults: &settings::NewAgentSettings,
 ) -> crate::setup::Setup {
     let view = ui_view::settings(state);
     crate::setup::Setup {
         name: None,
         agent: crate::setup::Agent::Claude,
-        chat_in: crate::setup::ChatIn::Amux,
+        chat_in: settings::ChatInSetting::Amux,
         model: view
             .models
             .iter()

@@ -435,6 +435,7 @@ pub enum ColorSetting {
 /// agent's own interface (Claude Code's or Codex's), which a new agent is
 /// attached to when it starts and `amux attach` opens.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "lowercase")]
 pub enum ChatInSetting {
     #[default]

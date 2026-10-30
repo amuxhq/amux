@@ -28,7 +28,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tonic::Code;
 
-use crate::verbs::{CliAgent, Interface};
+use crate::verbs::CliAgent;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -67,7 +67,7 @@ enum Command {
         agent: String,
         /// Open it in this interface instead of the configured one.
         #[arg(long = "in", value_name = "INTERFACE")]
-        interface: Option<Interface>,
+        interface: Option<settings::ChatInSetting>,
     },
     /// List the agents, children beneath their parent.
     Ls,
@@ -81,7 +81,7 @@ enum Command {
         cwd: Option<PathBuf>,
         /// Chat with it in this interface instead of the configured one.
         #[arg(long = "in", value_name = "INTERFACE")]
-        interface: Option<Interface>,
+        interface: Option<settings::ChatInSetting>,
         /// Its model; `new_agent.<agent>.model` otherwise.
         #[arg(long)]
         model: Option<String>,

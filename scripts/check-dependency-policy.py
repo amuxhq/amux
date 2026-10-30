@@ -72,7 +72,7 @@ ALLOWED_LOCAL = {
     # The C ABI over both.
     "app-ffi": {"app-embedded", "app-runtime", "client", "model", "node", "ui-view"},
     # The terminal client composes the views over the drivers' state.
-    "tui": {"attachments", "client", "ui-runtime", "ui-state", "ui-view", "wire"},
+    "tui": {"attachments", "client", "settings", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The bounded ring of a core's inputs since its last checkpoint, in
     # segments named as the journal's are.
     "core-ring": {"journal"},
@@ -152,7 +152,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # Renders the terminal client's named states to PNG for review, and
     # its storybook, whose chats are recorded sessions replayed through the
     # interpreters.
-    "shot": {"interpret", "tui", "ui-state", "ui-view", "wire"},
+    "shot": {"interpret", "settings", "tui", "ui-state", "ui-view", "wire"},
     # Replays a dump bundle's stages with the models' properties judged at
     # every step: facts through the interpreter (the journal for
     # comparison), the daemon core from its checkpoint over its store,

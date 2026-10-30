@@ -11,6 +11,7 @@ tui = { workspace = true, features = ["fixtures"] }
 # The storybook replays recorded sessions through the interpreters, which
 # the client itself never links.
 interpret = { workspace = true }
+settings = { workspace = true }
 ui-state = { workspace = true }
 ui-view = { workspace = true }
 wire = { workspace = true }

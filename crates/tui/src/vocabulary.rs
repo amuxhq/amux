@@ -331,22 +331,13 @@ pub struct HomeScene {
     pub fleet: ui_state::FleetState,
     pub lines: std::collections::HashMap<ui_state::AgentKey, ui_view::SessionLine>,
     pub now: i64,
-    pub chat_in: crate::setup::ChatIn,
+    pub chat_in: settings::ChatInSetting,
 }
 
-/// What a new agent starts with on the authored desk, as a person's
-/// settings would say.
-static DEFAULTS: std::sync::LazyLock<crate::setup::Defaults> = std::sync::LazyLock::new(|| {
-    let of = |model: &str, effort: &str| crate::setup::AgentDefaults {
-        model: model.into(),
-        effort: effort.into(),
-        permission: "default".into(),
-    };
-    crate::setup::Defaults {
-        claude: of("opus", "high"),
-        codex: of("gpt-6.1-sol", "medium"),
-    }
-});
+/// What a new agent starts with on the authored desk: the shipped
+/// settings.
+static DEFAULTS: std::sync::LazyLock<settings::NewAgentSettings> =
+    std::sync::LazyLock::new(settings::NewAgentSettings::default);
 
 impl HomeScene {
     fn place(&self) -> crate::home::Place<'static> {
@@ -656,7 +647,7 @@ pub fn authored_home() -> HomeScene {
         fleet,
         lines,
         now: NOW,
-        chat_in: crate::setup::ChatIn::Amux,
+        chat_in: settings::ChatInSetting::Amux,
     }
 }
 

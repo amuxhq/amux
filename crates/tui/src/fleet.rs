@@ -55,9 +55,9 @@ pub struct FleetView {
     pub working_dir: String,
     pub home: Home,
     /// Where the person chats, which decides how a new agent starts.
-    pub chat_in: crate::setup::ChatIn,
+    pub chat_in: settings::ChatInSetting,
     /// What each agent starts with.
-    pub defaults: crate::setup::Defaults,
+    pub defaults: settings::NewAgentSettings,
 }
 
 impl FleetView {

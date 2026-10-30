@@ -303,7 +303,6 @@ impl HomeScene {
             local_host: b"desk",
             version: "",
             working_dir: "~/src/amux",
-            attach: false,
             chat_in: self.chat_in,
             defaults: &DEFAULTS,
         }
@@ -338,7 +337,7 @@ impl HomeScene {
 
     /// A key pressed on home, as the person would press it.
     pub fn key(&mut self, key: impl Into<crossterm::event::KeyEvent>) {
-        let _ = self.home.key(&self.fleet, key.into(), false);
+        let _ = self.home.key(&self.fleet, key.into());
     }
 }
 
@@ -597,8 +596,8 @@ pub fn authored_home() -> HomeScene {
     // Exited unfolded, as the person would open it; the highlight back on
     // the first agent.
     let key = crossterm::event::KeyEvent::from;
-    home.key(&fleet, key(crossterm::event::KeyCode::End), false);
-    home.key(&fleet, key(crossterm::event::KeyCode::Enter), false);
+    home.key(&fleet, key(crossterm::event::KeyCode::End));
+    home.key(&fleet, key(crossterm::event::KeyCode::Enter));
     home.select(ui_state::agent_key(fleet.find(b"planner").expect("listed")));
     HomeScene {
         home,

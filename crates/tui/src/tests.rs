@@ -1486,7 +1486,6 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
         leader: 'a',
         theme: theme(),
         initial_chat: None,
-        attach: true,
         version: "0.7.0".into(),
         local_host: b"a".to_vec(),
         layout: None,
@@ -2433,7 +2432,6 @@ static HOME_PLACE: std::sync::LazyLock<crate::home::Place<'static>> =
         local_host: b"a",
         version: "",
         working_dir: "~/work/amux",
-        attach: false,
         chat_in: settings::ChatInSetting::Amux,
         defaults: Box::leak(Box::default()),
     });
@@ -2549,7 +2547,7 @@ fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
         row,
         modifiers: KeyModifiers::NONE,
     };
-    home.mouse(&fleet, mouse(MouseEventKind::Moved, 10, beta), false);
+    home.mouse(&fleet, mouse(MouseEventKind::Moved, 10, beta));
     // Without a known ground the highlight is a mark and weight.
     let screen = home_screen(&mut home, &fleet, theme());
     let line = screen.lines().nth(usize::from(beta)).unwrap();
@@ -2558,25 +2556,24 @@ fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
         "{screen}"
     );
     // A key takes over from where the mouse left the highlight.
-    home.key(&fleet, key(KeyCode::Char('j')), false);
+    home.key(&fleet, key(KeyCode::Char('j')));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         !screen.lines().nth(usize::from(beta)).unwrap().contains('›'),
         "{screen}"
     );
-    home.key(&fleet, key(KeyCode::Char('k')), false);
+    home.key(&fleet, key(KeyCode::Char('k')));
     home_screen(&mut home, &fleet, theme());
     // The × stops, after asking; beta is working, so the window says the
     // stop cuts its turn, and Enter on the focused [Stop] confirms.
     let effects = home.mouse(
         &fleet,
         mouse(MouseEventKind::Down(MouseButton::Left), W - 5, beta),
-        false,
     );
     assert!(effects.is_empty());
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(screen.contains("beta is working. Stop anyway?"), "{screen}");
-    let effects = home.key(&fleet, key(KeyCode::Enter), false);
+    let effects = home.key(&fleet, key(KeyCode::Enter));
     assert!(matches!(effects.as_slice(), [FleetEffect::Stop(agent)] if agent.agent == b"w2"));
 }
 
@@ -2626,7 +2623,7 @@ fn a_known_ground_tints_the_highlight_instead_of_marking_it() {
 fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
     let fleet = home_fleet();
     let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, key(KeyCode::Char('n')));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("What should the new agent work on?"),
@@ -2650,21 +2647,17 @@ fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
         "{screen}"
     );
     // Enter on an empty draft does nothing.
-    assert!(home.key(&fleet, key(KeyCode::Enter), false).is_empty());
+    assert!(home.key(&fleet, key(KeyCode::Enter)).is_empty());
     for c in "fix it".chars() {
-        home.key(&fleet, key(KeyCode::Char(c)), false);
+        home.key(&fleet, key(KeyCode::Char(c)));
     }
-    let effects = home.key(
-        &fleet,
-        KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL),
-        false,
-    );
+    let effects = home.key(&fleet, KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL));
     assert!(
         matches!(effects.as_slice(), [FleetEffect::Start { setup, text, open: false, .. }] if text == "fix it" && setup.kind() == Kind::ClaudeSdk),
         "{effects:?}"
     );
     // While it starts, keys do not edit the draft.
-    home.key(&fleet, key(KeyCode::Char('x')), false);
+    home.key(&fleet, key(KeyCode::Char('x')));
     assert_eq!(home.draft.editor.text(), "fix it");
     home.started();
     assert!(home.draft.editor.is_empty());
@@ -2684,7 +2677,7 @@ fn a_new_agents_edge_keeps_its_model_and_permission_in_a_deep_folder_at_80_colum
         ..*HOME_PLACE
     };
     let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, key(KeyCode::Char('n')));
     let setup = home.open_setup(&place).unwrap();
     setup.offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
     setup.pick(crate::setup::Item::Permission, "bypassPermissions");
@@ -2726,7 +2719,7 @@ fn a_new_codex_edge_shows_the_plan_mode_shift_tab_turned_on_at_80_columns() {
         ..*HOME_PLACE
     };
     let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, key(KeyCode::Char('n')));
     let setup = home.open_setup(&place).unwrap();
     setup.pick(crate::setup::Item::Kind, "1");
     setup.offer(b"a", wire::Provider::Codex, &[2; 32], &codex_offer());
@@ -2761,13 +2754,13 @@ fn a_new_codex_edge_shows_the_plan_mode_shift_tab_turned_on_at_80_columns() {
         "{}",
         edge_of(&mut home)
     );
-    home.key(&fleet, key(KeyCode::BackTab), false);
+    home.key(&fleet, key(KeyCode::BackTab));
     let edge = edge_of(&mut home);
     assert!(
         edge.contains("plan") && edge.contains("read only"),
         "the edge does not show the plan mode Shift+Tab turned on: {edge}"
     );
-    home.key(&fleet, key(KeyCode::BackTab), false);
+    home.key(&fleet, key(KeyCode::BackTab));
     assert!(
         !edge_of(&mut home).contains("plan"),
         "{}",
@@ -2884,7 +2877,7 @@ fn a_new_agent_offers_what_its_host_offers() {
     use crate::setup::Item;
     let fleet = home_fleet();
     let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, key(KeyCode::Char('n')));
     home_screen(&mut home, &fleet, theme());
     home.open_setup(&HOME_PLACE).unwrap().pick(Item::Kind, "1");
     // Before the host says, a model can only be named.
@@ -2952,7 +2945,7 @@ fn a_new_agent_offers_what_its_host_offers() {
     );
     // Shift+Tab steps the mode, which the edge names once it is not the
     // normal one.
-    home.key(&fleet, key(KeyCode::BackTab), false);
+    home.key(&fleet, key(KeyCode::BackTab));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Codex · GPT-6 mini (low) · default · plan │"),
@@ -2983,7 +2976,7 @@ fn a_new_agent_offers_what_its_host_offers() {
 fn a_new_claude_steps_the_permissions_that_still_ask() {
     let fleet = home_fleet();
     let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, key(KeyCode::Char('n')));
     home_screen(&mut home, &fleet, theme());
     home.open_setup(&HOME_PLACE).unwrap().offer(
         b"a",
@@ -2993,7 +2986,7 @@ fn a_new_claude_steps_the_permissions_that_still_ask() {
     );
     let mut seen = Vec::new();
     for _ in 0..4 {
-        home.key(&fleet, key(KeyCode::BackTab), false);
+        home.key(&fleet, key(KeyCode::BackTab));
         seen.push(
             home.open_setup(&HOME_PLACE)
                 .unwrap()
@@ -3033,7 +3026,7 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
     }
     inventory(&mut fleet, studio);
     let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, key(KeyCode::Char('n')));
     home_screen(&mut home, &fleet, theme());
     assert_eq!(
         choice_words(&mut home, &fleet, Item::Kind),
@@ -3051,12 +3044,11 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
         local_host: HOME_PLACE.local_host,
         version: HOME_PLACE.version,
         working_dir: HOME_PLACE.working_dir,
-        attach: false,
         chat_in: settings::ChatInSetting::Native,
         defaults: HOME_PLACE.defaults,
     };
     let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, key(KeyCode::Char('n')));
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(W, H)).unwrap();
     terminal
         .draw(|frame| {
@@ -3089,21 +3081,21 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
     let ctrl_s = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL);
     let refused = "starting in a new worktree: the repository already has a branch named fix-it";
     let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, key(KeyCode::Char('n')));
     home_screen(&mut home, &fleet, theme());
-    home.key(&fleet, ctrl_s, false);
+    home.key(&fleet, ctrl_s);
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(screen.contains("w worktree"), "{screen}");
-    home.key(&fleet, key(KeyCode::Char('w')), false);
+    home.key(&fleet, key(KeyCode::Char('w')));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("│ ~/work/amux · new worktree │"),
         "{screen}"
     );
     for c in "fix it".chars() {
-        home.key(&fleet, key(KeyCode::Char(c)), false);
+        home.key(&fleet, key(KeyCode::Char(c)));
     }
-    let effects = home.key(&fleet, key(KeyCode::Enter), false);
+    let effects = home.key(&fleet, key(KeyCode::Enter));
     let [FleetEffect::Start { setup, .. }] = effects.as_slice() else {
         panic!("{effects:?}");
     };
@@ -3117,9 +3109,9 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
     assert!(screen.contains("fix it"), "{screen}");
     // Started again, the old reason goes; off again, the request asks for
     // none.
-    home.key(&fleet, ctrl_s, false);
-    home.key(&fleet, key(KeyCode::Char('w')), false);
-    let effects = home.key(&fleet, key(KeyCode::Enter), false);
+    home.key(&fleet, ctrl_s);
+    home.key(&fleet, key(KeyCode::Char('w')));
+    let effects = home.key(&fleet, key(KeyCode::Enter));
     let [FleetEffect::Start { setup, .. }] = effects.as_slice() else {
         panic!("{effects:?}");
     };
@@ -3127,7 +3119,7 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(!screen.contains("Could not start"), "{screen}");
     // Left meanwhile, the form has nowhere to say it.
-    home.key(&fleet, key(KeyCode::Esc), false);
+    home.key(&fleet, key(KeyCode::Esc));
     assert!(!home.start_failed(refused.to_owned()));
 
     // The form for an agent used in its own terminal: a checkbox.
@@ -3135,23 +3127,22 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
         local_host: HOME_PLACE.local_host,
         version: HOME_PLACE.version,
         working_dir: HOME_PLACE.working_dir,
-        attach: false,
         chat_in: settings::ChatInSetting::Native,
         defaults: HOME_PLACE.defaults,
     };
     let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, key(KeyCode::Char('n')));
     let screen = home_screen_at(&mut home, &fleet, &place);
     assert!(screen.contains("Worktree  [ ] new worktree"), "{screen}");
     // Out of the name, down to the last row, and Space ticks it.
-    home.key(&fleet, key(KeyCode::Esc), false);
+    home.key(&fleet, key(KeyCode::Esc));
     for _ in 0..4 {
-        home.key(&fleet, key(KeyCode::Down), false);
+        home.key(&fleet, key(KeyCode::Down));
     }
-    home.key(&fleet, key(KeyCode::Char(' ')), false);
+    home.key(&fleet, key(KeyCode::Char(' ')));
     let screen = home_screen_at(&mut home, &fleet, &place);
     assert!(screen.contains("Worktree  [✓] new worktree"), "{screen}");
-    let effects = home.key(&fleet, key(KeyCode::Enter), false);
+    let effects = home.key(&fleet, key(KeyCode::Enter));
     let [FleetEffect::Start { setup, .. }] = effects.as_slice() else {
         panic!("{effects:?}");
     };
@@ -3194,9 +3185,9 @@ fn home_screen_at(
 fn the_filter_lives_in_the_top_line_and_narrows_the_list() {
     let fleet = home_fleet();
     let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('/')), false);
+    home.key(&fleet, key(KeyCode::Char('/')));
     for c in "arch".chars() {
-        home.key(&fleet, key(KeyCode::Char(c)), false);
+        home.key(&fleet, key(KeyCode::Char(c)));
     }
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
@@ -3207,8 +3198,8 @@ fn the_filter_lives_in_the_top_line_and_narrows_the_list() {
     // The filter looks through folded sections too.
     assert!(screen.contains("archive"), "{screen}");
     assert!(!screen.contains("alpha"), "{screen}");
-    home.key(&fleet, key(KeyCode::Enter), false);
-    home.key(&fleet, key(KeyCode::Esc), false);
+    home.key(&fleet, key(KeyCode::Enter));
+    home.key(&fleet, key(KeyCode::Esc));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("alpha") && !screen.contains("archive"),
@@ -4279,14 +4270,14 @@ fn a_focused_control_on_home_carries_the_agent_rows_marker() {
             .unwrap_or_else(|| panic!("no {words} on\n{screen}"))
             .to_owned()
     };
-    home.key(&fleet, key(KeyCode::Home), false);
+    home.key(&fleet, key(KeyCode::Home));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("enter start"),
         "Home puts the keys on + New Agent: {screen}"
     );
     let new_agent = focused(&screen, "New Agent");
-    home.key(&fleet, key(KeyCode::Down), false);
+    home.key(&fleet, key(KeyCode::Down));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("enter hide"),

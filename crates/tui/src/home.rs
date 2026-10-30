@@ -552,7 +552,7 @@ impl Home {
         }
     }
 
-    pub fn key(&mut self, fleet: &FleetState, key: KeyEvent, attach: bool) -> Vec<FleetEffect> {
+    pub fn key(&mut self, fleet: &FleetState, key: KeyEvent) -> Vec<FleetEffect> {
         if self.draft.open {
             return self.draft_key(fleet, key);
         }
@@ -578,9 +578,7 @@ impl Home {
             KeyCode::Down | KeyCode::Char('j') => self.step(&targets, 1),
             KeyCode::Home | KeyCode::Char('g') => self.step(&targets, isize::MIN),
             KeyCode::End | KeyCode::Char('G') => self.step(&targets, isize::MAX),
-            KeyCode::Enter | KeyCode::Char('a')
-                if attach && (ctrl || key.code != KeyCode::Enter) =>
-            {
+            KeyCode::Enter | KeyCode::Char('a') if ctrl || key.code != KeyCode::Enter => {
                 return agent.map(FleetEffect::Attach).into_iter().collect();
             }
             KeyCode::Enter => return self.activate(current),
@@ -870,12 +868,7 @@ impl Home {
         self.draft.picker = Some(Picker::new(item, title, choices, typed));
     }
 
-    pub fn mouse(
-        &mut self,
-        fleet: &FleetState,
-        event: MouseEvent,
-        attach: bool,
-    ) -> Vec<FleetEffect> {
+    pub fn mouse(&mut self, fleet: &FleetState, event: MouseEvent) -> Vec<FleetEffect> {
         let (x, y) = (event.column, event.row);
         let hit = |rows_only: bool| {
             self.spots
@@ -995,7 +988,7 @@ impl Home {
                 vec![]
             }
             MouseEventKind::Down(MouseButton::Left) => match hit(false) {
-                Some(Hit::Key(key)) => self.key(fleet, key, attach),
+                Some(Hit::Key(key)) => self.key(fleet, key),
                 Some(Hit::Setting(item)) if !self.draft.starting => {
                     self.draft.prefix = false;
                     self.open_setting(fleet, item);
@@ -1102,7 +1095,7 @@ impl Home {
             }
         }
         laid.resize_with(height - 1, Laid::default);
-        let (hint, at) = self.hint_line(footer, width, theme, place.attach, section_folded);
+        let (hint, at) = self.hint_line(footer, width, theme, section_folded);
         if let Some(col) = at {
             cursor = Some((col, height - 1));
         }
@@ -1701,7 +1694,6 @@ impl Home {
         footer: Option<Line<'static>>,
         width: usize,
         theme: Theme,
-        attach: bool,
         section_folded: bool,
     ) -> (Laid, Option<usize>) {
         let mut line = Line::from(Span::raw(" ".repeat(MARGIN)));
@@ -1812,7 +1804,7 @@ impl Home {
                     Some(Target::Section(_)) => vec![("enter", "hide", key(KeyCode::Enter))],
                     _ => vec![("enter", "open", key(KeyCode::Enter))],
                 };
-                if attach && matches!(self.selected, Some(Target::Agent(_))) {
+                if matches!(self.selected, Some(Target::Agent(_))) {
                     hints.push(("a", "attach", key(KeyCode::Char('a'))));
                 }
                 if self.needle().is_some() {
@@ -1930,7 +1922,6 @@ pub struct Place<'a> {
     pub version: &'a str,
     /// Where a new agent works, as the person would write it.
     pub working_dir: &'a str,
-    pub attach: bool,
     /// Where the person chats, which decides how a new agent starts.
     pub chat_in: ChatInSetting,
     /// What each agent starts with.

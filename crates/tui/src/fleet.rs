@@ -45,8 +45,6 @@ pub enum FleetEffect {
 
 #[derive(Debug, Default)]
 pub struct FleetView {
-    /// Whether raw attach is offered.
-    pub attach: bool,
     /// This build's version, compared with the daemon's.
     pub version: String,
     /// The host whose daemon this client talks to.
@@ -71,7 +69,6 @@ impl FleetView {
             local_host: &self.local_host,
             version: &self.version,
             working_dir: &self.working_dir,
-            attach: self.attach,
             chat_in: self.chat_in,
             defaults: &self.defaults,
         };
@@ -93,11 +90,11 @@ impl FleetView {
     }
 
     pub fn key(&mut self, fleet: &FleetState, key: KeyEvent) -> Vec<FleetEffect> {
-        self.home.key(fleet, key, self.attach)
+        self.home.key(fleet, key)
     }
 
     pub fn mouse(&mut self, fleet: &FleetState, event: MouseEvent) -> Vec<FleetEffect> {
-        self.home.mouse(fleet, event, self.attach)
+        self.home.mouse(fleet, event)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -115,7 +112,6 @@ impl FleetView {
             local_host: &self.local_host,
             version: &self.version,
             working_dir: &self.working_dir,
-            attach: self.attach,
             chat_in: self.chat_in,
             defaults: &self.defaults,
         };

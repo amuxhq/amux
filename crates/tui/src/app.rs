@@ -45,9 +45,6 @@ pub struct TuiConfig {
     pub theme: Theme,
     /// A chat to open once its inventory row arrives.
     pub initial_chat: Option<Vec<u8>>,
-    /// Whether the embedding CLI can hand the terminal to an agent's own
-    /// interface.
-    pub attach: bool,
     /// This build's version, compared with the daemon's.
     pub version: String,
     /// The profile's host on this machine: only its agents' terminals are
@@ -397,7 +394,6 @@ impl App {
     pub fn new(client: Arc<dyn Client>, fleet: Fleet, config: TuiConfig) -> App {
         let (events, receiver) = mpsc::unbounded_channel();
         let fleet_view = FleetView {
-            attach: config.attach,
             version: config.version.clone(),
             local_host: config.local_host.clone(),
             working_dir: config.working_dir.to_string_lossy().into_owned(),
@@ -537,9 +533,10 @@ impl App {
                             self.fleet.close(&open.agent);
                             self.keep_draft(open);
                         }
-                        let terminal = self.fleet.state().agent(&agent).is_some_and(|entry| {
-                            self.config.attach && terminal_elsewhere(entry, &self.config).is_none()
-                        });
+                        let terminal =
+                            self.fleet.state().agent(&agent).is_some_and(|entry| {
+                                terminal_elsewhere(entry, &self.config).is_none()
+                            });
                         let mut view = ChatView::new(agent.agent.clone(), now_ms(), terminal);
                         match (self.drafts.remove(&agent), kept) {
                             (Some(draft), _) => view.editor = draft,
@@ -668,15 +665,10 @@ impl App {
                 if attach {
                     // Straight into its own terminal; where it has none
                     // here, its chat opens and says why.
-                    let refusal = terminal_refusal(&agent, &self.config);
-                    if refusal.is_none() && self.config.attach {
+                    let Some(why) = terminal_refusal(&agent, &self.config) else {
                         return Flow::Attach(Box::new(agent));
-                    }
-                    let why = match refusal {
-                        Some(why) => format!("{why}; its chat opens instead"),
-                        None => "its own terminal would open here, but this amux cannot hand the terminal over; its chat opens instead".to_owned(),
                     };
-                    self.notice(why, Tone::Warn);
+                    self.notice(format!("{why}; its chat opens instead"), Tone::Warn);
                     self.config.initial_chat = Some(agent.agent_id.clone());
                     self.fleet_changed();
                 } else if open {
@@ -1000,7 +992,7 @@ impl App {
                 drop(state);
                 self.notice(format!("tool steps: {}", tools.words()), Tone::Info);
             }
-            KeyCode::Char('a') if self.config.attach => {
+            KeyCode::Char('a') => {
                 let agent = chat.agent.clone();
                 drop(state);
                 return self.raw_attach(&agent).unwrap_or(Flow::Continue);
@@ -1625,7 +1617,7 @@ impl App {
                     && self
                         .leader_since
                         .is_none_or(|since| since.elapsed() >= PANEL_AFTER);
-                chat.view.panel = panel_due.then(|| panel_entries(self.config.attach));
+                chat.view.panel = panel_due.then(panel_entries);
                 let page = {
                     let state = chat.session.state();
                     chat.view
@@ -1804,7 +1796,7 @@ impl App {
 }
 
 /// The leader's panel in a chat: every chord and what it does.
-fn panel_entries(attach: bool) -> Vec<crate::chat::PanelEntry> {
+fn panel_entries() -> Vec<crate::chat::PanelEntry> {
     let entry =
         |group: &'static str, key: &str, label: &str, chord: char| crate::chat::PanelEntry {
             group,
@@ -1813,7 +1805,7 @@ fn panel_entries(attach: bool) -> Vec<crate::chat::PanelEntry> {
             chord,
         };
     // What is about amux first, then what is about this chat.
-    let mut entries = vec![
+    vec![
         entry("amux", "s", "home", 's'),
         entry("amux", "n", "new agent", 'n'),
         entry("amux", "h", "hosts", 'h'),
@@ -1833,17 +1825,12 @@ fn panel_entries(attach: bool) -> Vec<crate::chat::PanelEntry> {
             "tool steps: collapse, show all or hide",
             't',
         ),
-    ];
-    if attach {
-        entries.push(entry("this chat", "a", "attach to its own terminal", 'a'));
-    }
-    entries.extend([
+        entry("this chat", "a", "attach to its own terminal", 'a'),
         entry("this chat", "k", "focus an older row", 'k'),
         entry("this chat", "j", "focus a newer row", 'j'),
         entry("this chat", "o", "open the focused row", 'o'),
         entry("this chat", "y", "copy the focused row", 'y'),
-    ]);
-    entries
+    ]
 }
 
 pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'static>> {

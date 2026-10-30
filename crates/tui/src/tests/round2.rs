@@ -350,13 +350,13 @@ fn enter_after_a_filter_opens_the_agent_it_found() {
     let fleet = home_fleet();
     let mut home = crate::home::Home::default();
     home_at(&mut home, &fleet, W, H);
-    home.key(&fleet, key(KeyCode::Home), false);
-    home.key(&fleet, key(KeyCode::Char('/')), false);
+    home.key(&fleet, key(KeyCode::Home));
+    home.key(&fleet, key(KeyCode::Char('/')));
     for c in "alpha".chars() {
-        home.key(&fleet, key(KeyCode::Char(c)), false);
+        home.key(&fleet, key(KeyCode::Char(c)));
     }
-    home.key(&fleet, key(KeyCode::Enter), false);
-    let effects = home.key(&fleet, key(KeyCode::Enter), false);
+    home.key(&fleet, key(KeyCode::Enter));
+    let effects = home.key(&fleet, key(KeyCode::Enter));
     let screen = home_at(&mut home, &fleet, W, H);
     assert!(
         matches!(effects.as_slice(), [FleetEffect::Open(agent)] if agent.agent == b"w1"),
@@ -373,14 +373,14 @@ fn moving_to_cancel_in_the_stop_window_cancels() {
     let mut home = crate::home::Home::default();
     home_at(&mut home, &fleet, W, H);
     focus(&mut home, &fleet, "alpha");
-    home.key(&fleet, key(KeyCode::Char('x')), false);
+    home.key(&fleet, key(KeyCode::Char('x')));
     let screen = home_at(&mut home, &fleet, W, H);
     assert!(
         screen.contains("Cancel"),
         "the stop window is open:\n{screen}"
     );
-    home.key(&fleet, key(KeyCode::Right), false);
-    let effects = home.key(&fleet, key(KeyCode::Enter), false);
+    home.key(&fleet, key(KeyCode::Right));
+    let effects = home.key(&fleet, key(KeyCode::Enter));
     assert!(
         !effects
             .iter()
@@ -391,12 +391,12 @@ fn moving_to_cancel_in_the_stop_window_cancels() {
 
 /// Focuses `name`'s row through the filter.
 fn focus(home: &mut crate::home::Home, fleet: &FleetState, name: &str) {
-    home.key(fleet, key(KeyCode::Char('/')), false);
+    home.key(fleet, key(KeyCode::Char('/')));
     for c in name.chars() {
-        home.key(fleet, key(KeyCode::Char(c)), false);
+        home.key(fleet, key(KeyCode::Char(c)));
     }
-    home.key(fleet, key(KeyCode::Enter), false);
-    home.key(fleet, key(KeyCode::Down), false);
+    home.key(fleet, key(KeyCode::Enter));
+    home.key(fleet, key(KeyCode::Down));
 }
 
 /// Decided: `x` is home's one key for ending an agent. On a live agent it
@@ -409,9 +409,9 @@ fn x_stops_a_live_agent_and_deletes_only_an_exited_one() {
     let mut home = crate::home::Home::default();
     home_at(&mut home, &fleet, W, H);
     focus(&mut home, &fleet, "alpha");
-    home.key(&fleet, key(KeyCode::Char('x')), false);
+    home.key(&fleet, key(KeyCode::Char('x')));
     let screen = home_at(&mut home, &fleet, W, H);
-    let effects = home.key(&fleet, key(KeyCode::Enter), false);
+    let effects = home.key(&fleet, key(KeyCode::Enter));
     assert!(
         matches!(effects.as_slice(), [FleetEffect::Stop(agent)] if agent.agent == b"w1")
             && !screen.contains("Delete"),
@@ -420,8 +420,8 @@ fn x_stops_a_live_agent_and_deletes_only_an_exited_one() {
     let mut home = crate::home::Home::default();
     home_at(&mut home, &fleet, W, H);
     focus(&mut home, &fleet, "archive");
-    home.key(&fleet, key(KeyCode::Char('x')), false);
-    let effects = home.key(&fleet, key(KeyCode::Enter), false);
+    home.key(&fleet, key(KeyCode::Char('x')));
+    let effects = home.key(&fleet, key(KeyCode::Enter));
     assert!(
         matches!(effects.as_slice(), [FleetEffect::Delete(agent)] if agent.agent == b"old"),
         "x on an exited agent did {effects:?}"
@@ -448,7 +448,7 @@ fn a_held_stop_reads_on_its_row_and_x_cancels_it() {
     focus(&mut home, &fleet, "alpha");
     let screen = home_at(&mut home, &fleet, W, H);
     assert!(screen.contains("stop held"), "{screen}");
-    let effects = home.key(&fleet, key(KeyCode::Char('x')), false);
+    let effects = home.key(&fleet, key(KeyCode::Char('x')));
     assert!(
         matches!(effects.as_slice(), [FleetEffect::CancelStop(agent)] if *agent == alpha),
         "x on a held stop did {effects:?}:\n{screen}"
@@ -467,7 +467,7 @@ fn the_stop_window_names_the_turn_and_the_subagents_a_stop_cuts() {
         let mut home = crate::home::Home::default();
         home_at(&mut home, &fleet, W, H);
         focus(&mut home, &fleet, name);
-        home.key(&fleet, key(KeyCode::Char('x')), false);
+        home.key(&fleet, key(KeyCode::Char('x')));
         let screen = home_at(&mut home, &fleet, W, H);
         assert!(
             screen.contains("Stop") && screen.contains(words),
@@ -483,15 +483,15 @@ fn an_empty_rename_says_why_enter_does_nothing() {
     let fleet = home_fleet();
     let mut home = crate::home::Home::default();
     home_at(&mut home, &fleet, W, H);
-    home.key(&fleet, key(KeyCode::Char('/')), false);
+    home.key(&fleet, key(KeyCode::Char('/')));
     for c in "alpha".chars() {
-        home.key(&fleet, key(KeyCode::Char(c)), false);
+        home.key(&fleet, key(KeyCode::Char(c)));
     }
-    home.key(&fleet, key(KeyCode::Enter), false);
-    home.key(&fleet, key(KeyCode::Down), false);
-    home.key(&fleet, key(KeyCode::Char('r')), false);
-    home.key(&fleet, ctrl('u'), false);
-    home.key(&fleet, key(KeyCode::Enter), false);
+    home.key(&fleet, key(KeyCode::Enter));
+    home.key(&fleet, key(KeyCode::Down));
+    home.key(&fleet, key(KeyCode::Char('r')));
+    home.key(&fleet, ctrl('u'));
+    home.key(&fleet, key(KeyCode::Enter));
     let screen = home_at(&mut home, &fleet, W, H);
     assert!(
         !screen.contains("enter save") && screen.contains("empty"),
@@ -506,9 +506,9 @@ fn the_new_agents_settings_line_keeps_its_keys_at_80_columns() {
     let fleet = home_fleet();
     let mut home = crate::home::Home::default();
     home_at(&mut home, &fleet, 80, 24);
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, key(KeyCode::Char('n')));
     home_at(&mut home, &fleet, 80, 24);
-    home.key(&fleet, ctrl('s'), false);
+    home.key(&fleet, ctrl('s'));
     let screen = home_at(&mut home, &fleet, 80, 24);
     let line = screen
         .lines()
@@ -548,7 +548,7 @@ fn a_new_agent_form_left_empty_opens_with_the_defaults_again() {
     let fleet = home_fleet();
     let mut home = crate::home::Home::default();
     home_at(&mut home, &fleet, W, H);
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, key(KeyCode::Char('n')));
     home_at(&mut home, &fleet, W, H);
     let before = home
         .open_setup(&HOME_PLACE)
@@ -561,8 +561,8 @@ fn a_new_agent_form_left_empty_opens_with_the_defaults_again() {
         .open_setup(&HOME_PLACE)
         .map(|setup| setup.permission.clone());
     assert_ne!(before, cycled, "the permission moved");
-    home.key(&fleet, key(KeyCode::Esc), false);
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, key(KeyCode::Esc));
+    home.key(&fleet, key(KeyCode::Char('n')));
     let again = home
         .open_setup(&HOME_PLACE)
         .map(|setup| setup.permission.clone());
@@ -584,7 +584,7 @@ fn a_sentence_typed_on_home_stops_nothing() {
     focus(&mut home, &fleet, "alpha");
     let mut effects = Vec::new();
     for c in "so sure, yes".chars() {
-        effects.extend(home.key(&fleet, key(KeyCode::Char(c)), false));
+        effects.extend(home.key(&fleet, key(KeyCode::Char(c))));
     }
     assert!(
         !effects
@@ -1013,16 +1013,16 @@ fn choosing_an_away_host_for_a_new_agent_says_why() {
     inventory(&mut fleet, host(b"d", "desk", Reads::Away));
     let mut home = crate::home::Home::default();
     home_at(&mut home, &fleet, W, H);
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, key(KeyCode::Char('n')));
     home_at(&mut home, &fleet, W, H);
-    home.key(&fleet, ctrl('s'), false);
-    home.key(&fleet, key(KeyCode::Char('h')), false);
+    home.key(&fleet, ctrl('s'));
+    home.key(&fleet, key(KeyCode::Char('h')));
     let before = home_at(&mut home, &fleet, W, H);
     assert!(
         before.contains("2. desk"),
         "the away host is listed second:\n{before}"
     );
-    home.key(&fleet, key(KeyCode::Char('2')), false);
+    home.key(&fleet, key(KeyCode::Char('2')));
     let after = home_at(&mut home, &fleet, W, H);
     let host = home.open_setup(&HOME_PLACE).map(|setup| setup.host.clone());
     assert_eq!(host, Some(b"a".to_vec()), "the agent stays on studio");
@@ -1043,7 +1043,6 @@ fn raw_attach_to_a_stopped_agent_says_it_is_stopped() {
         leader: 'a',
         theme: theme(),
         initial_chat: None,
-        attach: true,
         version: String::new(),
         local_host: b"a".to_vec(),
         layout: None,
@@ -1100,14 +1099,14 @@ fn an_invalid_new_agent_name_is_refused_on_the_spot() {
     let fleet = home_fleet();
     let mut home = crate::home::Home::default();
     home_at(&mut home, &fleet, 80, 24);
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, key(KeyCode::Char('n')));
     home_at(&mut home, &fleet, 80, 24);
-    home.key(&fleet, ctrl('s'), false);
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home.key(&fleet, ctrl('s'));
+    home.key(&fleet, key(KeyCode::Char('n')));
     for c in "my agent/x".chars() {
-        home.key(&fleet, key(KeyCode::Char(c)), false);
+        home.key(&fleet, key(KeyCode::Char(c)));
     }
-    home.key(&fleet, key(KeyCode::Enter), false);
+    home.key(&fleet, key(KeyCode::Enter));
     let screen = home_at(&mut home, &fleet, 80, 24);
     let name = home
         .open_setup(&HOME_PLACE)
@@ -1119,11 +1118,11 @@ fn an_invalid_new_agent_name_is_refused_on_the_spot() {
     );
 
     // A valid name long enough to crowd the edge.
-    home.key(&fleet, ctrl('u'), false);
+    home.key(&fleet, ctrl('u'));
     for c in "a-very-long-agent-name-that-fills-most-of-the-edge".chars() {
-        home.key(&fleet, key(KeyCode::Char(c)), false);
+        home.key(&fleet, key(KeyCode::Char(c)));
     }
-    home.key(&fleet, key(KeyCode::Enter), false);
+    home.key(&fleet, key(KeyCode::Enter));
     let screen = home_at(&mut home, &fleet, 80, 24);
     let edge = screen
         .lines()
@@ -1157,11 +1156,11 @@ fn deleting_the_last_row_moves_the_highlight_to_the_new_last_row() {
     home_at(&mut home, &fleet, W, H);
     // End lands on the folded "Exited" heading; Enter opens it; End again
     // reaches its last row.
-    home.key(&fleet, key(KeyCode::End), false);
-    home.key(&fleet, key(KeyCode::Enter), false);
-    home.key(&fleet, key(KeyCode::End), false);
-    home.key(&fleet, key(KeyCode::Char('x')), false);
-    let deleted = match home.key(&fleet, key(KeyCode::Enter), false).as_slice() {
+    home.key(&fleet, key(KeyCode::End));
+    home.key(&fleet, key(KeyCode::Enter));
+    home.key(&fleet, key(KeyCode::End));
+    home.key(&fleet, key(KeyCode::Char('x')));
+    let deleted = match home.key(&fleet, key(KeyCode::Enter)).as_slice() {
         [FleetEffect::Delete(agent)] => agent.clone(),
         effects => panic!("x on the last row did {effects:?}"),
     };
@@ -1187,8 +1186,8 @@ fn deleting_the_last_row_moves_the_highlight_to_the_new_last_row() {
         marked.contains(kept),
         "{kept} is not highlighted:\n{screen}"
     );
-    home.key(&fleet, key(KeyCode::Char('x')), false);
-    let effects = home.key(&fleet, key(KeyCode::Enter), false);
+    home.key(&fleet, key(KeyCode::Char('x')));
+    let effects = home.key(&fleet, key(KeyCode::Enter));
     assert!(
         matches!(effects.as_slice(), [FleetEffect::Delete(agent)] if agent.agent != deleted.agent
             && agent.agent.starts_with(b"old")),

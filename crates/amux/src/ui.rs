@@ -82,14 +82,13 @@ async fn open(
         leader: char::from(config.keybinds.leader.char),
         theme,
         initial_chat,
-        attach: false,
         version: node::version().to_owned(),
         local_host: attacher.local_host().to_vec(),
         layout: Some(config.root.join("tui").join("layout.json")),
         chat_in: config.ui.chat_in,
         defaults: config.new_agent.clone(),
     };
-    tui::run(Arc::new(client), tui_config, Some(attach_fn(attacher))).await
+    tui::run(Arc::new(client), tui_config, attach_fn(attacher)).await
 }
 
 /// The fleet's raw attach. Only the fleet chord comes back to the fleet;

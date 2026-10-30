@@ -5,10 +5,8 @@
 ## 13 recorded 11: fact Transcript type=user uuid=6355a434-c660-45ed-8774-9420f1fafe9c
   row    2 6355a434-c660-45ed-8774-9420f1fafe9c Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED, then call ExitPlanMode. Do not ask questions.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 44 recorded 42: fact Hook hook_event_name=MessageDisplay
-  row    3 stream:6685843f-80f8-4980-a379-1a5f8a1f1e84 Prose { text: [Text("This is a trivial one-line change, so I'll skip exploration/design agents and write the plan directly.")], streaming: true, working_note: false }
 ## 48 recorded 46: fact Transcript type=assistant uuid=076832a4-a216-4f10-b0ed-3402ad7cc2df
-  row    3 stream:6685843f-80f8-4980-a379-1a5f8a1f1e84 Prose { text: [Text("This is a trivial one-line change, so I'll skip exploration/design agents and write the plan directly.")], streaming: false, working_note: false }
+  row    3 076832a4-a216-4f10-b0ed-3402ad7cc2df Prose { text: [Text("This is a trivial one-line change, so I'll skip exploration/design agents and write the plan directly.")], streaming: false, working_note: false }
 ## 61 recorded 59: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_0171jBS9EzgN9qgv1vg7XSyY
   composer Send activity=Some(Running { key: "toolu_0171jBS9EzgN9qgv1vg7XSyY" }) queue=[] underway=[] refused=[]
 ## 63 recorded 61: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_0171jBS9EzgN9qgv1vg7XSyY
@@ -35,7 +33,7 @@
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 6355a434-c660-45ed-8774-9420f1fafe9c Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED, then call ExitPlanMode. Do not ask questions.")], steered: false }
-     3 stream:6685843f-80f8-4980-a379-1a5f8a1f1e84 Prose { text: [Text("This is a trivial one-line change, so I'll skip exploration/design agents and write the plan directly.")], streaming: false, working_note: false }
+     3 076832a4-a216-4f10-b0ed-3402ad7cc2df Prose { text: [Text("This is a trivial one-line change, so I'll skip exploration/design agents and write the plan directly.")], streaming: false, working_note: false }
      4 toolu_0171jBS9EzgN9qgv1vg7XSyY Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded, result: "" } run[toolu_0171jBS9EzgN9qgv1vg7XSyY..toolu_0171jBS9EzgN9qgv1vg7XSyY x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
      5 toolu_01YHP45y9r7NzLsYDxwXuPxL Ask(Plan { title: Some("Context"), body: "\nThe user wants README.md's single line of content changed from the literal text `CURRENT` to `UPDATED`. This is a trivial, isolated text edit.\n\n# Plan\n\n- Edit `README.md` in the working directory, replacing its only line `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read the file back and confirm it contains exa…
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

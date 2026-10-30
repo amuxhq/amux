@@ -65,7 +65,7 @@ pub async fn run(config_path: Option<&Path>) -> Result<bool> {
     if let Some(door) = door
         && daemon.is_some()
     {
-        let profiles = connect::profiles(door)
+        let profiles = connect::installation(door)
             .list_profiles(wire::ListProfilesRequest {})
             .await
             .map_err(crate::plain)?

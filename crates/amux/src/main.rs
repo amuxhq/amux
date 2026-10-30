@@ -436,7 +436,7 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
             } => server::stop(&config).await,
             Command::Profile { command } => {
                 let door = connect::front_door(&config).await?;
-                let mut door = connect::profiles(door);
+                let mut door = connect::installation(door);
                 match command {
                     ProfileCommand::Ls => profiles::list(&mut door).await,
                     ProfileCommand::New { label } => profiles::create(&mut door, label).await,
@@ -487,7 +487,7 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 pairing::unpair(connect::admin_of(&selected).await?, &host, force).await
             }
             Command::Login { cloud_url } => {
-                let door = connect::profiles(connect::front_door(&config).await?);
+                let door = connect::installation(connect::front_door(&config).await?);
                 // Without --profile the daemon chooses: the profile already
                 // bound to this account, or the unbound one.
                 let selected = match profile {

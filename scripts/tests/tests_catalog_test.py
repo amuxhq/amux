@@ -46,7 +46,7 @@ class TestsCatalogTest(unittest.TestCase):
         self.assertEqual(
             suites.selection(suite),
             [
-                "-p", "amux", "-p", "patience", "--features", "amux/bundled", "-E",
+                "--workspace", "--features", "bundled", "-E",
                 "(package(amux) & kind(bin) & binary(/^(amux)$/))"
                 " | (binary_id(amux::integration) & test(/^(attach|process)::/))"
                 " | (package(patience) & kind(lib))",

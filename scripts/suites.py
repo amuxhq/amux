@@ -58,16 +58,23 @@ def filterset(selector: dict[str, Any]) -> str:
 
 
 def selection(suite: dict[str, Any]) -> list[str]:
-    """`cargo nextest run` arguments that run exactly the suite's Cargo tests."""
+    """`cargo nextest run` arguments that run exactly the suite's Cargo tests.
+
+    The workspace scope and features `just test` builds with, so a suite
+    reuses its build: naming the packages instead unifies the dependencies'
+    features differently and rebuilds much of the graph beside it. A
+    feature only the suite needs is added to that scope."""
     selectors = suite.get("cargo", [])
-    packages = sorted({selector["package"] for selector in selectors})
-    features = sorted(
-        {f"{selector['package']}/{feature}" for selector in selectors for feature in selector.get("features", [])}
-    )
-    arguments: list[str] = []
-    for package in packages:
-        arguments += ["-p", package]
-    if features:
-        arguments += ["--features", ",".join(features)]
-    arguments += ["-E", " | ".join(filterset(selector) for selector in selectors)]
-    return arguments
+    features = {"bundled"} | {
+        f"{selector['package']}/{feature}"
+        for selector in selectors
+        for feature in selector.get("features", [])
+        if feature != "bundled"
+    }
+    return [
+        "--workspace",
+        "--features",
+        ",".join(sorted(features)),
+        "-E",
+        " | ".join(filterset(selector) for selector in selectors),
+    ]

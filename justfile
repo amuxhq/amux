@@ -292,7 +292,7 @@ shear:
 warm: build test-build
 
 # `just suite desktop-cli-system` runs exactly the Cargo tests that suite of
-# tests/catalog.toml lists, and builds only its packages; anything after the
+# tests/catalog.toml lists, on `just test`'s build; anything after the
 # name goes to nextest (a test-name filter, `--no-capture`). The bound is the
 # protocol models' at their CI bounds, one after another on a four-core machine.
 # Run one catalogued suite's Cargo tests.

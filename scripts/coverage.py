@@ -29,8 +29,10 @@ REPORT = ROOT / "tests" / "coverage.md"
 # Kept apart from target/debug: instrumented builds would invalidate it.
 TARGET = ROOT / "target" / "coverage"
 SUMMARY = TARGET / "summary.json"
-# nextest's closing list of the tests that failed: `FAIL [ 1.2s] (3/9) <binary> <test>`.
-FAILED_TEST = re.compile(r"^\s+FAIL \[[^\]]*\] (?:\(\S+\) )?(?P<test>\S+ \S+)$")
+# nextest's closing list of the tests that did not pass, one per line: a
+# status (FAIL, SIGABRT, TIMEOUT, LEAK-FAIL...), the time, a padded counter,
+# the binary and the test: `SIGABRT [ 30.8s] ( 12/2483) <binary> <test>`.
+FAILED_TEST = re.compile(r"^\s+[A-Z][A-Z-]+ \[[^\]]*\] (?:\([^)]*\) )?(?P<test>\S+ \S+)$")
 
 
 def git(*arguments: str) -> str:
@@ -88,7 +90,10 @@ def run_tests(env: dict[str, str]) -> tuple[list[str], float]:
     if status != 0 and not failed:
         sys.exit(f"coverage: cargo nextest exited {status} without naming a failed test")
     subprocess.run(
-        ["cargo", "llvm-cov", "report", "--json", "--summary-only", "--output-path", str(SUMMARY)],
+        # A process killed while it writes its profile at exit (an agent a
+        # test SIGKILLs, a fake torn down with its net) leaves a truncated
+        # file that llvm-profdata cannot read; the rest still merge.
+        ["cargo", "llvm-cov", "report", "--failure-mode", "all", "--json", "--summary-only", "--output-path", str(SUMMARY)],
         cwd=ROOT, env=env, check=True,
     )
     return failed, time.monotonic() - started

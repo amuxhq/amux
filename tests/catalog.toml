@@ -152,7 +152,8 @@ evidence = ""
 update = ""
 cargo = [
   { package = "app-embedded", kind = "lib", targets = ["app_embedded"], features = [] },
-  { package = "app-embedded", modules = ["embedded", "runtime_log"], features = [] },
+  { package = "app-embedded", modules = ["embedded"], features = [] },
+  { package = "app-embedded", targets = ["runtime_log"], features = [] },
 ]
 
 [[suite]]

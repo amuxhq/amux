@@ -33,3 +33,10 @@ ui-view = { workspace = true }
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
+
+# A binary of its own, so it is a process of its own under every runner:
+# the runtime's log is the process's one global trace subscriber, which a
+# test net another suite started first would own instead.
+[[test]]
+name = "runtime_log"
+path = "tests/runtime_log.rs"

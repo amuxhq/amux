@@ -145,7 +145,10 @@ what is real and what is substituted, its time requirement (`none`, `driven` or 
 lane, evidence location, update command, and the Cargo targets, features and journeys it owns. A crate's
 integration suites are modules of its one integration test binary (`tests/integration.rs` declares one per suite, so
 the crate links its tests once rather than once a suite), and a suite names them as `modules`; `just suite <name>`
-runs exactly what a suite lists.
+runs exactly what a suite lists. A suite that must be the only one in its process under every runner, not only
+nextest (the sanitizers and the iOS store run use one process per binary), keeps a test target of its own:
+app-embedded's `runtime_log`, whose log is the process's one trace subscriber, and the live lane's harnessless
+targets.
 
 ```sh
 just tests-list    # print the catalogue: suite, boundary, lane, time, recipe
@@ -185,7 +188,7 @@ tests have their own harness), the C ABI's pointer checks (`just miri`) and the 
 
 ```sh
 just test                                  # every ordinary workspace target
-just suite many-daemon-protocol-spec       # one suite of tests/catalog.toml, building only its packages
+just suite many-daemon-protocol-spec       # one suite of tests/catalog.toml, on `just test`'s build
 just suite link-stories relaunch           # the same, then a test-name filter
 just test-crate interpret -- codex::       # one crate, then nextest arguments
 just test-store                            # the store's reader and writer suite, retention and SQLite file

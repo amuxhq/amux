@@ -109,9 +109,11 @@ change, compiles the whole dependency graph and can take longer than these
 numbers.
 
 No test builds a binary mid-run. The nextest setup script builds `amux`, the fakes and `fake-amux` once, before
-the first test, in the workspace run's features. Tests that built them themselves each ran cargo again, with the
-features of their own package: every test crate's first such build recompiled part of the graph (`fake-amux`
-among it) while other tests ran, and a test process per test would have queued every one of them on cargo's lock.
+the first test. Its features unify over its own packages rather than the workspace's, so after a change it
+compiles part of the graph again, once (46 s cold on the Mac, under a second warm). Tests that built the binaries
+themselves each ran cargo again, with the features of their own package: every test crate's first such build
+recompiled part of the graph while other tests ran, and a test process per test would have queued every one of
+them on cargo's lock.
 
 ### Protocol models
 

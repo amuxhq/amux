@@ -71,7 +71,8 @@ def walk(seed: int | None, seeds: int | None, filters: list[str]) -> tuple[int, 
     shown = ["TESTNET_MODE=simulated"] + [f"{k}={env[k]}" for k in ("TESTNET_SEED", "TESTNET_SEEDS") if k in env]
     print("$", *shown, *command, flush=True)
     walked: list[dict[str, object]] = []
-    process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.PIPE, text=True)
+    # nextest writes the tests' output, with its own, to stderr.
+    process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     assert process.stdout is not None
     for line in process.stdout:
         sys.stdout.write(line)

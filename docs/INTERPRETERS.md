@@ -908,7 +908,7 @@ After re-recording, run the replays and review the diffs:
 
 ```sh
 just test-crate claude-specs
-just test-crate codex-specs -- --test spec_replay
+just suite codex-recorded-adapter spec_replay::
 INTERPRET_UPDATE_GOLDENS=1 just test-crate interpret   # then review the golden diff
 ```
 
@@ -932,7 +932,7 @@ and every stream ends complete, unless the fixture says otherwise. And it
 checks the checkpoint property described [above](#checkpoints).
 
 ```sh
-just test-crate interpret -- --lib --test claude_pty --test claude_sdk --test codex --test coverage
+just suite interpreter-emissions
 ```
 
 ## The coverage test
@@ -957,7 +957,7 @@ golden line must match. The test enforces that:
 
 A change to what a kind can show is therefore a change to `vocabulary.toml`,
 to the kind's bodies and to a golden, together. Run it on its own with
-`just test-crate interpret -- --test coverage`.
+`just suite interpreter-emissions coverage::`.
 
 ## Adding or changing an interpreter
 

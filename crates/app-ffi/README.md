@@ -186,16 +186,16 @@ failure. The `debug-tools` feature, which only driving builds carry, lets
 
 ## Tests
 
-`cargo test -p app-ffi` drives the C functions against a desk served in
+`just test-crate app-ffi` drives the C functions against a desk served in
 process: pairing by PIN, the fleet, a chat's rows by key, a permission
 answered by position, a question answered with picks, paging and a dump, and
 the profile registry (create, the list moving, per-profile identity and source
 policy, delete and the refusal to delete the last).
 A confinement test holds the loop's shape: the header declares no function
 type the library could call back through, and a step on one thread drains
-the inputs another thread posted. `cargo test -p app-runtime` covers the
+the inputs another thread posted. `just test-crate app-runtime` covers the
 wake-once coalescing and the chat
-views; `cargo test -p app-embedded` covers pairing on the local network,
+views; `just test-crate app-embedded` covers pairing on the local network,
 sign-in with pairing through the relay, and one profile per account: binding
 by id with adoption, a second account's own profile, pause and resume,
 sign-out and signing back in, delete, and the trusting-profile lookup.

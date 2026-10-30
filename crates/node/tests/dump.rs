@@ -3,8 +3,6 @@
 //! the documented layout, with every planted secret absent. Real agent
 //! processes on the fake provider supply their own redacted parts.
 
-mod support;
-
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -12,6 +10,8 @@ use node::{DAEMON_LOG, MANIFEST};
 use prost::Message as _;
 use support::*;
 use wire::{DumpRequest, Lifecycle, Phase};
+
+use crate::support;
 
 const TOKEN: &str = "ghp_PLANTEDdumptoken0001abcdef";
 const KEY: &str = "sk-ant-api03-PLANTEDdumpkey0002";

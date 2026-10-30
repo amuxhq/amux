@@ -4,7 +4,7 @@ use prost::Message;
 use ui_state::{PhaseView, SessionState, decode_snapshot};
 use wire::{Kind, Phase};
 
-use crate::harness::*;
+use crate::spec::harness::*;
 
 fn strip_facts() -> (
     wire::ClaudeUsage,

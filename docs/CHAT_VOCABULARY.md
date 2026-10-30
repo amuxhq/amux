@@ -324,7 +324,7 @@ is full or partial:
   `golden` list appears on one line, and none prefixed with `!` does.
 
 A row marked none or n/a must name no carriers and no goldens. Run it with
-`just test-crate interpret --test coverage`. Adding a row to the catalogue means adding it to `vocabulary.toml`
+`just suite interpreter-emissions coverage::`. Adding a row to the catalogue means adding it to `vocabulary.toml`
 and raising the row count in the test; a provider that starts reporting something means raising its mark and
 naming the carrier and the golden line that shows it.
 

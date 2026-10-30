@@ -18,8 +18,11 @@
 #                   tests are the real-mode stories that demonstrate it
 #
 # tests, one of:
-#   <package>/<target>::<test path>   a Cargo test; <target> is the test
-#                                     target, `lib` or `bin:<name>`
+#   <package>/<target>::<test path>   a Cargo test; <target> is `lib`,
+#                                     `bin:<name>`, or `integration`, the
+#                                     crate's integration test binary,
+#                                     whose test paths start with the
+#                                     suite's module
 #   swift:<Target>/<Class>/<method>   an XCTest method
 #   journey:<client>/<story>          a story in journeys/manifest.json
 
@@ -33,13 +36,13 @@ source = "worked failure"
 section = "Replication and the client model"
 claim = "Opening a chat against a replica an hour stale: the source asks after its cursor with a cap, a gap beyond the cap answers Reset with a fresh tail and CaughtUp, a gap within it answers the delta; a chat opened before the source answers paints the stale rows unmarked and swaps the new block in at CaughtUp; with the origin asleep it paints the held rows and Detached, and a send is held by the client library until the chat is current."
 tests = [
-  "testnet/replication_stories::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
-  "store/conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
-  "ui-state/spec::open::a_subscribe_to_an_away_host_paints_held_rows_then_detached",
-  "ui-runtime/session::an_away_host_paints_its_held_rows_then_detached_with_send_disabled",
+  "testnet/integration::replication_stories::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
+  "store/integration::conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
+  "ui-state/integration::spec::open::a_subscribe_to_an_away_host_paints_held_rows_then_detached",
+  "ui-runtime/integration::session::an_away_host_paints_its_held_rows_then_detached_with_send_disabled",
   "swift:AmuxCoreTests/ChatModelTests/testAResetSwapsTheWholeSequenceInAtOnceAndFollowsTheNewestRow",
   "swift:AmuxCoreTests/ChatModelTests/testADraftSentWhileCatchingUpIsHandedOnForTheLibraryToHold",
-  "ui-state/spec::inputs::a_host_unreachable_rejection_holds_the_prompt_until_the_chat_catches_up",
+  "ui-state/integration::spec::inputs::a_host_unreachable_rejection_holds_the_prompt_until_the_chat_catches_up",
   "tui/lib::tests::detached_keeps_the_rows_and_the_draft",
 ]
 
@@ -49,11 +52,11 @@ source = "worked failure"
 section = "Agent messaging"
 claim = "The daemon dies after handing a child's result to the parent's daemon and before deleting the outbox row: on restart the drain re-sends it, the parent's daemon finds the envelope id already in the parent's items and drops it, so the parent reads the result once, on one host or across a link whose acknowledgement was lost; a row for an incarnation the parent has left is dropped, and a row for an away host waits for its presence."
 tests = [
-  "node/messaging::a_crash_between_hand_off_and_delete_yields_one_item",
-  "node/messaging::a_resumed_parent_receives_nothing",
-  "node/messaging::a_delivery_waiting_on_its_parents_lane_is_dropped_when_the_parent_resumes",
-  "testnet/family_stories::an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped",
-  "testnet/spec_families::cross_host_family_journey",
+  "node/integration::messaging::a_crash_between_hand_off_and_delete_yields_one_item",
+  "node/integration::messaging::a_resumed_parent_receives_nothing",
+  "node/integration::messaging::a_delivery_waiting_on_its_parents_lane_is_dropped_when_the_parent_resumes",
+  "testnet/integration::family_stories::an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped",
+  "testnet/integration::spec_families::cross_host_family_journey",
 ]
 
 [[contract]]
@@ -62,14 +65,14 @@ source = "worked failure"
 section = "Agent messaging"
 claim = "A parent is stopped or deleted while its far child's host is away: the stop or delete acts on the parent and is never refused for the family, the child carries on while its host cannot hear, and once its host is back and has caught up with the parent's host it stops the child (parent exited) or stops and deletes it (parent no longer listed); a child on the parent's own host follows the same rule at once; a listing that predates the child stops it when the listing shows the parent exited; a parent's host that is only away leaves the child running with its report waiting, and unpairing that host drops the report."
 tests = [
-  "testnet/family_stories::a_far_child_whose_parent_stopped_while_its_host_was_away_stops_on_return",
-  "testnet/family_stories::a_far_child_whose_parent_was_deleted_while_its_host_was_away_is_deleted_on_return",
-  "testnet/spec_families::unpairing_the_parents_host_leaves_the_child_and_drops_its_owed_report",
-  "testnet/family_stories::an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped",
-  "testnet/family_stories::stopping_a_parent_stops_every_descendant_on_every_host",
-  "node/registry::delete_aborts_first_and_its_children_here_follow",
-  "node/registry::a_spawn_for_an_exited_parent_is_refused",
-  "node/registry::a_child_asked_for_while_its_parent_stops_never_outlives_it",
+  "testnet/integration::family_stories::a_far_child_whose_parent_stopped_while_its_host_was_away_stops_on_return",
+  "testnet/integration::family_stories::a_far_child_whose_parent_was_deleted_while_its_host_was_away_is_deleted_on_return",
+  "testnet/integration::spec_families::unpairing_the_parents_host_leaves_the_child_and_drops_its_owed_report",
+  "testnet/integration::family_stories::an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped",
+  "testnet/integration::family_stories::stopping_a_parent_stops_every_descendant_on_every_host",
+  "node/integration::registry::delete_aborts_first_and_its_children_here_follow",
+  "node/integration::registry::a_spawn_for_an_exited_parent_is_refused",
+  "node/integration::registry::a_child_asked_for_while_its_parent_stops_never_outlives_it",
 ]
 
 [[contract]]
@@ -80,10 +83,10 @@ claim = "A parent's follow-up lands as a one-shot child's turn ends: the provide
 tests = [
   "interpret/lib::shared::tests::a_one_shot_agent_is_quiet_only_with_nothing_queued_running_or_pending",
   "interpret/lib::testkind::tests::agent_messages_stay_pending_until_consumed",
-  "interpret/claude_pty::agent_messages_leave_the_pending_set_when_claude_shows_them_to_the_model",
-  "interpret/codex::an_idle_inject_is_kicked_under_either_arm",
-  "interpret/codex::the_parked_arm_kicks_an_empty_turn_and_consumes_at_its_acknowledgement",
-  "node/messaging::a_child_answering_exiting_to_its_parents_message_is_resumed_with_it",
+  "interpret/integration::claude_pty::agent_messages_leave_the_pending_set_when_claude_shows_them_to_the_model",
+  "interpret/integration::codex::an_idle_inject_is_kicked_under_either_arm",
+  "interpret/integration::codex::the_parked_arm_kicks_an_empty_turn_and_consumes_at_its_acknowledgement",
+  "node/integration::messaging::a_child_answering_exiting_to_its_parents_message_is_resumed_with_it",
 ]
 
 [[contract]]
@@ -92,9 +95,9 @@ source = "worked failure"
 section = "Inputs"
 claim = "A prompt's verdict is lost with the connection and another client withdraws it meanwhile: after CaughtUp the prompt is nowhere, so it stays not confirmed with resend and discard and is never resent automatically; an uncertain input found in the queue or the items resolves."
 tests = [
-  "ui-state/spec::inputs::an_uncertain_input_found_in_the_queue_or_items_at_caught_up_resolves",
-  "ui-state/spec::inputs::a_prompt_withdrawn_before_a_reset_is_never_shown_as_queued",
-  "ui-runtime/session::an_uncertain_input_is_settled_from_the_queue_or_the_items_and_otherwise_left",
+  "ui-state/integration::spec::inputs::an_uncertain_input_found_in_the_queue_or_items_at_caught_up_resolves",
+  "ui-state/integration::spec::inputs::a_prompt_withdrawn_before_a_reset_is_never_shown_as_queued",
+  "ui-runtime/integration::session::an_uncertain_input_is_settled_from_the_queue_or_the_items_and_otherwise_left",
   "tui/lib::tests::an_unconfirmed_prompt_offers_resend_and_discard",
 ]
 
@@ -104,9 +107,9 @@ source = "worked failure"
 section = "Agent messaging"
 claim = "A child finishes its turn while the daemon is down: it runs on through the grace, the returning daemon ingests the turn end from the stored cursor and inserts the delivery in the same transaction, and the parent hears finished once; a child that drained mid-turn has no turn end and the parent hears failed."
 tests = [
-  "node/messaging::a_child_finishing_while_the_daemon_is_down_reaches_its_parent_once",
-  "node/messaging::a_child_gone_without_a_turn_end_tells_its_parent_it_failed",
-  "agent/lifecycle::with_no_daemon_the_agent_runs_its_first_prompt_then_drains_after_the_grace",
+  "node/integration::messaging::a_child_finishing_while_the_daemon_is_down_reaches_its_parent_once",
+  "node/integration::messaging::a_child_gone_without_a_turn_end_tells_its_parent_it_failed",
+  "agent/integration::lifecycle::with_no_daemon_the_agent_runs_its_first_prompt_then_drains_after_the_grace",
 ]
 
 [[contract]]
@@ -115,8 +118,8 @@ source = "worked failure"
 section = "Replication"
 claim = "Scrolling past a replica's held rows with the origin offline answers an error, never an empty page and never exhausted, and keeps what is held; once the origin is back the next page fills the rows."
 tests = [
-  "testnet/replication_stories::fetch_serves_the_block_locally_extends_it_from_the_origin_and_errors_when_away",
-  "ui-runtime/session::an_unreachable_origin_is_an_error_never_an_empty_page",
+  "testnet/integration::replication_stories::fetch_serves_the_block_locally_extends_it_from_the_origin_and_errors_when_away",
+  "ui-runtime/integration::session::an_unreachable_origin_is_an_error_never_an_empty_page",
 ]
 
 [[contract]]
@@ -125,12 +128,12 @@ source = "worked failure"
 section = "Durability"
 claim = "After a power cut the origin's store opens at its last checkpoint, the daemon bumps and syncs the generation before serving, re-ingests from the durable cursor, and every peer resets that host's replicas as their sources resume under the new generation; a clean reboot, a daemon crash and an agent crash change nothing."
 tests = [
-  "node/single_daemon::power_loss_bumps_the_generation_and_re_ingests_from_the_durable_cursor",
-  "node/single_daemon::a_clean_reboot_bumps_nothing",
-  "node/single_daemon::a_journal_cut_below_a_durable_cursor_rewinds_it_and_re_derived_steps_commit_anew",
-  "testnet/harness::a_rewound_host_loses_what_the_drive_never_got_under_a_new_generation",
-  "testnet/spec_inventory::a_generation_change_resets_one_hosts_replicas_and_nothing_else",
-  "testnet/spec_inventory::origin_rewind",
+  "node/integration::single_daemon::power_loss_bumps_the_generation_and_re_ingests_from_the_durable_cursor",
+  "node/integration::single_daemon::a_clean_reboot_bumps_nothing",
+  "node/integration::single_daemon::a_journal_cut_below_a_durable_cursor_rewinds_it_and_re_derived_steps_commit_anew",
+  "testnet/integration::harness::a_rewound_host_loses_what_the_drive_never_got_under_a_new_generation",
+  "testnet/integration::spec_inventory::a_generation_change_resets_one_hosts_replicas_and_nothing_else",
+  "testnet/integration::spec_inventory::origin_rewind",
 ]
 
 [[contract]]
@@ -139,10 +142,10 @@ source = "worked failure"
 section = "Agent lifecycle"
 claim = "Resuming an exited agent writes the next spec, starts its process and flips the row live under the same subscription; the new incarnation's items flow on the same revision sequence, upserting by key what it re-derives, and the client does nothing special."
 tests = [
-  "node/registry::resume_writes_the_next_spec_and_waits_for_a_dying_process",
-  "agent/providers::a_restart_from_the_checkpoint_re_emits_open_items_and_carries_keys_on",
-  "ui-runtime/session::the_exited_composer_resumes_with_the_draft_as_the_first_prompt",
-  "amux/agent_process::a_headless_claude_agent_outlives_its_daemon_and_resumes",
+  "node/integration::registry::resume_writes_the_next_spec_and_waits_for_a_dying_process",
+  "agent/integration::providers::a_restart_from_the_checkpoint_re_emits_open_items_and_carries_keys_on",
+  "ui-runtime/integration::session::the_exited_composer_resumes_with_the_draft_as_the_first_prompt",
+  "amux/integration::agent_process::a_headless_claude_agent_outlives_its_daemon_and_resumes",
   "swift:AmuxCoreTests/ChatModelTests/testAnExitedAgentResumesWithTheDraft",
 ]
 
@@ -152,14 +155,14 @@ source = "invariant"
 section = "Agent lifecycle"
 claim = "Why an incarnation ended is the last step of its journal. The daemon copies it onto the row in the commit that ingests that step and reads the journal to its end before it marks the agent exited, so the row carries the agent's own cause even when no daemon saw it go or a daemon died between ingesting the step and marking, and uses its own cause only where the journal has none. The boundary a new incarnation writes for one that ended without its own carries no cause, so the live incarnation's row holds none and its own end is recorded as itself. A failed report to a parent carries the cause as data, and the parent's interpreter words it for its provider."
 tests = [
-  "node/registry::agent_cause_reaches_the_row",
-  "node/registry::an_ingested_cause_survives_a_daemon_that_died_before_marking",
-  "node/registry::a_resumed_agent_ends_with_its_own_cause_not_the_one_its_repair_boundary_names",
-  "node/registry::a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones",
-  "node/messaging::a_child_gone_without_a_turn_end_tells_its_parent_it_failed",
-  "interpret/claude_pty::a_failed_report_is_worded_for_the_parents_provider",
-  "interpret/claude_sdk::a_failed_report_is_worded_for_the_parents_provider",
-  "interpret/codex::a_failed_report_is_worded_for_the_parents_provider",
+  "node/integration::registry::agent_cause_reaches_the_row",
+  "node/integration::registry::an_ingested_cause_survives_a_daemon_that_died_before_marking",
+  "node/integration::registry::a_resumed_agent_ends_with_its_own_cause_not_the_one_its_repair_boundary_names",
+  "node/integration::registry::a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones",
+  "node/integration::messaging::a_child_gone_without_a_turn_end_tells_its_parent_it_failed",
+  "interpret/integration::claude_pty::a_failed_report_is_worded_for_the_parents_provider",
+  "interpret/integration::claude_sdk::a_failed_report_is_worded_for_the_parents_provider",
+  "interpret/integration::codex::a_failed_report_is_worded_for_the_parents_provider",
 ]
 
 [[contract]]
@@ -168,10 +171,10 @@ source = "worked failure"
 section = "Supervisor and updates"
 claim = "The daemon restarts under an agent mid-turn with an open ask: the agent keeps the ask through the grace, the new daemon reads it back and clients see the same ask and answer it; only when no daemon returns within the drain deadline does the agent exit orphaned while waiting for you."
 tests = [
-  "testnet/spec_replication::an_ask_open_across_a_daemon_restart_is_the_same_ask_and_is_answered_after_it",
-  "agent/lifecycle::a_daemon_dialling_back_in_cancels_the_grace",
-  "amux/overlap::agents_of_the_previous_build_work_on_after_an_update",
-  "amux/system_journeys::survive_daemon",
+  "testnet/integration::spec_replication::an_ask_open_across_a_daemon_restart_is_the_same_ask_and_is_answered_after_it",
+  "agent/integration::lifecycle::a_daemon_dialling_back_in_cancels_the_grace",
+  "amux/integration::overlap::agents_of_the_previous_build_work_on_after_an_update",
+  "amux/integration::system_journeys::survive_daemon",
 ]
 
 # --- Invariants: interpreter ------------------------------------------------
@@ -193,8 +196,8 @@ section = "Interpreter"
 claim = "An ask opens on a fact and closes on a fact."
 tests = [
   "interpret/lib::testkind::tests::asks_open_and_close_only_on_facts",
-  "interpret/claude_pty::asks_open_on_the_hook_and_close_only_on_facts",
-  "interpret/claude_sdk::a_stopped_question_is_dismissed",
+  "interpret/integration::claude_pty::asks_open_on_the_hook_and_close_only_on_facts",
+  "interpret/integration::claude_sdk::a_stopped_question_is_dismissed",
 ]
 
 [[contract]]
@@ -204,7 +207,7 @@ section = "Interpreter"
 claim = "Every snapshot field is present, unknown explicit."
 tests = [
   "interpret/lib::unknown::tests::every_snapshot_field_has_an_explicit_unknown",
-  "ui-state/spec::snapshot::unknown_is_explicit_and_never_depends_on_which_fact_came_first",
+  "ui-state/integration::spec::snapshot::unknown_is_explicit_and_never_depends_on_which_fact_came_first",
 ]
 
 [[contract]]
@@ -247,10 +250,10 @@ source = "invariant"
 section = "Interpreter"
 claim = "An agent message yields its item at acceptance on every carrier."
 tests = [
-  "agent/providers::terminal_claude_takes_an_agent_message_on_its_messaging_socket",
-  "agent/providers::terminal_claude_without_a_socket_has_the_message_pasted",
-  "agent/providers::headless_claude_takes_an_agent_message_on_stdin",
-  "agent/providers::codex_takes_an_agent_message_as_injected_items",
+  "agent/integration::providers::terminal_claude_takes_an_agent_message_on_its_messaging_socket",
+  "agent/integration::providers::terminal_claude_without_a_socket_has_the_message_pasted",
+  "agent/integration::providers::headless_claude_takes_an_agent_message_on_stdin",
+  "agent/integration::providers::codex_takes_an_agent_message_as_injected_items",
 ]
 
 # --- Invariants: daemon -----------------------------------------------------
@@ -261,9 +264,9 @@ source = "invariant"
 section = "Daemon"
 claim = "Order is assigned once per key at first commit and never moves; one key per order."
 tests = [
-  "node/single_daemon::order_is_assigned_once_per_key_and_kept_across_a_re_derivation",
-  "store/conformance::commit_assigns_revisions_per_record_and_orders_once_per_key",
-  "store/sqlite::the_unique_position_index_trips_on_a_second_key_at_one_position",
+  "node/integration::single_daemon::order_is_assigned_once_per_key_and_kept_across_a_re_derivation",
+  "store/integration::conformance::commit_assigns_revisions_per_record_and_orders_once_per_key",
+  "store/integration::sqlite::the_unique_position_index_trips_on_a_second_key_at_one_position",
 ]
 
 [[contract]]
@@ -272,8 +275,8 @@ source = "invariant"
 section = "Daemon"
 claim = "Revisions rise in commit order; an older revision never overwrites a newer one."
 tests = [
-  "store/conformance::commit_assigns_revisions_per_record_and_orders_once_per_key",
-  "store/conformance::an_older_snapshot_never_overwrites_a_newer_envelope",
+  "store/integration::conformance::commit_assigns_revisions_per_record_and_orders_once_per_key",
+  "store/integration::conformance::an_older_snapshot_never_overwrites_a_newer_envelope",
 ]
 
 [[contract]]
@@ -282,9 +285,9 @@ source = "invariant"
 section = "Daemon"
 claim = "A profile store whose recorded migrations are not this build's, as every store written before the release schema is, is refused at open with a message that names the file and says it predates the schema; the daemon does not start on it and the file is left exactly as it was."
 tests = [
-  "store/sqlite::a_store_with_another_history_is_refused_and_named",
-  "store/sqlite::a_store_migrated_by_different_text_is_refused",
-  "node/registry::a_store_from_before_the_release_schema_stops_the_daemon_and_is_kept",
+  "store/integration::sqlite::a_store_with_another_history_is_refused_and_named",
+  "store/integration::sqlite::a_store_migrated_by_different_text_is_refused",
+  "node/integration::registry::a_store_from_before_the_release_schema_stops_the_daemon_and_is_kept",
 ]
 
 [[contract]]
@@ -293,11 +296,11 @@ source = "invariant"
 section = "Daemon"
 claim = "A reader that falls behind a stream's ring is sent Lagged before the stream closes, on a chat and on the inventory alike, and resubscribes at once; only an ordinary close backs off."
 tests = [
-  "node/single_daemon::a_lagging_subscriber_is_closed_with_lagged_and_ingest_never_waits",
-  "node/single_daemon::a_lagging_inventory_subscriber_is_told_it_lagged",
-  "ui-runtime/session::lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap",
-  "ui-runtime/fleet::inventory_lag_resubscribes_at_once",
-  "ui-runtime/fleet::the_fleet_opens_at_caught_up_and_relists_after_a_reconnect",
+  "node/integration::single_daemon::a_lagging_subscriber_is_closed_with_lagged_and_ingest_never_waits",
+  "node/integration::single_daemon::a_lagging_inventory_subscriber_is_told_it_lagged",
+  "ui-runtime/integration::session::lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap",
+  "ui-runtime/integration::fleet::inventory_lag_resubscribes_at_once",
+  "ui-runtime/integration::fleet::the_fleet_opens_at_caught_up_and_relists_after_a_reconnect",
 ]
 
 [[contract]]
@@ -306,8 +309,8 @@ source = "invariant"
 section = "Daemon"
 claim = "A journal segment is deleted only below a durable cursor."
 tests = [
-  "node/single_daemon::segments_are_deleted_only_below_a_cursor_on_the_drive",
-  "journal/journal::segments_below_a_durable_cursor_are_reclaimable_except_the_kept_ones",
+  "node/integration::single_daemon::segments_are_deleted_only_below_a_cursor_on_the_drive",
+  "journal/integration::journal::segments_below_a_durable_cursor_are_reclaimable_except_the_kept_ones",
 ]
 
 [[contract]]
@@ -316,8 +319,8 @@ source = "invariant"
 section = "Daemon"
 claim = "The generation file is written before anything is served."
 tests = [
-  "node/registry::the_generation_bumps_only_after_an_unclean_reboot",
-  "node/registry::startup_prepares_after_looking_and_writes_only_after_go",
+  "node/integration::registry::the_generation_bumps_only_after_an_unclean_reboot",
+  "node/integration::registry::startup_prepares_after_looking_and_writes_only_after_go",
 ]
 
 [[contract]]
@@ -326,9 +329,9 @@ source = "invariant"
 section = "Daemon"
 claim = "An own source's CaughtUp comes only at journal end-of-file, and is set by the sweep for an agent found exited."
 tests = [
-  "node/single_daemon::a_backlog_is_committed_in_batches_and_caught_up_once_at_its_end",
-  "node/single_daemon::the_sweep_ingests_a_finished_childs_journal_before_marking_it_exited",
-  "testnet/spec_replication::an_exited_agent_settles_only_once_its_own_stream_has_passed_the_exit",
+  "node/integration::single_daemon::a_backlog_is_committed_in_batches_and_caught_up_once_at_its_end",
+  "node/integration::single_daemon::the_sweep_ingests_a_finished_childs_journal_before_marking_it_exited",
+  "testnet/integration::spec_replication::an_exited_agent_settles_only_once_its_own_stream_has_passed_the_exit",
 ]
 
 [[contract]]
@@ -337,10 +340,10 @@ source = "invariant"
 section = "Daemon"
 claim = "An outbox row is deleted only on accept, on a receiver's incarnation mismatch, or with its agent."
 tests = [
-  "node/messaging::a_crash_between_hand_off_and_delete_yields_one_item",
-  "node/messaging::a_resumed_parent_receives_nothing",
-  "node/messaging::a_child_whose_parent_row_is_missing_keeps_its_row_until_the_parent_is_known",
-  "store/conformance::delete_removes_an_agent_whole",
+  "node/integration::messaging::a_crash_between_hand_off_and_delete_yields_one_item",
+  "node/integration::messaging::a_resumed_parent_receives_nothing",
+  "node/integration::messaging::a_child_whose_parent_row_is_missing_keeps_its_row_until_the_parent_is_known",
+  "store/integration::conformance::delete_removes_an_agent_whole",
 ]
 
 [[contract]]
@@ -349,8 +352,8 @@ source = "invariant"
 section = "Daemon"
 claim = "A notifications row never outlives its agent."
 tests = [
-  "node/push::a_needs_you_push_is_sent_once_due_and_cancelled_by_an_answer_exit_or_delete",
-  "store/conformance::turning_to_needs_you_inserts_one_notification_and_leaving_removes_it",
+  "node/integration::push::a_needs_you_push_is_sent_once_due_and_cancelled_by_an_answer_exit_or_delete",
+  "store/integration::conformance::turning_to_needs_you_inserts_one_notification_and_leaving_removes_it",
 ]
 
 # --- Invariants: runtime ----------------------------------------------------
@@ -361,9 +364,9 @@ source = "invariant"
 section = "Runtime"
 claim = "Only a replica's source writes the top of its block and only a Reset replaces it; pages extend it downward only."
 tests = [
-  "store/conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
-  "store/conformance::absorb_refuses_own_rows",
-  "testnet/replication_stories::fetch_serves_the_block_locally_extends_it_from_the_origin_and_errors_when_away",
+  "store/integration::conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
+  "store/integration::conformance::absorb_refuses_own_rows",
+  "testnet/integration::replication_stories::fetch_serves_the_block_locally_extends_it_from_the_origin_and_errors_when_away",
 ]
 
 [[contract]]
@@ -372,9 +375,9 @@ source = "invariant"
 section = "Runtime"
 claim = "A replica's cursor advances by the stream alone."
 tests = [
-  "store/conformance::a_delta_joins_above_and_only_live_records_move_the_cursor",
-  "store/conformance::rewind_cursor_moves_only_the_cursor_and_only_back",
-  "testnet/spec_replication::a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer",
+  "store/integration::conformance::a_delta_joins_above_and_only_live_records_move_the_cursor",
+  "store/integration::conformance::rewind_cursor_moves_only_the_cursor_and_only_back",
+  "testnet/integration::spec_replication::a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer",
 ]
 
 [[contract]]
@@ -383,8 +386,8 @@ source = "invariant"
 section = "Runtime"
 claim = "One source per agent."
 tests = [
-  "testnet/replication_stories::on_demand_warms_one_chat_listed_sweeps_the_rest_and_exited_agents_close",
-  "testnet/replication_stories::switching_to_on_demand_closes_every_source_no_client_watches",
+  "testnet/integration::replication_stories::on_demand_warms_one_chat_listed_sweeps_the_rest_and_exited_agents_close",
+  "testnet/integration::replication_stories::switching_to_on_demand_closes_every_source_no_client_watches",
 ]
 
 [[contract]]
@@ -393,9 +396,9 @@ source = "invariant"
 section = "Runtime"
 claim = "CaughtUp, Reset and Detached ride the broadcast in sequence with the rows they cover; CaughtUp is forwarded only after the origin's."
 tests = [
-  "testnet/replication_stories::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
-  "testnet/spec_replication::a_stream_lost_with_the_link_up_detaches_through_the_backoff",
-  "testnet/spec_replication::a_rewound_origin_resets_every_source_that_resumes_under_its_old_generation",
+  "testnet/integration::replication_stories::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
+  "testnet/integration::spec_replication::a_stream_lost_with_the_link_up_detaches_through_the_backoff",
+  "testnet/integration::spec_replication::a_rewound_origin_resets_every_source_that_resumes_under_its_old_generation",
 ]
 
 [[contract]]
@@ -404,10 +407,10 @@ source = "invariant"
 section = "Runtime"
 claim = "A generation change resets each of one host's replicas on its own stream, forgetting the rows of the old generation, and touches nothing of another host's."
 tests = [
-  "testnet/spec_inventory::a_generation_change_resets_one_hosts_replicas_and_nothing_else",
-  "testnet/spec_replication::a_rewound_origin_resets_every_source_that_resumes_under_its_old_generation",
-  "testnet/spec_replication::a_rewound_origin_resets_a_settled_replica_too",
-  "store/conformance::a_reset_under_another_generation_takes_the_envelope_even_at_revision_zero",
+  "testnet/integration::spec_inventory::a_generation_change_resets_one_hosts_replicas_and_nothing_else",
+  "testnet/integration::spec_replication::a_rewound_origin_resets_every_source_that_resumes_under_its_old_generation",
+  "testnet/integration::spec_replication::a_rewound_origin_resets_a_settled_replica_too",
+  "store/integration::conformance::a_reset_under_another_generation_takes_the_envelope_even_at_revision_zero",
 ]
 
 [[contract]]
@@ -416,11 +419,11 @@ source = "invariant"
 section = "Runtime"
 claim = "The recipient's daemon dedupes agent messages by envelope id through one ordered lane per own agent that answers only after the acceptance item has committed."
 tests = [
-  "node/messaging::a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped",
-  "node/messaging::a_message_waits_for_its_item_to_commit_and_one_envelope_is_handed_over_once",
-  "node/messaging::an_agent_that_stops_reading_holds_up_neither_other_parents_nor_a_kill",
-  "node/messaging::resend_with_same_id_is_one_item",
-  "testnet/spec_families::concurrent_duplicate_sends_across_hosts_yield_one_item",
+  "node/integration::messaging::a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped",
+  "node/integration::messaging::a_message_waits_for_its_item_to_commit_and_one_envelope_is_handed_over_once",
+  "node/integration::messaging::an_agent_that_stops_reading_holds_up_neither_other_parents_nor_a_kill",
+  "node/integration::messaging::resend_with_same_id_is_one_item",
+  "testnet/integration::spec_families::concurrent_duplicate_sends_across_hosts_yield_one_item",
 ]
 
 [[contract]]
@@ -429,9 +432,9 @@ source = "invariant"
 section = "Runtime"
 claim = "A message's sender is its caller, never request content: the agent whose tools socket made the call, else the person. A paired host is answered only for the answering host's own agents: its inventory carries that host's entry and agents, and any call naming an agent the host only replicates (a read, an input, a lifecycle call, a blob or a diff) is not found, never passed on."
 tests = [
-  "node/messaging::send_message_sender_is_the_caller",
-  "node/peer_service::inventory_is_origin_only",
-  "node/peer_service::replica_agent_is_refused_on_every_read_and_input",
+  "node/integration::messaging::send_message_sender_is_the_caller",
+  "node/integration::peer_service::inventory_is_origin_only",
+  "node/integration::peer_service::replica_agent_is_refused_on_every_read_and_input",
 ]
 
 [[contract]]
@@ -440,7 +443,7 @@ source = "invariant"
 section = "Runtime"
 claim = "A create names its kind by the arm that carries that kind's settings, so settings and kind cannot disagree; a create with no arm is refused as invalid and makes no agent."
 tests = [
-  "node/registry::a_create_without_a_kind_is_invalid",
+  "node/integration::registry::a_create_without_a_kind_is_invalid",
 ]
 
 # --- Invariants: session state ----------------------------------------------
@@ -451,9 +454,9 @@ source = "invariant"
 section = "Session state"
 claim = "Row ids never move."
 tests = [
-  "ui-view/views::row_ids_never_move_and_rows_by_keys_equal_rows_by_range",
-  "ui-state/spec::runs::the_newest_step_moves_while_every_row_id_stays",
-  "ui-state/spec::runs::a_page_merging_into_a_run_at_the_edge_keeps_ids_and_grows_the_count",
+  "ui-view/integration::views::row_ids_never_move_and_rows_by_keys_equal_rows_by_range",
+  "ui-state/integration::spec::runs::the_newest_step_moves_while_every_row_id_stays",
+  "ui-state/integration::spec::runs::a_page_merging_into_a_run_at_the_edge_keeps_ids_and_grows_the_count",
 ]
 
 [[contract]]
@@ -462,7 +465,7 @@ source = "invariant"
 section = "Session state"
 claim = "The window grows only at its edges."
 tests = [
-  "ui-state/spec::window::pages_extend_the_low_edge_and_never_the_top",
+  "ui-state/integration::spec::window::pages_extend_the_low_edge_and_never_the_top",
   "swift:AmuxCoreTests/ChatModelTests/testNewRowsExtendTheSequenceAtItsEdgesAndChangedRowsComeWithTheDelta",
 ]
 
@@ -472,11 +475,11 @@ source = "invariant"
 section = "Session state"
 claim = "Send only while caught up and the entry says live."
 tests = [
-  "ui-state/spec::open::detached_clears_caught_up_and_keeps_the_rows",
-  "ui-runtime/session::an_away_host_paints_its_held_rows_then_detached_with_send_disabled",
-  "ui-runtime/session::a_send_that_raced_the_exit_is_rejected_and_the_composer_offers_resume",
+  "ui-state/integration::spec::open::detached_clears_caught_up_and_keeps_the_rows",
+  "ui-runtime/integration::session::an_away_host_paints_its_held_rows_then_detached_with_send_disabled",
+  "ui-runtime/integration::session::a_send_that_raced_the_exit_is_rejected_and_the_composer_offers_resume",
   "swift:AmuxCoreTests/ChatModelTests/testADraftSentWhileCatchingUpIsHandedOnForTheLibraryToHold",
-  "ui-state/spec::inputs::a_host_unreachable_rejection_holds_the_prompt_until_the_chat_catches_up",
+  "ui-state/integration::spec::inputs::a_host_unreachable_rejection_holds_the_prompt_until_the_chat_catches_up",
   "tui/lib::tests::detached_keeps_the_rows_and_the_draft",
 ]
 
@@ -486,8 +489,8 @@ source = "invariant"
 section = "Session state"
 claim = "Nothing is persisted by the session state."
 tests = [
-  "ui-state/spec::open::nothing_is_kept_between_opens",
-  "app-embedded/embedded::a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows",
+  "ui-state/integration::spec::open::nothing_is_kept_between_opens",
+  "app-embedded/integration::embedded::a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows",
 ]
 
 # --- Invariants: agent and supervisor ---------------------------------------
@@ -498,8 +501,8 @@ source = "invariant"
 section = "Agent and supervisor"
 claim = "Stop goes to the owner."
 tests = [
-  "amux/supervise_cli::stop_goes_to_the_supervisor_first_where_the_install_has_one",
-  "amux/supervise_cli::stop_goes_to_the_daemon_where_the_install_has_no_supervisor",
+  "amux/integration::supervise_cli::stop_goes_to_the_supervisor_first_where_the_install_has_one",
+  "amux/integration::supervise_cli::stop_goes_to_the_daemon_where_the_install_has_no_supervisor",
 ]
 
 [[contract]]
@@ -508,8 +511,8 @@ source = "invariant"
 section = "Agent and supervisor"
 claim = "Updates only move forward."
 tests = [
-  "node/supervisor::choose_installs_only_a_newer_unrejected_build_inside_the_rollout",
-  "node/supervisor::k_starts_that_never_prepare_roll_back_and_the_rejected_build_is_skipped",
+  "node/integration::supervisor::choose_installs_only_a_newer_unrejected_build_inside_the_rollout",
+  "node/integration::supervisor::k_starts_that_never_prepare_roll_back_and_the_rejected_build_is_skipped",
 ]
 
 [[contract]]
@@ -519,9 +522,9 @@ section = "Agent and supervisor"
 claim = "Rollback only before activation."
 tests = [
   "supervisor-core/lib::tests::a_crash_after_go_restarts_with_backoff_and_never_rolls_back",
-  "node/supervisor::a_starting_supervisor_counts_failed_starts_against_prev_and_rolls_back",
-  "node/supervisor::a_starting_supervisor_finishes_a_recorded_rollback",
-  "amux/overlap::the_previous_build_reopens_a_store_the_new_one_migrated_before_prepared",
+  "node/integration::supervisor::a_starting_supervisor_counts_failed_starts_against_prev_and_rolls_back",
+  "node/integration::supervisor::a_starting_supervisor_finishes_a_recorded_rollback",
+  "amux/integration::overlap::the_previous_build_reopens_a_store_the_new_one_migrated_before_prepared",
 ]
 
 [[contract]]
@@ -530,8 +533,8 @@ source = "invariant"
 section = "Agent and supervisor"
 claim = "A login unit never kills agents with the supervisor."
 tests = [
-  "amux/overlap::restarting_the_launch_agent_leaves_the_agent_running",
-  "amux/supervise_cli::the_login_units_match_their_goldens",
+  "amux/integration::overlap::restarting_the_launch_agent_leaves_the_agent_running",
+  "amux/integration::supervise_cli::the_login_units_match_their_goldens",
 ]
 
 # --- Testing page: boundaries -----------------------------------------------
@@ -544,10 +547,10 @@ claim = "Interpreter, per driver: a step yields keyed items, appends, snapshots 
 tests = [
   "interpret/lib::testkind::tests::the_checkpoint_property_catches_state_a_resume_loses",
   "interpret/lib::testkind::tests::streams_end_full_and_resume_re_emits_open_items",
-  "interpret/claude_pty::a_prompt_row_behind_its_hooks_still_comes_first",
-  "interpret/claude_sdk::split_and_coalesced_stream_events_yield_the_same_final_items",
-  "interpret/codex::asks_cover_every_request_codex_makes",
-  "interpret/coverage::vocabulary_coverage",
+  "interpret/integration::claude_pty::a_prompt_row_behind_its_hooks_still_comes_first",
+  "interpret/integration::claude_sdk::split_and_coalesced_stream_events_yield_the_same_final_items",
+  "interpret/integration::codex::asks_cover_every_request_codex_makes",
+  "interpret/integration::coverage::vocabulary_coverage",
 ]
 
 [[contract]]
@@ -556,13 +559,13 @@ source = "testing page"
 section = "Boundaries"
 claim = "Provider adapter: real provider bytes and hooks reach the interpreter; semantic commands produce the right provider writes; agent messages go to the provider's own injection channel, the provider's acceptance being the verdict."
 tests = [
-  "agent/providers::a_terminal_claude_agent_types_its_prompt_and_hears_its_hooks",
-  "agent/providers::terminal_claude_denies_on_the_menu_that_offers_auto_mode",
-  "agent/providers::headless_claude_replays_initialization_a_control_reply_and_the_end_of_input",
-  "agent/providers::codex_replays_the_handshake_an_approval_and_the_end_of_input",
-  "agent/providers::headless_claude_replays_transport_loss_mid_turn",
-  "agent/providers::codex_replays_transport_loss_mid_turn",
-  "agent/providers::terminal_claude_replays_transport_loss_mid_turn",
+  "agent/integration::providers::a_terminal_claude_agent_types_its_prompt_and_hears_its_hooks",
+  "agent/integration::providers::terminal_claude_denies_on_the_menu_that_offers_auto_mode",
+  "agent/integration::providers::headless_claude_replays_initialization_a_control_reply_and_the_end_of_input",
+  "agent/integration::providers::codex_replays_the_handshake_an_approval_and_the_end_of_input",
+  "agent/integration::providers::headless_claude_replays_transport_loss_mid_turn",
+  "agent/integration::providers::codex_replays_transport_loss_mid_turn",
+  "agent/integration::providers::terminal_claude_replays_transport_loss_mid_turn",
 ]
 
 [[contract]]
@@ -571,11 +574,11 @@ source = "testing page"
 section = "Boundaries"
 claim = "Single daemon: ingest opaque framed steps; commit a step's items, snapshot and cursor atomically, copying phase and working_on onto the row; page and subscribe without losing committed data; reclaim only below the committed cursor."
 tests = [
-  "node/single_daemon::torn_tails_are_never_read_whether_the_writer_lives_or_dies",
-  "node/single_daemon::a_failure_before_or_after_each_write_commit_and_cursor_step_changes_nothing",
-  "store/conformance::snapshots_copy_their_envelope_onto_the_row",
-  "node/single_daemon::retention_sweep",
-  "store/retention::retention_never_trims_below_the_protected_rows",
+  "node/integration::single_daemon::torn_tails_are_never_read_whether_the_writer_lives_or_dies",
+  "node/integration::single_daemon::a_failure_before_or_after_each_write_commit_and_cursor_step_changes_nothing",
+  "store/integration::conformance::snapshots_copy_their_envelope_onto_the_row",
+  "node/integration::single_daemon::retention_sweep",
+  "store/integration::retention::retention_never_trims_below_the_protected_rows",
 ]
 
 [[contract]]
@@ -584,11 +587,11 @@ source = "invariant"
 section = "Boundaries"
 claim = "A pairing window lasts the length its start names, else the default, whatever its method, and nothing outside one second to ninety days opens; a demo window from `amux pair --demo` holds its chosen PIN through a wrong guess and successive pairings until it is closed; no window outlives its daemon, so a start re-run after a restart opens a fresh one; a confirm or an abandon that names no pairing is a malformed call; a profile renamed or deleted is listed so at once."
 tests = [
-  "node/front_door::ttl_applies_to_each_method",
-  "node/front_door::an_empty_pairing_token_is_invalid",
-  "node/front_door::rename_and_delete_change_the_listed_profile",
-  "testnet/spec_network::demo_pin_from_the_cli",
-  "testnet/spec_network::a_pairing_rerun_after_the_daemon_restarts_opens_a_fresh_window",
+  "node/integration::front_door::ttl_applies_to_each_method",
+  "node/integration::front_door::an_empty_pairing_token_is_invalid",
+  "node/integration::front_door::rename_and_delete_change_the_listed_profile",
+  "testnet/integration::spec_network::demo_pin_from_the_cli",
+  "testnet/integration::spec_network::a_pairing_rerun_after_the_daemon_restarts_opens_a_fresh_window",
   "amux/bin:amux::tests::a_demo_window_needs_its_pin_and_its_length",
 ]
 
@@ -598,17 +601,17 @@ source = "testing page"
 section = "Boundaries"
 claim = "Many daemons: production runtimes enforce discovery and trust, routing, subscription, entitlement, revocation and blob contracts."
 tests = [
-  "testnet/spec_network::a_key_that_does_not_match_the_pinned_one_is_refused",
-  "testnet/spec_network::a_pairing_that_replaces_a_hosts_key_closes_the_old_keys_live_link_first",
-  "testnet/spec_network::a_pairing_window_is_one_shot_attempt_capped_and_expires",
-  "testnet/spec_network::profiles_and_accounts_share_no_keys_windows_presence_or_administration",
-  "testnet/spec_network::revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_the_relay",
-  "testnet/spec_network::a_host_revoked_while_away_reads_the_desk_as_revoked_once_it_dials_through_the_relay",
-  "testnet/spec_network::hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tcp",
-  "testnet/spec_network::malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_carries_on",
-  "testnet/spec_network::a_subscriber_that_stops_reading_is_closed_while_one_beside_it_keeps_its_stream",
-  "testnet/spec_network::a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pro",
-  "testnet/spec_replication::blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the_reader",
+  "testnet/integration::spec_network::a_key_that_does_not_match_the_pinned_one_is_refused",
+  "testnet/integration::spec_network::a_pairing_that_replaces_a_hosts_key_closes_the_old_keys_live_link_first",
+  "testnet/integration::spec_network::a_pairing_window_is_one_shot_attempt_capped_and_expires",
+  "testnet/integration::spec_network::profiles_and_accounts_share_no_keys_windows_presence_or_administration",
+  "testnet/integration::spec_network::revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_the_relay",
+  "testnet/integration::spec_network::a_host_revoked_while_away_reads_the_desk_as_revoked_once_it_dials_through_the_relay",
+  "testnet/integration::spec_network::hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tcp",
+  "testnet/integration::spec_network::malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_carries_on",
+  "testnet/integration::spec_network::a_subscriber_that_stops_reading_is_closed_while_one_beside_it_keeps_its_stream",
+  "testnet/integration::spec_network::a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pro",
+  "testnet/integration::spec_replication::blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the_reader",
 ]
 
 [[contract]]
@@ -617,12 +620,12 @@ source = "testing page"
 section = "Boundaries"
 claim = "Many daemons: every host reaches every host it trusts over one end-to-end QUIC link pinned at pairing, whatever path carries it; one agent's session is reached and streamed live on the same network, through the relay over UDP, through the relay over TCP from a network that blocks UDP, over SSH into the far host's link socket (whose pinned handshake refuses a key it does not trust), through another daemon both hosts are paired with, and between hosts bound to IPv6 alone, and each host's link log names the path."
 tests = [
-  "testnet/spec_links::route_lan_reaches_a_session_on_the_same_network",
-  "testnet/spec_links::route_relay_udp_reaches_a_session_through_the_relays_forwarding",
-  "testnet/spec_links::route_relay_tcp_reaches_a_session_from_a_network_that_blocks_udp",
-  "testnet/spec_links::route_ssh_reaches_a_session_through_the_far_hosts_link_socket",
-  "testnet/spec_links::route_via_daemon_reaches_a_session_through_a_paired_host",
-  "testnet/spec_links::ipv6_only_hosts_link_and_stream_a_session",
+  "testnet/integration::spec_links::route_lan_reaches_a_session_on_the_same_network",
+  "testnet/integration::spec_links::route_relay_udp_reaches_a_session_through_the_relays_forwarding",
+  "testnet/integration::spec_links::route_relay_tcp_reaches_a_session_from_a_network_that_blocks_udp",
+  "testnet/integration::spec_links::route_ssh_reaches_a_session_through_the_far_hosts_link_socket",
+  "testnet/integration::spec_links::route_via_daemon_reaches_a_session_through_a_paired_host",
+  "testnet/integration::spec_links::ipv6_only_hosts_link_and_stream_a_session",
 ]
 
 [[contract]]
@@ -631,8 +634,8 @@ source = "testing page"
 section = "Boundaries"
 claim = "Many daemons: on a free account a host sees the account's hosts through the relay and reads them away, and the relay forwards nothing between them, while hosts that reach each other on one network or over SSH still do; a lapse mid-session stops forwarding at once, tells each end once, closes the link the relay carried and leaves both hosts reading each other away."
 tests = [
-  "testnet/spec_links::entitlement_free_sees_presence_and_carries_nothing_while_lan_and_ssh_reach",
-  "testnet/spec_links::entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once",
+  "testnet/integration::spec_links::entitlement_free_sees_presence_and_carries_nothing_while_lan_and_ssh_reach",
+  "testnet/integration::spec_links::entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once",
 ]
 
 [[contract]]
@@ -641,8 +644,8 @@ source = "testing page"
 section = "Boundaries"
 claim = "Many daemons: pairing through the relay is the same pinned-handshake pairing as on one network, carried by the relay's forwarding for a paid account, after which the link runs through the relay; on a free account the relay forwards no pairing, the attempt is refused for the plan and the responder's window stays open."
 tests = [
-  "testnet/spec_links::pairing_relay_paid_pairs_through_the_relay_and_reaches_a_session",
-  "testnet/spec_links::pairing_relay_free_refused_leaves_the_window_open",
+  "testnet/integration::spec_links::pairing_relay_paid_pairs_through_the_relay_and_reaches_a_session",
+  "testnet/integration::spec_links::pairing_relay_free_refused_leaves_the_window_open",
 ]
 
 [[contract]]
@@ -652,10 +655,10 @@ section = "Boundaries"
 claim = "Many daemons: a host's launch sends its first flight to every host it remembers; the first launch with no ticket for a host is a full handshake with no early data, a relaunch resumes with the ticket, its Hello and catch-up calls are accepted as 0-RTT data and its token skips the Retry, so the catch-up arrives within one round trip of its first packet, a host that lost its tickets refuses the early data and the same calls go again after the handshake, and a host that restarted keeping its tickets is still resumed; each launch's link log says whether the link resumed, how its early data fared and how long the catch-up took from the first packet. The phone's app does the same across its own launches: the first ever reaches its hosts by full handshakes, a relaunch resumes each with its early data accepted, and a launch after a host restarted still resumes it."
 tests = [
   "journey:phone/resume",
-  "testnet/spec_links::first_launch_full_handshake_costs_two_round_trips",
-  "testnet/spec_links::resume_accepted_catches_up_within_one_round_trip",
-  "testnet/spec_links::resume_rejected_resends_the_early_calls_after_the_handshake",
-  "testnet/spec_links::resume_after_host_restart_still_resumes",
+  "testnet/integration::spec_links::first_launch_full_handshake_costs_two_round_trips",
+  "testnet/integration::spec_links::resume_accepted_catches_up_within_one_round_trip",
+  "testnet/integration::spec_links::resume_rejected_resends_the_early_calls_after_the_handshake",
+  "testnet/integration::spec_links::resume_after_host_restart_still_resumes",
 ]
 
 [[contract]]
@@ -664,7 +667,7 @@ source = "testing page"
 section = "Boundaries"
 claim = "Many daemons: a host revoked while away that resumes with a ticket the revoking host gave it is refused with the revocation before anything it sent early is served, reads that host as revoked, and neither link log holds a link between the two."
 tests = [
-  "testnet/spec_links::revoked_ticket_refused_with_the_revocation",
+  "testnet/integration::spec_links::revoked_ticket_refused_with_the_revocation",
 ]
 
 [[contract]]
@@ -673,8 +676,8 @@ source = "testing page"
 section = "Boundaries"
 claim = "Many daemons: a launch's first flight through the relay leaves before the relay admits the host's own link; the relay holds those packets and lets them through on admission, and the link resumes through the relay; when the relay refuses the host's credential the held packets are dropped, nothing is sent for them to the destination or back, and no link comes up."
 tests = [
-  "testnet/spec_links::hold_buffer_released_on_admission_carries_the_first_flight",
-  "testnet/spec_links::hold_buffer_bad_token_drops_the_held_packets_unanswered",
+  "testnet/integration::spec_links::hold_buffer_released_on_admission_carries_the_first_flight",
+  "testnet/integration::spec_links::hold_buffer_bad_token_drops_the_held_packets_unanswered",
 ]
 
 [[contract]]
@@ -683,8 +686,8 @@ source = "testing page"
 section = "Boundaries"
 claim = "Many daemons: a relaunch presents the relay credential it kept and makes no call to the account service; a lapse at the account service is noticed at the next hourly refresh, when the relay stops forwarding, tells both ends, and each link log says the link went down."
 tests = [
-  "testnet/spec_links::token_relaunch_no_connect_reuses_the_kept_credential",
-  "testnet/spec_links::token_lapse_within_hour_is_noticed_at_the_hourly_refresh",
+  "testnet/integration::spec_links::token_relaunch_no_connect_reuses_the_kept_credential",
+  "testnet/integration::spec_links::token_lapse_within_hour_is_noticed_at_the_hourly_refresh",
 ]
 
 [[contract]]
@@ -693,10 +696,10 @@ source = "testing page"
 section = "Boundaries"
 claim = "Many daemons: two paid hosts behind ordinary imitated routers, with nothing between them but the relay, move their link from the relay onto a punched path to the address the relay saw each at; behind strict routers every probe is dropped and the link stays on the relay; hosts on a free account never learn where the relay sees each other, so nothing is punched; a lapse takes the punched path away. Each host's link log names the path at each step."
 tests = [
-  "testnet/spec_links::punch_ordinary_routers_move_the_link_onto_a_punched_path",
-  "testnet/spec_links::punch_strict_routers_keep_the_link_on_the_relay",
-  "testnet/spec_links::punch_free_never_probes_and_the_link_stays_on_the_lan",
-  "testnet/spec_links::punch_lapse_drops_the_punched_path",
+  "testnet/integration::spec_links::punch_ordinary_routers_move_the_link_onto_a_punched_path",
+  "testnet/integration::spec_links::punch_strict_routers_keep_the_link_on_the_relay",
+  "testnet/integration::spec_links::punch_free_never_probes_and_the_link_stays_on_the_lan",
+  "testnet/integration::spec_links::punch_lapse_drops_the_punched_path",
 ]
 
 [[contract]]
@@ -705,8 +708,8 @@ source = "testing page"
 section = "Boundaries"
 claim = "Many daemons: one subscription stays open while its link moves from the same network to the relay and back, and while a host's network changes under it, reading every line once with one opening and no reset, lag or detach, and the link never goes down; each host's link log names the path at each step."
 tests = [
-  "testnet/spec_links::path_change_lan_relay_lan_keeps_the_subscription_open",
-  "testnet/spec_links::path_change_phone_network_keeps_the_subscription_open",
+  "testnet/integration::spec_links::path_change_lan_relay_lan_keeps_the_subscription_open",
+  "testnet/integration::spec_links::path_change_phone_network_keeps_the_subscription_open",
 ]
 
 [[contract]]
@@ -715,22 +718,22 @@ source = "testing page"
 section = "Boundaries"
 claim = "Client model: an update returns the changed keys and what to fetch with no IO, clock or handles; keyed order and revisions never regress; an input reaches a settled, rejected or uncertain state; the result is the same under any arrival order. The window is bounded while the reader follows (the newest rows up to a cap, dropped from the top) and holds still while the reader is in history, with arrivals held apart and reported; the return releases them when they fit and otherwise reloads the head from a fresh tail; each client tells the model when its reader leaves and returns, and a following client pages nothing the cap would drop."
 tests = [
-  "ui-state/spec::properties::full_items_arriving_in_any_order_inside_the_window_give_the_same_state",
-  "ui-state/spec::properties::the_block_holds_through_following_reading_paging_and_reloads",
-  "ui-state/spec::following::following_drops_the_oldest_rows_past_the_cap_as_live_rows_arrive",
-  "ui-state/spec::following::reading_holds_arrivals_apart_and_reports_them",
-  "ui-state/spec::following::returning_releases_held_rows_that_fit_under_the_cap",
-  "ui-state/spec::following::returning_after_the_head_moved_on_reloads_it_from_a_fresh_tail",
-  "ui-state/spec::following::the_held_set_is_bounded_by_the_cap",
-  "ui-runtime/session::a_following_window_trims_to_its_cap_and_a_return_past_the_held_rows_reloads_the_head",
+  "ui-state/integration::spec::properties::full_items_arriving_in_any_order_inside_the_window_give_the_same_state",
+  "ui-state/integration::spec::properties::the_block_holds_through_following_reading_paging_and_reloads",
+  "ui-state/integration::spec::following::following_drops_the_oldest_rows_past_the_cap_as_live_rows_arrive",
+  "ui-state/integration::spec::following::reading_holds_arrivals_apart_and_reports_them",
+  "ui-state/integration::spec::following::returning_releases_held_rows_that_fit_under_the_cap",
+  "ui-state/integration::spec::following::returning_after_the_head_moved_on_reloads_it_from_a_fresh_tail",
+  "ui-state/integration::spec::following::the_held_set_is_bounded_by_the_cap",
+  "ui-runtime/integration::session::a_following_window_trims_to_its_cap_and_a_return_past_the_held_rows_reloads_the_head",
   "tui/lib::tests::the_view_tells_the_session_once_when_the_reader_leaves_and_once_when_it_returns",
   "tui/lib::tests::a_following_chat_under_live_rows_issues_no_page",
   "swift:AmuxCoreTests/ChatModelTests/testTheSessionIsToldWhenTheReaderLeavesAndReturns",
   "swift:AmuxCoreTests/ChatModelTests/testAFollowingChatUnderLiveRowsDropsTrimmedKeysAndAsksForNoPage",
   "swift:AmuxCoreTests/ChatModelTests/testRowsArrivingBelowAReaderWhoScrolledUpAreOfferedRatherThanFollowed",
-  "ui-state/spec::inputs::a_prompt_is_sent_then_settled_by_its_reflection",
-  "ui-state/spec::inputs::a_rejection_is_final_and_touches_no_row",
-  "ui-state/spec::runs::the_run_index_equals_a_rebuild_after_every_message",
+  "ui-state/integration::spec::inputs::a_prompt_is_sent_then_settled_by_its_reflection",
+  "ui-state/integration::spec::inputs::a_rejection_is_final_and_touches_no_row",
+  "ui-state/integration::spec::runs::the_run_index_equals_a_rebuild_after_every_message",
 ]
 
 [[contract]]
@@ -739,13 +742,13 @@ source = "testing page"
 section = "Boundaries"
 claim = "Store, effects, bridge: effects reach the intended service; identity and cancellation reach the right client; Swift decodes and applies the Rust view and command contract; the phone's embedded runtime is the daemon's runtime in process and no client opens a store."
 tests = [
-  "store/sqlite::rows_survive_a_reopen",
-  "client/seam::the_in_process_and_socket_clients_answer_alike",
-  "app-runtime/runtime::changes_wait_for_the_hosts_turn_and_rows_are_read_by_key",
+  "store/integration::sqlite::rows_survive_a_reopen",
+  "client/integration::seam::the_in_process_and_socket_clients_answer_alike",
+  "app-runtime/integration::runtime::changes_wait_for_the_hosts_turn_and_rows_are_read_by_key",
   "app-ffi/lib::tests::the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi",
-  "app-embedded/embedded::a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows",
+  "app-embedded/integration::embedded::a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows",
   "model/lib::tests::every_shared_value_has_a_schema_for_the_swift_mirrors",
-  "ui-runtime/session::closing_drops_the_stream_and_a_late_result_changes_nothing",
+  "ui-runtime/integration::session::closing_drops_the_stream_and_a_late_result_changes_nothing",
   "swift:AmuxCoreTests/RuntimeCoordinatorTests/testASecondAccountGetsItsOwnProfileAndBothStaySignedIn",
   "app-runtime/lib::schedules::a_hosts_keys_follow_the_window_through_every_schedule",
 ]
@@ -756,12 +759,12 @@ source = "testing page"
 section = "Boundaries"
 claim = "Views: each view is a pure function of the session state; row ids are item keys and never move; run membership is an attribute; attachments keep their positions."
 tests = [
-  "ui-view/goldens::claude_pty_view_goldens",
-  "ui-view/goldens::claude_sdk_view_goldens",
-  "ui-view/goldens::codex_view_goldens",
-  "ui-view/views::row_ids_never_move_and_rows_by_keys_equal_rows_by_range",
-  "ui-view/views::attachments_keep_their_positions",
-  "ui-view/views::unknown_renders_one_way",
+  "ui-view/integration::goldens::claude_pty_view_goldens",
+  "ui-view/integration::goldens::claude_sdk_view_goldens",
+  "ui-view/integration::goldens::codex_view_goldens",
+  "ui-view/integration::views::row_ids_never_move_and_rows_by_keys_equal_rows_by_range",
+  "ui-view/integration::views::attachments_keep_their_positions",
+  "ui-view/integration::views::unknown_renders_one_way",
 ]
 
 [[contract]]
@@ -770,8 +773,8 @@ source = "testing page"
 section = "Boundaries"
 claim = "Native presentation: the supplied view is drawn correctly and interaction produces the right command on that platform; paging fires while held rows still sit above the screen and asks for a larger page at an open collapsed run."
 tests = [
-  "tui/golden::every_vocabulary_component_matches_its_golden_in_both_themes",
-  "tui/frames::served_frames_match_their_goldens",
+  "tui/integration::golden::every_vocabulary_component_matches_its_golden_in_both_themes",
+  "tui/integration::frames::served_frames_match_their_goldens",
   "tui/lib::tests::fewer_than_a_page_of_held_rows_above_the_screen_asks_for_an_older_page",
   "tui/lib::tests::an_open_collapsed_run_at_the_top_asks_for_a_larger_page",
   "swift:AmuxComponentSnapshotTests/ComponentSnapshotTests/testComponents",
@@ -784,15 +787,15 @@ source = "testing page"
 section = "Boundaries"
 claim = "System composition: built binaries and platform facilities launch, connect, survive or terminate as promised and clean up what they own."
 tests = [
-  "amux/process::a_daemon_killed_mid_turn_loses_nothing",
-  "amux/agent_process::a_codex_agent_outlives_its_daemon_and_resumes",
-  "amux/agent_process::a_terminal_claude_agent_outlives_its_daemon_and_resumes",
-  "amux/attach::terminal_claude_attaches_twice_takes_keys_and_a_resize_and_detaches",
-  "node/registry::the_installation_lock_admits_one_daemon",
-  "node/registry::a_stop_and_a_kill_end_the_process_and_record_why",
-  "agent/lifecycle::a_stop_cancels_the_turn_under_an_open_ask_and_exits_stopped",
-  "node/supervisor::the_amux_daemon_exits_when_its_supervisor_dies",
-  "amux/supervise_cli::the_supervisor_holds_the_sleep_assertion_under_keep_awake",
+  "amux/integration::process::a_daemon_killed_mid_turn_loses_nothing",
+  "amux/integration::agent_process::a_codex_agent_outlives_its_daemon_and_resumes",
+  "amux/integration::agent_process::a_terminal_claude_agent_outlives_its_daemon_and_resumes",
+  "amux/integration::attach::terminal_claude_attaches_twice_takes_keys_and_a_resize_and_detaches",
+  "node/integration::registry::the_installation_lock_admits_one_daemon",
+  "node/integration::registry::a_stop_and_a_kill_end_the_process_and_record_why",
+  "agent/integration::lifecycle::a_stop_cancels_the_turn_under_an_open_ask_and_exits_stopped",
+  "node/integration::supervisor::the_amux_daemon_exits_when_its_supervisor_dies",
+  "amux/integration::supervise_cli::the_supervisor_holds_the_sleep_assertion_under_keep_awake",
 ]
 
 [[contract]]
@@ -814,8 +817,8 @@ source = "testing page"
 section = "Testnet"
 claim = "The door is held to capability parity: an explicit command-to-capability map is validated by a test."
 tests = [
-  "testnet/harness::every_door_verb_maps_to_one_capability_and_the_crate_docs_list_the_same_map",
-  "testnet/harness::the_door_serves_a_topology_to_a_real_client_once_it_publishes_readiness",
+  "testnet/integration::harness::every_door_verb_maps_to_one_capability_and_the_crate_docs_list_the_same_map",
+  "testnet/integration::harness::the_door_serves_a_topology_to_a_real_client_once_it_publishes_readiness",
 ]
 
 [[contract]]
@@ -824,8 +827,8 @@ source = "testing page"
 section = "Time and absence"
 claim = "A stuck predicate fails rather than passing at its deadline, and a broken observer is rejected."
 tests = [
-  "testnet/harness_stories::a_stuck_observation_fails_at_its_deadline_and_a_closed_one_at_once",
-  "testnet/harness::the_polling_waiters_fail_on_a_false_a_broken_or_a_hung_check",
+  "testnet/integration::harness_stories::a_stuck_observation_fails_at_its_deadline_and_a_closed_one_at_once",
+  "testnet/integration::harness::the_polling_waiters_fail_on_a_false_a_broken_or_a_hung_check",
 ]
 
 [[contract]]
@@ -834,12 +837,12 @@ source = "testing page"
 section = "Time and absence"
 claim = "Every policy timer takes its clock as a parameter and is tested at its real boundary; the interpreter has no clock; transport is the only real-time seam."
 tests = [
-  "testnet/harness::every_daemon_sleeps_its_policy_timers_on_the_driven_clock",
-  "testnet/spec_edge::a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock",
+  "testnet/integration::harness::every_daemon_sleeps_its_policy_timers_on_the_driven_clock",
+  "testnet/integration::spec_edge::a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock",
   "node/lib::auth::jwt::tests::expiration_uses_the_injected_policy_clock",
-  "ui-runtime/session::the_end_of_the_stream_reconnects_on_the_sessions_clock_with_doubling_backoff",
-  "agent/lifecycle::with_no_daemon_the_agent_runs_its_first_prompt_then_drains_after_the_grace",
-  "node/supervisor::a_child_that_hangs_before_prepared_is_stopped_at_the_start_deadline_and_counted",
+  "ui-runtime/integration::session::the_end_of_the_stream_reconnects_on_the_sessions_clock_with_doubling_backoff",
+  "agent/integration::lifecycle::with_no_daemon_the_agent_runs_its_first_prompt_then_drains_after_the_grace",
+  "node/integration::supervisor::a_child_that_hangs_before_prepared_is_stopped_at_the_start_deadline_and_counted",
 ]
 
 # --- Testing page: journeys --------------------------------------------------
@@ -873,7 +876,7 @@ claim = "Leave and recover: the phone reopens a replica with the origin unreacha
 tests = [
   "journey:terminal/leave-and-recover",
   "journey:phone/leave-and-recover",
-  "amux/overlap::a_tui_of_the_previous_build_works_on_after_an_update",
+  "amux/integration::overlap::a_tui_of_the_previous_build_works_on_after_an_update",
 ]
 
 [[contract]]
@@ -917,8 +920,8 @@ source = "testing page"
 section = "Journeys"
 claim = "The terminal's native stories: a second attach, resize, escape and detach."
 tests = [
-  "amux/attach::terminal_claude_attaches_twice_takes_keys_and_a_resize_and_detaches",
-  "agent/attach::two_clients_read_terminal_claude_from_its_files_and_type_into_it",
+  "amux/integration::attach::terminal_claude_attaches_twice_takes_keys_and_a_resize_and_detaches",
+  "agent/integration::attach::two_clients_read_terminal_claude_from_its_files_and_type_into_it",
   "amux/bin:amux::attach::tests::a_leader_chord_ends_the_keys_and_says_where_to_go",
 ]
 
@@ -931,8 +934,8 @@ section = "Contracts from the CI repair"
 claim = "An ask opens on a fact and closes on a fact; no timer, quiet period or catch-up signal touches it."
 tests = [
   "interpret/lib::testkind::tests::asks_open_and_close_only_on_facts",
-  "ui-state/spec::asks::ask_closes_on_fact",
-  "ui-state/spec::asks::an_ask_is_drawn_before_caught_up_only_when_the_entry_says_needs_you",
+  "ui-state/integration::spec::asks::ask_closes_on_fact",
+  "ui-state/integration::spec::asks::an_ask_is_drawn_before_caught_up_only_when_the_entry_says_needs_you",
 ]
 
 [[contract]]
@@ -942,8 +945,8 @@ section = "Contracts from the CI repair"
 claim = "Two primitives with one owner each, lifecycle on the row and phase in the snapshot envelope, attention being phase needs_you; every snapshot field present with an explicit unknown."
 tests = [
   "interpret/lib::shared::tests::an_open_ask_outranks_every_other_phase",
-  "ui-state/spec::snapshot::the_envelope_carries_phase_queue_and_working_on",
-  "ui-state/spec::fleet::a_family_is_as_loud_as_its_loudest_descendant",
+  "ui-state/integration::spec::snapshot::the_envelope_carries_phase_queue_and_working_on",
+  "ui-state/integration::spec::fleet::a_family_is_as_loud_as_its_loudest_descendant",
   "interpret/lib::unknown::tests::every_snapshot_field_has_an_explicit_unknown",
 ]
 
@@ -953,8 +956,8 @@ source = "testing page"
 section = "Contracts from the CI repair"
 claim = "One host set from the inventory: trusted hosts with presence and discovery candidates with a trust field; a trusted host never leaves a snapshot for being unreachable; the discovery scope keeps test networks off real phones."
 tests = [
-  "testnet/spec_inventory::a_trusted_host_stays_in_every_snapshot_while_unreachable",
-  "testnet/spec_inventory::discovery_candidates_appear_only_from_the_same_scope",
+  "testnet/integration::spec_inventory::a_trusted_host_stays_in_every_snapshot_while_unreachable",
+  "testnet/integration::spec_inventory::discovery_candidates_appear_only_from_the_same_scope",
   "node/lib::discovery::tests::txt_encoding_carries_version_host_id_name_and_scope",
 ]
 
@@ -964,8 +967,8 @@ source = "testing page"
 section = "Contracts from the CI repair"
 claim = "A chat believes the Snapshot for what the agent is doing and the entry for whether it exists; the fleet reads the row alone."
 tests = [
-  "ui-state/spec::snapshot::the_chat_header_reads_the_snapshot_while_the_row_says_otherwise",
-  "ui-view/views::the_fleet_places_families_by_their_loudest_member_newest_first",
+  "ui-state/integration::spec::snapshot::the_chat_header_reads_the_snapshot_while_the_row_says_otherwise",
+  "ui-view/integration::views::the_fleet_places_families_by_their_loudest_member_newest_first",
 ]
 
 [[contract]]
@@ -974,8 +977,8 @@ source = "testing page"
 section = "Contracts from the CI repair"
 claim = "The agent exits on its child's exit and abandons its terminal reader; the daemon opens no terminal."
 tests = [
-  "agent/lifecycle::the_agent_exits_on_its_child_exit_while_a_straggler_holds_the_terminal",
-  "agent/attach::two_clients_read_terminal_claude_from_its_files_and_type_into_it",
+  "agent/integration::lifecycle::the_agent_exits_on_its_child_exit_while_a_straggler_holds_the_terminal",
+  "agent/integration::attach::two_clients_read_terminal_claude_from_its_files_and_type_into_it",
 ]
 
 # --- Provider protocols, fleet facts, plans and asks -------------------------
@@ -986,12 +989,12 @@ source = "invariant"
 section = "Provider protocols"
 claim = "Every message recorded from Claude and Codex, live captures included, decodes to a known type and encodes back to the same JSON; a message no type knows is Unknown, never an error, and fails the strict decode."
 tests = [
-  "codex-protocol/corpus::every_recorded_line_is_known",
-  "codex-protocol/corpus::every_recorded_line_encodes_back_to_the_same_json",
-  "codex-protocol/corpus::an_invented_method_is_unknown_and_fails_strict",
-  "claude-protocol/stream_corpus::every_recorded_line_is_known",
-  "claude-protocol/pty_corpus::every_recorded_row_and_payload_is_known",
-  "claude-protocol/pty_corpus::an_invented_row_or_payload_is_unknown_and_fails_strict",
+  "codex-protocol/integration::corpus::every_recorded_line_is_known",
+  "codex-protocol/integration::corpus::every_recorded_line_encodes_back_to_the_same_json",
+  "codex-protocol/integration::corpus::an_invented_method_is_unknown_and_fails_strict",
+  "claude-protocol/integration::stream_corpus::every_recorded_line_is_known",
+  "claude-protocol/integration::pty_corpus::every_recorded_row_and_payload_is_known",
+  "claude-protocol/integration::pty_corpus::an_invented_row_or_payload_is_unknown_and_fails_strict",
 ]
 
 [[contract]]
@@ -1000,10 +1003,10 @@ source = "invariant"
 section = "Provider protocols"
 claim = "Codex's own app attaches to a Codex agent's live app server, before its first turn too, and drives it beside amux with no locking: a prompt from the app shows in amux's chat and an approval is answered from either side."
 tests = [
-  "amux/codex_attach::codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux",
-  "provider-fakes/codex::socket::codexs_app_joins_a_thread_with_no_turn_once_it_is_read_with_its_turns",
-  "agent/providers::a_codex_agent_is_one_client_of_a_server_on_its_private_socket",
-  "agent/codex_thread_name::the_thread_is_named_after_the_agent_at_start_and_on_rename",
+  "amux/integration::codex_attach::codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux",
+  "provider-fakes/integration::codex::socket::codexs_app_joins_a_thread_with_no_turn_once_it_is_read_with_its_turns",
+  "agent/integration::providers::a_codex_agent_is_one_client_of_a_server_on_its_private_socket",
+  "agent/integration::codex_thread_name::the_thread_is_named_after_the_agent_at_start_and_on_rename",
 ]
 
 [[contract]]
@@ -1012,10 +1015,10 @@ source = "invariant"
 section = "Fleet"
 claim = "Every agent has a name, a word pair when none was given; its since-when moves only when its phase does, so home keeps its order while agents stream; families sit in their loudest member's section, newest first."
 tests = [
-  "node/agent_names::a_given_name_is_kept_and_a_missing_one_is_a_word_pair",
-  "node/agent_names::an_assigned_name_avoids_other_agents_and_the_repositorys_branches",
+  "node/integration::agent_names::a_given_name_is_kept_and_a_missing_one_is_a_word_pair",
+  "node/integration::agent_names::an_assigned_name_avoids_other_agents_and_the_repositorys_branches",
   "interpret/lib::shared::tests::since_when_moves_only_when_the_phase_changes",
-  "ui-view/views::the_fleet_places_families_by_their_loudest_member_newest_first",
+  "ui-view/integration::views::the_fleet_places_families_by_their_loudest_member_newest_first",
   "tui/lib::tests::home_keeps_its_order_while_agents_stream_and_moves_one_whose_turn_ended",
 ]
 
@@ -1025,8 +1028,8 @@ source = "invariant"
 section = "Session state"
 claim = "Headless Claude's compacting status is a hidden item with Claude's word kept, emitted ahead of the compaction row, and the activity line reads Compacting from it until the compaction lands."
 tests = [
-  "interpret/claude_sdk::compacting_status_is_an_item",
-  "ui-state/spec::activity::compacting_shows_until_the_compaction_lands",
+  "interpret/integration::claude_sdk::compacting_status_is_an_item",
+  "ui-state/integration::spec::activity::compacting_shows_until_the_compaction_lands",
 ]
 
 [[contract]]
@@ -1035,11 +1038,11 @@ source = "invariant"
 section = "Fleet"
 claim = "The fleet keeps one session per live agent, shared by home and the chat, so one agent never has two subscriptions; an exited agent has a session only while a chat shows it; home wakes for what is outside the rows; the phone closes and reopens every session with the foreground."
 tests = [
-  "ui-runtime/fleet::home_and_the_chat_share_one_session_per_live_agent_and_never_subscribe_twice",
-  "ui-runtime/fleet::an_agent_that_exits_loses_its_session_unless_a_chat_shows_it",
-  "ui-runtime/fleet::home_wakes_for_what_is_outside_the_rows_and_not_for_rows_that_leave_its_line",
-  "ui-runtime/fleet::home_wakes_when_a_working_agent_moves_to_its_next_step",
-  "app-runtime/runtime::a_chat_catches_up_after_the_app_returns_to_the_foreground",
+  "ui-runtime/integration::fleet::home_and_the_chat_share_one_session_per_live_agent_and_never_subscribe_twice",
+  "ui-runtime/integration::fleet::an_agent_that_exits_loses_its_session_unless_a_chat_shows_it",
+  "ui-runtime/integration::fleet::home_wakes_for_what_is_outside_the_rows_and_not_for_rows_that_leave_its_line",
+  "ui-runtime/integration::fleet::home_wakes_when_a_working_agent_moves_to_its_next_step",
+  "app-runtime/integration::runtime::a_chat_catches_up_after_the_app_returns_to_the_foreground",
 ]
 
 [[contract]]
@@ -1048,7 +1051,7 @@ source = "invariant"
 section = "Session state"
 claim = "A client holding nothing for an append's key drops the append, since it has let the item go and fetches it whole if it comes back into view; a held item at the wrong revision still fetches."
 tests = [
-  "ui-state/spec::window::an_append_for_a_key_not_held_is_dropped",
+  "ui-state/integration::spec::window::an_append_for_a_key_not_held_is_dropped",
 ]
 
 [[contract]]
@@ -1057,13 +1060,13 @@ source = "invariant"
 section = "Chat surroundings"
 claim = "The row carries the folder's git facts from start and after each turn; the header counts the comparison the person chose; Diff lists the changed files and builds a patch only when asked, and the overview groups them by folder without one."
 tests = [
-  "agent/lifecycle::the_snapshot_carries_the_folders_git_facts_from_start_and_after_each_turn",
-  "git-facts/facts::a_comparison_lists_each_file_and_builds_a_patch_only_when_asked",
-  "git-facts/facts::on_the_base_branch_its_uncommitted_work_is_what_is_on_the_branch",
-  "git-facts/facts::untracked_paths_past_the_command_line_limit_still_count",
+  "agent/integration::lifecycle::the_snapshot_carries_the_folders_git_facts_from_start_and_after_each_turn",
+  "git-facts/integration::facts::a_comparison_lists_each_file_and_builds_a_patch_only_when_asked",
+  "git-facts/integration::facts::on_the_base_branch_its_uncommitted_work_is_what_is_on_the_branch",
+  "git-facts/integration::facts::untracked_paths_past_the_command_line_limit_still_count",
   "tui/lib::tests::the_header_counts_the_comparison_chosen",
   "tui/lib::tests::the_overview_fetches_its_changed_files_once_per_comparison_and_totals",
-  "app-runtime/runtime::opening_the_overview_lists_the_changed_files_by_folder",
+  "app-runtime/integration::runtime::opening_the_overview_lists_the_changed_files_by_folder",
 ]
 
 [[contract]]
@@ -1072,9 +1075,9 @@ source = "invariant"
 section = "Interpreter"
 claim = "Each interpreter publishes the provider's background jobs as a list, and the list empties when the provider exits."
 tests = [
-  "interpret/claude_sdk::the_job_list_empties_when_headless_claude_exits",
-  "interpret/claude_pty::the_job_list_empties_when_terminal_claude_exits",
-  "interpret/codex::the_job_list_empties_when_codex_exits",
+  "interpret/integration::claude_sdk::the_job_list_empties_when_headless_claude_exits",
+  "interpret/integration::claude_pty::the_job_list_empties_when_terminal_claude_exits",
+  "interpret/integration::codex::the_job_list_empties_when_codex_exits",
   "tui/lib::tests::the_overview_lists_jobs_files_by_folder_and_usage_windows",
 ]
 
@@ -1084,8 +1087,8 @@ source = "invariant"
 section = "Interpreter"
 claim = "A command's output streams as appends to its own item while newer items open below it, and a command that prints without end keeps bounded state."
 tests = [
-  "interpret/codex::a_command_below_the_newest_item_streams_its_output_as_appends",
-  "interpret/codex::a_command_that_prints_without_end_keeps_bounded_state",
+  "interpret/integration::codex::a_command_below_the_newest_item_streams_its_output_as_appends",
+  "interpret/integration::codex::a_command_that_prints_without_end_keeps_bounded_state",
 ]
 
 [[contract]]
@@ -1094,15 +1097,15 @@ source = "invariant"
 section = "Catalogue"
 claim = "What an agent offers is a catalogue written as a blob of its directory and named by hash outside the snapshot, fetched once per hash by a chat on screen and never by home, passed through a replica byte for byte, kept by a replica while its current snapshot names it, and never displaced by an older one answering late; a host says what its providers offer with no agent running, and a new agent is configured from it."
 tests = [
-  "ui-state/spec::snapshot::an_older_catalogue_answering_late_never_replaces_the_one_the_snapshot_names",
-  "agent/providers::the_catalogue_a_snapshot_names_is_in_the_agent_directory",
-  "ui-runtime/fleet::a_chat_on_screen_fetches_its_catalogue_once_per_hash_and_home_never_does",
-  "node/catalogue::a_paired_host_reads_its_peers_catalogue_keeps_a_copy_and_follows_a_new_hash",
-  "node/catalogue::catalogue_with_unknown_field_keeps_its_hash_through_a_replica",
-  "node/catalogue::current_catalogue_is_pinned",
-  "node/catalogue::an_unknown_catalogue_is_not_found",
-  "node/host_catalogue::a_host_says_what_its_providers_offer_with_no_agent_running",
-  "interpret/claude_sdk::a_commands_changed_event_rebuilds_the_offered_commands",
+  "ui-state/integration::spec::snapshot::an_older_catalogue_answering_late_never_replaces_the_one_the_snapshot_names",
+  "agent/integration::providers::the_catalogue_a_snapshot_names_is_in_the_agent_directory",
+  "ui-runtime/integration::fleet::a_chat_on_screen_fetches_its_catalogue_once_per_hash_and_home_never_does",
+  "node/integration::catalogue::a_paired_host_reads_its_peers_catalogue_keeps_a_copy_and_follows_a_new_hash",
+  "node/integration::catalogue::catalogue_with_unknown_field_keeps_its_hash_through_a_replica",
+  "node/integration::catalogue::current_catalogue_is_pinned",
+  "node/integration::catalogue::an_unknown_catalogue_is_not_found",
+  "node/integration::host_catalogue::a_host_says_what_its_providers_offer_with_no_agent_running",
+  "interpret/integration::claude_sdk::a_commands_changed_event_rebuilds_the_offered_commands",
   "tui/lib::tests::a_new_agent_offers_what_its_host_offers",
   "tui/lib::tests::a_new_agent_says_when_its_provider_is_not_signed_in",
 ]
@@ -1113,10 +1116,10 @@ source = "invariant"
 section = "Catalogue"
 claim = "Permission and mode are set only to values the agent offers; shift+tab moves through modes where the agent has them and through the permissions that still ask otherwise; Codex settings matching no named permission read custom."
 tests = [
-  "interpret/claude_sdk::a_permission_claude_does_not_offer_is_refused",
-  "interpret/claude_sdk::claude_offers_never_ask_only_when_launched_allowing_it",
-  "interpret/codex::the_settings_notice_names_the_mode_and_who_answers_approvals",
-  "interpret/codex::a_mode_chosen_at_creation_is_set_by_the_first_turn",
+  "interpret/integration::claude_sdk::a_permission_claude_does_not_offer_is_refused",
+  "interpret/integration::claude_sdk::claude_offers_never_ask_only_when_launched_allowing_it",
+  "interpret/integration::codex::the_settings_notice_names_the_mode_and_who_answers_approvals",
+  "interpret/integration::codex::a_mode_chosen_at_creation_is_set_by_the_first_turn",
   "tui/lib::tests::shift_tab_moves_claude_to_the_next_permission_that_still_asks",
   "tui/lib::tests::codex_moves_mode_with_shift_tab_and_permission_from_the_settings_key",
   "tui/lib::tests::codex_settings_outside_every_permission_read_custom",
@@ -1128,10 +1131,10 @@ source = "invariant"
 section = "Plans and asks"
 claim = "A plan is an item with its typed verdict for every kind, decided from amux or from Codex's own app; the file Claude writes its plan to draws nothing."
 tests = [
-  "interpret/claude_sdk::plans_are_items_with_their_verdict",
-  "interpret/claude_pty::plans_are_items_with_their_verdict",
-  "interpret/codex::plans_open_a_decision_amux_answers",
-  "interpret/codex::a_plan_is_decided_from_codexs_own_app",
+  "interpret/integration::claude_sdk::plans_are_items_with_their_verdict",
+  "interpret/integration::claude_pty::plans_are_items_with_their_verdict",
+  "interpret/integration::codex::plans_open_a_decision_amux_answers",
+  "interpret/integration::codex::a_plan_is_decided_from_codexs_own_app",
   "tui/lib::tests::a_plan_reads_under_its_heading_and_folds_once_decided",
   "journey:terminal/decide-plan-codex",
   "journey:phone/decide-plan-codex",
@@ -1143,11 +1146,11 @@ source = "invariant"
 section = "Plans and asks"
 claim = "A question can be skipped, noted and replied to instead, for every kind, a lone question too; the provider's own dialogs, such as terminal Claude's folder trust, take neither."
 tests = [
-  "interpret/claude_sdk::questions_are_skipped_noted_or_replied_to",
-  "interpret/codex::questions_are_skipped_noted_or_replied_to",
-  "interpret/claude_pty::a_question_of_several_can_be_skipped",
-  "interpret/claude_pty::a_question_takes_a_reply_instead",
-  "agent/providers::terminal_claude_leaves_a_skipped_question_out_of_its_answers",
+  "interpret/integration::claude_sdk::questions_are_skipped_noted_or_replied_to",
+  "interpret/integration::codex::questions_are_skipped_noted_or_replied_to",
+  "interpret/integration::claude_pty::a_question_of_several_can_be_skipped",
+  "interpret/integration::claude_pty::a_question_takes_a_reply_instead",
+  "agent/integration::providers::terminal_claude_leaves_a_skipped_question_out_of_its_answers",
   "tui/lib::tests::terminal_claude_takes_a_skip_and_a_note_on_any_question",
   "tui/lib::tests::a_question_is_noted_with_tab_and_the_next_skipped",
   "tui/lib::tests::a_question_is_replied_to_instead_with_what_was_answered_so_far",
@@ -1161,8 +1164,8 @@ source = "worked failure"
 section = "Sending"
 claim = "A send to another host with no link never leaves and is rejected; one cut off after it left reads may not have arrived, and settles once the link returns, arriving once."
 tests = [
-  "node/forwarded_send::a_send_with_no_link_never_leaves_and_is_rejected",
-  "node/forwarded_send::a_send_cut_off_after_it_left_is_uncertain_and_arrives_once",
+  "node/integration::forwarded_send::a_send_with_no_link_never_leaves_and_is_rejected",
+  "node/integration::forwarded_send::a_send_cut_off_after_it_left_is_uncertain_and_arrives_once",
   "tui/lib::tests::an_unconfirmed_prompt_offers_resend_and_discard",
   "journey:terminal/send-rejected",
   "journey:terminal/send-may-not-have-arrived",
@@ -1174,9 +1177,9 @@ source = "invariant"
 section = "Sending"
 claim = "A new agent can start in a fresh git worktree branched from what its folder has checked out; an existing branch or folder is refused rather than reused."
 tests = [
-  "git-facts/facts::a_worktree_branches_from_what_the_folder_has_checked_out",
-  "git-facts/facts::a_worktree_is_refused_rather_than_reusing_a_branch_or_a_folder",
-  "app-runtime/runtime::a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own",
+  "git-facts/integration::facts::a_worktree_branches_from_what_the_folder_has_checked_out",
+  "git-facts/integration::facts::a_worktree_is_refused_rather_than_reusing_a_branch_or_a_folder",
+  "app-runtime/integration::runtime::a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own",
   "journey:terminal/new-agent-worktree",
 ]
 
@@ -1185,7 +1188,7 @@ id = "terminal-wait-fails-fast"
 source = "testing page"
 section = "Time and absence"
 claim = "A terminal test whose wait fails ends instead of hanging."
-tests = ["amux/term_fails_fast::a_failing_terminal_wait_ends_its_test"]
+tests = ["amux/integration::term_fails_fast::a_failing_terminal_wait_ends_its_test"]
 
 # --- Models ------------------------------------------------------------------
 
@@ -1193,9 +1196,9 @@ tests = ["amux/term_fails_fast::a_failing_terminal_wait_ends_its_test"]
 id = "replication-store-never-refuses"
 source = "model"
 property = { crate = "models", machine = "replication", sentence = "the store never refuses a write" }
-checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+checker = "models/integration::replication::every_replication_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_replication::a_replica_is_carried_compressed",
+  "testnet/integration::spec_replication::a_replica_is_carried_compressed",
   "journey:terminal/leave-and-recover",
   "journey:phone/leave-and-recover",
 ]
@@ -1204,34 +1207,34 @@ tests = [
 id = "replication-cores-never-dump"
 source = "model"
 property = { crate = "models", machine = "replication", sentence = "the cores never ask for a dump" }
-checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+checker = "models/integration::replication::every_replication_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_replication::a_replica_is_carried_compressed",
-  "testnet/spec_replication::blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the_reader",
+  "testnet/integration::spec_replication::a_replica_is_carried_compressed",
+  "testnet/integration::spec_replication::blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the_reader",
 ]
 
 [[contract]]
 id = "replication-block-contiguous"
 source = "model"
 property = { crate = "models", machine = "replication", sentence = "the block is contiguous: under the origin's generation, every row the origin holds between the block's oldest and newest rows is in the block" }
-checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+checker = "models/integration::replication::every_replication_promise_holds_at_ci_bounds"
 tests = [
   "journey:terminal/leave-and-recover",
   "journey:phone/leave-and-recover",
-  "store/conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
-  "testnet/harness::the_block_invariant_holds_at_the_origin_and_catches_a_replica_with_a_hole",
+  "store/integration::conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
+  "testnet/integration::harness::the_block_invariant_holds_at_the_origin_and_catches_a_replica_with_a_hole",
   "testnet/lib::invariant::tests::empty_and_whole_tails_pass_and_holes_stale_rows_and_short_tops_fail",
-  "testnet/replication_stories::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
-  "testnet/spec_replication::trimming_after_a_reset_keeps_the_block_whole_and_runs_on_the_retention_interval",
+  "testnet/integration::replication_stories::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
+  "testnet/integration::spec_replication::trimming_after_a_reset_keeps_the_block_whole_and_runs_on_the_retention_interval",
 ]
 
 [[contract]]
 id = "replication-block-agrees"
 source = "model"
 property = { crate = "models", machine = "replication", sentence = "the block agrees with the origin: under the origin's generation, every row of the block the origin still holds is the origin's row at that order, or an older revision of it" }
-checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+checker = "models/integration::replication::every_replication_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_replication::a_replica_is_carried_compressed",
+  "testnet/integration::spec_replication::a_replica_is_carried_compressed",
   "journey:terminal/leave-and-recover",
   "journey:phone/leave-and-recover",
 ]
@@ -1240,22 +1243,22 @@ tests = [
 id = "replication-no-other-generation"
 source = "model"
 property = { crate = "models", machine = "replication", sentence = "no row survives from another generation: under the origin's generation, every row the replica stores at an order the origin holds is that order's key, no newer than the origin's, and a key the origin has since moved to a later order is an older revision of it" }
-checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+checker = "models/integration::replication::every_replication_promise_holds_at_ci_bounds"
 tests = [
   "journey:terminal/leave-and-recover",
   "journey:phone/leave-and-recover",
-  "store/conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
-  "testnet/spec_replication::a_rewound_origin_resets_every_source_that_resumes_under_its_old_generation",
-  "testnet/spec_replication::a_rewound_origin_resets_a_settled_replica_too",
+  "store/integration::conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
+  "testnet/integration::spec_replication::a_rewound_origin_resets_every_source_that_resumes_under_its_old_generation",
+  "testnet/integration::spec_replication::a_rewound_origin_resets_a_settled_replica_too",
 ]
 
 [[contract]]
 id = "replication-cursor-complete"
 source = "model"
 property = { crate = "models", machine = "replication", sentence = "the cursor is complete: under the origin's generation, the replica holds every row of its block's range that the origin revised at or below the cursor" }
-checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+checker = "models/integration::replication::every_replication_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_replication::a_replica_is_carried_compressed",
+  "testnet/integration::spec_replication::a_replica_is_carried_compressed",
   "journey:terminal/leave-and-recover",
   "journey:phone/leave-and-recover",
 ]
@@ -1264,9 +1267,9 @@ tests = [
 id = "replication-quiet-becomes-current"
 source = "model"
 property = { crate = "models", machine = "replication", sentence = "a replica whose origin and link fall quiet becomes current" }
-checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+checker = "models/integration::replication::every_replication_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_replication::a_replica_is_carried_compressed",
+  "testnet/integration::spec_replication::a_replica_is_carried_compressed",
   "journey:terminal/leave-and-recover",
   "journey:phone/leave-and-recover",
 ]
@@ -1275,31 +1278,31 @@ tests = [
 id = "presence-from-links"
 source = "model"
 property = { crate = "models", machine = "presence and routing", sentence = "presence from links: a host reads online exactly while a link of its own is up, away only while none is and the relay's refusal for the account's plan is the last word on it, and offline otherwise" }
-checker = "models/presence::every_presence_promise_holds_at_ci_bounds"
+checker = "models/integration::presence::every_presence_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_network::a_lapsed_account_stops_carrying_calls_the_relay_carried_while_it_was_pro",
-  "testnet/spec_network::a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once",
-  "testnet/spec_links::entitlement_free_sees_presence_and_carries_nothing_while_lan_and_ssh_reach",
-  "testnet/spec_links::entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once",
+  "testnet/integration::spec_network::a_lapsed_account_stops_carrying_calls_the_relay_carried_while_it_was_pro",
+  "testnet/integration::spec_network::a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once",
+  "testnet/integration::spec_links::entitlement_free_sees_presence_and_carries_nothing_while_lan_and_ssh_reach",
+  "testnet/integration::spec_links::entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once",
   "daemon-core/lib::presence::tests::a_forward_refused_after_the_forwarder_let_the_host_go_says_nothing",
   "daemon-core/lib::presence::tests::a_forwarder_holding_no_link_to_the_host_reads_it_offline_at_once",
-  "tui/frames::a_prompt_held_when_no_call_reaches_its_host_goes_once_one_does",
+  "tui/integration::frames::a_prompt_held_when_no_call_reaches_its_host_goes_once_one_does",
 ]
 
 [[contract]]
 id = "presence-working-route-reads-online"
 source = "model"
 property = { crate = "models", machine = "presence and routing", sentence = "a host with a working route eventually reads online: once the world stops changing and the shell's dials come to rest, a host that a forwarder carries reads online" }
-checker = "models/presence::every_presence_promise_holds_at_ci_bounds"
+checker = "models/integration::presence::every_presence_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_network::a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in",
+  "testnet/integration::spec_network::a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in",
 ]
 
 [[contract]]
 id = "path-carries-only-answered"
 source = "model"
 property = { crate = "models", machine = "path machine", sentence = "a path carries the link only after a probe on it was answered, the first flight's copies aside" }
-checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
+checker = "models/integration::path::every_path_machine_promise_holds_at_ci_bounds"
 tests = [
   "path-core/lib::tests::the_first_flight_goes_on_every_candidate_until_a_probe_answers",
 ]
@@ -1308,38 +1311,38 @@ tests = [
 id = "path-no-cross-network-after-lapse"
 source = "model"
 property = { crate = "models", machine = "path machine", sentence = "after a lapse no packet goes on a path across networks" }
-checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
+checker = "models/integration::path::every_path_machine_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_links::punch_free_never_probes_and_the_link_stays_on_the_lan",
-  "testnet/spec_links::punch_lapse_drops_the_punched_path",
-  "testnet/spec_links::entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once",
+  "testnet/integration::spec_links::punch_free_never_probes_and_the_link_stays_on_the_lan",
+  "testnet/integration::spec_links::punch_lapse_drops_the_punched_path",
+  "testnet/integration::spec_links::entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once",
 ]
 
 [[contract]]
 id = "path-a-working-path-is-used"
 source = "model"
 property = { crate = "models", machine = "path machine", sentence = "if any path works the link eventually uses one" }
-checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
+checker = "models/integration::path::every_path_machine_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_links::path_change_lan_relay_lan_keeps_the_subscription_open",
-  "testnet/spec_links::path_change_phone_network_keeps_the_subscription_open",
+  "testnet/integration::spec_links::path_change_lan_relay_lan_keeps_the_subscription_open",
+  "testnet/integration::spec_links::path_change_phone_network_keeps_the_subscription_open",
 ]
 
 [[contract]]
 id = "path-direct-eventually-chosen"
 source = "model"
 property = { crate = "models", machine = "path machine", sentence = "a direct path that keeps answering is eventually chosen" }
-checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
+checker = "models/integration::path::every_path_machine_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_links::punch_ordinary_routers_move_the_link_onto_a_punched_path",
-  "testnet/spec_links::path_change_lan_relay_lan_keeps_the_subscription_open",
+  "testnet/integration::spec_links::punch_ordinary_routers_move_the_link_onto_a_punched_path",
+  "testnet/integration::spec_links::path_change_lan_relay_lan_keeps_the_subscription_open",
 ]
 
 [[contract]]
 id = "path-no-swing"
 source = "model"
 property = { crate = "models", machine = "path machine", sentence = "the link never leaves a working path for another within the hold-down" }
-checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
+checker = "models/integration::path::every_path_machine_promise_holds_at_ci_bounds"
 tests = [
   "path-core/lib::tests::the_link_never_leaves_a_working_path_for_one_of_the_same_kind",
   "path-core/lib::tests::a_path_that_stops_answering_is_left_at_once_hold_down_or_not",
@@ -1349,16 +1352,16 @@ tests = [
 id = "path-relay-ready-while-direct"
 source = "model"
 property = { crate = "models", machine = "path machine", sentence = "the relay path stays ready while the link is direct" }
-checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
+checker = "models/integration::path::every_path_machine_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_links::path_change_lan_relay_lan_keeps_the_subscription_open",
+  "testnet/integration::spec_links::path_change_lan_relay_lan_keeps_the_subscription_open",
 ]
 
 [[contract]]
 id = "path-prefers-ipv6-as-near"
 source = "model"
 property = { crate = "models", machine = "path machine", sentence = "of two addresses as near, the link never chooses the IPv4 one while the IPv6 one works" }
-checker = "models/path::every_path_machine_promise_holds_at_ci_bounds"
+checker = "models/integration::path::every_path_machine_promise_holds_at_ci_bounds"
 tests = [
   "path-core/lib::tests::of_two_addresses_as_near_the_link_chooses_the_ipv6_one",
 ]
@@ -1367,7 +1370,7 @@ tests = [
 id = "relay-one-direct-link-latest-life"
 source = "model"
 property = { crate = "models", machine = "relay forwarding", sentence = "a host holds at most one direct link here, and none of an earlier life beside one of its latest" }
-checker = "models/relay::every_relay_forwarding_promise_holds_for_a_daemon_forwarding_at_ci_bounds"
+checker = "models/integration::relay::every_relay_forwarding_promise_holds_for_a_daemon_forwarding_at_ci_bounds"
 tests = [
   "node/lib::routing::link_registry::tests::a_link_from_a_new_runtime_instance_replaces_the_old_one_in_either_direction",
   "relay-core/lib::tests::a_displaced_direct_link_hands_its_pairs_to_the_link_replacing_it",
@@ -1377,7 +1380,7 @@ tests = [
 id = "relay-crossed-dial-keeps-preferred"
 source = "model"
 property = { crate = "models", machine = "relay forwarding", sentence = "of a crossed dial both ends keep the preferred link" }
-checker = "models/relay::every_relay_forwarding_promise_holds_for_a_daemon_forwarding_at_ci_bounds"
+checker = "models/integration::relay::every_relay_forwarding_promise_holds_for_a_daemon_forwarding_at_ci_bounds"
 tests = [
   "node/lib::routing::link_registry::tests::one_runtime_instance_keeps_its_first_link_in_each_direction",
 ]
@@ -1386,40 +1389,40 @@ tests = [
 id = "relay-forwards-only-paid-pairs"
 source = "model"
 property = { crate = "models", machine = "relay forwarding", sentence = "packets flow between two links only while both are up, on one account and paid, or both pinned" }
-checker = "models/relay::every_relay_forwarding_promise_holds_at_ci_bounds"
+checker = "models/integration::relay::every_relay_forwarding_promise_holds_at_ci_bounds"
 tests = [
   "relay-core/lib::tests::a_paid_link_and_a_pinned_link_are_never_paired",
   "relay-core/lib::tests::a_daemon_forwards_between_its_pinned_links_whose_keys_neither_lapse_nor_expire",
-  "testnet/spec_links::route_via_daemon_reaches_a_session_through_a_paired_host",
-  "testnet/spec_links::pairing_relay_free_refused_leaves_the_window_open",
+  "testnet/integration::spec_links::route_via_daemon_reaches_a_session_through_a_paired_host",
+  "testnet/integration::spec_links::pairing_relay_free_refused_leaves_the_window_open",
 ]
 
 [[contract]]
 id = "relay-nothing-before-admission"
 source = "model"
 property = { crate = "models", machine = "relay forwarding", sentence = "nothing is forwarded for a link not yet admitted, held packets included" }
-checker = "models/relay::every_relay_forwarding_promise_holds_at_ci_bounds"
+checker = "models/integration::relay::every_relay_forwarding_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_links::hold_buffer_bad_token_drops_the_held_packets_unanswered",
+  "testnet/integration::spec_links::hold_buffer_bad_token_drops_the_held_packets_unanswered",
 ]
 
 [[contract]]
 id = "relay-lapse-tells-both"
 source = "model"
 property = { crate = "models", machine = "relay forwarding", sentence = "a lapse or expiry removes every pair through the link and tells both ends" }
-checker = "models/relay::every_relay_forwarding_promise_holds_at_ci_bounds"
+checker = "models/integration::relay::every_relay_forwarding_promise_holds_at_ci_bounds"
 tests = [
   "relay-core/lib::tests::a_lapse_to_free_ends_every_pair_through_the_link_and_tells_both_ends",
   "relay-core/lib::tests::an_expired_token_ends_every_pair_through_the_link_until_a_fresh_one_comes",
-  "testnet/spec_links::entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once",
-  "testnet/spec_links::token_lapse_within_hour_is_noticed_at_the_hourly_refresh",
+  "testnet/integration::spec_links::entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once",
+  "testnet/integration::spec_links::token_lapse_within_hour_is_noticed_at_the_hourly_refresh",
 ]
 
 [[contract]]
 id = "relay-told-only-own-account"
 source = "model"
 property = { crate = "models", machine = "relay forwarding", sentence = "a link is only told of other hosts on its own account, and only once admitted" }
-checker = "models/relay::every_relay_forwarding_promise_holds_at_ci_bounds"
+checker = "models/integration::relay::every_relay_forwarding_promise_holds_at_ci_bounds"
 tests = [
   "relay-core/lib::tests::a_new_link_is_told_the_difference_between_its_handshake_and_the_neighbors_there_are",
 ]
@@ -1428,7 +1431,7 @@ tests = [
 id = "socket-never-drops-a-known-peer"
 source = "model"
 property = { crate = "models", machine = "link socket", sentence = "a dialler never drops its peer's packets as coming from somewhere it does not know" }
-checker = "models/socket::every_link_socket_promise_holds_across_a_relaunch_at_ci_bounds"
+checker = "models/integration::socket::every_link_socket_promise_holds_across_a_relaunch_at_ci_bounds"
 tests = [
   "node/lib::link::socket::tests::socket_knows_a_host_probing_from_where_strays_came_from",
   "node/lib::link::socket::tests::socket_leaves_an_address_a_dial_is_unnamed_at_to_the_dial",
@@ -1439,7 +1442,7 @@ tests = [
 id = "socket-flight-follows-the-dial"
 source = "model"
 property = { crate = "models", machine = "link socket", sentence = "a dial's first flight has gone out on whatever path carries the dial" }
-checker = "models/socket::every_link_socket_promise_holds_across_a_relaunch_at_ci_bounds"
+checker = "models/integration::socket::every_link_socket_promise_holds_across_a_relaunch_at_ci_bounds"
 tests = [
   "node/lib::link::socket::tests::socket_sends_a_first_flight_again_where_an_arrival_moves_it",
   "node/lib::link::socket::tests::socket_sends_a_first_flight_again_where_its_forwarding_moves",
@@ -1451,7 +1454,7 @@ tests = [
 id = "socket-no-route-on-a-gone-forwarder"
 source = "model"
 property = { crate = "models", machine = "link socket", sentence = "no route stays on a forwarding link that has gone" }
-checker = "models/socket::every_link_socket_promise_holds_as_time_passes_at_ci_bounds"
+checker = "models/integration::socket::every_link_socket_promise_holds_as_time_passes_at_ci_bounds"
 tests = [
   "node/lib::link::socket::tests::removing_a_forwarding_link_unsets_the_paths_through_it",
   "node/lib::link::socket::tests::socket_keeps_a_silent_forwarder_while_its_link_is_up",
@@ -1461,7 +1464,7 @@ tests = [
 id = "socket-strays-bounded"
 source = "model"
 property = { crate = "models", machine = "link socket", sentence = "a socket holds no more peers than the hosts and addresses it has heard from" }
-checker = "models/socket::every_link_socket_promise_holds_across_a_relaunch_at_ci_bounds"
+checker = "models/integration::socket::every_link_socket_promise_holds_across_a_relaunch_at_ci_bounds"
 tests = [
   "node/lib::link::socket::tests::socket_peer_count_returns_to_its_baseline_after_a_burst_of_idle_senders",
 ]
@@ -1470,160 +1473,160 @@ tests = [
 id = "socket-relaunch-links"
 source = "model"
 property = { crate = "models", machine = "link socket", sentence = "once the world settles, the laptop's dial has linked at both ends, sending again only what was lost" }
-checker = "models/socket::every_link_socket_promise_holds_across_a_relaunch_at_ci_bounds"
+checker = "models/integration::socket::every_link_socket_promise_holds_across_a_relaunch_at_ci_bounds"
 tests = [
-  "testnet/spec_links::relaunch_on_the_same_port_links_every_time",
-  "testnet/spec_links::relaunch_after_a_kill_links_every_time",
-  "testnet/spec_links::relaunch_of_a_killed_process_links_every_time",
+  "testnet/integration::spec_links::relaunch_on_the_same_port_links_every_time",
+  "testnet/integration::spec_links::relaunch_after_a_kill_links_every_time",
+  "testnet/integration::spec_links::relaunch_of_a_killed_process_links_every_time",
 ]
 
 [[contract]]
 id = "lifecycle-exits-at-turn-end"
 source = "model"
 property = { crate = "models", machine = "agent lifecycle", sentence = "an agent exits only at a turn end or a drain deadline: the lifecycle decides to end an incarnation only as a turn ends, while no turn runs, or as its drain deadline passes" }
-checker = "models/lifecycle::every_lifecycle_promise_holds_for_a_one_shot_child_at_ci_bounds"
+checker = "models/integration::lifecycle::every_lifecycle_promise_holds_for_a_one_shot_child_at_ci_bounds"
 tests = [
-  "agent/lifecycle::with_no_daemon_the_agent_runs_its_first_prompt_then_drains_after_the_grace",
-  "agent/lifecycle::a_stop_cancels_the_turn_under_an_open_ask_and_exits_stopped",
+  "agent/integration::lifecycle::with_no_daemon_the_agent_runs_its_first_prompt_then_drains_after_the_grace",
+  "agent/integration::lifecycle::a_stop_cancels_the_turn_under_an_open_ask_and_exits_stopped",
 ]
 
 [[contract]]
 id = "lifecycle-one-shot-runs-its-follow-up"
 source = "model"
 property = { crate = "models", machine = "agent lifecycle", sentence = "a one-shot child runs a queued follow-up before exiting: when it decides it has finished, every input and message it accepted has been taken" }
-checker = "models/lifecycle::every_lifecycle_promise_holds_for_a_one_shot_child_at_ci_bounds"
+checker = "models/integration::lifecycle::every_lifecycle_promise_holds_for_a_one_shot_child_at_ci_bounds"
 tests = [
-  "agent/lifecycle::a_one_shot_terminal_child_runs_the_follow_up_it_typed_as_its_turn_ended",
+  "agent/integration::lifecycle::a_one_shot_terminal_child_runs_the_follow_up_it_typed_as_its_turn_ended",
 ]
 
 [[contract]]
 id = "supervisor-go-only-after-prepared"
 source = "model"
 property = { crate = "models", machine = "supervisor update", sentence = "everything before go is read-only apart from migration and generation: no daemon is told go before it has prepared" }
-checker = "models/supervisor::every_update_promise_holds_where_a_running_binary_can_be_replaced"
+checker = "models/integration::supervisor::every_update_promise_holds_where_a_running_binary_can_be_replaced"
 tests = [
-  "node/supervisor::installs_a_newer_signed_release_and_execs_it_keeping_pid_child_pipe_and_lock",
-  "amux/overlap::the_previous_build_reopens_a_store_the_new_one_migrated_before_prepared",
+  "node/integration::supervisor::installs_a_newer_signed_release_and_execs_it_keeping_pid_child_pipe_and_lock",
+  "amux/integration::overlap::the_previous_build_reopens_a_store_the_new_one_migrated_before_prepared",
 ]
 
 [[contract]]
 id = "supervisor-rollback-restores-previous"
 source = "model"
 property = { crate = "models", machine = "supervisor update", sentence = "a rollback restores the previous binary: it records the build it rolls back as rejected and puts back the binary that was at the path before the update" }
-checker = "models/supervisor::every_update_promise_holds_where_a_running_binary_can_be_replaced"
+checker = "models/integration::supervisor::every_update_promise_holds_where_a_running_binary_can_be_replaced"
 tests = [
-  "node/supervisor::k_starts_that_never_prepare_roll_back_and_the_rejected_build_is_skipped",
-  "node/supervisor::a_starting_supervisor_finishes_a_recorded_rollback",
+  "node/integration::supervisor::k_starts_that_never_prepare_roll_back_and_the_rejected_build_is_skipped",
+  "node/integration::supervisor::a_starting_supervisor_finishes_a_recorded_rollback",
 ]
 
 [[contract]]
 id = "supervisor-always-a-binary-that-starts"
 source = "model"
 property = { crate = "models", machine = "supervisor update", sentence = "there is always a binary that can start: something is at the path for the service manager to start, and it is a build whose daemon starts, or prev, which is, is kept beside it; except between the two renames of a Windows install or rollback, which empty the path, so a crash or power loss there leaves nothing to start" }
-checker = "models/supervisor::every_update_promise_holds_where_a_running_binary_can_be_replaced"
+checker = "models/integration::supervisor::every_update_promise_holds_where_a_running_binary_can_be_replaced"
 tests = [
-  "node/supervisor::a_starting_supervisor_deletes_a_prev_that_is_the_binary",
-  "node/supervisor::a_starting_supervisor_counts_failed_starts_against_prev_and_rolls_back",
+  "node/integration::supervisor::a_starting_supervisor_deletes_a_prev_that_is_the_binary",
+  "node/integration::supervisor::a_starting_supervisor_counts_failed_starts_against_prev_and_rolls_back",
 ]
 
 [[contract]]
 id = "commit-before-broadcast"
 source = "model"
 property = { crate = "models", machine = "single daemon", sentence = "commit before broadcast: every row a step answers is in the store once the step is done, at the revision answered or a later one the step wrote over it" }
-checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+checker = "models/integration::single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
 tests = [
-  "node/single_daemon::a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it",
+  "node/integration::single_daemon::a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it",
   "daemon-core/lib::ingest::tests::a_failed_commit_answers_nothing_and_says_why",
-  "node/single_daemon::a_failure_before_or_after_each_write_commit_and_cursor_step_changes_nothing",
-  "node/single_daemon::a_withdrawn_prompt_is_never_read_as_queued",
+  "node/integration::single_daemon::a_failure_before_or_after_each_write_commit_and_cursor_step_changes_nothing",
+  "node/integration::single_daemon::a_withdrawn_prompt_is_never_read_as_queued",
 ]
 
 [[contract]]
 id = "subscribe-open-is-one-cut"
 source = "model"
 property = { crate = "models", machine = "single daemon", sentence = "the open is one cut: an open subscriber has read every row the store holds exactly once, in the order the store revised them, and nothing else" }
-checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+checker = "models/integration::single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
 tests = [
-  "store/conformance::cut_reads_snapshot_rows_and_marker_together",
-  "node/single_daemon::a_withdrawn_prompt_is_never_read_as_queued",
+  "store/integration::conformance::cut_reads_snapshot_rows_and_marker_together",
+  "node/integration::single_daemon::a_withdrawn_prompt_is_never_read_as_queued",
 ]
 
 [[contract]]
 id = "single-daemon-reclaims-below-the-checkpoint"
 source = "model"
 property = { crate = "models", machine = "single daemon", sentence = "a segment is reclaimed only below the last checkpoint's cursor: the journal still holds every frame from the cursor the drive's store has" }
-checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+checker = "models/integration::single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
 tests = [
-  "node/single_daemon::segments_are_deleted_only_below_a_cursor_on_the_drive",
-  "journal/journal::segments_below_a_durable_cursor_are_reclaimable_except_the_kept_ones",
+  "node/integration::single_daemon::segments_are_deleted_only_below_a_cursor_on_the_drive",
+  "journal/integration::journal::segments_below_a_durable_cursor_are_reclaimable_except_the_kept_ones",
 ]
 
 [[contract]]
 id = "single-daemon-generation-bumps-after-unclean-reboot"
 source = "model"
 property = { crate = "models", machine = "single daemon", sentence = "the generation bumps after an unclean reboot: a start after the machine restarted under a daemon that had not shut down cleanly serves a higher generation than the run before" }
-checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+checker = "models/integration::single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
 tests = [
-  "node/single_daemon::power_loss_bumps_the_generation_and_re_ingests_from_the_durable_cursor",
-  "node/registry::the_generation_bumps_only_after_an_unclean_reboot",
+  "node/integration::single_daemon::power_loss_bumps_the_generation_and_re_ingests_from_the_durable_cursor",
+  "node/integration::registry::the_generation_bumps_only_after_an_unclean_reboot",
 ]
 
 [[contract]]
 id = "single-daemon-generation-bumps-only-after-unclean-reboot"
 source = "model"
 property = { crate = "models", machine = "single daemon", sentence = "the generation bumps only after an unclean reboot: a start after a crash on the same boot, or after a clean shutdown, serves the generation of the run before" }
-checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+checker = "models/integration::single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
 tests = [
-  "node/single_daemon::a_clean_reboot_bumps_nothing",
-  "node/registry::the_generation_bumps_only_after_an_unclean_reboot",
+  "node/integration::single_daemon::a_clean_reboot_bumps_nothing",
+  "node/integration::registry::the_generation_bumps_only_after_an_unclean_reboot",
 ]
 
 [[contract]]
 id = "single-daemon-checkpoint-reproduces-the-state"
 source = "model"
 property = { crate = "models", machine = "single daemon", sentence = "a checkpoint plus the inputs since reproduces the state: the core restored from the newest checkpoint and stepped through every input since, against the journal as each found it, is the live core, store and journal" }
-checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+checker = "models/integration::single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
 tests = [
-  "node/single_daemon::every_input_is_recorded_and_the_ring_starts_again_at_each_checkpoint",
+  "node/integration::single_daemon::every_input_is_recorded_and_the_ring_starts_again_at_each_checkpoint",
 ]
 
 [[contract]]
 id = "client-same-state-under-any-arrival-order"
 source = "model"
 property = { crate = "models", machine = "client", sentence = "same state under any arrival order: once the client is caught up with nothing on its way to it, it holds every item the daemon holds from the oldest order its stream opened with up, each at the daemon's newest revision, and nothing else; a row below that is the daemon's row at its order, at the newest revision or an older one" }
-checker = "models/client::every_client_promise_holds_at_ci_bounds"
+checker = "models/integration::client::every_client_promise_holds_at_ci_bounds"
 tests = [
-  "ui-state/spec::properties::full_items_arriving_in_any_order_inside_the_window_give_the_same_state",
-  "ui-state/spec::window::the_store_read_and_broadcast_overlap_is_deduped_by_key",
-  "ui-state/spec::window::a_live_row_below_the_window_is_dropped",
+  "ui-state/integration::spec::properties::full_items_arriving_in_any_order_inside_the_window_give_the_same_state",
+  "ui-state/integration::spec::window::the_store_read_and_broadcast_overlap_is_deduped_by_key",
+  "ui-state/integration::spec::window::a_live_row_below_the_window_is_dropped",
 ]
 
 [[contract]]
 id = "client-catch-up-plus-live"
 source = "model"
 property = { crate = "models", machine = "client", sentence = "catch-up plus live equals uninterrupted delivery at every cut: once caught up with nothing on its way, the client's rows from the oldest order its stream opened with up and its agent state read as those of a client that received every event uninterrupted" }
-checker = "models/client::every_client_promise_holds_at_ci_bounds"
+checker = "models/integration::client::every_client_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_replication::a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer",
-  "ui-runtime/node::a_session_over_the_socket_reconnects_across_a_daemon_restart",
+  "testnet/integration::spec_replication::a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer",
+  "ui-runtime/integration::node::a_session_over_the_socket_reconnects_across_a_daemon_restart",
 ]
 
 [[contract]]
 id = "client-replay-from-a-checkpoint"
 source = "model"
 property = { crate = "models", machine = "client", sentence = "replay from any checkpoint equals the whole: the session at a checkpoint, fed every message since, is the live session" }
-checker = "models/client::every_client_promise_holds_at_ci_bounds"
+checker = "models/integration::client::every_client_promise_holds_at_ci_bounds"
 tests = [
-  "ui-runtime/session::the_trace_is_bounded_and_replays_from_its_starting_state",
+  "ui-runtime/integration::session::the_trace_is_bounded_and_replays_from_its_starting_state",
 ]
 
 [[contract]]
 id = "client-uncertain-input-left-with-resend-and-discard"
 source = "model"
 property = { crate = "models", machine = "client", sentence = "an uncertain input absent at CaughtUp is left with resend and discard: an input whose send was lost leaves uncertain only once an item reflecting it or a queue listing it reached the client, and settles only on an item reflecting it" }
-checker = "models/client::every_client_promise_holds_at_ci_bounds"
+checker = "models/integration::client::every_client_promise_holds_at_ci_bounds"
 tests = [
-  "ui-state/spec::inputs::an_uncertain_input_found_in_the_queue_or_items_at_caught_up_resolves",
+  "ui-state/integration::spec::inputs::an_uncertain_input_found_in_the_queue_or_items_at_caught_up_resolves",
   "tui/lib::tests::an_unconfirmed_prompt_offers_resend_and_discard",
 ]
 
@@ -1631,79 +1634,79 @@ tests = [
 id = "client-window-is-one-block"
 source = "model"
 property = { crate = "models", machine = "client", sentence = "the window is one block: the rows a client holds have contiguous orders and every index names a held row" }
-checker = "models/client::every_client_promise_holds_at_ci_bounds"
+checker = "models/integration::client::every_client_promise_holds_at_ci_bounds"
 tests = [
-  "ui-state/spec::properties::the_block_holds_through_following_reading_paging_and_reloads",
-  "ui-state/spec::window::pages_extend_the_low_edge_and_never_the_top",
+  "ui-state/integration::spec::properties::the_block_holds_through_following_reading_paging_and_reloads",
+  "ui-state/integration::spec::window::pages_extend_the_low_edge_and_never_the_top",
 ]
 
 [[contract]]
 id = "family-no-child-deleted-by-a-stale-listing"
 source = "model"
 property = { crate = "models", machine = "family and deliveries", sentence = "no child is deleted by a stale listing: a child goes from its host only once its parent has gone from the parent's own host" }
-checker = "models/family::every_family_promise_holds_at_ci_bounds"
+checker = "models/integration::family::every_family_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/family_stories::a_far_child_whose_parent_was_deleted_while_its_host_was_away_is_deleted_on_return",
-  "testnet/spec_families::unpairing_the_parents_host_leaves_the_child_and_drops_its_owed_report",
+  "testnet/integration::family_stories::a_far_child_whose_parent_was_deleted_while_its_host_was_away_is_deleted_on_return",
+  "testnet/integration::spec_families::unpairing_the_parents_host_leaves_the_child_and_drops_its_owed_report",
 ]
 
 [[contract]]
 id = "family-outbox-row-deleted-only-on-accept"
 source = "model"
 property = { crate = "models", machine = "family and deliveries", sentence = "an outbox row is deleted only on accept: a report goes from the child's outbox only once the parent's process accepted it, or the parent is gone from its host, or the child's host unpaired from it" }
-checker = "models/family::every_family_promise_holds_at_ci_bounds"
+checker = "models/integration::family::every_family_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/family_stories::an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped",
-  "node/messaging::a_child_whose_parent_row_is_missing_keeps_its_row_until_the_parent_is_known",
+  "testnet/integration::family_stories::an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped",
+  "node/integration::messaging::a_child_whose_parent_row_is_missing_keeps_its_row_until_the_parent_is_known",
 ]
 
 [[contract]]
 id = "family-report-accepted-at-most-once"
 source = "model"
 property = { crate = "models", machine = "family and deliveries", sentence = "each report reaches its parent exactly once: no report is accepted by the parent's process twice" }
-checker = "models/family::every_family_promise_holds_at_ci_bounds"
+checker = "models/integration::family::every_family_promise_holds_at_ci_bounds"
 tests = [
-  "node/messaging::a_crash_between_hand_off_and_delete_yields_one_item",
-  "node/messaging::a_child_finishing_while_the_daemon_is_down_reaches_its_parent_once",
-  "testnet/spec_families::cross_host_family_journey",
+  "node/integration::messaging::a_crash_between_hand_off_and_delete_yields_one_item",
+  "node/integration::messaging::a_child_finishing_while_the_daemon_is_down_reaches_its_parent_once",
+  "testnet/integration::spec_families::cross_host_family_journey",
 ]
 
 [[contract]]
 id = "family-report-reaches-its-parent"
 source = "model"
 property = { crate = "models", machine = "family and deliveries", sentence = "each report reaches its parent exactly once: once the world rests, a report for the parent's live incarnation on a paired, linked host has been accepted by it" }
-checker = "models/family::every_family_promise_holds_at_ci_bounds"
+checker = "models/integration::family::every_family_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/family_stories::an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped",
-  "testnet/spec_families::cross_host_family_journey",
+  "testnet/integration::family_stories::an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped",
+  "testnet/integration::spec_families::cross_host_family_journey",
 ]
 
 [[contract]]
 id = "family-nothing-owed-after-unpair"
 source = "model"
 property = { crate = "models", machine = "family and deliveries", sentence = "nothing is owed after unpair: no report is handed to the parent's host once the child's host has unpaired from it" }
-checker = "models/family::every_family_promise_holds_at_ci_bounds"
+checker = "models/integration::family::every_family_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_families::unpairing_the_parents_host_leaves_the_child_and_drops_its_owed_report",
+  "testnet/integration::spec_families::unpairing_the_parents_host_leaves_the_child_and_drops_its_owed_report",
 ]
 
 [[contract]]
 id = "family-descendants-of-a-stopped-parent-stop"
 source = "model"
 property = { crate = "models", machine = "family and deliveries", sentence = "every descendant of a stopped parent eventually stops on every reachable host: once the world rests with the parent exited or deleted, a child on a paired, linked host is not running, unless it was made while its host had not caught up with its parent's host or held no row for the parent, and its parent's row there says nothing definitive: an orphan left to the later clean-up of leftover agents" }
-checker = "models/family::every_family_promise_holds_at_ci_bounds"
+checker = "models/integration::family::every_family_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/family_stories::stopping_a_parent_stops_every_descendant_on_every_host",
-  "testnet/family_stories::a_far_child_whose_parent_stopped_while_its_host_was_away_stops_on_return",
+  "testnet/integration::family_stories::stopping_a_parent_stops_every_descendant_on_every_host",
+  "testnet/integration::family_stories::a_far_child_whose_parent_stopped_while_its_host_was_away_stops_on_return",
 ]
 
 [[contract]]
 id = "client-generation-known"
 source = "model"
 property = { crate = "models", machine = "client", sentence = "a caught-up client knows the generation it holds: once caught up with nothing on its way, the client holds the generation of the daemon's rows, so a stream it reopens under that generation continues its window rather than rebuilding it" }
-checker = "models/client::every_client_promise_holds_at_ci_bounds"
+checker = "models/integration::client::every_client_promise_holds_at_ci_bounds"
 tests = [
-  "ui-state/spec::open::a_reopen_under_the_generation_a_live_reset_named_continues_the_window",
+  "ui-state/integration::spec::open::a_reopen_under_the_generation_a_live_reset_named_continues_the_window",
   "daemon-core/lib::sources::tests::a_catch_up_is_absorbed_whole_at_its_caught_up_and_only_then_answered",
 ]
 
@@ -1711,7 +1714,7 @@ tests = [
 id = "reset-swaps-at-caught-up"
 source = "model"
 property = { crate = "models", machine = "client", sentence = "same state under any arrival order: once the client is caught up with nothing on its way to it, it holds every item the daemon holds from the oldest order its stream opened with up, each at the daemon's newest revision, and nothing else; a row below that is the daemon's row at its order, at the newest revision or an older one" }
-checker = "models/client::every_client_promise_holds_at_ci_bounds"
+checker = "models/integration::client::every_client_promise_holds_at_ci_bounds"
 tests = [
   "swift:AmuxCoreTests/ChatModelTests/testAResetSwapsTheWholeSequenceInAtOnceAndFollowsTheNewestRow",
 ]
@@ -1720,17 +1723,17 @@ tests = [
 id = "window-contiguous"
 source = "model"
 property = { crate = "models", machine = "client", sentence = "the window is one block: the rows a client holds have contiguous orders and every index names a held row" }
-checker = "models/client::every_client_promise_holds_at_ci_bounds"
+checker = "models/integration::client::every_client_promise_holds_at_ci_bounds"
 tests = [
-  "ui-state/spec::window::page_and_live_overlap_dedupe_by_key",
-  "ui-state/spec::window::a_live_row_below_the_window_is_dropped",
+  "ui-state/integration::spec::window::page_and_live_overlap_dedupe_by_key",
+  "ui-state/integration::spec::window::a_live_row_below_the_window_is_dropped",
 ]
 
 [[contract]]
 id = "appends-touch-open-items"
 source = "model"
 property = { crate = "models", machine = "client", sentence = "same state under any arrival order: once the client is caught up with nothing on its way to it, it holds every item the daemon holds from the oldest order its stream opened with up, each at the daemon's newest revision, and nothing else; a row below that is the daemon's row at its order, at the newest revision or an older one" }
-checker = "models/client::every_client_promise_holds_at_ci_bounds"
+checker = "models/integration::client::every_client_promise_holds_at_ci_bounds"
 tests = [
   "interpret/lib::testkind::tests::invariants::appends_go_to_any_open_item_and_never_after_its_final",
 ]
@@ -1739,7 +1742,7 @@ tests = [
 id = "one-shot-child-exit-rule"
 source = "model"
 property = { crate = "models", machine = "agent lifecycle", sentence = "a one-shot child runs a queued follow-up before exiting: when it decides it has finished, every input and message it accepted has been taken" }
-checker = "models/lifecycle::every_lifecycle_promise_holds_for_a_one_shot_child_at_ci_bounds"
+checker = "models/integration::lifecycle::every_lifecycle_promise_holds_for_a_one_shot_child_at_ci_bounds"
 tests = [
   "interpret/lib::shared::tests::a_one_shot_agent_is_quiet_only_with_nothing_queued_running_or_pending",
 ]
@@ -1748,39 +1751,39 @@ tests = [
 id = "connection-drops-mid-catch-up"
 source = "model"
 property = { crate = "models", machine = "client", sentence = "catch-up plus live equals uninterrupted delivery at every cut: once caught up with nothing on its way, the client's rows from the oldest order its stream opened with up and its agent state read as those of a client that received every event uninterrupted" }
-checker = "models/client::every_client_promise_holds_at_ci_bounds"
+checker = "models/integration::client::every_client_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/spec_replication::a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer",
-  "store/conformance::a_delta_joins_above_and_only_live_records_move_the_cursor",
-  "ui-runtime/session::lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap",
+  "testnet/integration::spec_replication::a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer",
+  "store/integration::conformance::a_delta_joins_above_and_only_live_records_move_the_cursor",
+  "ui-runtime/integration::session::lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap",
 ]
 
 [[contract]]
 id = "single-daemon-early-calls-after-accept"
 source = "model"
 property = { crate = "models", machine = "single daemon", sentence = "early calls are served only after the core accepts the resumed identity" }
-checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+checker = "models/integration::single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
 tests = [
   "daemon-core/lib::links::tests::a_resumed_link_naming_the_key_pinned_for_its_peer_comes_up",
   "daemon-core/lib::links::tests::a_resumed_link_naming_a_key_not_pinned_is_refused_before_anything_rides_it",
-  "testnet/spec_links::resume_accepted_catches_up_within_one_round_trip",
+  "testnet/integration::spec_links::resume_accepted_catches_up_within_one_round_trip",
 ]
 
 [[contract]]
 id = "single-daemon-unpinned-never-answered"
 source = "model"
 property = { crate = "models", machine = "single daemon", sentence = "a host whose pin was removed never answers, resumed or not" }
-checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+checker = "models/integration::single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
 tests = [
   "daemon-core/lib::links::tests::a_resumed_link_naming_a_key_not_pinned_is_refused_before_anything_rides_it",
-  "testnet/spec_links::revoked_ticket_refused_with_the_revocation",
+  "testnet/integration::spec_links::revoked_ticket_refused_with_the_revocation",
 ]
 
 [[contract]]
 id = "single-daemon-replay-changes-nothing"
 source = "model"
 property = { crate = "models", machine = "single daemon", sentence = "replayed early data changes no state" }
-checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+checker = "models/integration::single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
 tests = [
   "daemon-core/lib::peers::tests::a_replayed_early_read_changes_nothing_the_store_holds",
 ]
@@ -1789,7 +1792,7 @@ tests = [
 id = "replication-early-calls-after-accept"
 source = "model"
 property = { crate = "models", machine = "replication", sentence = "early calls are served only after the core accepts the resumed identity" }
-checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+checker = "models/integration::replication::every_replication_promise_holds_at_ci_bounds"
 tests = [
   "daemon-core/lib::links::tests::a_resumed_link_naming_the_key_pinned_for_its_peer_comes_up",
 ]
@@ -1798,7 +1801,7 @@ tests = [
 id = "replication-replay-changes-nothing"
 source = "model"
 property = { crate = "models", machine = "replication", sentence = "replayed early data changes no state" }
-checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+checker = "models/integration::replication::every_replication_promise_holds_at_ci_bounds"
 tests = [
   "daemon-core/lib::peers::tests::a_replayed_early_read_changes_nothing_the_store_holds",
 ]

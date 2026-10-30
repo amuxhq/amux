@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "Pure content values both amux clients compose: chat rows, ask cards, the strip, the fleet and the review document"
 publish = false
+autotests = false
 
 [dependencies]
 attachments = { workspace = true }
@@ -18,3 +19,7 @@ wire = { workspace = true }
 interpret = { workspace = true }
 proptest = { workspace = true }
 prost = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

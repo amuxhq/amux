@@ -1,9 +1,13 @@
 import importlib.util
 from pathlib import Path
+import sys
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+# The catalogue imports its selection helper from beside itself.
+sys.path.insert(0, str(ROOT / "scripts"))
+import suites  # noqa: E402
 SPEC = importlib.util.spec_from_file_location(
     "tests_catalog", ROOT / "scripts" / "tests-catalog.py"
 )
@@ -17,29 +21,44 @@ class TestsCatalogTest(unittest.TestCase):
         errors, cargo, swift = catalog.validate(catalog.load_catalog())
 
         self.assertEqual(errors, [])
-        self.assertIn(("testnet", "test", "spec_network"), cargo)
+        self.assertIn(("testnet", "test", "integration::spec_network"), cargo)
         self.assertIn(("node", "lib", "node"), cargo)
         self.assertIn("AmuxUITests", swift)
 
-    def test_test_crate_recipe_cannot_name_an_unlisted_target(self):
+    def test_a_suite_recipe_runs_its_own_suite(self):
+        selectors = [{"package": "testnet", "modules": ["spec_links"]}]
         errors = []
-        catalog.validate_cargo_recipe(
-            "example",
-            "just test-crate testnet -- --test absent",
-            [
-                {
-                    "package": "testnet",
-                    "targets": ["spec"],
-                    "features": ["bundled"],
-                }
-            ],
-            errors,
-        )
+        catalog.validate_cargo_recipe("links", "just suite links", selectors, errors)
+        catalog.validate_cargo_recipe("links", "just suite stories", selectors, errors)
+        catalog.validate_cargo_recipe("links", "just test-store", selectors, errors)
+
+        self.assertEqual(errors, ["links: recipe runs suite 'stories', not its own"])
+
+    def test_a_suite_selects_its_modules_and_targets_and_nothing_else(self):
+        suite = {
+            "cargo": [
+                {"package": "amux", "kind": "bin", "targets": ["amux"], "features": ["bundled"]},
+                {"package": "amux", "modules": ["process", "attach"], "features": ["bundled"]},
+                {"package": "patience", "kind": "lib", "targets": ["patience"]},
+            ]
+        }
 
         self.assertEqual(
-            errors,
-            ["example: recipe selects zero catalogued tests named 'absent'"],
+            suites.selection(suite),
+            [
+                "--workspace", "--features", "bundled", "-E",
+                "(package(amux) & kind(bin) & binary(/^(amux)$/))"
+                " | (binary_id(amux::integration) & test(/^(attach|process)::/))"
+                " | (package(patience) & kind(lib))",
+            ],
         )
+
+    def test_the_integration_binary_s_suites_are_its_modules_that_hold_tests(self):
+        modules = suites.integration_modules(ROOT / "crates" / "testnet")
+
+        self.assertIn("spec_links", modules)
+        self.assertNotIn("support", modules)
+        self.assertNotIn("stories", modules)
 
     def test_every_protocol_model_has_its_own_ci_job(self):
         suites = [
@@ -47,7 +66,7 @@ class TestsCatalogTest(unittest.TestCase):
                 "name": "protocol-models",
                 "cargo": [
                     {"package": "models", "kind": "lib", "targets": ["models"]},
-                    {"package": "models", "targets": ["family", "presence"]},
+                    {"package": "models", "modules": ["family", "presence"]},
                 ],
             }
         ]
@@ -56,7 +75,7 @@ class TestsCatalogTest(unittest.TestCase):
             "  models:\n"
             "    strategy:\n"
             "      matrix:\n"
-            "        target: [family, retired]\n"
+            "        model: [family, retired]\n"
             "  build:\n"
             "    runs-on: ubuntu-latest\n"
         )
@@ -64,13 +83,13 @@ class TestsCatalogTest(unittest.TestCase):
         self.assertEqual(
             catalog.validate_models_matrix(suites, workflow),
             [
-                "protocol-models test target presence is not in the CI models job's matrix",
-                "the CI models job's matrix names retired, which is no protocol-models test target",
+                "protocol-models model presence is not in the CI models job's matrix",
+                "the CI models job's matrix names retired, which is no protocol-models model",
             ],
         )
         self.assertEqual(
             catalog.validate_models_matrix(suites, "jobs:\n  test:\n    runs-on: x\n"),
-            [".github/workflows/ci.yml has no models job with a target matrix"],
+            [".github/workflows/ci.yml has no models job with a model matrix"],
         )
 
     def test_every_suite_of_testnet_stories_declares_its_modes(self):
@@ -79,7 +98,7 @@ class TestsCatalogTest(unittest.TestCase):
             catalog.validate_modes(suite["name"], suite, errors)
             return errors
 
-        stories = {"time": "driven", "cargo": [{"package": "testnet", "targets": ["harness"]}]}
+        stories = {"time": "driven", "cargo": [{"package": "testnet", "modules": ["harness"]}]}
         self.assertEqual(errors_of({"name": "both", **stories, "modes": ["real", "simulated"]}), [])
         self.assertEqual(
             errors_of({"name": "silent", **stories}),
@@ -93,10 +112,10 @@ class TestsCatalogTest(unittest.TestCase):
             errors_of({"name": "empty", **stories, "modes": []}),
             ["empty: modes must be a non-empty list"],
         )
-        fixtures = {"time": "none", "cargo": [{"package": "testnet", "targets": ["journal_fixtures"]}]}
+        fixtures = {"time": "none", "cargo": [{"package": "testnet", "modules": ["journal_fixtures"]}]}
         self.assertEqual(errors_of({"name": "fixtures", **fixtures}), [])
         self.assertEqual(
-            errors_of({"name": "store", "time": "driven", "cargo": [{"package": "store", "targets": ["x"]}], "modes": ["real"]}),
+            errors_of({"name": "store", "time": "driven", "cargo": [{"package": "store", "modules": ["x"]}], "modes": ["real"]}),
             ["store: modes belong to suites of testnet stories only"],
         )
 

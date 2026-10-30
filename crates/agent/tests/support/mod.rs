@@ -5,7 +5,7 @@
 #![allow(dead_code, unused_imports)]
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use agent::local_socket::{self, LocalStream};
@@ -44,36 +44,9 @@ pub fn agent_release() -> PathBuf {
 const HOLD_SCRIPT: &str =
     r#"trap : TERM; "$0" "$@"; while [ ! -e "$AMUX_TEST_HOLD" ]; do sleep 0.02; done"#;
 
-/// The fake provider binaries and the install path's stand-in, built once
-/// per test run.
+/// The fake provider binaries and the install path's stand-in.
 pub fn fakes() -> &'static Path {
-    static BUILT: OnceLock<PathBuf> = OnceLock::new();
-    BUILT.get_or_init(|| {
-        let status = provider_fakes::cargo::command()
-            .args([
-                "build",
-                "--locked",
-                "-p",
-                "provider-fakes",
-                "-p",
-                "claude",
-                "--bins",
-                "-p",
-                "agent",
-                "--example",
-                "amux_stand_in",
-            ])
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .status()
-            .expect("cargo runs");
-        assert!(status.success(), "building the fake providers failed");
-        // target/<profile>/deps/<this test> -> target/<profile>
-        let exe = std::env::current_exe().expect("the test binary's path");
-        exe.parent()
-            .and_then(Path::parent)
-            .expect("a target directory")
-            .to_owned()
-    })
+    provider_fakes::binaries::dir()
 }
 
 /// The stand-in for the amux binary at the install path: `hooks claude`

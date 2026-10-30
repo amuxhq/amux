@@ -1,11 +1,11 @@
 //! A Codex thread carries the agent's name: Codex's own app shows the name
 //! amux does.
 
-mod support;
-
 use agent::ExitCause;
 use support::*;
 use wire::Kind;
+
+use crate::support;
 
 /// The names the agent gave the thread, in order, from what the fake read.
 fn names(agent: &Agent, thread: &str) -> Vec<String> {

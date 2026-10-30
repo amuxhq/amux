@@ -4,7 +4,7 @@ version = 1
 name = "desktop-cli-system"
 contract = "The built amux binary hosts agents that outlive a killed daemon and are adopted by the next, attaches terminals to them, closes pairing mode however amux pair ends, words its refusals as sentences, serves the cloud relay, writes its login units, routes stop and update through the supervisor, and keeps overlapping releases working across an update; a terminal test whose wait fails ends instead of hanging."
 paths = ["crates/amux/tests"]
-recipe = "just test-crate amux -- --bins --test agent_process --test attach --test cli_words --test codex_attach --test overlap --test pairing --test process --test relay --test supervise_cli --test term_fails_fast"
+recipe = "just suite desktop-cli-system"
 boundary = "System composition"
 oracle = "Exact process output, exit status, login-unit goldens, journaled items, process and lock ownership, and the chat read back over the profile socket."
 real = ["built amux binary", "processes and process groups", "PTYs", "Unix sockets", "loopback QUIC and TLS", "temporary files"]
@@ -13,10 +13,10 @@ time = "real"
 capabilities = ["desktop", "Unix", "macOS for the sleep assertion case"]
 lane = "system"
 evidence = ""
-update = "AMUX_UPDATE_GOLDENS=1 just test-crate amux -- --test supervise_cli, then review the login-unit diff."
+update = "AMUX_UPDATE_GOLDENS=1 just suite desktop-cli-system supervise_cli::, then review the login-unit diff."
 cargo = [
   { package = "amux", kind = "bin", targets = ["amux"], features = ["bundled"] },
-  { package = "amux", targets = ["agent_process", "attach", "cli_words", "codex_attach", "overlap", "pairing", "process", "relay", "supervise_cli", "term_fails_fast"], features = ["bundled"] },
+  { package = "amux", modules = ["agent_process", "attach", "cli_words", "codex_attach", "overlap", "pairing", "process", "relay", "supervise_cli", "term_fails_fast"], features = ["bundled"] },
 ]
 
 [[suite]]
@@ -33,7 +33,7 @@ capabilities = ["desktop", "Unix"]
 lane = "journey"
 evidence = "the printed transcript; `-- --keep` leaves the install running for another client to open"
 update = ""
-cargo = [{ package = "amux", targets = ["system_journeys"], features = ["bundled"] }]
+cargo = [{ package = "amux", modules = ["system_journeys"], features = ["bundled"] }]
 journey_manifest = "journeys/manifest.json"
 journeys = ["survive-daemon"]
 
@@ -41,7 +41,7 @@ journeys = ["survive-daemon"]
 name = "agent-provider-hosting"
 contract = "The agent process launches each provider child, completes its handshake and a turn, continues the provider's own session in a later incarnation, and delivers agent messages through each provider's own injection channel."
 paths = ["crates/agent/tests/providers.rs", "crates/agent/tests/replay", "crates/agent/src"]
-recipe = "just test-crate agent -- --lib --test providers"
+recipe = "just suite agent-provider-hosting"
 boundary = "Provider adapter"
 oracle = "Journaled items and snapshots, provider writes checked byte for byte against recorded input, and re-emitted open items after a restart."
 real = ["agent process library", "provider child processes", "PTYs", "Unix sockets", "journal files"]
@@ -53,14 +53,14 @@ evidence = "crates/agent/tests/replay"
 update = "Cut or rewrite a replay fixture from its claude-specs or codex-specs recording and record the change in crates/agent/tests/replay/README.md."
 cargo = [
   { package = "agent", kind = "lib", targets = ["agent"], features = [] },
-  { package = "agent", targets = ["providers"], features = [] },
+  { package = "agent", modules = ["providers"], features = [] },
 ]
 
 [[suite]]
 name = "agent-codex-thread-name"
 contract = "The agent names its Codex thread with the agent's name straight after starting it and again when the agent is renamed, so Codex's own app shows the same name."
 paths = ["crates/agent/tests/codex_thread_name.rs", "crates/interpret/src/codex", "crates/agent/src"]
-recipe = "just test-crate agent -- --test codex_thread_name"
+recipe = "just suite agent-codex-thread-name"
 boundary = "Provider adapter"
 oracle = "The thread/name/set requests the fake Codex logged, with the thread and name each carried."
 real = ["agent process library", "provider child processes", "Unix sockets", "journal files"]
@@ -70,13 +70,13 @@ capabilities = ["Unix"]
 lane = "fast"
 evidence = "the fake's input log"
 update = ""
-cargo = [{ package = "agent", targets = ["codex_thread_name"], features = [] }]
+cargo = [{ package = "agent", modules = ["codex_thread_name"], features = [] }]
 
 [[suite]]
 name = "agent-process-lifecycle"
 contract = "An agent process without a daemon finishes its turn, outlives its grace and drains; a daemon dialling back cancels the grace; abort, kill, a failed journal write and a provider exit each end the process as promised."
 paths = ["crates/agent/tests/lifecycle.rs"]
-recipe = "just test-crate agent -- --test lifecycle"
+recipe = "just suite agent-process-lifecycle"
 boundary = "System composition"
 oracle = "Exit status, journaled boundaries, process-group observations and deadlines firing exactly when the test moves the clock."
 real = ["provider child processes", "Unix sockets", "journal files"]
@@ -86,13 +86,13 @@ capabilities = ["Unix for the process-group cases"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "agent", targets = ["lifecycle"], features = [] }]
+cargo = [{ package = "agent", modules = ["lifecycle"], features = [] }]
 
 [[suite]]
 name = "agent-terminal-attach"
 contract = "Two raw attach clients share terminal Claude's one terminal and type into it, and each Codex client gets its own view on the agent's one thread."
 paths = ["crates/agent/tests/attach.rs"]
-recipe = "just test-crate agent -- --test attach"
+recipe = "just suite agent-terminal-attach"
 boundary = "System composition"
 oracle = "Text each attached terminal draws and the connection closing when the agent ends it."
 real = ["agent process library", "PTYs", "Unix sockets"]
@@ -102,13 +102,13 @@ capabilities = ["Unix PTY"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "agent", targets = ["attach"], features = [] }]
+cargo = [{ package = "agent", modules = ["attach"], features = [] }]
 
 [[suite]]
 name = "agent-dump-redaction"
 contract = "An agent's part of a dump carries its facts ring, checkpoints and specs with every secret the provider, the person and the spec carried removed by its kind's redactor."
 paths = ["crates/agent/tests/dump.rs"]
-recipe = "just test-crate agent -- --test dump"
+recipe = "just suite agent-dump-redaction"
 boundary = "Provider adapter"
 oracle = "A search of the dumped part for every planted secret."
 real = ["agent process library", "Unix sockets", "journal files"]
@@ -118,13 +118,13 @@ capabilities = ["Unix"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "agent", targets = ["dump"], features = [] }]
+cargo = [{ package = "agent", modules = ["dump"], features = [] }]
 
 [[suite]]
 name = "agent-tool-server"
 contract = "amux's tool server answers the model's tool calls through the daemon, retries across an update window, and carries a provider's call through the harness's launch to the item the interpreter draws."
 paths = ["crates/agent/tests/tools.rs"]
-recipe = "just test-crate agent -- --test tools"
+recipe = "just suite agent-tool-server"
 boundary = "System composition"
 oracle = "The ordered calls the stand-in daemon received, tool results and refusals, and the drawn items."
 real = ["tool server", "Unix sockets", "child processes"]
@@ -134,13 +134,13 @@ capabilities = ["Unix"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "agent", targets = ["tools"], features = [] }]
+cargo = [{ package = "agent", modules = ["tools"], features = [] }]
 
 [[suite]]
 name = "embedded-runtime"
 contract = "The embedded runtime pairs with a desk by the PIN it shows, holds the desk's agents as replica rows a chat reads in process, switches its source policy, and reaches an account's hosts over the relay once signed in."
 paths = ["crates/app-embedded/tests"]
-recipe = "just test -- --test embedded --test runtime_log"
+recipe = "just suite embedded-runtime"
 boundary = "Store, effects, bridge"
 oracle = "Replica rows read in process, the desk's record of the prompt, and link observations."
 real = ["embedded profile runtime", "served daemon runtimes", "relay", "SQLite store", "loopback network"]
@@ -152,14 +152,15 @@ evidence = ""
 update = ""
 cargo = [
   { package = "app-embedded", kind = "lib", targets = ["app_embedded"], features = [] },
-  { package = "app-embedded", targets = ["embedded", "runtime_log"], features = [] },
+  { package = "app-embedded", modules = ["embedded"], features = [] },
+  { package = "app-embedded", targets = ["runtime_log"], features = [] },
 ]
 
 [[suite]]
 name = "git-facts"
 contract = "An agent folder's branch, base branch and change totals are read from real repositories: nothing outside one, the base recorded or else the repository's default, totals counting staged, changed and untracked files, the branch measured from where it left its base, and the person's index untouched."
 paths = ["crates/git-facts"]
-recipe = "just test-crate git-facts"
+recipe = "just suite git-facts"
 boundary = "Store, effects, bridge"
 oracle = "The facts read back against what the test made each repository hold, and the index file's bytes."
 real = ["git", "temporary repositories"]
@@ -171,14 +172,14 @@ evidence = ""
 update = ""
 cargo = [
   { package = "git-facts", kind = "lib", targets = ["git_facts"], features = [] },
-  { package = "git-facts", targets = ["facts"], features = [] },
+  { package = "git-facts", modules = ["facts"], features = [] },
 ]
 
 [[suite]]
 name = "app-runtime-host-turns"
 contract = "The app runtime wakes its host once per turn with the chat or fleet that moved, serves rows by key and older pages below the oldest held, reads collapsed runs as the views say, and dumps the fleet and every open chat."
 paths = ["crates/app-runtime/tests", "crates/app-runtime/src"]
-recipe = "just test-crate app-runtime"
+recipe = "just suite app-runtime-host-turns"
 boundary = "Store, effects, bridge"
 oracle = "Wake counts, rows read by key, and dump contents against a real node running an agent."
 real = ["node runtime in process", "agent process", "SQLite store"]
@@ -190,14 +191,14 @@ evidence = ""
 update = ""
 cargo = [
   { package = "app-runtime", kind = "lib", targets = ["app_runtime"], features = [] },
-  { package = "app-runtime", targets = ["runtime"], features = [] },
+  { package = "app-runtime", modules = ["runtime"], features = [] },
 ]
 
 [[suite]]
 name = "protocol-models"
 contract = "Every protocol promise, written as a sentence, holds in every state a checker reaches by exploring the real code on small instances, and a seed reproduces a walk."
 paths = ["crates/models", "crates/socket-core/src"]
-recipe = "just test-crate models"
+recipe = "just suite protocol-models"
 boundary = "Model"
 oracle = "Each property judged in every explored state: an always that never fails, a sometimes that is reached, an eventually that holds on every ending path, with the shortest counterexample printed for a failure."
 real = ["the code under each model"]
@@ -209,14 +210,14 @@ evidence = "the checker's printed verdict"
 update = ""
 cargo = [
   { package = "models", kind = "lib", targets = ["models"], features = [] },
-  { package = "models", targets = ["client", "composed", "family", "lifecycle", "path", "presence", "relay", "replication", "single_daemon", "socket", "supervisor", "switch"], features = [] },
+  { package = "models", modules = ["client", "composed", "family", "lifecycle", "path", "presence", "relay", "replication", "single_daemon", "socket", "supervisor", "switch"], features = [] },
 ]
 
 [[suite]]
 name = "claude-transport-boundary"
 contract = "The claude crate carries provider transport only: no session host, and its SDK module holds only the error a stream host reports; the stream-JSON frames live in claude-protocol."
 paths = ["crates/claude/tests/boundary.rs", "crates/claude/src"]
-recipe = "just test-crate claude"
+recipe = "just suite claude-transport-boundary"
 boundary = "Provider adapter"
 oracle = "Source-boundary assertions over the crate's modules."
 real = ["repository source"]
@@ -228,14 +229,14 @@ evidence = ""
 update = ""
 cargo = [
   { package = "claude", kind = "lib", targets = ["claude"], features = [] },
-  { package = "claude", targets = ["boundary"], features = [] },
+  { package = "claude", modules = ["boundary"], features = [] },
 ]
 
 [[suite]]
 name = "claude-recorded-adapter"
 contract = "Recorded Claude PTY and SDK traffic replays completely and remains tied to its keymap and wire provenance."
 paths = ["crates/claude-specs/tests", "crates/claude-specs/fixtures"]
-recipe = "just test-crate claude-specs"
+recipe = "just suite claude-recorded-adapter"
 boundary = "Provider adapter"
 oracle = "Strict replay consumption, expected writes, corpus manifests, and provenance assertions."
 real = ["recorded provider bytes"]
@@ -248,14 +249,14 @@ update = "Run the relevant claude-probe capture and review its manifest."
 cargo = [
   { package = "claude-specs", kind = "lib", targets = ["claude_specs"], features = [] },
   { package = "claude-specs", kind = "bin", targets = ["claude-probe"], features = [] },
-  { package = "claude-specs", targets = ["capture_proxy", "driver_boundary", "keymap_provenance", "scrub", "sdk_boundary", "spec_replay"], features = [] },
+  { package = "claude-specs", modules = ["capture_proxy", "driver_boundary", "keymap_provenance", "scrub", "sdk_boundary", "spec_replay"], features = [] },
 ]
 
 [[suite]]
 name = "codex-recorded-adapter"
 contract = "Every registered Codex provider recording replays strictly with complete corpus provenance."
 paths = ["crates/codex-specs/tests/spec_replay.rs", "crates/codex-specs/tests/capture_proxy.rs", "crates/codex-specs/fixtures"]
-recipe = "just test-crate codex-specs -- --test spec_replay --test capture_proxy"
+recipe = "just suite codex-recorded-adapter"
 boundary = "Provider adapter"
 oracle = "Strict replay consumption, expected writes, and recording manifest validation."
 real = ["recorded provider bytes"]
@@ -268,14 +269,14 @@ update = "Run codex-probe for the selected scenario and review its manifest."
 cargo = [
   { package = "codex-specs", kind = "lib", targets = ["codex_specs"], features = [] },
   { package = "codex-specs", kind = "bin", targets = ["codex-probe"], features = [] },
-  { package = "codex-specs", targets = ["capture_proxy", "spec_replay"], features = [] },
+  { package = "codex-specs", modules = ["capture_proxy", "spec_replay"], features = [] },
 ]
 
 [[suite]]
 name = "claude-protocol"
 contract = "Every line of every headless Claude recording, in both directions, and every transcript row and hook payload of every terminal Claude recording decodes as a known type and encodes back to the same JSON; an unknown type is kept whole in production and refused by the strict check."
 paths = ["crates/claude-protocol"]
-recipe = "just test-crate claude-protocol"
+recipe = "just suite claude-protocol"
 boundary = "Provider adapter"
 oracle = "Strict decoding of each recorded line and JSON equality after encoding."
 real = ["recorded provider bytes"]
@@ -287,14 +288,14 @@ evidence = "crates/claude-specs/fixtures/sdk and crates/claude-specs/fixtures/pt
 update = "A failing line is provider drift or a wrong type: fix the type in crates/claude-protocol/src, never a live recording."
 cargo = [
   { package = "claude-protocol", kind = "lib", targets = ["claude_protocol"], features = [] },
-  { package = "claude-protocol", targets = ["frames", "pty_corpus", "stream_corpus"], features = [] },
+  { package = "claude-protocol", modules = ["frames", "pty_corpus", "stream_corpus"], features = [] },
 ]
 
 [[suite]]
 name = "codex-protocol"
 contract = "Every line of every Codex recording, in both directions, decodes as a known message and encodes back to the same JSON; an unknown method or item type is kept whole in production and refused by the strict check; what amux writes to Codex encodes to the bytes it has always written."
 paths = ["crates/codex-protocol"]
-recipe = "just test-crate codex-protocol"
+recipe = "just suite codex-protocol"
 boundary = "Provider adapter"
 oracle = "Strict decoding of each recorded line, JSON equality after encoding, the typed fields read from recorded lines, and exact encoded bytes."
 real = ["recorded provider bytes"]
@@ -306,14 +307,14 @@ evidence = "crates/codex-specs/fixtures/runtime, journeys/recordings"
 update = "A failing line is provider drift or a wrong type: fix the type in crates/codex-protocol/src, never a live recording."
 cargo = [
   { package = "codex-protocol", kind = "lib", targets = ["codex_protocol"], features = [] },
-  { package = "codex-protocol", targets = ["corpus", "messages"], features = [] },
+  { package = "codex-protocol", modules = ["corpus", "messages"], features = [] },
 ]
 
 [[suite]]
 name = "provider-fake-behaviour"
 contract = "Each scripted fake provider speaks its real protocol as a host sees it: every frame it composes has a recorded shape, it echoes, queues, folds, steers, interrupts and blocks on asks the way its provider does, and every journey script loads on every fake."
 paths = ["crates/provider-fakes/src", "crates/provider-fakes/tests/codex.rs", "crates/provider-fakes/tests/pty.rs", "crates/provider-fakes/tests/sdk.rs", "crates/provider-fakes/tests/scripts.rs"]
-recipe = "just test-crate provider-fakes -- --lib --bins --test codex --test pty --test sdk --test scripts"
+recipe = "just suite provider-fake-behaviour"
 boundary = "Provider adapter"
 oracle = "Frames, transcript rows and hook payloads checked against recorded shapes, and exit codes."
 real = ["fake provider binaries", "PTYs", "stdio pipes"]
@@ -326,14 +327,14 @@ update = ""
 cargo = [
   { package = "provider-fakes", kind = "lib", targets = ["provider_fakes"], features = [] },
   { package = "provider-fakes", kind = "bin", targets = ["fake-claude-pty", "fake-claude-sdk", "fake-codex"], features = [] },
-  { package = "provider-fakes", targets = ["codex", "pty", "scripts", "sdk"], features = [] },
+  { package = "provider-fakes", modules = ["codex", "pty", "scripts", "sdk"], features = [] },
 ]
 
 [[suite]]
 name = "provider-fake-conformance"
 contract = "Every recording in the Claude and Codex corpora plays back through its fake byte for byte, and each fake's script engine reproduces the ordered frame kinds its provider recorded for the same scenario."
 paths = ["crates/provider-fakes/tests/conformance.rs", "crates/provider-fakes/tests/scripted.rs", "crates/claude-specs/fixtures", "crates/codex-specs/fixtures"]
-recipe = "just test-crate provider-fakes -- --test conformance --test scripted"
+recipe = "just suite provider-fake-conformance"
 boundary = "Provider adapter"
 oracle = "Byte-for-byte playback and the recorded sequence of frame kinds, one test per recording."
 real = ["recorded provider bytes", "fake provider binaries", "PTYs"]
@@ -343,13 +344,13 @@ capabilities = ["Unix PTY"]
 lane = "fast"
 evidence = "crates/claude-specs/fixtures"
 update = ""
-cargo = [{ package = "provider-fakes", targets = ["conformance", "scripted"], features = [] }]
+cargo = [{ package = "provider-fakes", modules = ["conformance", "scripted"], features = [] }]
 
 [[suite]]
 name = "interpreter-emissions"
 contract = "Each kind's interpreter turns its recorded and authored facts into the reviewed items, snapshots and effects, and every chat-vocabulary row a kind can show has a place in its bodies and a golden that shows it."
 paths = ["crates/interpret/src", "crates/interpret/fixtures", "crates/interpret/tests/claude_pty.rs", "crates/interpret/tests/claude_sdk.rs", "crates/interpret/tests/codex.rs", "crates/interpret/tests/coverage.rs", "crates/interpret/tests/vocabulary.toml"]
-recipe = "just test-crate interpret -- --lib --test claude_pty --test claude_sdk --test codex --test coverage"
+recipe = "just suite interpreter-emissions"
 boundary = "Interpreter"
 oracle = "Reviewed emission goldens, explicit intermediate outcomes, and the vocabulary catalogue checked against every kind's goldens."
 real = ["recorded provider facts"]
@@ -361,14 +362,14 @@ evidence = "crates/interpret/fixtures"
 update = "INTERPRET_UPDATE_GOLDENS=1 just test-crate interpret, then review the golden diff."
 cargo = [
   { package = "interpret", kind = "lib", targets = ["interpret"], features = [] },
-  { package = "interpret", targets = ["claude_pty", "claude_sdk", "codex", "coverage"], features = [] },
+  { package = "interpret", modules = ["claude_pty", "claude_sdk", "codex", "coverage"], features = [] },
 ]
 
 [[suite]]
 name = "interpreter-dump-redaction"
 contract = "Each kind's redactor removes every planted secret from item bodies, snapshots, facts-ring entries and checkpoints, leaves each target decoding as what it was, and changes nothing when run again."
 paths = ["crates/interpret/tests/redaction.rs"]
-recipe = "just test-crate interpret -- --test redaction"
+recipe = "just suite interpreter-dump-redaction"
 boundary = "Interpreter"
 oracle = "A search for every planted secret, the decoded shape before and after, and idempotence."
 real = []
@@ -378,13 +379,13 @@ capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "interpret", targets = ["redaction"], features = [] }]
+cargo = [{ package = "interpret", modules = ["redaction"], features = [] }]
 
 [[suite]]
 name = "simulated-agent-journals"
 contract = "Every journal the simulated net's agents play is listed, made of whole frames, obeys its interpreter's invariants and reaches what its listing says: turn ends, asks, follow-ups and exits, cut from Claude and Codex recordings and from authored scripts."
 paths = ["crates/testnet/fixtures/journals", "crates/testnet/tests/journal_fixtures.rs"]
-recipe = "just test -- --test journal_fixtures"
+recipe = "just suite simulated-agent-journals"
 boundary = "Interpreter"
 oracle = "Whole journal frames, the interpreter's journal invariants and each listing's reach claims."
 real = ["recorded provider facts", "the interpreters", "journal frame encoding"]
@@ -394,13 +395,13 @@ capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = "crates/testnet/fixtures/journals"
 update = ""
-cargo = [{ package = "testnet", targets = ["journal_fixtures"], features = [] }]
+cargo = [{ package = "testnet", modules = ["journal_fixtures"], features = [] }]
 
 [[suite]]
 name = "attachment-elements"
 contract = "Attachments round-trip between positioned text and the element the model sees, placeholders are counted against attachments, and malformed or stray elements stay text and are reported."
 paths = ["crates/attachments/tests", "crates/attachments/src"]
-recipe = "just test-crate attachments"
+recipe = "just suite attachment-elements"
 boundary = "Interpreter"
 oracle = "Exact round trips, canonical element text and typed problems."
 real = []
@@ -412,14 +413,14 @@ evidence = ""
 update = ""
 cargo = [
   { package = "attachments", kind = "lib", targets = ["attachments"], features = [] },
-  { package = "attachments", targets = ["attachments"], features = [] },
+  { package = "attachments", modules = ["attachments"], features = [] },
 ]
 
 [[suite]]
 name = "strict-recording-replay"
 contract = "Recorded transports reject missing, reordered, mismatched, or trailing traffic and acknowledge EOF and completion."
 paths = ["crates/replay-support/tests/strict_replay.rs"]
-recipe = "just test-crate replay-support -- --lib --test strict_replay"
+recipe = "just suite strict-recording-replay"
 boundary = "Provider adapter"
 oracle = "Typed replay results and exact read/write consumption."
 real = ["in-memory asynchronous IO"]
@@ -431,14 +432,14 @@ evidence = ""
 update = ""
 cargo = [
   { package = "replay-support", kind = "lib", targets = ["replay_support"], features = [] },
-  { package = "replay-support", targets = ["strict_replay"], features = [] },
+  { package = "replay-support", modules = ["strict_replay"], features = [] },
 ]
 
 [[suite]]
 name = "dump-bundle-replay"
 contract = "A dump bundle a real daemon wrote replays through its four stages with the models' properties judged at every step: its facts through the interpreter to what the journal holds, the daemon core from its checkpoint through every input since, its store slice through the session model, and that state through the views; `dump-replay` prints one line per stage and a ring the replay does not reproduce fails, naming the step and the property."
 paths = ["crates/replay-support/src/replay.rs", "crates/replay-support/src/bin/dump-replay.rs", "crates/replay-support/tests/bundle.rs", "crates/replay-support/tests/core_replay.rs", "crates/replay-support/tests/fixtures"]
-recipe = "just test-crate replay-support -- --test bundle --test core_replay"
+recipe = "just suite dump-bundle-replay"
 boundary = "Client model"
 oracle = "Equality between replayed steps and the journaled ones, the models' properties after every replayed step, and the views drawn from the replayed session."
 real = ["recorded dump bundles", "the daemon core", "the store"]
@@ -450,14 +451,14 @@ evidence = "crates/replay-support/tests/fixtures"
 update = ""
 cargo = [
   { package = "replay-support", kind = "bin", targets = ["dump-replay"], features = [] },
-  { package = "replay-support", targets = ["bundle", "core_replay"], features = [] },
+  { package = "replay-support", modules = ["bundle", "core_replay"], features = [] },
 ]
 
 [[suite]]
 name = "wire-size"
 contract = "The size meter replays a headless Claude recording through the interpreter and reports the snapshot count, the largest and median encoded snapshot, and per tool call the bytes its items and appends took."
 paths = ["crates/replay-support/src/wire_size.rs", "crates/replay-support/src/bin/wire-size.rs", "crates/replay-support/tests/wire_size.rs", "crates/replay-support/tests/fixtures/wire_size"]
-recipe = "just test-crate replay-support -- --test wire_size"
+recipe = "just suite wire-size"
 boundary = "Interpreter"
 oracle = "Encoded sizes counted by hand, and the counts of a five-line recording."
 real = ["headless Claude interpreter", "a hand-written recording"]
@@ -469,14 +470,14 @@ evidence = "`just wire-size RECORDING` prints the numbers"
 update = ""
 cargo = [
   { package = "replay-support", kind = "bin", targets = ["wire-size"], features = [] },
-  { package = "replay-support", targets = ["wire_size"], features = [] },
+  { package = "replay-support", modules = ["wire_size"], features = [] },
 ]
 
 [[suite]]
 name = "dump-show"
 contract = "The dump printer prints a bundle's manifest, each agent's row, its journal in the interpreter's emission-golden format beside the facts replayed through the same renderer, its store slice with orders and revisions, its facts lines and checkpoints as written, and names or prints every other file; it refuses a directory that is not a bundle."
 paths = ["crates/replay-support/src/show.rs", "crates/replay-support/src/bin/dump-show.rs", "crates/replay-support/tests/dump_show.rs", "crates/replay-support/tests/fixtures/bundle"]
-recipe = "just test-crate replay-support -- --test dump_show"
+recipe = "just suite dump-show"
 boundary = "Interpreter"
 oracle = "The printed sections of the committed bundle, the journal's rendering against the facts replay's, and the binary's output and exit status."
 real = ["a recorded dump bundle", "built dump-show binary", "temporary files"]
@@ -488,14 +489,14 @@ evidence = "`dump-show BUNDLE [--agent A]` prints the bundle"
 update = ""
 cargo = [
   { package = "replay-support", kind = "bin", targets = ["dump-show"], features = [] },
-  { package = "replay-support", targets = ["dump_show"], features = [] },
+  { package = "replay-support", modules = ["dump_show"], features = [] },
 ]
 
 [[suite]]
 name = "journal-segments"
 contract = "The journal appends steps into segments named by offset, rotates, lets readers start at any frame and follow a live writer, never returns a partial frame wherever it is cut, and reclaims only below a durable cursor."
 paths = ["crates/journal/tests", "crates/journal/src"]
-recipe = "just test-crate journal"
+recipe = "just suite journal-segments"
 boundary = "Single daemon"
 oracle = "Exact frames read back, segment names, torn-tail handling and reclaimable segments."
 real = ["temporary files"]
@@ -507,7 +508,7 @@ evidence = ""
 update = ""
 cargo = [
   { package = "journal", kind = "lib", targets = ["journal"], features = [] },
-  { package = "journal", targets = ["journal"], features = [] },
+  { package = "journal", modules = ["journal"], features = [] },
 ]
 
 [[suite]]
@@ -526,14 +527,14 @@ evidence = ""
 update = ""
 cargo = [
   { package = "store", kind = "lib", targets = ["store"], features = ["bundled"] },
-  { package = "store", targets = ["conformance", "explore", "retention", "sqlite"], features = ["bundled"] },
+  { package = "store", modules = ["conformance", "explore", "retention", "sqlite"], features = ["bundled"] },
 ]
 
 [[suite]]
 name = "single-daemon-contract"
 contract = "One daemon commits journaled steps atomically, fans out and serves subscriptions without losing committed rows across crashes, failed commits and power cuts, carries inputs, messages, deliveries and notifications exactly once, stores blobs (an agent's catalogue among them) and diffs, keeps a replica's current catalogue through blob eviction, asks a host's providers what they offer, assembles redacted dumps, adopts, starts, stops and resumes agent processes, and records each usage event where it happens."
 paths = ["crates/node/tests"]
-recipe = "just test -- --test single_daemon --test messaging --test push --test blobs --test catalogue --test host_catalogue --test diff --test registry --test dump --test agent_names --test analytics"
+recipe = "just suite single-daemon-contract"
 boundary = "Single daemon"
 oracle = "Committed rows, the stream log, failure-cut equality with a reference run, delivery and notification rows, bundle contents with every planted secret absent, and process observations."
 real = ["SQLite store", "journal files", "Unix sockets", "agent processes in the registry and messaging cases"]
@@ -543,13 +544,13 @@ capabilities = ["desktop", "Unix for the agent-process cases"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "node", targets = ["addresses", "agent_names", "analytics", "blobs", "catalogue", "diff", "dump", "forwarded_send", "front_door", "host_catalogue", "hosts", "messaging", "peer_service", "push", "registry", "resumption", "single_daemon", "worktree"], features = [] }]
+cargo = [{ package = "node", modules = ["addresses", "agent_names", "analytics", "blobs", "catalogue", "diff", "dump", "forwarded_send", "front_door", "host_catalogue", "hosts", "messaging", "peer_service", "push", "registry", "resumption", "single_daemon", "worktree"], features = [] }]
 
 [[suite]]
 name = "supervisor-update"
 contract = "The supervisor activates a new build, rolls back after failed starts, refuses a rejected build, finishes an interrupted rollback and restarts the daemon, with every step taken by the shipped supervisor code."
 paths = ["crates/node/tests/supervisor.rs", "crates/fake-amux/src"]
-recipe = "just test -- --test supervisor"
+recipe = "just suite supervisor-update"
 boundary = "System composition"
 oracle = "The supervisor's event transcript, installed and rejected builds, and process observations."
 real = ["supervisor processes", "re-stamped binaries", "signed release manifests", "Unix sockets"]
@@ -561,14 +562,14 @@ evidence = "the printed supervisor transcript"
 update = ""
 cargo = [
   { package = "fake-amux", kind = "bin", targets = ["fake-amux"], features = [] },
-  { package = "node", targets = ["supervisor"], features = [] },
+  { package = "node", modules = ["supervisor"], features = [] },
 ]
 
 [[suite]]
 name = "daemon-library-units"
 contract = "Daemon-side libraries preserve their local parsing, state, routing, lifecycle, persistence, agent-directory and wire invariants."
 paths = ["crates/agent-dir/src", "crates/analytics/src", "crates/client/src", "crates/log-file/src", "crates/node/src", "crates/release/src", "crates/socket-core/src", "crates/settings/src", "crates/version-stamp/src", "crates/wire/src"]
-recipe = "just test -- --lib -p agent-dir -p analytics -p client -p log-file -p node -p release -p settings -p version-stamp -p wire"
+recipe = "just suite daemon-library-units"
 boundary = "Single daemon"
 oracle = "Value assertions, explicit state transitions, wire round trips, and owned-resource observations."
 real = ["temporary files and local sockets in integration-shaped unit cases"]
@@ -594,7 +595,7 @@ cargo = [
 name = "state-machine-cores"
 contract = "Each state-machine core takes one input to the outputs it wants done and ends every step by checking its cheap invariants, a checkpoint restores only under the layout it was written with, and the ring of inputs since a checkpoint resumes from the newest one with a torn tail cut."
 paths = ["crates/agent-core/src", "crates/core-ring/src", "crates/daemon-core/src", "crates/path-core/src", "crates/relay-core/src", "crates/supervisor-core/src"]
-recipe = "just test -- --lib -p agent-core -p core-ring -p daemon-core -p path-core -p relay-core -p supervisor-core"
+recipe = "just suite state-machine-cores"
 boundary = "Single daemon"
 oracle = "The exact outputs of a step, the checkpoint a restored core writes, and the inputs a ring hands back."
 real = ["in-memory SQLite store", "temporary files"]
@@ -617,7 +618,7 @@ cargo = [
 name = "client-seam"
 contract = "The in-process call and gRPC over the profile socket answer alike against one real node, and a socket client reports transport while its daemon is down and redials after."
 paths = ["crates/client/tests"]
-recipe = "just test-crate client -- --test seam"
+recipe = "just suite client-seam"
 boundary = "Store, effects, bridge"
 oracle = "Equal answers from both clients and typed transport errors."
 real = ["node runtime", "gRPC over a Unix socket", "SQLite store"]
@@ -627,13 +628,13 @@ capabilities = ["desktop"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "client", targets = ["seam"], features = [] }]
+cargo = [{ package = "client", modules = ["seam"], features = [] }]
 
 [[suite]]
 name = "phone-bridge-library-units"
 contract = "The Rust phone bridge preserves its C boundary, mobile lifecycle and callback contracts, and every shared view value has a schema for its Swift mirror."
 paths = ["crates/app-ffi/src", "crates/model/src"]
-recipe = "just test -- -p app-ffi -p model"
+recipe = "just suite phone-bridge-library-units"
 boundary = "Store, effects, bridge"
 oracle = "C-boundary results, callback records, runtime state, and generated schemas."
 real = ["embedded runtime", "SQLite", "temporary files"]
@@ -652,7 +653,7 @@ cargo = [
 name = "provider-io-library-units"
 contract = "PTY ownership, capture redaction and the Codex app-server client preserve process, signal, byte, sanitization and protocol contracts."
 paths = ["crates/codex/src", "crates/pty-host/src", "crates/redaction/src"]
-recipe = "just test -- --lib -p codex -p pty-host -p redaction"
+recipe = "just suite provider-io-library-units"
 boundary = "Provider adapter"
 oracle = "Process-group observations, byte streams, exit status, exact sanitized values and decoded protocol messages."
 real = ["PTY child processes"]
@@ -672,7 +673,7 @@ cargo = [
 name = "testnet-harness"
 contract = "The test network harness validates topologies, runs real agents on each fake provider, sleeps every daemon's policy timers on its driven clock, installs each fault, fails stuck observations, catches a broken replica, and serves a topology through its door."
 paths = ["crates/patience/src", "crates/testnet/src", "crates/testnet/tests/harness.rs", "crates/testnet/tests/stories"]
-recipe = "just test -- --test harness"
+recipe = "just suite testnet-harness"
 modes = ["real"]
 boundary = "Many daemons"
 oracle = "Harness values, event observations, observation deadlines, door replies and the capability map the crate docs list."
@@ -687,14 +688,14 @@ cargo = [
   { package = "patience", kind = "lib", targets = ["patience"], features = [] },
   { package = "testnet", kind = "lib", targets = ["testnet"], features = [] },
   { package = "testnet", kind = "bin", targets = ["testnet"], features = [] },
-  { package = "testnet", targets = ["harness"], features = [] },
+  { package = "testnet", modules = ["harness"], features = [] },
 ]
 
 [[suite]]
 name = "link-stories"
 contract = "Hosts link over one QUIC connection per pair, whatever path carries it, from a socket of both address families: on the same network, over SSH into the far host's link socket, whose pinned handshake refuses a key it does not trust, and between two hosts bound to IPv6 alone, a host reaches another's agent, streams its session live and reads the carrying path from its link log."
 paths = ["crates/testnet/tests/spec_links.rs", "crates/testnet/stand-in"]
-recipe = "just test -- --test spec_links"
+recipe = "just suite link-stories"
 modes = ["real"]
 boundary = "Many daemons"
 oracle = "Listener addresses, the route each host reports, the path each host's link log names and session events, at bounded deadlines."
@@ -705,13 +706,13 @@ capabilities = ["loopback network", "desktop", "Unix"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "testnet", targets = ["spec_links"], features = [] }]
+cargo = [{ package = "testnet", modules = ["spec_links"], features = [] }]
 
 [[suite]]
 name = "testnet-stories"
 contract = "The harness's stories that hold on either net, a stuck observation failing at its deadline, a fence holding a host to its own cursors, a severed link going down and coming back, and a killed daemon's agents running on while its restart reads what they wrote, pass on the real net and under every seed on the simulated one, and a failing seed is reported with the command that reruns it."
 paths = ["crates/testnet/src/modes.rs", "crates/testnet/src/world.rs", "crates/testnet/src/probes.rs", "crates/testnet/tests/harness_stories.rs", "crates/testnet/tests/stories", "scripts/sim.py"]
-recipe = "just test -- --test harness_stories"
+recipe = "just suite testnet-stories"
 modes = ["real", "simulated"]
 boundary = "Many daemons"
 oracle = "The stories' observations and fences on each net, and the seeds each simulated story walked."
@@ -722,13 +723,13 @@ capabilities = ["desktop", "loopback network", "Unix"]
 lane = "fast"
 evidence = "`just sim` prints each story's seeds walked and failing seeds"
 update = ""
-cargo = [{ package = "testnet", targets = ["harness_stories"], features = [] }]
+cargo = [{ package = "testnet", modules = ["harness_stories"], features = [] }]
 
 [[suite]]
 name = "replication-stories"
 contract = "Replication's stories that hold on either net, a replica taking a tail, live records, a delta and a Reset with its markers in sequence, pages served from the block and from the origin with an error when the origin is away, switching to OnDemand closing every source no client watches, and OnDemand warming one chat with an exited agent's source closing and reopening on its resume, pass on the real net and under every seed on the simulated one."
 paths = ["crates/testnet/tests/replication_stories.rs"]
-recipe = "just test -- --test replication_stories"
+recipe = "just suite replication-stories"
 modes = ["real", "simulated"]
 boundary = "Many daemons"
 oracle = "The stories' marker sequences, pages, open sources and fences on each net, and the seeds each simulated story walked."
@@ -739,13 +740,13 @@ capabilities = ["desktop", "loopback network", "Unix"]
 lane = "fast"
 evidence = "`just sim` prints each story's seeds walked and failing seeds"
 update = ""
-cargo = [{ package = "testnet", targets = ["replication_stories"], features = [] }]
+cargo = [{ package = "testnet", modules = ["replication_stories"], features = [] }]
 
 [[suite]]
 name = "family-stories"
 contract = "Families' stories that hold on either net, a far child stopped or deleted on its host's return after its parent was, a stop reaching every descendant on every host, a one-shot sub-agent staying for its child's last report and telling its parent when it is stopped, and an away parent's reports waiting while one for a past incarnation is dropped, pass on the real net and under every seed on the simulated one."
 paths = ["crates/testnet/tests/family_stories.rs"]
-recipe = "just test -- --test family_stories"
+recipe = "just suite family-stories"
 modes = ["real", "simulated"]
 boundary = "Many daemons"
 oracle = "The stories' rows, outboxes, received items and exit causes on each net, and the seeds each simulated story walked."
@@ -756,13 +757,13 @@ capabilities = ["desktop", "loopback network", "Unix"]
 lane = "fast"
 evidence = "`just sim` prints each story's seeds walked and failing seeds"
 update = ""
-cargo = [{ package = "testnet", targets = ["family_stories"], features = [] }]
+cargo = [{ package = "testnet", modules = ["family_stories"], features = [] }]
 
 [[suite]]
 name = "simulated-net-harness"
 contract = "The simulated net makes one schedule of one seed and another of another, replays a seed's schedule line for line, reports a failing seed that fails again the same way on demand and shrinks it to a shorter run by seed search and ring cut, moves time only when the story advances it, lets an agent outlive its daemon for exactly its grace, breaks a call whose message it loses and still brings the replica current, carries a recorded Claude journal an agent plays turn by turn to the far host, and fails a wait as soon as nothing is left to deliver, under every seed it walks."
 paths = ["crates/testnet/src/sim", "crates/testnet/tests/sim_harness.rs", "crates/testnet/tests/sim_seeds.rs"]
-recipe = "just test -- --test sim_harness --test sim_seeds"
+recipe = "just suite simulated-net-harness"
 modes = ["simulated"]
 boundary = "Many daemons"
 oracle = "The stories' observations and fences, the delivery trace of each seed, and the virtual clock."
@@ -773,13 +774,13 @@ capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "testnet", targets = ["sim_harness", "sim_seeds"], features = [] }]
+cargo = [{ package = "testnet", modules = ["sim_harness", "sim_seeds"], features = [] }]
 
 [[suite]]
 name = "testnet-ctl"
 contract = "testnet ctl, run from a folder, starts an empty net there, adds hosts and a link, runs a fake agent, drives the real terminal client in tmux and draws it to PNG, captures the topology, session log, a dump of every host, the screens and the logs, and shuts the net down leaving the evidence."
 paths = ["crates/testnet/src/ctl", "crates/testnet/src/bin/testnet.rs", "crates/testnet/tests/ctl.rs"]
-recipe = "just test -- --test ctl"
+recipe = "just suite testnet-ctl"
 modes = ["real"]
 boundary = "System composition"
 oracle = "Command exit status and replies, the host's chat, the client's screen text and frame, and the files a capture writes."
@@ -790,13 +791,13 @@ capabilities = ["desktop", "Unix", "tmux"]
 lane = "fast"
 evidence = "the temporary folder's session.jsonl, shots and findings while the test runs"
 update = ""
-cargo = [{ package = "testnet", targets = ["ctl"], features = [] }]
+cargo = [{ package = "testnet", modules = ["ctl"], features = [] }]
 
 [[suite]]
 name = "many-daemon-protocol-spec"
 contract = "Production daemons enforce pairing, trust, discovery, routing, relay carriers, credential refresh, revocation and account isolation, reconcile the inventory, keep each replica one contiguous block, carry agent families and their deliveries across hosts, and count pairings and forwarded prompts once on the right host, and send a person's report or a check's dump to the profile's account only when signed in and allowed."
 paths = ["crates/testnet/tests/spec_analytics.rs", "crates/testnet/tests/spec_edge.rs", "crates/testnet/tests/spec_families.rs", "crates/testnet/tests/spec_inventory.rs", "crates/testnet/tests/spec_network.rs", "crates/testnet/tests/spec_replication.rs", "crates/testnet/tests/spec_reports.rs", "crates/testnet/tests/support"]
-recipe = "just test -- --test spec_analytics --test spec_edge --test spec_families --test spec_inventory --test spec_network --test spec_replication --test spec_reports"
+recipe = "just suite many-daemon-protocol-spec"
 modes = ["real"]
 boundary = "Many daemons"
 oracle = "Typed topology observations, protocol events, refusals, replica markers and state dumps at bounded deadlines."
@@ -807,7 +808,7 @@ capabilities = ["loopback network", "desktop"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "testnet", targets = ["spec_analytics", "spec_edge", "spec_families", "spec_inventory", "spec_network", "spec_replication", "spec_reports"], features = [] }]
+cargo = [{ package = "testnet", modules = ["spec_analytics", "spec_edge", "spec_families", "spec_inventory", "spec_network", "spec_replication", "spec_reports"], features = [] }]
 
 [[suite]]
 name = "claude-pty-live-compatibility"
@@ -861,7 +862,7 @@ cargo = [{ package = "qualification", targets = ["codex_live"], features = ["bun
 name = "flood-workload-smoke"
 contract = "The flood performance workload keeps running between perf runs and measures every metric it reports, and the served flood topology is the one the perf lane measures."
 paths = ["crates/qualification/tests/flood.rs", "journeys/topologies/flood.json"]
-recipe = "just test-crate qualification -- --test flood"
+recipe = "just suite flood-workload-smoke"
 boundary = "System composition"
 oracle = "Every reported metric is measured, and the served topology equals the measured one; budgets are not judged here."
 real = ["daemon runtimes", "agent processes", "SQLite store"]
@@ -870,14 +871,14 @@ time = "real"
 capabilities = ["desktop"]
 lane = "fast"
 evidence = ""
-update = "FLOOD_TOPOLOGY_UPDATE=1 just test-crate qualification -- --test flood"
-cargo = [{ package = "qualification", targets = ["flood"], features = ["bundled"] }]
+update = "FLOOD_TOPOLOGY_UPDATE=1 just suite flood-workload-smoke"
+cargo = [{ package = "qualification", modules = ["flood"], features = ["bundled"] }]
 
 [[suite]]
 name = "phone-workload-topology"
 contract = "The phone's performance topology loads as testnet serves it and holds the workload the suite describes: three machines, forty agents, and a conversation a thousand rows long that streams five cued bursts."
 paths = ["crates/qualification/tests/phone.rs", "crates/qualification/src/perf/phone.rs", "crates/qualification/src/bin/phone_topology.rs"]
-recipe = "just test-crate qualification -- --test phone"
+recipe = "just suite phone-workload-topology"
 boundary = "System composition"
 oracle = "The generated topology round-trips through the served form and its counts are the suite's constants."
 real = ["topology generator"]
@@ -888,7 +889,7 @@ lane = "fast"
 evidence = ""
 update = "Change the constants in crates/qualification/src/perf/phone.rs and this test together."
 cargo = [
-  { package = "qualification", targets = ["phone"], features = ["bundled"] },
+  { package = "qualification", modules = ["phone"], features = ["bundled"] },
   { package = "qualification", kind = "bin", targets = ["phone-topology"], features = ["bundled"] },
 ]
 
@@ -926,14 +927,14 @@ evidence = "crates/tui/tests/golden"
 update = "UPDATE_GOLDENS=1 just test-tui"
 cargo = [
   { package = "tui", kind = "lib", targets = ["tui"], features = ["fixtures"] },
-  { package = "tui", targets = ["frames", "golden"], features = ["fixtures"] },
+  { package = "tui", modules = ["frames", "golden"], features = ["fixtures"] },
 ]
 
 [[suite]]
 name = "terminal-evidence-tools"
 contract = "Terminal evidence tools render deterministic PNGs of every vocabulary component and verify them, the storybook's stories are the terminal stories of tests/stories.json by name and in its order, and every story draws at every size in both palettes."
 paths = ["crates/shot/src", "tests/stories.json"]
-recipe = "just test-crate shot"
+recipe = "just suite terminal-evidence-tools"
 boundary = "Native presentation"
 oracle = "Byte-stable images, exact dimensions, a face for every drawn glyph, and manifest membership."
 real = ["font rasterizer", "temporary image files"]
@@ -953,7 +954,7 @@ cargo = [
 name = "client-runtime-drivers"
 contract = "The session and fleet drivers paint the snapshot and held rows before returning, page below the oldest held row, reconnect on their own clock, settle uncertain inputs, fetch attachment bytes lazily, fetch a catalogue once per hash and only for a chat on screen, keep a bounded replayable trace, and run alike in process and over the profile socket against a real node."
 paths = ["crates/ui-runtime/tests", "crates/ui-runtime/src"]
-recipe = "just test-crate ui-runtime"
+recipe = "just suite client-runtime-drivers"
 boundary = "Store, effects, bridge"
 oracle = "Session and fleet state after each answered call, the calls the driver made, dump parts, and a real agent's chat read through both clients."
 real = ["node runtime in the real-node cases", "gRPC over a Unix socket", "runtime tasks"]
@@ -965,7 +966,7 @@ evidence = ""
 update = ""
 cargo = [
   { package = "ui-runtime", kind = "lib", targets = ["ui_runtime"], features = [] },
-  { package = "ui-runtime", targets = ["fleet", "node", "session"], features = [] },
+  { package = "ui-runtime", modules = ["fleet", "node", "session"], features = [] },
 ]
 
 [[suite]]
@@ -984,14 +985,14 @@ evidence = ""
 update = ""
 cargo = [
   { package = "ui-state", kind = "lib", targets = ["ui_state"], features = [] },
-  { package = "ui-state", targets = ["spec"], features = [] },
+  { package = "ui-state", modules = ["spec"], features = [] },
 ]
 
 [[suite]]
 name = "view-goldens"
 contract = "Each view is a pure function of the session state; row ids are item keys and never move, run membership is an attribute, a run of tool steps names only the failures its ended turn left unresolved, attachments keep their positions, and every choice an ask card offers reaches the interpreter as an input it accepts."
 paths = ["crates/ui-view/tests"]
-recipe = "just test-crate ui-view"
+recipe = "just suite view-goldens"
 boundary = "Views"
 oracle = "Reviewed view data goldens replayed from every interpreter fixture of all three kinds, authored goldens for inputs and composer states, row invariants over random windows, and the interpreter accepting each card's answers."
 real = ["interpreter"]
@@ -1003,14 +1004,14 @@ evidence = ""
 update = "Rerun with UI_VIEW_UPDATE_GOLDENS=1 and review the golden diff."
 cargo = [
   { package = "ui-view", kind = "lib", targets = ["ui_view"], features = [] },
-  { package = "ui-view", targets = ["answers", "goldens", "runs", "views"], features = [] },
+  { package = "ui-view", modules = ["answers", "goldens", "runs", "views"], features = [] },
 ]
 
 [[suite]]
 name = "install-scripts"
 contract = "The install scripts take the stable manifest's entry for the machine and install the binary it names only when the download's size and sha256 are the entry's; a machine the channel has no build for is told so."
 paths = ["crates/xtask/tests/install_scripts.rs", "scripts/install"]
-recipe = "just test-crate xtask"
+recipe = "just suite install-scripts"
 boundary = "System composition"
 oracle = "Exact script exits and the installed file's bytes, against a manifest the release crate serialized."
 real = ["child processes", "temporary files", "loopback HTTP"]
@@ -1021,14 +1022,14 @@ lane = "tool"
 evidence = ""
 update = ""
 cargo = [
-  { package = "xtask", targets = ["install_scripts"], features = [] },
+  { package = "xtask", modules = ["install_scripts"], features = [] },
 ]
 
 [[suite]]
 name = "ios-verify-boundary"
 contract = "iOS verification runs every stage in order, refuses recipes the justfiles no longer declare, and stops on a failed stage or a skipped journey."
 paths = ["crates/ios-tools/tests/ios_verify_cli.rs"]
-recipe = "just test-crate ios-tools"
+recipe = "just suite ios-verify-boundary"
 boundary = "System composition"
 oracle = "Exact command exits, recorded results, and scripted recipe and Xcode process interactions."
 real = ["child processes", "temporary files"]
@@ -1041,14 +1042,14 @@ update = ""
 cargo = [
   { package = "ios-tools", kind = "lib", targets = ["ios_tools"], features = [] },
   { package = "ios-tools", kind = "bin", targets = ["ios-tools"], features = [] },
-  { package = "ios-tools", targets = ["ios_verify_cli"], features = [] },
+  { package = "ios-tools", modules = ["ios_verify_cli"], features = [] },
 ]
 
 [[suite]]
 name = "protocol-and-release-tools"
 contract = "The protocol compatibility check accepts additions and renames but refuses a renumbered, retyped or unreserved field, enum value or method in amux.v1, and a release cut moves only the crates' version lines and reads the workflow's signing key."
 paths = ["crates/xtask/src"]
-recipe = "just test-crate xtask"
+recipe = "just suite protocol-and-release-tools"
 boundary = "System composition"
 oracle = "Exact verdicts over hand-built descriptor sets, and the exact text a cut writes."
 real = []

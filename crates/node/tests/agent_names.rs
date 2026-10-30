@@ -2,14 +2,14 @@
 //! letters, digits and hyphens, else a word pair the daemon chose that no other agent on the host has and no branch in the
 //! folder's repository has, so a branch can later be named after it.
 
-mod support;
-
 use std::path::Path;
 use std::process::Command;
 
 use prost::Message as _;
 use support::*;
 use wire::AgentSpec;
+
+use crate::support;
 
 fn spec_name(install: &Install, agent: &wire::Agent) -> String {
     let bytes = std::fs::read(install.agent_dir(id_of(agent)).join("spec.1")).unwrap();

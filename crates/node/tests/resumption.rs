@@ -2,14 +2,14 @@
 //! served only once the core takes the identity the ticket names, and a
 //! ticket naming a key no longer pinned is refused as revoked.
 
-mod support;
-
 use std::sync::Arc;
 
 use node::link_log::EarlyData;
 use node::{Daemon, EarlyAnswer, EarlyCall, Edge, LanOptions, ProfileRuntime};
 use support::synthetic::quiet_launch;
 use support::*;
+
+use crate::support;
 
 /// Edge options listening on loopback: on `socket` when given, else on
 /// any port.

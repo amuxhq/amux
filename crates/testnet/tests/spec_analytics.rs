@@ -2,8 +2,6 @@
 //! in its own role, and a prompt to a paired host's agent is counted once,
 //! on the host where the person sent it, naming the host it went to.
 
-mod support;
-
 use analytics::{CheckCause, Event, Kind, Method, On, PairingFailure, Recording, Role};
 use node::harness::LiveRoute;
 use provider_fakes::script::Step;
@@ -12,6 +10,8 @@ use testnet::{AgentDecl, Net, NetOptions, Topology, until};
 use tonic::Request;
 use wire::session_service_server::SessionService as _;
 use wire::{ClaudeSdkInput, PromptInput, SendInputRequest, begin_pair_request, claude_sdk_input};
+
+use crate::support;
 
 const SCOPE: &str = "analytics-test";
 
@@ -174,4 +174,6 @@ async fn pairing_counts_on_both_sides_and_a_prompt_counts_where_it_was_sent() {
         ],
         "the forwarded prompt is the laptop's, not the desk's"
     );
+
+    net.shutdown().await.unwrap();
 }

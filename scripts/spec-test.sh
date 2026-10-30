@@ -2,7 +2,7 @@
 
 set -eu
 
-"$(dirname "$0")/bounded" 900 cargo test --locked -p ui-state --test spec "$@"
+"$(dirname "$0")/bounded" 900 cargo nextest run --locked -p ui-state -E 'binary_id(ui-state::integration) & test(/^spec::/)' "$@"
 # The desktop SQLite linkage the workspace run names, so this build is the
 # one `just test` left behind and not a second store.
-exec "$(dirname "$0")/bounded" 900 cargo test --locked -p testnet --features store/bundled --test 'spec_*' "$@"
+exec "$(dirname "$0")/bounded" 900 cargo nextest run --locked -p testnet --features store/bundled -E 'binary_id(testnet::integration) & test(/^spec_/)' "$@"

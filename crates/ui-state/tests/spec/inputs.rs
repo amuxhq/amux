@@ -4,7 +4,7 @@
 use ui_state::{Composer, InputOutcome, InputState, Msg, Refusal, RefusalReason, SessionState};
 use wire::{Kind, Phase};
 
-use crate::harness::*;
+use crate::spec::harness::*;
 
 fn live(kind: Kind, phase: Phase, queue: &[(&[u8], bool)]) -> SessionState {
     let mut state = SessionState::new(with_phase(agent(kind), phase), CAP);

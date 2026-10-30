@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "The one seam both amux clients call the local runtime through: gRPC over the profile socket or an in-process call"
 publish = false
+autotests = false
 
 [dependencies]
 agent-dir = { workspace = true }
@@ -22,3 +23,7 @@ patience = { workspace = true }
 provider-fakes = { workspace = true }
 testnet = { workspace = true }
 tokio = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

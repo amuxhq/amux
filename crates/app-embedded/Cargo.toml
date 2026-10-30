@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "The daemon's profile runtime hosted in the phone's process: its store, replica rows, pairing and relay link"
 publish = false
+autotests = false
 
 [dependencies]
 log-file = { workspace = true }
@@ -28,3 +29,14 @@ tempfile = { workspace = true }
 testnet = { workspace = true }
 tracing = { workspace = true }
 ui-view = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+# A binary of its own, so it is a process of its own under every runner:
+# the runtime's log is the process's one global trace subscriber, which a
+# test net another suite started first would own instead.
+[[test]]
+name = "runtime_log"
+path = "tests/runtime_log.rs"

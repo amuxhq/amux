@@ -1,0 +1,50 @@
+# Installs one pinned cargo-nextest release by its download URL and checks
+# the archive against a SHA-256, as setup-just does for just: it never lists
+# releases. nextest publishes no checksum file, so the sums are those of the
+# archives as downloaded when the version was pinned. To move to another
+# release, change the version here, in .config/nextest.toml's
+# `nextest-version`, and the sums together.
+name: Set up cargo-nextest
+description: Install the pinned cargo-nextest release from its download URL, checked against its SHA-256.
+runs:
+  using: composite
+  steps:
+    - name: Install cargo-nextest
+      shell: bash
+      env:
+        NEXTEST_VERSION: "0.9.150"
+      run: |
+        set -euo pipefail
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64) target=x86_64-unknown-linux-gnu ext=tar.gz sum=b0959bc64232974224cf9fb22c915845398c0e8668fa7831eb5b43fb1eef781f ;;
+          Linux-ARM64) target=aarch64-unknown-linux-gnu ext=tar.gz sum=9164568e9840c6509177086828ac7d3178c2d8feb0658b4d2bff62fa620e98c8 ;;
+          macOS-*) target=universal-apple-darwin ext=tar.gz sum=82a759b4d218d38359424196ab244c470e8f7c7d149c814fbbeef4d67c3c301a ;;
+          Windows-X64) target=x86_64-pc-windows-msvc ext=zip sum=6fd8f9ba48c946a79a5bcdd35bf4f922447b149f7ca6c3ff7f39e12f32ef78db ;;
+          Windows-ARM64) target=aarch64-pc-windows-msvc ext=zip sum=812da1f75a1a18911d8aeb74e2b75caa95e652bfd210a46527de7d5f0776f22e ;;
+          *) echo "no pinned cargo-nextest release for $RUNNER_OS on $RUNNER_ARCH" >&2; exit 1 ;;
+        esac
+        temp="$RUNNER_TEMP"
+        if [ "$RUNNER_OS" = Windows ]; then temp=$(cygpath -u "$RUNNER_TEMP"); fi
+        dir="$temp/cargo-nextest-$NEXTEST_VERSION"
+        archive="$dir/cargo-nextest.$ext"
+        mkdir -p "$dir"
+        curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+          --output "$archive" \
+          "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-$NEXTEST_VERSION/cargo-nextest-$NEXTEST_VERSION-$target.$ext"
+        if command -v sha256sum >/dev/null; then
+          actual=$(sha256sum "$archive" | cut -d ' ' -f 1)
+        else
+          actual=$(shasum -a 256 "$archive" | cut -d ' ' -f 1)
+        fi
+        if [ "$actual" != "$sum" ]; then
+          echo "cargo-nextest-$NEXTEST_VERSION-$target.$ext has SHA-256 $actual, not $sum" >&2
+          exit 1
+        fi
+        if [ "$ext" = zip ]; then
+          pwsh -NoProfile -Command "Expand-Archive -Force -Path '$(cygpath -w "$archive")' -DestinationPath '$(cygpath -w "$dir")'"
+          cygpath -w "$dir" >> "$GITHUB_PATH"
+        else
+          tar -xzf "$archive" -C "$dir" cargo-nextest
+          echo "$dir" >> "$GITHUB_PATH"
+        fi
+        "$dir/cargo-nextest" nextest --version

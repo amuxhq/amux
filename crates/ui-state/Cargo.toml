@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "The pure session and fleet model both amux clients reduce their streams into"
 publish = false
+autotests = false
 
 [dependencies]
 model = { workspace = true }
@@ -13,3 +14,7 @@ wire = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

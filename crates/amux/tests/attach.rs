@@ -9,12 +9,12 @@
 
 #![cfg(unix)]
 
-mod support;
-
 use provider_fakes::Step;
 use support::desk::{Desk, LONG_GRACE_SECS, say};
 use support::term::Term;
 use support::{chat, client, created_id, line_of, says, until};
+
+use crate::support;
 
 /// The leader, Ctrl+A, and its two chords.
 const DETACH: &[u8] = b"\x01d";

@@ -10,8 +10,6 @@
 
 #![cfg(unix)]
 
-mod support;
-
 use std::collections::BTreeMap;
 use std::io::BufRead as _;
 use std::path::Path;
@@ -23,6 +21,8 @@ use support::{
     Channel, amux_binary, chat, client, count, created_id, gated_turn, says, texts, turns_ended,
     until,
 };
+
+use crate::support;
 
 /// The agent process hosting the directory `dir`, found by the agent id
 /// its command line ends with.

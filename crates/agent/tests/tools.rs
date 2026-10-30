@@ -3,8 +3,6 @@
 //! window, and the whole path from a provider's call through the harness's
 //! launch of `<install path> mcp <dir>` to the item the interpreter draws.
 
-mod support;
-
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -25,6 +23,8 @@ use wire::{
     InventoryEvent, Kind, Lifecycle, Phase, SendInputRequest, SendInputResponse,
     SendMessageRequest, SendMessageResponse, create_agent_request, inventory_event,
 };
+
+use crate::support;
 
 const ME: [u8; 16] = [0xa1; 16];
 const REVIEWER: [u8; 16] = [0xb2; 16];

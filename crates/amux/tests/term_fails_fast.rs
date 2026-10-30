@@ -4,14 +4,14 @@
 
 #![cfg(unix)]
 
-mod support;
-
 use std::os::unix::process::CommandExt as _;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use support::desk::{Desk, LONG_GRACE_SECS};
 use support::term::Term;
+
+use crate::support;
 
 /// Set in the child test process, the only place the failing wait runs.
 const FAILING: &str = "AMUX_TEST_TERM_FAILING_WAIT";
@@ -26,7 +26,11 @@ fn a_failing_terminal_wait_ends_its_test() {
     let output = said.reopen().unwrap();
     let started = Instant::now();
     let mut child = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "a_terminal_wait_that_fails", "--nocapture"])
+        .args([
+            "--exact",
+            "term_fails_fast::a_terminal_wait_that_fails",
+            "--nocapture",
+        ])
         .env(FAILING, "1")
         .stdin(Stdio::null())
         .stdout(output.try_clone().unwrap())

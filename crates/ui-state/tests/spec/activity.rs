@@ -5,7 +5,7 @@ use prost::Message as _;
 use ui_state::{ActivityKind, SessionState};
 use wire::{Kind, Phase, ToolState};
 
-use crate::harness::*;
+use crate::spec::harness::*;
 
 fn working(kind: Kind) -> SessionState {
     let mut state = SessionState::new(agent(kind), CAP);

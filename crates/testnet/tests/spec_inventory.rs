@@ -10,8 +10,6 @@
 
 #![cfg(unix)]
 
-mod support;
-
 use std::time::Duration;
 
 use provider_fakes::script::Step;
@@ -21,6 +19,8 @@ use testnet::{
 };
 use uuid::Uuid;
 use wire::{HostEntry, InventoryEvent, SessionEvent, inventory_event, session_event};
+
+use crate::support;
 
 fn text(text: &str) -> Step {
     Step::Text {

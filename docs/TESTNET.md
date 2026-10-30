@@ -29,14 +29,13 @@ or one under `amux supervise` (see [process and supervised hosts](#process-and-s
 a restart or an update is the shipped binary's own. Claims about the CLI and installation themselves still
 belong to the process tests in `crates/amux/tests`.
 
-On first use in a process, the harness builds `amux` and the fake providers with the same Cargo and profile that
-built the test, so agents always run the binary under test. With `TESTNET_BINARIES` naming a directory that
-already holds `amux`, the fakes and the probes, it builds nothing and uses those: a driver that built them once,
-with the features it chose, keeps every net it starts on that one build. The terminal and phone journey drivers
-always hand `testnet serve` that directory, the one they run from unless `TESTNET_BINARIES` names another, and stop
-at once if a binary is missing there: their recipes build `amux` and the fakes in the cargo invocation that builds
-`testnet`, since a build of its own would unify features otherwise and rebuild much of the workspace before the net
-is ready.
+The harness never builds `amux` or the fake providers. In a test, the nextest setup script built them before the
+first test started and names their directory in `TESTNET_BINARIES`, so agents always run the binary under test; a
+test without it fails at once. A driver that is not a test (`testnet serve`, `perf`) takes them from
+`TESTNET_BINARIES` if it names a directory, else from the directory it runs from, where its recipe built them in
+the same cargo invocation as the driver: a build of their own would unify features otherwise and rebuild much of
+the workspace. The terminal and phone journey drivers hand `testnet serve` that directory and stop at once if a
+binary is missing there.
 
 ## Two modes
 
@@ -710,12 +709,13 @@ watch` the terminal pane. Every environment is real throughout, so a QA run may 
 ## The harness's own tests
 
 ```sh
-just test -- --test harness                  # topology validation, clock, waits, faults, growth, process hosts, the door
-just test -- --test ctl                      # testnet ctl end to end: up, hosts, a link, a fake agent, a shot, a capture, down
-just test -- --test spec_edge --test spec_families --test spec_inventory --test spec_links --test spec_network --test spec_replication
+just suite testnet-harness                 # topology validation, clock, waits, faults, growth, process hosts, the door
+just suite testnet-ctl                     # testnet ctl end to end: up, hosts, a link, a fake agent, a shot, a capture, down
+just suite many-daemon-protocol-spec       # the spec_* suites but spec_links
+just suite link-stories                    # spec_links
 ```
 
-The `spec_*` targets are the many-daemon specifications: pairing, trust, discovery, routing, relay carriers,
+The `spec_*` suites (modules of testnet's integration test binary) are the many-daemon specifications: pairing, trust, discovery, routing, relay carriers,
 credential refresh, revocation, account isolation, the inventory, replication and agent families across hosts.
 `spec_links` holds one story per route a link takes (the same network, SSH, IPv6 alone), each reaching an agent's
 session, streaming it live and naming the carrying path from the link log. A story on the relay alone puts every

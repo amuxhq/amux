@@ -5,7 +5,12 @@ edition.workspace = true
 license.workspace = true
 description = "Claude Code's headless stream, transcript rows and hook payloads as types, with a tolerant decoder"
 publish = false
+autotests = false
 
 [dependencies]
 serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

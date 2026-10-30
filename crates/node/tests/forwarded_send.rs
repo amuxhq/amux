@@ -4,8 +4,6 @@
 //! the sender is told it was aborted and settles it at the next catch-up;
 //! nothing sends it again.
 
-mod support;
-
 use std::sync::Arc;
 
 use node::{Daemon, Edge, Owner, ProfileRuntime};
@@ -13,6 +11,8 @@ use support::synthetic::*;
 use support::*;
 use wire::session_service_server::SessionService as _;
 use wire::{SendInputRequest, SendInputResponse, send_input_response};
+
+use crate::support;
 
 const SEGMENTS: u64 = 1 << 20;
 

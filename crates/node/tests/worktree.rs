@@ -6,8 +6,6 @@
 //! the create with nothing made. Nothing ever removes the worktree or its
 //! branch.
 
-mod support;
-
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -16,6 +14,8 @@ use support::synthetic::{quiet_launch, read_until};
 use support::*;
 use wire::agent_service_server::AgentService as _;
 use wire::{AgentSpec, CreateAgentRequest, SessionEvent, session_event};
+
+use crate::support;
 
 fn git(cwd: &Path, args: &[&str]) -> String {
     let output = Command::new("git")

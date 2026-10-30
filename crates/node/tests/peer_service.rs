@@ -4,8 +4,6 @@
 //! only replicates is not found, so no host can reach a third host's agent
 //! through it or speak for one.
 
-mod support;
-
 use std::sync::Arc;
 
 use node::{Daemon, Edge, Owner, ProfileRuntime};
@@ -18,6 +16,8 @@ use wire::{
     ResumeAgentRequest, SendInputRequest, StopAgentRequest, inventory_event,
     peer_subscribe_session_request, session_event,
 };
+
+use crate::support;
 
 const SEGMENTS: u64 = 1 << 20;
 

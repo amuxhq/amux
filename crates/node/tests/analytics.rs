@@ -2,8 +2,6 @@
 //! the run before it, a person's inputs and a client opening, and the daily
 //! check-in, each recorded into a test's sink instead of being sent.
 
-mod support;
-
 use std::sync::Arc;
 
 use analytics::{Ask, Client, Event, Kind, On, Recording};
@@ -17,6 +15,8 @@ use wire::{
     ClaudeAnswer, ClaudeSdkInput, Input, Interrupt, Kind as WireKind, PromptInput, QuestionAnswer,
     SendInputRequest, claude_answer, claude_sdk_input,
 };
+
+use crate::support;
 
 const SEGMENTS: u64 = 1 << 20;
 const T0: i64 = 1_000_000_000;

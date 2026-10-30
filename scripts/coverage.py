@@ -29,8 +29,10 @@ REPORT = ROOT / "tests" / "coverage.md"
 # Kept apart from target/debug: instrumented builds would invalidate it.
 TARGET = ROOT / "target" / "coverage"
 SUMMARY = TARGET / "summary.json"
-# Cargo's closing list of the targets whose tests failed, one per line.
-FAILED_TARGET = re.compile(r"^\s+`(?P<target>.+)`$")
+# nextest's closing list of the tests that did not pass, one per line: a
+# status (FAIL, SIGABRT, TIMEOUT, LEAK-FAIL...), the time, a padded counter,
+# the binary and the test: `SIGABRT [ 30.8s] ( 12/2483) <binary> <test>`.
+FAILED_TEST = re.compile(r"^\s+[A-Z][A-Z-]+ \[[^\]]*\] (?:\([^)]*\) )?(?P<test>\S+ \S+)$")
 
 
 def git(*arguments: str) -> str:
@@ -40,16 +42,15 @@ def git(*arguments: str) -> str:
 
 
 def coverage_env() -> dict[str, str]:
-    """The environment cargo-llvm-cov instruments a plain cargo build under.
+    """The environment cargo-llvm-cov instruments a plain nextest run under.
 
-    Tests that build binaries of their own mid-run (the fake providers,
-    fake-amux) call cargo again and look for the result beside their own
-    executable. `cargo llvm-cov test` builds into a target directory it names
-    only on its own command line, so those nested builds went to
-    target/debug and the tests ran stale or missing binaries. Running plain
-    `cargo test` under the variables `show-env` prints, with
-    CARGO_TARGET_DIR set, sends every build to one instrumented directory
-    that the developer's own target/debug never shares.
+    The nextest setup script builds the binaries the integration suites
+    start (amux, the fakes, fake-amux) with a cargo of its own, into the
+    target directory it is given. Running plain `cargo nextest run` under
+    the variables `show-env` prints, with CARGO_TARGET_DIR set, sends that
+    build and the tests' to one instrumented directory that the developer's
+    own target/debug never shares, so the binaries the tests start are
+    instrumented too.
     """
     env = dict(os.environ, CARGO_TARGET_DIR=str(TARGET))
     shown = subprocess.run(
@@ -64,10 +65,10 @@ def coverage_env() -> dict[str, str]:
 
 
 def run_tests(env: dict[str, str]) -> tuple[list[str], float]:
-    """Run the workspace's tests under instrumentation; return the failed targets."""
+    """Run the workspace's tests under instrumentation; return the failed tests."""
     subprocess.run(["cargo", "llvm-cov", "clean", "--workspace"], cwd=ROOT, env=env, check=True)
     command = [
-        "cargo", "test", "--locked", "--workspace", "--all-targets",
+        "cargo", "nextest", "run", "--locked", "--workspace", "--all-targets",
         "--features", "bundled", "--no-fail-fast",
     ]
     started = time.monotonic()
@@ -75,24 +76,24 @@ def run_tests(env: dict[str, str]) -> tuple[list[str], float]:
         command, cwd=ROOT, env=env, stderr=subprocess.PIPE, text=True, bufsize=1
     )
     failed: list[str] = []
-    listing = False
+    summary = False
     assert process.stderr is not None
     for line in process.stderr:
         sys.stderr.write(line)
-        if "target failed" in line or "targets failed" in line:
-            listing = True
+        if line.lstrip().startswith("Summary ["):
+            summary = True
             continue
-        if listing:
-            match = FAILED_TARGET.match(line.rstrip("\n"))
-            if match:
-                failed.append(match["target"])
-            else:
-                listing = False
+        match = FAILED_TEST.match(line.rstrip("\n"))
+        if summary and match and match["test"] not in failed:
+            failed.append(match["test"])
     status = process.wait()
     if status != 0 and not failed:
-        sys.exit(f"coverage: cargo test exited {status} without naming a failed target")
+        sys.exit(f"coverage: cargo nextest exited {status} without naming a failed test")
     subprocess.run(
-        ["cargo", "llvm-cov", "report", "--json", "--summary-only", "--output-path", str(SUMMARY)],
+        # A process killed while it writes its profile at exit (an agent a
+        # test SIGKILLs, a fake torn down with its net) leaves a truncated
+        # file that llvm-profdata cannot read; the rest still merge.
+        ["cargo", "llvm-cov", "report", "--failure-mode", "all", "--json", "--summary-only", "--output-path", str(SUMMARY)],
         cwd=ROOT, env=env, check=True,
     )
     return failed, time.monotonic() - started
@@ -134,7 +135,7 @@ def write_report(
     lines = [
         "# Line coverage per crate",
         "",
-        "Written by `just coverage`: every workspace test target run under",
+        "Written by `just coverage`: every workspace test run under",
         "cargo-llvm-cov with the desktop features. Lines are counted in each",
         "crate's own sources (`crates/<crate>/src`), whichever crate's tests ran",
         "them, so a core's figure includes what the protocol models and the",
@@ -145,10 +146,10 @@ def write_report(
     ]
     if failed:
         lines += [
-            "These targets failed under instrumentation, so the figures understate",
+            "These tests failed under instrumentation, so the figures understate",
             "what the suite covers:",
             "",
-            *[f"- `{target}`" for target in failed],
+            *[f"- `{test}`" for test in failed],
             "",
         ]
     lines += ["| crate | lines | covered | line coverage |", "|---|---:|---:|---:|"]
@@ -170,7 +171,7 @@ def main() -> int:
     write_report(totals, failed, commit, dirty, seconds)
     print(f"coverage: wrote {REPORT.relative_to(ROOT)} ({len(totals)} crates)")
     if failed:
-        print(f"coverage: {len(failed)} targets failed under instrumentation", file=sys.stderr)
+        print(f"coverage: {len(failed)} tests failed under instrumentation", file=sys.stderr)
         return 1
     return 0
 

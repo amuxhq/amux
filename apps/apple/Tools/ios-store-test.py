@@ -13,8 +13,9 @@ import sqlite_linkage
 
 
 TRIPLE = "aarch64-apple-ios-sim"
-# The unit tests (named after the crate) and every integration test target.
-EXPECTED_TESTS = {"store", "conformance", "explore", "retention", "sqlite"}
+# The unit tests (named after the crate) and the integration test binary,
+# which holds every integration suite.
+EXPECTED_TESTS = {"store", "integration"}
 
 
 def build_tests() -> dict[str, Path]:
@@ -77,8 +78,8 @@ def run_on_simulator(udid: str, executable: Path) -> None:
 def main() -> None:
     executables = build_tests()
     # Every suite opens real databases, so each binary must carry SQLite
-    # itself rather than load the system's; the sqlite suite's is shown.
-    print(sqlite_linkage.inspect(executables["sqlite"]).render(), end="", flush=True)
+    # itself rather than load the system's; the integration binary's is shown.
+    print(sqlite_linkage.inspect(executables["integration"]).render(), end="", flush=True)
 
     udid = ios_simulators.ensure("golden")
     ios_simulators.run("xcrun", "simctl", "bootstatus", udid, "-b", timeout=600)

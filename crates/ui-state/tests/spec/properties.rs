@@ -9,7 +9,7 @@ use proptest::sample::Index;
 use ui_state::{Msg, SessionState};
 use wire::{Item, Kind, Phase, ToolState};
 
-use crate::harness::*;
+use crate::spec::harness::*;
 
 fn run(state: &mut SessionState, msgs: &[Msg]) {
     for msg in msgs {

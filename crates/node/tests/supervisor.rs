@@ -30,7 +30,7 @@ use patience::until;
 static EXECUTABLES: RwLock<()> = RwLock::new(());
 
 /// Writes an executable with no process start in flight. `write` must not
-/// start a process itself (resolve `binaries()` before calling).
+/// start a process itself.
 fn write_executable<T>(write: impl FnOnce() -> T) -> T {
     let _writing = EXECUTABLES
         .write()
@@ -46,33 +46,9 @@ fn start<T>(start: impl FnOnce() -> T) -> T {
     start()
 }
 
-/// fake-amux and amux, built once per run.
+/// fake-amux and amux.
 fn binaries() -> &'static Path {
-    static BUILT: OnceLock<PathBuf> = OnceLock::new();
-    BUILT.get_or_init(|| {
-        let mut cargo = provider_fakes::cargo::command();
-        cargo
-            .args([
-                "build",
-                "--locked",
-                "-p",
-                "fake-amux",
-                "-p",
-                "amux",
-                "--bins",
-            ])
-            .current_dir(env!("CARGO_MANIFEST_DIR"));
-        let status = start(|| cargo.spawn())
-            .expect("cargo runs")
-            .wait()
-            .expect("cargo runs");
-        assert!(status.success(), "building fake-amux and amux failed");
-        let exe = std::env::current_exe().expect("the test binary's path");
-        exe.parent()
-            .and_then(Path::parent)
-            .expect("a target directory")
-            .to_owned()
-    })
+    provider_fakes::binaries::dir()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

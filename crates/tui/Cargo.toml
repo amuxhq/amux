@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "amux terminal client: the fleet and the chat, composed from the view library"
 publish = false
+autotests = false
 
 [features]
 default = []
@@ -52,3 +53,7 @@ prost = { workspace = true }
 provider-fakes = { workspace = true }
 tempfile = { workspace = true }
 testnet = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

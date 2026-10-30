@@ -14,6 +14,7 @@ use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::{Codex, CodexWith, Drained, Parked};
 use interpret::{Interpreter, Replayed, replay};
+use support::Committer;
 use ui_state::{InputOutcome, Msg, SessionState};
 use ui_view::{
     ChatOptions, ToolRows, ask_card, chat_rows, chat_rows_for, composer, context, overview,
@@ -21,9 +22,7 @@ use ui_view::{
 };
 use wire::{Kind, SessionEvent, session_event};
 
-mod support;
-
-use support::Committer;
+use crate::support;
 
 const UPDATE: &str = "UI_VIEW_UPDATE_GOLDENS";
 

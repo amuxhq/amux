@@ -34,32 +34,17 @@ pub struct Capture {
     out: PathBuf,
 }
 
-/// The probe binaries, built beside this test binary.
+/// A probe binary, built with amux and the fakes by `just live`.
 fn probe(name: &str) -> Result<PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|error| error.to_string())?;
-    // target/<profile>/deps/<binary>
-    let target = exe
-        .ancestors()
-        .nth(2)
-        .ok_or("the test binary is not in a target directory")?;
-    let mut args = vec!["build", "--locked"];
-    if target.file_name().and_then(|name| name.to_str()) == Some("release") {
-        args.push("--release");
+    let probe = provider_fakes::binaries::path(name);
+    if probe.is_file() {
+        Ok(probe)
+    } else {
+        Err(format!(
+            "{} is not built: run the live lane with `just live`",
+            probe.display()
+        ))
     }
-    args.extend(match name {
-        "codex-probe" => ["-p", "codex-specs", "--bin", "codex-probe"],
-        _ => ["-p", "claude-specs", "--bin", "claude-probe"],
-    });
-    let status = provider_fakes::cargo::command()
-        .args(&args)
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .stdout(std::process::Stdio::null())
-        .status()
-        .map_err(|error| format!("cargo: {error}"))?;
-    if !status.success() {
-        return Err(format!("building {name} failed"));
-    }
-    Ok(target.join(name))
 }
 
 /// The first `command` on the PATH.

@@ -4,7 +4,7 @@
 use ui_state::{Composer, Connection, Msg, SessionState, Waiting};
 use wire::Phase;
 
-use crate::harness::*;
+use crate::spec::harness::*;
 
 #[test]
 fn open_from_the_snapshot_and_held_rows_with_caught_up_later() {

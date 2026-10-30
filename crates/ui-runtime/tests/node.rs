@@ -4,8 +4,6 @@
 
 #![cfg(unix)]
 
-mod support;
-
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,6 +13,8 @@ use support::until_within;
 use testnet::{AgentDecl, FakeKind, Net, Topology};
 use ui_runtime::{Fleet, Session, Window};
 use ui_state::{Connection, InputState};
+
+use crate::support;
 
 const PATIENCE: Duration = Duration::from_secs(20);
 /// The window's cap: more rows than any case here delivers.

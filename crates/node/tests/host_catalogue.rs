@@ -4,8 +4,6 @@
 //! host's fleet entry whether each is signed in, answers a paired host's
 //! clients through it, and hands Claude's to terminal Claude agents.
 
-mod support;
-
 use std::path::PathBuf;
 
 use prost::Message as _;
@@ -18,6 +16,8 @@ use wire::{
     Catalogue, GetBlobRequest, GetCatalogueRequest, GetCatalogueResponse, ProviderOnHost,
     inventory_event,
 };
+
+use crate::support;
 
 fn model(value: &str) -> OfferedModel {
     OfferedModel {

@@ -5,8 +5,6 @@
 //! hash; a hash that changes mid-session is read anew; replica retention
 //! never evicts the catalogue a replica's current snapshot names.
 
-mod support;
-
 use std::path::{Path, PathBuf};
 
 use prost::Message as _;
@@ -19,6 +17,8 @@ use wire::{
     BlobRef, Catalogue, GetBlobRequest, GetCatalogueRequest, OfferedModel, Phase, SessionEvent,
     session_event,
 };
+
+use crate::support;
 
 const SEGMENTS: u64 = 1 << 20;
 

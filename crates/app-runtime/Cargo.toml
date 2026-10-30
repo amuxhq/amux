@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "The phone's chats and fleet over the local runtime: session and fleet drivers with changes gathered for the host's next turn"
 publish = false
+autotests = false
 
 [dependencies]
 client = { workspace = true }
@@ -23,3 +24,7 @@ wire = { workspace = true }
 models = { workspace = true }
 provider-fakes = { workspace = true }
 testnet = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

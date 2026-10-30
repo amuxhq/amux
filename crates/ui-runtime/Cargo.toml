@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "The session and fleet drivers: the only place an amux chat does I/O"
 publish = false
+autotests = false
 
 [dependencies]
 client = { workspace = true }
@@ -21,3 +22,7 @@ wire = { workspace = true }
 async-trait = { workspace = true }
 provider-fakes = { workspace = true }
 testnet = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

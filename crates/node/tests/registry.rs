@@ -1,8 +1,6 @@
 //! The daemon's agent registry, generation file and startup path, against
 //! real `amux agent` processes on the scripted fake providers.
 
-mod support;
-
 use std::time::Duration;
 
 use node::{ActivationError, ActivationPipe, Generation, LockError, RegistryError, StartError};
@@ -11,6 +9,8 @@ use store::{AgentKey, AgentRow, Marker};
 use support::*;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use wire::{AgentSpec, ExitCause, Lifecycle, Phase};
+
+use crate::support;
 
 fn spec(dir: &std::path::Path, n: u32) -> AgentSpec {
     let bytes = std::fs::read(dir.join(format!("spec.{n}"))).expect("the spec exists");

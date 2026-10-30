@@ -186,7 +186,7 @@ fn every_journal_is_listed_whole_and_obeys_the_interpreters_invariants() {
         }
         if !journal.frames().exists() {
             failures.push(format!(
-                "{}: no frames file; cut it with `cargo test -p testnet --test journal_fixtures -- --ignored cut_missing_journals`",
+                "{}: no frames file; cut it with `just test-crate testnet -- --run-ignored only cut_missing_journals`",
                 journal.name
             ));
             continue;

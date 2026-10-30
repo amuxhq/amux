@@ -91,8 +91,8 @@ working between qualifying runs. It checks that every metric is measured, not th
 release builds on an enrolled machine.
 
 ```sh
-just test-crate qualification -- --test flood
-cargo test -p qualification --features perf flood
+just suite flood-workload-smoke
+cargo nextest run -p qualification --features perf flood
 ```
 
 The same test file holds the served flood to the measured one: `journeys/topologies/flood.json` must equal the

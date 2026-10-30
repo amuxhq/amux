@@ -5,8 +5,6 @@
 
 #![cfg(unix)]
 
-mod support;
-
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -17,6 +15,8 @@ use node::supervisor::SUPERVISOR_LOCK;
 use node::supervisor::login::LoginItem;
 use patience::{holds_for, until_within};
 use support::{Channel, PATIENCE, amux_binary};
+
+use crate::support;
 
 fn goldens() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/goldens/login")

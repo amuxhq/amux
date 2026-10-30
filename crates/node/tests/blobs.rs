@@ -2,8 +2,6 @@
 //! temp-and-rename, GetBlob reads own and replica files, and a write that
 //! fails is an error to the caller that leaves nothing behind.
 
-mod support;
-
 use std::path::Path;
 
 use node::BlobError;
@@ -13,6 +11,8 @@ use support::synthetic::*;
 use support::*;
 use uuid::Uuid;
 use wire::{GetBlobRequest, PutBlobRequest};
+
+use crate::support;
 
 const SEGMENTS: u64 = 1 << 20;
 

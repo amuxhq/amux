@@ -6,8 +6,6 @@
 
 #![cfg(unix)]
 
-mod stories;
-
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::net::{SocketAddr, TcpStream};
 use std::process::{Command, Stdio};
@@ -25,6 +23,8 @@ use testnet::{
     TopologyError, UdpGate, holds_for, until, until_within,
 };
 use wire::{ClaudeSdkItem, SessionEvent, claude_sdk_item, session_event};
+
+use crate::stories;
 
 /// Whether a claude_sdk agent's turn-end row has been seen: the last row
 /// its turn writes, so its journal is settled once this shows.

@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "Append-only journal segments between an agent process and its daemon"
 publish = false
+autotests = false
 
 [features]
 # The synthetic writer daemon and client tests drive journals with.
@@ -17,3 +18,7 @@ wire = { workspace = true }
 [dev-dependencies]
 journal = { path = ".", features = ["synthetic"] }
 tempfile = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

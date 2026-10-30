@@ -5,13 +5,13 @@
 
 #![cfg(unix)]
 
-mod support;
-
 use std::process::Stdio;
 
 use support::desk::{Desk, LONG_GRACE_SECS, say};
 use tokio::io::{AsyncBufReadExt as _, BufReader};
 use tokio::process::Child;
+
+use crate::support;
 
 /// Starts `amux pair` and returns it once it shows the PIN.
 async fn open(desk: &Desk) -> (Child, BufReader<tokio::process::ChildStdout>) {

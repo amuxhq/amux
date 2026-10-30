@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "The profile store: one SQLite file per profile holding own and replica agent rows"
 publish = false
+autotests = false
 
 [features]
 default = ["bundled"]
@@ -19,3 +20,7 @@ wire = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

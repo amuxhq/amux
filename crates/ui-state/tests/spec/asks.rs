@@ -4,7 +4,7 @@
 use ui_state::{InputState, Msg, Refusal, RefusalReason, SessionState};
 use wire::{Kind, Phase};
 
-use crate::harness::*;
+use crate::spec::harness::*;
 
 #[test]
 fn an_ask_is_drawn_before_caught_up_only_when_the_entry_says_needs_you() {

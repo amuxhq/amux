@@ -30,7 +30,7 @@ Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
 | Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat` |
 | Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --no-fail-fast --exclude models` |
 | Simulated stories, doctests and contracts | `ubuntu-latest` | `just sim`, `just contracts-check`, `just doctest`: what reads the same on every platform, run once |
-| Models | `ubuntu-latest`, one job per protocol-models test target | `just test-crate models -- --test <target>`: one model at its CI bounds |
+| Models | `ubuntu-latest`, one job per protocol model | `just test-crate models` filtered to one model's module of the integration test binary: one model at its CI bounds |
 | Build | `ubuntu-latest`, `macos-latest`, `windows-latest` | `just release-check` |
 | Terminal journeys | `ubuntu-latest`, `macos-latest` | Installs `tmux`, then `just journey terminal all`: every terminal story in the manifest |
 | Embedded client | `ubuntu-latest` | `just embedded-check`, `just embedded-test` |
@@ -38,10 +38,12 @@ Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
 | Sanitizers | `ubuntu-latest`, one job for each of `address` and `thread` | `just sanitize <kind>`: the tests that reach unsafe code and C, built on the pinned nightly with the standard library under the sanitizer; `address` fails on an out-of-bounds access, a use after free or a double free, `thread` on a data race |
 | iOS target check | `macos-latest` | `just mobile-check` |
 
-The test job runs with `--no-fail-fast`, so a platform reports every failing
-test binary, not only the first. Its matrix does not fail fast either: a
+The test job runs nextest's `ci` profile, which does not stop at the first
+failure, so a platform reports every failing test; it keeps the run's JUnit
+report (`target/nextest/ci/junit.xml`) as an artifact, every test's result
+and time and a failing test's output. Its matrix does not fail fast either: a
 failure on one operating system does not cancel the others. The Windows
-runner compiles and runs every test target; suites that need Unix processes,
+runner compiles and runs every test binary; suites that need Unix processes,
 PTYs or sockets are compiled out there. Among them are the tests that host
 terminal Claude: the agent's terminal cases (in its `attach`, `dump`,
 `providers`, `tools` and `lifecycle` suites), provider-fakes' `pty` suite,
@@ -53,7 +55,7 @@ the Windows job runs the agent's test of that refusal instead, and every
 headless Claude and Codex test as everywhere. On Linux and macOS the same run is the
 system lane as well: the built `amux` binary's suites (`process`,
 `supervise_cli`, `overlap`, `attach` and the rest), node's `supervisor` suite
-and the `survive-daemon` system journey are ordinary test targets.
+and the `survive-daemon` system journey are ordinary test suites.
 `contracts-check` runs on Linux after `just sim` has built what the
 workspace test run builds: the contracts name Unix-only tests, which Windows
 does not build, and the one test of a macOS facility is built on every Unix
@@ -68,20 +70,28 @@ The terminal journeys are `reach-host`,
 
 ### Bounds
 
-Two kinds of bound stop a run, and neither is ever raised to hide a failing
+Three kinds of bound stop a run, and none is ever raised to hide a failing
 or slow test.
 
+- **A test's bound** is nextest's (`slow-timeout` in
+  [`.config/nextest.toml`](../.config/nextest.toml)): a test is reported slow
+  after a minute and ended after three, a protocol model after two and
+  sixteen minutes. The slowest ordinary test, a testnet link story, took
+  47 s on the Mac with the whole suite running beside it. A hang ends the one
+  test that hung, names it, and the run goes on.
 - **A recipe bound** is a hang detector for one phase, sized above that
   phase's honest duration. `just test` runs two phases, each under its own
   bound ([`scripts/workspace-test.sh`](../scripts/workspace-test.sh)): compiling
-  every test target (`cargo test --no-run`, 1200 s, the bound `just test-build`
-  carries), then running them (1000 s). The run's bound is the slowest
+  every test binary (`cargo nextest run --no-run`, 1200 s, the bound `just
+  test-build` carries), then running them (1000 s). The run's bound is the slowest
   platform's measured clean run — one where no failing test waits out its own
   timeout — times 1.5, rounded up to the hundred.
 - **The job guard** (`timeout-minutes`) bounds the honest total of a job:
   setup, cache restore, every step. The test job's is 30 minutes.
 
-What the bounds were sized from, on a warm cache:
+What the bounds were sized from, on a warm cache, under `cargo test`, before
+the tests ran under nextest (on the Mac the same selection went from 441 s
+to 253 s):
 
 | Platform | Compile | Test run | Whole job |
 | --- | --- | --- | --- |
@@ -98,12 +108,12 @@ Linux's and does not move the bound. A cold cache, after a `Cargo.lock`
 change, compiles the whole dependency graph and can take longer than these
 numbers.
 
-Tests that build `amux` or the fake providers mid-run start cargo through
-`provider_fakes::cargo::command()`, which drops the variables cargo set for
-the package under test. Started with them, every test crate's build reran
-`ring`'s build script and recompiled everything above it, about a minute a
-crate on the macOS runner; that pushed the macOS run from 449 s to past its
-1000 s bound.
+No test builds a binary mid-run. The nextest setup script builds `amux`, the fakes and `fake-amux` once, before
+the first test. Its features unify over its own packages rather than the workspace's, so after a change it
+compiles part of the graph again, once (46 s cold on the Mac, under a second warm). Tests that built the binaries
+themselves each ran cargo again, with the features of their own package: every test crate's first such build
+recompiled part of the graph while other tests ran, and a test process per test would have queued every one of
+them on cargo's lock.
 
 ### Protocol models
 
@@ -111,10 +121,10 @@ The protocol models ([`crates/models`](../crates/models/README.md)) explore
 every state of the real cores within their bounds, a minute or more of
 every core each, so they leave the three Test jobs (`--exclude models`;
 `just test` itself still runs them) for the Models job: one Linux job per
-protocol-models test target, side by side, each building the models crate
-and running one model at its CI bounds on the runner's four cores. `just
-tests-check` fails when a protocol-models test target is missing from the
-job's matrix. Linux minutes cost a public repository nothing, and each job
+protocol model (a module of the crate's integration test binary), side by
+side, each building the models crate and running one model at its CI bounds
+on the runner's four cores. `just tests-check` fails when a model is missing
+from the job's matrix. Linux minutes cost a public repository nothing, and each job
 stays far inside the run's wall time, which the iOS gate sets.
 
 A model's bounds are sized to that runner; its test asserts the state count
@@ -131,7 +141,7 @@ guard is 25 minutes.
 
 The Models at nightly bounds workflow runs each model's ignored nightly
 test, the same matrix, daily and by hand; `just models-nightly` runs the
-same tests locally, one test binary after another. It restores the Models
+same tests locally, one model after another. It restores the Models
 job's Rust cache and never saves its own. Its job guard is 100
 minutes: the slowest model at its nightly bounds, the family model, takes
 757 s on the Mac's 12 threads, and roughly seven times that on
@@ -264,7 +274,7 @@ stopping at the first failure:
 | `typed-provider-check` | The interpreters, the agent's provider handshake and Claude's messaging socket read and write provider messages only through the protocol crates: no `json!`, field looked up by name or untyped `Value` outside the listed tool payloads ([`scripts/typed-provider-check.py`](../scripts/typed-provider-check.py)) |
 | `docs-check` | Every link, image and heading anchor under `docs/` resolves, every figure is referenced and standalone, and `docs/README.md` lists every page once ([`scripts/docs-check.py`](../scripts/docs-check.py)) |
 | `tests-check` | The suite catalogue names only things that exist |
-| `test` | Every workspace test target |
+| `test` | Every workspace test, under nextest |
 | `contracts-check` | Every design contract in [`tests/contracts.toml`](../tests/contracts.toml) names at least one test, and every test and model property it names exists |
 | `doctest` | Documentation tests |
 | `release-check` | The shipping binary builds and passes the release policy check |

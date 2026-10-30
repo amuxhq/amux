@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "The agent process: hosts one provider, runs its interpreter and writes its journal"
 publish = false
+autotests = false
 
 [dependencies]
 log-file = { workspace = true }
@@ -42,3 +43,7 @@ tempfile = { workspace = true }
 
 [target.'cfg(unix)'.dev-dependencies]
 tokio-tungstenite = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

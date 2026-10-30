@@ -5,8 +5,6 @@
 //! interpreter at that point, which must accept it and close the ask. Every
 //! pick the settings view offers is likewise an input the interpreter takes.
 
-mod support;
-
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -21,6 +19,8 @@ use ui_view::{
     ask_card, question_answer, reply_answer, setting_input, settings,
 };
 use wire::{Kind, SessionEvent, send_input_response, session_event};
+
+use crate::support;
 
 fn fixtures(kind: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

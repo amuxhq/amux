@@ -7,7 +7,7 @@
 use ui_state::{Msg, SessionState};
 use wire::{Kind, Phase};
 
-use crate::harness::*;
+use crate::spec::harness::*;
 
 /// A following session with rows `orders` held, caught up, and a window
 /// cap of `cap`.

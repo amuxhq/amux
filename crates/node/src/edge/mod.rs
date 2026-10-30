@@ -45,6 +45,7 @@ use self::cloud::{CloudLink, CloudTransport, UdpBlockedMemory, establish_cloud_l
 use self::status::RuntimeStatus;
 use crate::auth::CredentialProvider;
 use crate::connection::ConnectionManager;
+use crate::daemon::stop_step;
 use crate::discovery::{Advertisement, Discovery, FoundHosts, local_pairing_addrs};
 use crate::dispatcher::TunnelDispatcher;
 use crate::driver::CoreLinks;
@@ -1029,18 +1030,22 @@ impl Edge {
 
     pub(crate) async fn stop(&self, reason: wire::LinkCloseReason) {
         self.discovery.withdraw();
+        stop_step("saying goodbye on every link");
         self.channels
             .link_registry()
             .send_link_close_to_all(reason)
             .await;
         tokio::time::sleep(LINK_CLOSE_FLUSH).await;
         self.shutdown.send_replace(true);
+        stop_step("closing direct links");
         self.reachability.close_direct_links().await;
+        stop_step("stopping the relay link");
         if let Some(link) = self.cloud.lock().await.take() {
             link.stop().await;
         }
         self.quic_endpoint
             .close(quinn::VarInt::from_u32(0), b"profile stopping");
+        stop_step("joining the edge's tasks");
         let tasks = std::mem::take(&mut *self.tasks.lock().unwrap());
         for task in &tasks {
             task.abort();

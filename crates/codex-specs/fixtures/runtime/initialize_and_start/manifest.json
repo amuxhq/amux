@@ -5,8 +5,7 @@
     "provider": "codex",
     "version": "0.150.1",
     "model": "gpt-5.6-luna",
-    "at": "2026-08-29T20:59:28.388202Z",
-    "source_kind": "live_capture"
+    "at": "2026-08-29T20:59:28.388202Z"
   },
   "content": {
     "io.jsonl": "sha256:bbac78a85f1bdbd08a80e2af0fbad7b142f34e7dd37611e7997d171095787a8b",

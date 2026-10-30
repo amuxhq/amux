@@ -6,7 +6,7 @@ use chrono::DateTime;
 use redaction::RedactionSummary;
 use replay_support::{
     IoDirection, IoEvent, MANIFEST_SCHEMA_VERSION, Manifest, Recorded, Recording, ReplayAdvance,
-    ReplayClock, ReplayOptions, SourceKind, replay_transport_with_controller, strict_replay,
+    ReplayClock, ReplayOptions, replay_transport_with_controller, strict_replay,
 };
 use semver::Version;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
@@ -32,7 +32,6 @@ fn recording(io: Vec<IoEvent>) -> Recording {
                 version: Version::new(1, 0, 0),
                 model: "none".to_string(),
                 at: DateTime::UNIX_EPOCH,
-                source_kind: SourceKind::LiveCapture,
             },
             content: BTreeMap::new(),
             redaction: RedactionSummary::default(),

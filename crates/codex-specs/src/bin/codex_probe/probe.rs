@@ -7,10 +7,7 @@ use codex_specs::specs::{
     registry,
 };
 use redaction::Redaction;
-use replay_support::{
-    Manifest, SourceKind, SpecEntry, load_recording, migrate_legacy_manifest, registry_rows,
-    sanitize,
-};
+use replay_support::{Manifest, Recorded, SpecEntry, load_recording, registry_rows, sanitize};
 use semver::Version;
 use uuid::Uuid;
 
@@ -110,15 +107,16 @@ async fn record_one(entry: SpecEntry, root: &Path) -> Result<(), Box<dyn std::er
         )
         .into());
     }
-    let legacy = serde_json::json!({
-        "schema_version": 1,
-        "spec": entry.name,
-        "codex_version": provider_version.to_string(),
-        "model": report.server_model,
-        "recorded_at": Utc::now().to_rfc3339(),
-    });
-    let mut manifest = migrate_legacy_manifest(&legacy, "codex", &destination)?;
-    manifest.recorded.source_kind = SourceKind::LiveCapture;
+    let mut manifest = Manifest::inventory(
+        &destination,
+        entry.name,
+        Recorded {
+            provider: "codex".to_owned(),
+            version: provider_version,
+            model: report.server_model,
+            at: Utc::now(),
+        },
+    )?;
     manifest.redaction = redaction;
     manifest.session_ids = report.session_ids;
     manifest.provider_extra.insert(
@@ -183,15 +181,16 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         spawn.push('\n');
     }
     std::fs::write(stage.join("spawn.jsonl"), spawn)?;
-    let legacy = serde_json::json!({
-        "schema_version": 1,
-        "spec": name,
-        "codex_version": version.to_string(),
-        "model": model,
-        "recorded_at": Utc::now().to_rfc3339(),
-    });
-    let mut manifest = migrate_legacy_manifest(&legacy, "codex", &stage)?;
-    manifest.recorded.source_kind = SourceKind::LiveCapture;
+    let mut manifest = Manifest::inventory(
+        &stage,
+        name,
+        Recorded {
+            provider: "codex".to_owned(),
+            version,
+            model,
+            at: Utc::now(),
+        },
+    )?;
     manifest.redaction = redaction;
     manifest.session_ids = session_ids;
     manifest.provider_extra.insert(

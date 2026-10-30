@@ -1,6 +1,6 @@
 use codex_specs::specs::{MINIMUM_SUPPORTED, SpecSource, fixtures_root, registry, run};
 use replay_support::{
-    ReplayOptions, SourceKind, below_minimum, load_recording, orphan_recordings, strict_replay,
+    ReplayOptions, below_minimum, load_recording, orphan_recordings, strict_replay,
 };
 use semver::Version;
 
@@ -17,12 +17,6 @@ async fn every_registered_specification_replays_strictly() {
             "{} was recorded with disallowed model {}",
             entry.name,
             recording.manifest.recorded.model
-        );
-        assert_eq!(
-            recording.manifest.recorded.source_kind,
-            SourceKind::LiveCapture,
-            "{} is not a live capture; the spec corpus holds captures only",
-            entry.name
         );
         let replay = strict_replay(&recording, ReplayOptions::default());
         let controller = replay.controller.clone();

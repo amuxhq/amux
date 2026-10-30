@@ -106,7 +106,7 @@ fn normalized_relative(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migrate_legacy_manifest;
+    use crate::{Manifest, Recorded};
 
     const MODELS: &[&str] = &["test-model"];
     const REGISTRY: &[SpecEntry] = &[
@@ -127,13 +127,13 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("io.jsonl"), b"").unwrap();
         std::fs::write(dir.join("spawn.jsonl"), b"").unwrap();
-        let legacy = serde_json::json!({
-            "schema_version": 1,
-            "spec": spec,
-            "codex_version": version,
-            "model": "test-model"
-        });
-        let manifest = migrate_legacy_manifest(&legacy, "codex", &dir).unwrap();
+        let recorded = Recorded {
+            provider: "codex".to_string(),
+            version: Version::parse(version).unwrap(),
+            model: "test-model".to_string(),
+            at: chrono::DateTime::UNIX_EPOCH,
+        };
+        let manifest = Manifest::inventory(&dir, spec, recorded).unwrap();
         let mut bytes = serde_json::to_vec_pretty(&manifest).unwrap();
         bytes.push(b'\n');
         std::fs::write(dir.join("manifest.json"), bytes).unwrap();

@@ -10,8 +10,7 @@ pub mod wire_size;
 use std::path::Path;
 
 pub use manifest::{
-    MANIFEST_SCHEMA_VERSION, Manifest, Recorded, Recording, RecordingError, SourceKind,
-    load_recording, migrate_legacy_manifest,
+    MANIFEST_SCHEMA_VERSION, Manifest, Recorded, Recording, RecordingError, load_recording,
 };
 pub use registry::{RegistryRow, SpecEntry, below_minimum, orphan_recordings, registry_rows};
 pub use sanitize::sanitize;

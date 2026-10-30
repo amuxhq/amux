@@ -5,8 +5,7 @@
     "provider": "codex",
     "version": "0.160.0",
     "model": "gpt-6.1-sol",
-    "at": "2026-10-07T04:03:27.733627Z",
-    "source_kind": "live_capture"
+    "at": "2026-10-07T04:03:27.733627Z"
   },
   "content": {
     "io.jsonl": "sha256:0055d35005e66b93ec8ea4803a4727eb64c4aa1114308ae034c6aa047bd23793",

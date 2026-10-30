@@ -5,8 +5,7 @@
     "provider": "claude",
     "version": "2.1.312",
     "model": "claude-haiku-4-5-20251001",
-    "at": "2026-10-29T10:00:21.577374Z",
-    "source_kind": "live_capture"
+    "at": "2026-10-29T10:00:21.577374Z"
   },
   "content": {
     "io.jsonl": "sha256:5138bedd809ce1e9a45000e893cd42e9258b3ea09ead6a91aaa65d5f3703fc7a",

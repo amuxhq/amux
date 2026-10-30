@@ -5,7 +5,7 @@ use claude_specs::specs::{
     MINIMUM_SUPPORTED, SpecSource, fixtures_root, pty_registry, run, sdk_registry,
 };
 use replay_support::{
-    ReplayOptions, SourceKind, below_minimum, load_recording, orphan_recordings, strict_replay,
+    ReplayOptions, below_minimum, load_recording, orphan_recordings, strict_replay,
 };
 use semver::Version;
 
@@ -356,25 +356,12 @@ fn sdk_corpus_is_inventoried_current_and_unorphaned() {
         assert_eq!(recording.manifest.spec, entry.name);
         assert_eq!(recording.manifest.recorded.provider, "claude");
         assert!(recording.manifest.recorded.version >= minimum);
-        match recording.manifest.recorded.source_kind {
-            SourceKind::Migrated { .. } => {
-                assert_eq!(recording.manifest.recorded.version, minimum)
-            }
-            SourceKind::LiveCapture => {
-                assert!(
-                    [Version::new(2, 1, 312)].contains(&recording.manifest.recorded.version),
-                    "{} was captured against an unreviewed Claude version {}",
-                    entry.name,
-                    recording.manifest.recorded.version
-                )
-            }
-            SourceKind::Scripted { .. } => {
-                panic!(
-                    "{} is scripted; the spec corpus holds captures only",
-                    entry.name
-                )
-            }
-        }
+        assert!(
+            [Version::new(2, 1, 312)].contains(&recording.manifest.recorded.version),
+            "{} was captured against an unreviewed Claude version {}",
+            entry.name,
+            recording.manifest.recorded.version
+        );
         assert!(recording.manifest.content.contains_key("io.jsonl"));
         assert!(recording.manifest.content.contains_key("spawn.jsonl"));
     }
@@ -398,10 +385,6 @@ fn recorded_pty_corpus_is_inventoried_current_and_unorphaned() {
         assert_eq!(recording.manifest.spec, entry.name);
         assert_eq!(recording.manifest.recorded.provider, "claude");
         assert!(recording.manifest.recorded.version >= minimum);
-        assert_eq!(
-            recording.manifest.recorded.source_kind,
-            SourceKind::LiveCapture
-        );
         assert_eq!(
             recording
                 .io

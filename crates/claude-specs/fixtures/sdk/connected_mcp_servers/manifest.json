@@ -5,8 +5,7 @@
     "provider": "claude",
     "version": "2.1.312",
     "model": "claude-sonnet-5",
-    "at": "2026-10-29T09:59:02.650757Z",
-    "source_kind": "live_capture"
+    "at": "2026-10-29T09:59:02.650757Z"
   },
   "content": {
     "io.jsonl": "sha256:decb568643c0dbc2d558e3a30c735d21c055f280d2da50d6d19313444266d668",

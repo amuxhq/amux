@@ -6,10 +6,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use chrono::Utc;
 use claude_specs::specs::{SpecSource, execute, fixtures_root, pty_registry, sdk_registry};
 use redaction::Redaction;
-use replay_support::{
-    Manifest, SourceKind, SpecEntry, load_recording, migrate_legacy_manifest, registry_rows,
-    sanitize,
-};
+use replay_support::{Manifest, Recorded, SpecEntry, load_recording, registry_rows, sanitize};
 use semver::Version;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
@@ -253,16 +250,17 @@ async fn record_pty_one(entry: SpecEntry) -> Result<(), Box<dyn std::error::Erro
     spawn.push(b'\n');
     let spawn = sanitize_json_lines(&spawn, &capture.scratch)?;
     std::fs::write(stage.join("spawn.jsonl"), spawn)?;
-    let legacy = serde_json::json!({
-        "schema_version": 1,
-        "spec": entry.name,
-        "claude_code_version": capture.report.provider_version.to_string(),
-        "model": capture.report.model,
-        "recorded_at": Utc::now().to_rfc3339(),
-        "session_ids": [capture.report.session_id],
-    });
-    let mut manifest = migrate_legacy_manifest(&legacy, "claude", &stage)?;
-    manifest.recorded.source_kind = SourceKind::LiveCapture;
+    let mut manifest = Manifest::inventory(
+        &stage,
+        entry.name,
+        Recorded {
+            provider: "claude".to_owned(),
+            version: capture.report.provider_version.clone(),
+            model: capture.report.model.clone(),
+            at: Utc::now(),
+        },
+    )?;
+    manifest.session_ids = vec![capture.report.session_id.clone()];
     manifest.redaction = redaction;
     write_manifest(&stage.join("manifest.json"), &manifest)?;
 
@@ -506,16 +504,17 @@ async fn record_one(entry: SpecEntry, root: &Path) -> Result<(), Box<dyn std::er
     let sanitized_spawn = sanitize_json_lines(&capture.spawn, &capture.scratch)?;
     std::fs::write(stage.join("spawn.jsonl"), sanitized_spawn)?;
 
-    let legacy = serde_json::json!({
-        "schema_version": 1,
-        "spec": entry.name,
-        "claude_code_version": capture.version.to_string(),
-        "model": capture.report.model,
-        "recorded_at": Utc::now().to_rfc3339(),
-        "session_ids": capture.report.session_ids,
-    });
-    let mut manifest = migrate_legacy_manifest(&legacy, "claude", &stage)?;
-    manifest.recorded.source_kind = SourceKind::LiveCapture;
+    let mut manifest = Manifest::inventory(
+        &stage,
+        entry.name,
+        Recorded {
+            provider: "claude".to_owned(),
+            version: capture.version.clone(),
+            model: capture.report.model.clone(),
+            at: Utc::now(),
+        },
+    )?;
+    manifest.session_ids = capture.report.session_ids.clone();
     manifest.redaction = redaction;
     write_manifest(&stage.join("manifest.json"), &manifest)?;
 
@@ -615,16 +614,17 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         spawn.push('\n');
     }
     std::fs::write(stage.join("spawn.jsonl"), spawn)?;
-    let legacy = serde_json::json!({
-        "schema_version": 1,
-        "spec": name,
-        "claude_code_version": facts.version.to_string(),
-        "model": facts.model,
-        "recorded_at": Utc::now().to_rfc3339(),
-        "session_ids": facts.session_ids,
-    });
-    let mut manifest = migrate_legacy_manifest(&legacy, "claude", &stage)?;
-    manifest.recorded.source_kind = SourceKind::LiveCapture;
+    let mut manifest = Manifest::inventory(
+        &stage,
+        name,
+        Recorded {
+            provider: "claude".to_owned(),
+            version: facts.version.clone(),
+            model: facts.model.clone(),
+            at: Utc::now(),
+        },
+    )?;
+    manifest.session_ids = facts.session_ids.clone();
     manifest.redaction = redaction;
     manifest.provider_extra.insert(
         "driven_by".to_owned(),

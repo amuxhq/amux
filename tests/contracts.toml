@@ -534,7 +534,7 @@ section = "Agent and supervisor"
 claim = "A login unit never kills agents with the supervisor."
 tests = [
   "amux/integration::overlap::restarting_the_launch_agent_leaves_the_agent_running",
-  "amux/integration::supervise_cli::the_login_units_match_their_goldens",
+  "node/lib::supervisor::login::tests::a_login_item_restarts_on_failure_only_and_leaves_the_agents_alone",
 ]
 
 # --- Testing page: boundaries -----------------------------------------------
@@ -1182,13 +1182,6 @@ tests = [
   "app-runtime/integration::runtime::a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own",
   "journey:terminal/new-agent-worktree",
 ]
-
-[[contract]]
-id = "terminal-wait-fails-fast"
-source = "testing page"
-section = "Time and absence"
-claim = "A terminal test whose wait fails ends instead of hanging."
-tests = ["amux/integration::term_fails_fast::a_failing_terminal_wait_ends_its_test"]
 
 # --- Models ------------------------------------------------------------------
 

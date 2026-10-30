@@ -381,7 +381,7 @@ below it.
 ## Paging: Fetch and Get
 
 ```proto
-message ListItemsRequest  { bytes agent_id = 1; optional uint64 before_order = 2; uint32 limit = 3; }
+message ListItemsRequest  { bytes agent_id = 1; optional uint64 before_order = 2; uint32 page_size = 3; }
 message ListItemsResponse { repeated Item items = 1; bool exhausted = 2; }
 ```
 

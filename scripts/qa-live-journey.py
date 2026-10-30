@@ -293,7 +293,7 @@ def pairing_invitation(journal: Journal, profile: str) -> tuple[str, subprocess.
     production one. The command holds the offer open for as long as it runs,
     so it is left running and stopped by the caller."""
     offered = subprocess.Popen(
-        ["amux", "--profile", profile, "pair", "--qr", "--link"],
+        ["amux", "--profile", profile, "pair", "--qr", "--print-link"],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     deadline = time.time() + 60
     link = ""

@@ -382,20 +382,6 @@ pub async fn pair(
     .await
 }
 
-/// Pairs with the host whose QR code's link this is.
-pub async fn pair_with_link(admin: Admin, link: &str) -> Result<()> {
-    let invitation = node::parse_pair_link(link).context("the pairing link")?;
-    confirm(
-        admin,
-        BeginPairRequest {
-            host_id: invitation.host_id.as_bytes().to_vec(),
-            secret: Some(begin_pair_request::Secret::QrSecret(invitation.secret)),
-            addrs: invitation.addrs.iter().map(ToString::to_string).collect(),
-        },
-    )
-    .await
-}
-
 fn candidate<'a>(hosts: &'a [HostEntry], name: &str) -> Result<&'a HostEntry> {
     let found = hosts
         .iter()
@@ -418,21 +404,17 @@ fn candidate<'a>(hosts: &'a [HostEntry], name: &str) -> Result<&'a HostEntry> {
 }
 
 async fn confirm(mut admin: Admin, pairing: BeginPairRequest) -> Result<()> {
-    let secret = match pairing.secret {
-        Some(begin_pair_request::Secret::QrSecret(_)) => "pairing link",
-        _ => "PIN",
-    };
     let pending = admin
         .begin_pair(pairing)
         .await
-        .map_err(|status| refused(status, secret))?
+        .map_err(refused)?
         .into_inner();
     let peer = admin
         .confirm_pair(wire::ConfirmPairRequest {
             token: pending.token.clone(),
         })
         .await
-        .map_err(|status| refused(status, secret))?
+        .map_err(refused)?
         .into_inner();
     println!("{}", paired(&peer, &pending));
     Ok(())
@@ -441,17 +423,17 @@ async fn confirm(mut admin: Admin, pairing: BeginPairRequest) -> Result<()> {
 /// A pairing's refusal in words. A wrong secret and a closed pairing
 /// window read the same on the wire, so a guesser learns nothing, and so
 /// the words name both.
-fn refused(status: tonic::Status, secret: &str) -> anyhow::Error {
+fn refused(status: tonic::Status) -> anyhow::Error {
     if status.code() == tonic::Code::PermissionDenied && status.message() == "PAIRING_LOCKED" {
         return anyhow!(
-            "the other host closed its pairing window after too many wrong {secret}s; \
-             run `amux pair` there again for a new {secret}"
+            "the other host closed its pairing window after too many wrong PINs; \
+             run `amux pair` there again for a new PIN"
         );
     }
     if status.code() == tonic::Code::PermissionDenied && status.message() == "INVALID_PIN" {
         return anyhow!(
-            "the {secret} did not match, or the other host's pairing window has closed; \
-             check the {secret} it shows and try again"
+            "the PIN did not match, or the other host's pairing window has closed; \
+             check the PIN it shows and try again"
         );
     }
     if client::RpcError::from(status.clone()).reason() == Some(wire::ErrorReason::PaymentRequired) {
@@ -818,7 +800,7 @@ mod tests {
 
     #[test]
     fn a_wrong_pin_is_refused_in_words() {
-        let refusal = refused(tonic::Status::permission_denied("INVALID_PIN"), "PIN").to_string();
+        let refusal = refused(tonic::Status::permission_denied("INVALID_PIN")).to_string();
         assert_eq!(
             refusal,
             "the PIN did not match, or the other host's pairing window has closed; \
@@ -826,14 +808,14 @@ mod tests {
         );
         assert!(!refusal.contains("INVALID_PIN"));
         // Locked out after too many wrong PINs: said so, with the way on.
-        let locked = refused(tonic::Status::permission_denied("PAIRING_LOCKED"), "PIN").to_string();
+        let locked = refused(tonic::Status::permission_denied("PAIRING_LOCKED")).to_string();
         assert!(
             locked.contains("too many wrong PINs") && locked.contains("amux pair"),
             "{locked}"
         );
         // Any other refusal reads as it did.
         assert_eq!(
-            refused(tonic::Status::permission_denied("not allowed"), "PIN").to_string(),
+            refused(tonic::Status::permission_denied("not allowed")).to_string(),
             "not allowed"
         );
     }

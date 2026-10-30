@@ -18,6 +18,7 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
+use settings::ChatInSetting;
 use ui_state::{ActivityKind, AgentKey, Attention, Connection, FleetState};
 use ui_view::{
     ActivityLine, AskSubject, AskSummary, ExitCause, FleetRow, FleetSection, FleetView, Offline,
@@ -29,7 +30,7 @@ use crate::chat::composer::editor_lines;
 use crate::editor::Editor;
 use crate::fleet::FleetEffect;
 use crate::hosts;
-use crate::setup::{ChatIn, Form, FormHit, FormOutcome, Item as Setting, Pick, Picker, Setup};
+use crate::setup::{Form, FormHit, FormOutcome, Item as Setting, Pick, Picker, Setup};
 use crate::text::{self, pad_to, push};
 use crate::theme::Theme;
 
@@ -746,7 +747,7 @@ impl Home {
             .draft
             .setup
             .as_ref()
-            .is_some_and(|setup| setup.chat_in == ChatIn::Native)
+            .is_some_and(|setup| setup.chat_in == ChatInSetting::Native)
         {
             let (Some(setup), Some(form)) = (&mut self.draft.setup, &mut self.draft.form) else {
                 return vec![];
@@ -1052,7 +1053,7 @@ impl Home {
                 .draft
                 .setup
                 .as_ref()
-                .is_some_and(|setup| setup.chat_in == ChatIn::Native);
+                .is_some_and(|setup| setup.chat_in == ChatInSetting::Native);
         if modal && self.draft.form.is_none() {
             self.draft.form = self.draft.setup.as_ref().map(Form::new);
         }
@@ -1931,9 +1932,9 @@ pub struct Place<'a> {
     pub working_dir: &'a str,
     pub attach: bool,
     /// Where the person chats, which decides how a new agent starts.
-    pub chat_in: ChatIn,
+    pub chat_in: ChatInSetting,
     /// What each agent starts with.
-    pub defaults: &'a crate::setup::Defaults,
+    pub defaults: &'a settings::NewAgentSettings,
 }
 
 /// `key word` pairs, laid out by [`text::fit_hints`]; each is a click

@@ -15,4 +15,3 @@ mod process;
 mod relay;
 mod supervise_cli;
 mod system_journeys;
-mod term_fails_fast;

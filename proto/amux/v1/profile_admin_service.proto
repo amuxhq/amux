@@ -126,8 +126,8 @@ message UnpairRequest {
   string reason = 2;
 }
 
-// An SSH destination; `amux relay` there joins the profile whose id is the
-// peer's host id.
+// An SSH destination; `amux internal ssh-link` there joins the profile whose
+// id is the peer's host id.
 message SshTarget {
   string target = 1;
 }

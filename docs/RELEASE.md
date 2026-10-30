@@ -606,8 +606,7 @@ version.
 `cargo build --release -p amux --bins --no-default-features --features bundled`,
 whole-program optimised (fat LTO, one codegen unit) with line tables — and
 runs [`scripts/release-policy-check.sh`](../scripts/release-policy-check.sh)
-on it, which fails if the binary's help mentions the debug command, if it
-accepts `amux debug`, or if its SQLite linkage breaks policy
+on it, which fails if its SQLite linkage breaks policy
 (`scripts/sqlite_linkage.py`).
 
 The pushed tag starts the Release workflow

@@ -529,8 +529,8 @@ these; the entries amux and service managers run are hidden from it and listed a
 | `amux server stop` | Stops amux cleanly, the supervisor first where one runs; agents keep running. |
 
 Hidden flags serve tests and demos: the global `--config <path>` (or `AMUX_CONFIG`) names another config file;
-`amux pair --qr --print-link` also prints the QR code's link, to paste into a simulator; `amux pair --link` pairs
-from an `amux://pair` link; `amux pair --demo --pin <digits> --for <duration>` holds a PIN you choose open for an
+`amux pair --qr --print-link` also prints the QR code's link, to paste into a simulator;
+`amux pair --demo --pin <digits> --for <duration>` holds a PIN you choose open for an
 unattended demo (`30d`, `12h`, `45m`; at most 90 days) and returns at once, and `amux pair --cancel` closes it;
 `amux login --cloud-url` signs in to another account service.
 

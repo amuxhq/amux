@@ -40,19 +40,6 @@ fi
     exit 1
 }
 
-help=$("$binary" --help)
-case "$help" in
-    *debug*)
-        echo "release-policy-check: release help exposes the debug command" >&2
-        exit 1
-        ;;
-esac
-
-if "$binary" debug --help >/dev/null 2>&1; then
-    echo "release-policy-check: release binary accepts the debug command" >&2
-    exit 1
-fi
-
 scripts/python -B scripts/sqlite_linkage.py "$binary"
 
-echo "release policy excludes diagnostics"
+echo "release policy holds"

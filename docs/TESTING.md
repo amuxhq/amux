@@ -288,7 +288,6 @@ production code, and small authored scenarios. Ordinary runs compare and never r
 | Interpreter emission goldens (`*.json` input, `*.golden` output) per kind | `crates/interpret/fixtures` | `INTERPRET_UPDATE_GOLDENS=1` |
 | View data goldens | `crates/ui-view/tests/goldens` | `UI_VIEW_UPDATE_GOLDENS=1` |
 | Terminal component goldens (text plus style map, both themes) | `crates/tui/tests/golden` | `UPDATE_GOLDENS=1 just test-tui` |
-| Login-unit goldens | `crates/amux/tests/goldens/login` | `AMUX_UPDATE_GOLDENS=1 just suite desktop-cli-system supervise_cli::` |
 | Fake-provider scripts and served topologies | `journeys/scripts`, `journeys/topologies` | by hand |
 | Hand-written provider traffic | `journeys/recordings` | by hand |
 | Journey screen goldens: terminal frames and styles, phone element geometry | `journeys/goldens/terminal/<story>`, `journeys/goldens/phone/<story>` | `UPDATE_JOURNEY_GOLDENS=1` |

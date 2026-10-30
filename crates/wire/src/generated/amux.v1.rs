@@ -12212,8 +12212,8 @@ impl ::prost::Name for UnpairRequest {
         "type.googleapis.com/amux.v1.UnpairRequest".into()
     }
 }
-/// An SSH destination; `amux relay` there joins the profile whose id is the
-/// peer's host id.
+/// An SSH destination; `amux internal ssh-link` there joins the profile whose
+/// id is the peer's host id.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SshTarget {
     #[prost(string, tag = "1")]

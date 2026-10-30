@@ -92,19 +92,6 @@ pub fn restamp(from: &Path, to: &Path, version: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// The version stamped into the binary at `path`.
-pub fn read_file(path: &Path) -> io::Result<String> {
-    let mark: Vec<u8> = MARK_REVERSED.iter().rev().copied().collect();
-    let bytes = std::fs::read(path)?;
-    let at = bytes
-        .windows(MARK_LEN)
-        .position(|window| window == mark.as_slice())
-        .ok_or_else(|| io::Error::other(format!("{} holds no version stamp", path.display())))?;
-    let mut stamp = [0u8; LEN];
-    stamp.copy_from_slice(&bytes[at..at + LEN]);
-    Ok(read(&stamp))
-}
-
 /// A version below `version` for playing the release before it: the same
 /// numbers with a `-previous` prerelease, which semver orders first. A
 /// version that already has a prerelease has no such neighbour, so it

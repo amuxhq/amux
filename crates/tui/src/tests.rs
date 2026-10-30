@@ -1491,8 +1491,8 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
         local_host: b"a".to_vec(),
         layout: None,
         reports: None,
-        chat_in: crate::setup::ChatIn::Amux,
-        defaults: defaults(),
+        chat_in: settings::ChatInSetting::Amux,
+        defaults: settings::NewAgentSettings::default(),
     };
     let agent = |host: &[u8], kind: Kind| wire::Agent {
         host_id: host.to_vec(),
@@ -2429,27 +2429,14 @@ fn home_fleet() -> FleetState {
     fleet
 }
 
-/// New-agent defaults like the shipped ones.
-fn defaults() -> crate::setup::Defaults {
-    let of = |model: &str, effort: &str| crate::setup::AgentDefaults {
-        model: model.into(),
-        effort: effort.into(),
-        permission: "default".into(),
-    };
-    crate::setup::Defaults {
-        claude: of("opus", "high"),
-        codex: of("gpt-6.1-sol", "medium"),
-    }
-}
-
 static HOME_PLACE: std::sync::LazyLock<crate::home::Place<'static>> =
     std::sync::LazyLock::new(|| crate::home::Place {
         local_host: b"a",
         version: "",
         working_dir: "~/work/amux",
         attach: false,
-        chat_in: crate::setup::ChatIn::Amux,
-        defaults: Box::leak(Box::new(defaults())),
+        chat_in: settings::ChatInSetting::Amux,
+        defaults: Box::leak(Box::default()),
     });
 
 fn home_screen(home: &mut crate::home::Home, fleet: &FleetState, theme: Theme) -> String {
@@ -3066,7 +3053,7 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
         version: HOME_PLACE.version,
         working_dir: HOME_PLACE.working_dir,
         attach: false,
-        chat_in: crate::setup::ChatIn::Native,
+        chat_in: settings::ChatInSetting::Native,
         defaults: HOME_PLACE.defaults,
     };
     let mut home = crate::home::Home::default();
@@ -3150,7 +3137,7 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
         version: HOME_PLACE.version,
         working_dir: HOME_PLACE.working_dir,
         attach: false,
-        chat_in: crate::setup::ChatIn::Native,
+        chat_in: settings::ChatInSetting::Native,
         defaults: HOME_PLACE.defaults,
     };
     let mut home = crate::home::Home::default();

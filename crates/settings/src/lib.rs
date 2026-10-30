@@ -50,33 +50,6 @@ pub enum ConfigError {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Invalid(String),
-    #[error("configuration disagrees on {field}: expected {}, found {}", expected.display(), actual.display())]
-    Disagreement {
-        field: &'static str,
-        expected: PathBuf,
-        actual: PathBuf,
-    },
-}
-
-impl Clone for ConfigError {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Io(error) => Self::Io(match error.raw_os_error() {
-                Some(code) => std::io::Error::from_raw_os_error(code),
-                None => std::io::Error::new(error.kind(), error.to_string()),
-            }),
-            Self::Invalid(message) => Self::Invalid(message.clone()),
-            Self::Disagreement {
-                field,
-                expected,
-                actual,
-            } => Self::Disagreement {
-                field,
-                expected: expected.clone(),
-                actual: actual.clone(),
-            },
-        }
-    }
 }
 
 /// The amux account service a profile signs in to unless told otherwise.
@@ -435,6 +408,7 @@ pub enum ColorSetting {
 /// agent's own interface (Claude Code's or Codex's), which a new agent is
 /// attached to when it starts and `amux attach` opens.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "lowercase")]
 pub enum ChatInSetting {
     #[default]

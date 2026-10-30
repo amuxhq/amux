@@ -98,10 +98,6 @@ pub async fn front_door(config: &InstallationConfig) -> Result<Channel> {
     }
 }
 
-pub fn profiles(channel: Channel) -> InstallationServiceClient<Channel> {
-    InstallationServiceClient::new(channel)
-}
-
 pub fn installation(channel: Channel) -> InstallationServiceClient<Channel> {
     InstallationServiceClient::new(channel)
 }
@@ -148,7 +144,7 @@ pub fn profile_id(profile: &wire::Profile) -> String {
 /// The selected profile, as the front door describes it.
 pub async fn profile(config: &InstallationConfig, profile: Option<&str>) -> Result<wire::Profile> {
     let door = front_door(config).await?;
-    select(&mut profiles(door), profile).await
+    select(&mut installation(door), profile).await
 }
 
 /// The socket of a profile the front door described.

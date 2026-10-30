@@ -6,7 +6,7 @@ contract = "The built amux binary hosts agents that outlive a killed daemon and 
 paths = ["crates/amux/tests"]
 recipe = "just suite desktop-cli-system"
 boundary = "System composition"
-oracle = "Exact process output, exit status, login-unit goldens, journaled items, process and lock ownership, and the chat read back over the profile socket."
+oracle = "Exact process output, exit status, journaled items, process and lock ownership, and the chat read back over the profile socket."
 real = ["built amux binary", "processes and process groups", "PTYs", "Unix sockets", "loopback QUIC and TLS", "temporary files"]
 substituted = ["providers by the scripted fakes", "cloud account by a stand-in that signs connection tokens"]
 time = "real"
@@ -16,7 +16,7 @@ evidence = ""
 update = "AMUX_UPDATE_GOLDENS=1 just suite desktop-cli-system supervise_cli::, then review the login-unit diff."
 cargo = [
   { package = "amux", kind = "bin", targets = ["amux"], features = ["bundled"] },
-  { package = "amux", modules = ["agent_process", "attach", "cli_words", "codex_attach", "overlap", "pairing", "process", "relay", "supervise_cli", "term_fails_fast"], features = ["bundled"] },
+  { package = "amux", modules = ["agent_process", "attach", "cli_words", "codex_attach", "overlap", "pairing", "process", "relay", "supervise_cli"], features = ["bundled"] },
 ]
 
 [[suite]]

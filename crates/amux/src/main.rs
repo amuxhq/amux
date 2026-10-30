@@ -28,7 +28,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tonic::Code;
 
-use crate::verbs::{CliAgent, Interface};
+use crate::verbs::CliAgent;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -67,7 +67,7 @@ enum Command {
         agent: String,
         /// Open it in this interface instead of the configured one.
         #[arg(long = "in", value_name = "INTERFACE")]
-        interface: Option<Interface>,
+        interface: Option<settings::ChatInSetting>,
     },
     /// List the agents, children beneath their parent.
     Ls,
@@ -81,7 +81,7 @@ enum Command {
         cwd: Option<PathBuf>,
         /// Chat with it in this interface instead of the configured one.
         #[arg(long = "in", value_name = "INTERFACE")]
-        interface: Option<Interface>,
+        interface: Option<settings::ChatInSetting>,
         /// Its model; `new_agent.<agent>.model` otherwise.
         #[arg(long)]
         model: Option<String>,
@@ -134,19 +134,11 @@ enum Command {
     Pair {
         target: Option<String>,
         /// Show a QR code for the phone instead of a PIN.
-        #[arg(long, conflicts_with_all = ["target", "link", "cancel"])]
+        #[arg(long, conflicts_with_all = ["target", "cancel"])]
         qr: bool,
         /// With --qr, print the QR code's link too, to paste into a simulator.
         #[arg(long = "print-link", requires = "qr", hide = true)]
         print_link: bool,
-        /// Pair with the host whose QR code carries this amux://pair link.
-        #[arg(
-            long,
-            value_name = "LINK",
-            conflicts_with_all = ["target", "cancel"],
-            hide = true
-        )]
-        link: Option<String>,
         /// Close this host's pairing mode.
         #[arg(long, conflicts_with = "target", hide = true)]
         cancel: bool,
@@ -158,7 +150,7 @@ enum Command {
         #[arg(
             long,
             requires_all = ["pin", "for"],
-            conflicts_with_all = ["target", "qr", "link", "cancel"],
+            conflicts_with_all = ["target", "qr", "cancel"],
             hide = true
         )]
         demo: bool,
@@ -206,10 +198,6 @@ enum Command {
         /// Start amux at login, or not; asked when omitted.
         #[arg(long, value_enum)]
         login_item: Option<YesNo>,
-        /// Write the login item and print how it would be registered,
-        /// without registering it.
-        #[arg(long, hide = true)]
-        dry_run: bool,
     },
     /// Install the channel's release now.
     Update {
@@ -431,15 +419,11 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
         let config = connect::load_config(config_path.as_deref())?;
         let profile = profile.as_deref();
         match command {
-            Command::Init {
-                login_item,
-                dry_run,
-            } => {
+            Command::Init { login_item } => {
                 setup::init(
                     &config,
                     config_path.as_deref(),
                     login_item.map(|answer| matches!(answer, YesNo::Yes)),
-                    dry_run,
                 )
                 .await
             }
@@ -452,7 +436,7 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
             } => server::stop(&config).await,
             Command::Profile { command } => {
                 let door = connect::front_door(&config).await?;
-                let mut door = connect::profiles(door);
+                let mut door = connect::installation(door);
                 match command {
                     ProfileCommand::Ls => profiles::list(&mut door).await,
                     ProfileCommand::New { label } => profiles::create(&mut door, label).await,
@@ -469,7 +453,6 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 target,
                 qr,
                 print_link,
-                link,
                 cancel,
                 demo: _,
                 pin,
@@ -481,8 +464,6 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                     pairing::cancel(admin).await
                 } else if let (Some(pin), Some(ttl)) = (pin, r#for) {
                     pairing::demo(admin, pin, ttl).await
-                } else if let Some(link) = link {
-                    pairing::pair_with_link(admin, &link).await
                 } else if let Some(target) = target {
                     let mut client = connect::client_of(&selected).await?;
                     let target = pairing::Target::parse(&target)?;
@@ -506,7 +487,7 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 pairing::unpair(connect::admin_of(&selected).await?, &host, force).await
             }
             Command::Login { cloud_url } => {
-                let door = connect::profiles(connect::front_door(&config).await?);
+                let door = connect::installation(connect::front_door(&config).await?);
                 // Without --profile the daemon chooses: the profile already
                 // bound to this account, or the unbound one.
                 let selected = match profile {

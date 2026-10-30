@@ -434,7 +434,7 @@ impl Net {
             },
             clock,
             driven,
-            binaries: Binaries::built().clone(),
+            binaries: Binaries::built(),
             bus: ScriptedDiscovery::new(),
             edge_hook: options.edge,
             launch_hook: options.launch,

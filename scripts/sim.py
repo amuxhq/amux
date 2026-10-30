@@ -53,8 +53,8 @@ def simulated_targets() -> list[tuple[str, str]]:
 
 
 def walk(seed: int | None, seeds: int | None, filters: list[str]) -> tuple[int, list[dict[str, object]]]:
-    """Runs the simulated stories, streaming their output; returns cargo's
-    exit status and each story's walked line."""
+    """Runs the simulated stories, streaming their output; returns
+    nextest's exit status and each story's walked line."""
     targets = simulated_targets()
     if not targets:
         print("no suite in tests/catalog.toml declares a simulated mode", file=sys.stderr)
@@ -69,10 +69,13 @@ def walk(seed: int | None, seeds: int | None, filters: list[str]) -> tuple[int, 
     # The workspace scope and features `just test` builds with, so the stories
     # reuse its build: naming the package instead unifies the dependencies'
     # features differently and rebuilds every workspace crate beneath it.
-    command = ["cargo", "test", "--locked", "--no-fail-fast", "--workspace", "--features", "bundled"]
+    command = ["cargo", "nextest", "run", "--locked", "--no-fail-fast", "--workspace", "--features", "bundled"]
     for _, target in targets:
         command += ["--test", target]
-    command += ["--", "--nocapture", *filters]
+    # Each story's output whole as it ends, unindented, so its walked line
+    # reads as the story printed it; the stories still run side by side.
+    command += ["--success-output", "immediate", "--failure-output", "immediate", "--no-output-indent"]
+    command += ["--", *filters]
     shown = ["TESTNET_MODE=simulated"] + [f"{k}={env[k]}" for k in ("TESTNET_SEED", "TESTNET_SEEDS") if k in env]
     print("$", *shown, *command, flush=True)
     walked: list[dict[str, object]] = []

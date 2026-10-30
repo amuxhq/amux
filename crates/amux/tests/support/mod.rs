@@ -37,21 +37,9 @@ pub fn amux_binary() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_amux"))
 }
 
-/// The fake providers, built once per run, beside the amux binary.
+/// The fake providers, beside the amux binary.
 pub fn binaries() -> &'static Path {
-    static BUILT: OnceLock<PathBuf> = OnceLock::new();
-    BUILT.get_or_init(|| {
-        let status = provider_fakes::cargo::command()
-            .args(["build", "--locked", "-p", "provider-fakes", "--bins"])
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .status()
-            .expect("cargo runs");
-        assert!(status.success(), "building the fake providers failed");
-        amux_binary()
-            .parent()
-            .expect("a target directory")
-            .to_owned()
-    })
+    provider_fakes::binaries::dir()
 }
 
 /// A fake release channel: `/stable.json` names one build, served at

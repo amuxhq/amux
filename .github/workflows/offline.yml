@@ -25,6 +25,7 @@ jobs:
           shared-key: test
           save-if: false
       - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-nextest
       # The claim is that the tests need no network, not that fetching
       # their dependencies needs none: a fresh runner has an empty registry.
       - name: Fetch dependencies while the network is still available

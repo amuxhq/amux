@@ -33,6 +33,7 @@ jobs:
           shared-key: models
           save-if: false
       - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-nextest
       - name: Check the model at its nightly bounds
         run: just models-nightly ${{ matrix.target }}
 
@@ -48,6 +49,7 @@ jobs:
           shared-key: test
           save-if: false
       - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-nextest
       # The models run in the matrix above, so this walks seeds only; the
       # report names every failing seed and the command that reruns it.
       - name: Walk every simulated story under 2000 seeds

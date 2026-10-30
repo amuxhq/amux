@@ -49,17 +49,30 @@ build:
 check:
     {{bounded}} 900 cargo check --locked --workspace --lib --bins {{desktop_features}}
 
-# Run workspace tests, preserving explicit Cargo target selections.
-test *ARGS:
+# Every test runs in a process of its own (.config/nextest.toml).
+# Run workspace tests under cargo-nextest, preserving explicit Cargo target selections.
+test *ARGS: nextest
     if [ "${1-}" = -- ]; then shift; fi; scripts/workspace-test.sh "$@"
 
 # Run tests for one named workspace crate.
-test-crate CRATE *ARGS:
-    crate=$1; shift; if [ "${1-}" = -- ]; then shift; fi; feature=; if grep -q '^bundled *=' "crates/$crate/Cargo.toml"; then feature='{{desktop_features}}'; fi; {{bounded}} 900 cargo test --locked -p "$crate" $feature "$@"
+test-crate CRATE *ARGS: nextest
+    crate=$1; shift; if [ "${1-}" = -- ]; then shift; fi; feature=; if grep -q '^bundled *=' "crates/$crate/Cargo.toml"; then feature='{{desktop_features}}'; fi; {{bounded}} 900 cargo nextest run --locked -p "$crate" $feature "$@"
+
+# `just flaky [--load] TEST [COUNT]` runs every test whose name contains TEST
+# COUNT times (default 50), one run after another, and stops at the first
+# failure; --load keeps every core busy meanwhile.
+# Make a test that fails now and then fail on demand.
+flaky *ARGS: nextest
+    {{bounded}} 7200 scripts/flaky.sh "$@"
+
+# Refuse to start a test recipe without the pinned cargo-nextest.
+[private]
+nextest:
+    @cargo nextest --version >/dev/null 2>&1 || { echo "cargo-nextest is not installed: brew install cargo-nextest, or cargo install --locked cargo-nextest (.config/nextest.toml names the version)" >&2; exit 1; }
 
 # Exercise the profile store: its reader and writer suite, retention and the SQLite file.
-test-store *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo test --locked -p store --features bundled "$@"
+test-store *ARGS: nextest
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo nextest run --locked -p store --features bundled "$@"
 
 # Cross-compile every store test target and run it on the leased, booted iOS
 # simulator, after proving the SQLite suite's binary carries SQLite itself.
@@ -67,8 +80,8 @@ test-store-ios:
     scripts/with iphone -- {{bounded}} 2300 scripts/python -B apps/apple/Tools/ios-store-test.py
 
 # Exercise the pure store-backed reducer lifecycle and recorded UI specs.
-test-ui *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo test --locked -p ui-state "$@"
+test-ui *ARGS: nextest
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo nextest run --locked -p ui-state "$@"
 
 # Compile every ordinary workspace test target without running it.
 test-build:
@@ -79,12 +92,12 @@ doctest:
     {{bounded}} 600 cargo test --locked --workspace --doc {{desktop_features}}
 
 # Run the whole-daemon and UI-state specification suites.
-spec *ARGS:
+spec *ARGS: nextest
     if [ "${1-}" = -- ]; then shift; fi; scripts/spec-test.sh "$@"
 
 # Exercise TUI behavior.
-test-tui *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo test --locked -p tui --features fixtures "$@"
+test-tui *ARGS: nextest
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo nextest run --locked -p tui --features fixtures "$@"
 
 # Lint every workspace target with warnings denied. The qualification
 # features only decide which targets build, so they are on here: the live
@@ -148,8 +161,8 @@ embedded-check:
     {{bounded}} 900 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded
 
 # Exercise the public embedded owner and client boundary.
-embedded-test:
-    {{bounded}} 900 cargo test --locked -p app-embedded --test embedded
+embedded-test: nextest
+    {{bounded}} 900 cargo nextest run --locked -p app-embedded --test embedded
 
 # Check the provider-free graph for iOS devices and simulators.
 mobile-check:
@@ -160,7 +173,7 @@ mobile-check:
 # on Linux, through sudo. The workspace test script bounds its own compile and
 # run phases. The protocol models are pure computation that would take most of
 # the run's bound, and run in their own CI job, as they do for the test jobs.
-offline-test:
+offline-test: nextest
     scripts/offline-check.sh scripts/workspace-test.sh --lib --tests --no-fail-fast --exclude models
 
 # Build the product with the full-debug profile.
@@ -204,7 +217,7 @@ journey CLIENT NAME *ARGS:
     system)
         # --keep leaves the install running for other clients to open.
         if [ "${1-}" = --keep ]; then export AMUX_JOURNEY_KEEP=1; fi
-        {{bounded}} 1500 cargo test --locked -p amux --test system_journeys -- --exact --nocapture "$(echo "{{NAME}}" | tr - _)"
+        {{bounded}} 1500 cargo nextest run --locked -p amux {{desktop_features}} --test system_journeys --no-capture -- --exact "$(echo "{{NAME}}" | tr - _)"
         ;;
     *)
         echo "no {{CLIENT}} journeys: terminal or system" >&2
@@ -302,27 +315,27 @@ parked-check:
 # leaves the nightly job, one model each on a four-core runner, a quarter of an
 # hour of its six for the build; the single daemon's peer alone took two hours
 # on the twelve-core Mac.
-models-nightly *TARGETS:
-    if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 20700 cargo test --locked -p models $targets -- --ignored --nocapture
+models-nightly *TARGETS: nextest
+    if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 20700 cargo nextest run --locked -p models --profile nightly $targets --run-ignored only --no-capture
 
 # Walk the testnet's simulated stories by seed: every suite tests/catalog.toml
 # declares a simulated mode for, under TESTNET_MODE=simulated, a few seeds per
 # story. `--seed N` reruns one seed (a failure prints its command), `--seeds N`
 # walks N, and names after them narrow the run to matching stories.
-sim *ARGS:
+sim *ARGS: nextest
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 scripts/py scripts/sim.py sim "$@"
 
 # The nightly run: walk `--seeds N` seeds per simulated story, then check the
 # protocol models at `--bounds nightly` (the default), `ci` or `none`, and
 # print a report of seeds walked, time and failing seeds.
-nightly *ARGS:
+nightly *ARGS: nextest
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 14400 scripts/py scripts/sim.py nightly "$@"
 
 # Run every workspace test under cargo-llvm-cov with the desktop features and
 # write line coverage per crate, with the commit it measured, to
 # tests/coverage.md. Needs `cargo install cargo-llvm-cov` and the
 # llvm-tools-preview rustup component.
-coverage:
+coverage: nextest
     {{bounded}} 3600 scripts/py scripts/coverage.py
 
 # Fail when a contract in tests/contracts.toml names no test, or a test or a
@@ -353,9 +366,11 @@ ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-p
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,
 # resume, plan, questions, usage, catalogue, host_catalogue, permission, mode,
 # attach, or all), under the operator's existing login. With no arguments
-# it reports not_run for every kind and starts nothing.
+# it reports not_run for every kind and starts nothing. Its tests are not
+# libtest's, so they run under cargo test, with the binaries they start built
+# first.
 live *ARGS:
-    set -e; if [ "${1-}" = -- ]; then shift; fi; if [ $# -eq 0 ]; then for kind in claude_pty claude_sdk codex; do echo "live $kind: not_run (no scenario selected)"; done; exit 0; fi; kind=$1; shift; case "$kind" in claude_pty|claude_sdk|codex) ;; *) echo "live: unknown kind $kind; known: claude_pty, claude_sdk, codex" >&2; exit 2 ;; esac; {{bounded}} 3600 cargo test --locked -p qualification --features bundled,live --test "${kind}_live" -- "$@"
+    set -e; if [ "${1-}" = -- ]; then shift; fi; if [ $# -eq 0 ]; then for kind in claude_pty claude_sdk codex; do echo "live $kind: not_run (no scenario selected)"; done; exit 0; fi; kind=$1; shift; case "$kind" in claude_pty|claude_sdk|codex) ;; *) echo "live: unknown kind $kind; known: claude_pty, claude_sdk, codex" >&2; exit 2 ;; esac; {{bounded}} 900 cargo build --locked --features bundled -p amux -p provider-fakes -p claude-specs -p codex-specs --bins; TESTNET_BINARIES="$PWD/target/debug" {{bounded}} 3600 cargo test --locked -p qualification --features bundled,live --test "${kind}_live" -- "$@"
 
 # Waves of Sonnet testers, each on a test network of its own with real
 # Claude and Codex agents, keeping evidence of what they find (docs/QA.md).
@@ -367,7 +382,7 @@ qa *ARGS:
 # Qualify desktop performance on an enrolled machine. Pass --baseline to
 # record the current release medians after every absolute budget passes.
 perf *ARGS:
-    set -e; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p qualification --bin perf --features bundled,perf; {{bounded}} 1800 target/release/perf "$@"
+    set -e; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p qualification --bin perf --features bundled,perf; {{bounded}} 2400 cargo build --locked --release -p amux -p provider-fakes --bins; {{bounded}} 1800 target/release/perf "$@"
 
 # Records the release flood under an Instruments template on this Mac, for
 # reading what the daemon's core thread spends its time on and waits for

@@ -134,20 +134,31 @@ jobs:
         with:
           shared-key: test
       - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-nextest
       # testnet's ctl test drives the terminal client in tmux; Linux runners
       # have it already.
       - name: Install tmux on macOS
         if: runner.os == 'macOS'
         run: brew install tmux
       - name: Run workspace tests
-        # Report every failing test binary, not only the first: a platform
-        # that stops early hides the failures behind it until the next run.
+        # The ci profile reports every failing test, not only the first: a
+        # platform that stops early hides the failures behind it until the
+        # next run.
         # This is the fast lane and, on Linux and macOS, the system lane too:
         # the built amux binary's process, attach, overlap and supervise_cli
         # suites, node's supervisor suite and the survive-daemon system
         # journey are ordinary test targets, compiled out on Windows. The
         # protocol models run in the models job instead, on Linux only.
-        run: just test -- --no-fail-fast --exclude models
+        run: just test -- --profile ci --exclude models
+      - name: Keep the test report
+        # Every test's result and time, and a failing test's output, in
+        # JUnit form: target/nextest/ci/junit.xml.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ matrix.os }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
 
   platform-free:
     name: Simulated stories, doctests and contracts
@@ -162,6 +173,7 @@ jobs:
         with:
           shared-key: test
       - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-nextest
       - name: Walk the simulated stories by seed
         # The same stories under TESTNET_MODE=simulated, a few seeds each;
         # a failure prints the seed and the `just sim --seed` that reruns
@@ -197,6 +209,7 @@ jobs:
         with:
           shared-key: models
       - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-nextest
       - name: Check the model at its CI bounds
         run: just test-crate models -- --test ${{ matrix.target }}
 
@@ -300,6 +313,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-nextest
       - name: Check provider-free client graph
         run: just embedded-check
       - name: Test embedded ownership boundary

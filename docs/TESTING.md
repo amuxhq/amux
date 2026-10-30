@@ -135,7 +135,7 @@ just sim --seed 17 <name>        # exactly the failing seed, as a failure prints
 just nightly --seeds 2000        # thousands of seeds per story, then the models at nightly bounds, as a report
 ```
 
-Under `cargo test` the same switch is the environment: `TESTNET_MODE=simulated`, with `TESTNET_SEEDS=N` or
+Under `cargo nextest run` the same switch is the environment: `TESTNET_MODE=simulated`, with `TESTNET_SEEDS=N` or
 `TESTNET_SEED=N`.
 
 ## The catalogue and the contracts
@@ -167,6 +167,17 @@ Renaming a test means updating its contract entry; CI runs both checks.
 
 ## Running tests
 
+Every Rust test runs under [cargo-nextest](https://nexte.st), each in a process of its own, configured in
+[`.config/nextest.toml`](../.config/nextest.toml); the `just` test recipes refuse to start without it (`brew install
+cargo-nextest`, or `cargo install --locked cargo-nextest`). A process per test means no test shares a global, an
+environment variable or a once-built fixture with another, whatever runs beside it. No test builds a binary: a
+setup script ([`scripts/test-binaries.sh`](../scripts/test-binaries.sh)) builds `amux`, the fake providers,
+`fake-amux` and the agent's install-path stand-in once before any test starts and names their directory in
+`TESTNET_BINARIES`, and a test started without it fails saying so rather than running binaries older than the
+source. A test is reported slow after a minute and ended after three; a test that ends while a process it started
+still holds its output fails, since that process would outlive it. The documentation tests, the live lane (whose
+tests have their own harness), Miri and the sanitizers still run under `cargo test`.
+
 ```sh
 just test                                  # every ordinary workspace target
 just test -- --test spec_replication       # one Cargo target across the workspace
@@ -184,10 +195,18 @@ just live claude_sdk all                   # live compatibility for one kind (qu
 just live codex attach                     # Codex's own app co-driving a fresh agent; capture in target/live/codex-attach
 just perf                                  # performance qualification (see Performance)
 just coverage                              # every workspace test with line coverage per crate
+just flaky <test> 200                      # one test 200 times in a row, stopping at its first failure
+just flaky --load <test>                   # the same with every core kept busy beside it
 just fuzz-smoke                            # each fuzz target for 30 s; fails on a crash
 just sanitize address                      # the unsafe code's tests under the address sanitizer
 just sanitize thread                       # the same under the thread sanitizer (Linux only)
 ```
+
+`just flaky` is how a test that fails now and then is made to fail on demand: it runs every test whose name contains
+its argument, one run after another (50 by default), and stops at the first failure with that run's output.
+`--load` keeps every core busy meanwhile, as a full parallel run or a slow CI runner does, which is where most
+timing failures show; a failure that `--load` cannot bring back but a full run can is contention with other tests
+rather than with the CPU.
 
 `just coverage` writes `tests/coverage.md`: line coverage per crate and the commit it measured. Each crate's lines
 count whichever tests ran them, so a core's figure includes what the models and the testnet reach. It is a reading

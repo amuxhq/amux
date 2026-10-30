@@ -13,7 +13,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use patience::{PATIENCE, holds_for, until, until_within};
@@ -28,21 +27,9 @@ use wire::{SubscribeSessionRequest, session_event};
 /// gone.
 const GRACE_SECS: u64 = 10;
 
-/// The fake providers, built once per run, beside the amux binary.
+/// The fake providers, beside the amux binary.
 fn binaries() -> &'static Path {
-    static BUILT: OnceLock<PathBuf> = OnceLock::new();
-    BUILT.get_or_init(|| {
-        let status = provider_fakes::cargo::command()
-            .args(["build", "--locked", "-p", "provider-fakes", "--bins"])
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .status()
-            .expect("cargo runs");
-        assert!(status.success(), "building the fake providers failed");
-        Path::new(env!("CARGO_BIN_EXE_amux"))
-            .parent()
-            .expect("a target directory")
-            .to_owned()
-    })
+    provider_fakes::binaries::dir()
 }
 
 /// An installation in a temporary directory whose `claude` and `codex` are

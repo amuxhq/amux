@@ -29,14 +29,13 @@ or one under `amux supervise` (see [process and supervised hosts](#process-and-s
 a restart or an update is the shipped binary's own. Claims about the CLI and installation themselves still
 belong to the process tests in `crates/amux/tests`.
 
-On first use in a process, the harness builds `amux` and the fake providers with the same Cargo and profile that
-built the test, so agents always run the binary under test. With `TESTNET_BINARIES` naming a directory that
-already holds `amux`, the fakes and the probes, it builds nothing and uses those: a driver that built them once,
-with the features it chose, keeps every net it starts on that one build. The terminal and phone journey drivers
-always hand `testnet serve` that directory, the one they run from unless `TESTNET_BINARIES` names another, and stop
-at once if a binary is missing there: their recipes build `amux` and the fakes in the cargo invocation that builds
-`testnet`, since a build of its own would unify features otherwise and rebuild much of the workspace before the net
-is ready.
+The harness never builds `amux` or the fake providers. In a test, the nextest setup script built them before the
+first test started and names their directory in `TESTNET_BINARIES`, so agents always run the binary under test; a
+test without it fails at once. A driver that is not a test (`testnet serve`, `perf`) takes them from
+`TESTNET_BINARIES` if it names a directory, else from the directory it runs from, where its recipe built them in
+the same cargo invocation as the driver: a build of their own would unify features otherwise and rebuild much of
+the workspace. The terminal and phone journey drivers hand `testnet serve` that directory and stop at once if a
+binary is missing there.
 
 ## Two modes
 

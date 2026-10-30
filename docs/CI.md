@@ -98,12 +98,10 @@ Linux's and does not move the bound. A cold cache, after a `Cargo.lock`
 change, compiles the whole dependency graph and can take longer than these
 numbers.
 
-Tests that build `amux` or the fake providers mid-run start cargo through
-`provider_fakes::cargo::command()`, which drops the variables cargo set for
-the package under test. Started with them, every test crate's build reran
-`ring`'s build script and recompiled everything above it, about a minute a
-crate on the macOS runner; that pushed the macOS run from 449 s to past its
-1000 s bound.
+No test builds a binary mid-run. The nextest setup script builds `amux`, the fakes and `fake-amux` once, before
+the first test, in the workspace run's features. Tests that built them themselves each ran cargo again, with the
+features of their own package: every test crate's first such build recompiled part of the graph (`fake-amux`
+among it) while other tests ran, and a test process per test would have queued every one of them on cargo's lock.
 
 ### Protocol models
 

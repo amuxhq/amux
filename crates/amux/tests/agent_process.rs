@@ -15,7 +15,6 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::OnceLock;
 
 use agent::attach::Attached;
 use agent::local_socket::{self, LocalStream};
@@ -33,21 +32,9 @@ use wire::{
 /// is survived, never drained.
 const GRACE_MS: u32 = 10 * 60 * 1000;
 
-/// The fake providers, built once per run.
+/// The fake providers.
 fn fakes() -> &'static Path {
-    static BUILT: OnceLock<PathBuf> = OnceLock::new();
-    BUILT.get_or_init(|| {
-        let status = provider_fakes::cargo::command()
-            .args(["build", "--locked", "-p", "provider-fakes", "--bins"])
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .status()
-            .expect("cargo runs");
-        assert!(status.success(), "building the fake providers failed");
-        Path::new(env!("CARGO_BIN_EXE_amux"))
-            .parent()
-            .expect("a target directory")
-            .to_owned()
-    })
+    provider_fakes::binaries::dir()
 }
 
 struct Fixture {

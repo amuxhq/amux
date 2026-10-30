@@ -6,7 +6,7 @@
 pub mod synthetic;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use node::{Daemon, Launch, ProfileId, ProfileRuntime, StartOptions};
 pub use patience::{PATIENCE, Stuck, holds_for, until};
@@ -16,34 +16,9 @@ use wire::{
     claude_sdk_input,
 };
 
-/// The amux binary and the fake providers, built once per test run.
+/// The amux binary and the fake providers.
 pub fn binaries() -> &'static Path {
-    static BUILT: OnceLock<PathBuf> = OnceLock::new();
-    BUILT.get_or_init(|| {
-        let status = provider_fakes::cargo::command()
-            .args([
-                "build",
-                "--locked",
-                "-p",
-                "amux",
-                "-p",
-                "provider-fakes",
-                "--bins",
-            ])
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .status()
-            .expect("cargo runs");
-        assert!(
-            status.success(),
-            "building amux and the fake providers failed"
-        );
-        // target/<profile>/deps/<this test> -> target/<profile>
-        let exe = std::env::current_exe().expect("the test binary's path");
-        exe.parent()
-            .and_then(Path::parent)
-            .expect("a target directory")
-            .to_owned()
-    })
+    provider_fakes::binaries::dir()
 }
 
 fn binary(name: &str) -> PathBuf {

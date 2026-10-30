@@ -1,0 +1,53 @@
+# How cargo-nextest runs the workspace's tests (docs/TESTING.md, "Running
+# tests"). Every test runs in a process of its own, so no test shares a
+# global, an environment variable or a once-built fixture with another.
+
+nextest-version = { required = "0.9.150" }
+experimental = ["setup-scripts"]
+
+[scripts.setup.binaries]
+command = ["sh", "scripts/test-binaries.sh"]
+# Cold, it compiles the product; warm, cargo finds it fresh in a second.
+slow-timeout = { period = "120s", terminate-after = 10 }
+capture-stdout = true
+capture-stderr = true
+
+[[profile.default.scripts]]
+# Every package whose tests start amux or a fake provider depends on the
+# fakes.
+filter = "rdeps(provider-fakes)"
+setup = "binaries"
+
+[profile.default]
+fail-fast = false
+# A test is reported slow at a minute and ended at three. The slowest
+# ordinary test, a testnet link story, takes under 50 s on the Mac and a
+# third longer on the slowest CI runner (docs/CI.md, "Bounds"); a test that
+# runs past three minutes is waiting on something that will not come.
+slow-timeout = { period = "60s", terminate-after = 3 }
+# A test that ends while a process it started still holds its output fails:
+# that process outlives the test and competes with the next ones.
+leak-timeout = { period = "1s", result = "fail" }
+
+[[profile.default.overrides]]
+# The model checker explores on every core the machine has; two at once
+# would each take twice their budget. A model at its CI bounds takes up to
+# six minutes on a four-core runner (crates/models/README.md).
+filter = "package(models)"
+threads-required = "num-cpus"
+slow-timeout = { period = "120s", terminate-after = 8 }
+
+[profile.ci]
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"
+
+# `just models-nightly`: the models' ignored tests at their nightly bounds,
+# which run for hours; the workflow's job guard bounds them.
+[profile.nightly]
+
+[[profile.nightly.overrides]]
+filter = "package(models)"
+threads-required = "num-cpus"
+slow-timeout = { period = "600s" }

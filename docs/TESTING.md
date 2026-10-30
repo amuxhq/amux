@@ -251,8 +251,9 @@ Three clocks are kept apart. Policy time (retention, outbox retries and notifica
 refresh, reply and start deadlines) is injected: each timer takes its clock as a parameter, the interpreter has no
 clock at all and receives quiet periods as tick events, and the harness advances a `DrivenClock` to just before,
 at and after a real boundary.
-Transport time (QUIC timers, sockets, processes) runs normally. Harness deadlines are real and bounded, still fire
-when policy time is stopped, and are never the oracle.
+Transport time (QUIC timers, sockets, processes) runs normally, and so does the daemon core's link time, which its
+dial deadlines and pauses and how long a link lived are reckoned in. Harness deadlines are real and bounded, still
+fire when policy time is stopped, and are never the oracle.
 
 Waits subscribe before they read, return what they saw, and fail on a deadline or a closed stream; a wait never
 passes by timing out. An absence is shown by draining to a declared boundary or watching a whole declared window,

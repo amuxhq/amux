@@ -2,14 +2,14 @@
 //! `just test` runs, and walked by seed.
 
 use daemon_core::Presence;
-use models::presence::{Action, State, Via};
+use models::presence::{Action, Answered, State, Via};
 use models::{Bounds, Machine, PresenceRouting, check, walk};
 
 /// How many states the exhaustive run may explore: its count at these
-/// bounds (50,510 on 2026-10-26) with two percent over, since the count can
-/// move with the threads. A run past it says the bounds have outgrown their
-/// place; a run that hangs is the test harness's bound to catch.
-const BUDGET_STATES: u64 = 51_600;
+/// bounds (167,950 on 2026-10-30) with two percent over, since the count
+/// can move with the threads. A run past it says the bounds have outgrown
+/// their place; a run that hangs is the test harness's bound to catch.
+const BUDGET_STATES: u64 = 171_400;
 
 #[test]
 fn every_presence_promise_holds_at_ci_bounds() {
@@ -75,20 +75,31 @@ fn take(model: &PresenceRouting, state: &State, action: Action) -> State {
     model.next(state, &action).expect("an enabled action steps")
 }
 
-/// At the CI bounds the relay refuses a dial through it for the plan,
-/// which reads the host away, and carries one once the plan is bought and
-/// heard of, which reads it online over a link of its own.
+/// At the CI bounds the relay refuses the launch's dial through it for the
+/// plan, which reads the host away; once the host has left its address
+/// and the plan is bought and heard of, the core dials again at once and
+/// the relay carries it, which reads the host online over a link of its
+/// own.
 #[test]
 fn the_relay_refuses_then_carries_a_dial_at_ci_bounds() {
     let model = PresenceRouting::ci();
-    let claimed = take(&model, &model.init(), Action::ClaimUp(Via::Relay));
-    assert!(claimed.dialling(), "{claimed:?}");
-    let refused = take(&model, &claimed, Action::DialTried { fails: false });
+    let launched = model.init();
+    assert!(launched.dialling(), "{launched:?}");
+    let claimed = take(&model, &launched, Action::ClaimUp(Via::Relay));
+    let refused = take(&model, &claimed, Action::Refused(Via::Relay));
     assert_eq!(refused.presence(), Presence::Away, "{refused:?}");
 
-    let bought = take(&model, &refused, Action::PlanChanged);
+    let left = take(&model, &refused, Action::Leave);
+    let lapsed = take(&model, &left, Action::Deadline);
+    assert!(!lapsed.dialling(), "{lapsed:?}");
+    let bought = take(&model, &lapsed, Action::PlanChanged);
     let heard = take(&model, &bought, Action::PlanHeard);
-    let carried = take(&model, &heard, Action::DialTried { fails: false });
+    assert!(heard.dialling(), "{heard:?}");
+    let carried = take(
+        &model,
+        &heard,
+        Action::Answer(Answered::Through(Via::Relay)),
+    );
     assert_eq!(carried.presence(), Presence::Online, "{carried:?}");
     assert!(
         carried.active().is_some_and(|route| route.is_direct()),

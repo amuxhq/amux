@@ -1144,20 +1144,13 @@ impl Daemon {
             }
             (Opened::Initiator(initiate), Stage::Joining { call, host }, result) => {
                 let (call, host) = (*call, *host);
-                let (method, reachability) = (initiate.method, initiate.reachability.clone());
+                let method = initiate.method;
                 self.pairing.sessions.remove(&session);
                 Self::end_pairing(session, None, out);
                 match result {
                     Ok(_) => {
                         Self::pairing_event(method, Role::Joiner, Outcome::Succeeded { host }, out);
-                        answered(
-                            call,
-                            Response::Paired {
-                                host,
-                                reachability: Some(reachability),
-                            },
-                            out,
-                        );
+                        answered(call, Response::Paired { host }, out);
                     }
                     Err(error) => {
                         let failure = PairFailure::from_trust(&error).opaque();
@@ -1514,14 +1507,7 @@ impl Daemon {
         match result {
             Ok(_) => {
                 Self::pairing_event(Method::Ssh, role, Outcome::Succeeded { host }, out);
-                answered(
-                    call,
-                    Response::Paired {
-                        host,
-                        reachability: None,
-                    },
-                    out,
-                );
+                answered(call, Response::Paired { host }, out);
             }
             Err(error) => out.push(Output::EndCall {
                 call,

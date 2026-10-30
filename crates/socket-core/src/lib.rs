@@ -554,6 +554,20 @@ impl<K: Forwarding> Peers<K> {
     }
 
     /// The path a stand-in's packets go out on, where there is one.
+    /// Every path a stand-in's packets go out on now: the one carrying it,
+    /// or each candidate while a first flight has not settled on one.
+    pub fn paths_of(&self, stand_in: SocketAddr) -> Vec<Path> {
+        match self.by_stand_in.get(&stand_in) {
+            Some(Peer::Unnamed(path)) => vec![*path],
+            Some(peer @ Peer::Host(_)) => match self.peers.get(peer).map(|state| &state.route) {
+                Some(Route::Carrying(path)) => vec![*path],
+                Some(Route::All(paths)) => paths.clone(),
+                Some(Route::Unset) | None => Vec::new(),
+            },
+            None => Vec::new(),
+        }
+    }
+
     pub fn path_of(&self, stand_in: SocketAddr) -> Option<Path> {
         match self.by_stand_in.get(&stand_in)? {
             Peer::Unnamed(path) => Some(*path),
@@ -569,14 +583,16 @@ impl<K: Forwarding> Peers<K> {
     /// that path arrive from it.
     ///
     /// A host already known is named afresh when the path is an address
-    /// and the host's route is unset or another address: a host that
-    /// connected again from elsewhere, or whose connection quinn moved to
-    /// the address its packets now come from after its NAT rebound or its
-    /// network changed. Its earlier stand-in goes on reaching it at the new
-    /// address. A host carried some other way (through a forwarder, over a
-    /// byte stream, or on every candidate) keeps that route, and this
-    /// sender stays unnamed; its handshake is done, so it is let go only
-    /// once it goes silent, not for going unnamed.
+    /// and the host's route is unset, another address, or every candidate:
+    /// a host that connected again from elsewhere, or whose connection
+    /// quinn moved to the address its packets now come from after its NAT
+    /// rebound or its network changed, or one whose link crossed this
+    /// host's first flight to it. Its earlier stand-in goes on reaching it
+    /// at the new address, so that flight goes where the host is. A host
+    /// carried some other way (through a forwarder or over a byte stream)
+    /// keeps that route, and this sender stays unnamed; its handshake is
+    /// done, so it is let go only once it goes silent, not for going
+    /// unnamed.
     ///
     /// A stand-in another host was last heard at, at an address, is taken
     /// from it: the address was reused (a LAN address given out again, a
@@ -605,7 +621,7 @@ impl<K: Forwarding> Peers<K> {
                 Route::Carrying(carrying) => {
                     known.released || (addressed(*carrying) && addressed(path))
                 }
-                Route::All(_) => false,
+                Route::All(_) => addressed(path),
             };
             if !readdressed {
                 if let Some(sender) = self.peers.get_mut(&Peer::Unnamed(path)) {

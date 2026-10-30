@@ -307,6 +307,11 @@ impl LinkRegistry {
         let closed = Arc::new(Notify::new());
         let mut state = self.state.write().await;
         let carrier_for_paths = native_carrier.clone();
+        // Read while the route is fresh: a route the socket lets go first
+        // still names the forwarder that carried it.
+        if let Some(native) = &native_carrier {
+            native.forwarded_through();
+        }
         if carrier == CarrierKind::Forwarded {
             self.last_refusals
                 .lock()
@@ -722,19 +727,6 @@ impl LinkRegistry {
             .iter()
             .find(|(_, writer)| writer.host.id == peer)
             .map(|(link, writer)| (*link, writer.tx.clone()))
-    }
-
-    /// Whether a live network link already serves this peer directly.
-    ///
-    /// Link registration precedes routing-table publication. Discovery can
-    /// arrive in that interval, so a dial guard that consults routes alone can
-    /// open a second connection back to the peer that just connected.
-    pub(crate) async fn has_direct_peer_link_to(&self, peer: HostId) -> bool {
-        self.state.read().await.writers.values().any(|writer| {
-            writer.host.id == peer
-                && writer.role == LinkRole::Peer
-                && writer.carrier == CarrierKind::Direct
-        })
     }
 
     pub(crate) async fn send_link_close_to_all(&self, reason: pb::LinkCloseReason) {

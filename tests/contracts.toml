@@ -1292,7 +1292,7 @@ tests = [
 [[contract]]
 id = "presence-working-route-reads-online"
 source = "model"
-property = { crate = "models", machine = "presence and routing", sentence = "a host with a working route eventually reads online: once the world stops changing and the shell's dials come to rest, a host that a forwarder carries reads online" }
+property = { crate = "models", machine = "presence and routing", sentence = "a host some path reaches is eventually linked: once the world stops changing and the core's attempts come to rest, a host that has not refused this one and that a path the core knows reaches reads online" }
 checker = "models/integration::presence::every_presence_promise_holds_at_ci_bounds"
 tests = [
   "testnet/integration::spec_network::a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in",

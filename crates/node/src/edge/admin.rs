@@ -484,22 +484,17 @@ impl Edge {
     }
 
     /// Finishes a pairing a person confirmed: both sides commit the other's
-    /// key, and this side dials the peer at the route pairing found.
+    /// key, and the core dials the peer at the route pairing found.
     pub async fn confirm_pair(&self, token: &[u8]) -> Result<wire::Peer, Status> {
         let answer = self
             .ask(ClientRequest::ConfirmPair {
                 token: token.to_vec(),
             })
             .await?;
-        let Some(Response::Paired { host, reachability }) = answer else {
+        let Some(Response::Paired { host }) = answer else {
             return Err(Status::internal(format!("the core confirmed {answer:?}")));
         };
         let host = Uuid::from_bytes(host.0);
-        // Secret-based pairing reaches its peer directly or through the
-        // relay; SSH pairings commit through `trust_ssh_peer`.
-        if let Some(reachability) = reachability {
-            self.reachability.spawn_pair_time_link(host, reachability);
-        }
         self.peer_entry(HostRef {
             of: Some(wire::host_ref::Of::HostId(host.as_bytes().to_vec())),
         })
@@ -519,7 +514,6 @@ impl Edge {
         let identity = request
             .peer
             .ok_or_else(|| Status::invalid_argument("TrustSshPeerRequest.peer is required"))?;
-        let host = host_from_bytes("PairingIdentity.host_id", &identity.host_id)?;
         let reachability = request
             .ssh_target
             .map(|target| {
@@ -535,12 +529,9 @@ impl Edge {
             local: LocalPairingIdentity::from_device_identity(&self.identity)
                 .named(&self.host_name),
             peer: identity,
-            reachability: reachability.clone(),
+            reachability,
         })
         .await?;
-        if let Some(reachability) = reachability {
-            self.reachability.spawn_pair_time_link(host, reachability);
-        }
         Ok(())
     }
 

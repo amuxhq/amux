@@ -557,15 +557,17 @@ mod tests {
     fn a_redacted_input_keeps_its_ids_and_reads_back() {
         let redactor = Swap::default();
         let host = HostId([0x50; 16]);
-        let input = Input::DialError {
+        let input = Input::AttemptEnded {
             host,
-            error: Some("refused by PLANTED".into()),
+            attempt: crate::AttemptId(3),
+            outcome: crate::AttemptOutcome::Failed("refused by PLANTED".into()),
         };
         assert_eq!(
             input.redacted(&redactor),
-            Input::DialError {
+            Input::AttemptEnded {
                 host,
-                error: Some("refused by REMOVED".into()),
+                attempt: crate::AttemptId(3),
+                outcome: crate::AttemptOutcome::Failed("refused by REMOVED".into()),
             }
         );
         let read = Recorded::Read {

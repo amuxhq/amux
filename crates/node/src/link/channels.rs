@@ -68,8 +68,9 @@ pub enum ChannelError {
 }
 
 /// What a call to a host says when that host refused this host's
-/// certificate as no longer trusted.
-pub const TRUST_REVOKED: &str = "the host no longer trusts this machine";
+/// certificate as no longer trusted: the words the core keeps as the
+/// host's dial error too.
+pub use daemon_core::payload::TRUST_REVOKED;
 
 /// Whether `status` is a host saying it no longer trusts this one, as
 /// [`ChannelError::status`] writes it.
@@ -89,16 +90,12 @@ impl ChannelError {
     }
 }
 
-/// Dials an end-to-end link to a host through a forwarder: the relay, or
-/// a paired daemon forwarding for its hosts.
+/// What a call reaches a host it has no link to by, and a pairing a host
+/// through a forwarder by.
 pub(crate) trait ForwardedDial: Send + Sync + 'static {
-    /// Brings up a link to `peer` whose packets the forwarder at the far
-    /// end of `through` carries, returning once it is registered.
-    fn dial_through(
-        &self,
-        peer: HostId,
-        through: LinkId,
-    ) -> BoxFuture<'_, Result<(), ChannelError>>;
+    /// Asks for a link of `peer`'s own now, returning once the attempt it
+    /// brought about has ended, however it ended.
+    fn want(&self, peer: HostId) -> BoxFuture<'_, Result<(), ChannelError>>;
 
     /// Dials `peer`'s pairing service through the forwarder at the far end
     /// of `through`, presenting no certificate: the host answers only while
@@ -240,12 +237,45 @@ pub(crate) struct Resuming {
     pub(crate) established: BoxFuture<'static, Result<LinkId, ChannelError>>,
 }
 
+/// The paths one dial's first flight goes out on at once.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Flight {
+    pub(crate) paths: Vec<super::socket::Path>,
+    /// Every link to the relay too, those that come up during the flight
+    /// as well.
+    pub(crate) through_relay: bool,
+}
+
+impl std::fmt::Display for Flight {
+    /// Where the flight went, as a dial's error names it.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut tried: Vec<String> = self
+            .paths
+            .iter()
+            .map(|path| match path {
+                super::socket::Path::Direct(addr) => addr.to_string(),
+                super::socket::Path::Forwarded(link) => format!("through link {}", link.0),
+                path => format!("{path:?}"),
+            })
+            .collect();
+        if self.through_relay {
+            tried.push("through the relay".to_owned());
+        }
+        f.write_str(&tried.join(", "))
+    }
+}
+
 /// Dials a host resuming with the ticket its last link left.
 pub(crate) trait ResumedDial: Send + Sync + 'static {
-    /// Starts a link to `peer` and its connector, returning as soon as the
-    /// link can carry data: where the dial holds a ticket, before the
-    /// handshake finishes, so what is written next goes out as early data.
-    fn dial_resumed(&self, peer: HostId) -> BoxFuture<'_, Result<Resuming, ChannelError>>;
+    /// Starts a link to `peer` on every path of `flight` and its
+    /// connector, returning as soon as the link can carry data: where the
+    /// dial holds a ticket, before the handshake finishes, so what is
+    /// written next goes out as early data.
+    fn dial_resumed(
+        &self,
+        peer: HostId,
+        flight: Flight,
+    ) -> BoxFuture<'_, Result<Resuming, ChannelError>>;
 }
 
 /// A calls channel kept for reuse, and whether the one connection under it
@@ -396,10 +426,11 @@ impl ChannelPool {
     /// host refuses the early data, the same calls go out again once the
     /// handshake has finished; with no ticket they follow the handshake.
     /// The channels stay the pool's, for the calls that come after.
-    pub async fn open_resumed(
+    pub(crate) async fn open_resumed_on(
         &self,
         peer: HostId,
         early: Vec<EarlyCall>,
+        flight: Flight,
     ) -> Result<ResumedLink, ChannelError> {
         let dial = self
             .resumed
@@ -408,7 +439,7 @@ impl ChannelPool {
         let Resuming {
             carrier,
             established,
-        } = dial.dial_resumed(peer).await?;
+        } = dial.dial_resumed(peer, flight).await?;
         // One stream for each channel the calls ride, opened and written at
         // once: the carrier sends both as early data where it can.
         let mut opened: Vec<(ChannelClass, Channel, Arc<Ending>, Arc<CancellationToken>)> =
@@ -749,7 +780,8 @@ impl ChannelPool {
 
     /// The link a channel to `peer` on `route` rides and its carrier. A
     /// route through a forwarder rides a link of `peer`'s own, whose
-    /// packets the forwarder carries: the one up, or one dialled now.
+    /// packets the forwarder carries: the one up, or one the core dials
+    /// now.
     async fn carrier(
         &self,
         peer: HostId,
@@ -764,34 +796,21 @@ impl ChannelPool {
                 .ok_or(ChannelError::LinkUnavailable {
                     host_id: link.peer(),
                 }),
-            Route::Via(forwarder) => self.dial_through(peer, forwarder).await,
+            Route::Via(forwarder) => {
+                if let Some(up) = self.links.native_carrier_to_peer(peer).await {
+                    return Ok(up);
+                }
+                self.forwarded
+                    .get()
+                    .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?
+                    .want(peer)
+                    .await?;
+                self.links
+                    .native_carrier_to_peer(peer)
+                    .await
+                    .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })
+            }
         }
-    }
-
-    /// The link of `peer`'s own that is up, or one dialled now whose
-    /// packets `forwarder` carries.
-    pub(crate) async fn dial_through(
-        &self,
-        peer: HostId,
-        forwarder: HostId,
-    ) -> Result<(LinkId, Arc<QuicCarrier>), ChannelError> {
-        if let Some(up) = self.links.native_carrier_to_peer(peer).await {
-            return Ok(up);
-        }
-        let (through, _) = self
-            .links
-            .native_carrier_to_peer(forwarder)
-            .await
-            .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?;
-        let dial = self
-            .forwarded
-            .get()
-            .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?;
-        dial.dial_through(peer, through).await?;
-        self.links
-            .native_carrier_to_peer(peer)
-            .await
-            .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })
     }
 
     /// The channel over a stream of the link: its handshake authenticated
@@ -1472,7 +1491,11 @@ mod tests {
         }
 
         impl ResumedDial for LoopbackDial {
-            fn dial_resumed(&self, peer: HostId) -> BoxFuture<'_, Result<Resuming, ChannelError>> {
+            fn dial_resumed(
+                &self,
+                peer: HostId,
+                _: Flight,
+            ) -> BoxFuture<'_, Result<Resuming, ChannelError>> {
                 Box::pin(async move {
                     let addr = *self.addr.lock().unwrap();
                     let carrier = Arc::new(
@@ -1555,7 +1578,9 @@ mod tests {
         async fn open_and_read(dialler: &Dialler, host: HostId) -> EarlyData {
             let opened = tokio::time::timeout(
                 Duration::from_secs(10),
-                dialler.pool.open_resumed(host, calls()),
+                dialler
+                    .pool
+                    .open_resumed_on(host, calls(), Flight::default()),
             )
             .await
             .expect("the link comes up in time")

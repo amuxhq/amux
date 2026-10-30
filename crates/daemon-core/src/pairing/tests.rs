@@ -38,7 +38,10 @@ impl Host {
             daemon,
             out: Vec::new(),
         };
-        host.step(Input::Tick { now_ms: 1_000_000 });
+        host.step(Input::Tick {
+            now_ms: 1_000_000,
+            link_ms: 1_000_000,
+        });
         host.step(Input::Entropy([host_seed(host.id()); 32]));
         host.step(Input::Started);
         host.out.clear();
@@ -120,7 +123,10 @@ impl Host {
     }
 
     fn tick(&mut self, now_ms: u64) {
-        self.step(Input::Tick { now_ms });
+        self.step(Input::Tick {
+            now_ms,
+            link_ms: now_ms,
+        });
     }
 
     fn trusts(&self, host: u8) -> bool {

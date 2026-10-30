@@ -38,9 +38,9 @@ pub(crate) fn device_server_name() -> rustls::pki_types::ServerName<'static> {
 const CLOSE_LINGER: std::time::Duration = std::time::Duration::from_secs(1);
 pub(crate) const RELAY_QUIC_HANDSHAKE_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(2);
-/// How long a resumed dial to a host waits for its handshake to finish
-/// once it has started sending early data, as a direct dial waits for its
-/// handshake.
+/// How long a test's resumed dial to a host waits for its handshake to
+/// finish once it has started sending early data.
+#[cfg(test)]
 pub(crate) const RESUMED_HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 /// How long a relay dial waits on one address before starting on the
 /// next, of the other family where there is one: the connection attempt
@@ -353,6 +353,9 @@ pub struct QuicCarrier {
     /// link, on a link dialled on every candidate at once: the path is
     /// the one the peer answered on, not one the dial chose.
     follows: Option<Arc<LinkSocket>>,
+    /// The forwarder the socket's route last went through alone, for once
+    /// the socket has let the route go: the forwarder going takes it.
+    last_through: Mutex<Option<super::socket::LinkId>>,
     inbound: tokio::sync::Mutex<mpsc::UnboundedReceiver<ByteStream>>,
     control: Mutex<Option<(ControlSink, ControlSource)>>,
     /// Asks the control writer to finish its stream, answering once the
@@ -408,6 +411,7 @@ pub(crate) struct EarlyForwarding {
 }
 
 impl QuicCarrier {
+    /// Dials `peer` at `addr` alone, for a test of one link.
     #[cfg(test)]
     pub(crate) async fn connect_direct(
         endpoint: &LinkEndpoint,
@@ -416,21 +420,7 @@ impl QuicCarrier {
         trust_store: SharedTrustStore,
         peer: HostId,
     ) -> Result<Self, ConnectError> {
-        Self::connect_direct_with_transport(endpoint, addr, identity, trust_store, peer, None).await
-    }
-
-    pub(crate) async fn connect_direct_with_transport(
-        endpoint: &LinkEndpoint,
-        addr: SocketAddr,
-        identity: &DeviceIdentity,
-        trust_store: SharedTrustStore,
-        peer: HostId,
-        transport: Option<std::sync::Arc<quinn::TransportConfig>>,
-    ) -> Result<Self, ConnectError> {
-        let mut config = endpoint.client_config(identity, &trust_store, peer)?;
-        if let Some(transport) = transport {
-            config.transport_config(transport);
-        }
+        let config = endpoint.client_config(identity, &trust_store, peer)?;
         let dialled = std::time::Instant::now();
         let connection = endpoint
             .connect_to(config, addr, Server::Host(peer), DEVICE_SERVER_NAME)?
@@ -477,7 +467,7 @@ impl QuicCarrier {
     /// once, and through the relay when `through_relay`, as a
     /// resumed dial to one address does: the link's first flight
     /// goes out on all of them, and the first path the peer answers on
-    /// carries it.
+    /// carries it. The handshake is given up after `deadline`.
     pub(crate) async fn first_flight(
         endpoint: &LinkEndpoint,
         paths: Vec<super::socket::Path>,
@@ -485,11 +475,12 @@ impl QuicCarrier {
         identity: &DeviceIdentity,
         trust_store: SharedTrustStore,
         peer: HostId,
+        deadline: std::time::Duration,
     ) -> Result<Self, ConnectError> {
         let config = endpoint.client_config(identity, &trust_store, peer)?;
         let connecting =
             endpoint.connect_on_all(config, peer, paths, through_relay, DEVICE_SERVER_NAME)?;
-        let (connection, early) = handshake(connecting, RESUMED_HANDSHAKE_TIMEOUT).await?;
+        let (connection, early) = handshake(connecting, deadline).await?;
         let control = open_control(&connection, early.as_ref()).await?;
         Ok(Self::new(connection, CarrierKind::Direct, Some(control))
             .following(endpoint.socket.clone())
@@ -833,6 +824,7 @@ impl QuicCarrier {
             through: None,
             early: None,
             follows: None,
+            last_through: Mutex::new(None),
             inbound: tokio::sync::Mutex::new(inbound),
             control: Mutex::new(Some((
                 ControlSink {
@@ -965,15 +957,25 @@ impl QuicCarrier {
     }
 
     pub fn forwarded_through(&self) -> Option<super::socket::LinkId> {
-        let routed = self
-            .follows
-            .as_ref()
-            .and_then(|socket| socket.path_of(self.connection.remote_address()));
-        match routed {
-            Some(super::socket::Path::Forwarded(through)) => Some(through),
-            Some(_) => None,
-            None => self.through,
-        }
+        let Some(socket) = &self.follows else {
+            return self.through;
+        };
+        let routed = socket.paths_of(self.connection.remote_address());
+        // A first flight that only forwarders answer goes on every path
+        // until one carries it: through one forwarder alone, it rides that.
+        let through = match routed.as_slice() {
+            [] => return *self.last_through.lock().unwrap(),
+            [super::socket::Path::Forwarded(through), rest @ ..]
+                if rest
+                    .iter()
+                    .all(|path| *path == super::socket::Path::Forwarded(*through)) =>
+            {
+                Some(*through)
+            }
+            _ => None,
+        };
+        *self.last_through.lock().unwrap() = through;
+        through
     }
 
     pub fn early_data(&self) -> EarlyData {

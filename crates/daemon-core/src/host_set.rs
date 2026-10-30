@@ -17,6 +17,7 @@
 //! the deltas after it describe one sequence.
 
 use std::collections::BTreeMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -63,6 +64,21 @@ impl HostSet {
     pub fn published(&self) -> &[HostEntry] {
         &self.published
     }
+
+    /// Every host discovery holds now.
+    pub(crate) fn found_hosts(&self) -> impl Iterator<Item = HostId> + '_ {
+        self.candidates.iter().map(|candidate| candidate.host)
+    }
+
+    /// The addresses discovery holds `host` at, newest first.
+    pub(crate) fn found_at(&self, host: HostId) -> Vec<SocketAddr> {
+        self.candidates
+            .iter()
+            .filter(|candidate| candidate.host == host)
+            .flat_map(|candidate| &candidate.addrs)
+            .filter_map(|addr| addr.parse().ok())
+            .collect()
+    }
 }
 
 impl Daemon {
@@ -76,9 +92,18 @@ impl Daemon {
         self.touched.host_set = true;
     }
 
-    pub(crate) fn candidates_found(&mut self, found: Vec<Candidate>) {
+    /// Every machine discovery holds now: the host set lists those not
+    /// paired, and a paired one found at an address it was not before has
+    /// a new path.
+    pub(crate) fn candidates_found(&mut self, found: Vec<Candidate>, out: &mut Vec<Output>) {
+        let before: BTreeMap<HostId, Vec<SocketAddr>> = self
+            .host_set
+            .found_hosts()
+            .map(|host| (host, self.host_set.found_at(host)))
+            .collect();
         self.host_set.candidates = found;
         self.touched.host_set = true;
+        self.reach_found(&before, out);
     }
 
     pub(crate) fn dial_error(&mut self, host: HostId, error: Option<String>) {

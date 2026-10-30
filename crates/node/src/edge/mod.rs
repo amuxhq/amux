@@ -15,7 +15,7 @@ pub(crate) mod account;
 mod admin;
 mod binding;
 mod cloud;
-mod first_flight;
+pub(crate) mod first_flight;
 mod peer;
 mod relay_server;
 mod status;
@@ -61,7 +61,9 @@ use crate::routing::{
     local_host,
 };
 use crate::runtime::ProfileRuntime;
-use crate::services::{LocalPairingIdentity, PairingService, ReachabilityLinkConnector};
+use crate::services::{
+    ConnectorParts, LocalPairingIdentity, PairingService, ReachabilityLinkConnector,
+};
 use crate::transport::BoxedGrpcIo;
 use crate::trust::SharedTrustStore;
 use crate::{Clock, HostId};
@@ -295,7 +297,7 @@ pub struct Edge {
     shutdown: watch::Sender<bool>,
     tasks: Mutex<Vec<JoinHandle<()>>>,
     analytics: analytics::Analytics,
-    first_flights: first_flight::FirstFlights,
+    first_flights: Arc<first_flight::FirstFlights>,
     /// The path machine of every peer, choosing the path its link takes.
     paths: Arc<PathDriver>,
     /// The machine's interface addresses, where a test stands in for them.
@@ -467,20 +469,20 @@ impl Edge {
         let discovery: Arc<dyn Discovery> =
             platform.unwrap_or_else(|| Arc::new(crate::discovery::ScriptedDiscovery::new()));
         let found = Arc::new(FoundHosts::default());
-        let reachability = ReachabilityLinkConnector::new(
-            identity.clone(),
-            trust.clone(),
-            local_host.clone(),
-            channels.clone(),
-            connections.clone(),
-            incoming_streams_tx.clone(),
-        );
-        reachability.configure(
-            discovery.clone(),
-            found.clone(),
-            quic_endpoint.clone(),
-            options.discovery_scope.clone(),
-        );
+        let first_flights = Arc::new(first_flight::FirstFlights::default());
+        let reachability = ReachabilityLinkConnector::new(ConnectorParts {
+            identity: identity.clone(),
+            trust_store: trust.clone(),
+            local_host: local_host.clone(),
+            channels: channels.clone(),
+            connections: connections.clone(),
+            incoming_streams_tx: incoming_streams_tx.clone(),
+            endpoint: quic_endpoint.clone(),
+            discovery: discovery.clone(),
+            found_hosts: found.clone(),
+            scope: options.discovery_scope.clone(),
+            first_flights: first_flights.clone(),
+        });
         // A handed set is advertised nowhere: this edge has no advertiser.
         if let Some(addr) = lan_addr.filter(|_| !handed) {
             let addrs = if addr.ip().is_unspecified() {
@@ -498,11 +500,8 @@ impl Edge {
                 })
                 .map_err(|error| EdgeError::Discovery(error.to_string()))?;
         }
-        tasks.push(reachability.spawn_dial_on_found(discovery.browse(), options.dial));
+        tasks.push(reachability.spawn_dial_on_found(discovery.browse()));
         discovery.requery();
-        if options.dial {
-            tasks.extend(reachability.spawn_startup_links());
-        }
         if options.link_socket {
             tasks.push(serve_link_socket(
                 dir,
@@ -540,16 +539,13 @@ impl Edge {
             shutdown,
             tasks: Mutex::new(tasks),
             analytics,
-            first_flights: first_flight::FirstFlights::default(),
+            first_flights,
             paths,
             interfaces: options.interfaces.clone(),
         });
-        if options.dial {
-            edge.tasks
-                .lock()
-                .unwrap()
-                .push(tokio::spawn(first_flight::launch(Arc::downgrade(&edge))));
-        }
+        // The core dials every trusted host from here: a launch's first
+        // flights.
+        edge.reachability.start_dialling(options.dial);
         edge.tasks.lock().unwrap().push(follow_plan(
             &edge.status,
             &edge.connections,
@@ -672,19 +668,45 @@ impl Edge {
         Ok(crate::link::peer_client(self.channel(host).await?))
     }
 
-    /// Brings up a link to `host` resuming with the ticket its last link
-    /// left, writing `early` before the handshake finishes; see
-    /// [`crate::link::ChannelPool::open_resumed`].
+    /// Brings up a link to `host` on every path the core knows it by,
+    /// resuming with the ticket its last link left and writing `early`
+    /// before the handshake finishes, beside whatever the core dials; see
+    /// [`crate::link::ChannelPool::open_resumed_on`].
     pub async fn open_resumed(
         &self,
         host: HostId,
         early: Vec<crate::EarlyCall>,
     ) -> Result<crate::ResumedLink, crate::link::ChannelError> {
-        self.channels.open_resumed(host, early).await
+        let core = crate::routing::core_host(host);
+        let plan = self
+            .runtime
+            .upgrade()
+            .ok_or(crate::link::ChannelError::LinkUnavailable { host_id: host })?
+            .driver()
+            .look(move |daemon| daemon.dial_plan(core))
+            .await
+            .unwrap_or_default();
+        let flight = crate::link::channels::Flight {
+            paths: plan
+                .paths
+                .into_iter()
+                .filter_map(|path| match path {
+                    daemon_core::DialPath::Direct(addr) => {
+                        Some(crate::link::socket::Path::Direct(addr))
+                    }
+                    daemon_core::DialPath::Through(link) => {
+                        Some(crate::link::socket::Path::Forwarded(link))
+                    }
+                    daemon_core::DialPath::Ssh(_) => None,
+                })
+                .collect(),
+            through_relay: plan.through_relay,
+        };
+        self.channels.open_resumed_on(host, early, flight).await
     }
 
-    /// The answers launch's first flights brought, for the calls the core
-    /// makes once each host's link is up.
+    /// The answers the first flights brought, for the calls the core makes
+    /// once each host's link is up.
     pub(crate) fn first_flights(&self) -> &first_flight::FirstFlights {
         &self.first_flights
     }
@@ -1003,12 +1025,10 @@ impl Edge {
             .with_clock(self.clock.clone())
     }
 
-    /// Dials a trusted peer's LAN listener directly.
+    /// Has a trusted peer dialled at its LAN listener: the address is
+    /// remembered as where it answers, and the core dials it there.
     pub fn dial(&self, host: HostId, addr: SocketAddr) {
-        self.reachability.spawn_pair_time_link(
-            host,
-            crate::trust::Reachability::Direct { addrs: vec![addr] },
-        );
+        self.connections.remember_direct_addr(host, addr);
     }
 
     /// Closes every link, withdraws the advertisement and stops serving.
@@ -1030,6 +1050,7 @@ impl Edge {
 
     pub(crate) async fn stop(&self, reason: wire::LinkCloseReason) {
         self.discovery.withdraw();
+        self.reachability.stop_dialling();
         stop_step("saying goodbye on every link");
         self.channels
             .link_registry()
@@ -1206,25 +1227,28 @@ pub fn interface_addrs() -> Vec<std::net::IpAddr> {
     addrs
 }
 
-/// Gives every trusted host a path machine, with what it listed before
-/// this launch, as the core read them from the trust file.
+/// Gives every trusted host a path machine, with the addresses the core
+/// read for it from the trust file.
 fn seed_addresses(core: crate::driver::CoreLinks, paths: &Arc<PathDriver>) -> JoinHandle<()> {
     let paths = Arc::downgrade(paths);
     tokio::spawn(async move {
         let looked = core
             .look(|daemon| {
-                let trusted: Vec<HostId> = daemon.trust().entries().map(|(host, _)| host).collect();
-                (trusted, daemon.peer_addresses().clone())
+                daemon
+                    .trust()
+                    .entries()
+                    .map(|(host, _)| {
+                        let id = daemon_core::HostId(*host.as_bytes());
+                        (host, daemon.path_candidates(id))
+                    })
+                    .collect::<Vec<_>>()
             })
             .await;
-        let (Some((trusted, listed)), Some(paths)) = (looked, paths.upgrade()) else {
+        let (Some(trusted), Some(paths)) = (looked, paths.upgrade()) else {
             return;
         };
-        for host in trusted {
-            paths.addresses(host, &[]);
-        }
-        for (host, addrs) in listed {
-            paths.addresses(uuid::Uuid::from_bytes(host.0), &addrs);
+        for (host, addrs) in trusted {
+            paths.addresses(host, &addrs);
         }
     })
 }

@@ -4,11 +4,11 @@
 use models::{Bounds, FamilyDeliveries, check, walk};
 
 /// How many states the exhaustive run may explore: the most it explored at
-/// these bounds on 2026-10-26 (204,278 to 207,372 states on twelve, four
+/// these bounds on 2026-10-30 (209,382 to 213,130 states on twelve, four
 /// and two threads) with two percent over, since the count moves with the
 /// threads. A run past it says the bounds have outgrown their place; a run
 /// that hangs is the test harness's bound to catch.
-const BUDGET_STATES: u64 = 211_600;
+const BUDGET_STATES: u64 = 217_400;
 
 #[test]
 fn every_family_promise_holds_at_ci_bounds() {

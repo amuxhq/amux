@@ -665,27 +665,26 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
     let impostor_addr = edge(&net, "impostor").lan_addr().unwrap();
     net.discovery()
         .announce(advert(&net, "desk", impostor_addr, "home"));
-    until(
-        "the laptop to dial the claimed address and fail",
+    // The dialer checks the answering key before it presents its own, so
+    // the stranger never sees the laptop's certificate. One dial tries the
+    // desk's old address beside the claimed one, so its error names both.
+    let refused = until(
+        "the laptop to dial the claimed address and meet the wrong key",
         || async {
             let error = edge(&net, "laptop").last_dial_error(desk).await;
             error
-                .as_ref()
-                .is_some_and(|error| error.contains(&impostor_addr.to_string()))
-                .then_some(())
+                .clone()
+                .filter(|error| {
+                    error.contains(&impostor_addr.to_string())
+                        && error.contains("QUIC handshake failed")
+                        && error.contains("invalid peer certificate")
+                })
                 .ok_or_else(|| format!("last dial error: {error:?}"))
         },
     )
     .await
     .unwrap();
-    // The dialer checks the answering key before it presents its own, so
-    // the stranger never sees the laptop's certificate.
-    let refused = edge(&net, "laptop").last_dial_error(desk).await.unwrap();
-    assert!(
-        refused.contains(&format!("{impostor_addr}: QUIC handshake failed"))
-            && refused.contains("invalid peer certificate"),
-        "{refused}"
-    );
+    println!("the laptop's dial at the claimed address: {refused}");
     // The dial's outcome is in: the stranger's key never matches the pin.
     assert_eq!(
         edge(&net, "laptop").via(desk).await,
@@ -913,19 +912,12 @@ async fn discovery_advertises_a_listener_and_finds_a_paired_host_at_its_new_addr
     assert!(!advertised(quiet), "a profile without a listener");
     assert!(!advertised(phone), "a phone listens for nothing");
 
-    // Trusted after the desk was found, the phone waits for the network to
-    // name the desk again, and dials it the moment it does.
-    net.trust("desk", "phone").await.unwrap();
-    net.trust("phone", "desk").await.unwrap();
-    never(
-        "the phone to dial before the desk is found again",
-        async || edge(&net, "phone").via(desk).await != LiveRoute::Offline,
-    )
-    .await;
+    // Trusted after the desk was found, the phone dials it at once where
+    // the network found it.
     let first = edge(&net, "desk").lan_addr().unwrap();
     assert_eq!(first, held.local_addr().unwrap());
-    net.discovery()
-        .announce(advert(&net, "desk", first, "home"));
+    net.trust("desk", "phone").await.unwrap();
+    net.trust("phone", "desk").await.unwrap();
     until_via(&net, "phone", "desk", LiveRoute::Direct).await;
     // The dialler stores an address once its link is established, just
     // after routing already names the link.

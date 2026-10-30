@@ -448,17 +448,9 @@ impl Daemon {
     fn revocation_cleared(&mut self, host: HostId, out: &mut Vec<Output>) {
         self.touched.host_set = true;
         if self.sources.trusts(host) {
-            self.try_again(host, out);
+            self.reconsider(host, out);
             self.sources_try_again(host, out);
         }
-    }
-
-    /// Whether the core asks for no dial to `host`: one this profile does
-    /// not trust, or one that said it no longer trusts this host. Pairing
-    /// again opens a link of its own.
-    pub(crate) fn dial_barred(&self, host: HostId) -> bool {
-        (self.sources.knows_trust() && !self.sources.trusts(host))
-            || self.routing.catalogue.revoked(host)
     }
 }
 

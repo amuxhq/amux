@@ -22,6 +22,21 @@ SSH pairing commits through the same trust writes. Randomness arrives as
 `Input::Entropy` and is stretched by counting, so a run is a function of its
 inputs.
 
+Reaching paired hosts is the core's as well (`reach`). It holds one attempt
+per host at a time, from its `Output::Dial` until its `Input::AttemptEnded`,
+each on every path it knows the host by: where discovery found it and where
+it last answered, its SSH destination, the paired hosts and the relay that
+claim it. An attempt has ten seconds; one that ends without a link is
+followed by a pause (one second doubling to thirty) that a new path or a call
+wanting the host cuts short, and a host whose link dropped within a second
+waits out the rest of that second before the next; a host that refused
+this one as no longer trusted is not dialled until something says it may have
+taken that back. The same addresses go to the link's path machine
+(`Output::PeerAddresses`), so a link up on one path moves to another that
+answers. These deadlines and pauses, and how long a link lived, are reckoned
+in link time, the second clock `Input::Tick` carries, which runs on when a
+test holds policy time still.
+
 What belongs inside: anything whose interleaving with the core's state can
 matter is in the core; anything that only produces a result is a job the
 driver runs and reports back as an input; transport and codec are the

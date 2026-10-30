@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::ids::{CallId, JobId};
+use crate::ids::{AttemptId, CallId, JobId};
 use crate::{Daemon, Pending};
 
 /// Ids the core numbered itself, each mapped to its rank among those in
@@ -85,8 +85,20 @@ impl Daemon {
             next_job: 0,
             peers: self.pending.peers.canonical(&ids),
         };
+        let attempts = Renumber::new(
+            self.routing.reach.attempts(),
+            AttemptId,
+            AttemptId(u64::MAX),
+        );
+        let routing = crate::RoutingState {
+            reach: self
+                .routing
+                .reach
+                .canonical(|attempt| attempts.get(attempt)),
+            ..self.routing.clone()
+        };
         let core = (
-            &self.routing,
+            &routing,
             &self.presence,
             &self.sources.canonical(&ids),
             &self.families.canonical(&ids),

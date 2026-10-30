@@ -472,6 +472,12 @@ impl LinkSocket {
         self.lock().peers.path_of(stand_in)
     }
 
+    /// Every path a stand-in's packets go out on now; see
+    /// [`socket_core::Peers::paths_of`].
+    pub fn paths_of(&self, stand_in: SocketAddr) -> Vec<Path> {
+        self.lock().peers.paths_of(stand_in)
+    }
+
     /// What kind of path `path` is, as the link log names it, while the
     /// socket knows it.
     pub fn kind_of(&self, path: Path) -> Option<PathKind> {

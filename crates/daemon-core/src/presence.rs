@@ -7,9 +7,7 @@
 //! offline otherwise. A call that fails on a link closes the link, which
 //! is how a link that cannot carry calls stops reading online.
 //!
-//! A host with no link of its own that another host claims to reach is
-//! dialled through that host. The shell keeps dialling it, backing off
-//! between tries, until a link of its own is up or no claim lists it.
+//! When a host is dialled, and on which paths, is the reach module's.
 
 use std::collections::BTreeMap;
 
@@ -107,9 +105,8 @@ impl Daemon {
     /// Acts on each route that came up or went since `before`. A route
     /// gone takes its channels with it. A link of the host's own coming up
     /// says the relay's last refusal and the last dial error are out of
-    /// date. A host left with no link of its own is dialled through a host
-    /// claiming to reach it, when such a claim comes up or its own last
-    /// link goes.
+    /// date. What the move means for dialling the host is the reach
+    /// module's.
     pub(crate) fn routes_moved(
         &mut self,
         before: Vec<(HostId, Vec<Route>)>,
@@ -131,35 +128,12 @@ impl Daemon {
             {
                 known.refused_for_plan = false;
             }
-            let own_went = !own && was.iter().any(Route::is_direct);
-            let claimed = now
-                .iter()
-                .any(|route| !route.is_direct() && !was.contains(route));
-            if own_went || claimed {
-                self.try_again(host, out);
-            }
+            self.reach_routes_moved(host, &was, &now, out);
         }
-    }
-
-    /// Asks the shell to dial `host` through a host claiming to reach it,
-    /// while no link of its own is up. The account's relay is never dialled
-    /// through to itself. A host this profile does not trust, or one that
-    /// said it no longer trusts this one, is not dialled: pairing again
-    /// opens a link of its own.
-    pub(crate) fn try_again(&mut self, host: HostId, out: &mut Vec<Output>) {
-        let routes = self.routing.links.routes_to(host);
-        if self.routing.links.is_relay(host)
-            || routes.iter().any(Route::is_direct)
-            || routes.is_empty()
-            || self.dial_barred(host)
-        {
-            return;
-        }
-        out.push(Output::DialThrough { host });
     }
 
     /// The account's plan changed, so what the relay carries changed with
-    /// it: every host it refused for the plan is dialled through it again.
+    /// it: every host it refused for the plan is dialled again at once.
     /// Each reads as it did until that dial brings up a link of its own.
     pub(crate) fn plan_changed(&mut self, out: &mut Vec<Output>) {
         let refused: Vec<HostId> = self
@@ -170,7 +144,7 @@ impl Daemon {
             .map(|(host, _)| *host)
             .collect();
         for host in refused {
-            self.try_again(host, out);
+            self.reconsider(host, out);
         }
     }
 
@@ -182,7 +156,14 @@ impl Daemon {
     /// shutdown says nothing of the host, and neither does one through a
     /// forwarder no longer claiming it: what it refused was sent before it
     /// said it no longer reaches the host.
-    pub(crate) fn forward_refused(&mut self, link: LinkId, host: HostId, reason: ForwardRefusal) {
+    pub(crate) fn forward_refused(
+        &mut self,
+        link: LinkId,
+        host: HostId,
+        reason: ForwardRefusal,
+        out: &mut Vec<Output>,
+    ) {
+        self.reach_refused(link, host, reason, out);
         let Some(forwarder) = self.routing.links.link(link).map(|link| link.peer) else {
             return;
         };
@@ -348,14 +329,22 @@ mod tests {
         daemon.presence().view(host)
     }
 
-    /// The hosts a step asked to be dialled through a forwarder.
-    fn dialled_through(out: &[Output]) -> Vec<HostId> {
+    /// The hosts a step asked to be dialled.
+    fn dialled(out: &[Output]) -> Vec<HostId> {
         out.iter()
             .filter_map(|output| match output {
-                Output::DialThrough { host } => Some(*host),
+                Output::Dial { host, .. } => Some(*host),
                 _ => None,
             })
             .collect()
+    }
+
+    /// A daemon trusting the desk and the laptop, whose driver dials.
+    fn dialling() -> Daemon {
+        let mut daemon = daemon();
+        trust(&mut daemon, vec![DESK, LAPTOP]);
+        step(&mut daemon, Input::Dialling(crate::reach::Dialling::All));
+        daemon
     }
 
     fn trust(daemon: &mut Daemon, hosts: Vec<HostId>) -> Vec<Output> {
@@ -383,7 +372,7 @@ mod tests {
 
     /// A host the relay claims, which it refused to carry for the plan.
     fn refused_desk() -> Daemon {
-        let mut daemon = daemon();
+        let mut daemon = dialling();
         up(&mut daemon, 1, RELAY, CarrierKind::Relay);
         claims(&mut daemon, 1, &[DESK]);
         forward_refused(&mut daemon, 1, DESK, ForwardRefusal::PaymentRequired);
@@ -465,9 +454,9 @@ mod tests {
 
     #[test]
     fn a_relay_is_never_a_route_nor_dialled_through() {
-        let mut daemon = daemon();
+        let mut daemon = dialling();
         let out = up(&mut daemon, 1, RELAY, CarrierKind::Relay);
-        assert_eq!(dialled_through(&out), Vec::new());
+        assert_eq!(dialled(&out), Vec::new());
         assert_eq!(view(&daemon, RELAY).presence, Presence::Offline);
 
         let relay = wire::Host {
@@ -487,34 +476,28 @@ mod tests {
     }
 
     #[test]
-    fn a_host_with_no_link_of_its_own_is_dialled_through_each_host_claiming_it() {
+    fn a_host_reads_online_while_a_link_of_its_own_is_up_and_offline_once_no_route_lists_it() {
         let mut daemon = daemon();
         up(&mut daemon, 1, RELAY, CarrierKind::Relay);
-        let out = claims(&mut daemon, 1, &[DESK]);
-        assert_eq!(dialled_through(&out), vec![DESK]);
+        claims(&mut daemon, 1, &[DESK]);
         assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
 
-        // Its own link coming up is what reads it online; a claim coming up
-        // then asks for no dial.
         up(&mut daemon, 2, DESK, CarrierKind::Forwarded);
         assert_eq!(view(&daemon, DESK).presence, Presence::Online);
         up(&mut daemon, 3, LAPTOP, CarrierKind::Direct);
-        assert_eq!(
-            dialled_through(&claims(&mut daemon, 3, &[DESK])),
-            Vec::new()
-        );
+        claims(&mut daemon, 3, &[DESK]);
 
-        // Its own last link going, while claims still list it, dials it
-        // through them again; the last route going reads it offline.
+        // Its own last link going, while claims still list it, reads it
+        // offline and takes the link's channels; the last route going
+        // forgets it.
         let out = down(&mut daemon, 2);
         assert!(out.contains(&Output::DropRoute {
             host: DESK,
             route: Route::Direct(LinkId(2))
         }));
-        assert_eq!(dialled_through(&out), vec![DESK]);
         assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
         down(&mut daemon, 3);
-        assert_eq!(dialled_through(&down(&mut daemon, 1)), Vec::new());
+        down(&mut daemon, 1);
         assert_eq!(view(&daemon, DESK), HostView::default());
     }
 
@@ -522,14 +505,12 @@ mod tests {
     fn a_host_not_trusted_is_not_dialled_through_until_it_is() {
         let mut daemon = daemon();
         trust(&mut daemon, vec![LAPTOP]);
+        step(&mut daemon, Input::Dialling(crate::reach::Dialling::All));
         up(&mut daemon, 1, LAPTOP, CarrierKind::Direct);
-        assert_eq!(
-            dialled_through(&claims(&mut daemon, 1, &[DESK])),
-            Vec::new()
-        );
+        assert_eq!(dialled(&claims(&mut daemon, 1, &[DESK])), Vec::new());
 
         let trusted = trust(&mut daemon, vec![DESK, LAPTOP]);
-        assert_eq!(dialled_through(&trusted), vec![DESK]);
+        assert_eq!(dialled(&trusted), vec![DESK]);
     }
 
     #[test]
@@ -548,7 +529,7 @@ mod tests {
         let mut daemon = refused_desk();
         claims(&mut daemon, 1, &[DESK, LAPTOP]);
         let out = step(&mut daemon, Input::PlanChanged);
-        assert_eq!(dialled_through(&out), vec![DESK]);
+        assert_eq!(dialled(&out), vec![DESK]);
         assert_eq!(view(&daemon, DESK).presence, Presence::Away);
     }
 
@@ -594,16 +575,26 @@ mod tests {
 
     #[test]
     fn a_route_coming_up_clears_the_last_dial_error() {
-        let mut daemon = daemon();
+        let mut daemon = dialling();
+        up(&mut daemon, 1, RELAY, CarrierKind::Relay);
+        let out = claims(&mut daemon, 1, &[DESK]);
+        let attempt = out
+            .iter()
+            .find_map(|output| match output {
+                Output::Dial { attempt, .. } => Some(*attempt),
+                _ => None,
+            })
+            .expect("the desk is dialled");
         step(
             &mut daemon,
-            Input::DialError {
+            Input::AttemptEnded {
                 host: DESK,
-                error: Some("connection refused".to_owned()),
+                attempt,
+                outcome: crate::AttemptOutcome::Failed("connection refused".to_owned()),
             },
         );
         assert_eq!(daemon.last_dial_error(DESK), Some("connection refused"));
-        up(&mut daemon, 1, DESK, CarrierKind::Direct);
+        up(&mut daemon, 2, DESK, CarrierKind::Forwarded);
         assert_eq!(daemon.last_dial_error(DESK), None);
     }
 

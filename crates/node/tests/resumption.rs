@@ -19,6 +19,7 @@ fn lan(socket: Option<Arc<std::net::UdpSocket>>) -> node::EdgeOptions {
             bind: "127.0.0.1:0".parse().unwrap(),
             socket,
         }),
+        dial: true,
         ..Default::default()
     }
 }
@@ -456,7 +457,7 @@ async fn first_flight_on_every_path_reaches_the_host_once() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_first_flight_with_no_ticket_to_an_address_that_never_answers_gives_up_in_time() {
+async fn an_attempt_at_an_address_that_never_answers_gives_way_to_one_that_does() {
     let desk = Install::new();
     let mut options = desk.options("boot-1", quiet_launch());
     options.edge = lan(None);
@@ -487,23 +488,22 @@ async fn a_first_flight_with_no_ticket_to_an_address_that_never_answers_gives_up
     let laptop_runtime = runtime(&laptop_daemon, &laptop);
     let laptop_edge = laptop_runtime.edge().unwrap();
 
-    // Well inside the QUIC idle timeout the dial would otherwise wait out.
+    // The laptop's core dials the silent address at launch, and that
+    // attempt waits out its whole deadline unless something changes. An
+    // address that answers restarts it there at once: a dead address never
+    // keeps the host from where it really is.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    assert!(laptop_edge.via(desk_id).await == node::harness::LiveRoute::Offline);
     let started = std::time::Instant::now();
-    let failed = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        laptop_edge.open_resumed(desk_id, vec![EarlyCall::SubscribeInventory]),
-    )
-    .await
-    .expect("the dial gives up within its handshake deadline");
-    assert!(failed.is_err(), "nothing answers at the remembered address");
-    assert!(started.elapsed() >= std::time::Duration::from_secs(1));
-
-    // The host's dial is free again: a dial to where the desk is goes
-    // ahead.
     laptop_edge.dial(desk_id, desk_edge.lan_addr().unwrap());
     assert!(
         laptop_edge.wait_for_route(desk_id, PATIENCE).await,
         "the laptop links to the desk at its real address"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "the link came up {:?} after the address was learned, behind the silent attempt",
+        started.elapsed()
     );
     drop((laptop_edge, laptop_runtime, desk_edge));
     laptop_daemon.shutdown().await.unwrap();

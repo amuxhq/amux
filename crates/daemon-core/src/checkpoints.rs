@@ -148,7 +148,7 @@ fn writes(input: &Input, copying: JobId) -> bool {
         Input::PeerCall { request, .. } => peer_writes(request),
         Input::Tick { .. }
         | Input::Timer {
-            id: TimerId::Checkpoint | TimerId::Refresh(_),
+            id: TimerId::Checkpoint | TimerId::Refresh(_) | TimerId::Attempt(_) | TimerId::Retry(_),
         }
         | Input::AnswerLagged { .. }
         | Input::LinkUp { .. }
@@ -163,7 +163,8 @@ fn writes(input: &Input, copying: JobId) -> bool {
         | Input::PlanChanged
         | Input::TryAgain { .. }
         | Input::Candidates { .. }
-        | Input::DialError { .. }
+        | Input::Dialling(_)
+        | Input::Wanted { .. }
         | Input::Entropy(_)
         | Input::Configure(_)
         | Input::Checkpointed => false,
@@ -416,7 +417,13 @@ mod tests {
                 .any(|output| matches!(output, Output::SpawnAgent { .. }))
         );
         assert!(armed(&made), "{made:?}");
-        let quiet = step(&mut daemon, Input::Tick { now_ms: 5 });
+        let quiet = step(
+            &mut daemon,
+            Input::Tick {
+                now_ms: 5,
+                link_ms: 5,
+            },
+        );
         assert!(!armed(&quiet), "a step that wrote nothing arms nothing");
     }
 

@@ -279,6 +279,9 @@ impl Driver {
             outgoing: outgoing.clone(),
             timers: BTreeMap::new(),
             alarm: None,
+            links_since: tokio::time::Instant::now(),
+            link_timers: BTreeMap::new(),
+            link_alarm: None,
             waiting: HashMap::new(),
             ticked: None,
             dumps: DumpLimit::new(dump_interval_ms),
@@ -613,9 +616,16 @@ pub(crate) struct CoreThread {
     timers: BTreeMap<TimerId, u64>,
     /// The one alarm, set to the soonest deadline, which wakes the loop.
     alarm: Option<(u64, AbortHandle)>,
+    /// Where the core's link time starts: it runs on the runtime's own
+    /// clock, as the transports do, however the profile's clock moves.
+    links_since: tokio::time::Instant,
+    /// The timers armed in link time, as `timers` holds the rest.
+    link_timers: BTreeMap<TimerId, u64>,
+    /// The alarm for the soonest of them.
+    link_alarm: Option<(u64, AbortHandle)>,
     waiting: HashMap<daemon_core::AgentId, Vec<Waiting>>,
-    /// The clock as last told to the core.
-    ticked: Option<u64>,
+    /// The clocks as last told to the core: policy time, then link time.
+    ticked: Option<(u64, u64)>,
     /// The dumps the core asked for that were written, by kind.
     dumps: DumpLimit,
     /// The settings as last told to the core.
@@ -884,17 +894,39 @@ impl CoreThread {
     /// input.
     fn fire_due(&mut self, runtime: &Arc<ProfileRuntime>, out: &mut Vec<Output>) {
         let now = runtime.clock_now().max(0) as u64;
-        let due = self
-            .timers
-            .iter()
-            .filter(|(_, at)| **at <= now)
-            .map(|(id, at)| (*at, *id))
-            .min();
+        let due = soonest_due(&self.timers, now);
         if let Some((_, id)) = due {
             self.timers.remove(&id);
             self.step(runtime, Input::Timer { id }, out);
         }
+        let due = soonest_due(&self.link_timers, self.link_now());
+        if let Some((_, id)) = due {
+            self.link_timers.remove(&id);
+            self.step(runtime, Input::Timer { id }, out);
+        }
         self.set_alarm(runtime);
+        self.set_link_alarm();
+    }
+
+    fn link_now(&self) -> u64 {
+        self.links_since.elapsed().as_millis() as u64
+    }
+
+    /// Sets the link-time alarm to the soonest deadline in link time.
+    fn set_link_alarm(&mut self) {
+        let now = self.link_now();
+        let next = self.link_timers.values().copied().min();
+        let (inputs, since) = (&self.inputs, self.links_since);
+        rearm(&mut self.link_alarm, now, next, |at| {
+            let inputs = inputs.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep_until(since + std::time::Duration::from_millis(at)).await;
+                if let Some(inputs) = inputs.upgrade() {
+                    let _ = inputs.send(Fed::Wake).await;
+                }
+            })
+            .abort_handle()
+        });
     }
 
     /// Sets the one alarm to the soonest deadline, on the profile's clock;
@@ -920,10 +952,11 @@ impl CoreThread {
 
     /// Tells the core the time, when it moved.
     fn tick(&mut self, runtime: &Arc<ProfileRuntime>, out: &mut Vec<Output>) {
-        let now = runtime.clock_now().max(0) as u64;
+        let now = (runtime.clock_now().max(0) as u64, self.link_now());
         if self.ticked != Some(now) {
             self.ticked = Some(now);
-            self.step(runtime, Input::Tick { now_ms: now }, out);
+            let (now_ms, link_ms) = now;
+            self.step(runtime, Input::Tick { now_ms, link_ms }, out);
         }
     }
 
@@ -1086,13 +1119,17 @@ impl CoreThread {
                 }
             }
             Output::ArmTimer { id, at_ms } => {
-                // Every timer keeps to the profile's clock, the one the
-                // core reckons on. A follower or source due now is stepped
-                // next, with the store; anything else due now rings the
-                // alarm and queues behind the inputs already waiting.
+                // Every timer keeps to the clock the core reckons it on:
+                // link time, or the profile's clock. A follower or source
+                // due now is stepped next, with the store; anything else
+                // due now rings the alarm and queues behind the inputs
+                // already waiting.
                 let now = runtime.clock_now().max(0) as u64;
                 let sourcing = matches!(id, TimerId::Follow(_) | TimerId::Source(..));
-                if sourcing && at_ms <= now {
+                if id.on_link_clock() {
+                    self.link_timers.insert(id, at_ms);
+                    self.set_link_alarm();
+                } else if sourcing && at_ms <= now {
                     self.timers.remove(&id);
                     self.again.push_back(Input::Timer { id });
                 } else {
@@ -1101,6 +1138,9 @@ impl CoreThread {
                 }
             }
             Output::CancelTimer { id } => {
+                if self.link_timers.remove(&id).is_some() {
+                    self.set_link_alarm();
+                }
                 self.timers.remove(&id);
                 self.set_alarm(runtime);
             }
@@ -1176,9 +1216,14 @@ impl CoreThread {
                     let _ = reply.send(Err(reason));
                 }
             }
-            Output::DialThrough { host } => {
+            Output::Abandon { host, attempt } => {
                 if let Some(connections) = self.connections() {
-                    connections.dial_through(host);
+                    connections.abandon(host, attempt);
+                }
+            }
+            Output::Rediscover => {
+                if let Some(connections) = self.connections() {
+                    connections.rediscover();
                 }
             }
             Output::DropRoute { host, route } => {
@@ -1233,9 +1278,14 @@ impl CoreThread {
                     task.abort();
                 }
             }
-            Output::Dial { host } => {
+            Output::Dial {
+                host,
+                attempt,
+                plan,
+                early,
+            } => {
                 if let Some(connections) = self.connections() {
-                    connections.dial(host);
+                    connections.dial(host, attempt, plan, early);
                 }
             }
             Output::SpawnAgent { dir, spec } => runtime.spawn_process(dir, *spec),
@@ -1653,6 +1703,15 @@ impl ProfileRuntime {
 /// `now` may have rung already, so it is set afresh. One replaced is
 /// stopped: wakes come from reports too, and an alarm left sleeping would
 /// ring again and set one more of its own.
+/// The timer due soonest by `now`, if any is.
+fn soonest_due(timers: &BTreeMap<TimerId, u64>, now: u64) -> Option<(u64, TimerId)> {
+    timers
+        .iter()
+        .filter(|(_, at)| **at <= now)
+        .map(|(id, at)| (*at, *id))
+        .min()
+}
+
 fn rearm(
     alarm: &mut Option<(u64, AbortHandle)>,
     now: u64,

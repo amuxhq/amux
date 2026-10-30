@@ -1208,16 +1208,16 @@ async fn resume_accepted_catches_up_within_one_round_trip() {
 
 /// Every relaunch resumes, not every other one: a resumed link leaves the
 /// laptop a ticket of its own, which the next process loads and resumes
-/// with. The desk sends that ticket once the laptop's Finished reaches it,
-/// two round trips into the link, so each launch is kept open until the
-/// ticket is on disk, as a person looking at their fleet keeps the app
-/// open.
+/// with. The desk sends that ticket, and an address-validation token, once
+/// the laptop's Finished reaches it, two round trips into the link, so
+/// each launch is kept open until both are on disk, as a person looking at
+/// their fleet keeps the app open.
 #[tokio::test(flavor = "multi_thread")]
 async fn resume_every_relaunch_with_the_ticket_the_last_one_kept() {
     let mut net = linked_through_a_slow_network().await;
     let round_trip = 2 * ONE_WAY.as_millis();
     for relaunch in 1..=2 {
-        until_the_laptop_keeps_a_ticket_from_the_desk(&net).await;
+        until_the_laptop_keeps_a_ticket_and_a_token_from_the_desk(&net).await;
         net.stop_daemon("laptop").await.unwrap();
         // The laptop comes back on another port, so the desk, redialling it,
         // cannot cross the laptop's first flight with a link of its own.
@@ -1464,22 +1464,31 @@ async fn links_within(
     assert!(took < within, "relaunch {launch} took {took:?} to link");
 }
 
-/// Waits until a ticket the desk gave the laptop is on the laptop's disk.
-async fn until_the_laptop_keeps_a_ticket_from_the_desk(net: &Net) {
+/// Waits until the laptop keeps on disk what its next process presents
+/// the desk: a ticket to resume with, and an address-validation token so
+/// no Retry costs that dial a round trip. The desk sends both once the
+/// laptop's Finished reaches it, and a ticket an earlier link left is no
+/// sign this link's token has come.
+async fn until_the_laptop_keeps_a_ticket_and_a_token_from_the_desk(net: &Net) {
     let laptop = net.host("laptop").unwrap().clone();
-    let desk_tickets = node::profile_dir(&laptop.data_dir, laptop.profile)
-        .join(node::CLIENT_TICKETS_DIR)
-        .join(host_id(net, "desk").to_string());
-    until("the laptop to keep a ticket from the desk", || {
-        let kept = tickets_beneath(&desk_tickets);
-        async move {
-            if kept > 0 {
-                Ok(())
-            } else {
-                Err("no ticket on disk".to_owned())
+    let profile = node::profile_dir(&laptop.data_dir, laptop.profile);
+    let desk = host_id(net, "desk").to_string();
+    let desk_tickets = profile.join(node::CLIENT_TICKETS_DIR).join(&desk);
+    let desk_tokens = profile.join(node::CLIENT_TOKENS_DIR).join(&desk);
+    until(
+        "the laptop to keep a ticket and a token from the desk",
+        || {
+            let tickets = tickets_beneath(&desk_tickets);
+            let token = std::fs::metadata(&desk_tokens).is_ok_and(|kept| kept.len() > 0);
+            async move {
+                match (tickets > 0, token) {
+                    (true, true) => Ok(()),
+                    (false, _) => Err("no ticket on disk".to_owned()),
+                    (true, false) => Err("no token on disk".to_owned()),
+                }
             }
-        }
-    })
+        },
+    )
     .await
     .unwrap();
 }

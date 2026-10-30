@@ -1398,7 +1398,10 @@ impl Transition<'_> {
         let mut inputs = Vec::with_capacity(2);
         if host.ticked != Some(now) {
             host.ticked = Some(now);
-            inputs.push(Input::Tick { now_ms: now });
+            inputs.push(Input::Tick {
+                now_ms: now,
+                link_ms: now,
+            });
         }
         inputs.push(input);
         let out = self.step_host(h, inputs);
@@ -1500,7 +1503,13 @@ impl Transition<'_> {
                         ));
                     }
                 };
-                step(daemon, Input::Tick { now_ms: now });
+                step(
+                    daemon,
+                    Input::Tick {
+                        now_ms: now,
+                        link_ms: now,
+                    },
+                );
                 step(daemon, Input::Configure(settings));
                 step(daemon, Input::Entropy(entropy));
                 daemon.trust_for_test(daemon_core::trust::TrustStore::of_hosts(trusted));
@@ -1966,7 +1975,8 @@ impl Transition<'_> {
                 | Output::CloseChannel { .. }
                 | Output::DropRoute { .. }
                 | Output::Dial { .. }
-                | Output::DialThrough { .. }
+                | Output::Abandon { .. }
+                | Output::Rediscover
                 | Output::LinkControl { .. }
                 | Output::SendFile { .. }
                 | Output::ForgetAgent { .. }
@@ -2652,6 +2662,8 @@ fn timer_kind(id: &TimerId) -> &'static str {
         TimerId::Exit(_) => "Exit",
         TimerId::PairWindow => "PairWindow",
         TimerId::Pairing(_) => "Pairing",
+        TimerId::Attempt(_) => "Attempt",
+        TimerId::Retry(_) => "Retry",
     }
 }
 

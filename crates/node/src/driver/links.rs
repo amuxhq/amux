@@ -62,6 +62,21 @@ impl CoreLinks {
             .await
     }
 
+    /// Tells the core a call needs a link to `host` now, and answers the
+    /// attempt then out to it, if any, and whether the host refused this
+    /// one as no longer trusted. Nothing while the profile is gone.
+    pub(crate) async fn want(
+        &self,
+        host: daemon_core::HostId,
+    ) -> Option<(Option<daemon_core::AttemptId>, bool)> {
+        let runtime = self.0.upgrade()?;
+        let driver = runtime.driver();
+        driver.feed(Input::Wanted { host }).await;
+        driver
+            .look(move |daemon| (daemon.reach().attempt(host), daemon.revoked_by(host)))
+            .await
+    }
+
     /// Looks at what the core decided, between its steps; nothing while the
     /// profile is gone.
     pub(crate) async fn look<T: Send + 'static>(

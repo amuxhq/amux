@@ -46,6 +46,18 @@ pub enum TimerId {
     /// A pairing conversation's deadline, or a pending pairing's token
     /// expiry.
     Pairing(PairingId),
+    /// The attempt out to the host has had its time.
+    Attempt(HostId),
+    /// The host's pause before its next attempt is over.
+    Retry(HostId),
+}
+
+impl TimerId {
+    /// Whether the deadline is in link time rather than policy time; see
+    /// [`Input::Tick`](crate::Input::Tick).
+    pub fn on_link_clock(&self) -> bool {
+        matches!(self, TimerId::Attempt(_) | TimerId::Retry(_))
+    }
 }
 
 /// A job the driver runs off the core thread; its outcome returns as
@@ -84,6 +96,10 @@ impl AgentId {
         bytes.try_into().ok().map(AgentId)
     }
 }
+
+/// One attempt to reach a host, from its dial until it ends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct AttemptId(pub u64);
 
 /// One pairing conversation, from its first message to its end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

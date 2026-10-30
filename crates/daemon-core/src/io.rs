@@ -10,21 +10,29 @@ use store::AgentKey;
 use wire::{InventoryEvent, SessionEvent};
 
 use crate::families::Ended;
-use crate::ids::{AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
+use crate::ids::{
+    AgentId, AttemptId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId,
+};
 use crate::payload::{
-    Advertisement, AgentSpec, AnalyticsBatch, Answer, CarrierKind, ChannelClass, ChannelError,
-    ClientRequest, ControlFrame, Hello, JobResult, LinkCloseReason, LinkFrame, PairMessage,
-    PeerRequest, PublicKey, Push, Response, Status,
+    AgentSpec, AnalyticsBatch, Answer, CarrierKind, ChannelClass, ChannelError, ClientRequest,
+    ControlFrame, Hello, JobResult, LinkCloseReason, LinkFrame, PairMessage, PeerRequest,
+    PublicKey, Push, Response, Status,
 };
 use crate::presence::Route;
+use crate::reach::{AttemptOutcome, Plan};
 use crate::{DumpReason, codec};
 
 /// Everything that can happen to the daemon, decoded by the driver.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Input {
-    /// The clock, as an input: the core reads time from nothing else.
+    /// The clocks, as an input: the core reads time from nothing else.
+    /// `now_ms` is policy time, which a test may hold still; `link_ms` is
+    /// the links' own time, which runs on regardless, as the transports'
+    /// do. Every dial's deadline and pause, and how long a link lived, are
+    /// reckoned in link time.
     Tick {
         now_ms: u64,
+        link_ms: u64,
     },
     /// A timer the core armed has fired.
     Timer {
@@ -131,9 +139,18 @@ pub enum Input {
         session: PairingId,
         status: Option<crate::pairing::PairFailure>,
     },
-    /// Hosts the local network browse resolved, as each resolves.
-    Discovered {
-        found: Vec<Advertisement>,
+    /// The driver dials from now on, or no longer: its edge is up, or
+    /// stopping.
+    Dialling(crate::reach::Dialling),
+    /// A call needs a link to the host now.
+    Wanted {
+        host: HostId,
+    },
+    /// How an attempt the core asked for with [`Output::Dial`] ended.
+    AttemptEnded {
+        host: HostId,
+        attempt: AttemptId,
+        outcome: AttemptOutcome,
     },
     /// The host said it no longer trusts this one: it closed a link saying
     /// so, or refused this host's certificate as revoked on a channel.
@@ -152,12 +169,6 @@ pub enum Input {
     /// first.
     Candidates {
         found: Vec<crate::host_set::Candidate>,
-    },
-    /// Why the last dial to the host failed, or none once a route to it
-    /// came up.
-    DialError {
-        host: HostId,
-        error: Option<String>,
     },
     /// A connection to the agent's process said Hello.
     AgentHello {
@@ -259,12 +270,13 @@ impl Input {
             Input::PairingOpened { .. } => "PairingOpened",
             Input::PairingMessage { .. } => "PairingMessage",
             Input::PairingClosed { .. } => "PairingClosed",
-            Input::Discovered { .. } => "Discovered",
+            Input::Dialling(_) => "Dialling",
+            Input::Wanted { .. } => "Wanted",
+            Input::AttemptEnded { .. } => "AttemptEnded",
             Input::PeerRevoked { .. } => "PeerRevoked",
             Input::ChannelAnswered { .. } => "ChannelAnswered",
             Input::OwnHost(_) => "OwnHost",
             Input::Candidates { .. } => "Candidates",
-            Input::DialError { .. } => "DialError",
             Input::AgentHello { .. } => "AgentHello",
             Input::Nudge { .. } => "Nudge",
             Input::ControlClosed { .. } => "ControlClosed",
@@ -371,9 +383,10 @@ pub enum Output {
     RefuseResumed {
         link: LinkId,
     },
-    /// The addresses a trusted host last listed for itself changed: every
-    /// one it can be reached at, in its order, each with where it came
-    /// from.
+    /// The addresses a trusted host may be reached at changed: every one,
+    /// each with where it came from, as
+    /// [`Daemon::path_candidates`](crate::Daemon::path_candidates) gives
+    /// them; none once the host is no longer trusted.
     PeerAddresses {
         host: HostId,
         addrs: Vec<crate::payload::PeerAddress>,
@@ -424,16 +437,25 @@ pub enum Output {
         host: HostId,
         route: Route,
     },
-    /// Dial `host` at the addresses the local network last gave for it.
+    /// Dial `host` once on every path of `plan` at once, and report how it
+    /// ended as [`Input::AttemptEnded`] under `attempt`. `early` are the
+    /// calls the core will make of the host once its link is up: they go
+    /// with the dial as early data, and their answers wait for the core's
+    /// calls.
     Dial {
         host: HostId,
+        attempt: AttemptId,
+        plan: Plan,
+        early: Vec<PeerRequest>,
     },
-    /// Dial `host` through a host that claims to reach it, again and
-    /// again with a pause between tries, until a link of its own is up or
-    /// no host claims it.
-    DialThrough {
+    /// Drop the attempt: the core gave up on it, and hears nothing more
+    /// of it.
+    Abandon {
         host: HostId,
+        attempt: AttemptId,
     },
+    /// Ask the local network again where the hosts it found are.
+    Rediscover,
     /// Make `request` of `host` on a channel to it, and report what came
     /// back as [`Input::PeerAnswer`] under `call`: one answer for a unary
     /// call, one per event and then its end for a stream.
@@ -756,7 +778,10 @@ mod tests {
     fn every_kind_of_input_reads_back_as_written() {
         let agent = AgentKey::new(b"host".to_vec(), b"agent".to_vec());
         let inputs = vec![
-            Input::Tick { now_ms: 7 },
+            Input::Tick {
+                now_ms: 7,
+                link_ms: 7,
+            },
             Input::Timer {
                 id: TimerId::Checkpoint,
             },
@@ -843,11 +868,21 @@ mod tests {
                     details: Vec::new(),
                 })),
             },
-            Input::Discovered {
-                found: vec![Advertisement {
-                    host: HostId([4; 16]),
-                    trusted: true,
-                }],
+            Input::Dialling(crate::reach::Dialling::All),
+            Input::Wanted {
+                host: HostId([4; 16]),
+            },
+            Input::AttemptEnded {
+                host: HostId([4; 16]),
+                attempt: AttemptId(3),
+                outcome: AttemptOutcome::Linked {
+                    addr: Some("10.0.0.4:7000".parse().unwrap()),
+                },
+            },
+            Input::AttemptEnded {
+                host: HostId([4; 16]),
+                attempt: AttemptId(4),
+                outcome: AttemptOutcome::Failed("no answer".into()),
             },
             Input::ClientCall {
                 call: CallId(3),
@@ -883,9 +918,8 @@ mod tests {
                     addrs: vec!["10.0.0.4:7000".into()],
                 }],
             },
-            Input::DialError {
-                host: HostId([1; 16]),
-                error: Some("refused".into()),
+            Input::Timer {
+                id: TimerId::Retry(HostId([1; 16])),
             },
             Input::JobDone {
                 job: JobId(5),

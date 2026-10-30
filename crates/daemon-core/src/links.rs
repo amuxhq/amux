@@ -27,8 +27,7 @@ use crate::Daemon;
 use crate::ids::{ChannelId, HostId, LinkId, TimerId};
 use crate::io::{Job, Output};
 use crate::payload::{
-    Advertisement, CarrierKind, ChannelClass, ChannelError, LinkFrame, PeerAddress, PublicKey,
-    Source,
+    CarrierKind, ChannelClass, ChannelError, LinkFrame, PeerAddress, PublicKey, Source,
 };
 use crate::presence::Route;
 use crate::trust::TrustChange;
@@ -220,24 +219,6 @@ impl Daemon {
         self.touched.host_set = true;
     }
 
-    /// Hosts the local network found. A paired host without a link of its
-    /// own is dialed; one already linked directly needs no second link, and
-    /// a host not paired is only a hint until it is.
-    pub(crate) fn discovered(&mut self, found: Vec<Advertisement>, out: &mut Vec<Output>) {
-        let own = HostId::from_slice(self.store.own_host());
-        for advert in found {
-            let linked = self
-                .routing
-                .links
-                .routes_to(advert.host)
-                .iter()
-                .any(|route| matches!(route, Route::Direct(_)));
-            if advert.trusted && Some(advert.host) != own && !linked {
-                out.push(Output::Dial { host: advert.host });
-            }
-        }
-    }
-
     /// The relay link presented a credential: its refresh is armed. On the
     /// free plan it comes on an interval, so a purchase reaches the link
     /// promptly; otherwise once the credential is an hour old, or shortly
@@ -415,7 +396,7 @@ impl Daemon {
             Body::ObservedAddress(observed) if relay => self.observed(&observed.addr, out),
             Body::ForwardRefused(refused) => {
                 if let Some(dst) = HostId::from_slice(&refused.dst) {
-                    self.forward_refused(link, dst, refused.reason());
+                    self.forward_refused(link, dst, refused.reason(), out);
                 }
             }
             Body::HelloAck(_)
@@ -490,10 +471,7 @@ impl Daemon {
         } else {
             self.routing.addresses.insert(peer, addrs.clone());
         }
-        out.push(Output::PeerAddresses {
-            host: peer,
-            addrs: addrs.clone(),
-        });
+        self.tell_paths(peer, out);
         self.change_trust(
             TrustChange::Listed {
                 host,
@@ -1165,7 +1143,13 @@ mod tests {
     fn the_relay_credential_is_refreshed_on_the_free_interval_hourly_or_before_it_expires() {
         let mut daemon = daemon();
         up(&mut daemon);
-        step(&mut daemon, Input::Tick { now_ms: 1_000 });
+        step(
+            &mut daemon,
+            Input::Tick {
+                now_ms: 1_000,
+                link_ms: 1_000,
+            },
+        );
         let credential = |expires_at_ms, fetched_at_ms, free_every_ms| Input::Credential {
             link: LINK,
             expires_at_ms,

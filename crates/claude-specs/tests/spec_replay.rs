@@ -33,29 +33,21 @@ mod sdk_replays {
         commands_cleared => "commands/cleared",
         control_permission_mode_and_model => "control/permission_mode_and_model",
         control_session_introspection => "control/session_introspection",
-        control_session_maintenance => "control/session_maintenance",
         control_effort => "control/effort",
-        control_connected_mcp_servers => "control/connected_mcp_servers",
         tools_permission_callback => "tools/permission_callback",
         tools_question_asked => "tools/question_asked",
         tools_plan_reviewed => "tools/plan_reviewed",
         tools_question_every_shape => "tools/question_every_shape",
         tools_question_dismissed => "tools/question_dismissed",
-        tools_in_process_mcp => "tools/in_process_mcp",
         tools_elicitation_accepted => "tools/elicitation_accepted",
         tools_elicitation_declined => "tools/elicitation_declined",
         tools_elicitation_cancelled => "tools/elicitation_cancelled",
         tools_elicitation_link_accepted => "tools/elicitation_link_accepted",
         tools_hook_lifecycle => "tools/hook_lifecycle",
         options_configured_turn => "options/configured_turn",
-        options_every_hook_event => "options/every_hook_event",
         configured_effortful_turn => "configured/effortful_turn",
         agents_subagent_task => "agents/subagent_task",
         history_resumed => "history/resumed",
-        history_forked => "history/forked",
-        history_resumed_at => "history/resumed_at",
-        results_max_turns => "results/max_turns",
-        results_max_budget => "results/max_budget",
         results_interrupted => "results/interrupted",
         work_image => "work/image",
         work_failing_command => "work/failing_command",
@@ -273,11 +265,6 @@ async fn elicited() {
 #[tokio::test]
 async fn hook_lifecycle() {
     replay("tools/hook_lifecycle").await;
-}
-
-#[tokio::test]
-async fn every_hook_event() {
-    replay("options/every_hook_event").await;
 }
 
 async fn replay(name: &str) {

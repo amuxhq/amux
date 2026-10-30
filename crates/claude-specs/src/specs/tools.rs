@@ -10,10 +10,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use super::{HAIKU, PlanReview, SessionSetup, SpecDef, SpecSession};
-use crate::driver::sdk::{
-    CreateSdkMcpServerOptions, HookEvent, HookSubscription, McpServerConfig, PermissionMode,
-    SdkMcpToolOptions, SdkMcpToolResult, create_sdk_mcp_server, tool,
-};
+use crate::driver::sdk::{HookEvent, HookSubscription, McpServerConfig, PermissionMode};
 use crate::expect;
 
 pub(super) static PERMISSION_CALLBACK: SpecDef = SpecDef {
@@ -202,85 +199,6 @@ async fn permission_callback(session: &mut SpecSession) {
     expect!(
         turn.text() == "DONE",
         "the model answers after the tool, not instead of it: {:?}",
-        turn.text()
-    );
-}
-
-pub(super) static IN_PROCESS_MCP: SpecDef = SpecDef {
-    name: "tools/in_process_mcp",
-    fixture: "in_process_mcp",
-    setup: mcp_setup,
-    run: |session| Box::pin(in_process_mcp(session)),
-};
-
-fn mcp_setup() -> SessionSetup {
-    let echo = tool(
-        "echo",
-        "Echo the given text back verbatim.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {"text": {"type": "string"}},
-            "required": ["text"]
-        }),
-        |input: serde_json::Value, _call| async move {
-            Ok(SdkMcpToolResult::text(format!(
-                "echoed:{}",
-                input
-                    .get("text")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or_default()
-            )))
-        },
-        SdkMcpToolOptions::default(),
-    )
-    .expect("the echo tool is well formed");
-    let server = create_sdk_mcp_server(CreateSdkMcpServerOptions {
-        name: "spec".to_string(),
-        version: None,
-        instructions: None,
-        tools: vec![echo],
-        always_load: true,
-    })
-    .expect("the in-process server is well formed");
-
-    let mut setup = SessionSetup::new(
-        HAIKU,
-        "Call the echo tool with text set to HELLO, then reply with exactly \
-         what it returned.",
-    );
-    setup.options.permission_mode = Some(PermissionMode::Default);
-    setup.allow_permissions();
-    setup.options.mcp_servers = HashMap::from([("spec".to_string(), server)]);
-    setup
-}
-
-/// A tool implemented in this process is reachable by the model as an ordinary
-/// tool, and its result travels back the ordinary way.
-///
-/// Nothing here runs as a subprocess: the MCP traffic is carried over the same
-/// control channel as everything else, which is why this is worth stating
-/// separately from an external server.
-async fn in_process_mcp(session: &mut SpecSession) {
-    let turn = session.turn().await;
-    expect!(
-        turn.succeeded(),
-        "a turn that calls an in-process tool completes"
-    );
-    expect!(
-        turn.tools_used() == ["mcp__spec__echo"],
-        "the tool is offered under its namespaced MCP name, not its bare one: {:?}",
-        turn.tools_used()
-    );
-    expect!(
-        turn.tool_results()
-            .iter()
-            .any(|result| result.contains("echoed:HELLO")),
-        "the result this process computed is what came back: {:?}",
-        turn.tool_results()
-    );
-    expect!(
-        turn.text().contains("echoed:HELLO"),
-        "and the model answered from it: {:?}",
         turn.text()
     );
 }

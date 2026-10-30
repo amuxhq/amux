@@ -12,7 +12,6 @@ use crate::driver::sdk::control::{
     ElicitationRequestBody, HookCallbackRequest, InitializeRequestBody,
 };
 use crate::driver::sdk::init::InitializationResult;
-use crate::driver::sdk::mcp::SdkMcpServer;
 use crate::driver::sdk::message::Message;
 use crate::driver::sdk::options::{
     ElicitationMode, ElicitationRequest, HookCallbackContext, HookEventData, HookInput,
@@ -41,7 +40,6 @@ pub(crate) struct QueryInner {
     pub initialize_request: InitializeRequestBody,
     pub pending_incoming: Mutex<HashMap<String, IncomingRequestKind>>,
     pub hook_callback_ids: HashSet<String>,
-    pub sdk_mcp_servers: std::sync::RwLock<HashMap<String, SdkMcpServer>>,
 }
 
 impl QueryInner {
@@ -296,34 +294,6 @@ async fn handle_incoming_control_request(
             ),
             Err(error) => return refuse(error).await,
         },
-        ControlRequestBody::McpMessage(body) => {
-            let server = inner
-                .sdk_mcp_servers
-                .read()
-                .expect("SDK MCP server lock poisoned")
-                .get(&body.server_name)
-                .cloned();
-            let Some(server) = server else {
-                let _ = send_control_error(
-                    inner,
-                    &request_id,
-                    &format!("SDK MCP server not found: {}", body.server_name),
-                )
-                .await;
-                return;
-            };
-            let mcp_response = server
-                .handle_message(&body.message)
-                .await
-                .unwrap_or_else(|| serde_json::json!({ "jsonrpc": "2.0", "id": 0, "result": {} }));
-            let _ = send_control_success(
-                inner,
-                &request_id,
-                serde_json::json!({ "mcp_response": mcp_response }),
-            )
-            .await;
-            return;
-        }
         ControlRequestBody::Elicitation(body) => match elicitation_request(body) {
             Ok(request) => (
                 IncomingRequestKind::Elicitation,
@@ -799,7 +769,6 @@ mod tests {
             initialize_request: InitializeRequestBody::default(),
             pending_incoming: Mutex::new(HashMap::new()),
             hook_callback_ids: HashSet::new(),
-            sdk_mcp_servers: std::sync::RwLock::new(HashMap::new()),
         })
     }
 

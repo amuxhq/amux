@@ -5,46 +5,6 @@ use std::path::PathBuf;
 
 use claude_protocol::stream::PermissionMode;
 pub use claude_protocol::stream::options::*;
-use serde::Serialize;
-
-use crate::driver::sdk::mcp::SdkMcpServer;
-
-/// One MCP server the driver configures. Unlike the wire form, the
-/// in-process variant carries the server the driver answers for.
-#[derive(Debug, Clone)]
-pub enum McpServerConfig {
-    Stdio(McpStdioServerConfig),
-    Sse(McpSseServerConfig),
-    Http(McpHttpServerConfig),
-    Sdk(SdkMcpServer),
-}
-
-impl McpServerConfig {
-    pub(crate) fn sdk_server(&self) -> Option<&SdkMcpServer> {
-        match self {
-            Self::Sdk(server) => Some(server),
-            _ => None,
-        }
-    }
-
-    /// The server as Claude reads it.
-    pub fn to_wire(&self) -> claude_protocol::stream::McpServerConfig {
-        match self {
-            Self::Stdio(config) => claude_protocol::stream::McpServerConfig::Stdio(config.clone()),
-            Self::Sse(config) => claude_protocol::stream::McpServerConfig::Sse(config.clone()),
-            Self::Http(config) => claude_protocol::stream::McpServerConfig::Http(config.clone()),
-            Self::Sdk(server) => claude_protocol::stream::McpServerConfig::Sdk {
-                name: server.configured_name().to_owned(),
-            },
-        }
-    }
-}
-
-impl Serialize for McpServerConfig {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.to_wire().serialize(serializer)
-    }
-}
 
 pub struct QueryOptions {
     /// Model override. `None` truthfully leaves model selection to Claude Code.
@@ -188,16 +148,6 @@ impl QueryOptions {
             return Err(Error::InvalidOptions(
                 "resume_session_at requires resume".into(),
             ));
-        }
-        for (name, config) in &self.mcp_servers {
-            if let Some(server) = config.sdk_server()
-                && server.configured_name() != name
-            {
-                return Err(Error::InvalidOptions(format!(
-                    "SDK MCP server map key `{name}` must match configured name `{}`",
-                    server.configured_name()
-                )));
-            }
         }
         for (agent_name, agent) in &self.agents {
             if let Some(mcp_servers) = &agent.mcp_servers {

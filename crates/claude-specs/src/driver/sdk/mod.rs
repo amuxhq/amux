@@ -3,7 +3,6 @@
 pub mod abort;
 pub(crate) mod dispatch;
 mod error;
-pub mod mcp;
 pub mod options;
 mod process;
 pub(crate) mod query;
@@ -12,11 +11,7 @@ pub mod session;
 pub use abort::AbortHandle;
 pub use claude_protocol::stream::*;
 pub use error::Error;
-pub use mcp::{
-    CreateSdkMcpServerOptions, SdkMcpServer, SdkMcpTool, SdkMcpToolCall, SdkMcpToolError,
-    SdkMcpToolOptions, SdkMcpToolResult, create_sdk_mcp_server, tool,
-};
-pub use options::{McpServerConfig, QueryOptions};
+pub use options::QueryOptions;
 pub use query::{ProcessExit, Termination, UserMessage};
 pub use session::{
     Control, EventStream, PermissionSuggestion, RequestId, SdkEvent, Session, from_io,

@@ -130,7 +130,6 @@ impl ProcessExit {
 #[derive(Default)]
 pub(crate) struct QueryRuntimeConfig {
     initialize_request: InitializeRequestBody,
-    sdk_mcp_servers: HashMap<String, crate::driver::sdk::mcp::SdkMcpServer>,
     hook_callback_ids: HashSet<String>,
 }
 
@@ -149,16 +148,8 @@ impl From<QueryOptions> for QueryRuntimeConfig {
             prompt_suggestions,
             agent_progress_summaries,
             forward_subagent_text,
-            mcp_servers,
             ..
         } = options;
-
-        let sdk_mcp_servers = mcp_servers
-            .into_iter()
-            .filter_map(|(name, config)| config.sdk_server().cloned().map(|server| (name, server)))
-            .collect::<HashMap<_, _>>();
-        let mut sdk_mcp_server_names = sdk_mcp_servers.keys().cloned().collect::<Vec<_>>();
-        sdk_mcp_server_names.sort();
 
         let (system_prompt, append_system_prompt, exclude_dynamic_sections) = match system_prompt {
             Some(SystemPrompt::Custom(prompt)) => (Some(vec![prompt]), None, None),
@@ -200,7 +191,7 @@ impl From<QueryOptions> for QueryRuntimeConfig {
 
         Self {
             initialize_request: InitializeRequestBody {
-                sdk_mcp_servers: (!sdk_mcp_server_names.is_empty()).then_some(sdk_mcp_server_names),
+                sdk_mcp_servers: None,
                 hooks: (!wire_hooks.is_empty()).then_some(wire_hooks),
                 json_schema: None,
                 system_prompt,
@@ -220,7 +211,6 @@ impl From<QueryOptions> for QueryRuntimeConfig {
                 per_task_stop_affordance,
                 extensions: Default::default(),
             },
-            sdk_mcp_servers,
             hook_callback_ids,
         }
     }
@@ -334,7 +324,6 @@ impl Query {
             initialize_request: runtime.initialize_request,
             pending_incoming: Mutex::new(HashMap::new()),
             hook_callback_ids: runtime.hook_callback_ids,
-            sdk_mcp_servers: std::sync::RwLock::new(runtime.sdk_mcp_servers),
         });
         let reader_task =
             dispatch::spawn_reader_task(reader, output_tx.clone(), inner.clone(), shutdown.clone());

@@ -411,52 +411,11 @@ impl SpecSession {
         self.control().stop_task(task_id).await
     }
 
-    pub async fn reinitialize(&self) -> Result<InitializationResult, Error> {
-        self.control().reinitialize().await
-    }
-
-    pub async fn reconnect_mcp_server(&self, name: &str) -> Result<(), Error> {
-        self.control().reconnect_mcp_server(name).await
-    }
-
-    pub async fn set_mcp_servers(
-        &self,
-        servers: std::collections::HashMap<String, crate::driver::sdk::McpServerConfig>,
-    ) -> Result<crate::driver::sdk::McpSetServersResult, Error> {
-        self.control().set_mcp_servers(servers).await
-    }
-
-    pub async fn set_mcp_permission_mode_override(
-        &self,
-        name: &str,
-        mode: Option<crate::driver::sdk::McpPermissionMode>,
-    ) -> Result<crate::driver::sdk::McpPermissionModeOverrideResult, Error> {
-        self.control()
-            .set_mcp_permission_mode_override(name, mode)
-            .await
-    }
-
-    pub async fn toggle_mcp_server(&self, name: &str, enabled: bool) -> Result<(), Error> {
-        self.control().toggle_mcp_server(name, enabled).await
-    }
-
-    pub async fn reload_skills(&self) -> Result<crate::driver::sdk::ReloadSkillsResult, Error> {
-        self.control().reload_skills().await
-    }
-
-    pub async fn reload_plugins(&self) -> Result<crate::driver::sdk::ReloadPluginsResult, Error> {
-        self.control().reload_plugins().await
-    }
-
     pub async fn apply_flag_settings(
         &self,
         settings: claude_protocol::stream::FlagSettings,
     ) -> Result<(), Error> {
         self.control().apply_flag_settings(settings).await
-    }
-
-    pub async fn seed_read_state(&self, path: &str, mtime: u64) -> Result<(), Error> {
-        self.control().seed_read_state(path, mtime).await
     }
 
     /// Send another user message into a session that is already open.
@@ -1049,15 +1008,12 @@ static DEFINITIONS: &[&SpecDef] = &[
     &commands::CLEARED,
     &control::PERMISSION_MODE_AND_MODEL,
     &control::SESSION_INTROSPECTION,
-    &control::SESSION_MAINTENANCE,
     &control::EFFORT,
-    &control::CONNECTED_MCP_SERVERS,
     &tools::PERMISSION_CALLBACK,
     &tools::QUESTION_ASKED,
     &tools::PLAN_REVIEWED,
     &questions::EVERY_SHAPE,
     &questions::DISMISSED,
-    &tools::IN_PROCESS_MCP,
     &tools::ELICITATION_ACCEPTED,
     &tools::ELICITATION_DECLINED,
     &tools::ELICITATION_CANCELLED,
@@ -1065,14 +1021,9 @@ static DEFINITIONS: &[&SpecDef] = &[
     &tools::DIALOG_REQUESTED,
     &tools::HOOK_LIFECYCLE,
     &configured::CONFIGURED_TURN,
-    &configured::EVERY_HOOK_EVENT,
     &configured::EFFORTFUL_TURN,
     &agents::SUBAGENT_TASK,
     &history::RESUMED,
-    &history::FORKED,
-    &history::RESUMED_AT,
-    &results::MAX_TURNS,
-    &results::MAX_BUDGET,
     &results::INTERRUPTED,
     &work::IMAGE,
     &work::FAILING_COMMAND,
@@ -1102,15 +1053,12 @@ static SDK_REGISTRY: &[SpecEntry] = &[
     entry("commands/cleared", "cleared"),
     entry("control/permission_mode_and_model", "controls"),
     entry("control/session_introspection", "introspection"),
-    entry("control/session_maintenance", "session_maintenance"),
     entry("control/effort", "effort"),
-    entry("control/connected_mcp_servers", "connected_mcp_servers"),
     entry("tools/permission_callback", "permission_callback"),
     entry("tools/question_asked", "question_asked"),
     entry("tools/plan_reviewed", "plan_reviewed"),
     entry("tools/question_every_shape", "question_every_shape"),
     entry("tools/question_dismissed", "question_dismissed"),
-    entry("tools/in_process_mcp", "in_process_mcp"),
     entry("tools/elicitation_accepted", "elicitation_accepted"),
     entry("tools/elicitation_declined", "elicitation_declined"),
     entry("tools/elicitation_cancelled", "elicitation_cancelled"),
@@ -1120,14 +1068,9 @@ static SDK_REGISTRY: &[SpecEntry] = &[
     ),
     entry("tools/hook_lifecycle", "hook_lifecycle"),
     entry("options/configured_turn", "configured_turn"),
-    entry("options/every_hook_event", "every_hook_event"),
     entry("configured/effortful_turn", "effortful_turn"),
     entry("agents/subagent_task", "subagent_task"),
     entry("history/resumed", "resumed"),
-    entry("history/forked", "forked"),
-    entry("history/resumed_at", "resumed_at"),
-    entry("results/max_turns", "max_turns"),
-    entry("results/max_budget", "max_budget"),
     entry("results/interrupted", "interrupted"),
     entry("work/image", "image"),
     entry("work/failing_command", "failing_command"),

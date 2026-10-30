@@ -204,16 +204,9 @@ fn apply_common_options(cmd: &mut Command, options: &QueryOptions) -> Result<(),
 
     // MCP server configuration (inline JSON)
     if !options.mcp_servers.is_empty() {
-        let process_servers = options
-            .mcp_servers
-            .iter()
-            .filter(|(_, config)| config.sdk_server().is_none())
-            .collect::<std::collections::HashMap<_, _>>();
-        if !process_servers.is_empty() {
-            let wrapper = serde_json::json!({ "mcpServers": process_servers });
-            if let Ok(json) = serde_json::to_string(&wrapper) {
-                cmd.arg("--mcp-config").arg(json);
-            }
+        let wrapper = serde_json::json!({ "mcpServers": options.mcp_servers });
+        if let Ok(json) = serde_json::to_string(&wrapper) {
+            cmd.arg("--mcp-config").arg(json);
         }
     }
     if options.strict_mcp_config {
@@ -513,27 +506,6 @@ mod tests {
         assert_eq!(arg_value(&args, "--allowedTools"), Some("Bash,Read"));
         assert_eq!(arg_value(&args, "--disallowedTools"), Some("Write"));
         assert!(args.contains(&"--dangerously-skip-permissions".to_string()));
-    }
-
-    #[test]
-    fn apply_common_options_keeps_live_sdk_mcp_servers_off_process_argv() {
-        let server = crate::driver::sdk::create_sdk_mcp_server(
-            crate::driver::sdk::CreateSdkMcpServerOptions {
-                name: "local".into(),
-                version: None,
-                instructions: None,
-                tools: vec![],
-                always_load: false,
-            },
-        )
-        .unwrap();
-        let mut opts = QueryOptions::new("m");
-        opts.mcp_servers.insert("local".into(), server);
-
-        let mut cmd = Command::new("claude");
-        apply_common_options(&mut cmd, &opts).unwrap();
-        let args = collect_args(&cmd);
-        assert!(arg_value(&args, "--mcp-config").is_none());
     }
 
     #[test]

@@ -354,7 +354,9 @@ mod tests {
         // `exec`, so the child killed on drop is the sleep itself: a shell
         // that forks it (dash does) would leave it holding the test's
         // output for half a minute.
-        command.args(["-c", "exec sleep 30", "sh"]).kill_on_drop(true);
+        command
+            .args(["-c", "exec sleep 30", "sh"])
+            .kill_on_drop(true);
         spawn_server(command, listen).unwrap()
     }
 

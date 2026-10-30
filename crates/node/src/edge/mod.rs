@@ -41,7 +41,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
-use self::cloud::{CloudLink, CloudTransport, UdpBlockedMemory, establish_cloud_link};
+use self::cloud::{CloudLink, CloudTransport, establish_cloud_link};
 use self::status::RuntimeStatus;
 use crate::auth::CredentialProvider;
 use crate::connection::ConnectionManager;
@@ -291,7 +291,6 @@ pub struct Edge {
     account: Arc<Account>,
     cloud_options: CloudOptions,
     cloud: tokio::sync::Mutex<Option<CloudLink>>,
-    udp_blocked: Arc<UdpBlockedMemory>,
     status: RuntimeStatus,
     clock: Arc<dyn Clock>,
     shutdown: watch::Sender<bool>,
@@ -533,7 +532,6 @@ impl Edge {
             account,
             cloud_options: options.cloud.clone(),
             cloud: tokio::sync::Mutex::new(None),
-            udp_blocked: Arc::new(UdpBlockedMemory::new(UDP_BLOCKED_MEMORY, clock.clone())),
             status: RuntimeStatus::default(),
             clock,
             shutdown,
@@ -543,6 +541,14 @@ impl Edge {
             paths,
             interfaces: options.interfaces.clone(),
         });
+        // The core dials the relay through the edge's cloud link.
+        let weak = Arc::downgrade(&edge);
+        edge.connections.set_relay_dialer(Arc::new(move |attempt| {
+            let Some(edge) = weak.upgrade() else {
+                return;
+            };
+            tokio::spawn(async move { edge.dial_relay(attempt).await });
+        }));
         // The core dials every trusted host from here: a launch's first
         // flights.
         edge.reachability.start_dialling(options.dial);
@@ -801,8 +807,20 @@ impl Edge {
 
     /// Whether this profile remembers that UDP to `relay` was eaten, and so
     /// dials that relay over TCP only until the memory expires.
-    pub fn remembers_udp_blocked(&self, relay: &str) -> bool {
-        self.udp_blocked.holds(relay)
+    pub async fn remembers_udp_blocked(&self, relay: &str) -> bool {
+        let relay = relay.to_owned();
+        let until = match self.runtime.upgrade() {
+            Some(runtime) => {
+                runtime
+                    .driver()
+                    .look(move |daemon| daemon.relay_reach().udp_blocked_until(&relay))
+                    .await
+            }
+            None => None,
+        };
+        until
+            .flatten()
+            .is_some_and(|until| (self.clock.now_ms().max(0) as u64) < until)
     }
 
     /// The profile's standing with its cloud account.
@@ -890,6 +908,7 @@ impl Edge {
         if let Some(finished) = cloud.take() {
             finished.stop().await;
         }
+        let core = crate::driver::CoreLinks::new(self.runtime.clone());
         self.local_host.set_signed_in(true);
         self.status.report(Relay::Connecting);
         let connector: LinkConnectorCtx =
@@ -905,16 +924,37 @@ impl Edge {
             self.status.clone(),
             CloudTransport::new(
                 self.quic_endpoint.clone(),
-                self.udp_blocked.clone(),
                 self.cloud_options.relay_tcp,
                 self.cloud_options.relay_quic.clone(),
                 self.cloud_options.free_refresh_interval,
             ),
+            core.clone(),
         ));
+        drop(cloud);
+        // The core decides each attempt from here.
+        core.feed(daemon_core::Input::RelayWanted(true)).await;
+    }
+
+    /// Makes the relay attempt the core asked for, on the cloud link that
+    /// is up; one asked for once the link has gone ends at once.
+    async fn dial_relay(&self, attempt: daemon_core::AttemptId) {
+        match self.cloud.lock().await.as_ref() {
+            Some(link) => link.dial(attempt),
+            None => crate::driver::CoreLinks::new(self.runtime.clone()).report(
+                daemon_core::Input::RelayEnded {
+                    attempt,
+                    outcome: daemon_core::RelayOutcome::Lost("signed out".to_owned()),
+                },
+            ),
+        }
     }
 
     /// Stops the cloud link; the profile works locally.
     pub(crate) async fn stop_cloud(&self) {
+        // The core first, so the attempt's ending asks for no other.
+        crate::driver::CoreLinks::new(self.runtime.clone())
+            .feed(daemon_core::Input::RelayWanted(false))
+            .await;
         if let Some(link) = self.cloud.lock().await.take() {
             link.stop().await;
         }

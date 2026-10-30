@@ -50,13 +50,18 @@ pub enum TimerId {
     Attempt(HostId),
     /// The host's pause before its next attempt is over.
     Retry(HostId),
+    /// The pause before the relay's next attempt is over.
+    RelayRetry,
 }
 
 impl TimerId {
     /// Whether the deadline is in link time rather than policy time; see
     /// [`Input::Tick`](crate::Input::Tick).
     pub fn on_link_clock(&self) -> bool {
-        matches!(self, TimerId::Attempt(_) | TimerId::Retry(_))
+        matches!(
+            self,
+            TimerId::Attempt(_) | TimerId::Retry(_) | TimerId::RelayRetry
+        )
     }
 }
 

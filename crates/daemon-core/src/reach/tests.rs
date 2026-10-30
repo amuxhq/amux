@@ -776,3 +776,176 @@ fn a_run_whose_other_paths_stay_silent_names_what_turned_it_away() {
         )
     );
 }
+
+/// The relay attempt the step asked for.
+fn relay_dial(out: &[Output]) -> AttemptId {
+    out.iter()
+        .find_map(|output| match output {
+            Output::DialRelay { attempt } => Some(*attempt),
+            _ => None,
+        })
+        .expect("a relay dial")
+}
+
+fn relay_ends(daemon: &mut Daemon, attempt: AttemptId, outcome: RelayOutcome) -> Vec<Output> {
+    step(daemon, Input::RelayEnded { attempt, outcome })
+}
+
+fn relay_carriers(daemon: &mut Daemon, attempt: AttemptId) -> Option<RelayCarriers> {
+    step(
+        daemon,
+        Input::RelayPrepared {
+            attempt,
+            host: "relay.example".into(),
+        },
+    );
+    daemon.relay_reach().carriers(attempt)
+}
+
+#[test]
+fn the_relay_is_dialled_once_signed_in_on_quic_with_tls_after_its_head_start() {
+    let mut daemon = daemon(trusting());
+    let attempt = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
+    assert_eq!(daemon.relay_reach().carriers(attempt), None, "no host yet");
+    assert_eq!(
+        relay_carriers(&mut daemon, attempt),
+        Some(RelayCarriers::Both {
+            head_start_ms: TCP_HEAD_START_MS
+        })
+    );
+    let again = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
+    assert_ne!(again, attempt, "signing in again starts afresh");
+    assert_eq!(daemon.relay_reach().carriers(attempt), None);
+}
+
+#[test]
+fn a_relay_host_found_to_drop_udp_is_dialled_over_tls_alone_for_an_hour() {
+    let mut daemon = daemon(trusting());
+    let first = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
+    relay_carriers(&mut daemon, first);
+    step(
+        &mut daemon,
+        Input::RelayUdp {
+            host: "relay.example".into(),
+            reached: false,
+        },
+    );
+    let out = relay_ends(&mut daemon, first, RelayOutcome::KeptTokenRefused);
+    let second = relay_dial(&out);
+    assert_eq!(
+        relay_carriers(&mut daemon, second),
+        Some(RelayCarriers::Tcp)
+    );
+    at(&mut daemon, UDP_BLOCKED_MS);
+    let third = relay_dial(&relay_ends(
+        &mut daemon,
+        second,
+        RelayOutcome::KeptTokenRefused,
+    ));
+    assert_eq!(
+        relay_carriers(&mut daemon, third),
+        Some(RelayCarriers::Both {
+            head_start_ms: TCP_HEAD_START_MS
+        }),
+        "the memory lapsed"
+    );
+}
+
+#[test]
+fn a_lost_relay_link_is_dialled_again_after_a_second_doubling_to_five_minutes() {
+    let mut daemon = daemon(trusting());
+    let mut attempt = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
+    let mut now = 0;
+    let mut pauses = Vec::new();
+    for _ in 0..11 {
+        let out = relay_ends(&mut daemon, attempt, RelayOutcome::Lost("gone".into()));
+        let due = armed(&out, TimerId::RelayRetry).expect("a pause");
+        pauses.push(due - now);
+        at(&mut daemon, due);
+        now = due;
+        attempt = relay_dial(&step(
+            &mut daemon,
+            Input::Timer {
+                id: TimerId::RelayRetry,
+            },
+        ));
+    }
+    assert_eq!(
+        pauses,
+        vec![
+            1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 128_000, 256_000, 300_000, 300_000
+        ]
+    );
+}
+
+#[test]
+fn a_clean_close_or_a_link_that_lived_starts_the_relay_pause_afresh() {
+    let mut daemon = daemon(trusting());
+    let first = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
+    let out = relay_ends(&mut daemon, first, RelayOutcome::Lost("gone".into()));
+    let due = armed(&out, TimerId::RelayRetry).unwrap();
+    at(&mut daemon, due);
+    let second = relay_dial(&step(
+        &mut daemon,
+        Input::Timer {
+            id: TimerId::RelayRetry,
+        },
+    ));
+    step(&mut daemon, Input::RelayLinked { attempt: second });
+    at(&mut daemon, due + RELAY_LIVED_MS);
+    let out = relay_ends(&mut daemon, second, RelayOutcome::Lost("gone".into()));
+    assert_eq!(
+        armed(&out, TimerId::RelayRetry),
+        Some(due + RELAY_LIVED_MS + RELAY_RETRY_FIRST_MS),
+        "it lived: the pause is the first again"
+    );
+
+    let mut daemon = self::daemon(trusting());
+    let first = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
+    relay_ends(&mut daemon, first, RelayOutcome::Lost("gone".into()));
+    at(&mut daemon, 1_000);
+    let second = relay_dial(&step(
+        &mut daemon,
+        Input::Timer {
+            id: TimerId::RelayRetry,
+        },
+    ));
+    let out = relay_ends(&mut daemon, second, RelayOutcome::Closed);
+    assert_eq!(armed(&out, TimerId::RelayRetry), Some(2_000));
+}
+
+#[test]
+fn a_final_ending_stops_the_relay_until_the_profile_signs_in_again() {
+    let mut daemon = daemon(trusting());
+    let attempt = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
+    let out = relay_ends(&mut daemon, attempt, RelayOutcome::Final("sign in".into()));
+    assert_eq!(armed(&out, TimerId::RelayRetry), None);
+    assert_eq!(daemon.relay_reach().attempt(), None);
+    relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
+}
+
+#[test]
+fn signing_out_ends_the_relay_pause_and_a_late_ending_changes_nothing() {
+    let mut daemon = daemon(trusting());
+    let attempt = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
+    relay_ends(&mut daemon, attempt, RelayOutcome::Lost("gone".into()));
+    let out = step(&mut daemon, Input::RelayWanted(false));
+    assert!(out.contains(&Output::CancelTimer {
+        id: TimerId::RelayRetry
+    }));
+    let again = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
+    step(&mut daemon, Input::RelayWanted(false));
+    let out = relay_ends(&mut daemon, again, RelayOutcome::Lost("stopped".into()));
+    assert_eq!(out, Vec::new());
+}
+
+#[test]
+fn the_relay_pause_takes_jitter_from_the_cores_entropy() {
+    let mut daemon = daemon(trusting());
+    step(&mut daemon, Input::Entropy([7; 32]));
+    let attempt = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
+    let out = relay_ends(&mut daemon, attempt, RelayOutcome::Lost("gone".into()));
+    let pause = armed(&out, TimerId::RelayRetry).unwrap();
+    assert!((750..=6_250).contains(&pause), "{pause}");
+    assert_ne!(pause, 1_000);
+}

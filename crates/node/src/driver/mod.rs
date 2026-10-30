@@ -1288,6 +1288,11 @@ impl CoreThread {
                     connections.dial(host, attempt, plan, early);
                 }
             }
+            Output::DialRelay { attempt } => {
+                if let Some(connections) = self.connections() {
+                    connections.dial_relay(attempt);
+                }
+            }
             Output::SpawnAgent { dir, spec } => runtime.spawn_process(dir, *spec),
             Output::DialAgent { agent } => runtime.dial_agent(uuid::Uuid::from_bytes(agent.0)),
             Output::WriteControl { agent, frame } => {

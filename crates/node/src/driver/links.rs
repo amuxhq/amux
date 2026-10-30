@@ -21,6 +21,14 @@ impl CoreLinks {
         Self(runtime)
     }
 
+    /// Steps `input`, waiting until the core has: a look after it sees
+    /// what it decided. Nothing while the profile is gone.
+    pub(crate) async fn feed(&self, input: Input) {
+        if let Some(runtime) = self.0.upgrade() {
+            runtime.driver().feed(input).await;
+        }
+    }
+
     /// Reports what a link or channel did, without waiting.
     pub(crate) fn report(&self, input: Input) {
         if let Some(runtime) = self.0.upgrade() {

@@ -428,6 +428,12 @@ impl Daemon {
     }
 
     /// Fresh randomness: mixed into what the core draws from.
+    /// 64 random bytes from the entropy the core was given; none before
+    /// any arrived.
+    pub(crate) fn draw_entropy(&mut self) -> Option<[u8; 64]> {
+        self.pairing.entropy.draw()
+    }
+
     pub(crate) fn entropy(&mut self, fresh: [u8; 32]) {
         self.pairing.entropy.add(fresh);
     }

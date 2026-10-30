@@ -23,7 +23,12 @@ pub struct ConnectionManager {
     analytics: analytics::Analytics,
     /// What dials a host the core says to, once the edge dials at all.
     dialer: std::sync::OnceLock<crate::services::Dialer>,
+    /// What links to the relay when the core says to, once the edge is up.
+    relay: std::sync::OnceLock<RelayDialer>,
 }
+
+/// Makes one relay attempt the core asked for.
+pub(crate) type RelayDialer = Arc<dyn Fn(daemon_core::AttemptId) + Send + Sync>;
 
 impl ConnectionManager {
     pub(crate) fn new(channels: Arc<ChannelPool>, analytics: analytics::Analytics) -> Arc<Self> {
@@ -32,6 +37,7 @@ impl ConnectionManager {
             replacing: Replacing::default(),
             analytics,
             dialer: std::sync::OnceLock::new(),
+            relay: std::sync::OnceLock::new(),
         })
     }
 
@@ -71,6 +77,21 @@ impl ConnectionManager {
     ) {
         if let Some(dialer) = self.dialer.get() {
             dialer.dial(host_from_core(host), attempt, plan, early);
+        }
+    }
+
+    pub(crate) fn set_relay_dialer(&self, dialer: RelayDialer) {
+        let _ = self.relay.set(dialer);
+    }
+
+    /// The core says to link to the relay.
+    pub(crate) fn dial_relay(&self, attempt: daemon_core::AttemptId) {
+        match self.relay.get() {
+            Some(dial) => dial(attempt),
+            None => self.report(Input::RelayEnded {
+                attempt,
+                outcome: daemon_core::RelayOutcome::Lost("the edge is not up".to_owned()),
+            }),
         }
     }
 

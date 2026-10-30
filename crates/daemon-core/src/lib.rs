@@ -62,7 +62,9 @@ pub use links::LinkRegistry;
 pub use notifications::Notifications;
 pub use pairing::PairingState;
 pub use presence::{HostView, Presence, PresenceState, Route};
-pub use reach::{AttemptOutcome, DialPath, Dialling, Plan, Reach};
+pub use reach::{
+    AttemptOutcome, DialPath, Dialling, Plan, Reach, RelayCarriers, RelayOutcome, RelayReach,
+};
 pub use redact::Redactor;
 pub use retention::{Retain, Retained};
 pub use serve::Answers;
@@ -331,6 +333,14 @@ impl Daemon {
             Input::Timer {
                 id: TimerId::Retry(host),
             } => self.retry_due(host, out),
+            Input::RelayWanted(wanted) => self.relay_wanted(wanted, out),
+            Input::RelayPrepared { attempt, host } => self.relay_prepared(attempt, &host),
+            Input::RelayUdp { host, reached } => self.relay_udp(host, reached),
+            Input::RelayLinked { attempt } => self.relay_linked(attempt),
+            Input::RelayEnded { attempt, outcome } => self.relay_ended(attempt, outcome, out),
+            Input::Timer {
+                id: TimerId::RelayRetry,
+            } => self.relay_retry_due(out),
             Input::PairingOpened { session, opened } => self.pairing_opened(session, opened, out),
             Input::PairingMessage { session, message } => {
                 self.pairing_message(session, message, out)

@@ -1975,6 +1975,7 @@ impl Transition<'_> {
                 | Output::CloseChannel { .. }
                 | Output::DropRoute { .. }
                 | Output::Dial { .. }
+                | Output::DialRelay { .. }
                 | Output::Abandon { .. }
                 | Output::Rediscover
                 | Output::LinkControl { .. }
@@ -2664,6 +2665,7 @@ fn timer_kind(id: &TimerId) -> &'static str {
         TimerId::Pairing(_) => "Pairing",
         TimerId::Attempt(_) => "Attempt",
         TimerId::Retry(_) => "Retry",
+        TimerId::RelayRetry => "RelayRetry",
     }
 }
 

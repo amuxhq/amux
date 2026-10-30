@@ -42,6 +42,18 @@ answers. These deadlines and pauses, and how long a link lived, are reckoned
 in link time, the second clock `Input::Tick` carries, which runs on when a
 test holds policy time still.
 
+The relay link is reached the same way (`reach::relay`): one attempt at a
+time while the profile is signed in (`Input::RelayWanted`), from
+`Output::DialRelay` until `Input::RelayEnded`. The driver fetches the token
+and names the relay host (`Input::RelayPrepared`); the core chooses the
+carriers then: QUIC with TLS over TCP after a 300 ms head start, or TLS alone
+to a host found to drop UDP within the hour (`Input::RelayUdp`, in policy
+time). After a lost link or a failed attempt it pauses a second doubling to
+five minutes, jittered from the entropy it is given, starting afresh after a
+clean close or a link that lived thirty seconds; a refused kept token is
+replaced at once, and a refusal of the credentials or the version stops it
+until the profile signs in again.
+
 What belongs inside: anything whose interleaving with the core's state can
 matter is in the core; anything that only produces a result is a job the
 driver runs and reports back as an input; transport and codec are the

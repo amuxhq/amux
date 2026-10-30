@@ -85,6 +85,7 @@ async fn hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tc
     until("the phone to remember UDP is blocked", || async {
         edge(&net, "phone")
             .remembers_udp_blocked(RELAY_HOST)
+            .await
             .then_some(())
             .ok_or("not remembered")
     })
@@ -93,11 +94,11 @@ async fn hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tc
     net.block_udp("phone", false).unwrap();
     net.advance(node::UDP_BLOCKED_MEMORY - Duration::from_millis(1))
         .unwrap();
-    assert!(edge(&net, "phone").remembers_udp_blocked(RELAY_HOST));
+    assert!(edge(&net, "phone").remembers_udp_blocked(RELAY_HOST).await);
     reconnect(&net, "phone").await;
     assert_eq!(carrier(&net, "phone"), Some(RelayCarrier::Tcp));
     net.advance(Duration::from_millis(1)).unwrap();
-    assert!(!edge(&net, "phone").remembers_udp_blocked(RELAY_HOST));
+    assert!(!edge(&net, "phone").remembers_udp_blocked(RELAY_HOST).await);
     reconnect(&net, "phone").await;
     assert_eq!(carrier(&net, "phone"), Some(RelayCarrier::Quic));
     until_via(&net, "desk", "phone", LiveRoute::Relay).await;

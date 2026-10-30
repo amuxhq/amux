@@ -107,6 +107,8 @@ pub struct Reach {
     /// The addresses each host's path machine was last told, so it hears
     /// only of a change.
     told: BTreeMap<HostId, Vec<PeerAddress>>,
+    /// The link to the relay.
+    relay: RelayReach,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -209,6 +211,7 @@ impl Reach {
     pub(crate) fn canonical(&self, rank: impl Fn(AttemptId) -> AttemptId) -> Reach {
         let mut reach = self.clone();
         reach.next_attempt = 0;
+        reach.relay = self.relay.canonical(&rank);
         for reaching in reach.hosts.values_mut() {
             reaching.failures = 0;
             reaching.linked_since_ms = reaching.linked_since_ms.map(|_| 0);
@@ -783,5 +786,11 @@ impl Daemon {
     }
 }
 
+mod relay;
 #[cfg(test)]
 mod tests;
+
+pub use relay::{
+    RELAY_LIVED_MS, RELAY_RETRY_FIRST_MS, RELAY_RETRY_MAX_MS, RelayCarriers, RelayOutcome,
+    RelayReach, TCP_HEAD_START_MS, UDP_BLOCKED_MS,
+};

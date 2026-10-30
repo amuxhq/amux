@@ -146,6 +146,29 @@ pub enum Input {
     Wanted {
         host: HostId,
     },
+    /// The profile signed in to its account, or out: the relay is dialled,
+    /// or no longer.
+    RelayWanted(bool),
+    /// The relay attempt has its token, which names the relay `host`.
+    RelayPrepared {
+        attempt: AttemptId,
+        host: String,
+    },
+    /// QUIC reached the relay `host`, or failed where TLS over TCP did not.
+    RelayUdp {
+        host: String,
+        reached: bool,
+    },
+    /// The relay admitted the attempt's link.
+    RelayLinked {
+        attempt: AttemptId,
+    },
+    /// How a relay attempt the core asked for with [`Output::DialRelay`]
+    /// ended: its dial, or its link once up.
+    RelayEnded {
+        attempt: AttemptId,
+        outcome: crate::reach::RelayOutcome,
+    },
     /// How an attempt the core asked for with [`Output::Dial`] ended.
     AttemptEnded {
         host: HostId,
@@ -273,6 +296,11 @@ impl Input {
             Input::Dialling(_) => "Dialling",
             Input::Wanted { .. } => "Wanted",
             Input::AttemptEnded { .. } => "AttemptEnded",
+            Input::RelayWanted(_) => "RelayWanted",
+            Input::RelayPrepared { .. } => "RelayPrepared",
+            Input::RelayUdp { .. } => "RelayUdp",
+            Input::RelayLinked { .. } => "RelayLinked",
+            Input::RelayEnded { .. } => "RelayEnded",
             Input::PeerRevoked { .. } => "PeerRevoked",
             Input::ChannelAnswered { .. } => "ChannelAnswered",
             Input::OwnHost(_) => "OwnHost",
@@ -447,6 +475,14 @@ pub enum Output {
         attempt: AttemptId,
         plan: Plan,
         early: Vec<PeerRequest>,
+    },
+    /// Link to the relay: fetch the token, report the host it names as
+    /// [`Input::RelayPrepared`], dial it on the carriers
+    /// [`RelayReach::carriers`](crate::reach::RelayReach::carriers) then
+    /// gives, run the link, and report how it ended as
+    /// [`Input::RelayEnded`] under `attempt`.
+    DialRelay {
+        attempt: AttemptId,
     },
     /// Drop the attempt: the core gave up on it, and hears nothing more
     /// of it.
@@ -883,6 +919,22 @@ mod tests {
                 host: HostId([4; 16]),
                 attempt: AttemptId(4),
                 outcome: AttemptOutcome::Failed("no answer".into()),
+            },
+            Input::RelayWanted(true),
+            Input::RelayPrepared {
+                attempt: AttemptId(5),
+                host: "relay.example".into(),
+            },
+            Input::RelayUdp {
+                host: "relay.example".into(),
+                reached: false,
+            },
+            Input::RelayLinked {
+                attempt: AttemptId(5),
+            },
+            Input::RelayEnded {
+                attempt: AttemptId(5),
+                outcome: crate::reach::RelayOutcome::Lost("gone".into()),
             },
             Input::ClientCall {
                 call: CallId(3),

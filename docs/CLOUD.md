@@ -141,8 +141,10 @@ and offer to manage no subscription.
 
 A signed-in profile asks `GET /api/connect` for a relay credential. The answer
 is `host`, `port`, `token`, `expires_at` and `tier` (`free` or `pro`). The
-profile dials that relay over QUIC, with TCP as the fallback, and presents
-the token.
+profile dials that relay over QUIC, with TLS over TCP started 300 ms later
+as the fallback (or TLS alone for an hour after QUIC failed where TCP did
+not), and presents the token. A link lost or a dial failed is tried again
+after a second doubling to five minutes, jittered.
 
 The token is a JWT the account service signs with RS256. The relay accepts
 that algorithm only, whatever the token's header names, and validates the

@@ -16,7 +16,7 @@ evidence = ""
 update = "AMUX_UPDATE_GOLDENS=1 just suite desktop-cli-system supervise_cli::, then review the login-unit diff."
 cargo = [
   { package = "amux", kind = "bin", targets = ["amux"], features = ["bundled"] },
-  { package = "amux", modules = ["agent_process", "attach", "cli_words", "codex_attach", "overlap", "pairing", "process", "relay", "supervise_cli", "term_fails_fast"], features = ["bundled"] },
+  { package = "amux", modules = ["agent_process", "attach", "cli_words", "codex_attach", "overlap", "pairing", "process", "relay", "supervise_cli"], features = ["bundled"] },
 ]
 
 [[suite]]

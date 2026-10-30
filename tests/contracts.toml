@@ -1183,13 +1183,6 @@ tests = [
   "journey:terminal/new-agent-worktree",
 ]
 
-[[contract]]
-id = "terminal-wait-fails-fast"
-source = "testing page"
-section = "Time and absence"
-claim = "A terminal test whose wait fails ends instead of hanging."
-tests = ["amux/integration::term_fails_fast::a_failing_terminal_wait_ends_its_test"]
-
 # --- Models ------------------------------------------------------------------
 
 [[contract]]

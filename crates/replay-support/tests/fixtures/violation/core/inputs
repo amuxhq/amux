@@ -1,6 +1,6 @@
-{"Input":{"Tick":{"now_ms":1792444149880}}}
+{"Input":{"Tick":{"now_ms":1792444149880,"link_ms":1792444149880}}}
 {"Input":"Checkpointed"}
-{"Input":{"Tick":{"now_ms":1792444164971}}}
+{"Input":{"Tick":{"now_ms":1792444164971,"link_ms":1792444164971}}}
 {"Input":{"ClientCall":{"call":3,"request":{"SubscribeSession":{"agent_id":[175,203,137,249,105,222,76,181,173,36,214,83,136,27,188,64],"tail":1000}}}}}
-{"Input":{"Tick":{"now_ms":1792444164973}}}
+{"Input":{"Tick":{"now_ms":1792444164973,"link_ms":1792444164973}}}
 {"Input":{"CallCancelled":{"call":3}}}

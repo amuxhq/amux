@@ -14,7 +14,7 @@ mod session;
 pub mod trace;
 
 use std::io;
-use std::path::{Component, Path};
+use std::path::Path;
 
 pub use fleet::{Fleet, FleetGuard, HELD_ROWS, OpenError, Stop, Window};
 pub use session::{
@@ -56,20 +56,11 @@ impl Backoff {
 }
 
 /// Writes a client's dump part into a bundle directory the daemon wrote.
-/// Names are relative paths inside the bundle; any other is refused.
+/// Names are relative paths inside the bundle, the constant ones the
+/// client's own `dump_part` gives.
 pub fn write_part(bundle: &Path, part: &wire::DumpPart) -> io::Result<()> {
     for file in &part.files {
-        let name = Path::new(&file.name);
-        let inside = name
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)));
-        if !inside {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("a dump part names {:?}, outside its bundle", file.name),
-            ));
-        }
-        let path = bundle.join(name);
+        let path = bundle.join(&file.name);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }

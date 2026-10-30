@@ -1089,6 +1089,12 @@ impl client::Client for SlowClearing {
     ) -> Result<wire::DumpResponse, client::RpcError> {
         self.inner.dump(request).await
     }
+    async fn submit_report(
+        &self,
+        request: wire::SubmitReportRequest,
+    ) -> Result<wire::SubmitReportResponse, client::RpcError> {
+        self.inner.submit_report(request).await
+    }
 }
 
 /// A draft the person cleared stays cleared while the daemon's copy is

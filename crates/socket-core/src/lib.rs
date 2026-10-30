@@ -463,6 +463,9 @@ pub struct Peers<K> {
     reporting: bool,
     /// When an arrival on each path from each host was last reported.
     reported: HashMap<(HostId, Path), u64>,
+    /// How many of this host's own dialled connections are at each
+    /// stand-in, while they last.
+    dialled: HashMap<SocketAddr, usize>,
 }
 
 impl<K> Default for Peers<K> {
@@ -480,6 +483,7 @@ impl<K> Default for Peers<K> {
             next_path: 0,
             reporting: false,
             reported: HashMap::new(),
+            dialled: HashMap::new(),
         }
     }
 }
@@ -509,6 +513,7 @@ impl<K: Hash> Hash for Peers<K> {
         self.next_path.hash(state);
         self.reporting.hash(state);
         sorted(self.reported.iter()).hash(state);
+        sorted(self.dialled.iter()).hash(state);
     }
 }
 
@@ -554,6 +559,20 @@ impl<K: Forwarding> Peers<K> {
     }
 
     /// The path a stand-in's packets go out on, where there is one.
+    /// Every path a stand-in's packets go out on now: the one carrying it,
+    /// or each candidate while a first flight has not settled on one.
+    pub fn paths_of(&self, stand_in: SocketAddr) -> Vec<Path> {
+        match self.by_stand_in.get(&stand_in) {
+            Some(Peer::Unnamed(path)) => vec![*path],
+            Some(peer @ Peer::Host(_)) => match self.peers.get(peer).map(|state| &state.route) {
+                Some(Route::Carrying(path)) => vec![*path],
+                Some(Route::All(paths)) => paths.clone(),
+                Some(Route::Unset) | None => Vec::new(),
+            },
+            None => Vec::new(),
+        }
+    }
+
     pub fn path_of(&self, stand_in: SocketAddr) -> Option<Path> {
         match self.by_stand_in.get(&stand_in)? {
             Peer::Unnamed(path) => Some(*path),
@@ -566,17 +585,22 @@ impl<K: Forwarding> Peers<K> {
 
     /// Gives an unnamed sender's stand-in its host once the handshake says
     /// who it is; quinn keeps the same address, and the host's packets on
-    /// that path arrive from it.
+    /// that path arrive from it. A host this host is dialling at a stand-in
+    /// of its own keeps that one instead (see [`Peers::dial_held`]): the
+    /// named stand-in still reaches it, and the accepted connection moves
+    /// to the host's as quinn lets a server follow its peer.
     ///
     /// A host already known is named afresh when the path is an address
-    /// and the host's route is unset or another address: a host that
-    /// connected again from elsewhere, or whose connection quinn moved to
-    /// the address its packets now come from after its NAT rebound or its
-    /// network changed. Its earlier stand-in goes on reaching it at the new
-    /// address. A host carried some other way (through a forwarder, over a
-    /// byte stream, or on every candidate) keeps that route, and this
-    /// sender stays unnamed; its handshake is done, so it is let go only
-    /// once it goes silent, not for going unnamed.
+    /// and the host's route is unset, another address, or every candidate:
+    /// a host that connected again from elsewhere, or whose connection
+    /// quinn moved to the address its packets now come from after its NAT
+    /// rebound or its network changed, or one whose link crossed this
+    /// host's first flight to it. Its earlier stand-in goes on reaching it
+    /// at the new address, so that flight goes where the host is. A host
+    /// carried some other way (through a forwarder or over a byte stream)
+    /// keeps that route, and this sender stays unnamed; its handshake is
+    /// done, so it is let go only once it goes silent, not for going
+    /// unnamed.
     ///
     /// A stand-in another host was last heard at, at an address, is taken
     /// from it: the address was reused (a LAN address given out again, a
@@ -605,7 +629,7 @@ impl<K: Forwarding> Peers<K> {
                 Route::Carrying(carrying) => {
                     known.released || (addressed(*carrying) && addressed(path))
                 }
-                Route::All(_) => false,
+                Route::All(_) => addressed(path),
             };
             if !readdressed {
                 if let Some(sender) = self.peers.get_mut(&Peer::Unnamed(path)) {
@@ -625,7 +649,18 @@ impl<K: Forwarding> Peers<K> {
                 self.peers.remove(&Peer::Unnamed(path));
             }
         }
-        self.mint(Peer::Host(host), now_ms, Expiry::Kept).stand_in = stand_in;
+        // While this host's own dial is at the host's stand-in, the host
+        // keeps it: a dialled connection drops packets from any other
+        // address, while the accepted one being named follows its peer
+        // there, as quinn lets a server.
+        let dialled = self
+            .peers
+            .get(&Peer::Host(host))
+            .is_some_and(|known| self.dialled.contains_key(&known.stand_in));
+        let held = self.mint(Peer::Host(host), now_ms, Expiry::Kept);
+        if !dialled {
+            held.stand_in = stand_in;
+        }
         self.by_stand_in.insert(stand_in, Peer::Host(host));
         if addressed(path) {
             self.unlearn_addresses(host);
@@ -638,8 +673,8 @@ impl<K: Forwarding> Peers<K> {
     /// connection still sends goes out, but no dial trusts it: the next
     /// dial's first flight goes out on every candidate rather than only on
     /// the path the old link last used, which may be dead, and a connection
-    /// from the host on any path names it afresh. Its next link, or any
-    /// route set, takes the release back.
+    /// from the host on any path names it afresh. Its next link, or a
+    /// route set on one path, takes the release back.
     pub fn release(&mut self, host: HostId) {
         if let Some(held) = self.peers.get_mut(&Peer::Host(host)) {
             held.released = true;
@@ -663,6 +698,24 @@ impl<K: Forwarding> Peers<K> {
     pub fn keep(&mut self, host: HostId) {
         if let Some(held) = self.peers.get_mut(&Peer::Host(host)) {
             held.expiry = Expiry::Kept;
+        }
+    }
+
+    /// A connection this host dialled is at `stand_in` until
+    /// [`Peers::dial_ended`]. quinn's dialled connections hear only from the
+    /// address they dialled, so a host named afresh at another stand-in
+    /// meanwhile keeps this one.
+    pub fn dial_held(&mut self, stand_in: SocketAddr) {
+        *self.dialled.entry(stand_in).or_default() += 1;
+    }
+
+    /// One of the dialled connections at `stand_in` is gone.
+    pub fn dial_ended(&mut self, stand_in: SocketAddr) {
+        if let Some(count) = self.dialled.get_mut(&stand_in) {
+            *count -= 1;
+            if *count == 0 {
+                self.dialled.remove(&stand_in);
+            }
         }
     }
 
@@ -1324,6 +1377,11 @@ impl<K: Forwarding> Peers<K> {
     /// Carries `host` on `route`. Addresses its earlier routes took still
     /// lead to it, so packets still in flight on a path it switched from
     /// arrive as its own.
+    ///
+    /// A first flight's route is a guess until a link comes up on it: the
+    /// path it settles on is the first to answer, which may be something
+    /// turning the dial away (an endpoint left by the host's last run, a
+    /// machine with another key), so no later dial trusts it alone.
     fn set_route(&mut self, host: HostId, route: Route, now_ms: u64) {
         self.claim(Peer::Host(host), now_ms);
         for path in route.paths() {
@@ -1333,11 +1391,12 @@ impl<K: Forwarding> Peers<K> {
             .peers
             .get_mut(&Peer::Host(host))
             .expect("stand-in just made");
-        if !matches!(route, Route::All(_)) {
+        let flight = matches!(route, Route::All(_));
+        if !flight {
             peer.flight = None;
         }
         peer.route = route;
-        peer.released = false;
+        peer.released = flight;
     }
 
     /// A packet from `peer` arrived on `path` while its first flight goes

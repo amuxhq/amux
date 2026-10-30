@@ -38,6 +38,7 @@ pub mod pairing;
 pub mod payload;
 mod peers;
 pub mod presence;
+pub mod reach;
 pub mod redact;
 pub mod retention;
 pub mod serve;
@@ -49,7 +50,9 @@ pub use checkpoints::Checkpoints;
 pub use deliveries::{Deliveries, DrainReport, delivery_envelope_id};
 pub use families::{Create, Ended, FamilyState, Refusal, Resume};
 pub use fingerprint::Fingerprint;
-pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
+pub use ids::{
+    AccountId, AgentId, AttemptId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId,
+};
 pub use ingest::Journals;
 pub use io::{
     FromShell, IngestEnd, Ingested, Input, Job, Output, ParentSays, Recorded, Settings, ShellWork,
@@ -59,6 +62,9 @@ pub use links::LinkRegistry;
 pub use notifications::Notifications;
 pub use pairing::PairingState;
 pub use presence::{HostView, Presence, PresenceState, Route};
+pub use reach::{
+    AttemptOutcome, DialPath, Dialling, Plan, Reach, RelayCarriers, RelayOutcome, RelayReach,
+};
 pub use redact::Redactor;
 pub use retention::{Retain, Retained};
 pub use serve::Answers;
@@ -201,7 +207,10 @@ impl Daemon {
     /// the checks.
     fn dispatch(&mut self, input: Input, out: &mut Vec<Output>) {
         match input {
-            Input::Tick { now_ms } => self.timers.now_ms = now_ms,
+            Input::Tick { now_ms, link_ms } => {
+                self.timers.now_ms = now_ms;
+                self.timers.link_ms = link_ms;
+            }
             Input::ClientCall { call, request } => self.client_call(call, request, out),
             Input::PeerCall {
                 from,
@@ -300,7 +309,7 @@ impl Daemon {
             Input::ChannelClosed { channel, .. } => self.channel_closed(channel),
             Input::PlanChanged => self.plan_changed(out),
             Input::TryAgain { host } => {
-                self.try_again(host, out);
+                self.reconsider(host, out);
                 self.sources_try_again(host, out);
             }
             Input::Started => self.trust_started(out),
@@ -308,9 +317,30 @@ impl Daemon {
             Input::Policy(policy) => self.set_policy(policy, out),
             Input::HostForgotten { host } => {
                 self.forget_addresses(host);
-                self.forget_host(host)
+                self.forget_host(host);
+                self.stop_reaching(host, out);
             }
-            Input::Discovered { found } => self.discovered(found, out),
+            Input::Dialling(dialling) => self.dialling(dialling, out),
+            Input::Wanted { host } => self.want_host(host, out),
+            Input::AttemptEnded {
+                host,
+                attempt,
+                outcome,
+            } => self.attempt_ended(host, attempt, outcome, out),
+            Input::Timer {
+                id: TimerId::Attempt(host),
+            } => self.attempt_due(host, out),
+            Input::Timer {
+                id: TimerId::Retry(host),
+            } => self.retry_due(host, out),
+            Input::RelayWanted(wanted) => self.relay_wanted(wanted, out),
+            Input::RelayPrepared { attempt, host } => self.relay_prepared(attempt, &host),
+            Input::RelayUdp { host, reached } => self.relay_udp(host, reached),
+            Input::RelayLinked { attempt } => self.relay_linked(attempt),
+            Input::RelayEnded { attempt, outcome } => self.relay_ended(attempt, outcome, out),
+            Input::Timer {
+                id: TimerId::RelayRetry,
+            } => self.relay_retry_due(out),
             Input::PairingOpened { session, opened } => self.pairing_opened(session, opened, out),
             Input::PairingMessage { session, message } => {
                 self.pairing_message(session, message, out)
@@ -326,8 +356,7 @@ impl Daemon {
             Input::PeerRevoked { host } => self.peer_revoked(host),
             Input::ChannelAnswered { channel } => self.channel_answered(channel, out),
             Input::OwnHost(entry) => self.own_host_said(*entry),
-            Input::Candidates { found } => self.candidates_found(found),
-            Input::DialError { host, error } => self.dial_error(host, error),
+            Input::Candidates { found } => self.candidates_found(found, out),
         }
     }
 
@@ -724,13 +753,17 @@ pub struct RoutingState {
     addresses: std::collections::BTreeMap<HostId, Vec<payload::PeerAddress>>,
     /// The address the relay last saw this host's packets come from.
     observed: Option<std::net::SocketAddr>,
+    /// Each host being dialled, and when it is tried next.
+    reach: reach::Reach,
 }
 
 /// The clock as last told and the timers armed.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Timers {
     now_ms: u64,
-    /// The timers armed that the core keeps count of: each host's retry.
+    link_ms: u64,
+    /// The timers armed that the core keeps count of, so one cancelled
+    /// after it rang is told apart.
     armed: std::collections::BTreeSet<TimerId>,
 }
 

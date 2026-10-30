@@ -21,6 +21,14 @@ impl CoreLinks {
         Self(runtime)
     }
 
+    /// Steps `input`, waiting until the core has: a look after it sees
+    /// what it decided. Nothing while the profile is gone.
+    pub(crate) async fn feed(&self, input: Input) {
+        if let Some(runtime) = self.0.upgrade() {
+            runtime.driver().feed(input).await;
+        }
+    }
+
     /// Reports what a link or channel did, without waiting.
     pub(crate) fn report(&self, input: Input) {
         if let Some(runtime) = self.0.upgrade() {
@@ -59,6 +67,21 @@ impl CoreLinks {
                 core_class(class),
                 pin.map(PublicKey),
             )
+            .await
+    }
+
+    /// Tells the core a call needs a link to `host` now, and answers what
+    /// the core then holds for it. Nothing while the profile is gone.
+    pub(crate) async fn want(&self, host: daemon_core::HostId) -> Option<Wanted> {
+        let runtime = self.0.upgrade()?;
+        let driver = runtime.driver();
+        driver.feed(Input::Wanted { host }).await;
+        driver
+            .look(move |daemon| Wanted {
+                attempt: daemon.reach().attempt(host),
+                revoked: daemon.revoked_by(host),
+                expecting: daemon.reach().expecting(host),
+            })
             .await
     }
 
@@ -109,8 +132,19 @@ pub(crate) fn core_error(error: &ChannelError) -> payload::ChannelError {
         ChannelError::Refused(refusal) => payload::ChannelError::Refused(*refusal),
         ChannelError::NoPairingRoute
         | ChannelError::Handshake(_)
+        | ChannelError::TurnedAway { .. }
         | ChannelError::Identity(_)
         | ChannelError::Tls(_)
         | ChannelError::Revoked => payload::ChannelError::Handshake(error.to_string()),
     }
+}
+
+/// What the core holds for a host a call wants a link to.
+pub(crate) struct Wanted {
+    /// The attempt out to it, if one is.
+    pub(crate) attempt: Option<daemon_core::AttemptId>,
+    /// It refused this host as no longer trusted.
+    pub(crate) revoked: bool,
+    /// Its own dial to this host is expected, as a pairing's joiner's is.
+    pub(crate) expecting: bool,
 }

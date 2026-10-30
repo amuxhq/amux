@@ -264,7 +264,7 @@ mod tests {
     use store::{AgentKey, AgentRow, Sqlite};
 
     use super::*;
-    use crate::payload::{Advertisement, CarrierKind, ClientRequest, PeerFailure, PeerReply};
+    use crate::payload::{CarrierKind, ClientRequest, PeerFailure, PeerReply};
     use crate::{Checkpoint, Input, LinkId, StartOptions};
 
     const OWN: [u8; 16] = *b"own-host-0000000";
@@ -402,45 +402,6 @@ mod tests {
         assert_eq!(daemon.pending.peer_calls(), 0);
     }
 
-    #[test]
-    fn a_paired_host_found_without_a_direct_link_is_dialed() {
-        let mut daemon = daemon();
-        let found = |host: [u8; 16], trusted| Input::Discovered {
-            found: vec![Advertisement {
-                host: HostId(host),
-                trusted,
-            }],
-        };
-        assert_eq!(
-            step(&mut daemon, found(PEER, true)),
-            vec![Output::Dial { host: HostId(PEER) }]
-        );
-        assert_eq!(
-            step(&mut daemon, found(PEER, false)),
-            Vec::new(),
-            "an unpaired host is only a hint"
-        );
-        assert_eq!(
-            step(&mut daemon, found(OWN, true)),
-            Vec::new(),
-            "not itself"
-        );
-        step(
-            &mut daemon,
-            Input::LinkUp {
-                link: LinkId(1),
-                peer: HostId(PEER),
-                kind: CarrierKind::Direct,
-                resumed: None,
-            },
-        );
-        let out = step(&mut daemon, found(PEER, true));
-        assert!(
-            !out.iter()
-                .any(|output| matches!(output, Output::Dial { .. })),
-            "a host linked directly needs no second link: {out:?}"
-        );
-    }
     #[test]
     fn a_replayed_early_read_changes_nothing_the_store_holds() {
         let mut daemon = daemon();

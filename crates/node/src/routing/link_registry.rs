@@ -56,6 +56,7 @@ impl LinkRegistry {
             refusals: tokio::sync::broadcast::channel(16).0,
             last_refusals: std::sync::Mutex::default(),
             paths: std::sync::OnceLock::new(),
+            registered: Notify::new(),
         }
     }
 
@@ -116,6 +117,8 @@ pub struct LinkRegistry {
     /// The profile's path machines, told of every peer link that comes up
     /// or goes on the profile's socket.
     paths: std::sync::OnceLock<std::sync::Weak<PathDriver>>,
+    /// Woken as each link registers.
+    registered: Notify,
 }
 
 #[derive(Default)]
@@ -307,6 +310,11 @@ impl LinkRegistry {
         let closed = Arc::new(Notify::new());
         let mut state = self.state.write().await;
         let carrier_for_paths = native_carrier.clone();
+        // Read while the route is fresh: a route the socket lets go first
+        // still names the forwarder that carried it.
+        if let Some(native) = &native_carrier {
+            native.forwarded_through();
+        }
         if carrier == CarrierKind::Forwarded {
             self.last_refusals
                 .lock()
@@ -330,6 +338,7 @@ impl LinkRegistry {
                 old.closed.notify_waiters();
             }
             self.path_up(&link, host.id, role, carrier_for_paths.as_ref());
+            self.registered.notify_waiters();
             return Some(Registration { close_rx });
         }
         // The forwarding core settles which of two direct links to one peer
@@ -420,6 +429,7 @@ impl LinkRegistry {
             old.closed.notify_waiters();
         }
         self.path_up(&link, host.id, role, carrier_for_paths.as_ref());
+        self.registered.notify_waiters();
         Some(Registration { close_rx })
     }
 
@@ -649,6 +659,22 @@ impl LinkRegistry {
             .and_then(|writer| writer.native_carrier.clone())
     }
 
+    /// Waits until a link of `peer`'s own is up, or `until`; whether one
+    /// is.
+    pub(crate) async fn link_of_peer_by(&self, peer: HostId, until: tokio::time::Instant) -> bool {
+        loop {
+            let registered = self.registered.notified();
+            tokio::pin!(registered);
+            registered.as_mut().enable();
+            if self.native_carrier_to_peer(peer).await.is_some() {
+                return true;
+            }
+            if tokio::time::timeout_at(until, registered).await.is_err() {
+                return false;
+            }
+        }
+    }
+
     pub async fn native_carrier_to_peer(&self, peer: HostId) -> Option<(LinkId, Arc<QuicCarrier>)> {
         self.state
             .read()
@@ -722,19 +748,6 @@ impl LinkRegistry {
             .iter()
             .find(|(_, writer)| writer.host.id == peer)
             .map(|(link, writer)| (*link, writer.tx.clone()))
-    }
-
-    /// Whether a live network link already serves this peer directly.
-    ///
-    /// Link registration precedes routing-table publication. Discovery can
-    /// arrive in that interval, so a dial guard that consults routes alone can
-    /// open a second connection back to the peer that just connected.
-    pub(crate) async fn has_direct_peer_link_to(&self, peer: HostId) -> bool {
-        self.state.read().await.writers.values().any(|writer| {
-            writer.host.id == peer
-                && writer.role == LinkRole::Peer
-                && writer.carrier == CarrierKind::Direct
-        })
     }
 
     pub(crate) async fn send_link_close_to_all(&self, reason: pb::LinkCloseReason) {

@@ -661,6 +661,7 @@ impl Daemon {
         // While the profiles are still hosted: the uploader asks them for
         // their accounts.
         if let Some(flusher) = self.analytics_flusher() {
+            stop_step("flushing analytics");
             flusher.flush(telemetry::SHUTDOWN_FLUSH).await;
         }
         let hosted = std::mem::take(&mut *self.installation.hosted.lock().unwrap());
@@ -673,10 +674,14 @@ impl Daemon {
         for hosted in hosted.values() {
             // Before the watchers stop: a dump in flight still gets its
             // agents' parts until its time is up.
+            stop_step("finishing dumps");
             hosted.runtime.finish_dumps().await;
+            stop_step("stopping background work");
             hosted.runtime.stop_background().await;
+            stop_step("stopping watchers");
             hosted.runtime.stop_watching().await;
         }
+        stop_step("flushing stores");
         for hosted in hosted.values() {
             hosted
                 .runtime
@@ -685,6 +690,7 @@ impl Daemon {
                 .map_err(io::Error::other)?
                 .map_err(io::Error::other)?;
         }
+        stop_step("marking the installation clean");
         self.generation
             .mark_clean(&self.installation.data_dir)
             .await?;
@@ -695,4 +701,12 @@ impl Daemon {
         drop(self.lock.take());
         Ok(())
     }
+}
+
+/// The log target of a clean stop's steps: one line as each begins, so a
+/// stop that hangs is read off the log at the step it is stuck in.
+pub const STOP_TARGET: &str = "amux::stop";
+
+pub(crate) fn stop_step(step: &str) {
+    tracing::info!(target: STOP_TARGET, "{step}");
 }

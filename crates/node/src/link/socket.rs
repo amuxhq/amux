@@ -300,6 +300,16 @@ impl LinkSocket {
         self.lock().peers.name(stand_in, host, now)
     }
 
+    /// Holds `stand_in` as a dialled connection's until the hold drops;
+    /// see [`Peers::dial_held`].
+    pub fn hold_dial(self: &Arc<Self>, stand_in: SocketAddr) -> DialHold {
+        self.lock().peers.dial_held(stand_in);
+        DialHold {
+            socket: Arc::downgrade(self),
+            stand_in,
+        }
+    }
+
     /// `peer`'s last link went; see [`Peers::release`].
     pub fn release(&self, peer: HostId) {
         self.lock().peers.release(peer);
@@ -470,6 +480,12 @@ impl LinkSocket {
     /// The path a stand-in's packets go out on, where there is one.
     pub fn path_of(&self, stand_in: SocketAddr) -> Option<Path> {
         self.lock().peers.path_of(stand_in)
+    }
+
+    /// Every path a stand-in's packets go out on now; see
+    /// [`socket_core::Peers::paths_of`].
+    pub fn paths_of(&self, stand_in: SocketAddr) -> Vec<Path> {
+        self.lock().peers.paths_of(stand_in)
     }
 
     /// What kind of path `path` is, as the link log names it, while the
@@ -1021,6 +1037,21 @@ impl Datagrams for Udp {
     }
 }
 
+/// A dialled connection's claim on its stand-in, for as long as the
+/// connection is held.
+pub struct DialHold {
+    socket: std::sync::Weak<LinkSocket>,
+    stand_in: SocketAddr,
+}
+
+impl Drop for DialHold {
+    fn drop(&mut self) {
+        if let Some(socket) = self.socket.upgrade() {
+            socket.lock().peers.dial_ended(self.stand_in);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -1297,6 +1328,38 @@ mod tests {
         assert_eq!(fake.take_sent(), vec![(elsewhere, QUIC.to_vec())]);
     }
 
+    /// The path a first flight settles on is only the first to answer:
+    /// until a link comes up on it no dial trusts it, so the next goes out
+    /// on every candidate again rather than only where it was turned away.
+    #[test]
+    fn socket_trusts_a_first_flights_path_only_once_a_link_comes_up_on_it() {
+        let (fake, socket, _own) = fake_socket();
+        let peer = HostId::new_v4();
+        let (refusing, real): (SocketAddr, SocketAddr) = (
+            "192.168.1.9:7000".parse().unwrap(),
+            "192.168.1.10:7000".parse().unwrap(),
+        );
+        let stand_in = socket.dial_on_all(
+            peer,
+            vec![Path::Direct(refusing), Path::Direct(real)],
+            false,
+        );
+        fake.push(refusing, QUIC);
+        receive(&socket);
+        assert_eq!(socket.carrying(peer), Some(Path::Direct(refusing)));
+        assert_eq!(socket.trusted_route(peer), None, "nothing linked on it");
+
+        fake.take_sent();
+        socket.dial_on_all(peer, vec![Path::Direct(real)], false);
+        socket.try_send(&transmit(stand_in, QUIC)).unwrap();
+        assert_eq!(fake.take_sent(), vec![(real, QUIC.to_vec())]);
+
+        fake.push(real, QUIC);
+        receive(&socket);
+        socket.reclaim(peer);
+        assert_eq!(socket.trusted_route(peer), Some(Path::Direct(real)));
+    }
+
     #[test]
     fn socket_largest_datagram_fits_ipv6_behind_the_header() {
         let (_fake, socket, _own) = fake_socket();
@@ -1488,6 +1551,41 @@ mod tests {
             "naming it again changes nothing"
         );
         assert_eq!(socket.peer_of(stand_in), Some(host));
+    }
+
+    /// A host whose own dial crossed this host's: its connection, heard
+    /// before this host dialled it, is at a stand-in of its own, and naming
+    /// it there leaves the host at the stand-in this host's dial is at, so
+    /// the dial still hears its answers; once that dial is gone, the host is
+    /// named afresh where it is heard, as before.
+    #[test]
+    fn socket_keeps_a_dialled_hosts_stand_in_when_its_crossing_link_is_named() {
+        let (fake, socket, _own) = fake_socket();
+        let desk = HostId::new_v4();
+        let at: SocketAddr = "192.168.1.9:7000".parse().unwrap();
+        fake.push(at, QUIC);
+        let (crossing, _) = receive(&socket).unwrap();
+        let dialled = socket.dial_on_all(desk, vec![Path::Direct(at)], false);
+        assert_ne!(crossing, dialled);
+        let hold = socket.hold_dial(dialled);
+
+        assert!(socket.name(crossing, desk));
+        assert_eq!(socket.stand_in(desk), dialled, "the dial's stand-in stays");
+        fake.push(at, QUIC);
+        assert_eq!(receive(&socket).unwrap().0, dialled, "the dial hears it");
+        socket.try_send(&transmit(crossing, QUIC)).unwrap();
+        assert_eq!(
+            fake.take_sent(),
+            vec![(at, QUIC.to_vec())],
+            "the crossing link still reaches it"
+        );
+
+        drop(hold);
+        let elsewhere: SocketAddr = "192.168.1.10:7000".parse().unwrap();
+        fake.push(elsewhere, QUIC);
+        let (moved, _) = receive(&socket).unwrap();
+        assert!(socket.name(moved, desk));
+        assert_eq!(socket.stand_in(desk), moved, "no dial holds it now");
     }
 
     /// An address is one host's at a time. A host proving itself at the

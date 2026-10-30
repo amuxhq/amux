@@ -34,8 +34,6 @@ use crate::trust::{Reachability, TrustEntry, TrustStore};
 
 const MAX_PAIRING_NAME_BYTES: usize = 256;
 const QR_SECRET_LEN: usize = daemon_core::pairing::QR_SECRET_LEN;
-/// How long a pairing dial to one address may take before the next is tried.
-const PAIRING_QUIC_DIAL_TIMEOUT: Duration = Duration::from_secs(2);
 /// A demo window is a standing shared secret; bound how long any window
 /// can live.
 const PAIR_MODE_MAX_TTL: Duration = Duration::from_secs(90 * 86_400);
@@ -333,15 +331,18 @@ impl Edge {
             .into_iter()
             .map(|addr| addr.parse::<SocketAddr>().map_err(|_| invalid_pin()))
             .collect::<Result<Vec<_>, _>>()?;
-        let found_addrs = requested_host
-            .map(|host| self.reachability.found_addrs(host))
-            .unwrap_or_default();
-        let mut direct_addrs = found_addrs.clone();
-        for addr in requested_addrs {
-            if !direct_addrs.contains(&addr) {
-                direct_addrs.push(addr);
-            }
-        }
+        // Which addresses, how long each, and the forwarders after them,
+        // are the core's.
+        let plan = runtime
+            .driver()
+            .look(move |daemon| {
+                daemon.pairing_dial(
+                    requested_host.map(|host| daemon_core::HostId(*host.as_bytes())),
+                    &requested_addrs,
+                )
+            })
+            .await
+            .ok_or_else(|| Status::unavailable("the profile is stopping"))?;
         let local =
             LocalPairingIdentity::from_device_identity(&self.identity).named(&self.host_name);
         let initiate = |found: bool, reachability: Reachability| Initiate {
@@ -361,23 +362,13 @@ impl Edge {
         // A host with no pairing window open refuses the connection before
         // reading the secret; that refusal answers like any other secret
         // failure, whether it ends the dial or the call that follows it.
-        for addr in direct_addrs {
-            let dial = match tokio::time::timeout(
-                PAIRING_QUIC_DIAL_TIMEOUT,
-                crate::transport::pairing_quic_channel(&self.quic_endpoint, addr),
-            )
-            .await
-            {
-                Ok(Ok(dial)) => dial,
-                Ok(Err(crate::transport::TransportError::NoPairingWindow)) => {
-                    return Err(invalid_pin());
-                }
-                Ok(Err(error)) => {
-                    last_unreachable = Some(error.to_string());
-                    continue;
-                }
-                Err(_) => {
-                    last_unreachable = Some(format!("nothing answered at {addr}"));
+        let mut dials = PairingDials::start(&self.quic_endpoint, &plan);
+        while let Some((addr, found, dial)) = dials.next().await {
+            let dial = match dial {
+                Ok(dial) => dial,
+                Err(DialMiss::NoPairingWindow) => return Err(invalid_pin()),
+                Err(DialMiss::Unreachable(error)) => {
+                    last_unreachable = Some(error);
                     continue;
                 }
             };
@@ -387,10 +378,7 @@ impl Edge {
                     &mut wire::pairing_service_client::PairingServiceClient::new(
                         dial.channel.clone(),
                     ),
-                    initiate(
-                        found_addrs.contains(&addr),
-                        Reachability::Direct { addrs: vec![addr] },
-                    ),
+                    initiate(found, Reachability::Direct { addrs: vec![addr] }),
                 )
                 .await
                 .map_err(refused);
@@ -411,6 +399,7 @@ impl Edge {
                 Err(error) => return Err(opaque(error)),
             }
         }
+        drop(dials);
         // No address answered: every neighbor announcing the host is tried,
         // paired hosts first, since they forward on any plan and the cloud
         // relay only on a paid one.
@@ -418,10 +407,15 @@ impl Edge {
         if selected.is_none()
             && let Some(host) = requested_host
         {
-            for (forwarder, relay) in self.connections.pairing_forwarders(host).await {
+            for (forwarder, relay) in plan.forwarders.iter().copied() {
+                let forwarder = crate::routing::host_from_core(forwarder);
                 let channel = match self
                     .connections
-                    .pairing_channel_through(host, forwarder)
+                    .pairing_channel_through(
+                        host,
+                        forwarder,
+                        Duration::from_millis(plan.deadline_ms),
+                    )
                     .await
                 {
                     Ok(channel) => channel,
@@ -484,22 +478,17 @@ impl Edge {
     }
 
     /// Finishes a pairing a person confirmed: both sides commit the other's
-    /// key, and this side dials the peer at the route pairing found.
+    /// key, and the core dials the peer at the route pairing found.
     pub async fn confirm_pair(&self, token: &[u8]) -> Result<wire::Peer, Status> {
         let answer = self
             .ask(ClientRequest::ConfirmPair {
                 token: token.to_vec(),
             })
             .await?;
-        let Some(Response::Paired { host, reachability }) = answer else {
+        let Some(Response::Paired { host }) = answer else {
             return Err(Status::internal(format!("the core confirmed {answer:?}")));
         };
         let host = Uuid::from_bytes(host.0);
-        // Secret-based pairing reaches its peer directly or through the
-        // relay; SSH pairings commit through `trust_ssh_peer`.
-        if let Some(reachability) = reachability {
-            self.reachability.spawn_pair_time_link(host, reachability);
-        }
         self.peer_entry(HostRef {
             of: Some(wire::host_ref::Of::HostId(host.as_bytes().to_vec())),
         })
@@ -519,7 +508,6 @@ impl Edge {
         let identity = request
             .peer
             .ok_or_else(|| Status::invalid_argument("TrustSshPeerRequest.peer is required"))?;
-        let host = host_from_bytes("PairingIdentity.host_id", &identity.host_id)?;
         let reachability = request
             .ssh_target
             .map(|target| {
@@ -535,12 +523,9 @@ impl Edge {
             local: LocalPairingIdentity::from_device_identity(&self.identity)
                 .named(&self.host_name),
             peer: identity,
-            reachability: reachability.clone(),
+            reachability,
         })
         .await?;
-        if let Some(reachability) = reachability {
-            self.reachability.spawn_pair_time_link(host, reachability);
-        }
         Ok(())
     }
 
@@ -650,5 +635,119 @@ impl Edge {
         self.trust
             .read()
             .is_ok_and(|store| store.entries().next().is_none())
+    }
+}
+
+/// Why a pairing dial to one address came to nothing.
+enum DialMiss {
+    /// The host has no pairing window open.
+    NoPairingWindow,
+    Unreachable(String),
+}
+
+/// The pairing dials of one plan, all at once, handed out in the order the
+/// plan prefers: an address that answered waits while any earlier one is
+/// still within its short try.
+struct PairingDials {
+    dials: futures_util::stream::FuturesUnordered<
+        futures_util::future::BoxFuture<
+            'static,
+            (usize, Result<crate::transport::PairingQuic, DialMiss>),
+        >,
+    >,
+    addrs: Vec<(SocketAddr, bool)>,
+    /// What each dial came to, until it is handed out: none while it runs.
+    ended: Vec<Option<Result<crate::transport::PairingQuic, DialMiss>>>,
+    handed: Vec<bool>,
+    preferred_until: tokio::time::Instant,
+}
+
+impl PairingDials {
+    fn start(endpoint: &crate::link::LinkEndpoint, plan: &daemon_core::reach::PairingDial) -> Self {
+        let deadline = Duration::from_millis(plan.deadline_ms);
+        let dials = plan
+            .addrs
+            .iter()
+            .enumerate()
+            .map(|(index, &(addr, _))| {
+                let endpoint = endpoint.clone();
+                Box::pin(async move {
+                    let dial = match tokio::time::timeout(
+                        deadline,
+                        crate::transport::pairing_quic_channel(&endpoint, addr),
+                    )
+                    .await
+                    {
+                        Ok(Ok(dial)) => Ok(dial),
+                        Ok(Err(crate::transport::TransportError::NoPairingWindow)) => {
+                            Err(DialMiss::NoPairingWindow)
+                        }
+                        Ok(Err(error)) => Err(DialMiss::Unreachable(error.to_string())),
+                        Err(_) => Err(DialMiss::Unreachable(format!("nothing answered at {addr}"))),
+                    };
+                    (index, dial)
+                }) as futures_util::future::BoxFuture<'static, _>
+            })
+            .collect();
+        let count = plan.addrs.len();
+        Self {
+            dials,
+            addrs: plan.addrs.clone(),
+            ended: (0..count).map(|_| None).collect(),
+            handed: vec![false; count],
+            preferred_until: tokio::time::Instant::now() + Duration::from_millis(plan.short_try_ms),
+        }
+    }
+
+    /// The next dial to take, with its address and whether discovery found
+    /// the host there; none once every one is handed out.
+    async fn next(
+        &mut self,
+    ) -> Option<(
+        SocketAddr,
+        bool,
+        Result<crate::transport::PairingQuic, DialMiss>,
+    )> {
+        use futures_util::StreamExt as _;
+        loop {
+            if let Some(index) = self.ready() {
+                self.handed[index] = true;
+                let (addr, found) = self.addrs[index];
+                let dial = self.ended[index].take().expect("an ended dial");
+                return Some((addr, found, dial));
+            }
+            if self.handed.iter().all(|handed| *handed) {
+                return None;
+            }
+            let preferring = tokio::time::sleep_until(self.preferred_until);
+            tokio::select! {
+                ended = self.dials.next() => {
+                    let (index, dial) = ended?;
+                    self.ended[index] = Some(dial);
+                }
+                () = preferring, if tokio::time::Instant::now() < self.preferred_until => {}
+            }
+        }
+    }
+
+    /// The first dial to hand out: the earliest that ended, once every
+    /// earlier one has ended, failed, or had its short try.
+    fn ready(&self) -> Option<usize> {
+        let preferring = tokio::time::Instant::now() < self.preferred_until;
+        for index in 0..self.addrs.len() {
+            if self.handed[index] {
+                continue;
+            }
+            match &self.ended[index] {
+                // A failure is handed out at once: it says only that this
+                // address is no way to the host.
+                Some(_) => return Some(index),
+                // Still dialling: a later answer waits for it while it is
+                // within its short try.
+                None if preferring => return None,
+                None => continue,
+            }
+        }
+        None
     }
 }

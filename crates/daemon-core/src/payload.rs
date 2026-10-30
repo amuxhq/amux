@@ -62,11 +62,9 @@ pub struct Push {
     pub text: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Advertisement {
-    pub host: HostId,
-    pub trusted: bool,
-}
+/// What a host's dial error says of one that refused this host's
+/// certificate.
+pub const TRUST_REVOKED: &str = "the host no longer trusts this machine";
 
 /// How a link reaches its peer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -414,11 +412,10 @@ pub enum Response {
     PairingCancelled {
         was_active: bool,
     },
-    /// The pairing is committed: `host` is trusted, and reached as
-    /// `reachability` when this side dialled it.
+    /// The pairing is committed: `host` is trusted, and the core dials it
+    /// on the paths the pairing left it.
     Paired {
         host: HostId,
-        reachability: Option<crate::trust::Reachability>,
     },
 }
 

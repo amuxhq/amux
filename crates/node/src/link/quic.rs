@@ -38,9 +38,9 @@ pub(crate) fn device_server_name() -> rustls::pki_types::ServerName<'static> {
 const CLOSE_LINGER: std::time::Duration = std::time::Duration::from_secs(1);
 pub(crate) const RELAY_QUIC_HANDSHAKE_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(2);
-/// How long a resumed dial to a host waits for its handshake to finish
-/// once it has started sending early data, as a direct dial waits for its
-/// handshake.
+/// How long a test's resumed dial to a host waits for its handshake to
+/// finish once it has started sending early data.
+#[cfg(test)]
 pub(crate) const RESUMED_HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 /// How long a relay dial waits on one address before starting on the
 /// next, of the other family where there is one: the connection attempt
@@ -286,6 +286,14 @@ pub enum ConnectError {
     Setup(#[from] quinn::ConnectError),
     #[error("QUIC handshake failed: {0}")]
     Handshake(#[from] quinn::ConnectionError),
+    /// A first flight's handshake ended on an answer from one of its paths,
+    /// before any other path could answer.
+    #[error("{}: QUIC handshake failed: {source}", turned_on(path))]
+    TurnedAway {
+        path: super::socket::Path,
+        #[source]
+        source: quinn::ConnectionError,
+    },
     #[error("the link's Hello could not be written: {0}")]
     Opening(#[source] io::Error),
 }
@@ -294,8 +302,50 @@ impl ConnectError {
     /// The far host closed the handshake refusing this host's certificate
     /// as no longer trusted.
     pub(crate) fn refused_as_revoked(&self) -> bool {
-        matches!(self, ConnectError::Handshake(error) if refused_as_revoked(error))
+        match self {
+            ConnectError::Handshake(error) | ConnectError::TurnedAway { source: error, .. } => {
+                refused_as_revoked(error)
+            }
+            _ => false,
+        }
     }
+}
+
+/// A path as a turned-away dial's error names it.
+fn turned_on(path: &super::socket::Path) -> String {
+    match path {
+        super::socket::Path::Direct(addr) | super::socket::Path::Punched(addr) => addr.to_string(),
+        super::socket::Path::Forwarded(link) => format!("through link {}", link.0),
+        super::socket::Path::Framed(id) => format!("byte stream {}", id.0),
+    }
+}
+
+/// A first flight's handshake that something answered and ended, named by
+/// the path the answer came on: the first packet back settles the
+/// stand-in's route on its path.
+fn turned_away(
+    socket: &super::socket::LinkSocket,
+    stand_in: SocketAddr,
+    error: ConnectError,
+) -> ConnectError {
+    match error {
+        ConnectError::Handshake(source) if answered(&source) => match socket.path_of(stand_in) {
+            Some(path) => ConnectError::TurnedAway { path, source },
+            None => ConnectError::Handshake(source),
+        },
+        error => error,
+    }
+}
+
+/// Whether the handshake ended on something the far end sent, or the
+/// local end made of it, rather than on silence or this end giving up.
+fn answered(error: &quinn::ConnectionError) -> bool {
+    !matches!(
+        error,
+        quinn::ConnectionError::TimedOut
+            | quinn::ConnectionError::LocallyClosed
+            | quinn::ConnectionError::CidsExhausted
+    )
 }
 
 /// Whether the far end closed the connection with TLS's
@@ -353,6 +403,12 @@ pub struct QuicCarrier {
     /// link, on a link dialled on every candidate at once: the path is
     /// the one the peer answered on, not one the dial chose.
     follows: Option<Arc<LinkSocket>>,
+    /// The forwarder the socket's route last went through alone, for once
+    /// the socket has let the route go: the forwarder going takes it.
+    last_through: Mutex<Option<super::socket::LinkId>>,
+    /// A dialled link's claim on its peer's stand-in, which the peer keeps
+    /// while the link is held.
+    _dialled: Option<super::socket::DialHold>,
     inbound: tokio::sync::Mutex<mpsc::UnboundedReceiver<ByteStream>>,
     control: Mutex<Option<(ControlSink, ControlSource)>>,
     /// Asks the control writer to finish its stream, answering once the
@@ -408,6 +464,7 @@ pub(crate) struct EarlyForwarding {
 }
 
 impl QuicCarrier {
+    /// Dials `peer` at `addr` alone, for a test of one link.
     #[cfg(test)]
     pub(crate) async fn connect_direct(
         endpoint: &LinkEndpoint,
@@ -416,21 +473,7 @@ impl QuicCarrier {
         trust_store: SharedTrustStore,
         peer: HostId,
     ) -> Result<Self, ConnectError> {
-        Self::connect_direct_with_transport(endpoint, addr, identity, trust_store, peer, None).await
-    }
-
-    pub(crate) async fn connect_direct_with_transport(
-        endpoint: &LinkEndpoint,
-        addr: SocketAddr,
-        identity: &DeviceIdentity,
-        trust_store: SharedTrustStore,
-        peer: HostId,
-        transport: Option<std::sync::Arc<quinn::TransportConfig>>,
-    ) -> Result<Self, ConnectError> {
-        let mut config = endpoint.client_config(identity, &trust_store, peer)?;
-        if let Some(transport) = transport {
-            config.transport_config(transport);
-        }
+        let config = endpoint.client_config(identity, &trust_store, peer)?;
         let dialled = std::time::Instant::now();
         let connection = endpoint
             .connect_to(config, addr, Server::Host(peer), DEVICE_SERVER_NAME)?
@@ -477,7 +520,7 @@ impl QuicCarrier {
     /// once, and through the relay when `through_relay`, as a
     /// resumed dial to one address does: the link's first flight
     /// goes out on all of them, and the first path the peer answers on
-    /// carries it.
+    /// carries it. The handshake is given up after `deadline`.
     pub(crate) async fn first_flight(
         endpoint: &LinkEndpoint,
         paths: Vec<super::socket::Path>,
@@ -485,15 +528,21 @@ impl QuicCarrier {
         identity: &DeviceIdentity,
         trust_store: SharedTrustStore,
         peer: HostId,
+        deadline: std::time::Duration,
     ) -> Result<Self, ConnectError> {
         let config = endpoint.client_config(identity, &trust_store, peer)?;
         let connecting =
             endpoint.connect_on_all(config, peer, paths, through_relay, DEVICE_SERVER_NAME)?;
-        let (connection, early) = handshake(connecting, RESUMED_HANDSHAKE_TIMEOUT).await?;
+        let stand_in = connecting.remote_address();
+        let dialled = endpoint.socket.hold_dial(stand_in);
+        let (connection, early) = handshake(connecting, deadline)
+            .await
+            .map_err(|error| turned_away(&endpoint.socket, stand_in, error))?;
         let control = open_control(&connection, early.as_ref()).await?;
         Ok(Self::new(connection, CarrierKind::Direct, Some(control))
             .following(endpoint.socket.clone())
-            .with_early(early))
+            .with_early(early)
+            .holding(dialled))
     }
 
     pub(crate) async fn connect_relay(
@@ -627,14 +676,15 @@ impl QuicCarrier {
         peer: HostId,
     ) -> Result<Self, ConnectError> {
         let config = endpoint.client_config(identity, &trust_store, peer)?;
-        let connection = endpoint
-            .connect_through(config, peer, through, DEVICE_SERVER_NAME)?
-            .await?;
+        let connecting = endpoint.connect_through(config, peer, through, DEVICE_SERVER_NAME)?;
+        let dialled = endpoint.socket.hold_dial(connecting.remote_address());
+        let connection = connecting.await?;
         let control = open_control(&connection, None).await?;
         Ok(Self::new(connection, CarrierKind::Direct, Some(control))
             .with_path(endpoint.forwarded_kind(through))
             .carried_through(Some(through))
-            .following(endpoint.socket.clone()))
+            .following(endpoint.socket.clone())
+            .holding(dialled))
     }
 
     /// Dials the far end of `io`, a byte stream made one more path of the
@@ -738,10 +788,16 @@ impl QuicCarrier {
     /// sent before it, or why it failed. A link dialled with no ticket has
     /// finished its handshake already.
     pub(crate) async fn handshake(&self) -> Result<EarlyData, ConnectError> {
-        match &self.early {
-            Some(early) => early.handshake().await.map_err(ConnectError::from),
-            None => Ok(EarlyData::None),
-        }
+        let Some(early) = &self.early else {
+            return Ok(EarlyData::None);
+        };
+        early.handshake().await.map_err(|error| {
+            let error = ConnectError::from(error);
+            match &self.follows {
+                Some(socket) => turned_away(socket, self.connection.remote_address(), error),
+                None => error,
+            }
+        })
     }
 
     fn alone(mut self) -> Self {
@@ -769,6 +825,11 @@ impl QuicCarrier {
     /// a direct link's address, known to whoever dialled or answered it.
     pub(crate) fn with_path(mut self, path: PathKind) -> Self {
         self.path = path;
+        self
+    }
+
+    fn holding(mut self, dialled: super::socket::DialHold) -> Self {
+        self._dialled = Some(dialled);
         self
     }
 
@@ -833,6 +894,8 @@ impl QuicCarrier {
             through: None,
             early: None,
             follows: None,
+            last_through: Mutex::new(None),
+            _dialled: None,
             inbound: tokio::sync::Mutex::new(inbound),
             control: Mutex::new(Some((
                 ControlSink {
@@ -965,15 +1028,25 @@ impl QuicCarrier {
     }
 
     pub fn forwarded_through(&self) -> Option<super::socket::LinkId> {
-        let routed = self
-            .follows
-            .as_ref()
-            .and_then(|socket| socket.path_of(self.connection.remote_address()));
-        match routed {
-            Some(super::socket::Path::Forwarded(through)) => Some(through),
-            Some(_) => None,
-            None => self.through,
-        }
+        let Some(socket) = &self.follows else {
+            return self.through;
+        };
+        let routed = socket.paths_of(self.connection.remote_address());
+        // A first flight that only forwarders answer goes on every path
+        // until one carries it: through one forwarder alone, it rides that.
+        let through = match routed.as_slice() {
+            [] => return *self.last_through.lock().unwrap(),
+            [super::socket::Path::Forwarded(through), rest @ ..]
+                if rest
+                    .iter()
+                    .all(|path| *path == super::socket::Path::Forwarded(*through)) =>
+            {
+                Some(*through)
+            }
+            _ => None,
+        };
+        *self.last_through.lock().unwrap() = through;
+        through
     }
 
     pub fn early_data(&self) -> EarlyData {

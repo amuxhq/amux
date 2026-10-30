@@ -417,11 +417,23 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
         .await
         .expect_err("an unpaired host is no peer");
     assert_eq!(gone.code(), tonic::Code::NotFound);
-    let before = edge(&net, "laptop").last_dial_error(desk_id).await;
-    edge(&net, "laptop").dial(desk_id, edge(&net, "desk").lan_addr().unwrap());
-    let refused = dial_failed(&net, "laptop", desk_id, before).await;
+    // The desk said why as it closed the link: the laptop still trusts it,
+    // but reads it as no longer trusting the laptop, and does not dial it.
+    until(
+        "the laptop to read the desk as no longer trusting it",
+        || async {
+            net.runtime("laptop")
+                .unwrap()
+                .host_entry_of(desk_id)
+                .is_some_and(|entry| entry.revoked())
+                .then_some(())
+                .ok_or("still trusted")
+        },
+    )
+    .await
+    .unwrap();
     assert_eq!(edge(&net, "desk").via(laptop_id).await, LiveRoute::Offline);
-    println!("desk unpaired the laptop; its redial is refused: {refused}");
+    println!("desk unpaired the laptop, which reads the desk as no longer trusting it");
 
     net.shutdown().await.unwrap();
 }

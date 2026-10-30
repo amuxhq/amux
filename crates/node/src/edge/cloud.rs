@@ -1,21 +1,23 @@
-//! Cloud relay connection with automatic reconnection.
+//! The link to the cloud relay, one attempt at a time as the core asks.
 //!
-//! Asks the configured cloud for relay credentials, then connects to that relay.
-//! Handles exponential backoff on retriable errors and stops on auth failures.
+//! Each attempt asks the configured cloud for relay credentials (or presents
+//! the ones kept from the last), dials the relay on the carriers the core
+//! chooses, runs the link until it ends, and tells the core how it ended;
+//! when to try again is the core's.
 
-use std::collections::HashMap;
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
+use daemon_core::{AttemptId, Input, RelayCarriers, RelayOutcome};
 use futures_util::FutureExt;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tracing::Instrument;
-use uuid::Uuid;
 
 use super::status::{Relay, RelayCarrier, RuntimeStatus};
 use super::token::{StoredToken, forget_token, load_token, store_token};
@@ -24,6 +26,7 @@ use crate::auth::CredentialProvider;
 use crate::auth::cloud::{
     CloudError, CloudRoutingConnectionDetails, fetch_routing_connection_details,
 };
+use crate::driver::CoreLinks;
 use crate::link::QuicCarrier;
 use crate::link::framed::FramedKind;
 use crate::routing::{
@@ -33,27 +36,13 @@ use crate::routing::{
 };
 use crate::transport::tls_connect_stream;
 
-const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
-const MAX_BACKOFF: Duration = Duration::from_secs(300);
-const RELATIVE_JITTER_RATIO: f64 = 0.25;
-const ABSOLUTE_JITTER_MAX: Duration = Duration::from_secs(5);
-const BACKOFF_RESET_AFTER_ESTABLISHED: Duration = Duration::from_secs(30);
 const CLOUD_ROUTING_ESTABLISHMENT_TIMEOUT: Duration = Duration::from_secs(10);
 pub const FREE_TIER_REFRESH_INTERVAL: Duration = Duration::from_secs(180);
-pub const UDP_BLOCKED_MEMORY: Duration = Duration::from_secs(3600);
-pub(crate) const TCP_FALLBACK_DELAY: Duration = Duration::from_millis(300);
-
-pub struct UdpBlockedMemory {
-    duration: Duration,
-    clock: Arc<dyn Clock>,
-    /// When each host was found to eat UDP, on the policy clock.
-    blocked_at: Mutex<HashMap<String, i64>>,
-    changed: watch::Sender<u64>,
-}
+/// How long a relay host found to drop UDP is dialled over TLS alone.
+pub const UDP_BLOCKED_MEMORY: Duration = Duration::from_millis(daemon_core::reach::UDP_BLOCKED_MS);
 
 pub struct CloudTransport {
     quic_endpoint: crate::link::LinkEndpoint,
-    udp_blocked: Arc<UdpBlockedMemory>,
     tcp_override: Option<std::net::SocketAddr>,
     quic_override: Option<super::RelayQuic>,
     free_refresh_interval: Option<Duration>,
@@ -62,14 +51,12 @@ pub struct CloudTransport {
 impl CloudTransport {
     pub(crate) fn new(
         quic_endpoint: crate::link::LinkEndpoint,
-        udp_blocked: Arc<UdpBlockedMemory>,
         tcp_override: Option<std::net::SocketAddr>,
         quic_override: Option<super::RelayQuic>,
         free_refresh_interval: Option<Duration>,
     ) -> Self {
         Self {
             quic_endpoint,
-            udp_blocked,
             tcp_override,
             quic_override,
             free_refresh_interval,
@@ -77,57 +64,12 @@ impl CloudTransport {
     }
 }
 
-impl UdpBlockedMemory {
-    pub(crate) fn new(duration: Duration, clock: Arc<dyn Clock>) -> Self {
-        let (changed, _) = watch::channel(0);
-        Self {
-            duration,
-            clock,
-            blocked_at: Mutex::new(HashMap::new()),
-            changed,
-        }
-    }
-
-    pub(crate) fn holds(&self, host: &str) -> bool {
-        let mut blocked_at = self
-            .blocked_at
-            .lock()
-            .expect("UDP-blocked memory lock poisoned");
-        let now = self.clock.now_ms();
-        let previous_len = blocked_at.len();
-        let memory = self.duration.as_millis() as i64;
-        blocked_at.retain(|_, recorded| now - *recorded < memory);
-        if blocked_at.len() != previous_len {
-            self.changed.send_modify(|generation| *generation += 1);
-        }
-        blocked_at.contains_key(host)
-    }
-
-    fn record(&self, host: &str) {
-        self.blocked_at
-            .lock()
-            .expect("UDP-blocked memory lock poisoned")
-            .insert(host.to_string(), self.clock.now_ms());
-        self.changed.send_modify(|generation| *generation += 1);
-    }
-
-    fn clear(&self, host: &str) {
-        let removed = self
-            .blocked_at
-            .lock()
-            .expect("UDP-blocked memory lock poisoned")
-            .remove(host)
-            .is_some();
-        if removed {
-            self.changed.send_modify(|generation| *generation += 1);
-        }
-    }
-}
-
 pub struct CloudLink {
     stop_tx: watch::Sender<bool>,
     refresher: Option<Refresher>,
-    task: JoinHandle<()>,
+    ctx: Arc<CloudConnectionContext>,
+    /// The attempt the core asked for last, while it runs.
+    attempt: Mutex<Option<JoinHandle<()>>>,
 }
 
 /// The longest an entitlement refresh waits for the relay's answer. The
@@ -194,11 +136,17 @@ struct CloudConnectionContext {
     status: RuntimeStatus,
     refresh_rx: LinkConnectorRefreshReceiver,
     transport: CloudTransport,
+    /// The profile's core, which decides each attempt and hears how it
+    /// ended.
+    core: CoreLinks,
+    /// An attempt ended in a way only signing in again mends.
+    finished: AtomicBool,
 }
 
 impl CloudLink {
+    /// Whether an attempt ended in a way only signing in again mends.
     pub(crate) fn is_finished(&self) -> bool {
-        self.task.is_finished()
+        self.ctx.finished.load(Ordering::SeqCst)
     }
 
     pub(crate) fn request_stop(&self) {
@@ -207,13 +155,18 @@ impl CloudLink {
 
     pub(crate) async fn stop(self) {
         self.request_stop();
-        let _ = self.task.await;
+        let attempt = self.attempt.lock().unwrap().take();
+        if let Some(attempt) = attempt {
+            let _ = attempt.await;
+        }
     }
 
     /// Ends the link at once, as a crash would: no goodbye to the relay.
     pub(crate) fn abort(self) {
         self.request_stop();
-        self.task.abort();
+        if let Some(attempt) = self.attempt.lock().unwrap().take() {
+            attempt.abort();
+        }
     }
 
     /// What refreshes this link's entitlement, to be held across the wait
@@ -221,8 +174,18 @@ impl CloudLink {
     pub(crate) fn refresher(&self) -> Option<Refresher> {
         self.refresher.clone()
     }
+
+    /// Makes the attempt the core asked for.
+    pub(crate) fn dial(&self, attempt: AttemptId) {
+        let ctx = self.ctx.clone();
+        let stop_rx = self.stop_tx.subscribe();
+        let span = tracing::info_span!("cloud", url = %ctx.cloud_url, attempt = attempt.0);
+        let task = tokio::spawn(run_attempt(ctx, stop_rx, attempt).instrument(span));
+        *self.attempt.lock().unwrap() = Some(task);
+    }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn establish_cloud_link(
     cloud_url: String,
     credentials: Arc<dyn CredentialProvider>,
@@ -231,83 +194,74 @@ pub(crate) fn establish_cloud_link(
     connector_ctx: LinkConnectorCtx,
     status: RuntimeStatus,
     transport: CloudTransport,
+    core: CoreLinks,
 ) -> CloudLink {
-    let (stop_tx, mut stop_rx) = watch::channel(false);
+    let (stop_tx, _) = watch::channel(false);
     let (refresh_tx, refresh_rx) = mpsc::channel(1);
     let refresh_rx = Arc::new(tokio::sync::Mutex::new(refresh_rx));
-    let task_status = status.clone();
-    let cloud_span = tracing::info_span!("cloud", url = %cloud_url);
-    let connection = CloudConnectionContext {
+    let ctx = Arc::new(CloudConnectionContext {
         cloud_url,
         credentials,
         profile,
         clock,
         connector: connector_ctx,
-        status: task_status,
+        status: status.clone(),
         refresh_rx,
         transport,
-    };
-    let task = tokio::spawn(
-        async move {
-
-            let mut backoff = INITIAL_BACKOFF;
-
-            loop {
-                if *stop_rx.borrow() {
-                    return;
-                }
-                connection.status.report(Relay::Connecting);
-                tracing::info!("attempting cloud routing connection");
-                match run_cloud_connection(&connection, stop_rx.clone()).await
-                {
-                    Ok(()) => {
-                        tracing::info!("cloud routing connection closed cleanly");
-                        backoff = INITIAL_BACKOFF;
-                    }
-                    Err(CloudConnectionError::NonRetriable(msg)) => {
-                        tracing::error!(error = %msg, "cloud non-retriable error, stopping");
-                        return;
-                    }
-                    // The kept token is forgotten; the next attempt fetches
-                    // a fresh one at once, and only its refusal is final.
-                    Err(CloudConnectionError::KeptTokenRefused) => {
-                        tracing::info!("the relay refused the kept token; fetching a fresh one");
-                        continue;
-                    }
-                    Err(CloudConnectionError::Retriable { msg, reset_backoff }) => {
-                        if reset_backoff {
-                            backoff = INITIAL_BACKOFF;
-                        }
-                        tracing::warn!(error = %msg, "cloud routing connection error, will retry");
-                    }
-                }
-
-                if *stop_rx.borrow() {
-                    return;
-                }
-                connection.status.report(Relay::Retrying);
-
-                let retry_delay = jittered_backoff(backoff);
-                tracing::info!(base_backoff = ?backoff, retry_delay = ?retry_delay, "reconnecting to cloud");
-                if sleep_or_stop(retry_delay, &mut stop_rx).await {
-                    return;
-                }
-                backoff = next_backoff(backoff);
-            }
-        }
-        .instrument(cloud_span),
-    );
+        core,
+        finished: AtomicBool::new(false),
+    });
     CloudLink {
         stop_tx,
         refresher: Some(Refresher { refresh_tx, status }),
-        task,
+        ctx,
+        attempt: Mutex::new(None),
     }
+}
+
+/// One attempt: its dial, and its link once up, until either ends; the
+/// core hears how.
+async fn run_attempt(
+    ctx: Arc<CloudConnectionContext>,
+    stop_rx: watch::Receiver<bool>,
+    attempt: AttemptId,
+) {
+    if *stop_rx.borrow() {
+        return;
+    }
+    ctx.status.report(Relay::Connecting);
+    tracing::info!("attempting cloud routing connection");
+    let outcome = match run_cloud_connection(&ctx, stop_rx.clone(), attempt).await {
+        Ok(()) => {
+            tracing::info!("cloud routing connection closed cleanly");
+            RelayOutcome::Closed
+        }
+        Err(CloudConnectionError::NonRetriable(msg)) => {
+            tracing::error!(error = %msg, "cloud non-retriable error, stopping");
+            ctx.finished.store(true, Ordering::SeqCst);
+            RelayOutcome::Final(msg)
+        }
+        // The kept token is forgotten; the next attempt fetches a fresh one
+        // at once, and only its refusal is final.
+        Err(CloudConnectionError::KeptTokenRefused) => {
+            tracing::info!("the relay refused the kept token; fetching a fresh one");
+            RelayOutcome::KeptTokenRefused
+        }
+        Err(CloudConnectionError::Retriable { msg }) => {
+            tracing::warn!(error = %msg, "cloud routing connection error, will retry");
+            RelayOutcome::Lost(msg)
+        }
+    };
+    if matches!(outcome, RelayOutcome::Closed | RelayOutcome::Lost(_)) && !*stop_rx.borrow() {
+        ctx.status.report(Relay::Retrying);
+    }
+    ctx.core.report(Input::RelayEnded { attempt, outcome });
 }
 
 /// Error type for cloud connection attempts
 enum CloudConnectionError {
     /// Error that should trigger reconnection (connection lost, host changed)
-    Retriable { msg: String, reset_backoff: bool },
+    Retriable { msg: String },
     /// Error that should stop reconnection attempts.
     NonRetriable(String),
     /// The relay refused a token kept from an earlier fetch.
@@ -331,7 +285,6 @@ fn cloud_connection_error_from_fetch(
         }
         error @ CloudError::Connection(_) => CloudConnectionError::Retriable {
             msg: format!("Connection failed: {error}"),
-            reset_backoff: false,
         },
     }
 }
@@ -339,6 +292,7 @@ fn cloud_connection_error_from_fetch(
 async fn run_cloud_connection(
     ctx: &CloudConnectionContext,
     mut stop_rx: watch::Receiver<bool>,
+    attempt: AttemptId,
 ) -> std::result::Result<(), CloudConnectionError> {
     // A stop may drop the fetch mid-refresh: the credential's exchange and
     // the save of a rotated token run apart from it and finish anyway.
@@ -348,8 +302,23 @@ async fn run_cloud_connection(
         prepared = prepare_cloud_connection(ctx) => prepared,
     };
     let prepared = prepared?;
-
-    run_cloud_connection_with_details(ctx, prepared, stop_rx).await
+    // The carriers are the core's to choose, now it knows the relay host.
+    ctx.core
+        .feed(Input::RelayPrepared {
+            attempt,
+            host: prepared.host.clone(),
+        })
+        .await;
+    let carriers = ctx
+        .core
+        .look(move |daemon| daemon.relay_reach().carriers(attempt))
+        .await
+        .flatten();
+    // None: the core no longer wants this attempt.
+    let Some(carriers) = carriers else {
+        return Ok(());
+    };
+    run_cloud_connection_with_details(ctx, prepared, carriers, attempt, stop_rx).await
 }
 
 /// The relay to dial and the token to present there.
@@ -438,10 +407,28 @@ fn forget_kept(ctx: &CloudConnectionContext) {
 
 pub(crate) type CloudDialResult = Result<Arc<QuicCarrier>, String>;
 
-pub(crate) async fn select_cloud_carrier<Q, T>(
-    host: &str,
-    udp_blocked: Arc<UdpBlockedMemory>,
-    fallback_delay: Duration,
+/// What a relay attempt learns of QUIC to the relay host, for the core.
+#[derive(Clone)]
+struct UdpFacts {
+    core: CoreLinks,
+    host: String,
+}
+
+impl UdpFacts {
+    fn reached(&self, reached: bool) {
+        self.core.report(Input::RelayUdp {
+            host: self.host.clone(),
+            reached,
+        });
+    }
+}
+
+/// Dials the relay on `carriers`: TLS alone, or QUIC with TLS after its
+/// head start, the first to link kept. What QUIC's dial came to, even one
+/// still out once TLS won, is told the core.
+async fn select_cloud_carrier<Q, T>(
+    carriers: RelayCarriers,
+    udp: UdpFacts,
     quic: Q,
     tcp: T,
 ) -> Result<(Arc<QuicCarrier>, RelayCarrier), String>
@@ -449,14 +436,17 @@ where
     Q: Future<Output = CloudDialResult> + Send + 'static,
     T: Future<Output = CloudDialResult> + Send,
 {
-    if udp_blocked.holds(host) {
-        tracing::debug!(host, "remembered UDP-blocked cloud host; dialing TCP only");
-        return tcp.await.map(|carrier| (carrier, RelayCarrier::Tcp));
-    }
+    let head_start = match carriers {
+        RelayCarriers::Tcp => {
+            tracing::debug!(host = %udp.host, "remembered UDP-blocked cloud host; dialing TCP only");
+            return tcp.await.map(|carrier| (carrier, RelayCarrier::Tcp));
+        }
+        RelayCarriers::Both { head_start_ms } => Duration::from_millis(head_start_ms),
+    };
 
     let mut quic = Box::pin(quic);
     let tcp = async move {
-        tokio::time::sleep(fallback_delay).await;
+        tokio::time::sleep(head_start).await;
         tcp.await
     };
     tokio::pin!(tcp);
@@ -474,30 +464,29 @@ where
     match first {
         First::Quic(Ok(carrier)) => {
             close_ready_loser(tcp.as_mut().now_or_never());
-            udp_blocked.clear(host);
+            udp.reached(true);
             Ok((carrier, RelayCarrier::Quic))
         }
         First::Tcp(Ok(carrier)) => {
             match quic.as_mut().now_or_never() {
                 Some(Ok(late_quic)) => {
                     late_quic.close(wire::pb::LinkCloseReason::UserShutdown);
-                    udp_blocked.clear(host);
+                    udp.reached(true);
                 }
                 Some(Err(error)) => {
                     tracing::debug!(%error, "cloud QUIC dial failed after all candidates");
-                    udp_blocked.record(host);
+                    udp.reached(false);
                 }
                 None => {
-                    let host = host.to_string();
                     tokio::spawn(async move {
                         match quic.await {
                             Ok(late_quic) => {
                                 late_quic.close(wire::pb::LinkCloseReason::UserShutdown);
-                                udp_blocked.clear(&host);
+                                udp.reached(true);
                             }
                             Err(error) => {
-                                tracing::debug!(%error, %host, "cloud QUIC probe failed after all candidates");
-                                udp_blocked.record(&host);
+                                tracing::debug!(%error, host = %udp.host, "cloud QUIC probe failed after all candidates");
+                                udp.reached(false);
                             }
                         }
                     });
@@ -509,7 +498,7 @@ where
             tracing::debug!(error = %quic_error, "cloud QUIC dial failed; waiting for TCP");
             match tcp.await {
                 Ok(carrier) => {
-                    udp_blocked.record(host);
+                    udp.reached(false);
                     Ok((carrier, RelayCarrier::Tcp))
                 }
                 Err(tcp_error) => Err(format!(
@@ -521,7 +510,7 @@ where
             tracing::debug!(error = %tcp_error, "cloud TCP dial failed; waiting for QUIC");
             match quic.await {
                 Ok(carrier) => {
-                    udp_blocked.clear(host);
+                    udp.reached(true);
                     Ok((carrier, RelayCarrier::Quic))
                 }
                 Err(quic_error) => Err(format!(
@@ -541,6 +530,8 @@ fn close_ready_loser(result: Option<CloudDialResult>) {
 async fn run_cloud_connection_with_details(
     ctx: &CloudConnectionContext,
     details: Prepared,
+    carriers: RelayCarriers,
+    attempt: AttemptId,
     stop_rx: watch::Receiver<bool>,
 ) -> std::result::Result<(), CloudConnectionError> {
     tracing::info!(host = %details.host, port = details.port, kept = details.kept, "connecting to cloud routing");
@@ -560,7 +551,6 @@ async fn run_cloud_connection_with_details(
         })
         .map_err(|error| CloudConnectionError::Retriable {
             msg: format!("Connection failed: {error}"),
-            reset_backoff: false,
         })?;
     let quic_endpoint = ctx.transport.quic_endpoint.clone();
     let quic_host = details.host.clone();
@@ -644,9 +634,11 @@ async fn run_cloud_connection_with_details(
     let (carrier, relay_carrier) = tokio::time::timeout(
         CLOUD_ROUTING_ESTABLISHMENT_TIMEOUT,
         select_cloud_carrier(
-            &details.host,
-            ctx.transport.udp_blocked.clone(),
-            TCP_FALLBACK_DELAY,
+            carriers,
+            UdpFacts {
+                core: ctx.core.clone(),
+                host: details.host.clone(),
+            },
             quic,
             tcp,
         ),
@@ -654,13 +646,10 @@ async fn run_cloud_connection_with_details(
     .await
     .map_err(|_| CloudConnectionError::Retriable {
         msg: "cloud routing transport dial timed out".to_string(),
-        reset_backoff: false,
     })?
     .map_err(|error| CloudConnectionError::Retriable {
         msg: format!("Connection failed: {error}"),
-        reset_backoff: false,
     })?;
-    let connected_at = std::time::Instant::now();
     {
         let mut settled = settled.lock().unwrap_or_else(|e| e.into_inner());
         *settled = true;
@@ -705,7 +694,6 @@ async fn run_cloud_connection_with_details(
     let established = await_cloud_establishment(
         &ctx.status,
         established_rx,
-        connected_at,
         CLOUD_ROUTING_ESTABLISHMENT_TIMEOUT,
         tier,
         relay_carrier,
@@ -716,12 +704,12 @@ async fn run_cloud_connection_with_details(
         forget_kept(ctx);
     }
     established?;
+    ctx.core.report(Input::RelayLinked { attempt });
 
     let result = connector_task
         .await
         .map_err(|error| CloudConnectionError::Retriable {
             msg: format!("cloud routing task failed: {error}"),
-            reset_backoff: should_reset_backoff_after_connection(connected_at.elapsed()),
         })?;
 
     match result {
@@ -735,15 +723,9 @@ async fn run_cloud_connection_with_details(
             forget_kept(ctx);
             Err(CloudConnectionError::Retriable {
                 msg: error.to_string(),
-                reset_backoff: should_reset_backoff_after_connection(connected_at.elapsed()),
             })
         }
-        Err(error) => {
-            Err(
-                cloud_connection_error_from_status(&ctx.status, error, connected_at.elapsed())
-                    .await,
-            )
-        }
+        Err(error) => Err(cloud_connection_error_from_status(&ctx.status, error).await),
     }
 }
 
@@ -760,20 +742,6 @@ impl Drop for Unforward {
         if let Some(link) = self.1 {
             self.0.remove_forwarding(link);
         }
-    }
-}
-
-async fn sleep_or_stop(duration: Duration, stop_rx: &mut watch::Receiver<bool>) -> bool {
-    if *stop_rx.borrow() {
-        return true;
-    }
-
-    let sleep = tokio::time::sleep(duration);
-    tokio::pin!(sleep);
-    tokio::select! {
-        biased;
-        _ = wait_for_stop(stop_rx) => true,
-        _ = &mut sleep => false,
     }
 }
 
@@ -795,7 +763,6 @@ async fn wait_for_stop(stop_rx: &mut watch::Receiver<bool>) {
 async fn await_cloud_establishment(
     observed: &RuntimeStatus,
     established_rx: oneshot::Receiver<Result<Host, tonic::Status>>,
-    connected_at: std::time::Instant,
     timeout: Duration,
     tier: crate::Tier,
     carrier: RelayCarrier,
@@ -809,13 +776,10 @@ async fn await_cloud_establishment(
         Ok(Ok(Err(status))) if kept && status.code() == tonic::Code::Unauthenticated => {
             Err(CloudConnectionError::KeptTokenRefused)
         }
-        Ok(Ok(Err(status))) => {
-            Err(cloud_connection_error_from_status(observed, status, connected_at.elapsed()).await)
-        }
+        Ok(Ok(Err(status))) => Err(cloud_connection_error_from_status(observed, status).await),
         Ok(Err(_)) => Ok(()),
         Err(_) => Err(CloudConnectionError::Retriable {
             msg: "cloud routing handshake timed out".to_string(),
-            reset_backoff: false,
         }),
     }
 }
@@ -823,7 +787,6 @@ async fn await_cloud_establishment(
 async fn cloud_connection_error_from_status(
     observed: &RuntimeStatus,
     status: tonic::Status,
-    connection_uptime: Duration,
 ) -> CloudConnectionError {
     if crate::net_error::from_status(&status)
         .is_some_and(|error| crate::net_error::is_version_mismatch(&error))
@@ -840,7 +803,6 @@ async fn cloud_connection_error_from_status(
     }
     CloudConnectionError::Retriable {
         msg: status.to_string(),
-        reset_backoff: should_reset_backoff_after_connection(connection_uptime),
     }
 }
 
@@ -920,40 +882,6 @@ impl LinkConnectorTokenRefresher for CloudLinkTokenRefresher {
 
         Ok(token.connector_token())
     }
-}
-
-fn next_backoff(backoff: Duration) -> Duration {
-    std::cmp::min(backoff * 2, MAX_BACKOFF)
-}
-
-fn jittered_backoff(base_backoff: Duration) -> Duration {
-    jittered_backoff_with_samples(base_backoff, random_unit_interval(), random_unit_interval())
-}
-
-fn jittered_backoff_with_samples(
-    base_backoff: Duration,
-    relative_sample: f64,
-    absolute_sample: f64,
-) -> Duration {
-    debug_assert!((0.0..=1.0).contains(&relative_sample));
-    debug_assert!((0.0..=1.0).contains(&absolute_sample));
-
-    let base_secs = base_backoff.as_secs_f64();
-    let relative_offset = base_secs * RELATIVE_JITTER_RATIO * ((relative_sample * 2.0) - 1.0);
-    let absolute_offset = ABSOLUTE_JITTER_MAX.as_secs_f64() * absolute_sample;
-    Duration::from_secs_f64((base_secs + relative_offset + absolute_offset).max(0.0))
-}
-
-fn random_unit_interval() -> f64 {
-    let uuid = Uuid::new_v4();
-    let mut bytes = [0u8; 8];
-    bytes.copy_from_slice(&uuid.as_bytes()[..8]);
-    let sample = u64::from_le_bytes(bytes);
-    sample as f64 / u64::MAX as f64
-}
-
-fn should_reset_backoff_after_connection(connection_uptime: Duration) -> bool {
-    connection_uptime >= BACKOFF_RESET_AFTER_ESTABLISHED
 }
 
 #[cfg(test)]

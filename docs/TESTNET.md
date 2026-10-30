@@ -446,8 +446,9 @@ built, so certificates and credentials minted against it look current, and moves
 `DrivenClock::armed(at_ms)` resolves once something sleeps until exactly that moment, so a test can step past a
 deadline knowing it was set. Relay credentials expire on the same clock (`CREDENTIAL_TTL`, ten minutes).
 
-Transports stay on real time: a QUIC idle timer or a socket read is not policy. Never pause the async runtime
-around real IO. `testnet serve` and the flood run on wall time, where `advance` is refused.
+Transports stay on real time: a QUIC idle timer or a socket read is not policy. So does the core's link time, which
+every dial's deadline and pause is reckoned in: a link that drops is redialled as it would be off the net. Never
+pause the async runtime around real IO. `testnet serve` and the flood run on wall time, where `advance` is refused.
 
 ## `testnet serve`
 

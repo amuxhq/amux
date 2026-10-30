@@ -125,7 +125,9 @@ A [TestNet](TESTNET.md) story is written once against the harness's verbs and ru
 
 The simulated net is the composed-net machine walked by seed, so the checker and the simulator explore one
 definition; a story is decided entirely by its seed, runs in milliseconds, and checks the cores' invariants after
-every step. What it does not have (the relay, the LAN, process hosts, real providers) it refuses at start. Suites
+every step. Its links come up only on the cores' own dials, as on a real net, and while a story waits with nothing
+left to deliver, link time runs on to the cores' next redial, within the wait's patience, as it does in real time on
+the real net. What it does not have (the relay, the LAN, process hosts, real providers) it refuses at start. Suites
 whose stories run in both modes say so in the catalogue's `modes`.
 
 ```sh
@@ -251,8 +253,9 @@ Three clocks are kept apart. Policy time (retention, outbox retries and notifica
 refresh, reply and start deadlines) is injected: each timer takes its clock as a parameter, the interpreter has no
 clock at all and receives quiet periods as tick events, and the harness advances a `DrivenClock` to just before,
 at and after a real boundary.
-Transport time (QUIC timers, sockets, processes) runs normally. Harness deadlines are real and bounded, still fire
-when policy time is stopped, and are never the oracle.
+Transport time (QUIC timers, sockets, processes) runs normally, and so does the daemon core's link time, which its
+dial deadlines and pauses and how long a link lived are reckoned in. Harness deadlines are real and bounded, still
+fire when policy time is stopped, and are never the oracle.
 
 Waits subscribe before they read, return what they saw, and fail on a deadline or a closed stream; a wait never
 passes by timing out. An absence is shown by draining to a declared boundary or watching a whole declared window,

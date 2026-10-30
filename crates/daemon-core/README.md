@@ -22,6 +22,44 @@ SSH pairing commits through the same trust writes. Randomness arrives as
 `Input::Entropy` and is stretched by counting, so a run is a function of its
 inputs.
 
+Reaching paired hosts is the core's as well (`reach`). It holds one attempt
+per host at a time, from its `Output::Dial` until its `Input::AttemptEnded`,
+each on every path it knows the host by: where discovery found it and where
+it last answered, its SSH destination, the paired hosts and the relay that
+claim it. An attempt has ten seconds. A path that turns it away (a
+machine with another key, an endpoint refusing connections) is left out and
+the rest are dialled again at once within the same ten seconds. At a
+pairing the joiner dials and the offerer waits up to ten seconds for that
+link, a call on the offerer meanwhile waiting with it, so the two dials do
+not cross; an attempt
+that ends without a link otherwise is followed by a pause (one second doubling to thirty) that a new path or a call
+wanting the host cuts short, and a host whose link dropped within a second
+waits out the rest of that second before the next; a host that refused
+this one as no longer trusted is not dialled until something says it may have
+taken that back. The same addresses go to the link's path machine
+(`Output::PeerAddresses`), so a link up on one path moves to another that
+answers. These deadlines and pauses, and how long a link lived, are reckoned
+in link time, the second clock `Input::Tick` carries, which runs on when a
+test holds policy time still.
+
+The relay link is reached the same way (`reach::relay`): one attempt at a
+time while the profile is signed in (`Input::RelayWanted`), from
+`Output::DialRelay` until `Input::RelayEnded`. The driver fetches the token
+and names the relay host (`Input::RelayPrepared`); the core chooses the
+carriers then: QUIC with TLS over TCP after a 300 ms head start, or TLS alone
+to a host found to drop UDP within the hour (`Input::RelayUdp`, in policy
+time). After a lost link or a failed attempt it pauses a second doubling to
+five minutes, jittered from the entropy it is given, starting afresh after a
+clean close or a link that lived thirty seconds; a refused kept token is
+replaced at once, and a refusal of the credentials or the version stops it
+until the profile signs in again.
+
+A host to pair with is dialled on the plan `Daemon::pairing_dial` gives:
+every address at once, those discovery found the host at before those the
+request named, an earlier one preferred over a later answer while within its
+two-second short try, each with five seconds in all; then the forwarders that
+claim the host, paired hosts before the relay.
+
 What belongs inside: anything whose interleaving with the core's state can
 matter is in the core; anything that only produces a result is a job the
 driver runs and reports back as an input; transport and codec are the

@@ -23,7 +23,12 @@ pub struct ConnectionManager {
     analytics: analytics::Analytics,
     /// What dials a host the core says to, once the edge dials at all.
     dialer: std::sync::OnceLock<crate::services::Dialer>,
+    /// What links to the relay when the core says to, once the edge is up.
+    relay: std::sync::OnceLock<RelayDialer>,
 }
+
+/// Makes one relay attempt the core asked for.
+pub(crate) type RelayDialer = Arc<dyn Fn(daemon_core::AttemptId) + Send + Sync>;
 
 impl ConnectionManager {
     pub(crate) fn new(channels: Arc<ChannelPool>, analytics: analytics::Analytics) -> Arc<Self> {
@@ -32,6 +37,7 @@ impl ConnectionManager {
             replacing: Replacing::default(),
             analytics,
             dialer: std::sync::OnceLock::new(),
+            relay: std::sync::OnceLock::new(),
         })
     }
 
@@ -57,31 +63,49 @@ impl ConnectionManager {
         self.core()?.look(look).await
     }
 
-    /// Discovery resolved `host` in this profile's scope.
-    pub(crate) fn discovered(&self, host: HostId, trusted: bool) {
-        self.report(Input::Discovered {
-            found: vec![daemon_core::payload::Advertisement {
-                host: core_host(host),
-                trusted,
-            }],
-        });
-    }
-
     pub(crate) fn set_dialer(&self, dialer: crate::services::Dialer) {
         let _ = self.dialer.set(dialer);
     }
 
-    /// The core says to dial `host`.
-    pub(crate) fn dial(&self, host: daemon_core::HostId) {
+    /// The core says to dial `host` on every path of `plan`.
+    pub(crate) fn dial(
+        &self,
+        host: daemon_core::HostId,
+        attempt: daemon_core::AttemptId,
+        plan: daemon_core::Plan,
+        early: Vec<daemon_core::payload::PeerRequest>,
+    ) {
         if let Some(dialer) = self.dialer.get() {
-            dialer.dial(host_from_core(host));
+            dialer.dial(host_from_core(host), attempt, plan, early);
         }
     }
 
-    /// The core says to dial `host` through a host claiming to reach it.
-    pub(crate) fn dial_through(&self, host: daemon_core::HostId) {
+    pub(crate) fn set_relay_dialer(&self, dialer: RelayDialer) {
+        let _ = self.relay.set(dialer);
+    }
+
+    /// The core says to link to the relay.
+    pub(crate) fn dial_relay(&self, attempt: daemon_core::AttemptId) {
+        match self.relay.get() {
+            Some(dial) => dial(attempt),
+            None => self.report(Input::RelayEnded {
+                attempt,
+                outcome: daemon_core::RelayOutcome::Lost("the edge is not up".to_owned()),
+            }),
+        }
+    }
+
+    /// The core gave up on the attempt to `host`.
+    pub(crate) fn abandon(&self, host: daemon_core::HostId, attempt: daemon_core::AttemptId) {
         if let Some(dialer) = self.dialer.get() {
-            dialer.dial_through(host_from_core(host));
+            dialer.abandon(host_from_core(host), attempt);
+        }
+    }
+
+    /// The core asks the local network again where the hosts it found are.
+    pub(crate) fn rediscover(&self) {
+        if let Some(dialer) = self.dialer.get() {
+            dialer.rediscover();
         }
     }
 
@@ -126,14 +150,6 @@ impl ConnectionManager {
             links
                 .close_host_before(peer, since, LinkCloseRequest::CallsFailed)
                 .await;
-        });
-    }
-
-    /// `peer` refused this host's certificate in a link's handshake: it no
-    /// longer trusts this one.
-    pub(crate) fn peer_revoked(&self, peer: HostId) {
-        self.report(Input::PeerRevoked {
-            host: core_host(peer),
         });
     }
 
@@ -193,39 +209,17 @@ impl ConnectionManager {
         }
     }
 
-    /// The neighbors announcing `peer`, nearest route first, each with
-    /// whether this host admitted it as the cloud relay: what a pairing goes
-    /// through when no address answers. A paired host forwards on any plan,
-    /// the cloud relay only on a paid one.
-    pub(crate) async fn pairing_forwarders(&self, peer: HostId) -> Vec<(HostId, bool)> {
-        let host = core_host(peer);
-        self.look(move |core| {
-            let links = core.links();
-            links
-                .routes_to(host)
-                .into_iter()
-                .filter_map(|route| match route {
-                    daemon_core::Route::Via(forwarder) => {
-                        Some((forwarder, links.is_relay(forwarder)))
-                    }
-                    daemon_core::Route::Direct(_) => None,
-                })
-                .collect::<Vec<_>>()
-        })
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(forwarder, relay)| (host_from_core(forwarder), relay))
-        .collect()
-    }
-
-    /// A channel to `peer`'s pairing service through `forwarder`.
+    /// A channel to `peer`'s pairing service through `forwarder`, its dial
+    /// given up after `deadline`.
     pub(crate) async fn pairing_channel_through(
         &self,
         peer: HostId,
         forwarder: HostId,
+        deadline: std::time::Duration,
     ) -> Result<Channel, ChannelError> {
-        self.channels.pairing_channel(peer, forwarder).await
+        self.channels
+            .pairing_channel(peer, forwarder, deadline)
+            .await
     }
 
     /// Why the last dial to `peer` failed, until a route to it comes up.
@@ -236,25 +230,9 @@ impl ConnectionManager {
             .flatten()
     }
 
-    pub(crate) async fn record_reachability_error(&self, peer: HostId, error: impl Into<String>) {
-        self.dial_error(peer, Some(error.into()));
-    }
-
-    pub(crate) async fn clear_reachability_error(&self, peer: HostId) {
-        self.dial_error(peer, None);
-    }
-
-    /// Tells the core why the last dial to `peer` failed, or that it
-    /// succeeded: the host's entry carries it.
-    fn dial_error(&self, peer: HostId, error: Option<String>) {
-        self.report(Input::DialError {
-            host: core_host(peer),
-            error,
-        });
-    }
-
     /// Keeps the address a trusted peer answered at as the only direct
-    /// address it is dialled at: the core writes it.
+    /// address it is dialled at: the core writes it, and dials the host
+    /// there if it has no link.
     pub(crate) fn remember_direct_addr(&self, peer: HostId, addr: std::net::SocketAddr) {
         self.report(Input::ChangeTrust(crate::trust::TrustChange::DirectAddrs {
             host: peer,

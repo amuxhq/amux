@@ -15,7 +15,7 @@ pub(crate) use io::{
     BoxedGrpcAuth, BoxedGrpcConnectInfo, BoxedGrpcIo, PreTrustPairingReachability, Replacing,
 };
 pub(crate) use memory::ShutdownIo;
-pub(crate) use pairing::{pairing_quic_channel, pairing_quic_channel_through};
+pub(crate) use pairing::{PairingQuic, pairing_quic_channel, pairing_quic_channel_through};
 pub use relay_tls::{
     create_tls_acceptor, relay_quic_server_config, relay_quic_server_config_from_der,
 };

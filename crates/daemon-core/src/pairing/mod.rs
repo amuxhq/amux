@@ -428,6 +428,12 @@ impl Daemon {
     }
 
     /// Fresh randomness: mixed into what the core draws from.
+    /// 64 random bytes from the entropy the core was given; none before
+    /// any arrived.
+    pub(crate) fn draw_entropy(&mut self) -> Option<[u8; 64]> {
+        self.pairing.entropy.draw()
+    }
+
     pub(crate) fn entropy(&mut self, fresh: [u8; 32]) {
         self.pairing.entropy.add(fresh);
     }
@@ -1044,6 +1050,16 @@ impl Daemon {
         reachability: Option<Reachability>,
         out: &mut Vec<Output>,
     ) {
+        // The joiner dials the offerer once both have committed.
+        if matches!(
+            self.pairing
+                .sessions
+                .get(&session)
+                .map(|current| &current.opened),
+            Some(Opened::Responder { .. })
+        ) {
+            self.expect_link(host, out);
+        }
         let host = Uuid::from_bytes(host.0);
         let before = self.trust().entry(host).cloned();
         self.pairing.committing.insert(session, (host, before));
@@ -1144,20 +1160,13 @@ impl Daemon {
             }
             (Opened::Initiator(initiate), Stage::Joining { call, host }, result) => {
                 let (call, host) = (*call, *host);
-                let (method, reachability) = (initiate.method, initiate.reachability.clone());
+                let method = initiate.method;
                 self.pairing.sessions.remove(&session);
                 Self::end_pairing(session, None, out);
                 match result {
                     Ok(_) => {
                         Self::pairing_event(method, Role::Joiner, Outcome::Succeeded { host }, out);
-                        answered(
-                            call,
-                            Response::Paired {
-                                host,
-                                reachability: Some(reachability),
-                            },
-                            out,
-                        );
+                        answered(call, Response::Paired { host }, out);
                     }
                     Err(error) => {
                         let failure = PairFailure::from_trust(&error).opaque();
@@ -1488,6 +1497,8 @@ impl Daemon {
         let role = if reachability.is_some() {
             Role::Joiner
         } else {
+            // The side with the SSH destination dials.
+            self.expect_link(host, out);
             Role::Offerer
         };
         self.change_trust(
@@ -1514,14 +1525,7 @@ impl Daemon {
         match result {
             Ok(_) => {
                 Self::pairing_event(Method::Ssh, role, Outcome::Succeeded { host }, out);
-                answered(
-                    call,
-                    Response::Paired {
-                        host,
-                        reachability: None,
-                    },
-                    out,
-                );
+                answered(call, Response::Paired { host }, out);
             }
             Err(error) => out.push(Output::EndCall {
                 call,

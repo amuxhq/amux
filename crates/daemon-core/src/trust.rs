@@ -842,6 +842,10 @@ impl Daemon {
         if let TrustChanged::Paired(_) | TrustChanged::Removed(_) = &changed {
             self.trust_committed(id, out);
         }
+        // Where the host may be reached is the trust store's in part: an
+        // address it answered at, an SSH destination, the account.
+        self.tell_paths(id, out);
+        self.reconsider(id, out);
         if changed == TrustChanged::Paired(PairingUpdate::ReplacedPubkey) {
             self.finish_replacement(id);
         }

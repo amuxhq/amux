@@ -126,6 +126,32 @@ impl Sim {
         true
     }
 
+    /// Makes the next delivery, or, with none waiting, lets link time run
+    /// on to the next timer armed in it, as on a real net while a story
+    /// waits, if that falls due by `link_until`.
+    fn step_within(&mut self, link_until: u64) -> bool {
+        if self.step() {
+            return true;
+        }
+        if self.net.failure().is_some() {
+            return false;
+        }
+        match self.net.next_link_due() {
+            Some(due) if due <= link_until => {
+                let by = due.saturating_sub(self.net.link_ms());
+                self.net.run_link_time(by);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// How far link time may run on while a story waits `patience`.
+    fn link_until(&self, patience: Duration) -> u64 {
+        let patience = u64::try_from(patience.as_millis()).unwrap_or(u64::MAX);
+        self.net.link_ms().saturating_add(patience)
+    }
+
     fn is_up(&self, h: usize) -> bool {
         self.net.is_up(h)
     }
@@ -1032,6 +1058,7 @@ impl World for SimNet {
         E: Display,
         F: Future<Output = Result<T, E>>,
     {
+        let link_until = self.sim().link_until(PATIENCE);
         for _ in 0..MOST_STEPS {
             let seen = match probe().await {
                 Ok(found) => return Ok(found),
@@ -1039,7 +1066,7 @@ impl World for SimNet {
             };
             let mut sim = self.sim();
             failed(&sim)?;
-            if !sim.step() {
+            if !sim.step_within(link_until) {
                 failed(&sim)?;
                 return Err(quiet(&sim, what, seen));
             }
@@ -1056,6 +1083,7 @@ impl World for SimNet {
     where
         F: Future<Output = bool>,
     {
+        let link_until = self.sim().link_until(window);
         for _ in 0..MOST_STEPS {
             if !check().await {
                 return Err(Stuck::Broke {
@@ -1067,7 +1095,7 @@ impl World for SimNet {
             }
             let mut sim = self.sim();
             failed(&sim)?;
-            if !sim.step() {
+            if !sim.step_within(link_until) {
                 return failed(&sim);
             }
         }
@@ -1133,13 +1161,14 @@ fn wait<T>(
     what: &str,
     mut probe: impl FnMut(&mut Sim) -> Result<T, String>,
 ) -> Result<T, NetError> {
+    let link_until = sim.link_until(PATIENCE);
     for _ in 0..MOST_STEPS {
         failed(sim)?;
         let seen = match probe(sim) {
             Ok(found) => return Ok(found),
             Err(seen) => seen,
         };
-        if !sim.step() {
+        if !sim.step_within(link_until) {
             failed(sim)?;
             return Err(quiet(sim, what, seen));
         }

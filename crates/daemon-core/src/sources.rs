@@ -176,6 +176,11 @@ impl Sources {
         self.told_trust
     }
 
+    /// The hosts this profile trusts, as last said.
+    pub(crate) fn trusted(&self) -> impl Iterator<Item = HostId> + '_ {
+        self.trusted.iter().copied()
+    }
+
     /// Whether this profile trusts `host`, as last said.
     pub(crate) fn trusts(&self, host: HostId) -> bool {
         self.trusted.contains(&host)
@@ -364,14 +369,12 @@ impl Daemon {
         let added: Vec<HostId> = trusted.difference(&self.sources.trusted).copied().collect();
         self.sources.trusted = trusted.clone();
         self.sources.told_trust = true;
-        // A host a route reached before its trust landed was not dialled
-        // then: it is now.
+        // A host paired now, or one known before trust was, is dialled.
         for host in added {
-            if self.reachable(host) {
-                self.try_again(host, out);
-            }
+            self.reach_host(host, out);
         }
         for host in gone {
+            self.stop_reaching(host, out);
             self.unfollow(host, out);
         }
         if let Err(error) = self.drop_untrusted(out) {

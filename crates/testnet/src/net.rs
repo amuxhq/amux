@@ -26,6 +26,7 @@ use provider_fakes::script::{INPUT_LOG_ENV, SCRIPT_ENV, Script, Step};
 use serde::{Deserialize, Serialize};
 use store::AgentKey;
 use tokio::sync::mpsc;
+use tracing::Instrument as _;
 use uuid::Uuid;
 use wire::agent_service_server::AgentService as _;
 use wire::installation_service_client::InstallationServiceClient;
@@ -2364,7 +2365,18 @@ impl Net {
         let runs: Vec<Weak<ProfileRuntime>> =
             daemon.profiles().iter().map(Arc::downgrade).collect();
         if clean {
-            daemon.shutdown().await?;
+            let host_id = host.info.host_id;
+            let stop = daemon
+                .shutdown()
+                .instrument(crate::link_log::stopping(host_id));
+            tokio::time::timeout(PATIENCE, stop)
+                .await
+                .map_err(|_| Stuck::Deadline {
+                    what: format!("{name}'s clean stop"),
+                    waited: PATIENCE,
+                    seen: crate::link_log::stop_step(host_id)
+                        .map_or("no step begun".to_owned(), |step| format!("stuck {step}")),
+                })??;
             if let Some(attached) = attached {
                 attached.cut();
             }

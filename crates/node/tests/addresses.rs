@@ -25,6 +25,7 @@ fn listing(interfaces: &[&str]) -> node::EdgeOptions {
                 .map(|ip| ip.parse::<IpAddr>().unwrap())
                 .collect(),
         ),
+        dial: true,
         ..Default::default()
     }
 }

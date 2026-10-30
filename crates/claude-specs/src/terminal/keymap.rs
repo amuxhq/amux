@@ -465,65 +465,6 @@ pub fn load_str(source: &str, origin: &str, kind: KeymapSource) -> Result<Keymap
     })
 }
 
-/// Append evidence produced by a passing PTY specification to a baked keymap.
-///
-/// User keymaps are rejected earlier by [`load_str`]. This mutation is public
-/// so the separate specification tooling can record verified provider
-/// evidence without becoming part of the provider library.
-#[doc(hidden)]
-pub fn append_verified(path: &Path, entry: VerifiedVersion) -> Result<(), KeymapError> {
-    let contents = std::fs::read_to_string(path)
-        .map_err(|error| KeymapError::Io(path.to_path_buf(), error))?;
-    let document = contents
-        .parse::<toml::Table>()
-        .map_err(|error| KeymapError::Parse {
-            origin: path.display().to_string(),
-            reason: error.to_string(),
-        })?;
-    let verified = document
-        .get("verified")
-        .and_then(toml::Value::as_array)
-        .ok_or_else(|| KeymapError::Parse {
-            origin: path.display().to_string(),
-            reason: "field 'verified' must be an array".to_owned(),
-        })?;
-    let value = toml::Value::try_from(&entry).map_err(|error| KeymapError::Parse {
-        origin: path.display().to_string(),
-        reason: format!("could not encode verified entry: {error}"),
-    })?;
-    if verified.iter().any(|candidate| candidate == &value) {
-        return Ok(());
-    }
-    let encoded = value.to_string();
-    let line_start = contents
-        .find("verified = [")
-        .ok_or_else(|| KeymapError::Parse {
-            origin: path.display().to_string(),
-            reason: "field 'verified' must be a top-level inline array".to_owned(),
-        })?;
-    let line_end = contents[line_start..]
-        .find('\n')
-        .map_or(contents.len(), |offset| line_start + offset);
-    let line = &contents[line_start..line_end];
-    let close = line.rfind(']').ok_or_else(|| KeymapError::Parse {
-        origin: path.display().to_string(),
-        reason: "field 'verified' must be a one-line array".to_owned(),
-    })?;
-    let insertion = line_start + close;
-    let separator = if line[..close].trim_end().ends_with('[') {
-        ""
-    } else {
-        ", "
-    };
-    let mut rendered = contents.clone();
-    rendered.insert_str(insertion, &format!("{separator}{encoded}"));
-    load_str(&rendered, &path.display().to_string(), KeymapSource::Baked)?;
-    let temporary = path.with_extension("toml.tmp");
-    std::fs::write(&temporary, rendered)
-        .map_err(|error| KeymapError::Io(temporary.clone(), error))?;
-    std::fs::rename(&temporary, path).map_err(|error| KeymapError::Io(path.to_path_buf(), error))
-}
-
 struct LoadedKeymap {
     keymap: Keymap,
     id: KeymapId,
@@ -2623,24 +2564,5 @@ mod resolve {
             error.to_string(),
             "unverified keymap shape for PermissionMenu: a scoped allowance on a permission menu with 3 suggestions is not verified"
         );
-    }
-
-    #[test]
-    fn a_recording_appends_its_version_to_the_keymap_file() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("claude-2.1.toml");
-        std::fs::write(&path, BAKED_KEYMAPS[0].1).unwrap();
-        let entry = VerifiedVersion {
-            version: "2.1.312".parse().unwrap(),
-            run_id: "run".to_owned(),
-            spec: "prompt".to_owned(),
-        };
-        append_verified(&path, entry.clone()).unwrap();
-        append_verified(&path, entry.clone()).unwrap();
-
-        let contents = std::fs::read_to_string(&path).unwrap();
-        let keymap = load_str(&contents, "baked", KeymapSource::Baked).unwrap();
-        let appended = keymap.verified.iter().filter(|v| **v == entry).count();
-        assert_eq!(appended, 1, "appended once, then left alone");
     }
 }

@@ -5,9 +5,8 @@ use std::time::Duration;
 use chrono::DateTime;
 use redaction::RedactionSummary;
 use replay_support::{
-    IoDirection, IoEvent, MANIFEST_SCHEMA_VERSION, Manifest, Observed, Recorded, Recording,
-    ReplayAdvance, ReplayClock, ReplayOptions, SourceKind, replay_transport_with_controller,
-    strict_replay,
+    IoDirection, IoEvent, MANIFEST_SCHEMA_VERSION, Manifest, Recorded, Recording, ReplayAdvance,
+    ReplayClock, ReplayOptions, SourceKind, replay_transport_with_controller, strict_replay,
 };
 use semver::Version;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
@@ -35,9 +34,7 @@ fn recording(io: Vec<IoEvent>) -> Recording {
                 at: DateTime::UNIX_EPOCH,
                 source_kind: SourceKind::LiveCapture,
             },
-            verified: Vec::new(),
             content: BTreeMap::new(),
-            observed: Observed::default(),
             redaction: RedactionSummary::default(),
             session_ids: Vec::new(),
             provider_extra: serde_json::Map::new(),

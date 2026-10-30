@@ -357,13 +357,6 @@ fn sdk_corpus_is_inventoried_current_and_unorphaned() {
         assert_eq!(recording.manifest.spec, entry.name);
         assert_eq!(recording.manifest.recorded.provider, "claude");
         assert!(recording.manifest.recorded.version >= minimum);
-        assert!(
-            recording
-                .manifest
-                .verified
-                .iter()
-                .all(|verification| verification.version == Version::new(2, 1, 251))
-        );
         match recording.manifest.recorded.source_kind {
             SourceKind::Migrated { .. } => {
                 assert_eq!(recording.manifest.recorded.version, minimum)

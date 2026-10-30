@@ -37,7 +37,6 @@ pub mod commands;
 pub mod configured;
 pub mod control;
 pub mod history;
-pub mod probe;
 pub mod pty;
 pub mod questions;
 pub mod results;

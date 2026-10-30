@@ -1,7 +1,5 @@
 pub mod bundle;
 mod manifest;
-mod observation;
-mod probe;
 mod registry;
 pub mod replay;
 mod sanitize;
@@ -12,11 +10,9 @@ pub mod wire_size;
 use std::path::Path;
 
 pub use manifest::{
-    MANIFEST_SCHEMA_VERSION, Manifest, Observed, Recorded, Recording, RecordingError, SourceKind,
-    Verification, append_verification, load_recording, migrate_legacy_manifest,
+    MANIFEST_SCHEMA_VERSION, Manifest, Recorded, Recording, RecordingError, SourceKind,
+    load_recording, migrate_legacy_manifest,
 };
-pub use observation::{DriftReport, drift, observe};
-pub use probe::{ProbeAttempt, ProbeOutcome, ProbeResult, ProbeRun, path_past_probe, probe};
 pub use registry::{RegistryRow, SpecEntry, below_minimum, orphan_recordings, registry_rows};
 pub use sanitize::sanitize;
 pub use transport::{
@@ -98,4 +94,21 @@ fn parse_script(path: &Path) -> Result<Vec<IoEvent>, RecordingError> {
         });
     }
     Ok(events)
+}
+
+/// The PATH a probe standing in for `command` hands the real provider:
+/// `path` less every folder whose `command` is the probe itself. A wrapper
+/// earlier on the PATH that runs the next `command` it finds (a usage
+/// meter, a version manager) then reaches the real provider instead of
+/// the probe again, which would start another wrapper, without end.
+pub fn path_past_probe(
+    probe: &Path,
+    command: &std::ffi::OsStr,
+    path: &std::ffi::OsStr,
+) -> std::ffi::OsString {
+    let probe = std::fs::canonicalize(probe).unwrap_or_else(|_| probe.to_owned());
+    let kept = std::env::split_paths(path).filter(|folder| {
+        std::fs::canonicalize(folder.join(command)).map_or(true, |found| found != probe)
+    });
+    std::env::join_paths(kept).unwrap_or_else(|_| path.to_owned())
 }

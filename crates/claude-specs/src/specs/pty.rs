@@ -181,10 +181,6 @@ pub fn fixtures_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/pty")
 }
 
-pub fn baked_keymap_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("keymaps/claude-2.1.toml")
-}
-
 /// Apply the launch arguments owned by a PTY specification.
 pub fn prepare_launch(entry: &SpecEntry, launch: &mut Launch) -> Result<(), SpecFailure> {
     let definition = definition_for(entry)?;

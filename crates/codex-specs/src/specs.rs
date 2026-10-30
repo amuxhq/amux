@@ -118,7 +118,6 @@ pub struct RunReport {
     pub provider_version: Option<Version>,
     pub server_model: String,
     pub session_ids: Vec<String>,
-    pub observed: replay_support::Observed,
 }
 
 struct ScenarioReport {
@@ -134,7 +133,6 @@ struct Runtime {
     server: Option<two_clients::live::Server>,
     model: String,
     project: PathBuf,
-    live_io: Option<PathBuf>,
     replay_driver: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -191,13 +189,6 @@ pub async fn execute(spec: &SpecEntry, source: SpecSource) -> Result<RunReport, 
     }
 
     let scenario = scenario.map_err(|claim| failure(spec, claim))?;
-    let observed = runtime
-        .live_io
-        .as_deref()
-        .filter(|path| path.is_file())
-        .map(replay_support::load_script)
-        .map(|events| replay_support::observe(&events))
-        .unwrap_or_default();
     let provider_version = initialization
         .as_ref()
         .and_then(|result| version_from_user_agent(&result.user_agent));
@@ -206,7 +197,6 @@ pub async fn execute(spec: &SpecEntry, source: SpecSource) -> Result<RunReport, 
         provider_version,
         server_model: scenario.server_model,
         session_ids: scenario.session_ids,
-        observed,
     })
 }
 
@@ -250,7 +240,6 @@ async fn open_runtime(spec: &SpecEntry, source: SpecSource) -> Result<Runtime, S
                 server: None,
                 model,
                 project,
-                live_io: Some(io_path),
                 replay_driver: None,
             })
         }
@@ -318,7 +307,6 @@ async fn open_runtime(spec: &SpecEntry, source: SpecSource) -> Result<Runtime, S
                 server: None,
                 model: CAPTURE_MODEL.to_string(),
                 project: PathBuf::from("<MACHINE_PATH>"),
-                live_io: None,
                 replay_driver: Some(driver),
             })
         }
@@ -343,7 +331,6 @@ async fn open_two_clients(
         server: Some(server),
         model,
         project,
-        live_io: Some(io_path),
         replay_driver: None,
     })
 }

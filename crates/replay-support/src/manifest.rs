@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use chrono::{DateTime, Utc};
@@ -19,18 +19,14 @@ pub struct Recording {
     pub io: Vec<IoEvent>,
 }
 
-/// Provenance, immutable content, observations, and a growing live ledger.
+/// Provenance and the inventory of a recording's immutable content.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub schema_version: u32,
     pub spec: String,
     pub recorded: Recorded,
-    #[serde(default)]
-    pub verified: Vec<Verification>,
     pub content: BTreeMap<String, String>,
-    #[serde(default)]
-    pub observed: Observed,
     #[serde(default)]
     pub redaction: RedactionSummary,
     #[serde(default)]
@@ -50,14 +46,6 @@ pub struct Recorded {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Verification {
-    pub version: Version,
-    pub at: DateTime<Utc>,
-    pub run_id: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceKind {
     LiveCapture,
@@ -70,17 +58,6 @@ pub enum SourceKind {
     Scripted {
         note: String,
     },
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Observed {
-    #[serde(default)]
-    pub frames: BTreeSet<String>,
-    #[serde(default)]
-    pub fields: BTreeSet<String>,
-    #[serde(default)]
-    pub discriminants: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -168,10 +145,6 @@ pub fn migrate_legacy_manifest(
         .map(|value| serde_json::from_value(value).map_err(|error| malformed(&path, error)))
         .transpose()?
         .unwrap_or_default();
-    let observed = Observed {
-        frames: string_set(object.get("observed_frames"), &path, "observed_frames")?,
-        ..Observed::default()
-    };
     let redaction = object
         .get("redaction_summary")
         .cloned()
@@ -211,20 +184,11 @@ pub fn migrate_legacy_manifest(
             at,
             source_kind: SourceKind::Migrated { from },
         },
-        verified: Vec::new(),
         content: build_inventory(dir)?,
-        observed,
         redaction,
         session_ids,
         provider_extra,
     })
-}
-
-/// Append a live verification while leaving all inventoried bytes untouched.
-pub fn append_verification(dir: &Path, verification: Verification) -> Result<(), RecordingError> {
-    let mut recording = load_recording(dir)?;
-    recording.manifest.verified.push(verification);
-    write_manifest(&dir.join("manifest.json"), &recording.manifest)
 }
 
 fn validate_inventory(
@@ -356,16 +320,6 @@ fn read_required(path: &Path) -> Result<Vec<u8>, RecordingError> {
     std::fs::read(path).map_err(|error| io_error(path, error))
 }
 
-fn write_manifest(path: &Path, manifest: &Manifest) -> Result<(), RecordingError> {
-    let mut bytes =
-        serde_json::to_vec_pretty(manifest).map_err(|error| RecordingError::Malformed {
-            path: path.to_path_buf(),
-            reason: error.to_string(),
-        })?;
-    bytes.push(b'\n');
-    std::fs::write(path, bytes).map_err(|error| io_error(path, error))
-}
-
 fn required_string(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &str,
@@ -392,21 +346,6 @@ fn legacy_recorded_at(
     value
         .parse()
         .map_err(|error| malformed(path, format!("invalid recorded_at: {error}")))
-}
-
-fn string_set(
-    value: Option<&serde_json::Value>,
-    path: &Path,
-    field: &str,
-) -> Result<BTreeSet<String>, RecordingError> {
-    value
-        .cloned()
-        .map(|value| {
-            serde_json::from_value(value)
-                .map_err(|error| malformed(path, format!("invalid {field}: {error}")))
-        })
-        .transpose()
-        .map(Option::unwrap_or_default)
 }
 
 fn io_error(path: &Path, error: std::io::Error) -> RecordingError {
@@ -460,7 +399,9 @@ mod tests {
 
     fn install_migrated_manifest(dir: &Path) -> Manifest {
         let manifest = migrate_fixture(dir);
-        write_manifest(&dir.join("manifest.json"), &manifest).unwrap();
+        let mut bytes = serde_json::to_vec_pretty(&manifest).unwrap();
+        bytes.push(b'\n');
+        std::fs::write(dir.join("manifest.json"), bytes).unwrap();
         manifest
     }
 
@@ -476,17 +417,7 @@ mod tests {
                 at: "2026-08-29T12:00:00Z".parse().unwrap(),
                 source_kind: SourceKind::LiveCapture,
             },
-            verified: vec![Verification {
-                version: Version::parse("2.1.247").unwrap(),
-                at: "2026-08-29T13:00:00Z".parse().unwrap(),
-                run_id: "run-1".to_string(),
-            }],
             content: BTreeMap::new(),
-            observed: Observed {
-                frames: BTreeSet::from(["assistant".to_string()]),
-                fields: BTreeSet::from(["message.content.0.type".to_string()]),
-                discriminants: BTreeSet::from(["text".to_string()]),
-            },
             redaction: RedactionSummary::default(),
             session_ids: Vec::new(),
             provider_extra: serde_json::Map::new(),
@@ -495,8 +426,6 @@ mod tests {
         let json = serde_json::to_value(&manifest).unwrap();
         assert_eq!(json["recorded"]["version"], "0.150.1");
         assert_eq!(json["recorded"]["source_kind"], "live_capture");
-        assert_eq!(json["verified"][0]["version"], "2.1.247");
-        assert_eq!(json["observed"]["fields"][0], "message.content.0.type");
         assert_eq!(serde_json::from_value::<Manifest>(json).unwrap(), manifest);
     }
 
@@ -511,7 +440,6 @@ mod tests {
             Version::parse("2.1.247").unwrap()
         );
         assert_eq!(manifest.recorded.at, DateTime::UNIX_EPOCH);
-        assert_eq!(manifest.verified, Vec::<Verification>::new());
         assert!(matches!(
             manifest.recorded.source_kind,
             SourceKind::Migrated { ref from } if from == "claude-sdk 0.3.247"
@@ -535,7 +463,6 @@ mod tests {
                 .values()
                 .all(|hash| hash.starts_with("sha256:") && hash.len() == 71)
         );
-        assert_eq!(manifest.observed.frames.len(), 8);
         assert_eq!(manifest.provider_extra["agent_sdk_version"], "0.3.247");
     }
 
@@ -564,43 +491,5 @@ mod tests {
             load_recording(temp.path()).unwrap_err(),
             RecordingError::Uninventoried { path }
         );
-    }
-
-    #[test]
-    fn append_verification_rewrites_manifest_only() {
-        let temp = copy_fixture();
-        let before = install_migrated_manifest(temp.path());
-        let bytes_before = before
-            .content
-            .keys()
-            .map(|relative| {
-                (
-                    relative.clone(),
-                    std::fs::read(temp.path().join(relative)).unwrap(),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
-
-        append_verification(
-            temp.path(),
-            Verification {
-                version: Version::parse("2.1.251").unwrap(),
-                at: "2026-08-29T14:00:00Z".parse().unwrap(),
-                run_id: "probe-1".to_string(),
-            },
-        )
-        .unwrap();
-
-        let after = load_recording(temp.path()).unwrap().manifest;
-        assert_eq!(after.verified.len(), 1);
-        assert_eq!(after.content, before.content);
-        for (relative, bytes) in bytes_before {
-            let current = std::fs::read(temp.path().join(&relative)).unwrap();
-            assert_eq!(current, bytes, "{relative} bytes changed");
-            assert_eq!(
-                after.content[&relative],
-                digest_file(&temp.path().join(relative)).unwrap()
-            );
-        }
     }
 }

@@ -551,7 +551,8 @@ impl Edge {
         }));
         // The core dials every trusted host from here: a launch's first
         // flights.
-        edge.reachability.start_dialling(options.dial);
+        edge.reachability
+            .start_dialling(options.dial, options.lan.is_some());
         edge.tasks.lock().unwrap().push(follow_plan(
             &edge.status,
             &edge.connections,

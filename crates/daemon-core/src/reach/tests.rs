@@ -131,12 +131,17 @@ fn up(daemon: &mut Daemon, link: u64, peer: HostId, kind: CarrierKind) -> Vec<Ou
     )
 }
 
+/// The link is lost, with no word from either end.
 fn down(daemon: &mut Daemon, link: u64) -> Vec<Output> {
+    closed(daemon, link, wire::LinkCloseReason::Unspecified)
+}
+
+fn closed(daemon: &mut Daemon, link: u64, reason: wire::LinkCloseReason) -> Vec<Output> {
     step(
         daemon,
         Input::LinkDown {
             link: LinkId(link),
-            reason: wire::LinkCloseReason::UserShutdown,
+            reason,
         },
     )
 }
@@ -583,6 +588,76 @@ fn the_offerer_of_a_pairing_waits_for_the_joiners_link_instead_of_dialling() {
         None,
         "linked: nothing to dial"
     );
+}
+
+/// The desk dialled at start and linked, a minute ago.
+fn linked_to_the_desk() -> Daemon {
+    let mut daemon = daemon(trusting());
+    step(&mut daemon, Input::Listening(true));
+    let (attempt, _) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);
+    up(&mut daemon, 1, DESK, CarrierKind::Direct);
+    ended(
+        &mut daemon,
+        DESK,
+        attempt,
+        AttemptOutcome::Linked { addr: None },
+    );
+    at(&mut daemon, 60_000);
+    daemon
+}
+
+#[test]
+fn a_host_that_said_goodbye_is_left_to_dial_back_and_dialled_once_an_attempt_passes() {
+    let mut daemon = linked_to_the_desk();
+    let out = closed(&mut daemon, 1, wire::LinkCloseReason::UserShutdown);
+    assert!(
+        dials(&out).iter().all(|(host, ..)| *host != DESK),
+        "a dial would cross the desk's own as it starts again: {out:?}"
+    );
+    assert_eq!(
+        armed(&out, TimerId::Retry(DESK)),
+        Some(60_000 + ATTEMPT_DEADLINE_MS)
+    );
+    assert!(daemon.reach().expecting(DESK));
+    let out = step(&mut daemon, Input::Wanted { host: DESK });
+    assert!(dials(&out).is_empty(), "a call waits for the desk's link");
+
+    at(&mut daemon, 60_000 + ATTEMPT_DEADLINE_MS);
+    let out = step(
+        &mut daemon,
+        Input::Timer {
+            id: TimerId::Retry(DESK),
+        },
+    );
+    dial_of(&out, DESK);
+}
+
+#[test]
+fn a_host_that_listens_for_nothing_dials_a_host_that_said_goodbye_as_before() {
+    let mut daemon = daemon(trusting());
+    let (attempt, _) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);
+    up(&mut daemon, 1, DESK, CarrierKind::Direct);
+    ended(
+        &mut daemon,
+        DESK,
+        attempt,
+        AttemptOutcome::Linked { addr: None },
+    );
+    at(&mut daemon, 60_000);
+    let out = closed(&mut daemon, 1, wire::LinkCloseReason::UserShutdown);
+    dial_of(&out, DESK);
+    assert!(!daemon.reach().expecting(DESK));
+}
+
+#[test]
+fn a_host_that_said_goodbye_and_came_back_is_not_dialled_after_the_wait() {
+    let mut daemon = linked_to_the_desk();
+    closed(&mut daemon, 1, wire::LinkCloseReason::UserShutdown);
+    let out = up(&mut daemon, 2, DESK, CarrierKind::Direct);
+    assert!(out.contains(&Output::CancelTimer {
+        id: TimerId::Retry(DESK)
+    }));
+    assert!(!daemon.reach().expecting(DESK));
 }
 
 #[test]

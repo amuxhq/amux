@@ -273,7 +273,12 @@ impl Daemon {
 
     /// The link is gone, and with it every channel it carried: the driver
     /// ends their streams with the connection.
-    pub(crate) fn link_down(&mut self, link: LinkId, out: &mut Vec<Output>) {
+    pub(crate) fn link_down(
+        &mut self,
+        link: LinkId,
+        reason: wire::LinkCloseReason,
+        out: &mut Vec<Output>,
+    ) {
         self.cancel(TimerId::Refresh(link), out);
         let Some(gone) = self.routing.links.links.get(&link) else {
             return;
@@ -287,6 +292,9 @@ impl Daemon {
         registry.links.remove(&link);
         registry.channels.retain(|_, channel| channel.link != link);
         self.catalogue_link_down(link, peer);
+        if reason == wire::LinkCloseReason::UserShutdown {
+            self.expect_return(peer, out);
+        }
         self.routes_moved(before, out);
     }
 

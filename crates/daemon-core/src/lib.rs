@@ -287,7 +287,7 @@ impl Daemon {
                 kind,
                 resumed,
             } => self.link_up(link, peer, kind, resumed.as_ref(), out),
-            Input::LinkDown { link, .. } => self.link_down(link, out),
+            Input::LinkDown { link, reason } => self.link_down(link, reason, out),
             Input::LinkCarried { link, kind } => self.link_carried(link, kind),
             Input::LinkControl { link, frame } => self.link_control(link, frame, out),
             Input::Credential {
@@ -321,6 +321,7 @@ impl Daemon {
                 self.stop_reaching(host, out);
             }
             Input::Dialling(dialling) => self.dialling(dialling, out),
+            Input::Listening(listening) => self.listening(listening),
             Input::Wanted { host } => self.want_host(host, out),
             Input::AttemptEnded {
                 host,

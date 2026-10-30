@@ -142,6 +142,9 @@ pub enum Input {
     /// The driver dials from now on, or no longer: its edge is up, or
     /// stopping.
     Dialling(crate::reach::Dialling),
+    /// The driver listens for direct links, or does not: a phone dials
+    /// out and is never dialled.
+    Listening(bool),
     /// A call needs a link to the host now.
     Wanted {
         host: HostId,
@@ -294,6 +297,7 @@ impl Input {
             Input::PairingMessage { .. } => "PairingMessage",
             Input::PairingClosed { .. } => "PairingClosed",
             Input::Dialling(_) => "Dialling",
+            Input::Listening(_) => "Listening",
             Input::Wanted { .. } => "Wanted",
             Input::AttemptEnded { .. } => "AttemptEnded",
             Input::RelayWanted(_) => "RelayWanted",
@@ -905,6 +909,7 @@ mod tests {
                 })),
             },
             Input::Dialling(crate::reach::Dialling::All),
+            Input::Listening(true),
             Input::Wanted {
                 host: HostId([4; 16]),
             },

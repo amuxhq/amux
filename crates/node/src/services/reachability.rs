@@ -208,8 +208,10 @@ impl ReachabilityLinkConnector {
     }
 
     /// The core may dial from now on: `direct` says whether it may dial
-    /// hosts' own addresses, or stays off the local network.
-    pub(crate) fn start_dialling(&self, direct: bool) {
+    /// hosts' own addresses, or stays off the local network, and
+    /// `listening` whether hosts may dial this one.
+    pub(crate) fn start_dialling(&self, direct: bool, listening: bool) {
+        self.inner.report(Input::Listening(listening));
         self.inner.report(Input::Dialling(if direct {
             daemon_core::reach::Dialling::All
         } else {

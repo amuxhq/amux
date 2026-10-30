@@ -1,33 +1,33 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.283"}}
+## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.312"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
-item boundary:1 boundary final at=1790386557358 text="" BOUNDARY_KIND_STARTED session=2ca876f6-495e-4ee7-8e55-9a787892da3b version=2.1.283 keymap=claude-2.1
-snapshot IDLE queue=[] working_on=- at=1790386557358 asks=[] session=2ca876f6-495e-4ee7-8e55-9a787892da3b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
-## 7 recorded 5: fact Transcript type=permission-mode
-snapshot IDLE queue=[] working_on=- at=1790386557493 asks=[] session=2ca876f6-495e-4ee7-8e55-9a787892da3b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
-## 14 recorded 12: fact Transcript type=user uuid=f7668940-8809-4b2a-ab07-379ab1dd09fe
-item f7668940-8809-4b2a-ab07-379ab1dd09fe prompt final at=1790386557853 text="Use AskUserQuestion to ask one single-select question with header Color and options Red and Blue. If I decline to answer, reply exactly QUESTION_DECLINED."
-snapshot WORKING queue=[] working_on=- at=1790386557596 asks=[] session=2ca876f6-495e-4ee7-8e55-9a787892da3b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
-## 40 recorded 38: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01NRiLvbG2zjs5v2m2r7HNAC
-snapshot WORKING queue=[] working_on=- at=1790386559853 asks=[] session=2ca876f6-495e-4ee7-8e55-9a787892da3b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=? running=toolu_01NRiLvbG2zjs5v2m2r7HNAC AskUserQuestion since=1790386559853
-## 42 recorded 40: fact Hook hook_event_name=PermissionRequest
-snapshot NEEDS_YOU queue=[] working_on=- at=1790386559875 asks=[ask:1->- question:2+other] session=2ca876f6-495e-4ee7-8e55-9a787892da3b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=? running=toolu_01NRiLvbG2zjs5v2m2r7HNAC AskUserQuestion since=1790386559853
-## 44 recorded 42: fact Transcript type=assistant uuid=8ce7cc05-dfcf-433f-ab1a-08f691d91f7a
-item 8ce7cc05-dfcf-433f-ab1a-08f691d91f7a thinking final at=1790386559661 text=""
-snapshot NEEDS_YOU queue=[] working_on=- at=1790386560072 asks=[ask:1->- question:2+other] session=2ca876f6-495e-4ee7-8e55-9a787892da3b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=36219 tasks=? background=? running=toolu_01NRiLvbG2zjs5v2m2r7HNAC AskUserQuestion since=1790386559853
-## 45 recorded 43: fact Transcript type=assistant uuid=aa9a5a99-6d21-497c-8a66-ea2448191e6e
-item toolu_01NRiLvbG2zjs5v2m2r7HNAC ask final at=1790386560284 text="" question×1 open
-snapshot NEEDS_YOU queue=[] working_on=- at=1790386560072 asks=[ask:1->toolu_01NRiLvbG2zjs5v2m2r7HNAC question:2+other] session=2ca876f6-495e-4ee7-8e55-9a787892da3b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=36219 tasks=? background=? running=toolu_01NRiLvbG2zjs5v2m2r7HNAC AskUserQuestion since=1790386559853
-## 46 recorded 44: fact Transcript type=user uuid=323384d6-6b58-4884-a639-e526ac614510
-item toolu_01NRiLvbG2zjs5v2m2r7HNAC ask final at=1790386560284 text="" question×1 ASK_OUTCOME_DISMISSED
-snapshot WORKING queue=[] working_on=- at=1790386560072 asks=[] session=2ca876f6-495e-4ee7-8e55-9a787892da3b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=36219 tasks=? background=?
-## 50 recorded 48: fact Transcript type=user uuid=a6dd91d0-4536-4059-99d9-953473724959
-item a6dd91d0-4536-4059-99d9-953473724959 interruption final at=1790386560384 text=""
-item turn:1 turn final at=1790386560384 text="" #1 TURN_OUTCOME_INTERRUPTED started=1790386557596
-snapshot IDLE queue=[] working_on=- at=1790386560080 asks=[] session=2ca876f6-495e-4ee7-8e55-9a787892da3b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=36219 tasks=? background=?
+item boundary:1 boundary final at=1793309086553 text="" BOUNDARY_KIND_STARTED session=f401d338-004c-4959-a2f6-7e2371f9b61b version=2.1.312
+snapshot IDLE queue=[] working_on=- at=1793309086553 asks=[] session=f401d338-004c-4959-a2f6-7e2371f9b61b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
+## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793309086580 asks=[] session=f401d338-004c-4959-a2f6-7e2371f9b61b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
+## 13 recorded 11: fact Transcript type=user uuid=ccac26ac-1c9c-48b1-87da-e9a3f454ff29
+item ccac26ac-1c9c-48b1-87da-e9a3f454ff29 prompt final at=1793309086822 text="Use AskUserQuestion to ask one single-select question with header Color and options Red and Blue. If I decline to answer, reply exactly QUESTION_DECLINED."
+snapshot WORKING queue=[] working_on=- at=1793309086822 asks=[] session=f401d338-004c-4959-a2f6-7e2371f9b61b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
+## 37 recorded 35: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01LdtVF2aDHgH1Lysj9nKwH2
+snapshot WORKING queue=[] working_on=- at=1793309090084 asks=[] session=f401d338-004c-4959-a2f6-7e2371f9b61b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=? running=toolu_01LdtVF2aDHgH1Lysj9nKwH2 AskUserQuestion since=1793309090084
+## 39 recorded 37: fact Hook hook_event_name=PermissionRequest
+snapshot NEEDS_YOU queue=[] working_on=- at=1793309090111 asks=[ask:1->- question:2+other] session=f401d338-004c-4959-a2f6-7e2371f9b61b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=? running=toolu_01LdtVF2aDHgH1Lysj9nKwH2 AskUserQuestion since=1793309090084
+## 43 recorded 41: fact Transcript type=assistant uuid=381994cc-483e-4650-a677-e85432ff0ff8
+item 381994cc-483e-4650-a677-e85432ff0ff8 thinking final at=1793309089887 text=""
+snapshot NEEDS_YOU queue=[] working_on=- at=1793309090221 asks=[ask:1->- question:2+other] session=f401d338-004c-4959-a2f6-7e2371f9b61b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34745 tasks=? background=? running=toolu_01LdtVF2aDHgH1Lysj9nKwH2 AskUserQuestion since=1793309090084
+## 44 recorded 42: fact Transcript type=assistant uuid=77f62e5b-07d6-4915-92eb-670b2f23c159
+item toolu_01LdtVF2aDHgH1Lysj9nKwH2 ask final at=1793309090317 text="" question×1 open
+snapshot NEEDS_YOU queue=[] working_on=- at=1793309090221 asks=[ask:1->toolu_01LdtVF2aDHgH1Lysj9nKwH2 question:2+other] session=f401d338-004c-4959-a2f6-7e2371f9b61b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34745 tasks=? background=? running=toolu_01LdtVF2aDHgH1Lysj9nKwH2 AskUserQuestion since=1793309090084
+## 45 recorded 43: fact Transcript type=user uuid=5af1f181-2ae9-4379-b51d-90bc8a6dd021
+item toolu_01LdtVF2aDHgH1Lysj9nKwH2 ask final at=1793309090317 text="" question×1 ASK_OUTCOME_DISMISSED
+snapshot WORKING queue=[] working_on=- at=1793309090221 asks=[] session=f401d338-004c-4959-a2f6-7e2371f9b61b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34745 tasks=? background=?
+## 48 recorded 46: fact Transcript type=user uuid=38a11e09-d482-4c3e-b4a5-15ae70729a96
+item 38a11e09-d482-4c3e-b4a5-15ae70729a96 interruption final at=1793309090417 text=""
+item turn:1 turn final at=1793309090417 text="" #1 TURN_OUTCOME_INTERRUPTED started=1793309086822
+snapshot IDLE queue=[] working_on=- at=1793309090230 asks=[] session=f401d338-004c-4959-a2f6-7e2371f9b61b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34745 tasks=? background=?
 turn_end 1 last=-

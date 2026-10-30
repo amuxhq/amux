@@ -550,6 +550,20 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "hook_event_name": "PreToolUse",
+          "tool_use_id": "toolu_2",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "make test"
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "amux_reply": 1,
           "hook_event_name": "PermissionRequest",
           "permission_suggestions": [],
           "tool_input": {

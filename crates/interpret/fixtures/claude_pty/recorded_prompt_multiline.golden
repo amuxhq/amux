@@ -1,26 +1,28 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.251"}}
+## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.312"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
-item boundary:1 boundary final at=1788080207019 text="" BOUNDARY_KIND_STARTED session=a469f6bd-fd56-4325-a2f5-5d6a90b14c86 version=2.1.251 keymap=claude-2.1
-snapshot IDLE queue=[] working_on=- at=1788080207019 asks=[] session=a469f6bd-fd56-4325-a2f5-5d6a90b14c86 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
-## 6 recorded 4: fact Transcript type=permission-mode
-snapshot IDLE queue=[] working_on=- at=1788080207145 asks=[] session=a469f6bd-fd56-4325-a2f5-5d6a90b14c86 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
-## 11 recorded 9: fact Transcript type=user uuid=af7582ae-f400-4e98-ab15-026a7c3e08da
-item af7582ae-f400-4e98-ab15-026a7c3e08da prompt final at=1788080207248 text="Reply exactly PTY_SPEC_MULTILINE_OK and nothing else.\nThis second line is part of one prompt."
-snapshot WORKING queue=[] working_on=- at=1788080207248 asks=[] session=a469f6bd-fd56-4325-a2f5-5d6a90b14c86 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
-## 22 recorded 20: fact Hook hook_event_name=Stop
-snapshot WORKING queue=[] working_on=- at=1788080209359 asks=[] session=a469f6bd-fd56-4325-a2f5-5d6a90b14c86 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=[]
-## 24 recorded 22: fact Transcript type=assistant uuid=51070252-2008-4fe0-afbe-d11bb8cda4ff
-item 51070252-2008-4fe0-afbe-d11bb8cda4ff thinking final at=1788080209445 text=""
-snapshot WORKING queue=[] working_on=- at=1788080209421 asks=[] session=a469f6bd-fd56-4325-a2f5-5d6a90b14c86 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34334 tasks=? background=[]
-## 25 recorded 23: fact Transcript type=assistant uuid=46313ce9-7131-476d-bfb5-d0710cbc6590
-item 46313ce9-7131-476d-bfb5-d0710cbc6590 message final at=1788080209457 text="PTY_SPEC_MULTILINE_OK"
-## 28 recorded 26: fact Transcript type=system subtype=turn_duration uuid=8ce1e7bd-28dc-4642-931f-8e3727e30eaa
-item turn:1 turn final at=1788080209573 text="" #1 TURN_OUTCOME_COMPLETED started=1788080207251
-snapshot IDLE queue=[] working_on=- at=1788080209422 asks=[] session=a469f6bd-fd56-4325-a2f5-5d6a90b14c86 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34334 tasks=? background=[]
-turn_end 1 last=46313ce9-7131-476d-bfb5-d0710cbc6590
+item boundary:1 boundary final at=1793308271188 text="" BOUNDARY_KIND_STARTED session=d9c92ab0-1e08-408b-bcf3-85c5f3db8b23 version=2.1.312
+snapshot IDLE queue=[] working_on=- at=1793308271188 asks=[] session=d9c92ab0-1e08-408b-bcf3-85c5f3db8b23 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
+## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793308271596 asks=[] session=d9c92ab0-1e08-408b-bcf3-85c5f3db8b23 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
+## 13 recorded 11: fact Transcript type=user uuid=9bd24269-1e87-482d-9e20-cbbfce7fe448
+item 9bd24269-1e87-482d-9e20-cbbfce7fe448 prompt final at=1793308271831 text="Reply exactly PTY_SPEC_MULTILINE_OK and nothing else.\nThis second line is part of one prompt."
+snapshot WORKING queue=[] working_on=- at=1793308271831 asks=[] session=d9c92ab0-1e08-408b-bcf3-85c5f3db8b23 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
+## 36 recorded 34: fact Hook hook_event_name=MessageDisplay
+item stream:468e7bca-8fb5-4175-8403-30d61b475598 message open at=1793308272807 text="PTY_SPEC_MULTILINE_OK"
+## 37 recorded 35: fact Hook hook_event_name=Stop
+snapshot WORKING queue=[] working_on=- at=1793308272807 asks=[] session=d9c92ab0-1e08-408b-bcf3-85c5f3db8b23 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=[]
+## 39 recorded 37: fact Transcript type=assistant uuid=f5b23274-4f5f-45d5-bade-3bedad2dbfc3
+item f5b23274-4f5f-45d5-bade-3bedad2dbfc3 thinking final at=1793308272965 text=""
+snapshot WORKING queue=[] working_on=- at=1793308272958 asks=[] session=d9c92ab0-1e08-408b-bcf3-85c5f3db8b23 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34736 tasks=? background=[]
+## 40 recorded 38: fact Transcript type=assistant uuid=d979fe83-3910-4136-99a6-9097d13a0273
+item stream:468e7bca-8fb5-4175-8403-30d61b475598 message final at=1793308273011 text="PTY_SPEC_MULTILINE_OK"
+## 44 recorded 42: fact Transcript type=system subtype=turn_duration uuid=0e350224-344f-46ae-b7a2-b35ca3d41a30
+item turn:1 turn final at=1793308273054 text="" #1 TURN_OUTCOME_COMPLETED started=1793308271821
+snapshot IDLE queue=[] working_on=- at=1793308272969 asks=[] session=d9c92ab0-1e08-408b-bcf3-85c5f3db8b23 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34736 tasks=? background=[]
+turn_end 1 last=stream:468e7bca-8fb5-4175-8403-30d61b475598

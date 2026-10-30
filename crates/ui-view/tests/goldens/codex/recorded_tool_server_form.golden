@@ -118,7 +118,7 @@
   row    9 ask:3 Ask(Link { server: "<REDACTED_IDENTIFIER>", message: "Open the page to confirm.", url: "https://example.com/confirm", resolution: Open }) attention
   ask 3 -> "ask:3" 1/1 Open
     choices OpenLink*, Decline
-    body Link { server: "<REDACTED_IDENTIFIER>", message: "Open the page to confirm.", url: "https://example.com/confirm" }
+    body Link { server: "<REDACTED_IDENTIFIER>", message: "Open the page to confirm.", url: "https://example.com/confirm", local_page: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 128 recorded 127: input stdin-8
   row    9 ask:3 Ask(Link { server: "<REDACTED_IDENTIFIER>", message: "Open the page to confirm.", url: "https://example.com/confirm", resolution: Cancelled })

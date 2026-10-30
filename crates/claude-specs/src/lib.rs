@@ -3,6 +3,7 @@
 pub mod driver;
 pub mod scrub;
 pub mod specs;
+pub mod terminal;
 
 use std::path::{Path, PathBuf};
 

@@ -2,24 +2,17 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 11 recorded 9: fact Transcript type=user uuid=39337fdb-9345-4a06-8c99-f3c77149bb54
-  row    2 39337fdb-9345-4a06-8c99-f3c77149bb54 Prompt { text: [Text("Reply exactly MODE_CYCLED and nothing else.")], steered: false }
+## 14 recorded 12: fact Transcript type=user uuid=80b6d75e-103f-426c-a13e-e64b06dadefe
+  row    2 80b6d75e-103f-426c-a13e-e64b06dadefe Prompt { text: [Text("Reply exactly MODE_CYCLED and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 25 recorded 23: fact Transcript type=assistant uuid=5c3fdbef-8193-4e56-83b9-c4d59e5c0a0d
-  row    3 5c3fdbef-8193-4e56-83b9-c4d59e5c0a0d Thinking { text: "", open: false, duration_ms: Some(1404) }
-## 27 recorded 25: fact Transcript type=assistant uuid=a1aba222-b555-481f-8574-af659a4fd17a
-  row    4 a1aba222-b555-481f-8574-af659a4fd17a Prose { text: [Text("MODE_CYCLED")], streaming: false, working_note: false }
-## 29 recorded 27: fact Transcript type=system subtype=turn_duration uuid=eb5d3245-1be1-46b6-86bf-d3f11ec93752
-  row    5 turn:1 TurnEnd { duration_ms: Some(1445), failed: false }
-  composer Send activity=None queue=[] underway=[] refused=[]
+## 36 recorded 34: fact Hook hook_event_name=MessageDisplay
+  row    3 stream:70403e6c-d1db-4bd8-be28-82d2ca0feed3 Prose { text: [Text("MODE_CYCLED")], streaming: true, working_note: false }
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 39337fdb-9345-4a06-8c99-f3c77149bb54 Prompt { text: [Text("Reply exactly MODE_CYCLED and nothing else.")], steered: false }
-     3 5c3fdbef-8193-4e56-83b9-c4d59e5c0a0d Thinking { text: "", open: false, duration_ms: Some(1404) }
-     4 a1aba222-b555-481f-8574-af659a4fd17a Prose { text: [Text("MODE_CYCLED")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(1445), failed: false }
+     2 80b6d75e-103f-426c-a13e-e64b06dadefe Prompt { text: [Text("Reply exactly MODE_CYCLED and nothing else.")], steered: false }
+     3 stream:70403e6c-d1db-4bd8-be28-82d2ca0feed3 Prose { text: [Text("MODE_CYCLED")], streaming: true, working_note: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 34299, window_tokens: None, percent: None, near_full: false }) sign-in None
+== context None sign-in None
 == settings
   model* unlisted claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
   permission  "default" "Ask" normal unsettable

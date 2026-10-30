@@ -205,6 +205,9 @@ fn row_kind(row: &Value) -> Option<String> {
             format!("attachment {attachment}")
         }
         "queue-operation" => format!("queue-operation {}", row["operation"].as_str()?),
+        // Claude 2.1.312 writes a Stop hook's summary after some turns and
+        // not others alike, so no fake can say when.
+        "system" if row["subtype"] == "stop_hook_summary" => return None,
         "system" => format!("system {}", row["subtype"].as_str()?),
         "user" if row["message"]["content"].is_string() => "user prompt".into(),
         "user" | "assistant" => format!("{kind} {}", blocks(&row["message"]["content"])),
@@ -720,7 +723,7 @@ mod claude_pty {
                 text(),
                 "turn_end"
             ]),
-            Some("user tool_result"),
+            Some("queue-operation remove"),
         ))
         .await;
     }

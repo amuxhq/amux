@@ -9,16 +9,7 @@
         "channel": "agent",
         "json": {
           "type": "launch",
-          "version": "2.1.282",
-          "keymap": "claude-2.1",
-          "permission_menus": {
-            "per_suggestion": [
-              1
-            ],
-            "folded": [
-              2
-            ]
-          }
+          "version": "2.1.282"
         }
       }
     },
@@ -98,6 +89,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 1,
           "hook_event_name": "PermissionRequest",
           "tool_name": "Bash",
           "tool_input": {

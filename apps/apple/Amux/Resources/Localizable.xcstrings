@@ -7021,6 +7021,18 @@
         }
       }
     },
+    "This page is on the agent’s machine. Open the link in a browser there." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This page is on the agent’s machine. Open the link in a browser there."
+          }
+        }
+      }
+    },
     "This phone" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
       "extractionState" : "manual",

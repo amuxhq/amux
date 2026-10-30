@@ -797,7 +797,7 @@ public enum ChatWords {
         case .question: return String(localized: "Question")
         case .plan: return String(localized: "Plan ready")
         case .form(let server, _, _): return String(localized: "\(server) needs details")
-        case .link(let server, _, _): return String(localized: "\(server) wants you to open a link")
+        case .link(let server, _, _, _): return String(localized: "\(server) wants you to open a link")
         case .access: return String(localized: "Wants more access")
         case .unanswerable: return String(localized: "Can’t answer this here")
         }

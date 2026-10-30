@@ -1003,7 +1003,6 @@ impl State {
                     provider_version: self.version.clone().unwrap_or_default(),
                     cause: exit.cause,
                     cause_detail: exit.detail,
-                    keymap: String::new(),
                 })),
                 complete: true,
                 ..Default::default()

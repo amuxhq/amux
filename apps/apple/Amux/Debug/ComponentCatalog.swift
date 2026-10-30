@@ -328,7 +328,8 @@ enum ComponentCatalog {
                     Choice(outcome: .decline, primary: false, takesNote: false),
                 ])),
             ask("link", height: 380, F.card(.codex, .link(
-                server: "linear", message: "Sign in to Linear to continue.", url: "https://linear.app/login"), [
+                server: "linear", message: "Sign in to Linear to continue.", url: "https://linear.app/login",
+                localPage: false), [
                     Choice(outcome: .openLink, primary: true, takesNote: false),
                     Choice(outcome: .decline, primary: false, takesNote: false),
                 ])),

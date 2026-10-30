@@ -59,20 +59,20 @@
 ## 32 fact {"channel":"transcript","json":{"message":{"content":[{"id":"toolu_2","input":{"command":"make test"},"name":"Bash","type":"tool_use"}],"id":"m5","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.180Z","type":"assistant","uuid":"a5"}}
   row   15 toolu_2 Command { command: "make test", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_2..toolu_2 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_2" }) queue=[] underway=[] refused=[]
-## 33 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"make test"},"tool_name":"Bash"}}
+## 34 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"make test"},"tool_name":"Bash"}}
   ask ask:1 -> "toolu_2" 1/1 Open
-    choices AllowOnce*, Deny { stops: true }+note
+    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
     body Command { command: "make test", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 34 input {"id":"p5","prompt":{"text":"Stop after this."}}
+## 35 input {"id":"p5","prompt":{"text":"Stop after this."}}
   composer Send activity=None queue=[QueuedRow { input_id: [112, 53], text: [Text("Stop after this.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
-## 36 fact {"channel":"transcript","json":{"message":{"content":[{"content":"tests ran","tool_use_id":"toolu_2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.185Z","type":"user","uuid":"u7"}}
+## 37 fact {"channel":"transcript","json":{"message":{"content":[{"content":"tests ran","tool_use_id":"toolu_2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.185Z","type":"user","uuid":"u7"}}
   row   15 toolu_2 Command { command: "make test", state: Succeeded, exit_code: None, output_head: ["tests ran"], more_lines: 0, output_trimmed: false, output_tail: ["tests ran"], duration_ms: Some(5) } run[toolu_2..toolu_2 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true …
   ask none
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 53], text: [Text("Stop after this.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
-## 37 input {"id":"n7","send_now":{"target":"p5"}}
+## 38 input {"id":"n7","send_now":{"target":"p5"}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 53], text: [Text("Stop after this.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
-## 38 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.190Z","type":"user","uuid":"u6"}}
+## 39 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.190Z","type":"user","uuid":"u6"}}
   row   15 toolu_2 Command { command: "make test", state: Succeeded, exit_code: None, output_head: ["tests ran"], more_lines: 0, output_trimmed: false, output_tail: ["tests ran"], duration_ms: Some(5) } run[toolu_2..toolu_2 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true }
   row   16 u6 Hidden collapsed
   row   17 turn:4 Stopped

@@ -32,7 +32,7 @@ use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot};
 use wire::{AgentSpec, Attachment};
 
-use crate::terminal::{self, Keys};
+use crate::terminal::{self, KeyStep};
 use crate::{dir, tree};
 
 /// How long output still in flight is collected after the child exits.
@@ -57,20 +57,6 @@ const CODEX_WRITER_WAIT: Duration = Duration::from_secs(30);
 const CODEX_WRITER_RETRY: Duration = Duration::from_millis(250);
 /// How often a followed transcript is read for new rows.
 const TRANSCRIPT_POLL: Duration = Duration::from_millis(25);
-/// The hook events terminal Claude reports to the agent, when the spec's
-/// hook policy names none.
-const HOOK_EVENTS: &[&str] = &[
-    "SessionStart",
-    "SessionEnd",
-    "UserPromptSubmit",
-    "PermissionRequest",
-    "PreToolUse",
-    "PostToolUse",
-    "PostToolUseFailure",
-    "Stop",
-    "SubagentStop",
-    "Notification",
-];
 
 /// What the provider did.
 #[derive(Debug)]
@@ -122,6 +108,11 @@ pub enum ProviderError {
         "terminal Claude is not hosted on Windows in this build; headless Claude and Codex are"
     )]
     TerminalOnWindows,
+    #[error(
+        "terminal Claude needs Claude Code {} or later; this machine has {found}. Update Claude, or chat in amux",
+        claude::version::MIN_TERMINAL
+    )]
+    ClaudeTooOld { found: String },
     #[error("{0}")]
     Io(#[from] io::Error),
 }
@@ -136,7 +127,7 @@ enum Input {
     Stdin(Stdin),
     Codex(CodexSender),
     /// Keystrokes for the typing task.
-    Terminal(mpsc::UnboundedSender<Vec<claude::pty::keymap::KeyStep>>),
+    Terminal(mpsc::UnboundedSender<Vec<KeyStep>>),
     Closed,
 }
 
@@ -150,8 +141,6 @@ pub struct Provider {
     #[cfg_attr(unix, allow(dead_code))]
     kill: Option<oneshot::Sender<()>>,
     terminal: Option<pty_host::PtyHandle>,
-    /// Terminal Claude's keymap, when one covers its version.
-    keys: Option<Keys>,
     messaging: Option<claude::hooks::MessagingCredentials>,
     session: String,
     dir: PathBuf,
@@ -278,7 +267,6 @@ impl Provider {
             pid,
             kill: Some(kill),
             terminal: None,
-            keys: None,
             messaging: None,
             session,
             dir: dir.to_owned(),
@@ -547,7 +535,6 @@ impl Provider {
             pid,
             kill: Some(kill),
             terminal: None,
-            keys: None,
             messaging: None,
             session: String::new(),
             dir: dir.to_owned(),
@@ -557,9 +544,9 @@ impl Provider {
         })
     }
 
-    /// Claude in a terminal. The agent reads its version and resolves the
-    /// keymap for it first, and reports both as the launch fact before
-    /// anything Claude says. Its hooks report to private/hooks.sock; its
+    /// Claude in a terminal. The agent reads its version first, refuses a
+    /// Claude older than [`claude::version::MIN_TERMINAL`], and reports it
+    /// as the launch fact before anything Claude says. Its hooks report to private/hooks.sock; its
     /// messaging socket is private/messaging.sock.
     async fn spawn_terminal(
         spec: &AgentSpec,
@@ -570,16 +557,22 @@ impl Provider {
             return Err(ProviderError::TerminalOnWindows);
         }
         let (session, resume) = claude_session(spec, dir)?;
-        let keys = Keys::resolve(Path::new(&spec.provider_command)).await;
-        let launch = interpret::claude_pty::launch_fact(
-            keys.as_ref().map_or("", |keys| keys.version.as_str()),
-            keys.as_ref().map_or("", Keys::name),
-            &keys
-                .as_ref()
-                .map(Keys::permission_menus)
-                .unwrap_or_default(),
-            keys.as_ref().and_then(Keys::send_now_refused).as_deref(),
-        );
+        // A version that cannot be read starts anyway: a wrapper or an odd
+        // banner is likelier than an old Claude.
+        let version = match claude::version::probe_version(Path::new(&spec.provider_command)).await
+        {
+            Ok(version) if version.0 < claude::version::MIN_TERMINAL => {
+                return Err(ProviderError::ClaudeTooOld {
+                    found: version.to_string(),
+                });
+            }
+            Ok(version) => version.to_string(),
+            Err(error) => {
+                eprintln!("amux agent: reading the Claude version: {error}");
+                String::new()
+            }
+        };
+        let launch = interpret::claude_pty::launch_fact(&version);
         let _ = events
             .send(ProviderEvent::Fact(Fact {
                 channel: Channel::Agent,
@@ -696,7 +689,6 @@ impl Provider {
             pid: Some(handle.pid()),
             kill: None,
             terminal: Some(handle),
-            keys,
             messaging: None,
             session,
             dir: dir.to_owned(),
@@ -756,13 +748,7 @@ impl Provider {
                     }
                     _ => String::new(),
                 };
-                let keys = self.keys.as_ref().ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::Unsupported,
-                        "no keymap covers this Claude, so nothing can be typed",
-                    )
-                })?;
-                let steps = keys.steps(&input, &text)?;
+                let steps = terminal::steps(&input, &text)?;
                 self.type_keys(steps)
             }
             Effect::Inject {
@@ -860,7 +846,7 @@ impl Provider {
         claude_stream::MessageContent::Blocks(blocks)
     }
 
-    fn type_keys(&self, steps: Vec<claude::pty::keymap::KeyStep>) -> io::Result<()> {
+    fn type_keys(&self, steps: Vec<KeyStep>) -> io::Result<()> {
         match &self.input {
             Input::Terminal(keys) => keys.send(steps).map_err(|_| closed()),
             _ => Err(closed()),
@@ -892,13 +878,7 @@ impl Provider {
                 }
             }
         }
-        let keys = self.keys.as_ref().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::Unsupported,
-                "no messaging socket and no keymap to paste an agent message with",
-            )
-        })?;
-        let steps = keys.prompt(&terminal::pasted_message(text))?;
+        let steps = terminal::prompt(&terminal::pasted_message(text))?;
         self.type_keys(steps)
     }
 
@@ -1090,7 +1070,7 @@ impl Provider {
     /// Bytes an attached terminal typed, in order with the keystrokes the
     /// interpreter asked for.
     pub fn type_raw(&self, bytes: Vec<u8>) {
-        let _ = self.type_keys(vec![claude::pty::keymap::KeyStep::Write(bytes)]);
+        let _ = self.type_keys(vec![KeyStep::Write(bytes)]);
     }
 
     /// Resizes the terminal, for a provider that has one.
@@ -1314,10 +1294,6 @@ fn claude_launch(
         } else {
             Vec::new()
         },
-        hook_events: HOOK_EVENTS
-            .iter()
-            .map(|event| (*event).to_owned())
-            .collect(),
         accept_cross_session: true,
         // The files amux attaches live in the agent's blob folder, outside
         // the working folder: without this Claude asks to read a file the

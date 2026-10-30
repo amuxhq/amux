@@ -9,6 +9,12 @@ use tokio::process::Command;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// The oldest Claude amux runs in a terminal: the first with every hook
+/// the agent registers (PostModelSwitch, the newest of them, came in
+/// 2.1.251). An older Claude starts without complaint and never reports
+/// the events amux follows a session by, so it is refused at launch.
+pub const MIN_TERMINAL: Version = Version::new(2, 1, 251);
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ClaudeVersion(pub Version);
 

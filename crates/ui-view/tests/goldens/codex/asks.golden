@@ -69,7 +69,7 @@
   row    8 ask:"elicit-1" Ask(Link { server: "docs", message: "Sign in to the docs server.", url: "https://docs.example.com/login", resolution: Open }) attention
   ask "elicit-1" -> "ask:\"elicit-1\"" 1/1 Open
     choices OpenLink*, Decline
-    body Link { server: "docs", message: "Sign in to the docs server.", url: "https://docs.example.com/login" }
+    body Link { server: "docs", message: "Sign in to the docs server.", url: "https://docs.example.com/login", local_page: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 20 input {"answer":{"answer":{"link":{"action":"accept"}},"ask":"\"elicit-1\""},"id":"a8"}
   row    8 ask:"elicit-1" Ask(Link { server: "docs", message: "Sign in to the docs server.", url: "https://docs.example.com/login", resolution: Answered })

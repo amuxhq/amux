@@ -1,21 +1,12 @@
 {
-  "about": "Terminal Claude's questions take a reply instead: amux cancels Claude's menu and sends the person's words as the next prompt, and the question reads replied instead. Claude's form has nowhere to type a note, so a note is refused.",
+  "about": "Terminal Claude's questions take notes and a reply instead, as headless Claude's do: notes go back with the answers on the hook, and a reply instead refuses the question with the person's words, which Claude reads as their answer, and the question reads replied instead.",
   "events": [
     {
       "fact": {
         "channel": "agent",
         "json": {
           "type": "launch",
-          "version": "2.1.282",
-          "keymap": "claude-2.1",
-          "permission_menus": {
-            "per_suggestion": [
-              1
-            ],
-            "folded": [
-              2
-            ]
-          }
+          "version": "2.1.282"
         }
       }
     },
@@ -118,6 +109,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 1,
           "hook_event_name": "PermissionRequest",
           "tool_name": "AskUserQuestion",
           "tool_input": {
@@ -164,34 +156,6 @@
     },
     {
       "input": {
-        "id": "a2",
-        "answer": {
-          "ask": "ask:1",
-          "answer": {
-            "selected": [
-              0,
-              [
-                1
-              ]
-            ],
-            "notes": [
-              "warm is better",
-              null
-            ]
-          }
-        }
-      },
-      "expect": {
-        "reply": "rejected:UNSUPPORTED",
-        "silent": true,
-        "asks": [
-          "ask:1"
-        ]
-      },
-      "note": "a note on a question: Claude's form has nowhere to type one"
-    },
-    {
-      "input": {
         "id": "a3",
         "answer": {
           "ask": "ask:1",
@@ -204,7 +168,7 @@
         }
       },
       "expect": {
-        "reply": "queued",
+        "reply": "accepted",
         "asks": []
       },
       "note": "reply instead cancels the menu, which stops the turn, and queues the words as the next prompt"

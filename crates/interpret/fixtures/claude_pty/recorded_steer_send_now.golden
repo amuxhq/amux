@@ -1,27 +1,27 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.283"}}
+## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.312"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
-item boundary:1 boundary final at=1790396283139 text="" BOUNDARY_KIND_STARTED session=54e51d89-3ba3-4cd7-91cb-a43e68ca75d5 version=2.1.283 keymap=claude-2.1
-snapshot IDLE queue=[] working_on=- at=1790396283139 asks=[] session=54e51d89-3ba3-4cd7-91cb-a43e68ca75d5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
-## 7 recorded 5: fact Transcript type=permission-mode
-snapshot IDLE queue=[] working_on=- at=1790396283295 asks=[] session=54e51d89-3ba3-4cd7-91cb-a43e68ca75d5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=?
-## 13 recorded 11: fact Transcript type=user uuid=be72659b-51ae-4705-82a8-3595513903c7
-item be72659b-51ae-4705-82a8-3595513903c7 prompt final at=1790396283748 text="I am testing how follow-up messages reach you while a command runs. Use Bash, not in the background, to run exactly: python3 -c 'import time; time.sleep(30)'; echo S1. Then reply with the word PTY_STEER_NOW, and also follow any follow-up message I send while the command runs."
-snapshot WORKING queue=[] working_on=- at=1790396283397 asks=[] session=54e51d89-3ba3-4cd7-91cb-a43e68ca75d5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=?
-## 40 recorded 38: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01NG2nrg9ukVCrHuC45fehtJ
-snapshot WORKING queue=[] working_on=- at=1790396285916 asks=[] session=54e51d89-3ba3-4cd7-91cb-a43e68ca75d5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=? running=toolu_01NG2nrg9ukVCrHuC45fehtJ Bash since=1790396285916
-## 42 recorded 40: fact Transcript type=assistant uuid=f41c7fd7-d400-45fe-9697-53f1e7176f57
-item f41c7fd7-d400-45fe-9697-53f1e7176f57 thinking final at=1790396285871 text=""
-snapshot WORKING queue=[] working_on=- at=1790396286319 asks=[] session=54e51d89-3ba3-4cd7-91cb-a43e68ca75d5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=43591 tasks=? background=? running=toolu_01NG2nrg9ukVCrHuC45fehtJ Bash since=1790396285916
-## 43 recorded 41: fact Transcript type=assistant uuid=dec67a35-5eac-42c7-9060-e366b98e337c
-item toolu_01NG2nrg9ukVCrHuC45fehtJ tool final at=1790396286474 text="" Bash TOOL_STATE_RUNNING input=shell:"python3 -c 'import time; time.sleep(30)'; echo S1"
-## 48 recorded 46: fact Transcript type=user uuid=b785e6c1-4ef3-4a9e-9b50-a923f598b807
-item toolu_01NG2nrg9ukVCrHuC45fehtJ tool final at=1790396286474 text="" Bash TOOL_STATE_SUCCEEDED ended=1790396290616 input=shell:"python3 -c 'import time; time.sleep(30)'; echo S1" out="Command was moved to the background (ID: ba4rtox6w) so that …"
-snapshot WORKING queue=[] working_on=- at=1790396290186 asks=[] session=54e51d89-3ba3-4cd7-91cb-a43e68ca75d5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=43591 tasks=? background=[toolu_01NG2nrg9ukVCrHuC45fehtJ:"python3 -c 'import time; time.sleep(30)'; echo S1"@1790396286474]
-## 52 recorded 50: fact Transcript type=user uuid=c9bd22e9-7222-47ec-a1b0-3a78e7ed9913
-item c9bd22e9-7222-47ec-a1b0-3a78e7ed9913 prompt final at=1790396290642 text="Also append the word DURIAN."
+item boundary:1 boundary final at=1793309291007 text="" BOUNDARY_KIND_STARTED session=a8c1511e-c699-42e5-8500-37e11906113e version=2.1.312
+snapshot IDLE queue=[] working_on=- at=1793309291007 asks=[] session=a8c1511e-c699-42e5-8500-37e11906113e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
+## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793309291034 asks=[] session=a8c1511e-c699-42e5-8500-37e11906113e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=?
+## 13 recorded 11: fact Transcript type=user uuid=d26f04fb-9758-4516-a57b-9bbf9caa145b
+item d26f04fb-9758-4516-a57b-9bbf9caa145b prompt final at=1793309291263 text="I am testing how follow-up messages reach you while a command runs. Use Bash, not in the background, to run exactly: python3 -c 'import time; time.sleep(30)'; echo S1. Then reply with the word PTY_STEER_NOW, and also follow any follow-up message I send while the command runs."
+snapshot WORKING queue=[] working_on=- at=1793309291263 asks=[] session=a8c1511e-c699-42e5-8500-37e11906113e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=?
+## 36 recorded 34: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01Pyawzs2PBmY4Y3RvwKY86S
+snapshot WORKING queue=[] working_on=- at=1793309293039 asks=[] session=a8c1511e-c699-42e5-8500-37e11906113e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=? running=toolu_01Pyawzs2PBmY4Y3RvwKY86S Bash since=1793309293039
+## 40 recorded 38: fact Transcript type=assistant uuid=d6b5f240-4c34-44db-8ecd-ac98e9ac38e5
+item d6b5f240-4c34-44db-8ecd-ac98e9ac38e5 thinking final at=1793309292859 text=""
+snapshot WORKING queue=[] working_on=- at=1793309293442 asks=[] session=a8c1511e-c699-42e5-8500-37e11906113e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34783 tasks=? background=? running=toolu_01Pyawzs2PBmY4Y3RvwKY86S Bash since=1793309293039
+## 41 recorded 39: fact Transcript type=assistant uuid=a27ab5a7-241c-47ad-97bd-42261c116af6
+item toolu_01Pyawzs2PBmY4Y3RvwKY86S tool final at=1793309293260 text="" Bash TOOL_STATE_RUNNING input=shell:"python3 -c 'import time; time.sleep(30)'; echo S1"
+## 50 recorded 48: fact Transcript type=user uuid=a45d1cec-d65a-47e8-91b7-267474d60d44
+item toolu_01Pyawzs2PBmY4Y3RvwKY86S tool final at=1793309293260 text="" Bash TOOL_STATE_SUCCEEDED ended=1793309297426 input=shell:"python3 -c 'import time; time.sleep(30)'; echo S1" out="Command was moved to the background (ID: bwuecvyt4) so that …"
+snapshot WORKING queue=[] working_on=- at=1793309297330 asks=[] session=a8c1511e-c699-42e5-8500-37e11906113e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34783 tasks=? background=[toolu_01Pyawzs2PBmY4Y3RvwKY86S:"python3 -c 'import time; time.sleep(30)'; echo S1"@1793309293260]
+## 55 recorded 53: fact Transcript type=user uuid=9bf7a9bb-f68d-4ae3-99dd-c265c1af20f4
+item 9bf7a9bb-f68d-4ae3-99dd-c265c1af20f4 prompt final at=1793309297448 text="Also append the word DURIAN."

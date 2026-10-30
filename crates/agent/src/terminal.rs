@@ -1,230 +1,116 @@
-//! Typing into Claude's terminal: the keymap resolved for the Claude this
-//! incarnation launched turns the interpreter's semantic inputs into bytes,
-//! and one task types them in order, with the pauses the keymap asks for.
-//!
-//! The keymap is resolved at every start against the version Claude
-//! reports, so an updated Claude gets the right map without a new spec and
-//! an edited keymap takes effect at the next start. The choice is recorded
-//! on the boundary item through the launch fact.
+//! Typing into Claude's terminal. Claude's asks are answered through its
+//! hooks, so what is typed is only what has no hook: a prompt, the keys
+//! that interrupt and cycle the permission mode, and the folder-trust
+//! dialog Claude shows before any hook runs. Those keys are Claude's own
+//! and have not changed across the versions amux hosts, so they are fixed
+//! here. One task types them in order, with the pauses Claude needs to
+//! take each paste whole.
 
 use std::io;
-use std::path::Path;
+use std::time::Duration;
 
-use claude::pty::keymap::{self, Environment, KeyStep, Keymap, ProgramName, Resolved};
-use claude::pty::{
-    AskAnswer, AskKind, PermissionAnswer, PlanAnswer, QuestionAnswer, QuestionFact,
-    QuestionResponse,
-};
-use interpret::claude_pty::{PermissionChoice, PermissionMenus, PlanChoice, TerminalInput};
+use interpret::claude_pty::TerminalInput;
 use tokio::sync::mpsc;
 
-/// The keymap for the Claude this incarnation runs, and the version it was
-/// resolved for.
-pub struct Keys {
-    pub version: String,
-    resolved: Resolved,
-    keymap: Keymap,
+const ESCAPE: &[u8] = b"\x1b";
+const ENTER: &[u8] = b"\r";
+const DOWN: &[u8] = b"\x1b[B";
+const SHIFT_TAB: &[u8] = b"\x1b[Z";
+const PASTE_BEGIN: &[u8] = b"\x1b[200~";
+const PASTE_END: &[u8] = b"\x1b[201~";
+
+/// One paste of about 1,100 characters reaches the model wrapped as pasted
+/// content, which it will not take instructions from; one of about 750 is
+/// kept as typed. A longer prompt goes as several pastes of at most this.
+const PASTE_CHARS: usize = 700;
+const BETWEEN_PASTES: Duration = Duration::from_millis(100);
+/// Claude takes a paste's end, then Enter, as one submission only once it
+/// has drawn the paste.
+const AFTER_PASTE: Duration = Duration::from_millis(400);
+const AFTER_MOVE: Duration = Duration::from_millis(300);
+
+/// Bytes to write, or a pause before the next.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyStep {
+    Write(Vec<u8>),
+    Delay(Duration),
 }
 
-impl Keys {
-    /// Resolves the keymap for the version `command --version` reports.
-    /// None when Claude reports no version this build reads or no keymap
-    /// covers it; the agent then runs without one and cannot type.
-    pub async fn resolve(command: &Path) -> Option<Self> {
-        let version = match claude::version::probe_version(command).await {
-            Ok(version) => version,
-            Err(error) => {
-                eprintln!("amux agent: reading the Claude version: {error}");
-                return None;
-            }
-        };
-        match keymap::resolve_session(&keymap::KeymapSources::default(), &version) {
-            Ok((resolved, keymap)) => Some(Self {
-                version: version.to_string(),
-                resolved,
-                keymap,
-            }),
-            Err(error) => {
-                eprintln!("amux agent: no keymap for Claude {version}: {error}");
-                None
-            }
-        }
-    }
-
-    /// The name the boundary item records.
-    pub fn name(&self) -> &str {
-        &self.resolved.keymap.name
-    }
-
-    /// The permission menus this keymap can type an allowance on.
-    pub fn permission_menus(&self) -> PermissionMenus {
-        let shapes = self
-            .keymap
-            .verified_shapes
-            .get(&ProgramName::PermissionMenu)
-            .cloned()
-            .unwrap_or_default();
-        let counts = |counts: Vec<usize>| counts.into_iter().map(|count| count as u32).collect();
-        PermissionMenus {
-            per_suggestion: counts(shapes.permission_suggestions),
-            folded: counts(shapes.permission_folded_suggestions),
-        }
-    }
-
-    /// Why this keymap cannot type send now for this Claude, when it
-    /// cannot.
-    pub fn send_now_refused(&self) -> Option<String> {
-        match self.resolved.stability_limits.get(&ProgramName::SendNow) {
-            Some(keymap::Extrapolation::Refused { reason }) => Some(reason.clone()),
-            Some(keymap::Extrapolation::Allowed) => None,
-            None => Some("this Claude's keymap has no send now".to_owned()),
-        }
-    }
-
-    /// The keystrokes for a semantic input.
-    pub fn steps(&self, input: &TerminalInput, prompt_text: &str) -> io::Result<Vec<KeyStep>> {
-        match input {
-            TerminalInput::Prompt { .. } => self.prompt(prompt_text),
-            TerminalInput::SendNow { .. } => keymap::encode(
-                &self.keymap,
-                &self.resolved,
-                ProgramName::SendNow,
-                &Environment {
-                    ask: None,
-                    answer: None,
-                    prompt: Some(prompt_text),
-                },
-            )
-            .map_err(io::Error::other),
-            TerminalInput::Clear => self.prompt("/clear"),
-            TerminalInput::Interrupt => self.encode(ProgramName::Interrupt, None, None),
-            TerminalInput::CyclePermissionMode => self.encode(ProgramName::ModeCycle, None, None),
-            TerminalInput::Permission {
-                suggestions,
-                choice,
-            } => {
-                let ask = AskKind::Permission {
-                    tool_name: String::new(),
-                    suggestions: *suggestions as usize,
-                    is_plan: false,
-                };
-                let answer = AskAnswer::Permission(match choice {
-                    PermissionChoice::AllowOnce => PermissionAnswer::AllowOnce,
-                    PermissionChoice::AllowScoped { suggestion } => PermissionAnswer::AllowScoped {
-                        suggestion: *suggestion as usize,
-                    },
-                    PermissionChoice::AllowSwitchingToAuto => {
-                        PermissionAnswer::AllowSwitchingToAuto
-                    }
-                    PermissionChoice::Deny { note } => PermissionAnswer::Deny {
-                        feedback: (!note.is_empty()).then(|| note.clone()),
-                    },
-                });
-                self.encode(ProgramName::PermissionMenu, Some(&ask), Some(&answer))
-            }
-            TerminalInput::Plan(choice) => {
-                let ask = AskKind::Permission {
-                    tool_name: "ExitPlanMode".to_owned(),
-                    suggestions: 0,
-                    is_plan: true,
-                };
-                let answer = AskAnswer::Plan(match choice {
-                    PlanChoice::ApproveSwitching => PlanAnswer::ApproveAuto,
-                    PlanChoice::Approve => PlanAnswer::ApproveManual,
-                    PlanChoice::SendBack { note } => PlanAnswer::RequestChanges {
-                        feedback: note.clone(),
-                    },
-                });
-                self.encode(ProgramName::PlanMenu, Some(&ask), Some(&answer))
-            }
-            // The trust dialog preselects No: Enter exits, Down and Enter
-            // trusts the folder.
-            TerminalInput::Trust { trust } => {
-                let key = |name| {
-                    self.keymap
-                        .keys
-                        .get(&name)
-                        .cloned()
-                        .ok_or_else(|| unsupported(&format!("the keymap has no {name:?} key")))
-                };
-                let mut steps = Vec::new();
-                if *trust {
-                    let pause = self
-                        .keymap
-                        .delays
-                        .get(&keymap::DelayName::AfterMove)
-                        .copied()
-                        .unwrap_or_default();
-                    steps.push(KeyStep::Write(key(keymap::KeyName::Down)?));
-                    steps.push(KeyStep::Delay(std::time::Duration::from_millis(u64::from(
-                        pause,
-                    ))));
-                }
-                steps.push(KeyStep::Write(key(keymap::KeyName::Enter)?));
-                Ok(steps)
-            }
-            TerminalInput::Question { questions, answers } => {
-                let ask = AskKind::Question {
-                    questions: questions
-                        .iter()
-                        .map(|shape| QuestionFact {
-                            options: shape.options as usize,
-                            multi_select: shape.multi_select,
-                            previews: shape.previews,
-                        })
-                        .collect(),
-                };
-                let answer = AskAnswer::Question(QuestionResponse {
-                    answers: answers
-                        .iter()
-                        .map(|choice| QuestionAnswer {
-                            selected: choice.selected.iter().map(|at| *at as usize).collect(),
-                            other: choice.other.clone(),
-                        })
-                        .collect(),
-                });
-                self.encode(ProgramName::QuestionForm, Some(&ask), Some(&answer))
-            }
-        }
-    }
-
-    /// Pastes `text` and submits it.
-    pub fn prompt(&self, text: &str) -> io::Result<Vec<KeyStep>> {
-        keymap::encode(
-            &self.keymap,
-            &self.resolved,
-            ProgramName::Prompt,
-            &Environment {
-                ask: None,
-                answer: None,
-                prompt: Some(text),
-            },
-        )
-        .map_err(io::Error::other)
-    }
-
-    fn encode(
-        &self,
-        program: ProgramName,
-        ask: Option<&AskKind>,
-        answer: Option<&AskAnswer>,
-    ) -> io::Result<Vec<KeyStep>> {
-        keymap::encode(
-            &self.keymap,
-            &self.resolved,
-            program,
-            &Environment {
-                ask,
-                answer,
-                prompt: None,
-            },
-        )
-        .map_err(io::Error::other)
-    }
+/// The keystrokes for a semantic input; `text` is a prompt's, its
+/// attachments written in.
+pub fn steps(input: &TerminalInput, text: &str) -> io::Result<Vec<KeyStep>> {
+    Ok(match input {
+        TerminalInput::Prompt { .. } | TerminalInput::SendNow { .. } => prompt(text)?,
+        TerminalInput::Clear => prompt("/clear")?,
+        TerminalInput::Interrupt => vec![KeyStep::Write(ESCAPE.to_vec())],
+        TerminalInput::CyclePermissionMode => vec![KeyStep::Write(SHIFT_TAB.to_vec())],
+        // The trust dialog preselects No: Enter exits, Down and Enter
+        // trusts the folder.
+        TerminalInput::Trust { trust: true } => vec![
+            KeyStep::Write(DOWN.to_vec()),
+            KeyStep::Delay(AFTER_MOVE),
+            KeyStep::Write(ENTER.to_vec()),
+        ],
+        TerminalInput::Trust { trust: false } => vec![KeyStep::Write(ENTER.to_vec())],
+    })
 }
 
-fn unsupported(what: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::Unsupported, what.to_owned())
+/// Pastes `text` and submits it. Text with control characters other than
+/// line breaks is refused: they would reach Claude as keys.
+pub fn prompt(text: &str) -> io::Result<Vec<KeyStep>> {
+    let text = text.replace("\r\n", "\n").replace('\r', "\n");
+    if text.trim().is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "a prompt must not be empty",
+        ));
+    }
+    if text
+        .chars()
+        .any(|character| character.is_control() && character != '\n')
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "a prompt must not contain control characters",
+        ));
+    }
+    let mut steps = Vec::new();
+    for (index, piece) in paste_pieces(&text, PASTE_CHARS).into_iter().enumerate() {
+        if index > 0 {
+            steps.push(KeyStep::Delay(BETWEEN_PASTES));
+        }
+        let mut bytes = PASTE_BEGIN.to_vec();
+        bytes.extend_from_slice(piece.as_bytes());
+        bytes.extend_from_slice(PASTE_END);
+        steps.push(KeyStep::Write(bytes));
+    }
+    steps.push(KeyStep::Delay(AFTER_PASTE));
+    steps.push(KeyStep::Write(ENTER.to_vec()));
+    Ok(steps)
+}
+
+/// `text` in runs of at most `limit` characters. Each cut falls between
+/// two characters that are not whitespace where the run has such a place,
+/// so no piece starts or ends with a space or a line break for Claude to
+/// trim from a paste.
+fn paste_pieces(text: &str, limit: usize) -> Vec<&str> {
+    let mut pieces = Vec::new();
+    let mut rest = text;
+    loop {
+        let head: Vec<(usize, char)> = rest.char_indices().take(limit + 1).collect();
+        if head.len() <= limit {
+            break;
+        }
+        let cut = (1..=limit)
+            .rev()
+            .find(|&at| !head[at - 1].1.is_whitespace() && !head[at].1.is_whitespace())
+            .unwrap_or(limit);
+        let (piece, after) = rest.split_at(head[cut].0);
+        pieces.push(piece);
+        rest = after;
+    }
+    pieces.push(rest);
+    pieces
 }
 
 /// Starts the task that types into the terminal. Keystrokes go in the
@@ -258,84 +144,77 @@ pub fn pasted_message(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
-    use interpret::claude_pty::{QuestionChoice, QuestionShape};
-
     use super::*;
 
-    fn keys() -> Keys {
-        let version = "2.1.283".parse().expect("a version");
-        let (resolved, keymap) =
-            keymap::resolve_session(&keymap::KeymapSources::default(), &version).expect("a keymap");
-        Keys {
-            version: version.to_string(),
-            resolved,
-            keymap,
-        }
+    fn written(steps: &[KeyStep]) -> Vec<Vec<u8>> {
+        steps
+            .iter()
+            .filter_map(|step| match step {
+                KeyStep::Write(bytes) => Some(bytes.clone()),
+                KeyStep::Delay(_) => None,
+            })
+            .collect()
     }
 
-    /// Claude draws a question with previews side by side, where a digit
-    /// only moves the cursor: the pick is confirmed with Enter.
     #[test]
-    fn a_pick_on_a_question_with_previews_is_confirmed_with_enter() {
-        let input = TerminalInput::Question {
-            questions: vec![QuestionShape {
-                options: 4,
-                multi_select: false,
-                previews: true,
-            }],
-            answers: vec![QuestionChoice {
-                selected: vec![2],
-                other: None,
-            }],
-        };
+    fn a_prompt_is_one_paste_then_enter() {
         assert_eq!(
-            keys().steps(&input, "").expect("keys"),
+            prompt("hello\r\nthere").expect("keys"),
             [
-                KeyStep::Write(b"3".to_vec()),
-                KeyStep::Delay(Duration::from_millis(300)),
+                KeyStep::Write(b"\x1b[200~hello\nthere\x1b[201~".to_vec()),
+                KeyStep::Delay(AFTER_PASTE),
                 KeyStep::Write(b"\r".to_vec()),
             ]
         );
     }
 
-    /// "No, keep planning" with no note, as the terminal client sends it
-    /// (a note there goes as a prompt of its own), on Claude 2.1.296 as QA
-    /// ran it: the plan menu's third entry is typed, and since that entry
-    /// opens a field for what to change, Enter is pressed on the field left
-    /// empty, which sends the plan back without a note. QA recorded the
-    /// entry alone once, whose field then waited for good while amux marked
-    /// the plan sent back and the agent working.
     #[test]
-    fn a_plan_sent_back_without_a_note_sends_the_menus_empty_field() {
-        let version = "2.1.296".parse().expect("a version");
-        let (resolved, keymap) =
-            keymap::resolve_session(&keymap::KeymapSources::default(), &version).expect("a keymap");
-        let keys = Keys {
-            version: version.to_string(),
-            resolved,
-            keymap,
-        };
-        let steps = keys
-            .steps(
-                &TerminalInput::Plan(PlanChoice::SendBack {
-                    note: String::new(),
-                }),
-                "",
-            )
-            .expect("keys for a plan sent back");
-        let typed: Vec<&KeyStep> = steps
+    fn a_long_prompt_is_pasted_in_pieces_claude_keeps_as_typed() {
+        let text = "word ".repeat(300).trim_end().to_owned();
+        let pastes = written(&prompt(&text).expect("keys"));
+        assert_eq!(pastes.len(), 4, "three pastes and Enter");
+        let rejoined: String = pastes[..3]
             .iter()
-            .filter(|step| matches!(step, KeyStep::Write(_)))
+            .map(|paste| {
+                let paste = std::str::from_utf8(paste).expect("utf-8");
+                let inner = paste
+                    .strip_prefix("\x1b[200~")
+                    .and_then(|paste| paste.strip_suffix("\x1b[201~"))
+                    .expect("a bracketed paste");
+                assert!(inner.chars().count() <= PASTE_CHARS);
+                inner.to_owned()
+            })
             .collect();
+        assert_eq!(rejoined, text);
+    }
+
+    #[test]
+    fn paste_pieces_cut_between_letters_and_rejoin_exactly() {
+        let text = "ab cd ef";
+        let pieces = paste_pieces(text, 4);
+        assert_eq!(pieces.concat(), text);
+        assert!(
+            pieces
+                .iter()
+                .all(|piece| !piece.starts_with(' ') && !piece.ends_with(' '))
+        );
+    }
+
+    #[test]
+    fn a_prompt_with_control_characters_is_refused() {
+        assert!(prompt("ok\x1b[Bno").is_err());
+        assert!(prompt("  \n ").is_err());
+    }
+
+    #[test]
+    fn trusting_the_folder_moves_to_yes_before_enter() {
         assert_eq!(
-            typed,
-            [
-                &KeyStep::Write(b"3".to_vec()),
-                &KeyStep::Write(b"\r".to_vec()),
-            ],
-            "the send-back entry, then Enter on its empty field: {steps:?}"
+            written(&steps(&TerminalInput::Trust { trust: true }, "").expect("keys")),
+            [b"\x1b[B".to_vec(), b"\r".to_vec()]
+        );
+        assert_eq!(
+            written(&steps(&TerminalInput::Trust { trust: false }, "").expect("keys")),
+            [b"\r".to_vec()]
         );
     }
 }

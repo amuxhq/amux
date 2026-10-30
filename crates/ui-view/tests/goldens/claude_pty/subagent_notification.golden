@@ -14,9 +14,9 @@
   row    3 toolu_agent Subagent { description: "Look around", running: true, tool_count: 0, last_tool: "", answer: "", duration_ms: None } run[toolu_agent..toolu_agent x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
 ## 8 fact {"channel":"hook","json":{"agent_id":"ag1","agent_type":"general-purpose","hook_event_name":"PreToolUse","tool_input":{"command":"ls"},"tool_name":"Bash","tool_use_id":"toolu_sub1"}}
   row    3 toolu_agent Subagent { description: "Look around", running: true, tool_count: 1, last_tool: "Bash", answer: "", duration_ms: None } run[toolu_agent..toolu_agent x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
-## 9 fact {"channel":"hook","json":{"agent_id":"ag1","agent_type":"general-purpose","hook_event_name":"PermissionRequest","tool_input":{"command":"ls"},"tool_name":"Bash"}}
+## 9 fact {"channel":"hook","json":{"agent_id":"ag1","agent_type":"general-purpose","amux_reply":1,"hook_event_name":"PermissionRequest","tool_input":{"command":"ls"},"tool_name":"Bash"}}
   ask ask:1 -> "toolu_agent" 1/1 Open
-    choices AllowOnce*, Deny { stops: true }+note
+    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
     body Command { command: "ls", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 10 fact {"channel":"hook","json":{"agent_id":"ag1","agent_type":"general-purpose","hook_event_name":"PostToolUse","tool_input":{"command":"ls"},"tool_name":"Bash","tool_response":{"stdout":"README.md"},"tool_use_id":"toolu_sub1"}}

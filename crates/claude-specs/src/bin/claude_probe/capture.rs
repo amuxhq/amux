@@ -60,10 +60,6 @@ fn hex(bytes: &[u8]) -> String {
     text
 }
 
-fn shell_quote(text: &str) -> String {
-    format!("'{}'", text.replace('\'', r"'\''"))
-}
-
 /// Wraps every hook command in `--settings` so its payload passes through
 /// this binary first. Settings given as a file are rewritten into the
 /// capture directory.
@@ -94,10 +90,22 @@ fn wrap_hooks(args: &mut [String], dir: &Path, process: &str) -> io::Result<()> 
                     .into_iter()
                     .flatten()
                 {
-                    if let Some(command) = hook.get("command").and_then(|c| c.as_str()) {
-                        hook["command"] =
-                            format!("{} {HOOK} {}", shell_quote(&me), shell_quote(command)).into();
+                    let Some(command) = hook.get("command").and_then(|c| c.as_str()) else {
+                        continue;
+                    };
+                    // A hook with `args` is a program run as given; one
+                    // without is a shell command line.
+                    let mut wrapped = vec![HOOK.to_owned()];
+                    match hook.get("args").and_then(serde_json::Value::as_array) {
+                        Some(args) => {
+                            wrapped.push(command.to_owned());
+                            wrapped
+                                .extend(args.iter().filter_map(|a| a.as_str()).map(str::to_owned));
+                        }
+                        None => wrapped.extend(["/bin/sh".into(), "-c".into(), command.to_owned()]),
                     }
+                    hook["command"] = me.clone().into();
+                    hook["args"] = wrapped.into();
                 }
             }
         }
@@ -114,8 +122,8 @@ fn wrap_hooks(args: &mut [String], dir: &Path, process: &str) -> io::Result<()> 
 
 /// Run as a wrapped hook: record the payload, note the transcript it
 /// names for the proxy to tail, then hand the payload to the host's own
-/// command and answer as it answers.
-pub(super) fn hook(command: &str) -> Result<(), Box<dyn std::error::Error>> {
+/// command, `program` run with `args`, and answer as it answers.
+pub(super) fn hook(program: &str, args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut payload = Vec::new();
     io::stdin().read_to_end(&mut payload)?;
     if let (Some(dir), Ok(process)) = (
@@ -142,8 +150,8 @@ pub(super) fn hook(command: &str) -> Result<(), Box<dyn std::error::Error>> {
             let _ = std::fs::write(dir.join(format!("{process}.transcript")), path);
         }
     }
-    let mut child = std::process::Command::new("/bin/sh")
-        .args(["-c", command])
+    let mut child = std::process::Command::new(program)
+        .args(args)
         .stdin(std::process::Stdio::piped())
         .spawn()?;
     if let Some(mut stdin) = child.stdin.take() {

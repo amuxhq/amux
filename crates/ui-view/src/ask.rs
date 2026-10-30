@@ -27,13 +27,11 @@ pub struct AskCard {
     pub body: AskBody,
     /// The likely choice first. Only what this agent offers.
     pub choices: Vec<Choice>,
-    /// A note may go out with each question's answer. Terminal Claude has
-    /// no place to type one, so it takes none.
+    /// A note may go out with each question's answer. Not for the
+    /// provider's own dialogs, answered on its screen.
     pub question_note: bool,
-    /// A question may be left unanswered. Terminal Claude's form takes one
-    /// only when it asks several questions: it then ends in Claude's review
-    /// screen, which submits with some unanswered, while a lone question is
-    /// submitted by answering it.
+    /// A question may be left unanswered. Not for the provider's own
+    /// dialogs either.
     pub question_skip: bool,
     /// The person may reply in their own words instead of answering the
     /// questions. Not for the provider's own dialogs, outside any turn.
@@ -118,6 +116,9 @@ pub enum AskBody {
         server: String,
         message: String,
         url: String,
+        /// The page is on the agent's own machine (`localhost`), so the
+        /// link opens only in a browser there.
+        local_page: bool,
     },
     Access {
         reason: String,
@@ -259,8 +260,8 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
         count: asks.len(),
         body,
         choices,
-        question_note: state.kind() != wire::Kind::ClaudePty,
-        question_skip: state.kind() != wire::Kind::ClaudePty || reviewed_form(head),
+        question_note: !provider_dialog(head),
+        question_skip: !provider_dialog(head),
         question_reply: !provider_dialog(head),
         stops_turn: !matches!(
             head,
@@ -281,18 +282,6 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
         ),
         state: card_state,
     })
-}
-
-/// Whether terminal Claude's form for the ask ends in its review screen: a
-/// question ask of more than one question.
-fn reviewed_form(ask: &OpenAsk) -> bool {
-    matches!(
-        ask,
-        OpenAsk::Claude(wire::Ask {
-            body: Some(ask::Body::Question(question)),
-            ..
-        }) if question.questions.len() > 1
-    )
 }
 
 /// Whether the ask is a question the provider asks itself, outside a turn.
@@ -554,6 +543,38 @@ fn link_body(link: &wire::LinkAsk) -> AskBody {
         server: link.server.clone(),
         message: link.message.clone(),
         url: link.url.clone(),
+        local_page: loopback(&link.url),
+    }
+}
+
+/// Whether a URL names the machine it is opened on: a sign-in that runs
+/// on the agent's machine sends its browser to `localhost`, which any
+/// other device reads as itself.
+fn loopback(url: &str) -> bool {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return false;
+    };
+    let scheme_like = |c: char| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.');
+    if scheme.is_empty() || !scheme.chars().all(scheme_like) {
+        return false;
+    }
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    let host = match host.strip_prefix('[') {
+        Some(bracketed) => bracketed.split(']').next().unwrap_or_default(),
+        None => host.split(':').next().unwrap_or_default(),
+    };
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    match host.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(ip)) => ip.is_loopback() || ip.is_unspecified(),
+        Ok(std::net::IpAddr::V6(ip)) => {
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || ip.to_ipv4_mapped().is_some_and(|ip| ip.is_loopback())
+        }
+        Err(_) => host == "localhost" || host.ends_with(".localhost"),
     }
 }
 
@@ -1152,5 +1173,35 @@ mod tests {
             super::elsewhere("/Users/ada/tally", "/Users/ada/other"),
             "/Users/ada/other"
         );
+    }
+
+    /// A sign-in that sends its browser back to the agent's own machine
+    /// opens only there; anything else opens anywhere.
+    #[test]
+    fn a_link_to_localhost_is_a_page_on_the_agents_machine() {
+        for url in [
+            "http://localhost:8765/callback?code=1",
+            "http://LOCALHOST/",
+            "http://auth.localhost:3000",
+            "http://127.0.0.1:53682/",
+            "http://user@127.0.0.1",
+            "http://[::1]:8080/cb",
+            "http://0.0.0.0:9000",
+            "http://[0:0:0:0:0:0:0:1]/",
+            "http://[::ffff:127.0.0.1]:80/",
+            "http://localhost./cb",
+        ] {
+            assert!(loopback(url), "{url} is on the agent's machine");
+        }
+        for url in [
+            "https://linear.app/oauth/authorize",
+            "https://localhost.example.com/",
+            "https://example.com/?next=http://localhost:8765",
+            "https://10.0.0.5/sign-in",
+            "https://127.example.com/",
+            "example.com/?next=http://localhost:8765",
+        ] {
+            assert!(!loopback(url), "{url} opens anywhere");
+        }
     }
 }

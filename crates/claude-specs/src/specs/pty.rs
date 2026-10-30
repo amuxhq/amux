@@ -8,7 +8,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use claude::launch::Launch;
-use claude::pty::keymap::KeymapSources;
 use claude_protocol::hooks;
 use claude_protocol::stream::PermissionMode;
 use replay_support::{IoDirection, IoEvent, Manifest, ReplayReport, SpecEntry, StrictReplay};
@@ -19,6 +18,7 @@ use crate::driver::pty::{
     AskAnswer, AskFacts, AskKind, Intent, PermissionAnswer, PlanAnswer, PtyEvent, QuestionAnswer,
     QuestionResponse, RelinkReason,
 };
+use crate::terminal::keymap::KeymapSources;
 
 const DEFAULT_WAIT: Duration = Duration::from_secs(600);
 const WAIT_ENV: &str = "CLAUDE_PTY_SPEC_TIMEOUT_SECS";
@@ -182,7 +182,7 @@ pub fn fixtures_root() -> PathBuf {
 }
 
 pub fn baked_keymap_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../claude/keymaps/claude-2.1.toml")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("keymaps/claude-2.1.toml")
 }
 
 /// Apply the launch arguments owned by a PTY specification.
@@ -191,6 +191,18 @@ pub fn prepare_launch(entry: &SpecEntry, launch: &mut Launch) -> Result<(), Spec
     launch
         .args
         .extend(definition.args.iter().map(|arg| (*arg).to_owned()));
+    // A capture records Claude, not the machine it ran on: the owner's user
+    // settings (plugins, skills, agents, permission rules, default mode) and
+    // the tool servers their account connects stay out, as for headless
+    // captures. The spec's own servers still come in on `--mcp-config`.
+    if !launch.args.iter().any(|arg| arg == "--setting-sources") {
+        launch
+            .args
+            .extend(["--setting-sources".to_owned(), "project,local".to_owned()]);
+    }
+    if !launch.args.iter().any(|arg| arg == "--strict-mcp-config") {
+        launch.args.push("--strict-mcp-config".to_owned());
+    }
     if !launch.args.iter().any(|arg| arg == "--model") {
         let model = if SONNET_FALLBACK_SPECS.contains(&entry.name) {
             SONNET
@@ -585,8 +597,11 @@ impl PtySpecSession {
         let mut key_answered = false;
         loop {
             let screen = self.screen.lock().expect("screen mutex poisoned").clone();
+            // The hint under the composer is laid out with cursor moves, so
+            // its words are matched one at a time.
             let composer_up = screen.contains("for agents")
-                || (screen.contains("Try") && screen.contains("shift+tab"));
+                || (screen.contains("Try")
+                    && (screen.contains("shift+tab") || screen.contains("shortcuts")));
             if !trust_answered
                 && screen.contains("safety")
                 && screen.contains("folder")
@@ -637,7 +652,9 @@ impl PtySpecSession {
                 return Ok(());
             }
             if Instant::now() > deadline {
-                return Err("Claude composer did not appear after 60s".to_owned());
+                return Err(format!(
+                    "Claude composer did not appear after 60s; screen: {screen}"
+                ));
             }
             if self.capture.is_some() {
                 tokio::time::sleep(Duration::from_millis(200)).await;
@@ -843,6 +860,20 @@ fn successful_tool_result(row: &serde_json::Value, tool_use_id: &str) -> bool {
                         && block.get("is_error").and_then(serde_json::Value::as_bool) != Some(true)
                 })
             })
+}
+
+/// The id of the first call to `tool_name` an assistant row makes.
+fn tool_use_named(row: &serde_json::Value, tool_name: &str) -> Option<String> {
+    row.pointer("/message/content")?
+        .as_array()?
+        .iter()
+        .find(|block| {
+            block.get("type").and_then(serde_json::Value::as_str) == Some("tool_use")
+                && block.get("name").and_then(serde_json::Value::as_str) == Some(tool_name)
+        })?
+        .get("id")?
+        .as_str()
+        .map(str::to_owned)
 }
 
 fn structured_patch_changes(
@@ -1269,6 +1300,21 @@ async fn plan_auto(session: &mut PtySpecSession) -> Result<(), String> {
                     return Err("Edit PreToolUse hook omitted its tool-use id".to_owned());
                 }
             }
+            // Hooks and rows travel apart: the Edit's own row can come
+            // before its PreToolUse hook, and names the call as well.
+            PtyEvent::Transcript { row, .. }
+                if edit_tool_use_id.is_none()
+                    && tool_use_named(
+                        &serde_json::to_value(&row).expect("a row serializes"),
+                        "Edit",
+                    )
+                    .is_some() =>
+            {
+                edit_tool_use_id = tool_use_named(
+                    &serde_json::to_value(&row).expect("a row serializes"),
+                    "Edit",
+                );
+            }
             PtyEvent::Transcript { row, .. }
                 if edit_tool_use_id.as_ref().is_some_and(|tool_use_id| {
                     structured_patch_changes(
@@ -1529,7 +1575,20 @@ async fn compact_relink(session: &mut PtySpecSession) -> Result<(), String> {
             text: "/compact".to_owned(),
         })
         .await?;
-    session.wait_relink(RelinkReason::Compact).await
+    session.wait_relink(RelinkReason::Compact).await?;
+    // The compaction's own rows land after the hook that relinks: the
+    // recording holds them through the command's output, its last.
+    session
+        .wait_transcript(|row| {
+            row.pointer("/message/content")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|text| {
+                    // 2.1.312 wraps the words in terminal escapes.
+                    text.starts_with("<local-command-stdout>") && text.contains("Compacted")
+                })
+        })
+        .await
+        .map(|_| ())
 }
 
 async fn clear_relink(session: &mut PtySpecSession) -> Result<(), String> {

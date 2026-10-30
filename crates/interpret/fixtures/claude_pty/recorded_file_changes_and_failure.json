@@ -1,5 +1,5 @@
 {
-  "about": "Files created, edited and removed through the shell, and a command that fails: the work rows and the failed flag.",
+  "about": "Files created, edited and removed through the shell, and a command that fails: the work rows and the failed flag. The recording ends at the Stop hook, before the reply's own row, so the reply streamed through MessageDisplay is still open.",
   "spec": {
     "created_at_ms": 0
   },
@@ -9,16 +9,7 @@
         "channel": "agent",
         "json": {
           "type": "launch",
-          "version": "2.1.283",
-          "keymap": "claude-2.1",
-          "permission_menus": {
-            "per_suggestion": [
-              1
-            ],
-            "folded": [
-              2
-            ]
-          }
+          "version": "2.1.312"
         }
       }
     }
@@ -26,5 +17,8 @@
   "recording": {
     "path": "../../../claude-specs/fixtures/pty/file_changes_and_failure/io.jsonl",
     "format": "claude_pty_io"
+  },
+  "end": {
+    "streams_may_remain": true
   }
 }

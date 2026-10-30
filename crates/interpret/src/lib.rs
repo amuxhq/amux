@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 mod ask_item;
+mod claude_answers;
 mod claude_common;
 pub mod claude_pty;
 pub mod claude_sdk;
@@ -26,7 +27,7 @@ pub mod unknown;
 #[cfg(any(test, feature = "testkind"))]
 pub mod testkind;
 
-pub use claude_common::{FileStep, NOTEBOOK_OLD_SOURCE, file_step, tool_input};
+pub use claude_common::{FileStep, HOOK_ANSWER_FIELD, NOTEBOOK_OLD_SOURCE, file_step, tool_input};
 pub use golden::{
     EndRules, FixtureInput, FixtureScript, GoldenReport, Replayed, UPDATE_GOLDENS_ENV,
     check_invariants, claude_pty_input, claude_sdk_input, codex_input, fixture_script, render_item,
@@ -185,8 +186,7 @@ pub enum Channel {
     /// A call on the agent's own tool server (tools.sock).
     Tools,
     /// What the agent process itself observed about the provider it
-    /// launched: for Claude in a terminal, the version it found and the
-    /// keymap it resolved for that version.
+    /// launched: for Claude in a terminal, the version it found.
     Agent,
 }
 
@@ -228,8 +228,12 @@ pub enum Effect {
     /// journals the step.
     WriteBlob { hash: Vec<u8>, bytes: Vec<u8> },
     /// Claude in a terminal: a semantic input the agent process types into
-    /// the PTY through the keymap it resolved for the running Claude.
+    /// the PTY.
     Terminal(claude_pty::TerminalInput),
+    /// Claude in a terminal: the output of the hook Claude waits on whose
+    /// payload the agent numbered `id`, which Claude reads as the hook's
+    /// decision. Empty, it releases the hook without one.
+    HookAnswer { id: u64, answer: Vec<u8> },
     /// Headless Claude: a user message on stdin carrying `uuid`, which
     /// Claude echoes on everything it reports about the message. The agent
     /// process encodes the attachments as content blocks.

@@ -2,8 +2,9 @@
 
 use std::path::Path;
 
-use claude::pty::keymap::{self, VerifiedVersion};
 use replay_support::{SpecEntry, Verification, append_verification, load_recording};
+
+use crate::terminal::keymap::{self, VerifiedVersion};
 
 /// Record a passing live verification in both the recording ledger and the
 /// baked keymap whose semantic programs the PTY specification exercised.

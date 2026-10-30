@@ -5,22 +5,14 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
-[features]
-default = []
-pty = ["dep:pty-host", "dep:sha2", "dep:toml"]
-
 [dependencies]
 anyhow.workspace = true
 claude-protocol.workspace = true
-pty-host = { workspace = true, optional = true }
 semver = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
-sha2 = { workspace = true, optional = true }
-shell-words.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-toml = { workspace = true, optional = true }
 uuid.workspace = true
 
 [dev-dependencies]

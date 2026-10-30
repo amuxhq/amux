@@ -392,16 +392,15 @@ async fn a_restart_from_the_checkpoint_re_emits_open_items_and_carries_keys_on()
     assert_eq!(agent.exit().await, ExitCause::Killed);
 }
 
-/// Terminal Claude: the agent reads the version the binary reports,
-/// resolves the keymap for it and records both on the boundary; the prompt
-/// is typed through that keymap; hooks arrive through the hook binary on
-/// private/hooks.sock and the transcript is followed from the path the
-/// session start names.
+/// Terminal Claude: the agent reads the version the binary reports and
+/// records it on the boundary; the prompt is pasted into the terminal;
+/// hooks arrive through the hook command on private/hooks.sock and the
+/// transcript is followed from the path the session start names.
 // Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]
-fn a_terminal_claude_agent_types_through_its_keymap_and_hears_its_hooks() {
+fn a_terminal_claude_agent_types_its_prompt_and_hears_its_hooks() {
     terminal_test(async {
         let agent = Agent::start(Setup {
             kind: Kind::ClaudePty,
@@ -425,13 +424,16 @@ fn a_terminal_claude_agent_types_through_its_keymap_and_hears_its_hooks() {
         assert!(log.has_text("say hello"), "the typed prompt is reflected");
         assert_eq!(
             log.launches().first().map(String::as_str),
-            Some("STARTED 2.1.283 claude-2.1"),
-            "the boundary records the version and the keymap resolved for it"
+            Some("STARTED 2.1.283"),
+            "the boundary records the version"
         );
         daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
     });
 }
+
+#[cfg(unix)]
+const PTY_PROMPT: &str = "Use the Bash tool to run exactly: printf denied > denied.txt. Then stop.";
 
 /// Whether Codex has answered the agent's request of `method`: the answer
 /// is among the facts the interpreter was fed.
@@ -743,43 +745,6 @@ async fn codex_replays_transport_loss_mid_turn() {
     assert_no_drift(&agent);
 }
 
-#[cfg(unix)]
-const PTY_PROMPT: &str = "Use the Bash tool to run exactly: printf denied > denied.txt. Then stop.";
-
-/// Terminal Claude: input goes live, the prompt is typed through the
-/// keymap, the session starts, the permission menu is answered with a
-/// denial and its feedback, the turn ends, and the session runs to the end
-/// of the recording.
-// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
-// docs/ARCHITECTURE.md, "Windows, as a stated cost").
-#[cfg(unix)]
-#[test]
-fn terminal_claude_replays_a_prompt_a_denial_with_feedback_and_its_end() {
-    terminal_test(async {
-        let agent = Agent::start(Setup {
-            kind: Kind::ClaudePty,
-            replay: Some("pty_deny"),
-            ..Setup::sdk()
-        })
-        .await;
-        let mut daemon = agent.dial().await;
-        agent.ready().await;
-        assert_eq!(daemon.prompt(b"p1", PTY_PROMPT).await, Verdict::Accepted);
-        answer(
-            &agent,
-            &mut daemon,
-            b"a1",
-            serde_json::json!({"deny": {"note": "Use a read-only command instead"}}),
-        )
-        .await;
-        assert_eq!(agent.exit().await, ExitCause::ProviderExited(Some(0)));
-        let log = agent.log();
-        assert!(log.turn_ends() >= 1, "{:#?}", log.sequence());
-        assert!(log.has_text("Use a read-only command instead"));
-        assert_no_drift(&agent);
-    });
-}
-
 /// Terminal Claude in manual mode, where it offers auto mode, draws Yes /
 /// Yes, don't ask again / Yes, and switch to auto mode / No. The ask offers
 /// the switch, and choosing it allows the call and puts Claude in auto
@@ -860,9 +825,9 @@ fn terminal_claude_switches_to_auto_mode_from_the_permission_menu() {
 }
 
 /// Terminal Claude 2.1.283 in manual mode draws Yes / Yes, don't ask again
-/// / Yes, and switch to auto mode / No. A deny with a note reaches No: the
-/// call is refused, the session stays in manual mode and the note follows
-/// as a prompt.
+/// / Yes, and switch to auto mode / No. A deny with a note is the hook's
+/// decision: the call is refused with the note as the reason Claude reads,
+/// the turn goes on and the session stays in manual mode.
 // Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
@@ -888,10 +853,6 @@ fn terminal_claude_denies_on_the_menu_that_offers_auto_mode() {
                     wait_for: None,
                 })),
                 Step::Text {
-                    chunks: vec!["never said".into()],
-                },
-                Step::TurnEnd,
-                Step::Text {
                     chunks: vec!["Noted.".into()],
                 },
                 Step::TurnEnd,
@@ -913,7 +874,7 @@ fn terminal_claude_denies_on_the_menu_that_offers_auto_mode() {
         )
         .await;
         agent
-            .wait("the note's turn ends", |log| log.turn_ends() == 2)
+            .wait("the turn ends", |log| log.turn_ends() == 1)
             .await;
         let log = agent.log();
         // Each call as its newest revision has it.
@@ -939,22 +900,20 @@ fn terminal_claude_denies_on_the_menu_that_offers_auto_mode() {
         let decision = tool.decision.clone().expect("a decision");
         assert_eq!(decision.outcome(), wire::DecisionOutcome::Denied);
         assert_eq!(decision.note, "No network in this test");
-        assert!(!log.has_text("never said"), "the deny ended the turn");
-        assert!(log.has_text("Noted."), "the note followed as a prompt");
+        assert!(log.has_text("Noted."), "the turn went on");
         assert_ne!(log.permission().as_deref(), Some("auto"));
         daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
     });
 }
 
-/// A question of several skipped in terminal Claude's form: the keymap
-/// moves past it with Tab and submits from Claude's review screen, and
-/// Claude's answers leave it out.
+/// A question of several skipped in terminal Claude's form: the hook's
+/// answers leave it out, and so do Claude's.
 // Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]
-fn terminal_claude_takes_a_skipped_question_through_its_review_screen() {
+fn terminal_claude_leaves_a_skipped_question_out_of_its_answers() {
     use provider_fakes::Ask;
     use provider_fakes::script::Question;
     let question = |header: &str, text: &str, multi_select, labels: [&str; 2]| Question {
@@ -1356,6 +1315,30 @@ async fn windows_refuses_terminal_claude_and_names_the_platform() {
             detail: Some(format!("the provider: {why}")),
         }
     );
+}
+
+/// A Claude older than the hooks amux registers is refused before it
+/// starts, in words that say what to do: it would run without reporting
+/// any event amux follows.
+#[cfg(unix)]
+#[test]
+fn terminal_claude_older_than_its_hooks_is_refused_with_the_version_needed() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let bin = tempfile::tempdir().unwrap();
+    let claude = bin.path().join("claude");
+    std::fs::write(&claude, "#!/bin/sh\necho '2.1.250 (Claude Code)'\n").unwrap();
+    std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+    terminal_test(async {
+        let agent = Agent::start(Setup {
+            kind: Kind::ClaudePty,
+            command: Some(claude.to_str().unwrap().to_owned()),
+            ..Setup::sdk()
+        })
+        .await;
+        let why = "terminal Claude needs Claude Code 2.1.251 or later; this machine has 2.1.250. \
+                   Update Claude, or chat in amux";
+        assert_eq!(agent.exit().await, ExitCause::Unstarted(why.to_owned()));
+    });
 }
 
 /// A permission cycle amux types into terminal Claude while it is idle

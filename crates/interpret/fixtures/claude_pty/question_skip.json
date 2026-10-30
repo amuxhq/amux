@@ -1,21 +1,12 @@
 {
-  "about": "Terminal Claude's question form takes a skipped question when it has several: the keys move past it to Claude's review screen, which submits with it unanswered, and the record reads answered 2 of 3. A lone question has no review screen, so its skip is refused.",
+  "about": "Terminal Claude's questions can be skipped, a lone one too: the hook's answers leave the skipped question out, and the record reads answered 2 of 3.",
   "events": [
     {
       "fact": {
         "channel": "agent",
         "json": {
           "type": "launch",
-          "version": "2.1.282",
-          "keymap": "claude-2.1",
-          "permission_menus": {
-            "per_suggestion": [
-              1
-            ],
-            "folded": [
-              2
-            ]
-          }
+          "version": "2.1.282"
         }
       }
     },
@@ -133,6 +124,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 1,
           "hook_event_name": "PermissionRequest",
           "tool_name": "AskUserQuestion",
           "tool_input": {
@@ -392,6 +384,7 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "amux_reply": 2,
           "hook_event_name": "PermissionRequest",
           "tool_name": "AskUserQuestion",
           "tool_input": {
@@ -434,30 +427,10 @@
         }
       },
       "expect": {
-        "reply": "rejected:UNSUPPORTED",
-        "silent": true,
-        "asks": [
-          "ask:2"
-        ]
-      },
-      "note": "a lone question cannot be skipped: Claude submits it as soon as it is answered, with no review screen"
-    },
-    {
-      "input": {
-        "id": "a3",
-        "answer": {
-          "ask": "ask:2",
-          "answer": {
-            "selected": [
-              0
-            ]
-          }
-        }
-      },
-      "expect": {
         "reply": "accepted",
         "asks": []
-      }
+      },
+      "note": "a lone question cannot be skipped: Claude submits it as soon as it is answered, with no review screen"
     }
   ]
 }

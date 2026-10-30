@@ -5,12 +5,12 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use claude::version::ClaudeVersion;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::{AskAnswer, AskKind, InputError, Intent, PermissionAnswer, PlanAnswer, QuestionAnswer};
-use crate::version::ClaudeVersion;
 
 pub const BAKED_KEYMAPS: &[(&str, &str)] = &[(
     "keymaps/claude-2.1.toml",
@@ -475,7 +475,7 @@ pub fn append_verified(path: &Path, entry: VerifiedVersion) -> Result<(), Keymap
     let contents = std::fs::read_to_string(path)
         .map_err(|error| KeymapError::Io(path.to_path_buf(), error))?;
     let document = contents
-        .parse::<toml::Value>()
+        .parse::<toml::Table>()
         .map_err(|error| KeymapError::Parse {
             origin: path.display().to_string(),
             reason: error.to_string(),
@@ -1604,7 +1604,7 @@ mod format {
 #[cfg(test)]
 mod interpret {
     use super::*;
-    use crate::pty::{AskId, QuestionFact, QuestionResponse};
+    use crate::terminal::{AskId, QuestionFact, QuestionResponse};
 
     const BAKED: &str = include_str!("../../keymaps/claude-2.1.toml");
 
@@ -2302,7 +2302,7 @@ mod interpret {
 #[cfg(test)]
 mod resolve {
     use super::*;
-    use crate::pty::AskId;
+    use crate::terminal::AskId;
 
     const BAKED: &str = include_str!("../../keymaps/claude-2.1.toml");
 
@@ -2343,11 +2343,11 @@ mod resolve {
     #[test]
     fn shipped_baked_set_uses_verified_anchor_and_bounded_extrapolation() {
         let sources = KeymapSources::default();
-        let exact = resolve(&sources, &version("2.1.251")).expect("verified version");
+        let exact = resolve(&sources, &version("2.1.312")).expect("verified version");
         assert_eq!(
             exact.basis,
             Basis::Verified {
-                version: "2.1.251".parse().unwrap()
+                version: "2.1.312".parse().unwrap()
             }
         );
         assert_eq!(exact.keymap.name, "claude-2.1");
@@ -2355,30 +2355,28 @@ mod resolve {
         assert!(exact.keymap.digest.starts_with("sha256:"));
         assert_eq!(exact.keymap.digest.len(), 71);
         for (_, program) in PROGRAM_TABLE {
-            if *program == ProgramName::SendNow {
-                assert_refused(&exact, *program);
-            } else {
-                assert_allowed(&exact, *program);
-            }
+            assert_allowed(&exact, *program);
         }
 
-        let same_minor = resolve(&sources, &version("2.1.260")).expect("same minor");
+        let same_minor = resolve(&sources, &version("2.1.320")).expect("same minor");
         assert_eq!(
             same_minor.basis,
             Basis::Extrapolated {
-                from: "2.1.251".parse().unwrap()
+                from: "2.1.312".parse().unwrap()
             }
         );
         for (_, program) in PROGRAM_TABLE {
-            if *program == ProgramName::SendNow {
-                assert_refused(&same_minor, *program);
-            } else {
-                assert_allowed(&same_minor, *program);
-            }
+            assert_allowed(&same_minor, *program);
         }
-        let steering = resolve(&sources, &version("2.1.283")).expect("steering probe");
+        // An older Claude of the same minor extrapolates too, but types no
+        // send now before the steering probe's version.
+        let older = resolve(&sources, &version("2.1.251")).expect("older, same minor");
         for (_, program) in PROGRAM_TABLE {
-            assert_allowed(&steering, *program);
+            if *program == ProgramName::SendNow {
+                assert_refused(&older, *program);
+            } else {
+                assert_allowed(&older, *program);
+            }
         }
 
         // A later minor extrapolates from the newest live-verified version,
@@ -2471,9 +2469,9 @@ mod resolve {
             user_dir: Some(PathBuf::from("definitely-missing-user-keymaps")),
         };
         assert_eq!(
-            resolve(&sources, &version("2.1.251")).unwrap().basis,
+            resolve(&sources, &version("2.1.312")).unwrap().basis,
             Basis::Verified {
-                version: "2.1.251".parse().unwrap()
+                version: "2.1.312".parse().unwrap()
             }
         );
     }
@@ -2625,5 +2623,24 @@ mod resolve {
             error.to_string(),
             "unverified keymap shape for PermissionMenu: a scoped allowance on a permission menu with 3 suggestions is not verified"
         );
+    }
+
+    #[test]
+    fn a_recording_appends_its_version_to_the_keymap_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("claude-2.1.toml");
+        std::fs::write(&path, BAKED_KEYMAPS[0].1).unwrap();
+        let entry = VerifiedVersion {
+            version: "2.1.312".parse().unwrap(),
+            run_id: "run".to_owned(),
+            spec: "prompt".to_owned(),
+        };
+        append_verified(&path, entry.clone()).unwrap();
+        append_verified(&path, entry.clone()).unwrap();
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let keymap = load_str(&contents, "baked", KeymapSource::Baked).unwrap();
+        let appended = keymap.verified.iter().filter(|v| **v == entry).count();
+        assert_eq!(appended, 1, "appended once, then left alone");
     }
 }

@@ -118,10 +118,7 @@ Each item runs `<binary> [--config <path>] supervise`, where `<binary>` is the
 running `amux` executable, and sends the supervisor's own output to
 `<data_dir>/supervisor.log`. If a supervisor started by hand is already
 running, `amux init` stops it first so the login item's supervisor owns the
-install; agents keep running and the new daemon adopts them. The committed
-goldens under
-[`crates/amux/tests/goldens/login`](../crates/amux/tests/goldens/login) show the
-exact text of all three files.
+install; agents keep running and the new daemon adopts them.
 
 ## Stop goes to the owner
 

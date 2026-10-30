@@ -198,10 +198,6 @@ enum Command {
         /// Start amux at login, or not; asked when omitted.
         #[arg(long, value_enum)]
         login_item: Option<YesNo>,
-        /// Write the login item and print how it would be registered,
-        /// without registering it.
-        #[arg(long, hide = true)]
-        dry_run: bool,
     },
     /// Install the channel's release now.
     Update {
@@ -423,15 +419,11 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
         let config = connect::load_config(config_path.as_deref())?;
         let profile = profile.as_deref();
         match command {
-            Command::Init {
-                login_item,
-                dry_run,
-            } => {
+            Command::Init { login_item } => {
                 setup::init(
                     &config,
                     config_path.as_deref(),
                     login_item.map(|answer| matches!(answer, YesNo::Yes)),
-                    dry_run,
                 )
                 .await
             }

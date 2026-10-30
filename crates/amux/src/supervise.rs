@@ -10,14 +10,14 @@ pub use node::SUPERVISOR_LOG;
 use node::supervisor::{Inherited, Params, SuperviseOptions, UpdatePolicy, UpdateSource};
 use settings::{InstallationConfig, Updates};
 
-/// What the config says the supervisor may install. A build without a
-/// release key installs nothing.
+/// What the config says the supervisor may install. A build without
+/// release keys installs nothing.
 fn policy(config: &InstallationConfig) -> Result<UpdatePolicy> {
     let auto = config.updates()? == Updates::Auto;
-    let source = node::release::release_key().map(|key| UpdateSource {
+    let source = node::release::release_keys().map(|keys| UpdateSource {
         channel: config.channel_name().to_owned(),
         manifest_url: config.manifest_url(),
-        key,
+        keys,
     });
     Ok(UpdatePolicy { auto, source })
 }

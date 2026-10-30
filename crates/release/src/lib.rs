@@ -104,7 +104,7 @@ pub fn new_seed() -> [u8; 32] {
 }
 
 /// The public half of the key whose seed this is; what a build compiles in
-/// as `AMUX_RELEASE_PUBLIC_KEY` to trust releases signed with the seed.
+/// among `AMUX_RELEASE_PUBLIC_KEYS` to trust releases signed with the seed.
 pub fn public_key(seed: &[u8; 32]) -> [u8; 32] {
     use ring::signature::KeyPair as _;
     let pair = Ed25519KeyPair::from_seed_unchecked(seed).expect("an Ed25519 seed is any 32 bytes");
@@ -116,6 +116,13 @@ pub fn public_key(seed: &[u8; 32]) -> [u8; 32] {
 /// Reads 64 hex digits as a key or seed.
 pub fn parse_key(text: &str) -> Option<[u8; 32]> {
     parse_hex::<32>(text)
+}
+
+/// Reads a comma-separated list of keys, each 64 hex digits; none when any
+/// is not one, or there are none.
+pub fn parse_keys(text: &str) -> Option<Vec<[u8; 32]>> {
+    let keys = text.split(',').map(parse_key).collect::<Option<Vec<_>>>()?;
+    (!keys.is_empty()).then_some(keys)
 }
 
 pub fn hex(bytes: &[u8]) -> String {
@@ -137,7 +144,7 @@ pub fn sha256_of(bytes: &[u8]) -> String {
 pub enum VerifyError {
     #[error("the manifest is for the {actual} channel, not {expected}")]
     Channel { expected: String, actual: String },
-    #[error("the manifest's signature does not verify against this build's key")]
+    #[error("the manifest's signature does not verify against any key this build trusts")]
     Signature,
     #[error("the artifact's hash {actual} is not the manifest's {expected}")]
     Hash { expected: String, actual: String },
@@ -146,11 +153,13 @@ pub enum VerifyError {
 }
 
 /// Checks that a manifest is for `channel` and that its signature verifies
-/// against `key`; done before anything in it is believed.
+/// against one of `keys`; done before anything in it is believed. A build
+/// trusts more than one key so that a backup kept offline can sign the
+/// release that retires a key that leaked.
 pub fn verify_manifest(
     manifest: &Manifest,
     channel: &str,
-    key: &[u8; 32],
+    keys: &[[u8; 32]],
 ) -> Result<(), VerifyError> {
     use base64::Engine as _;
     if manifest.channel != channel {
@@ -162,9 +171,15 @@ pub fn verify_manifest(
     let signature = base64::engine::general_purpose::STANDARD
         .decode(manifest.signature.trim())
         .map_err(|_| VerifyError::Signature)?;
-    UnparsedPublicKey::new(&ED25519, key)
-        .verify(&signed_message(manifest), &signature)
-        .map_err(|_| VerifyError::Signature)
+    let message = signed_message(manifest);
+    keys.iter()
+        .any(|key| {
+            UnparsedPublicKey::new(&ED25519, key)
+                .verify(&message, &signature)
+                .is_ok()
+        })
+        .then_some(())
+        .ok_or(VerifyError::Signature)
 }
 
 /// Checks a downloaded artifact's hash and size against its entry in a

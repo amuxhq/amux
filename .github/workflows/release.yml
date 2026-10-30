@@ -7,10 +7,11 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # The public half of the release signing key. Its seed lives only in the
-  # release Mac's login keychain (docs/RELEASE.md, "Signing and
-  # verification"); the binaries built here trust manifests signed with it.
-  AMUX_RELEASE_PUBLIC_KEY: 8d172ee8b9d0eed49f0ac9ffa831a83a1554f262646826ef59fea67836d7d288
+  # The public halves of the release signing key and its offline backup,
+  # comma-separated. The signing seed lives only in the release Mac's
+  # release keychain and the backup's off it (docs/RELEASE.md, "The release
+  # key"); the binaries built here trust manifests signed with either.
+  AMUX_RELEASE_PUBLIC_KEYS: 8d172ee8b9d0eed49f0ac9ffa831a83a1554f262646826ef59fea67836d7d288,c37f64b363171e3b6335b475477e1fcf110f870d8bd1b6be87e92a15183455a0
 
 jobs:
   build:

@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("restamp") => restamp(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
             eprintln!(
-                "usage: xtask <codegen|proto-compat [REF]|restamp FROM TO [VERSION]|release <key generate|key public|cut VERSION|deploy VERSION [--channel C] [--rollout N]>>"
+                "usage: xtask <codegen|proto-compat [REF]|restamp FROM TO [VERSION]|release <key generate [--file PATH]|cut VERSION|deploy VERSION [--channel C] [--rollout N] [--key-file PATH]>>"
             );
             std::process::exit(2);
         }

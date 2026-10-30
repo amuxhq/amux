@@ -1,5 +1,5 @@
 //! What a build knows about releases: its own version, the target it was
-//! built for and the key releases are signed with. The manifest itself,
+//! built for and the keys releases are signed with. The manifest itself,
 //! its signature and the choice of build to install are the [`release`]
 //! crate, shared with the release tool.
 
@@ -18,25 +18,26 @@ pub const TEST_RELEASE_KEY: [u8; 32] = [
     0xcc, 0xee, 0x4b, 0x8f, 0x20, 0x05, 0xb4, 0xcc, 0xa0, 0x83, 0x5d, 0xf1, 0x04, 0xa4, 0x7e, 0xa9,
 ];
 
-/// The key releases are signed with, compiled in from
-/// `AMUX_RELEASE_PUBLIC_KEY` (64 hex digits) at build time. A release build
-/// without one never installs anything; a debug build without one trusts
-/// [`TEST_RELEASE_KEY`].
-pub fn release_key() -> Option<[u8; 32]> {
-    match option_env!("AMUX_RELEASE_PUBLIC_KEY") {
-        Some(hex) => {
-            Some(parse_key(hex).expect("AMUX_RELEASE_PUBLIC_KEY is 64 hex digits at build time"))
-        }
-        None if cfg!(debug_assertions) => Some(TEST_RELEASE_KEY),
+/// The keys a release may be signed with, compiled in from
+/// `AMUX_RELEASE_PUBLIC_KEYS` (comma-separated, 64 hex digits each) at build
+/// time: the key releases are signed with and the backup kept offline. A
+/// release build without them never installs anything; a debug build
+/// without them trusts [`TEST_RELEASE_KEY`].
+pub fn release_keys() -> Option<Vec<[u8; 32]>> {
+    match option_env!("AMUX_RELEASE_PUBLIC_KEYS") {
+        Some(list) => Some(parse_keys(list).expect(
+            "AMUX_RELEASE_PUBLIC_KEYS is comma-separated keys of 64 hex digits at build time",
+        )),
+        None if cfg!(debug_assertions) => Some(vec![TEST_RELEASE_KEY]),
         None => None,
     }
 }
 
 /// Whether this is a published build: optimised and built by the release
-/// workflow, which names the release key. Development builds, test binaries
+/// workflow, which names the release keys. Development builds, test binaries
 /// and test networks are not, and send no product analytics.
 pub fn is_published() -> bool {
-    option_env!("AMUX_RELEASE_PUBLIC_KEY").is_some() && !cfg!(debug_assertions)
+    option_env!("AMUX_RELEASE_PUBLIC_KEYS").is_some() && !cfg!(debug_assertions)
 }
 
 #[used]

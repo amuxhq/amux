@@ -68,7 +68,7 @@ flaky *ARGS: nextest
 # Refuse to start a test recipe without the pinned cargo-nextest.
 [private]
 nextest:
-    @cargo nextest --version >/dev/null 2>&1 || { echo "cargo-nextest is not installed: brew install cargo-nextest, or cargo install --locked cargo-nextest (.config/nextest.toml names the version)" >&2; exit 1; }
+    @cargo nextest --version >/dev/null 2>&1 || { echo "cargo-nextest is not installed: brew install cargo-nextest, or cargo install --locked cargo-nextest@0.9.150 (.config/nextest.toml requires it)" >&2; exit 1; }
 
 # Exercise the profile store: its reader and writer suite, retention and the SQLite file.
 test-store *ARGS: nextest
@@ -141,13 +141,14 @@ release VERSION:
 
 # `just deploy 0.8.0` signs the release's binaries with the keychain's key and
 # publishes the stable manifest; `--channel preview` and `--rollout 10`
-# choose who takes it.
+# choose who takes it, and `--key-file PATH` signs with the backup instead.
 # Put a cut release in front of a channel.
 deploy VERSION *ARGS:
     shift; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 3600 cargo run --locked -q -p xtask -- release deploy {{VERSION}} "$@"
 
-# `just release-key generate` makes one in the login keychain and prints its
-# public half; `just release-key public` prints it again.
+# `just release-key generate` makes a key in its own keychain and prints its
+# public half; `generate --file PATH` makes the offline backup in a new file
+# instead.
 # The release signing key.
 release-key *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 600 cargo run --locked -q -p xtask -- release key "$@"
@@ -278,13 +279,14 @@ dependency-policy:
 # Check every dependency against deny.toml with cargo-deny: no open security
 # advisory or yanked release, only the licences it lists, and only crates.io
 # and the rustls patch as sources. Fetches the advisory database. Needs
-# `cargo install cargo-deny`.
+# `cargo install --locked cargo-deny@0.20.2`.
 deny:
     {{bounded}} 600 cargo deny --locked check
 
 # Fail on any dependency no crate's code uses, so unused ones do not pile up
 # again. A crate lists what the code cannot show it needs under
-# `[package.metadata.cargo-shear]`. Needs `cargo install cargo-shear`.
+# `[package.metadata.cargo-shear]`. Needs
+# `cargo install --locked cargo-shear@1.14.0`.
 shear:
     {{bounded}} 300 cargo shear --locked --deny-warnings
 
@@ -342,7 +344,7 @@ nightly *ARGS: nextest
 
 # Run every workspace test under cargo-llvm-cov with the desktop features and
 # write line coverage per crate, with the commit it measured, to
-# tests/coverage.md. Needs `cargo install cargo-llvm-cov` and the
+# tests/coverage.md. Needs `cargo install --locked cargo-llvm-cov@0.9.0` and the
 # llvm-tools-preview rustup component.
 coverage: nextest
     {{bounded}} 3600 scripts/py scripts/coverage.py

@@ -1,8 +1,11 @@
 //! Publishing the daemon's release feed: the signing key and the channel
 //! manifests. The private key is a 32-byte Ed25519 seed that lives only in
-//! this Mac's login keychain; the workflow that builds releases never sees
-//! it, and neither does the server that serves manifests, so neither can
-//! sign a manifest machines would take. What is signed is what the
+//! a keychain of its own on this Mac, which asks for its password on every
+//! read; the workflow that builds releases never sees it, and neither does
+//! the server that serves manifests, so neither can sign a manifest
+//! machines would take. A second key, the backup, is kept offline and
+//! trusted by every build beside it, so a release signed with the backup
+//! can retire a key that leaked. What is signed is what the
 //! workflow built: the key vouches for the digests GitHub published, not
 //! for the build, a trust kept deliberately and written up on the release
 //! page.
@@ -20,9 +23,9 @@
 //!
 //! ```text
 //! xtask release key generate        make a seed, keep it, print its public half
-//! xtask release key public          print the keychain seed's public half
+//! xtask release key generate --file PATH   make the offline backup in a new file instead
 //! xtask release cut VERSION         bump, lock, release-check, commit, tag, push
-//! xtask release deploy VERSION [--channel stable|preview] [--rollout N]
+//! xtask release deploy VERSION [--channel stable|preview] [--rollout N] [--key-file PATH]
 //! ```
 
 use std::collections::BTreeMap;
@@ -33,9 +36,16 @@ use release::{Manifest, Release};
 
 /// The keychain item that holds the seed, as `security` names it.
 const KEYCHAIN_SERVICE: &str = "amux-release-key";
-/// The workflow whose `env` names the key the published binaries trust.
+/// The keychain that holds it. It has a password of its own, unlike the
+/// login keychain, which every process running as the operator can read
+/// without a prompt. Its item names no application allowed to read it, so
+/// every read, this tool's included, asks for that password.
+const KEYCHAIN: &str = "amux-release.keychain";
+/// Seconds the keychain stays unlocked after a read.
+const KEYCHAIN_LOCK_SECS: &str = "60";
+/// The workflow whose `env` names the keys the published binaries trust.
 const WORKFLOW: &str = ".github/workflows/release.yml";
-const PUBLIC_KEY_VARIABLE: &str = "AMUX_RELEASE_PUBLIC_KEY";
+const PUBLIC_KEY_VARIABLE: &str = "AMUX_RELEASE_PUBLIC_KEYS";
 /// The file the Release workflow publishes for each target it builds.
 const ASSETS: &[(&str, &str)] = &[
     ("x86_64-unknown-linux-gnu", "amux-linux-x86_64"),
@@ -48,44 +58,40 @@ pub fn main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
     match words.as_slice() {
         ["key", "generate"] => generate(),
-        ["key", "public"] => {
-            println!("{}", release::hex(&release::public_key(&keychain_seed()?)));
-            Ok(())
-        }
+        ["key", "generate", "--file", path] => backup(Path::new(path)),
         ["cut", version] => cut(version),
         ["deploy", version, rest @ ..] => deploy(version, rest),
-        _ => Err("usage: xtask release <key generate|key public|cut VERSION|deploy VERSION [--channel stable|preview] [--rollout N]>".into()),
+        _ => Err("usage: xtask release <key generate [--file PATH]|cut VERSION|deploy VERSION [--channel stable|preview] [--rollout N] [--key-file PATH]>".into()),
     }
 }
 
-/// Makes a seed from the system's randomness and keeps it in the login
-/// keychain. Refuses when one is there: a key is rotated by removing the old
+/// Makes a seed from the system's randomness and keeps it in the release
+/// keychain, making that keychain first when there is none. Refuses when
+/// the keychain already holds one: a key is rotated by removing the old
 /// item deliberately, never by a second run overwriting it.
 fn generate() -> Result<(), Box<dyn std::error::Error>> {
-    if keychain_seed().is_ok() {
-        return Err(format!(
-            "the login keychain already holds an item for service {KEYCHAIN_SERVICE}; \
-             delete it with `security delete-generic-password -s {KEYCHAIN_SERVICE}` \
-             to make another key"
-        )
-        .into());
-    }
+    refuse_if_kept()?;
     let seed = release::new_seed();
-    let hex = release::hex(&seed);
-    let status = Command::new("security")
-        .args([
-            "add-generic-password",
-            "-s",
-            KEYCHAIN_SERVICE,
-            "-a",
-            &account(),
-            "-w",
-            &hex,
-        ])
-        .status()?;
-    if !status.success() {
-        return Err("security add-generic-password failed".into());
-    }
+    keep(&seed)?;
+    println!("{}", release::hex(&release::public_key(&seed)));
+    Ok(())
+}
+
+/// Makes the backup seed in a new file at `path`, readable only by its
+/// owner, and prints its public half. The seed goes nowhere else: it is
+/// meant to leave this Mac, and the file to be deleted once it has.
+fn backup(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Write as _;
+    use std::os::unix::fs::OpenOptionsExt as _;
+    let seed = release::new_seed();
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|error| format!("cannot make {}: {error}", path.display()))?;
+    writeln!(file, "{}", release::hex(&seed))?;
+    file.sync_all()?;
     println!("{}", release::hex(&release::public_key(&seed)));
     Ok(())
 }
@@ -94,29 +100,137 @@ fn account() -> String {
     std::env::var("USER").unwrap_or_else(|_| "amux".into())
 }
 
-/// The seed from the login keychain.
-fn keychain_seed() -> Result<[u8; 32], Box<dyn std::error::Error>> {
-    let output = Command::new("security")
-        .args(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"])
-        .output()?;
-    if !output.status.success() {
+/// Refuses when the release keychain already holds a seed.
+fn refuse_if_kept() -> Result<(), Box<dyn std::error::Error>> {
+    if keychain_path().exists()
+        && security(&["find-generic-password", "-s", KEYCHAIN_SERVICE, KEYCHAIN]).is_ok()
+    {
         return Err(format!(
-            "no release key in the login keychain (service {KEYCHAIN_SERVICE}); \
-             `xtask release key generate` makes one"
+            "the release keychain already holds an item for service {KEYCHAIN_SERVICE}; \
+             delete it with `security delete-generic-password -s {KEYCHAIN_SERVICE} {KEYCHAIN}` \
+             to keep another"
         )
         .into());
     }
-    release::parse_key(&String::from_utf8_lossy(&output.stdout))
-        .ok_or_else(|| "the keychain item is not 64 hex digits".into())
+    Ok(())
 }
 
-/// The key the workflow compiles into the binaries it publishes.
-pub fn workflow_key(workflow: &str) -> Option<[u8; 32]> {
+/// Keeps `seed` in the release keychain, made first when missing, as an
+/// item no application may read without the keychain's password.
+fn keep(seed: &[u8; 32]) -> Result<(), Box<dyn std::error::Error>> {
+    if !keychain_path().exists() {
+        // `-P` asks for the new password in a system dialog. Asked on the
+        // terminal instead, it would be read by a process the recipe's
+        // timeout runs outside the terminal's foreground, which cannot turn
+        // echo off or read the answer.
+        println!(
+            "Choose a password for the release keychain in the dialog, different from your \
+             login password."
+        );
+        let status = Command::new("security")
+            .args(["create-keychain", "-P", KEYCHAIN])
+            .status()?;
+        if !status.success() {
+            return Err("security create-keychain failed".into());
+        }
+        security(&[
+            "set-keychain-settings",
+            "-l",
+            "-u",
+            "-t",
+            KEYCHAIN_LOCK_SECS,
+            KEYCHAIN,
+        ])?;
+    }
+    security(&[
+        "add-generic-password",
+        "-s",
+        KEYCHAIN_SERVICE,
+        "-a",
+        &account(),
+        // No application may read the item without asking.
+        "-T",
+        "",
+        "-w",
+        &release::hex(seed),
+        KEYCHAIN,
+    ])?;
+    Ok(())
+}
+
+fn keychain_path() -> PathBuf {
+    let home = std::env::var_os("HOME").expect("HOME is set");
+    Path::new(&home).join("Library/Keychains/amux-release.keychain-db")
+}
+
+/// The seed from the release keychain, after its password.
+fn keychain_seed() -> Result<[u8; 32], Box<dyn std::error::Error>> {
+    read_seed(KEYCHAIN).map_err(|_| {
+        format!(
+            "no release key in the release keychain {KEYCHAIN} (service {KEYCHAIN_SERVICE}); \
+             `xtask release key generate` makes one"
+        )
+        .into()
+    })
+}
+
+/// The seed kept in `keychain`.
+fn read_seed(keychain: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+    let seed = security(&[
+        "find-generic-password",
+        "-s",
+        KEYCHAIN_SERVICE,
+        "-w",
+        keychain,
+    ])?;
+    release::parse_key(&seed).ok_or_else(|| "the keychain item is not 64 hex digits".into())
+}
+
+/// The backup seed in the file at `path`.
+fn file_seed(path: &Path) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+    release::parse_key(&text)
+        .ok_or_else(|| format!("{} is not a seed of 64 hex digits", path.display()).into())
+}
+
+/// Runs `security` with `args`; what it printed when it succeeded.
+fn security(args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
+    let output = Command::new("security").args(args).output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "security {} failed: {}",
+            args[0],
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// The keys the workflow compiles into the binaries it publishes.
+pub fn workflow_keys(workflow: &str) -> Option<Vec<[u8; 32]>> {
     workflow
         .lines()
         .filter_map(|line| line.trim().strip_prefix(PUBLIC_KEY_VARIABLE))
         .filter_map(|rest| rest.trim().strip_prefix(':'))
-        .find_map(|value| release::parse_key(value.trim().trim_matches(|c| c == '"' || c == '\'')))
+        .find_map(|value| release::parse_keys(value.trim().trim_matches(|c| c == '"' || c == '\'')))
+}
+
+/// The workflow's keys, refused unless there are at least two: a release
+/// whose binaries trust no backup could not be followed by one that
+/// retires a leaked key.
+fn trusted_keys(workflow: &str) -> Result<Vec<[u8; 32]>, Box<dyn std::error::Error>> {
+    let keys = workflow_keys(workflow)
+        .ok_or_else(|| format!("{WORKFLOW} sets no {PUBLIC_KEY_VARIABLE}"))?;
+    if keys.len() < 2 {
+        return Err(format!(
+            "{WORKFLOW} names one key in {PUBLIC_KEY_VARIABLE}; add the backup's public half \
+             (`xtask release key generate --file PATH` prints it) so the binaries trust it too"
+        )
+        .into());
+    }
+    Ok(keys)
 }
 
 /// The manifests that carry the version. The daemon announces its own
@@ -141,11 +255,13 @@ fn cut(version: &str) -> Result<(), Box<dyn std::error::Error>> {
             format!("the tree has changes; a cut commits only the version:\n{status}").into(),
         );
     }
-    let workflow = std::fs::read_to_string(root.join(WORKFLOW))?;
-    let key = release::public_key(&keychain_seed()?);
-    if workflow_key(&workflow) != Some(key) {
+    // The keys are checked here without reading the seed, which would ask
+    // for the keychain's password a second time; the deploy reads it and
+    // checks it against them.
+    trusted_keys(&std::fs::read_to_string(root.join(WORKFLOW))?)?;
+    if !keychain_path().exists() {
         return Err(format!(
-            "{WORKFLOW} does not name this Mac's release key, so the release could not be deployed"
+            "this Mac has no release keychain {KEYCHAIN}, so the release could not be deployed"
         )
         .into());
     }
@@ -229,12 +345,15 @@ fn git(root: &Path, args: &[&str]) -> Result<String, Box<dyn std::error::Error>>
 struct Options {
     channel: String,
     rollout: Option<u8>,
+    /// Sign with the backup seed in this file rather than the keychain's.
+    key_file: Option<PathBuf>,
 }
 
 fn options(rest: &[&str]) -> Result<Options, Box<dyn std::error::Error>> {
     let mut options = Options {
         channel: "stable".into(),
         rollout: None,
+        key_file: None,
     };
     let mut words = rest.iter();
     while let Some(word) = words.next() {
@@ -256,6 +375,9 @@ fn options(rest: &[&str]) -> Result<Options, Box<dyn std::error::Error>> {
                 }
                 options.rollout = Some(percent);
             }
+            "--key-file" => {
+                options.key_file = Some(words.next().ok_or("--key-file needs a path")?.into());
+            }
             other => return Err(format!("unknown argument {other}").into()),
         }
     }
@@ -274,21 +396,20 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
     let tag = format!("v{version}");
     wait_for_release(&tag)?;
 
-    let seed = keychain_seed()?;
-    let key = release::public_key(&seed);
     let root = repository_root();
-    let workflow = std::fs::read_to_string(root.join(WORKFLOW))?;
-    match workflow_key(&workflow) {
-        Some(trusted) if trusted == key => {}
-        Some(_) => {
-            return Err(format!(
-                "{WORKFLOW} names a different {PUBLIC_KEY_VARIABLE} than the keychain seed's \
-                 public half {}; the binaries would refuse this manifest",
-                release::hex(&key)
-            )
-            .into());
-        }
-        None => return Err(format!("{WORKFLOW} sets no {PUBLIC_KEY_VARIABLE}").into()),
+    let trusted = trusted_keys(&std::fs::read_to_string(root.join(WORKFLOW))?)?;
+    let seed = match &options.key_file {
+        Some(path) => file_seed(path)?,
+        None => keychain_seed()?,
+    };
+    let key = release::public_key(&seed);
+    if !trusted.contains(&key) {
+        return Err(format!(
+            "{WORKFLOW} does not list the signing seed's public half {} in \
+             {PUBLIC_KEY_VARIABLE}; the binaries would refuse this manifest",
+            release::hex(&key)
+        )
+        .into());
     }
 
     let repository = gh(&[
@@ -339,7 +460,7 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
         signature: String::new(),
     };
     manifest.signature = release::sign(&seed, &manifest);
-    release::verify_manifest(&manifest, &options.channel, &key)?;
+    release::verify_manifest(&manifest, &options.channel, &trusted)?;
     let json = serde_json::to_string_pretty(&manifest)?;
 
     let dir = root.join("target/release-manifests");
@@ -496,12 +617,46 @@ fn repository_root() -> PathBuf {
 mod tests {
     use super::*;
 
+    const ONE: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+    const TWO: &str = "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100";
+
     #[test]
-    fn reads_the_workflows_key() {
-        let workflow = "env:\n  CARGO_TERM_COLOR: always\n  AMUX_RELEASE_PUBLIC_KEY: \"00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff\"\n";
-        assert_eq!(workflow_key(workflow).map(|k| k[0]), Some(0x00));
-        assert_eq!(workflow_key(workflow).map(|k| k[15]), Some(0xff));
-        assert_eq!(workflow_key("env:\n  CARGO_TERM_COLOR: always\n"), None);
+    fn reads_the_workflows_keys() {
+        let workflow = format!(
+            "env:\n  CARGO_TERM_COLOR: always\n  AMUX_RELEASE_PUBLIC_KEYS: \"{ONE},{TWO}\"\n"
+        );
+        let keys = workflow_keys(&workflow).unwrap();
+        assert_eq!(keys.len(), 2);
+        assert_eq!((keys[0][0], keys[0][15], keys[1][0]), (0x00, 0xff, 0xff));
+        assert_eq!(workflow_keys("env:\n  CARGO_TERM_COLOR: always\n"), None);
+        assert_eq!(
+            workflow_keys(&format!("env:\n  AMUX_RELEASE_PUBLIC_KEYS: {ONE},nothex\n")),
+            None,
+            "one bad key spoils the list"
+        );
+    }
+
+    #[test]
+    fn a_release_needs_a_backup_key() {
+        let one = format!("env:\n  AMUX_RELEASE_PUBLIC_KEYS: {ONE}\n");
+        assert!(trusted_keys(&one).is_err());
+        let two = format!("env:\n  AMUX_RELEASE_PUBLIC_KEYS: {ONE},{TWO}\n");
+        assert_eq!(trusted_keys(&two).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_backup_seed_reads_back_from_its_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("backup.key");
+        backup(&path).unwrap();
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "only its owner may read it");
+        assert!(file_seed(&path).is_ok());
+        assert!(
+            backup(&path).is_err(),
+            "an existing file is never overwritten"
+        );
     }
 
     #[test]
@@ -531,14 +686,11 @@ mod tests {
         assert!(bump_version(manifest, &to, &from).is_none());
     }
 
-    /// The committed workflow names a real key, so the release binaries it
-    /// builds trust something.
+    /// The committed workflow names the release key and its backup, so the
+    /// binaries it builds trust both.
     #[test]
-    fn the_workflow_names_a_key() {
+    fn the_workflow_names_a_key_and_its_backup() {
         let workflow = std::fs::read_to_string(repository_root().join(WORKFLOW)).unwrap();
-        assert!(
-            workflow_key(&workflow).is_some(),
-            "{WORKFLOW} sets no {PUBLIC_KEY_VARIABLE}"
-        );
+        trusted_keys(&workflow).unwrap();
     }
 }

@@ -122,8 +122,8 @@ pub struct UpdateSource {
     pub channel: String,
     /// The channel's manifest.
     pub manifest_url: String,
-    /// The key release signatures must verify against.
-    pub key: [u8; 32],
+    /// The keys a release signature must verify against one of.
+    pub keys: Vec<[u8; 32]>,
 }
 
 pub struct SuperviseOptions {
@@ -734,7 +734,7 @@ async fn list(source: &UpdateSource) -> Result<Manifest, CheckError> {
             url: source.manifest_url.clone(),
             error,
         })?;
-    release::verify_manifest(&manifest, &source.channel, &source.key)?;
+    release::verify_manifest(&manifest, &source.channel, &source.keys)?;
     Ok(manifest)
 }
 

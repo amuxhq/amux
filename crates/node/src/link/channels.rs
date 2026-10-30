@@ -105,11 +105,12 @@ pub(crate) trait ForwardedDial: Send + Sync + 'static {
 
     /// Dials `peer`'s pairing service through the forwarder at the far end
     /// of `through`, presenting no certificate: the host answers only while
-    /// its pairing window is open.
+    /// its pairing window is open. The dial is given up after `deadline`.
     fn pair_through(
         &self,
         peer: HostId,
         through: LinkId,
+        deadline: std::time::Duration,
     ) -> BoxFuture<'_, Result<Channel, ChannelError>>;
 }
 
@@ -741,11 +742,13 @@ impl ChannelPool {
         Ok(channel)
     }
 
-    /// A channel to `peer`'s pairing service through `forwarder`.
+    /// A channel to `peer`'s pairing service through `forwarder`, its dial
+    /// given up after `deadline`.
     pub(crate) async fn pairing_channel(
         &self,
         peer: HostId,
         forwarder: HostId,
+        deadline: std::time::Duration,
     ) -> Result<Channel, ChannelError> {
         let (through, _) = self
             .links
@@ -755,7 +758,7 @@ impl ChannelPool {
         self.forwarded
             .get()
             .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?
-            .pair_through(peer, through)
+            .pair_through(peer, through, deadline)
             .await
     }
 

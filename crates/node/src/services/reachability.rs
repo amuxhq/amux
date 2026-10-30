@@ -764,6 +764,7 @@ impl ForwardedDialer {
         &self,
         peer: HostId,
         through: LinkId,
+        deadline: Duration,
     ) -> Result<tonic::transport::Channel, ChannelError> {
         let inner = self.inner()?;
         let registry = inner.channels.link_registry();
@@ -771,6 +772,7 @@ impl ForwardedDialer {
             registry.forward_refusals(),
             registry.as_ref(),
             peer,
+            deadline,
             crate::transport::pairing_quic_channel_through(&inner.endpoint, peer, through.core()),
         )
         .await?
@@ -779,16 +781,14 @@ impl ForwardedDialer {
     }
 }
 
-/// How long a pairing dial through a forwarder may take.
-const PAIRING_THROUGH_TIMEOUT: Duration = Duration::from_secs(2);
-
-/// Runs `dial` under the handshake's deadline, unless the forwarder
-/// refuses to carry packets to `peer` first. A dial that times out after a
+/// Runs `dial` under `deadline`, unless the forwarder refuses to carry
+/// packets to `peer` first. A dial that times out after a
 /// refusal the forwarder has not repeated yet fails with that refusal.
 async fn refused_or<T>(
     mut refusals: broadcast::Receiver<(HostId, wire::pb::ForwardRefusal)>,
     registry: &crate::routing::LinkRegistry,
     peer: HostId,
+    deadline: Duration,
     dial: impl std::future::Future<Output = T>,
 ) -> Result<T, ChannelError> {
     let refused = async {
@@ -804,7 +804,7 @@ async fn refused_or<T>(
     };
     tokio::select! {
         reason = refused => Err(ChannelError::Refused(reason)),
-        dialled = tokio::time::timeout(PAIRING_THROUGH_TIMEOUT, dial) => {
+        dialled = tokio::time::timeout(deadline, dial) => {
             dialled.map_err(|_| match registry.last_refusal(peer) {
                 Some(reason) => ChannelError::Refused(reason),
                 None => ChannelError::Handshake("the QUIC handshake timed out".to_owned()),
@@ -832,8 +832,9 @@ impl ForwardedDial for ForwardedDialer {
         &self,
         peer: HostId,
         through: LinkId,
+        deadline: Duration,
     ) -> BoxFuture<'_, Result<tonic::transport::Channel, ChannelError>> {
-        Box::pin(self.pair(peer, through))
+        Box::pin(self.pair(peer, through, deadline))
     }
 }
 

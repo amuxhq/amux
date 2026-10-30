@@ -411,7 +411,11 @@ impl Edge {
                 let forwarder = crate::routing::host_from_core(forwarder);
                 let channel = match self
                     .connections
-                    .pairing_channel_through(host, forwarder)
+                    .pairing_channel_through(
+                        host,
+                        forwarder,
+                        Duration::from_millis(plan.deadline_ms),
+                    )
                     .await
                 {
                     Ok(channel) => channel,

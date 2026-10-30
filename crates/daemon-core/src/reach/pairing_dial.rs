@@ -11,8 +11,9 @@
 //! address has failed or been silent that long. Each address has the
 //! attempt's whole deadline, which outlasts QUIC sending a lost first
 //! packet twice more. With no address answering, the forwarders that claim
-//! the host are tried in turn, paired hosts before the relay, since they
-//! forward on any plan and the relay only on a paid one.
+//! the host are tried in turn, each with the same deadline, paired hosts
+//! before the relay, since they forward on any plan and the relay only on
+//! a paid one.
 
 use std::net::SocketAddr;
 
@@ -35,7 +36,8 @@ pub struct PairingDial {
     pub addrs: Vec<(SocketAddr, bool)>,
     /// How long an earlier address is preferred over a later answer.
     pub short_try_ms: u64,
-    /// How long each address's dial may take.
+    /// How long the dial to each address, or through each forwarder, may
+    /// take.
     pub deadline_ms: u64,
     /// The hosts claiming to reach it, in the order they are tried, each
     /// with whether it is the relay.

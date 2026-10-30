@@ -209,13 +209,17 @@ impl ConnectionManager {
         }
     }
 
-    /// A channel to `peer`'s pairing service through `forwarder`.
+    /// A channel to `peer`'s pairing service through `forwarder`, its dial
+    /// given up after `deadline`.
     pub(crate) async fn pairing_channel_through(
         &self,
         peer: HostId,
         forwarder: HostId,
+        deadline: std::time::Duration,
     ) -> Result<Channel, ChannelError> {
-        self.channels.pairing_channel(peer, forwarder).await
+        self.channels
+            .pairing_channel(peer, forwarder, deadline)
+            .await
     }
 
     /// Why the last dial to `peer` failed, until a route to it comes up.

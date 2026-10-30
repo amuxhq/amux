@@ -337,32 +337,7 @@ fn forward_pty_hook() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("CLAUDE_HOOK_SOCKET is not set")?;
     let mut payload = Vec::new();
     std::io::Read::read_to_end(&mut std::io::stdin(), &mut payload)?;
-    let debug = std::env::var_os("CLAUDE_PTY_HOOK_DEBUG");
-    if let Some(path) = &debug {
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
-        file.write_all(&payload)?;
-        file.write_all(b"\n")?;
-    }
-    let result = claude::hooks::forward(&payload, &socket);
-    if let Some(path) = debug {
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
-        writeln!(
-            file,
-            "{}",
-            serde_json::json!({
-                "debug_socket": socket,
-                "debug_socket_exists": socket.exists(),
-                "debug_forward_error": result.as_ref().err().map(ToString::to_string),
-            })
-        )?;
-    }
-    result?;
+    claude::hooks::forward(&payload, &socket)?;
     Ok(())
 }
 

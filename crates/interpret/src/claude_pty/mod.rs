@@ -590,6 +590,12 @@ pub struct State {
     prompt_unseen: Option<String>,
     #[serde(default)]
     prompt_seen: Option<String>,
+    /// Calls whose PostToolUse came before their row. Claude wrote the row
+    /// before the call ran, so a reply drawn after the hook is a later
+    /// message's: drawn before the row lands, it would sit above the call.
+    #[serde(default)]
+    calls_unseen: Vec<String>,
+    /// The batches held while a prompt's or a call's row is owed.
     #[serde(default)]
     held_displays: Vec<HeldDisplay>,
     /// Why auto mode refused a call whose row has not landed yet, by
@@ -690,6 +696,7 @@ impl State {
             ended_prompts: VecDeque::new(),
             prompt_unseen: None,
             prompt_seen: None,
+            calls_unseen: Vec::new(),
             held_displays: Vec::new(),
             refused: BTreeMap::new(),
             bang: None,

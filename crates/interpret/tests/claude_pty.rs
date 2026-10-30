@@ -1753,3 +1753,73 @@ fn a_reply_drawn_before_its_prompts_row_lands_below_the_prompt() {
         .collect();
     assert_eq!(keys, ["u1", "stream:d1"]);
 }
+
+#[test]
+fn a_reply_drawn_before_an_announced_calls_row_lands_below_the_call() {
+    let (mut state, _) = started_claude();
+    let common = |event: &str| {
+        serde_json::json!({
+            "hook_event_name": event, "session_id": "s1", "prompt_id": "q1",
+            "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
+            "permission_mode": "default",
+        })
+    };
+    let command = serde_json::json!({"command": "deploy --check"});
+    ClaudePty::step(
+        &mut state,
+        transcript_row(serde_json::json!({
+            "type": "user", "uuid": "u1", "sessionId": "s1", "promptId": "q1",
+            "timestamp": "2027-01-15T08:00:01.000Z", "promptSource": "typed",
+            "origin": {"kind": "human"},
+            "message": {"role": "user", "content": "check the deploy"},
+        })),
+    );
+    let mut announced = common("PreToolUse");
+    announced["tool_name"] = "Bash".into();
+    announced["tool_input"] = command.clone();
+    announced["tool_use_id"] = "toolu_1".into();
+    ClaudePty::step(&mut state, hook(announced));
+    // The call's PostToolUse and the next reply's lines overtake its row.
+    let mut ran = common("PostToolUse");
+    ran["tool_name"] = "Bash".into();
+    ran["tool_input"] = command.clone();
+    ran["tool_use_id"] = "toolu_1".into();
+    ran["tool_response"] = serde_json::json!({"stdout": "ok", "stderr": "", "interrupted": false});
+    ran["duration_ms"] = 1.into();
+    ClaudePty::step(&mut state, hook(ran));
+    let mut display = common("MessageDisplay");
+    for (key, value) in [
+        ("delta", serde_json::json!("The deploy check passed.\n")),
+        ("final", serde_json::json!(true)),
+        ("index", serde_json::json!(0)),
+        ("message_id", serde_json::json!("d2")),
+        ("turn_id", serde_json::json!("turn-q1")),
+    ] {
+        display[key] = value;
+    }
+    let early = ClaudePty::step(&mut state, hook(display));
+    assert!(early.step.items.is_empty(), "{:?}", early.step.items);
+
+    let landed = ClaudePty::step(
+        &mut state,
+        transcript_row(serde_json::json!({
+            "type": "assistant", "uuid": "a1", "parentUuid": "u1",
+            "timestamp": "2027-01-15T08:00:02.000Z", "sessionId": "s1",
+            "isSidechain": false, "userType": "external",
+            "message": {
+                "id": "msg_1", "type": "message", "role": "assistant",
+                "model": "claude-haiku-5-5",
+                "content": [{"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": command}],
+                "stop_reason": "tool_use",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        })),
+    );
+    let keys: Vec<&str> = landed
+        .step
+        .items
+        .iter()
+        .map(|item| item.key.as_str())
+        .collect();
+    assert_eq!(keys, ["toolu_1", "stream:d2"]);
+}

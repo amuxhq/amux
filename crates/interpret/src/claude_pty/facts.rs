@@ -327,13 +327,13 @@ impl State {
                 duration_ms,
                 ..
             }) => {
-                self.call_ended(tool_use_id);
+                self.call_ran(tool_use_id);
                 if let Some(duration) = duration_ms {
                     self.ran_for(emit, tool_use_id, *duration);
                 }
             }
             Payload::PostToolUseFailure(PostToolUseFailure { tool_use_id, .. }) => {
-                self.call_ended(tool_use_id)
+                self.call_ran(tool_use_id)
             }
             // Auto mode's refusal names its rule; the call's row says it
             // was refused.
@@ -819,7 +819,13 @@ impl State {
         {
             return;
         }
-        if self.prompt_unseen.is_some() && self.prompt_unseen == display.common.prompt_id {
+        let opens = !self
+            .streams
+            .iter()
+            .any(|stream| stream.message_id == display.message_id);
+        let prompt_owed =
+            self.prompt_unseen.is_some() && self.prompt_unseen == display.common.prompt_id;
+        if prompt_owed || (opens && !self.calls_unseen.is_empty()) {
             self.held_displays.push(HeldDisplay {
                 message_id: display.message_id.clone(),
                 delta: display.delta.clone(),
@@ -922,6 +928,15 @@ impl State {
             name,
             since_ms: self.shared.now_ms(),
         });
+    }
+
+    /// A call's PostToolUse or PostToolUseFailure hook: it no longer
+    /// runs, and its row is written, though maybe not yet read.
+    fn call_ran(&mut self, id: &str) {
+        self.call_ended(id);
+        if !self.tools.contains_key(id) && !self.calls_unseen.iter().any(|call| call == id) {
+            self.calls_unseen.push(id.to_owned());
+        }
     }
 
     /// A call's PostToolUse hook or its result row: it no longer runs.
@@ -1483,9 +1498,27 @@ impl State {
         self.prompt_seen = Some(prompt_id.to_owned());
         if self.prompt_unseen.as_deref() == Some(prompt_id) {
             self.prompt_unseen = None;
-            for held in std::mem::take(&mut self.held_displays) {
-                self.draw_display(emit, &held.message_id, &held.delta);
-            }
+            self.release_displays(emit);
+        }
+    }
+
+    /// The row of the call `id` landed: a reply drawn before it goes below
+    /// it now.
+    fn call_landed(&mut self, emit: &mut Emit, id: &str) {
+        let owed = self.calls_unseen.len();
+        self.calls_unseen.retain(|call| call != id);
+        if self.calls_unseen.len() < owed {
+            self.release_displays(emit);
+        }
+    }
+
+    /// Draws the batches held once no row they wait for is owed.
+    fn release_displays(&mut self, emit: &mut Emit) {
+        if self.prompt_unseen.is_some() || !self.calls_unseen.is_empty() {
+            return;
+        }
+        for held in std::mem::take(&mut self.held_displays) {
+            self.draw_display(emit, &held.message_id, &held.delta);
         }
     }
 
@@ -1651,6 +1684,7 @@ impl State {
         self.local_turn = false;
         self.running.clear();
         self.prompt_unseen = None;
+        self.calls_unseen.clear();
         self.held_displays.clear();
         self.finish_streams(emit);
         self.ended_prompts
@@ -1799,6 +1833,7 @@ impl State {
                     id, name, input, ..
                 } => {
                     self.tool_seen(emit, id, name, input, at_ms, &message_id);
+                    self.call_landed(emit, id);
                 }
                 other => self.shared.item(
                     emit,

@@ -23,7 +23,7 @@ use crate::link::framed::{FramedKind, FramedPath};
 use crate::link::quic::{stream_carrier_kind, stream_path};
 use crate::link::relaying::Relaying;
 use crate::link::socket::{LinkSocket, Path, PathId};
-use crate::link::{ChannelPool, LinkEndpoint, QuicCarrier, run_link};
+use crate::link::{LinkEndpoint, QuicCarrier, run_link};
 use crate::resource_limits::{Admitted, HandshakeAdmission};
 use crate::routing::{
     AuthenticatedLinkContextProvider, AuthenticatedLinkUser, Capabilities, LinkCtx, LinkRegistry,
@@ -114,7 +114,7 @@ struct CloudLinkServerInner {
 /// One account's side of the relay: the links its hosts hold here and the
 /// adjacency they advertise to each other. Accounts never see each other.
 struct RelayUser {
-    channels: Arc<ChannelPool>,
+    links: Arc<LinkRegistry>,
     incoming_streams_tx: mpsc::Sender<crate::link::InboundStream>,
     drain: JoinHandle<()>,
 }
@@ -136,14 +136,14 @@ impl RelayUser {
         // relay serves no calls of its own.
         let drain = tokio::spawn(async move { while incoming.recv().await.is_some() {} });
         Self {
-            channels: Arc::new(ChannelPool::new(links)),
+            links,
             incoming_streams_tx,
             drain,
         }
     }
 
     fn link_ctx(&self, local_host: &LiveLocalHost, clock: &Arc<dyn Clock>) -> LinkCtx {
-        LinkCtx::new_live(local_host.clone(), self.channels.link_registry())
+        LinkCtx::new_live(local_host.clone(), self.links.clone())
             .with_incoming_streams(self.incoming_streams_tx.clone())
             .with_clock(clock.clone())
     }
@@ -427,19 +427,15 @@ impl CloudLinkServer {
     }
 
     pub async fn user_has_link_to(&self, user_id: Uuid, host_id: HostId) -> bool {
-        let tunnels = self
+        let links = self
             .inner
             .users
             .read()
             .await
             .get(&user_id)
-            .map(|services| services.channels.clone());
-        match tunnels {
-            Some(tunnels) => tunnels
-                .link_registry()
-                .link_to_peer(host_id)
-                .await
-                .is_some(),
+            .map(|user| user.links.clone());
+        match links {
+            Some(links) => links.link_to_peer(host_id).await.is_some(),
             None => false,
         }
     }
@@ -449,29 +445,29 @@ impl CloudLinkServer {
     /// its work over a single connection looks like from here.
     #[doc(hidden)]
     pub async fn user_links(&self, user_id: Uuid) -> Vec<(HostId, usize)> {
-        let channels = self
+        let links = self
             .inner
             .users
             .read()
             .await
             .get(&user_id)
-            .map(|services| services.channels.clone());
-        match channels {
-            Some(channels) => channels.link_registry().links_per_peer().await,
+            .map(|user| user.links.clone());
+        match links {
+            Some(links) => links.links_per_peer().await,
             None => Vec::new(),
         }
     }
 
     pub async fn send_link_close_to_all(&self, reason: wire::pb::LinkCloseReason) {
-        let tunnels = {
+        let links = {
             let users = self.inner.users.read().await;
             users
                 .values()
-                .map(|services| services.channels.clone())
+                .map(|user| user.links.clone())
                 .collect::<Vec<_>>()
         };
-        for tunnels in tunnels {
-            tunnels.link_registry().send_link_close_to_all(reason).await;
+        for links in links {
+            links.send_link_close_to_all(reason).await;
         }
     }
 }

@@ -14,8 +14,6 @@ use crate::runtime::ProfileRuntime;
 use crate::transport::{BoxedGrpcAuth, BoxedGrpcConnectInfo, PreTrustPairingReachability};
 use crate::trust::Reachability;
 
-const MAX_PAIRING_NAME_BYTES: usize = 256;
-
 type PairStream = Pin<Box<dyn Stream<Item = Result<wire::pb::PairMessage, Status>> + Send>>;
 
 /// This host as a pairing presents it: its id and its identity key.
@@ -75,11 +73,6 @@ impl wire::pairing_service_server::PairingService for PairingService {
         request: tonic::Request<tonic::Streaming<wire::pb::PairMessage>>,
     ) -> Result<tonic::Response<Self::PairStream>, Status> {
         let reachability = pairing_request_reachability(&request)?;
-        if self.host_name.len() > MAX_PAIRING_NAME_BYTES {
-            return Err(Status::invalid_argument(
-                "PROTOCOL_VIOLATION: name is too long",
-            ));
-        }
         let Some(runtime) = self.runtime.upgrade() else {
             return Err(Status::failed_precondition("profile is unavailable"));
         };

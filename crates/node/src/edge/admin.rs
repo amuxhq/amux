@@ -32,7 +32,6 @@ use crate::runtime::ProfileRuntime;
 use crate::services::LocalPairingIdentity;
 use crate::trust::{Reachability, TrustEntry, TrustStore};
 
-const MAX_PAIRING_NAME_BYTES: usize = 256;
 const QR_SECRET_LEN: usize = daemon_core::pairing::QR_SECRET_LEN;
 /// A demo window is a standing shared secret; bound how long any window
 /// can live.
@@ -199,11 +198,6 @@ impl Edge {
         let method = request
             .method
             .ok_or_else(|| Status::invalid_argument("StartPairingRequest.method is required"))?;
-        if self.host_name.len() > MAX_PAIRING_NAME_BYTES {
-            return Err(Status::invalid_argument(
-                "host_name is too long for pairing",
-            ));
-        }
         let ttl = pairing_ttl(request.ttl_seconds)?;
         self.reachability.requery();
         let (label, method) = match method {

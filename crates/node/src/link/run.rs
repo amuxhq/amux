@@ -23,8 +23,7 @@ use crate::net_error::{self, status as protocol_status};
 use crate::routing::{
     Host, LinkAdmission, LinkCloseRequest, LinkId, LinkProperties, LinkRegistry, LinkRole,
     LiveLocalHost, Registration, RuntimeInstance, core_host, host_from_wire, host_to_wire,
-    inbound_host_from_wire, neighbor_down_from_wire, neighbor_up_from_wire,
-    protocol_error_hello_ack, protocol_error_link_close, validate_remote_host,
+    protocol_error_hello_ack, protocol_error_link_close,
 };
 use crate::{Clock, HostId};
 
@@ -1061,27 +1060,10 @@ async fn handle_control_body(
     acceptor_auth: Option<&mut LinkAuthSession>,
 ) -> ControlAction {
     match body {
-        wire::pb::message::Body::NeighborUp(event) => match neighbor_up_from_wire(event.clone()) {
-            Ok(_) => {
-                ctx.report_frame(link, wire::pb::message::Body::NeighborUp(event));
-                ControlAction::Continue
-            }
-            Err(error) => ControlAction::ReplyAndClose(
-                Box::new(protocol_error_link_close(error.to_string())),
-                wire::pb::LinkCloseReason::ProtocolError,
-            ),
-        },
-        wire::pb::message::Body::NeighborDown(event) => {
-            match neighbor_down_from_wire(event.clone()) {
-                Ok(_) => {
-                    ctx.report_frame(link, wire::pb::message::Body::NeighborDown(event));
-                    ControlAction::Continue
-                }
-                Err(error) => ControlAction::ReplyAndClose(
-                    Box::new(protocol_error_link_close(error.to_string())),
-                    wire::pb::LinkCloseReason::ProtocolError,
-                ),
-            }
+        body @ (wire::pb::message::Body::NeighborUp(_)
+        | wire::pb::message::Body::NeighborDown(_)) => {
+            ctx.report_frame(link, body);
+            ControlAction::Continue
         }
         wire::pb::message::Body::Reauth(reauth) => {
             let Some(auth) = acceptor_auth else {
@@ -1189,7 +1171,6 @@ fn accept_peer_hello(
         .ok_or_else(|| "Hello.host is required".to_string())
         .and_then(|host| host_from_wire(host).map_err(|error| error.to_string()))
         .map_err(invalid_argument_error)?;
-    validate_remote_host(&host).map_err(invalid_argument_error)?;
     if let Some(authenticated_peer) = ctx.authenticated_peer
         && host.id != authenticated_peer
     {
@@ -1228,7 +1209,6 @@ fn accept_peer_hello_ack(
         .ok_or_else(|| "HelloAccepted.host is required".to_string())
         .and_then(|host| host_from_wire(host).map_err(|error| error.to_string()))
         .map_err(invalid_argument_error)?;
-    validate_remote_host(&host).map_err(invalid_argument_error)?;
     if let Some(expected_peer) = ctx.expected_peer
         && host.id != expected_peer
     {
@@ -1323,10 +1303,7 @@ fn accepted_hello_ack(
 fn neighbors_from_wire(neighbors: Vec<wire::pb::Host>) -> Result<Vec<Host>, wire::pb::Error> {
     neighbors
         .into_iter()
-        .map(|host| {
-            inbound_host_from_wire(host, "handshake neighbor")
-                .map_err(|error| invalid_argument_error(error.to_string()))
-        })
+        .map(|host| host_from_wire(host).map_err(invalid_argument_error))
         .collect()
 }
 

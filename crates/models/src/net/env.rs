@@ -1629,7 +1629,9 @@ impl Transition<'_> {
                     }
                 }
                 step(daemon, Input::Swept);
-                // The edge is up: the core dials what it trusts.
+                // The edge is up: every host listens at its address in the
+                // net, and dials what it trusts.
+                step(daemon, Input::Listening(true));
                 step(daemon, Input::Dialling(Dialling::All));
                 out
             },

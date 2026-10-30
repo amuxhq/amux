@@ -101,6 +101,9 @@ pub enum AttemptOutcome {
 pub struct Reach {
     /// What the driver dials.
     dialling: Dialling,
+    /// The driver listens for direct links, so a host that stopped can
+    /// dial this one as it starts again.
+    listening: bool,
     hosts: BTreeMap<HostId, Reaching>,
     /// The last attempt id minted.
     next_attempt: u64,
@@ -141,10 +144,11 @@ enum Pause {
     /// After a link that closed almost as it came up: nothing ends it, or
     /// whatever refused the link is asked again at once.
     ShortLink,
-    /// The host just paired with this one as the joiner, which dials: a
-    /// dial from here too would cross it, and a call on the link it
-    /// displaced would fail. Its link coming or an attempt's deadline
-    /// passing ends it.
+    /// The host dials this one itself, having just paired with it as the
+    /// joiner or said goodbye as it stopped: a dial from here too would
+    /// cross its dial, and of two crossed links one is turned away, with
+    /// whatever the dial carried, a returning host's catch-up among it.
+    /// Its link coming or an attempt's deadline passing ends it.
     Expecting,
 }
 
@@ -182,9 +186,10 @@ impl Reach {
         self.dialling
     }
 
-    /// Whether a link is expected from `host` itself, which just paired
-    /// with this host as the joiner and dials it: this host does not dial it
-    /// meanwhile, so a call waits for that link.
+    /// Whether a link is expected from `host` itself, which dials this
+    /// host: it just paired with it as the joiner, or said goodbye as it
+    /// stopped. This host does not dial it meanwhile, so a call waits for
+    /// that link.
     pub fn expecting(&self, host: HostId) -> bool {
         self.hosts
             .get(&host)
@@ -490,6 +495,30 @@ impl Daemon {
         reaching.pause = Some(Pause::Expecting);
         let at_ms = self.timers.link_ms.saturating_add(ATTEMPT_DEADLINE_MS);
         self.arm(TimerId::Retry(host), at_ms, out);
+    }
+
+    /// The driver listens for direct links, or no longer.
+    pub(crate) fn listening(&mut self, listening: bool) {
+        self.routing.reach.listening = listening;
+    }
+
+    /// `host` closed its last link of its own here saying goodbye: it is
+    /// stopping, and dials every host it trusts as it starts again, so this
+    /// host, if it listens, waits as long as an attempt may take before
+    /// dialling it, and does not cross that dial. A host that listens for
+    /// nothing, as a phone does, cannot be dialled back and dials as
+    /// before; one that comes back unable to reach this one is dialled
+    /// from here once the wait is over.
+    pub(crate) fn expect_return(&mut self, host: HostId, out: &mut Vec<Output>) {
+        let linked = self
+            .routing
+            .links
+            .routes_to(host)
+            .iter()
+            .any(|route| route.is_direct());
+        if self.routing.reach.listening && self.wanted(host) && !linked {
+            self.expect_link(host, out);
+        }
     }
 
     fn cut_pause(&mut self, host: HostId, out: &mut Vec<Output>) {

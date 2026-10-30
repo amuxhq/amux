@@ -395,8 +395,8 @@ impl fmt::Display for Version {
     }
 }
 
-/// The newest provider version the scenarios' recordings were recorded or
-/// verified against: a provider older than that is not what they describe.
+/// The newest provider version the scenarios' recordings were recorded
+/// against: a provider older than that is not what they describe.
 struct Corpus {
     version: Version,
     recordings: Vec<String>,
@@ -430,11 +430,8 @@ fn corpus(driver: &Driver, scenarios: &[Scenario]) -> Corpus {
         let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&manifest) else {
             continue;
         };
-        let verified = manifest["verified"].as_array().cloned().unwrap_or_default();
-        for seen in std::iter::once(&manifest["recorded"]).chain(&verified) {
-            if let Some(seen) = seen["version"].as_str() {
-                version = version.max(Version::parse(seen));
-            }
+        if let Some(seen) = manifest["recorded"]["version"].as_str() {
+            version = version.max(Version::parse(seen));
         }
     }
     Corpus {

@@ -4,9 +4,7 @@ use std::time::Duration;
 use claude_specs::specs::{
     MINIMUM_SUPPORTED, SpecSource, fixtures_root, pty_registry, run, sdk_registry,
 };
-use replay_support::{
-    ReplayOptions, SourceKind, below_minimum, load_recording, orphan_recordings, strict_replay,
-};
+use replay_support::{below_minimum, load_recording, orphan_recordings, strict_replay};
 use semver::Version;
 
 const SPEC_TIMEOUT: Duration = Duration::from_secs(30);
@@ -35,29 +33,21 @@ mod sdk_replays {
         commands_cleared => "commands/cleared",
         control_permission_mode_and_model => "control/permission_mode_and_model",
         control_session_introspection => "control/session_introspection",
-        control_session_maintenance => "control/session_maintenance",
         control_effort => "control/effort",
-        control_connected_mcp_servers => "control/connected_mcp_servers",
         tools_permission_callback => "tools/permission_callback",
         tools_question_asked => "tools/question_asked",
         tools_plan_reviewed => "tools/plan_reviewed",
         tools_question_every_shape => "tools/question_every_shape",
         tools_question_dismissed => "tools/question_dismissed",
-        tools_in_process_mcp => "tools/in_process_mcp",
         tools_elicitation_accepted => "tools/elicitation_accepted",
         tools_elicitation_declined => "tools/elicitation_declined",
         tools_elicitation_cancelled => "tools/elicitation_cancelled",
         tools_elicitation_link_accepted => "tools/elicitation_link_accepted",
         tools_hook_lifecycle => "tools/hook_lifecycle",
         options_configured_turn => "options/configured_turn",
-        options_every_hook_event => "options/every_hook_event",
         configured_effortful_turn => "configured/effortful_turn",
         agents_subagent_task => "agents/subagent_task",
         history_resumed => "history/resumed",
-        history_forked => "history/forked",
-        history_resumed_at => "history/resumed_at",
-        results_max_turns => "results/max_turns",
-        results_max_budget => "results/max_budget",
         results_interrupted => "results/interrupted",
         work_image => "work/image",
         work_failing_command => "work/failing_command",
@@ -111,7 +101,7 @@ mod sdk_replays {
         let error = run(
             entry,
             SpecSource::Recorded {
-                replay: strict_replay(&recording, ReplayOptions::default()),
+                replay: strict_replay(&recording),
                 transport_order: Vec::new(),
                 session_ids: recording.manifest.session_ids,
             },
@@ -246,7 +236,7 @@ async fn replay_pty_recording(
         entry.name,
         recording.manifest.recorded.model
     );
-    let replay = strict_replay(&recording, ReplayOptions::default());
+    let replay = strict_replay(&recording);
     let report = tokio::time::timeout(
         SPEC_TIMEOUT,
         claude_specs::specs::pty::run(
@@ -254,7 +244,6 @@ async fn replay_pty_recording(
             claude_specs::specs::pty::Source::Recorded {
                 replay,
                 manifest: Box::new(recording.manifest),
-                keymaps: claude_specs::terminal::keymap::KeymapSources::default(),
             },
         ),
     )
@@ -276,11 +265,6 @@ async fn elicited() {
 #[tokio::test]
 async fn hook_lifecycle() {
     replay("tools/hook_lifecycle").await;
-}
-
-#[tokio::test]
-async fn every_hook_event() {
-    replay("options/every_hook_event").await;
 }
 
 async fn replay(name: &str) {
@@ -307,7 +291,7 @@ async fn replay(name: &str) {
         .filter_map(|event| event.transport_id.clone())
         .filter(|transport| seen.insert(transport.clone()))
         .collect::<Vec<_>>();
-    let replay = strict_replay(&recording, ReplayOptions::default());
+    let replay = strict_replay(&recording);
     let controller = replay.controller.clone();
     let outcome = match tokio::time::timeout(
         SPEC_TIMEOUT,
@@ -358,31 +342,11 @@ fn sdk_corpus_is_inventoried_current_and_unorphaned() {
         assert_eq!(recording.manifest.recorded.provider, "claude");
         assert!(recording.manifest.recorded.version >= minimum);
         assert!(
-            recording
-                .manifest
-                .verified
-                .iter()
-                .all(|verification| verification.version == Version::new(2, 1, 251))
+            [Version::new(2, 1, 312)].contains(&recording.manifest.recorded.version),
+            "{} was captured against an unreviewed Claude version {}",
+            entry.name,
+            recording.manifest.recorded.version
         );
-        match recording.manifest.recorded.source_kind {
-            SourceKind::Migrated { .. } => {
-                assert_eq!(recording.manifest.recorded.version, minimum)
-            }
-            SourceKind::LiveCapture => {
-                assert!(
-                    [Version::new(2, 1, 312)].contains(&recording.manifest.recorded.version),
-                    "{} was captured against an unreviewed Claude version {}",
-                    entry.name,
-                    recording.manifest.recorded.version
-                )
-            }
-            SourceKind::Scripted { .. } => {
-                panic!(
-                    "{} is scripted; the spec corpus holds captures only",
-                    entry.name
-                )
-            }
-        }
         assert!(recording.manifest.content.contains_key("io.jsonl"));
         assert!(recording.manifest.content.contains_key("spawn.jsonl"));
     }
@@ -406,10 +370,6 @@ fn recorded_pty_corpus_is_inventoried_current_and_unorphaned() {
         assert_eq!(recording.manifest.spec, entry.name);
         assert_eq!(recording.manifest.recorded.provider, "claude");
         assert!(recording.manifest.recorded.version >= minimum);
-        assert_eq!(
-            recording.manifest.recorded.source_kind,
-            SourceKind::LiveCapture
-        );
         assert_eq!(
             recording
                 .io

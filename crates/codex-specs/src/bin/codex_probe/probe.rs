@@ -1,6 +1,5 @@
 use std::io::{self, BufRead as _, Write as _};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use chrono::Utc;
 use codex_specs::specs::{
@@ -8,10 +7,7 @@ use codex_specs::specs::{
     registry,
 };
 use redaction::Redaction;
-use replay_support::{
-    Manifest, ProbeAttempt, ProbeRun, SourceKind, SpecEntry, append_verification, load_recording,
-    migrate_legacy_manifest, probe, registry_rows, sanitize,
-};
+use replay_support::{Manifest, Recorded, SpecEntry, load_recording, registry_rows, sanitize};
 use semver::Version;
 use uuid::Uuid;
 
@@ -31,30 +27,20 @@ pub(super) async fn main() -> Result<(), Box<dyn std::error::Error>> {
         [command, names @ ..] if command == "record" && !names.is_empty() => {
             record_selected(names).await
         }
-        [command] if command == "probe" => run_probe(default_probe_dir()).await,
         [command, capture, name] if command == "join" => join(Path::new(capture), name),
-        [command, flag, out] if command == "probe" && flag == "--out" => {
-            run_probe(PathBuf::from(out)).await
-        }
         _ => Err(usage().into()),
     }
 }
 
 fn usage() -> &'static str {
-    "usage: codex-probe list | record <spec>... | probe [--out <dir>] | join <capture dir> <name>"
+    "usage: codex-probe list | record <spec>... | join <capture dir> <name>"
 }
 
 fn list() -> Result<(), Box<dyn std::error::Error>> {
     for row in registry_rows(&fixtures_root(), registry())? {
-        let ledger = row
-            .verified
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
         println!(
-            "spec={} recording={} recorded={} verified=[{}]",
-            row.spec, row.recording, row.recorded, ledger
+            "spec={} recording={} recorded={}",
+            row.spec, row.recording, row.recorded
         );
     }
     Ok(())
@@ -71,86 +57,6 @@ async fn record_selected(names: &[String]) -> Result<(), Box<dyn std::error::Err
         println!("recorded {} model={CAPTURE_MODEL}", entry.name);
     }
     Ok(())
-}
-
-async fn run_probe(out: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    let version = installed_version()?;
-    let run_id = Uuid::new_v4().to_string();
-    let fixtures = Arc::new(fixtures_root());
-    let live_fixtures = Arc::clone(&fixtures);
-    let pass_fixtures = Arc::clone(&fixtures);
-    let record_fixtures = Arc::clone(&fixtures);
-    let mut run = ProbeRun {
-        run_id,
-        provider: "codex".to_string(),
-        version,
-        dir: out,
-        results: Vec::new(),
-    };
-
-    let (probe_path, drift_path) = probe(
-        &mut run,
-        registry(),
-        move |entry| {
-            let fixtures = Arc::clone(&live_fixtures);
-            async move {
-                let recording =
-                    load_recording(&fixtures.join(entry.recording)).map_err(io::Error::other)?;
-                match live_attempt(entry).await {
-                    Ok(report) => Ok(ProbeAttempt {
-                        claim: Ok(()),
-                        recorded: recording.manifest.observed,
-                        live: report.observed,
-                        raw_payloads: 0,
-                    }),
-                    Err(error) => Ok(ProbeAttempt {
-                        claim: Err(error.to_string()),
-                        recorded: recording.manifest.observed,
-                        live: replay_support::Observed::default(),
-                        raw_payloads: 0,
-                    }),
-                }
-            }
-        },
-        move |entry, verification| {
-            let fixtures = Arc::clone(&pass_fixtures);
-            async move {
-                append_verification(&fixtures.join(entry.recording), verification)
-                    .map_err(io::Error::other)
-            }
-        },
-        move |entry| {
-            let fixtures = Arc::clone(&record_fixtures);
-            async move {
-                record_one(entry, &fixtures)
-                    .await
-                    .map_err(|error| io::Error::other(error.to_string()))
-            }
-        },
-    )
-    .await?;
-
-    for result in &run.results {
-        println!("spec={} outcome={:?}", result.spec, result.outcome);
-    }
-    println!("probe={}", probe_path.display());
-    println!("drift={}", drift_path.display());
-    Ok(())
-}
-
-async fn live_attempt(
-    entry: SpecEntry,
-) -> Result<codex_specs::specs::RunReport, Box<dyn std::error::Error>> {
-    let scratch = isolated_home(entry.name)?;
-    execute(
-        &entry,
-        SpecSource::Live {
-            codex_home: scratch.path().join("codex-home"),
-            model: CAPTURE_MODEL.to_string(),
-        },
-    )
-    .await
-    .map_err(Into::into)
 }
 
 async fn record_one(entry: SpecEntry, root: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -201,16 +107,16 @@ async fn record_one(entry: SpecEntry, root: &Path) -> Result<(), Box<dyn std::er
         )
         .into());
     }
-    let legacy = serde_json::json!({
-        "schema_version": 1,
-        "spec": entry.name,
-        "codex_version": provider_version.to_string(),
-        "model": report.server_model,
-        "recorded_at": Utc::now().to_rfc3339(),
-    });
-    let mut manifest = migrate_legacy_manifest(&legacy, "codex", &destination)?;
-    manifest.recorded.source_kind = SourceKind::LiveCapture;
-    manifest.observed = replay_support::observe(&events);
+    let mut manifest = Manifest::inventory(
+        &destination,
+        entry.name,
+        Recorded {
+            provider: "codex".to_owned(),
+            version: provider_version,
+            model: report.server_model,
+            at: Utc::now(),
+        },
+    )?;
     manifest.redaction = redaction;
     manifest.session_ids = report.session_ids;
     manifest.provider_extra.insert(
@@ -275,16 +181,16 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         spawn.push('\n');
     }
     std::fs::write(stage.join("spawn.jsonl"), spawn)?;
-    let legacy = serde_json::json!({
-        "schema_version": 1,
-        "spec": name,
-        "codex_version": version.to_string(),
-        "model": model,
-        "recorded_at": Utc::now().to_rfc3339(),
-    });
-    let mut manifest = migrate_legacy_manifest(&legacy, "codex", &stage)?;
-    manifest.recorded.source_kind = SourceKind::LiveCapture;
-    manifest.observed = replay_support::observe(&events);
+    let mut manifest = Manifest::inventory(
+        &stage,
+        name,
+        Recorded {
+            provider: "codex".to_owned(),
+            version,
+            model,
+            at: Utc::now(),
+        },
+    )?;
     manifest.redaction = redaction;
     manifest.session_ids = session_ids;
     manifest.provider_extra.insert(
@@ -494,12 +400,6 @@ fn secret_values() -> Vec<String> {
         .into_iter()
         .filter_map(|name| std::env::var(name).ok())
         .collect()
-}
-
-fn default_probe_dir() -> PathBuf {
-    Path::new("target")
-        .join("codex-probe")
-        .join(Uuid::new_v4().to_string())
 }
 
 /// Set in the environment of the probe when Codex starts it as the spec tool

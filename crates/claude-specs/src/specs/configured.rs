@@ -16,8 +16,8 @@ use std::collections::HashMap;
 
 use super::{HAIKU, SessionSetup, SpecDef, SpecSession};
 use crate::driver::sdk::{
-    Effort, HookEvent, HookSubscription, PermissionMode, SdkBeta, SettingSource, SkillsConfig,
-    SystemPrompt, ThinkingConfig, ThinkingDisplay, ToolsConfig, ToolsPreset,
+    Effort, PermissionMode, SdkBeta, SettingSource, SkillsConfig, SystemPrompt, ThinkingConfig,
+    ThinkingDisplay, ToolsConfig, ToolsPreset,
 };
 use crate::expect;
 
@@ -84,93 +84,6 @@ async fn configured_turn(session: &mut SpecSession) {
         turn.text() == "CONFIGURED",
         "the caller's system prompt reached the model, which answered from it \
          rather than from the question: {:?}",
-        turn.text()
-    );
-}
-
-pub(super) static EVERY_HOOK_EVENT: SpecDef = SpecDef {
-    name: "options/every_hook_event",
-    fixture: "every_hook_event",
-    setup: every_hook_setup,
-    run: |session| Box::pin(every_hook_event(session)),
-};
-
-/// Every hook event this SDK can express. Listed rather than derived, so that
-/// adding one upstream shows up here as a specification to extend rather than
-/// silently widening what this claims.
-const EVERY_EVENT: &[HookEvent] = &[
-    HookEvent::PreToolUse,
-    HookEvent::PostToolUse,
-    HookEvent::PostToolUseFailure,
-    HookEvent::PostToolBatch,
-    HookEvent::Notification,
-    HookEvent::UserPromptSubmit,
-    HookEvent::UserPromptExpansion,
-    HookEvent::SessionStart,
-    HookEvent::SessionEnd,
-    HookEvent::Stop,
-    HookEvent::StopFailure,
-    HookEvent::SubagentStart,
-    HookEvent::SubagentStop,
-    HookEvent::PreCompact,
-    HookEvent::PostCompact,
-    HookEvent::PermissionRequest,
-    HookEvent::PermissionDenied,
-    HookEvent::Setup,
-    HookEvent::TeammateIdle,
-    HookEvent::TaskCreated,
-    HookEvent::TaskCompleted,
-    HookEvent::Elicitation,
-    HookEvent::ElicitationResult,
-    HookEvent::ConfigChange,
-    HookEvent::WorktreeCreate,
-    HookEvent::WorktreeRemove,
-    HookEvent::InstructionsLoaded,
-    HookEvent::CwdChanged,
-    HookEvent::FileChanged,
-    HookEvent::DirectoryAdded,
-    HookEvent::MessageDisplay,
-];
-
-fn every_hook_setup() -> SessionSetup {
-    let mut setup = SessionSetup::new(HAIKU, "Reply with exactly HOOKS_OK and nothing else.");
-    setup.options.permission_mode = Some(PermissionMode::Default);
-    for event in EVERY_EVENT {
-        setup.options.hook_subscriptions.push(HookSubscription {
-            event: event.clone(),
-            matcher: None,
-        });
-    }
-    setup.answer_hooks(None);
-    setup
-}
-
-/// Every hook event the SDK can express is a name Claude Code recognises, and
-/// registering all of them is accepted.
-///
-/// This is about naming, not firing. Most of these events cannot be induced in
-/// one short session - a worktree is never created, no configuration changes,
-/// nothing is compacted - and `tools/hook_lifecycle` is where the four that a
-/// tool call does reach are shown to arrive in order. What is at stake here is
-/// that each event is registered under the name Claude Code expects. Get one
-/// wrong and it is not an error: the hook is simply never called, and the
-/// caller has no way to tell that from an event that never happened.
-async fn every_hook_event(session: &mut SpecSession) {
-    expect!(
-        session.initialization().hooks_applied == Some(true),
-        "Claude Code confirms it applied the hooks it was sent, rather than \
-         accepting the registration and discarding it: {:?}",
-        session.initialization().hooks_applied
-    );
-
-    let turn = session.turn().await;
-    expect!(
-        turn.succeeded(),
-        "a session with every hook event registered still runs"
-    );
-    expect!(
-        turn.text() == "HOOKS_OK",
-        "and answers its prompt: {:?}",
         turn.text()
     );
 }

@@ -536,13 +536,8 @@ recordings, from 2.1.283).
 
 The recording harness still answers Claude's menus with keys, as a person at
 its terminal does, so recordings keep covering asks answered in Claude's own
-view. Its versioned keymaps, the programs that interpret them and the
-evidence each carries live in
-[`crates/claude-specs/src/terminal/keymap.rs`](../crates/claude-specs/src/terminal/keymap.rs),
-and
-[`keymap_provenance.rs`](../crates/claude-specs/tests/keymap_provenance.rs)
-requires every verified entry to name a recording with the same version and
-run id.
+view. Its keymap and the programs that interpret it live in
+[`crates/claude-specs/src/terminal/keymap.rs`](../crates/claude-specs/src/terminal/keymap.rs).
 
 ## Headless Claude
 
@@ -868,18 +863,15 @@ The probes run the real provider under your own login, so they are never
 part of an ordinary test run.
 
 ```sh
-# Claude: list the specs and what each was recorded and verified with.
+# Claude: list the specs and what each was recorded with.
 cargo run -p claude-specs --bin claude-probe -- list [--sdk|--pty]
 # Record one or more specs again, terminal or headless.
 cargo run -p claude-specs --bin claude-probe -- record --pty <spec>...
 cargo run -p claude-specs --bin claude-probe -- record --sdk <spec>...
-# Run every spec live and record the evidence.
-cargo run -p claude-specs --bin claude-probe -- probe [--sdk] [--pty] [--out <dir>]
 
-# Codex, the same three commands.
+# Codex, the same two commands.
 cargo run -p codex-specs --bin codex-probe -- list
 cargo run -p codex-specs --bin codex-probe -- record <spec>...
-cargo run -p codex-specs --bin codex-probe -- probe [--out <dir>]
 ```
 
 `claude-probe` runs the `claude` on your `PATH`, or the one named by
@@ -892,17 +884,6 @@ plugins, skills, agents, permission rules, default mode and connected accounts
 stay out of the recording. A terminal capture's transcript drops the rows that copy each API request and scrubs the
 attachments that carry your instructions, environment, attribution and what
 you have installed.
-
-`probe` runs every registered spec live and updates only the evidence its
-outcome permits. A spec that passes gets a verification (version, time, run
-id) appended to its manifest; for a terminal Claude spec, the same version,
-run id and spec name are appended to the harness keymap's `verified` list. A
-spec that fails live is recorded again, and reported failed if recording
-fails too. Each run writes `probe.json` (every spec's
-outcome) and `drift.json` (how the live shapes differ from the recorded
-ones) under `target/claude-probe/<run id>/` or `target/codex-probe/<run id>/`,
-or the directory `--out` names. `record --pty` also appends the keymap
-evidence, once the fresh recording has passed strict replay.
 
 After re-recording, run the replays and review the diffs:
 

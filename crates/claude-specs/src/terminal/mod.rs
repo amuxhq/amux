@@ -1,6 +1,6 @@
 //! Driving Claude Code in a terminal for recordings: starting it under a
-//! PTY, the semantic input a spec types, and the keymaps that turn that
-//! input into bytes for the version observed. amux itself answers Claude's
+//! PTY, the semantic input a spec types, and the keymap that turns that
+//! input into bytes. amux itself answers Claude's
 //! asks through its hooks; recordings keep answering them on Claude's own
 //! menus, as a person at the terminal does.
 

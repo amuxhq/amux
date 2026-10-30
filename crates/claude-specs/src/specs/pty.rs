@@ -18,11 +18,9 @@ use crate::driver::pty::{
     AskAnswer, AskFacts, AskKind, Intent, PermissionAnswer, PlanAnswer, PtyEvent, QuestionAnswer,
     QuestionResponse, RelinkReason,
 };
-use crate::terminal::keymap::KeymapSources;
 
-const DEFAULT_WAIT: Duration = Duration::from_secs(600);
-const WAIT_ENV: &str = "CLAUDE_PTY_SPEC_TIMEOUT_SECS";
-const STALL_DIAGNOSTIC_ENV: &str = "CLAUDE_PTY_STALL_DIAGNOSTIC";
+/// How long a specification's claim may take before it is called stalled.
+const WAIT: Duration = Duration::from_secs(600);
 const SONNET: &str = "claude-sonnet-5";
 const SONNET_FALLBACK_SPECS: &[&str] = &[
     "plan_approve",
@@ -181,10 +179,6 @@ pub fn fixtures_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/pty")
 }
 
-pub fn baked_keymap_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("keymaps/claude-2.1.toml")
-}
-
 /// Apply the launch arguments owned by a PTY specification.
 pub fn prepare_launch(entry: &SpecEntry, launch: &mut Launch) -> Result<(), SpecFailure> {
     let definition = definition_for(entry)?;
@@ -217,13 +211,11 @@ pub fn prepare_launch(entry: &SpecEntry, launch: &mut Launch) -> Result<(), Spec
 pub enum Source {
     Live {
         launch: Launch,
-        keymaps: KeymapSources,
         size: pty_host::PtySize,
     },
     Recorded {
         replay: StrictReplay,
         manifest: Box<Manifest>,
-        keymaps: KeymapSources,
     },
 }
 
@@ -238,13 +230,8 @@ pub struct RunReport {
 
 pub async fn run(entry: &SpecEntry, source: Source) -> Result<RunReport, SpecFailure> {
     let definition = definition_for(entry)?;
-    let wait = claim_wait(entry)?;
     let (session, capture, controller, provider_version, model, session_id) = match source {
-        Source::Live {
-            mut launch,
-            keymaps,
-            size,
-        } => {
+        Source::Live { mut launch, size } => {
             prepare_launch(entry, &mut launch)?;
             let model = launch
                 .args
@@ -264,7 +251,7 @@ pub async fn run(entry: &SpecEntry, source: Source) -> Result<RunReport, SpecFai
                 .iter()
                 .map(|(name, value)| ((*name).into(), (*value).into()))
                 .collect::<Vec<_>>();
-            let session = crate::driver::pty::spawn(&launch, &keymaps, size, &env)
+            let session = crate::driver::pty::spawn(&launch, size, &env)
                 .await
                 .map_err(|error| failure(entry, error.to_string()))?;
             (
@@ -279,11 +266,10 @@ pub async fn run(entry: &SpecEntry, source: Source) -> Result<RunReport, SpecFai
         Source::Recorded {
             mut replay,
             manifest,
-            keymaps,
         } => {
             let manifest = *manifest;
             let controller = replay.controller.clone();
-            let session = crate::driver::pty::from_recording(&mut replay, &manifest, &keymaps)
+            let session = crate::driver::pty::from_recording(&mut replay, &manifest)
                 .map_err(|error| failure(entry, error.to_string()))?;
             if !replay.transports.is_empty() {
                 return Err(failure(entry, "recording has undeclared extra transports"));
@@ -315,7 +301,7 @@ pub async fn run(entry: &SpecEntry, source: Source) -> Result<RunReport, SpecFai
         tokio::pin!(driver);
         let mut driver_finished = false;
         let claim = {
-            let claim = tokio::time::timeout(wait, async {
+            let claim = tokio::time::timeout(WAIT, async {
                 session.prepare_for_prompt().await?;
                 (definition.run)(&mut session).await
             });
@@ -379,24 +365,12 @@ pub async fn run(entry: &SpecEntry, source: Source) -> Result<RunReport, SpecFai
         }
     })
     .await;
-    let stall_diagnostic = if claim.is_err() {
-        capture
-            .as_ref()
-            .map(|capture| persist_stall_diagnostic(entry, &capture.events()))
-    } else {
-        None
-    };
     claim
         .map_err(|_| {
-            let diagnostic = match stall_diagnostic {
-                Some(Ok(path)) => format!("; diagnostic={}", path.display()),
-                Some(Err(error)) => format!("; diagnostic write failed: {error}"),
-                None => "; diagnostic unavailable for recorded source".to_owned(),
-            };
             failure(
                 entry,
                 format!(
-                    "stalled after {wait:?}{diagnostic}; terminal tail={:?}",
+                    "stalled after {WAIT:?}; terminal tail={:?}",
                     timeout_tail.unwrap_or_default()
                 ),
             )
@@ -420,66 +394,6 @@ pub async fn run(entry: &SpecEntry, source: Source) -> Result<RunReport, SpecFai
         io: capture.map_or_else(Vec::new, |capture| capture.events()),
         replay,
     })
-}
-
-fn claim_wait(entry: &SpecEntry) -> Result<Duration, SpecFailure> {
-    let Some(raw) = std::env::var_os(WAIT_ENV) else {
-        return Ok(DEFAULT_WAIT);
-    };
-    let raw = raw
-        .to_str()
-        .ok_or_else(|| failure(entry, format!("{WAIT_ENV} is not UTF-8")))?;
-    let seconds = raw.parse::<u64>().map_err(|error| {
-        failure(
-            entry,
-            format!("{WAIT_ENV} must be a positive integer: {error}"),
-        )
-    })?;
-    if seconds == 0 {
-        return Err(failure(
-            entry,
-            format!("{WAIT_ENV} must be a positive integer"),
-        ));
-    }
-    Ok(Duration::from_secs(seconds))
-}
-
-fn persist_stall_diagnostic(entry: &SpecEntry, events: &[IoEvent]) -> std::io::Result<PathBuf> {
-    let path = std::env::var_os(STALL_DIAGNOSTIC_ENV)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            std::env::temp_dir().join(format!(
-                "claude-pty-{}-stall-{}.jsonl",
-                entry.name,
-                std::process::id()
-            ))
-        });
-    if let Some(parent) = path.parent()
-        && !parent.as_os_str().is_empty()
-    {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut output = String::new();
-    for event in events {
-        let mut row = serde_json::json!({
-            "us": event.us,
-            "dir": match event.direction {
-                IoDirection::Write => "stdin",
-                IoDirection::Read => "stdout",
-            },
-            "line": event.line,
-        });
-        if let Some(transport_id) = &event.transport_id {
-            row["transport_id"] = transport_id.clone().into();
-        }
-        if let Some(session_id) = &event.session_id {
-            row["session_id"] = session_id.clone().into();
-        }
-        output.push_str(&serde_json::to_string(&row).map_err(std::io::Error::other)?);
-        output.push('\n');
-    }
-    std::fs::write(&path, output)?;
-    Ok(path)
 }
 
 fn definition_for(entry: &SpecEntry) -> Result<&'static PtySpecDef, SpecFailure> {

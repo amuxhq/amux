@@ -5,4 +5,3 @@ mod bundle;
 mod core_replay;
 mod dump_show;
 mod strict_replay;
-mod wire_size;

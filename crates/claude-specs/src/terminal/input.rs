@@ -2,7 +2,6 @@
 //! bytes: prompts, interrupts, mode cycling and answers to the asks Claude
 //! shows in its terminal.
 
-use claude::version::ClaudeVersion;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -130,11 +129,6 @@ pub enum InputError {
     UnsafeText { reason: String },
     #[error("answer does not fit the ask: {detail}")]
     AnswerMismatchesAsk { detail: String },
-    #[error("no keymap for Claude {version} can answer {program:?}")]
-    NoKeymap {
-        version: ClaudeVersion,
-        program: super::keymap::ProgramName,
-    },
     #[error("PTY input failed: {0}")]
     Pty(#[from] pty_host::PtyError),
 }

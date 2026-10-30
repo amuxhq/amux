@@ -19,11 +19,10 @@ pub struct RegistryRow {
     pub spec: String,
     pub recording: String,
     pub recorded: Version,
-    pub verified: Vec<Version>,
 }
 
-/// Load every registered recording and return its recorded version and live
-/// verification ledger in registry order.
+/// Load every registered recording and return its recorded version in
+/// registry order.
 pub fn registry_rows(
     fixtures_root: &Path,
     registry: &[SpecEntry],
@@ -36,12 +35,6 @@ pub fn registry_rows(
                 spec: entry.name.to_string(),
                 recording: entry.recording.to_string(),
                 recorded: recording.manifest.recorded.version,
-                verified: recording
-                    .manifest
-                    .verified
-                    .into_iter()
-                    .map(|verification| verification.version)
-                    .collect(),
             })
         })
         .collect()
@@ -112,10 +105,8 @@ fn normalized_relative(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use chrono::DateTime;
-
     use super::*;
-    use crate::{Verification, migrate_legacy_manifest};
+    use crate::{Manifest, Recorded};
 
     const MODELS: &[&str] = &["test-model"];
     const REGISTRY: &[SpecEntry] = &[
@@ -131,27 +122,18 @@ mod tests {
         },
     ];
 
-    fn write_recording(root: &Path, relative: &str, spec: &str, version: &str, verified: &[&str]) {
+    fn write_recording(root: &Path, relative: &str, spec: &str, version: &str) {
         let dir = root.join(relative);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("io.jsonl"), b"").unwrap();
         std::fs::write(dir.join("spawn.jsonl"), b"").unwrap();
-        let legacy = serde_json::json!({
-            "schema_version": 1,
-            "spec": spec,
-            "codex_version": version,
-            "model": "test-model"
-        });
-        let mut manifest = migrate_legacy_manifest(&legacy, "codex", &dir).unwrap();
-        manifest.verified = verified
-            .iter()
-            .enumerate()
-            .map(|(index, version)| Verification {
-                version: Version::parse(version).unwrap(),
-                at: DateTime::UNIX_EPOCH,
-                run_id: format!("run-{index}"),
-            })
-            .collect();
+        let recorded = Recorded {
+            provider: "codex".to_string(),
+            version: Version::parse(version).unwrap(),
+            model: "test-model".to_string(),
+            at: chrono::DateTime::UNIX_EPOCH,
+        };
+        let manifest = Manifest::inventory(&dir, spec, recorded).unwrap();
         let mut bytes = serde_json::to_vec_pretty(&manifest).unwrap();
         bytes.push(b'\n');
         std::fs::write(dir.join("manifest.json"), bytes).unwrap();
@@ -159,20 +141,14 @@ mod tests {
 
     fn fixture() -> tempfile::TempDir {
         let temp = tempfile::tempdir().unwrap();
-        write_recording(
-            temp.path(),
-            "current",
-            "current_spec",
-            "1.2.0",
-            &["1.2.1", "1.3.0"],
-        );
-        write_recording(temp.path(), "nested/old", "old_spec", "0.9.0", &[]);
-        write_recording(temp.path(), "orphan", "orphan_spec", "1.1.0", &[]);
+        write_recording(temp.path(), "current", "current_spec", "1.2.0");
+        write_recording(temp.path(), "nested/old", "old_spec", "0.9.0");
+        write_recording(temp.path(), "orphan", "orphan_spec", "1.1.0");
         temp
     }
 
     #[test]
-    fn registry_rows_list_recording_versions_and_ledgers() {
+    fn registry_rows_list_recording_versions() {
         let fixture = fixture();
 
         assert_eq!(
@@ -182,16 +158,11 @@ mod tests {
                     spec: "current_spec".to_string(),
                     recording: "current".to_string(),
                     recorded: Version::parse("1.2.0").unwrap(),
-                    verified: vec![
-                        Version::parse("1.2.1").unwrap(),
-                        Version::parse("1.3.0").unwrap(),
-                    ],
                 },
                 RegistryRow {
                     spec: "old_spec".to_string(),
                     recording: "nested/old".to_string(),
                     recorded: Version::parse("0.9.0").unwrap(),
-                    verified: Vec::new(),
                 },
             ]
         );

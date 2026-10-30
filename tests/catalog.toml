@@ -214,27 +214,8 @@ cargo = [
 ]
 
 [[suite]]
-name = "claude-transport-boundary"
-contract = "The claude crate carries provider transport only: no session host, and its SDK module holds only the error a stream host reports; the stream-JSON frames live in claude-protocol."
-paths = ["crates/claude/tests/boundary.rs", "crates/claude/src"]
-recipe = "just suite claude-transport-boundary"
-boundary = "Provider adapter"
-oracle = "Source-boundary assertions over the crate's modules."
-real = ["repository source"]
-substituted = ["Claude process"]
-time = "none"
-capabilities = ["Rust toolchain"]
-lane = "tool"
-evidence = ""
-update = ""
-cargo = [
-  { package = "claude", kind = "lib", targets = ["claude"], features = [] },
-  { package = "claude", modules = ["boundary"], features = [] },
-]
-
-[[suite]]
 name = "claude-recorded-adapter"
-contract = "Recorded Claude PTY and SDK traffic replays completely and remains tied to its keymap and wire provenance."
+contract = "Recorded Claude PTY and SDK traffic replays completely and remains tied to its wire provenance."
 paths = ["crates/claude-specs/tests", "crates/claude-specs/fixtures"]
 recipe = "just suite claude-recorded-adapter"
 boundary = "Provider adapter"
@@ -245,11 +226,11 @@ time = "driven"
 capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = "crates/claude-specs/fixtures"
-update = "Run the relevant claude-probe capture and review its manifest."
+update = "Run `claude-probe record` for the spec and review its manifest."
 cargo = [
   { package = "claude-specs", kind = "lib", targets = ["claude_specs"], features = [] },
   { package = "claude-specs", kind = "bin", targets = ["claude-probe"], features = [] },
-  { package = "claude-specs", modules = ["capture_proxy", "driver_boundary", "keymap_provenance", "scrub", "sdk_boundary", "spec_replay"], features = [] },
+  { package = "claude-specs", modules = ["capture_proxy", "scrub", "sdk_boundary", "spec_replay"], features = [] },
 ]
 
 [[suite]]
@@ -265,7 +246,7 @@ time = "driven"
 capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = "crates/codex-specs/fixtures"
-update = "Run codex-probe for the selected scenario and review its manifest."
+update = "Run `codex-probe record` for the spec and review its manifest."
 cargo = [
   { package = "codex-specs", kind = "lib", targets = ["codex_specs"], features = [] },
   { package = "codex-specs", kind = "bin", targets = ["codex-probe"], features = [] },
@@ -455,25 +436,6 @@ cargo = [
 ]
 
 [[suite]]
-name = "wire-size"
-contract = "The size meter replays a headless Claude recording through the interpreter and reports the snapshot count, the largest and median encoded snapshot, and per tool call the bytes its items and appends took."
-paths = ["crates/replay-support/src/wire_size.rs", "crates/replay-support/src/bin/wire-size.rs", "crates/replay-support/tests/wire_size.rs", "crates/replay-support/tests/fixtures/wire_size"]
-recipe = "just suite wire-size"
-boundary = "Interpreter"
-oracle = "Encoded sizes counted by hand, and the counts of a five-line recording."
-real = ["headless Claude interpreter", "a hand-written recording"]
-substituted = ["provider", "daemon"]
-time = "none"
-capabilities = ["Rust toolchain"]
-lane = "tool"
-evidence = "`just wire-size RECORDING` prints the numbers"
-update = ""
-cargo = [
-  { package = "replay-support", kind = "bin", targets = ["wire-size"], features = [] },
-  { package = "replay-support", modules = ["wire_size"], features = [] },
-]
-
-[[suite]]
 name = "dump-show"
 contract = "The dump printer prints a bundle's manifest, each agent's row, its journal in the interpreter's emission-golden format beside the facts replayed through the same renderer, its store slice with orders and revisions, its facts lines and checkpoints as written, and names or prints every other file; it refuses a directory that is not a bundle."
 paths = ["crates/replay-support/src/show.rs", "crates/replay-support/src/bin/dump-show.rs", "crates/replay-support/tests/dump_show.rs", "crates/replay-support/tests/fixtures/bundle"]
@@ -651,8 +613,8 @@ cargo = [
 
 [[suite]]
 name = "provider-io-library-units"
-contract = "PTY ownership, capture redaction and the Codex app-server client preserve process, signal, byte, sanitization and protocol contracts."
-paths = ["crates/codex/src", "crates/pty-host/src", "crates/redaction/src"]
+contract = "PTY ownership, capture redaction, the Codex app-server client and Claude's launch settings, hook receiver, transcript tailer and version probe preserve process, signal, byte, sanitization and protocol contracts."
+paths = ["crates/claude/src", "crates/codex/src", "crates/pty-host/src", "crates/redaction/src"]
 recipe = "just suite provider-io-library-units"
 boundary = "Provider adapter"
 oracle = "Process-group observations, byte streams, exit status, exact sanitized values and decoded protocol messages."
@@ -664,6 +626,7 @@ lane = "fast"
 evidence = ""
 update = ""
 cargo = [
+  { package = "claude", kind = "lib", targets = ["claude"], features = [] },
   { package = "codex", kind = "lib", targets = ["codex"], features = [] },
   { package = "pty-host", kind = "lib", targets = ["pty_host"], features = [] },
   { package = "redaction", kind = "lib", targets = ["redaction"], features = [] },

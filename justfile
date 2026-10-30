@@ -226,12 +226,6 @@ journey CLIENT NAME *ARGS:
         ;;
     esac
 
-# Replay a headless Claude recording through the interpreter and print JSON:
-# the snapshot count, the largest and median encoded snapshot, and per tool
-# call the bytes its items and appends took. Offline and deterministic.
-wire-size RECORDING:
-    {{bounded}} 600 cargo run --locked --quiet -p replay-support --bin wire-size -- "{{RECORDING}}"
-
 # Generate and verify the complete TUI evidence bundle.
 tui-evidence *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1800 scripts/tui-evidence "$@"

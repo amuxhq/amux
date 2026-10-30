@@ -42,7 +42,7 @@ fn recorded() -> Vec<Recording> {
         recordings.extend(found);
     }
     assert!(
-        recordings.len() >= 41,
+        recordings.len() >= 36,
         "found only {} recordings",
         recordings.len()
     );

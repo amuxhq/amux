@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use chrono::{DateTime, Utc};
@@ -19,18 +19,14 @@ pub struct Recording {
     pub io: Vec<IoEvent>,
 }
 
-/// Provenance, immutable content, observations, and a growing live ledger.
+/// Provenance and the inventory of a recording's immutable content.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub schema_version: u32,
     pub spec: String,
     pub recorded: Recorded,
-    #[serde(default)]
-    pub verified: Vec<Verification>,
     pub content: BTreeMap<String, String>,
-    #[serde(default)]
-    pub observed: Observed,
     #[serde(default)]
     pub redaction: RedactionSummary,
     #[serde(default)]
@@ -46,41 +42,6 @@ pub struct Recorded {
     pub version: Version,
     pub model: String,
     pub at: DateTime<Utc>,
-    pub source_kind: SourceKind,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Verification {
-    pub version: Version,
-    pub at: DateTime<Utc>,
-    pub run_id: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SourceKind {
-    LiveCapture,
-    Migrated {
-        from: String,
-    },
-    /// Wire traffic written by hand to state a protocol shape the live corpus
-    /// does not contain. `note` says what it stands in for and why, so a reader
-    /// never mistakes it for something a provider actually said.
-    Scripted {
-        note: String,
-    },
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Observed {
-    #[serde(default)]
-    pub frames: BTreeSet<String>,
-    #[serde(default)]
-    pub fields: BTreeSet<String>,
-    #[serde(default)]
-    pub discriminants: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -129,102 +90,20 @@ pub fn load_recording(dir: &Path) -> Result<Recording, RecordingError> {
     })
 }
 
-/// Convert one copied claude-sdk donor manifest to the ledgered shape.
-pub fn migrate_legacy_manifest(
-    legacy: &serde_json::Value,
-    provider: &str,
-    dir: &Path,
-) -> Result<Manifest, RecordingError> {
-    let path = dir.join("manifest.json");
-    let object = legacy
-        .as_object()
-        .ok_or_else(|| malformed(&path, "legacy manifest must be a JSON object"))?;
-    let spec = required_string(object, "spec", &path)?;
-    let version_key = format!("{provider}_version");
-    let version = object
-        .get(&version_key)
-        .or_else(|| object.get("claude_code_version"))
-        .or_else(|| object.get("version"))
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| malformed(&path, format!("missing provider version for {provider}")))?;
-    let version = Version::parse(version)
-        .map_err(|error| malformed(&path, format!("invalid provider version: {error}")))?;
-    let model = required_string(object, "model", &path)?;
-    let at = legacy_recorded_at(object, &path)?;
-    let from = object
-        .get("agent_sdk_version")
-        .and_then(serde_json::Value::as_str)
-        .map(|version| format!("claude-sdk {version}"))
-        .unwrap_or_else(|| {
-            let schema = object
-                .get("schema_version")
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or(0);
-            format!("legacy manifest schema {schema}")
-        });
-    let session_ids = object
-        .get("session_ids")
-        .cloned()
-        .map(|value| serde_json::from_value(value).map_err(|error| malformed(&path, error)))
-        .transpose()?
-        .unwrap_or_default();
-    let observed = Observed {
-        frames: string_set(object.get("observed_frames"), &path, "observed_frames")?,
-        ..Observed::default()
-    };
-    let redaction = object
-        .get("redaction_summary")
-        .cloned()
-        .map(|value| serde_json::from_value(value).map_err(|error| malformed(&path, error)))
-        .transpose()?
-        .unwrap_or_default();
-
-    let mapped = [
-        "schema_version",
-        "spec",
-        "claude_code_version",
-        "version",
-        version_key.as_str(),
-        "model",
-        "recorded_at",
-        "at",
-        "session_ids",
-        "source_kind",
-        "content_sha256",
-        "redaction_summary",
-        "persisted_sessions",
-        "observed_frames",
-    ];
-    let provider_extra = object
-        .iter()
-        .filter(|(key, _)| !mapped.contains(&key.as_str()))
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-
-    Ok(Manifest {
-        schema_version: MANIFEST_SCHEMA_VERSION,
-        spec,
-        recorded: Recorded {
-            provider: provider.to_string(),
-            version,
-            model,
-            at,
-            source_kind: SourceKind::Migrated { from },
-        },
-        verified: Vec::new(),
-        content: build_inventory(dir)?,
-        observed,
-        redaction,
-        session_ids,
-        provider_extra,
-    })
-}
-
-/// Append a live verification while leaving all inventoried bytes untouched.
-pub fn append_verification(dir: &Path, verification: Verification) -> Result<(), RecordingError> {
-    let mut recording = load_recording(dir)?;
-    recording.manifest.verified.push(verification);
-    write_manifest(&dir.join("manifest.json"), &recording.manifest)
+impl Manifest {
+    /// The manifest of a capture whose files are already in `dir`, every
+    /// replay-relevant one inventoried by its digest.
+    pub fn inventory(dir: &Path, spec: &str, recorded: Recorded) -> Result<Self, RecordingError> {
+        Ok(Self {
+            schema_version: MANIFEST_SCHEMA_VERSION,
+            spec: spec.to_owned(),
+            recorded,
+            content: build_inventory(dir)?,
+            redaction: RedactionSummary::default(),
+            session_ids: Vec::new(),
+            provider_extra: serde_json::Map::new(),
+        })
+    }
 }
 
 fn validate_inventory(
@@ -356,59 +235,6 @@ fn read_required(path: &Path) -> Result<Vec<u8>, RecordingError> {
     std::fs::read(path).map_err(|error| io_error(path, error))
 }
 
-fn write_manifest(path: &Path, manifest: &Manifest) -> Result<(), RecordingError> {
-    let mut bytes =
-        serde_json::to_vec_pretty(manifest).map_err(|error| RecordingError::Malformed {
-            path: path.to_path_buf(),
-            reason: error.to_string(),
-        })?;
-    bytes.push(b'\n');
-    std::fs::write(path, bytes).map_err(|error| io_error(path, error))
-}
-
-fn required_string(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &str,
-    path: &Path,
-) -> Result<String, RecordingError> {
-    object
-        .get(field)
-        .and_then(serde_json::Value::as_str)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| malformed(path, format!("missing string field {field}")))
-}
-
-fn legacy_recorded_at(
-    object: &serde_json::Map<String, serde_json::Value>,
-    path: &Path,
-) -> Result<DateTime<Utc>, RecordingError> {
-    let Some(value) = object.get("recorded_at").or_else(|| object.get("at")) else {
-        return Ok(DateTime::UNIX_EPOCH);
-    };
-    let value = value
-        .as_str()
-        .ok_or_else(|| malformed(path, "legacy recorded_at must be a string"))?;
-    value
-        .parse()
-        .map_err(|error| malformed(path, format!("invalid recorded_at: {error}")))
-}
-
-fn string_set(
-    value: Option<&serde_json::Value>,
-    path: &Path,
-    field: &str,
-) -> Result<BTreeSet<String>, RecordingError> {
-    value
-        .cloned()
-        .map(|value| {
-            serde_json::from_value(value)
-                .map_err(|error| malformed(path, format!("invalid {field}: {error}")))
-        })
-        .transpose()
-        .map(Option::unwrap_or_default)
-}
-
 fn io_error(path: &Path, error: std::io::Error) -> RecordingError {
     if error.kind() == std::io::ErrorKind::NotFound {
         RecordingError::Missing(path.to_path_buf())
@@ -428,39 +254,36 @@ fn malformed(path: &Path, reason: impl ToString) -> RecordingError {
 mod tests {
     use super::*;
 
-    const LEGACY_FIXTURE: &str = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/legacy_manifest"
-    );
+    const SESSION: &str = "sessions/4c2067b7-f57e-4999-b24d-afdd6b61c8a7.jsonl";
+    const SUBAGENT: &str = "sessions/4c2067b7-f57e-4999-b24d-afdd6b61c8a7/subagents/agent.jsonl";
 
-    fn copy_fixture() -> tempfile::TempDir {
-        let temp = tempfile::tempdir().unwrap();
-        copy_tree(Path::new(LEGACY_FIXTURE), temp.path());
-        temp
-    }
-
-    fn copy_tree(from: &Path, to: &Path) {
-        std::fs::create_dir_all(to).unwrap();
-        for entry in std::fs::read_dir(from).unwrap() {
-            let entry = entry.unwrap();
-            let target = to.join(entry.file_name());
-            if entry.file_type().unwrap().is_dir() {
-                copy_tree(&entry.path(), &target);
-            } else {
-                std::fs::copy(entry.path(), target).unwrap();
-            }
+    fn recorded() -> Recorded {
+        Recorded {
+            provider: "claude".to_string(),
+            version: Version::parse("2.1.312").unwrap(),
+            model: "claude-haiku-4-5".to_string(),
+            at: DateTime::UNIX_EPOCH,
         }
     }
 
-    fn migrate_fixture(dir: &Path) -> Manifest {
-        let legacy: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
-        migrate_legacy_manifest(&legacy, "claude", dir).unwrap()
+    /// A capture's files, with a session transcript and a subagent's below it.
+    fn capture() -> tempfile::TempDir {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("io.jsonl"), b"").unwrap();
+        std::fs::write(temp.path().join("spawn.jsonl"), b"{}\n").unwrap();
+        for relative in [SESSION, SUBAGENT] {
+            let path = temp.path().join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b"{}\n").unwrap();
+        }
+        temp
     }
 
-    fn install_migrated_manifest(dir: &Path) -> Manifest {
-        let manifest = migrate_fixture(dir);
-        write_manifest(&dir.join("manifest.json"), &manifest).unwrap();
+    fn install_manifest(dir: &Path) -> Manifest {
+        let manifest = Manifest::inventory(dir, "example", recorded()).unwrap();
+        let mut bytes = serde_json::to_vec_pretty(&manifest).unwrap();
+        bytes.push(b'\n');
+        std::fs::write(dir.join("manifest.json"), bytes).unwrap();
         manifest
     }
 
@@ -474,19 +297,8 @@ mod tests {
                 version: Version::parse("0.150.1").unwrap(),
                 model: "gpt-5.6-luna".to_string(),
                 at: "2026-08-29T12:00:00Z".parse().unwrap(),
-                source_kind: SourceKind::LiveCapture,
             },
-            verified: vec![Verification {
-                version: Version::parse("2.1.247").unwrap(),
-                at: "2026-08-29T13:00:00Z".parse().unwrap(),
-                run_id: "run-1".to_string(),
-            }],
             content: BTreeMap::new(),
-            observed: Observed {
-                frames: BTreeSet::from(["assistant".to_string()]),
-                fields: BTreeSet::from(["message.content.0.type".to_string()]),
-                discriminants: BTreeSet::from(["text".to_string()]),
-            },
             redaction: RedactionSummary::default(),
             session_ids: Vec::new(),
             provider_extra: serde_json::Map::new(),
@@ -494,40 +306,17 @@ mod tests {
 
         let json = serde_json::to_value(&manifest).unwrap();
         assert_eq!(json["recorded"]["version"], "0.150.1");
-        assert_eq!(json["recorded"]["source_kind"], "live_capture");
-        assert_eq!(json["verified"][0]["version"], "2.1.247");
-        assert_eq!(json["observed"]["fields"][0], "message.content.0.type");
         assert_eq!(serde_json::from_value::<Manifest>(json).unwrap(), manifest);
     }
 
     #[test]
-    fn migrated_manifest_inventories_donor_sessions_recursively() {
-        let temp = copy_fixture();
-        let manifest = migrate_fixture(temp.path());
+    fn the_inventory_covers_session_transcripts_recursively() {
+        let temp = capture();
+        let manifest = install_manifest(temp.path());
 
-        assert_eq!(manifest.schema_version, MANIFEST_SCHEMA_VERSION);
-        assert_eq!(
-            manifest.recorded.version,
-            Version::parse("2.1.247").unwrap()
-        );
-        assert_eq!(manifest.recorded.at, DateTime::UNIX_EPOCH);
-        assert_eq!(manifest.verified, Vec::<Verification>::new());
-        assert!(matches!(
-            manifest.recorded.source_kind,
-            SourceKind::Migrated { ref from } if from == "claude-sdk 0.3.247"
-        ));
-        assert_eq!(
-            serde_json::to_value(&manifest).unwrap()["recorded"]["source_kind"]["migrated"]["from"],
-            "claude-sdk 0.3.247"
-        );
         assert_eq!(
             manifest.content.keys().cloned().collect::<Vec<_>>(),
-            vec![
-                "io.jsonl",
-                "sessions/4c2067b7-f57e-4999-b24d-afdd6b61c8a7.jsonl",
-                "sessions/4c2067b7-f57e-4999-b24d-afdd6b61c8a7/subagents/agent.jsonl",
-                "spawn.jsonl",
-            ]
+            vec!["io.jsonl", SESSION, SUBAGENT, "spawn.jsonl"]
         );
         assert!(
             manifest
@@ -535,14 +324,13 @@ mod tests {
                 .values()
                 .all(|hash| hash.starts_with("sha256:") && hash.len() == 71)
         );
-        assert_eq!(manifest.observed.frames.len(), 8);
-        assert_eq!(manifest.provider_extra["agent_sdk_version"], "0.3.247");
+        assert_eq!(load_recording(temp.path()).unwrap().manifest, manifest);
     }
 
     #[test]
     fn load_manifest_rejects_hash_mismatch() {
-        let temp = copy_fixture();
-        install_migrated_manifest(temp.path());
+        let temp = capture();
+        install_manifest(temp.path());
         std::fs::write(temp.path().join("io.jsonl"), b"changed\n").unwrap();
 
         assert_eq!(
@@ -555,8 +343,8 @@ mod tests {
 
     #[test]
     fn load_manifest_rejects_uninventoried_file() {
-        let temp = copy_fixture();
-        install_migrated_manifest(temp.path());
+        let temp = capture();
+        install_manifest(temp.path());
         let path = temp.path().join("sessions/uninventoried.jsonl");
         std::fs::write(&path, b"{}\n").unwrap();
 
@@ -564,43 +352,5 @@ mod tests {
             load_recording(temp.path()).unwrap_err(),
             RecordingError::Uninventoried { path }
         );
-    }
-
-    #[test]
-    fn append_verification_rewrites_manifest_only() {
-        let temp = copy_fixture();
-        let before = install_migrated_manifest(temp.path());
-        let bytes_before = before
-            .content
-            .keys()
-            .map(|relative| {
-                (
-                    relative.clone(),
-                    std::fs::read(temp.path().join(relative)).unwrap(),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
-
-        append_verification(
-            temp.path(),
-            Verification {
-                version: Version::parse("2.1.251").unwrap(),
-                at: "2026-08-29T14:00:00Z".parse().unwrap(),
-                run_id: "probe-1".to_string(),
-            },
-        )
-        .unwrap();
-
-        let after = load_recording(temp.path()).unwrap().manifest;
-        assert_eq!(after.verified.len(), 1);
-        assert_eq!(after.content, before.content);
-        for (relative, bytes) in bytes_before {
-            let current = std::fs::read(temp.path().join(&relative)).unwrap();
-            assert_eq!(current, bytes, "{relative} bytes changed");
-            assert_eq!(
-                after.content[&relative],
-                digest_file(&temp.path().join(relative)).unwrap()
-            );
-        }
     }
 }

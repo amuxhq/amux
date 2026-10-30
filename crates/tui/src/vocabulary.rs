@@ -289,48 +289,34 @@ pub struct HomeScene {
     pub fleet: ui_state::FleetState,
     pub lines: std::collections::HashMap<ui_state::AgentKey, ui_view::SessionLine>,
     pub now: i64,
-    pub chat_in: settings::ChatInSetting,
 }
 
-/// What a new agent starts with on the authored desk: the shipped
-/// settings.
-static DEFAULTS: std::sync::LazyLock<settings::NewAgentSettings> =
-    std::sync::LazyLock::new(settings::NewAgentSettings::default);
+/// Home on the authored desk, chatting in amux, a new agent starting with
+/// the shipped settings.
+pub fn desk_home() -> crate::home::Home {
+    crate::home::Home::new(crate::home::Place {
+        local_host: b"desk".to_vec(),
+        version: String::new(),
+        working_dir: "~/src/amux".into(),
+        chat_in: settings::ChatInSetting::Amux,
+        defaults: settings::NewAgentSettings::default(),
+    })
+}
 
 impl HomeScene {
-    fn place(&self) -> crate::home::Place<'static> {
-        crate::home::Place {
-            local_host: b"desk",
-            version: "",
-            working_dir: "~/src/amux",
-            chat_in: self.chat_in,
-            defaults: &DEFAULTS,
-        }
-    }
-
     pub fn draw(
         &mut self,
         frame: &mut ratatui::Frame<'_>,
         area: ratatui::layout::Rect,
         theme: Theme,
     ) {
-        let place = self.place();
-        self.home.draw(
-            frame,
-            area,
-            &self.fleet,
-            &self.lines,
-            None,
-            self.now,
-            theme,
-            &place,
-        );
+        self.home
+            .draw(frame, area, &self.fleet, &self.lines, None, self.now, theme);
     }
 
     /// The open new-agent composer told what the desk offers its agent.
     pub fn offer(&mut self, provider: wire::Provider, catalogue: &wire::Catalogue) {
-        let place = self.place();
-        if let Some(setup) = self.home.open_setup(&place) {
+        if let Some(setup) = self.home.open_setup() {
             setup.offer(b"desk", provider, &[1; 32], catalogue);
         }
     }
@@ -592,7 +578,7 @@ pub fn authored_home() -> HomeScene {
     event(Of::CaughtUp(wire::CaughtUp { revision: 0 }));
     fleet.update(FleetMsg::Connection(Connection::Live));
 
-    let mut home = crate::home::Home::default();
+    let mut home = desk_home();
     // Exited unfolded, as the person would open it; the highlight back on
     // the first agent.
     let key = crossterm::event::KeyEvent::from;
@@ -604,7 +590,6 @@ pub fn authored_home() -> HomeScene {
         fleet,
         lines,
         now: NOW,
-        chat_in: settings::ChatInSetting::Amux,
     }
 }
 

@@ -327,16 +327,7 @@ fn home_at(home: &mut crate::home::Home, fleet: &FleetState, width: u16, height:
     terminal
         .draw(|frame| {
             let area = frame.area();
-            home.draw(
-                frame,
-                area,
-                fleet,
-                &HashMap::new(),
-                None,
-                now(),
-                theme(),
-                &HOME_PLACE,
-            );
+            home.draw(frame, area, fleet, &HashMap::new(), None, now(), theme());
         })
         .unwrap();
     text(terminal.backend().buffer())
@@ -348,7 +339,7 @@ fn home_at(home: &mut crate::home::Home, fleet: &FleetState, width: u16, height:
 #[test]
 fn enter_after_a_filter_opens_the_agent_it_found() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home_at(&mut home, &fleet, W, H);
     home.key(&fleet, key(KeyCode::Home));
     home.key(&fleet, key(KeyCode::Char('/')));
@@ -370,7 +361,7 @@ fn enter_after_a_filter_opens_the_agent_it_found() {
 #[test]
 fn moving_to_cancel_in_the_stop_window_cancels() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home_at(&mut home, &fleet, W, H);
     focus(&mut home, &fleet, "alpha");
     home.key(&fleet, key(KeyCode::Char('x')));
@@ -406,7 +397,7 @@ fn focus(home: &mut crate::home::Home, fleet: &FleetState, name: &str) {
 #[test]
 fn x_stops_a_live_agent_and_deletes_only_an_exited_one() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home_at(&mut home, &fleet, W, H);
     focus(&mut home, &fleet, "alpha");
     home.key(&fleet, key(KeyCode::Char('x')));
@@ -417,7 +408,7 @@ fn x_stops_a_live_agent_and_deletes_only_an_exited_one() {
             && !screen.contains("Delete"),
         "x on a live agent did {effects:?}:\n{screen}"
     );
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home_at(&mut home, &fleet, W, H);
     focus(&mut home, &fleet, "archive");
     home.key(&fleet, key(KeyCode::Char('x')));
@@ -443,7 +434,7 @@ fn a_held_stop_reads_on_its_row_and_x_cancels_it() {
         agent: alpha.clone(),
         listing,
     });
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home_at(&mut home, &fleet, W, H);
     focus(&mut home, &fleet, "alpha");
     let screen = home_at(&mut home, &fleet, W, H);
@@ -464,7 +455,7 @@ fn a_held_stop_reads_on_its_row_and_x_cancels_it() {
 fn the_stop_window_names_the_turn_and_the_subagents_a_stop_cuts() {
     let fleet = home_fleet();
     for (name, words) in [("alpha", "working"), ("planner", "1 subagent")] {
-        let mut home = crate::home::Home::default();
+        let mut home = new_home();
         home_at(&mut home, &fleet, W, H);
         focus(&mut home, &fleet, name);
         home.key(&fleet, key(KeyCode::Char('x')));
@@ -481,7 +472,7 @@ fn the_stop_window_names_the_turn_and_the_subagents_a_stop_cuts() {
 #[test]
 fn an_empty_rename_says_why_enter_does_nothing() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home_at(&mut home, &fleet, W, H);
     home.key(&fleet, key(KeyCode::Char('/')));
     for c in "alpha".chars() {
@@ -504,7 +495,7 @@ fn an_empty_rename_says_why_enter_does_nothing() {
 #[test]
 fn the_new_agents_settings_line_keeps_its_keys_at_80_columns() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home_at(&mut home, &fleet, 80, 24);
     home.key(&fleet, key(KeyCode::Char('n')));
     home_at(&mut home, &fleet, 80, 24);
@@ -546,26 +537,20 @@ fn choosing_another_host_drops_this_hosts_folder() {
 #[test]
 fn a_new_agent_form_left_empty_opens_with_the_defaults_again() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home_at(&mut home, &fleet, W, H);
     home.key(&fleet, key(KeyCode::Char('n')));
     home_at(&mut home, &fleet, W, H);
-    let before = home
-        .open_setup(&HOME_PLACE)
-        .map(|setup| setup.permission.clone());
+    let before = home.open_setup().map(|setup| setup.permission.clone());
     // As Shift+Tab cycling to auto does once the host has said what it offers.
-    if let Some(setup) = home.open_setup(&HOME_PLACE) {
+    if let Some(setup) = home.open_setup() {
         setup.pick(crate::setup::Item::Permission, "auto");
     }
-    let cycled = home
-        .open_setup(&HOME_PLACE)
-        .map(|setup| setup.permission.clone());
+    let cycled = home.open_setup().map(|setup| setup.permission.clone());
     assert_ne!(before, cycled, "the permission moved");
     home.key(&fleet, key(KeyCode::Esc));
     home.key(&fleet, key(KeyCode::Char('n')));
-    let again = home
-        .open_setup(&HOME_PLACE)
-        .map(|setup| setup.permission.clone());
+    let again = home.open_setup().map(|setup| setup.permission.clone());
     assert_eq!(
         again, before,
         "the abandoned form's permission carried into the next new agent"
@@ -579,7 +564,7 @@ fn a_new_agent_form_left_empty_opens_with_the_defaults_again() {
 #[test]
 fn a_sentence_typed_on_home_stops_nothing() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home_at(&mut home, &fleet, W, H);
     focus(&mut home, &fleet, "alpha");
     let mut effects = Vec::new();
@@ -1011,7 +996,7 @@ fn a_file_over_the_attachment_limit_is_refused_naming_the_limit() {
 fn choosing_an_away_host_for_a_new_agent_says_why() {
     let mut fleet = home_fleet();
     inventory(&mut fleet, host(b"d", "desk", Reads::Away));
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home_at(&mut home, &fleet, W, H);
     home.key(&fleet, key(KeyCode::Char('n')));
     home_at(&mut home, &fleet, W, H);
@@ -1024,7 +1009,7 @@ fn choosing_an_away_host_for_a_new_agent_says_why() {
     );
     home.key(&fleet, key(KeyCode::Char('2')));
     let after = home_at(&mut home, &fleet, W, H);
-    let host = home.open_setup(&HOME_PLACE).map(|setup| setup.host.clone());
+    let host = home.open_setup().map(|setup| setup.host.clone());
     assert_eq!(host, Some(b"a".to_vec()), "the agent stays on studio");
     assert_ne!(
         before, after,
@@ -1097,7 +1082,7 @@ fn a_chat_reconnecting_to_its_own_daemon_does_not_blame_the_agents_host() {
 #[test]
 fn an_invalid_new_agent_name_is_refused_on_the_spot() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home_at(&mut home, &fleet, 80, 24);
     home.key(&fleet, key(KeyCode::Char('n')));
     home_at(&mut home, &fleet, 80, 24);
@@ -1108,9 +1093,7 @@ fn an_invalid_new_agent_name_is_refused_on_the_spot() {
     }
     home.key(&fleet, key(KeyCode::Enter));
     let screen = home_at(&mut home, &fleet, 80, 24);
-    let name = home
-        .open_setup(&HOME_PLACE)
-        .and_then(|setup| setup.name.clone());
+    let name = home.open_setup().and_then(|setup| setup.name.clone());
     assert_eq!(name, None, "the invalid name was taken:\n{screen}");
     assert!(
         screen.contains("╭─ Name") && screen.contains("a-z, 0-9"),
@@ -1128,7 +1111,7 @@ fn an_invalid_new_agent_name_is_refused_on_the_spot() {
         .lines()
         .find(|line| line.contains('╰') && line.contains('│'))
         .unwrap_or_else(|| panic!("no edge:\n{screen}"));
-    let setup = home.open_setup(&HOME_PLACE).expect("the new agent's setup");
+    let setup = home.open_setup().expect("the new agent's setup");
     assert_eq!(
         setup.name.as_deref(),
         Some("a-very-long-agent-name-that-fills-most-of-the-edge")
@@ -1152,7 +1135,7 @@ fn deleting_the_last_row_moves_the_highlight_to_the_new_last_row() {
         agent.exit_cause = wire::ExitCause::Stopped as i32;
     }
     inventory(&mut fleet, attic);
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home_at(&mut home, &fleet, W, H);
     // End lands on the folded "Exited" heading; Enter opens it; End again
     // reaches its last row.

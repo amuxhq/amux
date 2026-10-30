@@ -15,7 +15,7 @@ use crate::chat::layout::{Anchor, PAGE};
 use crate::chat::{ChatEffect, ChatView};
 use crate::clipboard::ClipboardContent;
 use crate::fixtures::{self, caught_up, draw, text};
-use crate::fleet::{FleetEffect, FleetView};
+use crate::fleet::FleetEffect;
 use crate::theme::Theme;
 
 const W: u16 = 100;
@@ -1140,10 +1140,10 @@ fn a_host_out_of_reach_while_this_machine_is_signed_out_names_this_machines_sign
     );
     assert!(!screen.contains("not signed in"), "{screen}");
     // Home's top line says how to sign in again.
-    let mut fleet_view = FleetView {
+    let mut fleet_view = crate::home::Home::new(crate::home::Place {
         local_host: b"laptop".to_vec(),
-        ..FleetView::default()
-    };
+        ..Default::default()
+    });
     let screen = fleet_screen(&mut fleet_view, &fleet);
     assert!(screen.contains("signed out · amux login"), "{screen}");
 
@@ -1275,10 +1275,10 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
     assert!(screen.contains("it sends once you pair again"), "{screen}");
 
     // Home's top line says how to pair again, and does not count it away.
-    let mut fleet_view = FleetView {
+    let mut fleet_view = crate::home::Home::new(crate::home::Place {
         local_host: b"laptop".to_vec(),
-        ..FleetView::default()
-    };
+        ..Default::default()
+    });
     let screen = fleet_screen(&mut fleet_view, &fleet);
     assert!(
         screen.contains("desk no longer trusts this machine · amux pair desk"),
@@ -1441,7 +1441,7 @@ fn agent_row(
     })
 }
 
-fn fleet_screen(view: &mut FleetView, fleet: &FleetState) -> String {
+fn fleet_screen(view: &mut crate::home::Home, fleet: &FleetState) -> String {
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(W, H)).unwrap();
     terminal
         .draw(|frame| {
@@ -1464,14 +1464,14 @@ fn the_fleet_says_restart_to_update_when_the_daemon_runs_another_build() {
         &mut fleet,
         wire::inventory_event::Of::CaughtUp(wire::CaughtUp { revision: 0 }),
     );
-    let mut view = FleetView {
+    let mut view = crate::home::Home::new(crate::home::Place {
         version: "0.8.0".into(),
         local_host: b"a".to_vec(),
-        ..FleetView::default()
-    };
+        ..Default::default()
+    });
     let screen = fleet_screen(&mut view, &fleet);
     assert!(!screen.contains("restart to update"), "{screen}");
-    view.version = "0.7.0".into();
+    view.place.version = "0.7.0".into();
     let screen = fleet_screen(&mut view, &fleet);
     assert!(
         screen.contains("amux 0.8.0 running · restart to update"),
@@ -1992,7 +1992,7 @@ fn an_agent_that_exited_while_the_daemon_was_away_says_exited_once() {
     inventory(&mut fleet, host(b"host", "desk", Reads::Online));
     inventory(&mut fleet, wire::inventory_event::Of::Agent(exited));
     // Home lists it under Exited, which starts folded.
-    let mut fleet_view = FleetView::default();
+    let mut fleet_view = crate::home::Home::default();
     fleet_view.key(&fleet, key(KeyCode::Char('G')));
     fleet_view.key(&fleet, key(KeyCode::Enter));
     let screen = fleet_screen(&mut fleet_view, &fleet);
@@ -2285,7 +2285,7 @@ fn a_paste_in_the_fleet_types_into_the_rename_field() {
     let mut fleet = FleetState::new();
     inventory(&mut fleet, host(b"a", "studio", Reads::Online));
     inventory(&mut fleet, agent_row(b"p", "planner", Phase::Idle, None));
-    let mut view = FleetView::default();
+    let mut view = crate::home::Home::default();
     view.paste("ignored");
     view.key(&fleet, key(KeyCode::Char('r')));
     view.key(&fleet, ctrl('u'));
@@ -2303,7 +2303,7 @@ fn q_and_question_mark_reach_an_open_fleet_overlay_first() {
     let mut fleet = FleetState::new();
     inventory(&mut fleet, host(b"a", "studio", Reads::Online));
     inventory(&mut fleet, agent_row(b"p", "planner", Phase::Idle, None));
-    let mut view = FleetView::default();
+    let mut view = crate::home::Home::default();
     let q = key(KeyCode::Char('q'));
     let help = key(KeyCode::Char('?'));
     assert_eq!(view.key(&fleet, help), vec![FleetEffect::Help]);
@@ -2427,14 +2427,20 @@ fn home_fleet() -> FleetState {
     fleet
 }
 
-static HOME_PLACE: std::sync::LazyLock<crate::home::Place<'static>> =
-    std::sync::LazyLock::new(|| crate::home::Place {
-        local_host: b"a",
-        version: "",
-        working_dir: "~/work/amux",
+/// Home's place in these tests: host `a`, a folder under `~/work`.
+fn home_place() -> crate::home::Place {
+    crate::home::Place {
+        local_host: b"a".to_vec(),
+        version: String::new(),
+        working_dir: "~/work/amux".into(),
         chat_in: settings::ChatInSetting::Amux,
-        defaults: Box::leak(Box::default()),
-    });
+        defaults: settings::NewAgentSettings::default(),
+    }
+}
+
+fn new_home() -> crate::home::Home {
+    crate::home::Home::new(home_place())
+}
 
 fn home_screen(home: &mut crate::home::Home, fleet: &FleetState, theme: Theme) -> String {
     home_screen_with(home, fleet, &HashMap::new(), theme)
@@ -2451,7 +2457,7 @@ fn home_screen_with(
     terminal
         .draw(|frame| {
             let area = frame.area();
-            home.draw(frame, area, fleet, lines, None, now(), theme, &HOME_PLACE);
+            home.draw(frame, area, fleet, lines, None, now(), theme);
         })
         .unwrap();
     text(terminal.backend().buffer())
@@ -2467,7 +2473,7 @@ fn row_of(screen: &str, words: &str) -> u16 {
 #[test]
 fn home_leads_with_what_needs_you_and_folds_the_exited() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     let screen = home_screen(&mut home, &fleet, theme());
     // The family whose child needs you is under the heading, its child
     // named on its second line; the running follow newest first; the
@@ -2494,7 +2500,7 @@ fn home_leads_with_what_needs_you_and_folds_the_exited() {
 #[test]
 fn home_keeps_its_order_while_agents_stream_and_moves_one_whose_turn_ended() {
     let mut fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     let beta = AgentKey {
         host: b"a".to_vec(),
         agent: b"w2".to_vec(),
@@ -2538,7 +2544,7 @@ fn home_keeps_its_order_while_agents_stream_and_moves_one_whose_turn_ended() {
 fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
     use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     let screen = home_screen(&mut home, &fleet, theme());
     let beta = row_of(&screen, "beta");
     let mouse = |kind, column, row| MouseEvent {
@@ -2580,7 +2586,7 @@ fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
 #[test]
 fn a_known_ground_tints_the_highlight_instead_of_marking_it() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     let colors = crate::theme::TerminalColors {
         background: (21, 21, 21),
         foreground: (208, 208, 208),
@@ -2591,16 +2597,7 @@ fn a_known_ground_tints_the_highlight_instead_of_marking_it() {
     terminal
         .draw(|frame| {
             let area = frame.area();
-            home.draw(
-                frame,
-                area,
-                &fleet,
-                &HashMap::new(),
-                None,
-                now(),
-                tinted,
-                &HOME_PLACE,
-            );
+            home.draw(frame, area, &fleet, &HashMap::new(), None, now(), tinted);
         })
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
@@ -2622,7 +2619,7 @@ fn a_known_ground_tints_the_highlight_instead_of_marking_it() {
 #[test]
 fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home.key(&fleet, key(KeyCode::Char('n')));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
@@ -2635,12 +2632,9 @@ fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
         screen.contains("Claude · opus (high) · default │ ~/work/amux"),
         "{screen}"
     );
-    home.open_setup(&HOME_PLACE).unwrap().offer(
-        b"a",
-        wire::Provider::Claude,
-        &[1; 32],
-        &claude_offer(),
-    );
+    home.open_setup()
+        .unwrap()
+        .offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Claude · Opus (high) · ask │ ~/work/amux"),
@@ -2672,29 +2666,19 @@ fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
 #[test]
 fn a_new_agents_edge_keeps_its_model_and_permission_in_a_deep_folder_at_80_columns() {
     let fleet = home_fleet();
-    let place = crate::home::Place {
-        working_dir: "~/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work",
-        ..*HOME_PLACE
-    };
-    let mut home = crate::home::Home::default();
+    let mut home = crate::home::Home::new(crate::home::Place {
+        working_dir: "~/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work".into(),
+        ..home_place()
+    });
     home.key(&fleet, key(KeyCode::Char('n')));
-    let setup = home.open_setup(&place).unwrap();
+    let setup = home.open_setup().unwrap();
     setup.offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
     setup.pick(crate::setup::Item::Permission, "bypassPermissions");
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, H)).unwrap();
     terminal
         .draw(|frame| {
             let area = frame.area();
-            home.draw(
-                frame,
-                area,
-                &fleet,
-                &HashMap::new(),
-                None,
-                now(),
-                theme(),
-                &place,
-            );
+            home.draw(frame, area, &fleet, &HashMap::new(), None, now(), theme());
         })
         .unwrap();
     let screen = text(terminal.backend().buffer());
@@ -2714,13 +2698,12 @@ fn a_new_agents_edge_keeps_its_model_and_permission_in_a_deep_folder_at_80_colum
 #[test]
 fn a_new_codex_edge_shows_the_plan_mode_shift_tab_turned_on_at_80_columns() {
     let fleet = home_fleet();
-    let place = crate::home::Place {
-        working_dir: "~/.local/state/amux-qa/20261013-043305/t8/.testnet/net/desk/work",
-        ..*HOME_PLACE
-    };
-    let mut home = crate::home::Home::default();
+    let mut home = crate::home::Home::new(crate::home::Place {
+        working_dir: "~/.local/state/amux-qa/20261013-043305/t8/.testnet/net/desk/work".into(),
+        ..home_place()
+    });
     home.key(&fleet, key(KeyCode::Char('n')));
-    let setup = home.open_setup(&place).unwrap();
+    let setup = home.open_setup().unwrap();
     setup.pick(crate::setup::Item::Kind, "1");
     setup.offer(b"a", wire::Provider::Codex, &[2; 32], &codex_offer());
     setup.pick(crate::setup::Item::Permission, "read-only");
@@ -2730,16 +2713,7 @@ fn a_new_codex_edge_shows_the_plan_mode_shift_tab_turned_on_at_80_columns() {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                home.draw(
-                    frame,
-                    area,
-                    &fleet,
-                    &HashMap::new(),
-                    None,
-                    now(),
-                    theme(),
-                    &place,
-                );
+                home.draw(frame, area, &fleet, &HashMap::new(), None, now(), theme());
             })
             .unwrap();
         let screen = text(terminal.backend().buffer());
@@ -2853,7 +2827,7 @@ fn choice_words(
     fleet: &FleetState,
     item: crate::setup::Item,
 ) -> Vec<String> {
-    let setup = home.open_setup(&HOME_PLACE).unwrap();
+    let setup = home.open_setup().unwrap();
     setup
         .choices(item, fleet)
         .into_iter()
@@ -2876,43 +2850,28 @@ fn choice_words(
 fn a_new_agent_offers_what_its_host_offers() {
     use crate::setup::Item;
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home.key(&fleet, key(KeyCode::Char('n')));
     home_screen(&mut home, &fleet, theme());
-    home.open_setup(&HOME_PLACE).unwrap().pick(Item::Kind, "1");
+    home.open_setup().unwrap().pick(Item::Kind, "1");
     // Before the host says, a model can only be named.
-    assert!(
-        home.open_setup(&HOME_PLACE)
-            .unwrap()
-            .takes_typed(Item::Model)
-    );
+    assert!(home.open_setup().unwrap().takes_typed(Item::Model));
     assert_eq!(choice_words(&mut home, &fleet, Item::Effort), ["medium ✓"]);
     // What another host offers is not this one's.
-    home.open_setup(&HOME_PLACE).unwrap().offer(
-        b"b",
-        wire::Provider::Codex,
-        &[2; 32],
-        &codex_offer(),
-    );
-    assert!(home.open_setup(&HOME_PLACE).unwrap().offered.is_none());
-    home.open_setup(&HOME_PLACE).unwrap().offer(
-        b"a",
-        wire::Provider::Codex,
-        &[2; 32],
-        &codex_offer(),
-    );
+    home.open_setup()
+        .unwrap()
+        .offer(b"b", wire::Provider::Codex, &[2; 32], &codex_offer());
+    assert!(home.open_setup().unwrap().offered.is_none());
+    home.open_setup()
+        .unwrap()
+        .offer(b"a", wire::Provider::Codex, &[2; 32], &codex_offer());
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Codex · GPT-6.1 Sol (medium) · default │ ~/work/amux"),
         "{screen}"
     );
     assert!(screen.contains("shift+tab mode"), "{screen}");
-    assert!(
-        !home
-            .open_setup(&HOME_PLACE)
-            .unwrap()
-            .takes_typed(Item::Model)
-    );
+    assert!(!home.open_setup().unwrap().takes_typed(Item::Model));
     assert_eq!(
         choice_words(&mut home, &fleet, Item::Model),
         ["GPT-6.1 Sol ✓", "GPT-6 mini"]
@@ -2936,9 +2895,7 @@ fn a_new_agent_offers_what_its_host_offers() {
     );
 
     // Another model starts at its own default effort.
-    home.open_setup(&HOME_PLACE)
-        .unwrap()
-        .pick(Item::Model, "gpt-6-mini");
+    home.open_setup().unwrap().pick(Item::Model, "gpt-6-mini");
     assert_eq!(
         choice_words(&mut home, &fleet, Item::Effort),
         ["low · default ✓", "high"]
@@ -2951,10 +2908,7 @@ fn a_new_agent_offers_what_its_host_offers() {
         screen.contains("Codex · GPT-6 mini (low) · default · plan │"),
         "{screen}"
     );
-    let request = home
-        .open_setup(&HOME_PLACE)
-        .unwrap()
-        .request(b"id".to_vec(), None);
+    let request = home.open_setup().unwrap().request(b"id".to_vec(), None);
     let Some(wire::create_agent_request::Agent::Codex(config)) = request.agent else {
         panic!("a Codex agent: {request:?}");
     };
@@ -2967,33 +2921,24 @@ fn a_new_agent_offers_what_its_host_offers() {
         (Some("default"), Some("plan"))
     );
     // Another agent is another provider's catalogue, asked afresh.
-    home.open_setup(&HOME_PLACE).unwrap().pick(Item::Kind, "0");
-    assert!(home.open_setup(&HOME_PLACE).unwrap().offered.is_none());
+    home.open_setup().unwrap().pick(Item::Kind, "0");
+    assert!(home.open_setup().unwrap().offered.is_none());
 }
 
 /// Claude's Shift+Tab steps the permissions that still ask, as in a chat.
 #[test]
 fn a_new_claude_steps_the_permissions_that_still_ask() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home.key(&fleet, key(KeyCode::Char('n')));
     home_screen(&mut home, &fleet, theme());
-    home.open_setup(&HOME_PLACE).unwrap().offer(
-        b"a",
-        wire::Provider::Claude,
-        &[1; 32],
-        &claude_offer(),
-    );
+    home.open_setup()
+        .unwrap()
+        .offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
     let mut seen = Vec::new();
     for _ in 0..4 {
         home.key(&fleet, key(KeyCode::BackTab));
-        seen.push(
-            home.open_setup(&HOME_PLACE)
-                .unwrap()
-                .permission
-                .clone()
-                .unwrap(),
-        );
+        seen.push(home.open_setup().unwrap().permission.clone().unwrap());
     }
     assert_eq!(seen, ["acceptEdits", "plan", "default", "acceptEdits"]);
     let screen = home_screen(&mut home, &fleet, theme());
@@ -3025,14 +2970,14 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
         ];
     }
     inventory(&mut fleet, studio);
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home.key(&fleet, key(KeyCode::Char('n')));
     home_screen(&mut home, &fleet, theme());
     assert_eq!(
         choice_words(&mut home, &fleet, Item::Kind),
         ["Claude ✓", "Codex · not signed in"]
     );
-    home.open_setup(&HOME_PLACE).unwrap().pick(Item::Kind, "1");
+    home.open_setup().unwrap().pick(Item::Kind, "1");
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Codex (not signed in) · gpt-6.1-sol"),
@@ -3040,29 +2985,16 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
     );
 
     // The form for an agent used in its own terminal says it on the chip.
-    let place = crate::home::Place {
-        local_host: HOME_PLACE.local_host,
-        version: HOME_PLACE.version,
-        working_dir: HOME_PLACE.working_dir,
+    let mut home = crate::home::Home::new(crate::home::Place {
         chat_in: settings::ChatInSetting::Native,
-        defaults: HOME_PLACE.defaults,
-    };
-    let mut home = crate::home::Home::default();
+        ..home_place()
+    });
     home.key(&fleet, key(KeyCode::Char('n')));
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(W, H)).unwrap();
     terminal
         .draw(|frame| {
             let area = frame.area();
-            home.draw(
-                frame,
-                area,
-                &fleet,
-                &HashMap::new(),
-                None,
-                now(),
-                theme(),
-                &place,
-            );
+            home.draw(frame, area, &fleet, &HashMap::new(), None, now(), theme());
         })
         .unwrap();
     let screen = text(terminal.backend().buffer());
@@ -3080,7 +3012,7 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
     let fleet = home_fleet();
     let ctrl_s = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL);
     let refused = "starting in a new worktree: the repository already has a branch named fix-it";
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home.key(&fleet, key(KeyCode::Char('n')));
     home_screen(&mut home, &fleet, theme());
     home.key(&fleet, ctrl_s);
@@ -3123,16 +3055,12 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
     assert!(!home.start_failed(refused.to_owned()));
 
     // The form for an agent used in its own terminal: a checkbox.
-    let place = crate::home::Place {
-        local_host: HOME_PLACE.local_host,
-        version: HOME_PLACE.version,
-        working_dir: HOME_PLACE.working_dir,
+    let mut home = crate::home::Home::new(crate::home::Place {
         chat_in: settings::ChatInSetting::Native,
-        defaults: HOME_PLACE.defaults,
-    };
-    let mut home = crate::home::Home::default();
+        ..home_place()
+    });
     home.key(&fleet, key(KeyCode::Char('n')));
-    let screen = home_screen_at(&mut home, &fleet, &place);
+    let screen = home_screen(&mut home, &fleet, theme());
     assert!(screen.contains("Worktree  [ ] new worktree"), "{screen}");
     // Out of the name, down to the last row, and Space ticks it.
     home.key(&fleet, key(KeyCode::Esc));
@@ -3140,7 +3068,7 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
         home.key(&fleet, key(KeyCode::Down));
     }
     home.key(&fleet, key(KeyCode::Char(' ')));
-    let screen = home_screen_at(&mut home, &fleet, &place);
+    let screen = home_screen(&mut home, &fleet, theme());
     assert!(screen.contains("Worktree  [✓] new worktree"), "{screen}");
     let effects = home.key(&fleet, key(KeyCode::Enter));
     let [FleetEffect::Start { setup, .. }] = effects.as_slice() else {
@@ -3148,7 +3076,7 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
     };
     assert!(setup.request(b"id".to_vec(), None).new_worktree);
     assert!(home.start_failed(refused.to_owned()));
-    let screen = home_screen_at(&mut home, &fleet, &place);
+    let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Could not start the agent: starting in a new worktree:"),
         "{screen}"
@@ -3156,35 +3084,10 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
     assert!(screen.contains("[Start]"), "{screen}");
 }
 
-/// Home drawn for `place`.
-fn home_screen_at(
-    home: &mut crate::home::Home,
-    fleet: &FleetState,
-    place: &crate::home::Place<'_>,
-) -> String {
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(W, H)).unwrap();
-    terminal
-        .draw(|frame| {
-            let area = frame.area();
-            home.draw(
-                frame,
-                area,
-                fleet,
-                &HashMap::new(),
-                None,
-                now(),
-                theme(),
-                place,
-            );
-        })
-        .unwrap();
-    text(terminal.backend().buffer())
-}
-
 #[test]
 fn the_filter_lives_in_the_top_line_and_narrows_the_list() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home.key(&fleet, key(KeyCode::Char('/')));
     for c in "arch".chars() {
         home.key(&fleet, key(KeyCode::Char(c)));
@@ -4261,7 +4164,7 @@ fn keys_typed_steadily_as_an_ask_appears_stay_in_the_draft_until_half_a_second_o
 #[test]
 fn a_focused_control_on_home_carries_the_agent_rows_marker() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home_screen(&mut home, &fleet, theme());
     let focused = |screen: &str, words: &str| -> String {
         screen

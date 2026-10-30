@@ -22,7 +22,8 @@ use wire::{Agent, Attachment, DeleteAgentRequest, Diff, RenameAgentRequest};
 use crate::chat::layout::{CAP, PAGE};
 use crate::chat::{ChatEffect, ChatView};
 use crate::clipboard::read_clipboard;
-use crate::fleet::{FleetEffect, FleetView};
+use crate::fleet::FleetEffect;
+use crate::home::{Home, Place};
 use crate::text::{self, push};
 use crate::theme::Theme;
 
@@ -280,7 +281,7 @@ impl OpenChat {
 pub struct App {
     client: Arc<dyn Client>,
     pub fleet: Arc<Fleet>,
-    pub fleet_view: FleetView,
+    pub home: Home,
     pub chat: Option<OpenChat>,
     pub config: TuiConfig,
     leader_pending: bool,
@@ -393,20 +394,19 @@ fn plain(error: InputError) -> String {
 impl App {
     pub fn new(client: Arc<dyn Client>, fleet: Fleet, config: TuiConfig) -> App {
         let (events, receiver) = mpsc::unbounded_channel();
-        let fleet_view = FleetView {
+        let home = Home::new(Place {
             version: config.version.clone(),
             local_host: config.local_host.clone(),
             working_dir: config.working_dir.to_string_lossy().into_owned(),
             chat_in: config.chat_in,
             defaults: config.defaults.clone(),
-            ..FleetView::default()
-        };
+        });
         let layout = Layout::load(config.layout.as_deref());
         App {
             layout,
             client,
             fleet: Arc::new(fleet),
-            fleet_view,
+            home,
             chat: None,
             config,
             leader_pending: false,
@@ -553,7 +553,7 @@ impl App {
                         view.pane_folds = self.layout.folds_of(&agent.agent);
                         view.comparison = self.layout.comparison;
                         view.tools = self.layout.tools_of(&agent.agent);
-                        self.fleet_view.select(agent.clone());
+                        self.home.select(agent.clone());
                         self.chat = Some(OpenChat {
                             session,
                             view,
@@ -649,7 +649,7 @@ impl App {
                 hash,
                 catalogue,
             } => {
-                if let Some(setup) = self.fleet_view.open_setup() {
+                if let Some(setup) = self.home.open_setup() {
                     setup.offer(&host, provider, &hash, &catalogue);
                 }
                 self.host_offers.insert(hash, catalogue);
@@ -659,9 +659,9 @@ impl App {
                 open,
                 attach,
             } => {
-                self.fleet_view.home.started();
+                self.home.started();
                 let key = ui_state::agent_key(&agent);
-                self.fleet_view.select(key.clone());
+                self.home.select(key.clone());
                 if attach {
                     // Straight into its own terminal; where it has none
                     // here, its chat opens and says why.
@@ -681,7 +681,7 @@ impl App {
                 }
             }
             AppEvent::StartFailed(error) => {
-                if !self.fleet_view.home.start_failed(error.clone()) {
+                if !self.home.start_failed(error.clone()) {
                     self.notice(format!("could not start the agent: {error}"), Tone::Warn);
                 }
             }
@@ -725,7 +725,7 @@ impl App {
     pub fn close_chat(&mut self) {
         if let Some(chat) = self.chat.take() {
             self.fleet.close(&chat.agent);
-            self.fleet_view.select(chat.agent.clone());
+            self.home.select(chat.agent.clone());
             self.keep_draft(chat);
         }
     }
@@ -800,7 +800,7 @@ impl App {
                 let state = chat.session.state();
                 chat.view.field_text(&state)
             }
-            None => self.fleet_view.field_text(),
+            None => self.home.field_text(),
         }
     }
 
@@ -831,7 +831,7 @@ impl App {
                         let state = chat.session.state();
                         chat.view.paste_text(&state, &text);
                     }
-                    None => self.fleet_view.paste(&text),
+                    None => self.home.paste(&text),
                 }
                 Flow::Continue
             }
@@ -864,7 +864,7 @@ impl App {
                 }
                 let effects = {
                     let fleet = self.fleet.state();
-                    self.fleet_view.mouse(&fleet, mouse)
+                    self.home.mouse(&fleet, mouse)
                 };
                 for effect in effects {
                     if let Some(flow) = self.fleet_effect(effect) {
@@ -902,7 +902,7 @@ impl App {
                         let state = chat.session.state();
                         chat.view.kill_field(&state)
                     }
-                    None => self.fleet_view.kill_field(),
+                    None => self.home.kill_field(),
                 };
                 return Flow::Continue;
             }
@@ -947,7 +947,7 @@ impl App {
             KeyCode::Char('h') => {
                 drop(state);
                 self.close_chat();
-                self.fleet_view.home.open_hosts();
+                self.home.open_hosts();
             }
             KeyCode::Char('d') => return Flow::Quit,
             KeyCode::Char('k') => chat.view.move_focus(&state, true, theme),
@@ -975,7 +975,7 @@ impl App {
                 .sibling(state.kind(), self.config.chat_in);
                 drop(state);
                 self.close_chat();
-                self.fleet_view.home.new_agent(setup);
+                self.home.new_agent(setup);
             }
             KeyCode::Char('r') => {
                 drop(state);
@@ -1065,7 +1065,7 @@ impl App {
         }
         let effects = {
             let fleet = self.fleet.state();
-            self.fleet_view.key(&fleet, key)
+            self.home.key(&fleet, key)
         };
         for effect in effects {
             if let Some(flow) = self.fleet_effect(effect) {
@@ -1478,7 +1478,7 @@ impl App {
     /// setup.
     fn ask_host_offers(&mut self) {
         let fleet = self.fleet.state();
-        let Some(setup) = self.fleet_view.open_setup() else {
+        let Some(setup) = self.home.open_setup() else {
             return;
         };
         let host = setup.host.clone();
@@ -1642,7 +1642,7 @@ impl App {
                     })
                     .collect();
                 let fleet = self.fleet.state();
-                self.fleet_view
+                self.home
                     .draw(paint, area, &fleet, &lines, footer, now, theme);
                 None
             }

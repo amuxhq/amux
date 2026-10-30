@@ -156,22 +156,13 @@ fn a_folder_with_no_separators_keeps_kind_and_host_on_its_row() {
         agent.cwd = "x".repeat(120);
     }
     inventory(&mut fleet, row);
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     let mut terminal =
         ratatui::Terminal::new(ratatui::backend::TestBackend::new(NARROW, SHORT)).unwrap();
     terminal
         .draw(|frame| {
             let area = frame.area();
-            home.draw(
-                frame,
-                area,
-                &fleet,
-                &HashMap::new(),
-                None,
-                now(),
-                theme(),
-                &HOME_PLACE,
-            );
+            home.draw(frame, area, &fleet, &HashMap::new(), None, now(), theme());
         })
         .unwrap();
     let screen = text(terminal.backend().buffer());

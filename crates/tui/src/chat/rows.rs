@@ -511,18 +511,6 @@ pub(crate) fn patch_lines(
     lines
 }
 
-/// The end of `text` in at most `max` characters, "…" marking a cut.
-pub(crate) fn tail(text: &str, max: usize) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    if chars.len() <= max {
-        return text.to_owned();
-    }
-    let kept: String = chars[chars.len() - max.saturating_sub(1)..]
-        .iter()
-        .collect();
-    format!("…{kept}")
-}
-
 /// A session boundary, drawn like home's section headings: the words in
 /// the faint ink, then a hairline to the right margin.
 pub(crate) fn rule(words: &str, width: usize, theme: Theme) -> Line<'static> {

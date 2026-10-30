@@ -338,9 +338,9 @@ impl BoxLines {
                 push(&mut row, " ".repeat(col), ink, width);
             }
             let shown = if i == 0 && cut > 0 {
-                text_tail(&format!("…{part}"), room)
+                text::tail(&format!("…{part}"), room)
             } else {
-                text_tail(part, room)
+                text::tail(part, room)
             };
             end = text::str_width(&shown);
             push(&mut row, shown, ink, width);
@@ -904,7 +904,7 @@ impl AskUi {
                 let mut name = Line::default();
                 push(
                     &mut name,
-                    text_tail(path, width.saturating_sub(after).max(1)),
+                    text::tail(path, width.saturating_sub(after).max(1)),
                     theme.code(),
                     width,
                 );
@@ -1226,27 +1226,6 @@ fn push_runs(line: &mut Line<'static>, runs: Vec<(String, Style)>, width: usize)
     for (words, style) in runs {
         push(line, words, style, width);
     }
-}
-
-/// The end of `words` in at most `max` columns, "…" where it is cut.
-fn text_tail(words: &str, max: usize) -> String {
-    if text::str_width(words) <= max {
-        return words.to_owned();
-    }
-    let keep = max.saturating_sub(1);
-    let chars: Vec<char> = words.chars().collect();
-    let mut out: Vec<char> = Vec::new();
-    let mut used = 0;
-    for c in chars.iter().rev() {
-        let w = text::str_width(c.encode_utf8(&mut [0; 4]));
-        if used + w > keep {
-            break;
-        }
-        used += w;
-        out.push(*c);
-    }
-    out.reverse();
-    format!("…{}", out.into_iter().collect::<String>())
 }
 
 /// A question's rows in the box: its options, "Something else" when it
@@ -2909,10 +2888,6 @@ pub(crate) fn access_words(
     }
 }
 
-fn middle_cut(text: &str, max: usize) -> String {
-    text::ellipsize_middle(text, max)
-}
-
 impl AskUi {
     /// The form's values as the person left them, in field order.
     fn form_values(&self) -> Vec<FormValue> {
@@ -3034,7 +3009,7 @@ impl AskUi {
             out.lines.push(line);
         }
         let mut link = Line::default();
-        let shown = middle_cut(url, width);
+        let shown = text::ellipsize_middle(url, width);
         push(&mut link, shown.clone(), theme.code(), width);
         out.spots.push((
             out.lines.len(),

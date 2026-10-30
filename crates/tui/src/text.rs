@@ -457,6 +457,37 @@ pub fn thousands(n: usize) -> String {
     out
 }
 
+/// How long something ran or has run, coarsely: "1s" (never "0s"), "4m",
+/// "2h 5m".
+pub(crate) fn ran_for(ms: i64) -> String {
+    let secs = ms.max(0) / 1_000;
+    match secs {
+        0..60 => format!("{}s", secs.max(1)),
+        60..3_600 => format!("{}m", secs / 60),
+        _ => format!("{}h {}m", secs / 3_600, secs % 3_600 / 60),
+    }
+}
+
+/// The end of `text` in at most `max` cells, "…" where it is cut.
+pub(crate) fn tail(text: &str, max: usize) -> String {
+    if str_width(text) <= max {
+        return text.to_owned();
+    }
+    let keep = max.saturating_sub(1);
+    let mut out: Vec<char> = Vec::new();
+    let mut used = 0;
+    for c in text.chars().rev() {
+        let w = str_width(c.encode_utf8(&mut [0; 4]));
+        if used + w > keep {
+            break;
+        }
+        used += w;
+        out.push(c);
+    }
+    out.reverse();
+    format!("…{}", out.into_iter().collect::<String>())
+}
+
 /// `text` in at most `max` columns, cut in the middle so both ends show.
 pub(crate) fn ellipsize_middle(text: &str, max: usize) -> String {
     let chars: Vec<char> = text.chars().collect();

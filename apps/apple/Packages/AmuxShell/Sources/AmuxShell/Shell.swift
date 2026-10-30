@@ -2,6 +2,7 @@ import AmuxCore
 import AmuxDesign
 import AmuxFeatures
 import PhotosUI
+import StoreKit
 import SwiftUI
 import UniformTypeIdentifiers
 #if canImport(UIKit)
@@ -633,6 +634,7 @@ private struct PaywallPage: View {
     let router: Router
     let model: PaywallStore
     let actions: @MainActor (ShellAction) -> Void
+    @State private var managing = false
 
     var body: some View {
         Paywall(model: model) { action in
@@ -642,11 +644,27 @@ private struct PaywallPage: View {
             case .buy: actions(.buySubscription)
             case .restore: actions(.restorePurchases)
             case .retry: actions(.retryPurchase)
-            // The App Store's own page, the one place a subscription bought
-            // there is changed or cancelled.
-            case .manage: leave(for: AmuxCloudService.appStoreSubscriptions)
+            case .manage: managing = true
             }
         }
+        .managesAppStoreSubscription(isPresented: $managing, actions: actions)
+    }
+}
+
+extension View {
+    /// The App Store's own sheet for this app's subscription, the one place
+    /// a subscription bought there is changed or cancelled, raised over the
+    /// page rather than sending the person out of the app: the App Store's
+    /// subscriptions page lists every subscription the Apple account has,
+    /// and none bought through TestFlight. What the sheet changed reaches
+    /// the phone only by asking, so the account is asked as it closes.
+    func managesAppStoreSubscription(
+        isPresented: Binding<Bool>, actions: @escaping @MainActor (ShellAction) -> Void
+    ) -> some View {
+        manageSubscriptionsSheet(isPresented: isPresented)
+            .onChange(of: isPresented.wrappedValue) { _, open in
+                if !open { actions(.checkSubscription) }
+            }
     }
 }
 
@@ -949,6 +967,7 @@ private struct YouTabRoot: View {
     /// Freezes the screen behind this page and opens the report on it.
     let report: @MainActor () -> Void
     let actions: @MainActor (ShellAction) -> Void
+    @State private var managing = false
 
     var body: some View {
         DeleteAccountOverlay(
@@ -958,19 +977,23 @@ private struct YouTabRoot: View {
                 case .cancel: actions(.cancelDeletion)
                 case .confirm: actions(.confirmDeletion)
                 // The only place a renewal can be stopped is where it was
-                // bought, which for an App Store subscription is a page of the
-                // system's rather than one this app or amux.sh owns.
+                // bought: for an App Store subscription the system's sheet,
+                // for one bought on amux.sh its billing page.
                 //
                 // The question is asked again on the way out, so that coming
                 // back finds the address still typed and Delete one press away.
-                case .manageBilling(let url):
+                case .manageBilling(let source, let url):
                     deletion.askAgain()
-                    leave(for: url)
+                    switch source {
+                    case .appStore: managing = true
+                    case .web: leave(for: url)
+                    }
                 }
             }
         ) {
             you
         }
+        .managesAppStoreSubscription(isPresented: $managing, actions: actions)
         .navigationTitle(Tab.you.title)
         .toolbarTitleDisplayMode(.inline)
         .toolbar {

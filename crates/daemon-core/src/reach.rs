@@ -139,6 +139,11 @@ enum Pause {
     /// After a link that closed almost as it came up: nothing ends it, or
     /// whatever refused the link is asked again at once.
     ShortLink,
+    /// The host just paired with this one as the joiner, which dials: a
+    /// dial from here too would cross it, and a call on the link it
+    /// displaced would fail. Its link coming or an attempt's deadline
+    /// passing ends it.
+    Expecting,
 }
 
 /// What one attempt dials.
@@ -173,6 +178,15 @@ impl Reach {
     /// What the driver dials.
     pub fn dialling(&self) -> Dialling {
         self.dialling
+    }
+
+    /// Whether a link is expected from `host` itself, which just paired
+    /// with this host as the joiner and dials it: this host does not dial it
+    /// meanwhile, so a call waits for that link.
+    pub fn expecting(&self, host: HostId) -> bool {
+        self.hosts
+            .get(&host)
+            .is_some_and(|reaching| reaching.pause == Some(Pause::Expecting))
     }
 
     /// The attempt out to `host`, if one is.
@@ -455,10 +469,24 @@ impl Daemon {
     }
 
     /// A call needs a link to `host` now: a pause after failures ends and
-    /// the host is dialled, unless an attempt is out already.
+    /// the host is dialled, unless an attempt is out already or the link is
+    /// expected from the host itself (see [`Reach::expecting`]).
     pub(crate) fn want_host(&mut self, host: HostId, out: &mut Vec<Output>) {
         self.cut_pause(host, out);
         self.reach_host(host, out);
+    }
+
+    /// `host` is pairing with this host as the joiner, which dials this one
+    /// once the pairing commits: this host holds off its own dial for as
+    /// long as an attempt may take, so the two do not cross.
+    pub(crate) fn expect_link(&mut self, host: HostId, out: &mut Vec<Output>) {
+        let reaching = self.routing.reach.hosts.entry(host).or_default();
+        if reaching.attempt.is_some() {
+            return;
+        }
+        reaching.pause = Some(Pause::Expecting);
+        let at_ms = self.timers.link_ms.saturating_add(ATTEMPT_DEADLINE_MS);
+        self.arm(TimerId::Retry(host), at_ms, out);
     }
 
     fn cut_pause(&mut self, host: HostId, out: &mut Vec<Output>) {

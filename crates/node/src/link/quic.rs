@@ -406,6 +406,9 @@ pub struct QuicCarrier {
     /// The forwarder the socket's route last went through alone, for once
     /// the socket has let the route go: the forwarder going takes it.
     last_through: Mutex<Option<super::socket::LinkId>>,
+    /// A dialled link's claim on its peer's stand-in, which the peer keeps
+    /// while the link is held.
+    _dialled: Option<super::socket::DialHold>,
     inbound: tokio::sync::Mutex<mpsc::UnboundedReceiver<ByteStream>>,
     control: Mutex<Option<(ControlSink, ControlSource)>>,
     /// Asks the control writer to finish its stream, answering once the
@@ -531,13 +534,15 @@ impl QuicCarrier {
         let connecting =
             endpoint.connect_on_all(config, peer, paths, through_relay, DEVICE_SERVER_NAME)?;
         let stand_in = connecting.remote_address();
+        let dialled = endpoint.socket.hold_dial(stand_in);
         let (connection, early) = handshake(connecting, deadline)
             .await
             .map_err(|error| turned_away(&endpoint.socket, stand_in, error))?;
         let control = open_control(&connection, early.as_ref()).await?;
         Ok(Self::new(connection, CarrierKind::Direct, Some(control))
             .following(endpoint.socket.clone())
-            .with_early(early))
+            .with_early(early)
+            .holding(dialled))
     }
 
     pub(crate) async fn connect_relay(
@@ -671,14 +676,15 @@ impl QuicCarrier {
         peer: HostId,
     ) -> Result<Self, ConnectError> {
         let config = endpoint.client_config(identity, &trust_store, peer)?;
-        let connection = endpoint
-            .connect_through(config, peer, through, DEVICE_SERVER_NAME)?
-            .await?;
+        let connecting = endpoint.connect_through(config, peer, through, DEVICE_SERVER_NAME)?;
+        let dialled = endpoint.socket.hold_dial(connecting.remote_address());
+        let connection = connecting.await?;
         let control = open_control(&connection, None).await?;
         Ok(Self::new(connection, CarrierKind::Direct, Some(control))
             .with_path(endpoint.forwarded_kind(through))
             .carried_through(Some(through))
-            .following(endpoint.socket.clone()))
+            .following(endpoint.socket.clone())
+            .holding(dialled))
     }
 
     /// Dials the far end of `io`, a byte stream made one more path of the
@@ -822,6 +828,11 @@ impl QuicCarrier {
         self
     }
 
+    fn holding(mut self, dialled: super::socket::DialHold) -> Self {
+        self._dialled = Some(dialled);
+        self
+    }
+
     fn new(
         connection: quinn::Connection,
         kind: CarrierKind,
@@ -884,6 +895,7 @@ impl QuicCarrier {
             early: None,
             follows: None,
             last_through: Mutex::new(None),
+            _dialled: None,
             inbound: tokio::sync::Mutex::new(inbound),
             control: Mutex::new(Some((
                 ControlSink {

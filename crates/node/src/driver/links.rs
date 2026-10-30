@@ -62,18 +62,18 @@ impl CoreLinks {
             .await
     }
 
-    /// Tells the core a call needs a link to `host` now, and answers the
-    /// attempt then out to it, if any, and whether the host refused this
-    /// one as no longer trusted. Nothing while the profile is gone.
-    pub(crate) async fn want(
-        &self,
-        host: daemon_core::HostId,
-    ) -> Option<(Option<daemon_core::AttemptId>, bool)> {
+    /// Tells the core a call needs a link to `host` now, and answers what
+    /// the core then holds for it. Nothing while the profile is gone.
+    pub(crate) async fn want(&self, host: daemon_core::HostId) -> Option<Wanted> {
         let runtime = self.0.upgrade()?;
         let driver = runtime.driver();
         driver.feed(Input::Wanted { host }).await;
         driver
-            .look(move |daemon| (daemon.reach().attempt(host), daemon.revoked_by(host)))
+            .look(move |daemon| Wanted {
+                attempt: daemon.reach().attempt(host),
+                revoked: daemon.revoked_by(host),
+                expecting: daemon.reach().expecting(host),
+            })
             .await
     }
 
@@ -129,4 +129,14 @@ pub(crate) fn core_error(error: &ChannelError) -> payload::ChannelError {
         | ChannelError::Tls(_)
         | ChannelError::Revoked => payload::ChannelError::Handshake(error.to_string()),
     }
+}
+
+/// What the core holds for a host a call wants a link to.
+pub(crate) struct Wanted {
+    /// The attempt out to it, if one is.
+    pub(crate) attempt: Option<daemon_core::AttemptId>,
+    /// It refused this host as no longer trusted.
+    pub(crate) revoked: bool,
+    /// Its own dial to this host is expected, as a pairing's joiner's is.
+    pub(crate) expecting: bool,
 }

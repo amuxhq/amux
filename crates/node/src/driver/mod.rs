@@ -47,7 +47,7 @@ use daemon_core::{
     Output, Recorded, Retain, Retained, Settings, ShellWork, StartOptions, TimerId,
 };
 pub(crate) use feed::{Feed, WeakFeed};
-pub(crate) use links::{CoreLinks, core_error};
+pub(crate) use links::{CoreLinks, Wanted, core_error};
 pub use stepped::Cores;
 use store::Sqlite;
 pub use streams::{InventorySubscription, Subscription};

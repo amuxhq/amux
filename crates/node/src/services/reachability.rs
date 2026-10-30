@@ -706,17 +706,25 @@ impl ForwardedDialer {
             .core()
             .cloned()
             .ok_or(ChannelError::LinkUnavailable { host_id: peer })?;
-        let (attempt, revoked) = core
+        let crate::driver::Wanted {
+            attempt,
+            revoked,
+            expecting,
+        } = core
             .want(core_host(peer))
             .await
             .ok_or(ChannelError::LinkUnavailable { host_id: peer })?;
         if revoked {
             return Err(ChannelError::Revoked);
         }
+        let patience = tokio::time::Instant::now() + WANT_PATIENCE;
+        if expecting {
+            registry.link_of_peer_by(peer, patience).await;
+            return Ok(());
+        }
         // The core asked for the attempt before it answered, so it is out.
         // One turned away by a path is followed at once by another on the
         // rest, which the call waits for too.
-        let patience = tokio::time::Instant::now() + WANT_PATIENCE;
         let mut attempt = attempt;
         let ended = loop {
             let over = attempt.and_then(|attempt| {

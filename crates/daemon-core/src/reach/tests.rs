@@ -551,6 +551,68 @@ fn a_newly_paired_host_is_dialled() {
     dial_of(&out, DESK);
 }
 
+/// The desk trusted as the offerer of a pairing commits it, the laptop
+/// pairing as the joiner: the desk holds off its own dial.
+fn offered(daemon: &mut Daemon) -> Vec<Output> {
+    let mut out = Vec::new();
+    daemon.expect_link(DESK, &mut out);
+    daemon.trust_for_test(trusting());
+    out.extend(step(daemon, Input::Started));
+    out
+}
+
+#[test]
+fn the_offerer_of_a_pairing_waits_for_the_joiners_link_instead_of_dialling() {
+    let mut daemon = daemon(TrustStore::of_hosts([LAPTOP]));
+    step(&mut daemon, Input::Dialling(Dialling::All));
+    found(&mut daemon, DESK, &["192.168.1.5:7000"]);
+    let out = offered(&mut daemon);
+    assert!(
+        dials(&out).iter().all(|(host, ..)| *host != DESK),
+        "{out:?}"
+    );
+    assert_eq!(armed(&out, TimerId::Retry(DESK)), Some(ATTEMPT_DEADLINE_MS));
+
+    let out = up(&mut daemon, 1, DESK, CarrierKind::Direct);
+    assert!(out.contains(&Output::CancelTimer {
+        id: TimerId::Retry(DESK)
+    }));
+    at(&mut daemon, ATTEMPT_DEADLINE_MS);
+    assert_eq!(
+        daemon.reach().attempt(DESK),
+        None,
+        "linked: nothing to dial"
+    );
+}
+
+#[test]
+fn the_offerer_dials_once_no_link_came_within_an_attempts_deadline_and_not_for_a_call() {
+    let mut daemon = daemon(TrustStore::of_hosts([LAPTOP]));
+    step(&mut daemon, Input::Dialling(Dialling::All));
+    found(&mut daemon, DESK, &["192.168.1.5:7000"]);
+    offered(&mut daemon);
+    at(&mut daemon, ATTEMPT_DEADLINE_MS);
+    assert_eq!(daemon.reach().attempt(DESK), None);
+    let out = step(
+        &mut daemon,
+        Input::Timer {
+            id: TimerId::Retry(DESK),
+        },
+    );
+    dial_of(&out, DESK);
+
+    let mut daemon = self::daemon(TrustStore::of_hosts([LAPTOP]));
+    step(&mut daemon, Input::Dialling(Dialling::All));
+    found(&mut daemon, DESK, &["192.168.1.5:7000"]);
+    offered(&mut daemon);
+    let out = step(&mut daemon, Input::Wanted { host: DESK });
+    assert_eq!(dials(&out), Vec::new());
+    assert!(
+        daemon.reach().expecting(DESK),
+        "the call waits for its link"
+    );
+}
+
 #[test]
 fn a_dial_carries_the_calls_the_core_makes_of_the_host_once_linked() {
     let mut daemon = daemon(trusting());

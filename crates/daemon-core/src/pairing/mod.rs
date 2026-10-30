@@ -1044,6 +1044,16 @@ impl Daemon {
         reachability: Option<Reachability>,
         out: &mut Vec<Output>,
     ) {
+        // The joiner dials the offerer once both have committed.
+        if matches!(
+            self.pairing
+                .sessions
+                .get(&session)
+                .map(|current| &current.opened),
+            Some(Opened::Responder { .. })
+        ) {
+            self.expect_link(host, out);
+        }
         let host = Uuid::from_bytes(host.0);
         let before = self.trust().entry(host).cloned();
         self.pairing.committing.insert(session, (host, before));
@@ -1481,6 +1491,8 @@ impl Daemon {
         let role = if reachability.is_some() {
             Role::Joiner
         } else {
+            // The side with the SSH destination dials.
+            self.expect_link(host, out);
             Role::Offerer
         };
         self.change_trust(

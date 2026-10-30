@@ -23,7 +23,13 @@ The rules it keeps:
 
 - A stand-in names one peer at a time. A sender nobody has named yet is
   an unnamed peer of its own until its handshake names the host, and one
-  left unnamed or silent for a minute is let go.
+  left unnamed or silent for a minute is let go. A host this host's own
+  dial is at keeps its stand-in when a connection from it is named
+  elsewhere, since a dialled connection hears only the address it dialled;
+  the named connection, an accepted one, moves to it.
+- A first flight's route is not trusted until a link comes up on it: the
+  path it settled on is only the first to answer, which may have turned
+  the dial away.
 - A dial's first flight goes out on every path the dial chose, and a packet
   of it is sent again wherever an arrival or a forwarding link moves the
   peer before the handshake completes, so a flight never strands on a path

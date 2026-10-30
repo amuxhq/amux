@@ -1,19 +1,19 @@
 
   expired │ /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                                1 │ [Diff] │ [Home]
 
+  started ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+
     Tidy the pairing section.                                                                        hh:mm
+
+
+    Tidied.
 
     Worked <t>
 
 
     Check the links.                                                                                 hh:mm
 
-
-  ✗ authentication_failed
-    authentication_failed (401)
-
-  ✗ authentication_failed
-    authentication_failed (401)
 
 ▌ ✗ authentication_failed
 ▌   Failed to authenticate. API Error: 401 OAuth token has expired. Please obtain a new token or refresh your

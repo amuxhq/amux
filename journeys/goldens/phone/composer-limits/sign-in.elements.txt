@@ -6,9 +6,7 @@ chat.row.prose | Tidied. | final | 16,210,370,20
 chat.prose.render |  | rendered | 16,210,370,20
 chat.row.turn-end | <volatile>
 chat.row.prompt | Check the links. |  | 16,267,370,40
-chat.row.error | authentication_failed | folded | 16,307,370,64
-chat.row.error | authentication_failed | folded | 16,357,370,64
-chat.row.error | authentication_failed | folded | 16,407,370,98
+chat.row.error | authentication_failed | folded | 16,307,370,98
 chat.row.turn-end | <volatile>
 chat.foot.sign-in | Claude needs you to sign in | Sign-in failed · fake@example.com
 Failed to authenticate. API Error: 401 OAuth token has expired. Please obtain a new token or refresh your existing token.
@@ -27,10 +25,8 @@ Run claude and sign in with /login on desk. |  | 58,722,306,92
  | Tidied. |  | 16,210,370,20
  | Worked <t> |  | 16,237,74,16
  | Check the links. |  | 16,267,370,40
- | authentication_failed, authentication_failed (401) |  | 16,307,370,64
- | authentication_failed, authentication_failed (401) |  | 16,357,370,64
- | authentication_failed, Failed to authenticate. API Error: 401 OAuth token has expired. Please obtain a new token or refresh your existing token. |  | 16,407,370,98
- | Worked <t> · failed |  | 16,503,113,16
+ | authentication_failed, Failed to authenticate. API Error: 401 OAuth token has expired. Please obtain a new token or refresh your existing token. |  | 16,307,370,98
+ | Worked <t> · failed |  | 16,403,113,16
  | Back |  | 20,66,56,36
  | expired, /t/a/n/d/work · desk |  | 96,66,160,36
  | More |  | 342,66,36,36

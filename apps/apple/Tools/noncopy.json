@@ -1658,6 +1658,8 @@
       {"literal": "\"chat.signed-out\"", "context": "#Preview(\"Chat · signed out\") { StoryScreen(\"chat.signed-out\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"Chat · overview\"", "context": "#Preview(\"Chat · overview\") { StoryScreen(\"chat.overview\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.overview\"", "context": "#Preview(\"Chat · overview\") { StoryScreen(\"chat.overview\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"Chat · stop a job\"", "context": "#Preview(\"Chat · stop a job\") { StoryScreen(\"chat.overview-stop\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"chat.overview-stop\"", "context": "#Preview(\"Chat · stop a job\") { StoryScreen(\"chat.overview-stop\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"Chat · settings\"", "context": "#Preview(\"Chat · settings\") { StoryScreen(\"chat.settings\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.settings\"", "context": "#Preview(\"Chat · settings\") { StoryScreen(\"chat.settings\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"Chat · stop\"", "context": "#Preview(\"Chat · stop\") { StoryScreen(\"chat.stop\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

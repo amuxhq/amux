@@ -187,15 +187,13 @@ fn unknown_is_explicit_and_never_depends_on_which_fact_came_first() {
 }
 
 #[test]
-fn the_envelope_carries_phase_queue_and_working_on() {
+fn the_envelope_carries_phase_and_queue() {
     for kind in KINDS {
         let mut state = SessionState::new(agent(kind), CAP);
-        let mut snap = snapshot(kind, 4, Phase::Working, &[], &[(b"q1", false)]);
-        snap.working_on = Some("fixing the build".into());
+        let snap = snapshot(kind, 4, Phase::Working, &[], &[(b"q1", false)]);
         apply_checked(&mut state, ev_snapshot(snap));
         let decoded = state.agent_state();
         assert_eq!(decoded.phase, Phase::Working);
-        assert_eq!(decoded.working_on.as_deref(), Some("fixing the build"));
         assert_eq!(decoded.queue.len(), 1);
         assert_eq!(decoded.revision, 4);
     }

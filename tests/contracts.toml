@@ -945,7 +945,7 @@ section = "Contracts from the CI repair"
 claim = "Two primitives with one owner each, lifecycle on the row and phase in the snapshot envelope, attention being phase needs_you; every snapshot field present with an explicit unknown."
 tests = [
   "interpret/lib::shared::tests::an_open_ask_outranks_every_other_phase",
-  "ui-state/integration::spec::snapshot::the_envelope_carries_phase_queue_and_working_on",
+  "ui-state/integration::spec::snapshot::the_envelope_carries_phase_and_queue",
   "ui-state/integration::spec::fleet::a_family_is_as_loud_as_its_loudest_descendant",
   "interpret/lib::unknown::tests::every_snapshot_field_has_an_explicit_unknown",
 ]

@@ -260,8 +260,8 @@ impl OpenAsk {
     }
 }
 
-/// The agent as its newest Snapshot describes it: the envelope's phase,
-/// queue and working-on, and the per-kind body decoded into the facts the
+/// The agent as its newest Snapshot describes it: the envelope's phase
+/// and queue, and the per-kind body decoded into the facts the
 /// views draw. Every body field is present, at its explicit unknown until
 /// the interpreter learns it: an unset optional string, a `known: false`
 /// meter or list, an UNKNOWN state. An empty body, which is what Subscribe
@@ -272,7 +272,6 @@ pub struct AgentState {
     pub revision: u64,
     pub phase: wire::Phase,
     pub queue: Vec<wire::QueuedInput>,
-    pub working_on: Option<String>,
     pub at_ms: i64,
     /// In the order the interpreter opened them.
     pub asks: Vec<OpenAsk>,
@@ -314,7 +313,6 @@ pub struct AgentState {
     pub sign_in: SignIn,
     pub background: BackgroundJobs,
     pub provider_session: Option<String>,
-    pub active_turn: Option<String>,
     /// Terminal Claude's calls its hooks announced before their rows
     /// landed, oldest first.
     pub running_calls: Vec<wire::RunningCall>,
@@ -412,7 +410,6 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
             state.mode = snapshot.mode;
             state.approval_policy = snapshot.approval_policy;
             state.sandbox = snapshot.sandbox;
-            state.active_turn = snapshot.active_turn;
             state.provider_session = snapshot.thread_id;
             state.usage = snapshot.usage.map_or(Usage::Unknown, Usage::Codex);
             state.servers = snapshot.servers.unwrap_or_default();
@@ -433,7 +430,6 @@ impl AgentState {
             revision: snapshot.revision,
             phase: snapshot.phase(),
             queue: snapshot.queue.clone(),
-            working_on: snapshot.working_on.clone(),
             at_ms: snapshot.at_ms,
             catalogue: snapshot.catalogue.clone(),
             ..decode_snapshot(kind, &snapshot.body)

@@ -515,16 +515,20 @@ longer than the render server has been seen to take to finish glass, and
 writes `DIR/<id>.<appearance>.png`. It neither reads nor writes a baseline,
 cannot fail on a picture, and runs in no check.
 
-The phone journeys are drawn flat too: the journey driver turns the flag on
-at every launch, including the reopens a story makes, so the picture each
-compared screen leaves for review shows the screen finished.
+The phone journeys draw the app's own surfaces flat too: the journey driver
+turns the app's flag on at every launch, including the reopens a story
+makes, so the picture each compared screen leaves for review shows the
+screen finished. The system's bars keep their glass there; a journey
+compares element geometry, never those pictures.
 
 ### What a compared picture may differ by
 
 The component snapshots are held to one allowance:
 
-- any pixel may move by one 8-bit level per channel, which is the
-  rasteriser's rounding;
+- any pixel may move by up to three 8-bit levels per channel, which is the
+  rasteriser's rounding and the system's own bars drawn on one Mac or
+  another (on CI the review page's bar came out with 283 pixels two or
+  three levels from the picture taken on a desk);
 - at most 64 pixels of a picture may move further, and none of them by more
   than 8 levels in any channel.
 

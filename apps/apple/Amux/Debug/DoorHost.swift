@@ -677,13 +677,19 @@ final class DoorHost {
 
     private func tap(_ identifier: String, after: Double? = nil) async -> DoorReply {
         guard let window = DoorWindow.current else { return .error("no window on screen") }
-        guard let element = element(named: identifier, in: window) else {
+        // A control can be declared and still have no element of its own: a
+        // menu whose label is an image, sharing the bar's glass with another
+        // item, becomes the bar's own button, which carries the label but not
+        // the identifier, while the view that declared it is kept off screen.
+        // Such a control is found by its label below.
+        let element = element(named: identifier, in: window)
+        guard element != nil || declared(named: identifier) != nil else {
             return .error("no element named \(identifier)")
         }
         if let after { try? await Task.sleep(for: .seconds(after)) }
         // What VoiceOver does to a control, which is the one way to act on a
         // SwiftUI element from inside the process.
-        if element.accessibilityActivate() { return .ack }
+        if element?.accessibilityActivate() == true { return .ack }
         if let declared = declared(named: identifier),
            let under = VisibleTree.element(
                at: CGPoint(x: declared.frame.midX, y: declared.frame.midY), in: window,

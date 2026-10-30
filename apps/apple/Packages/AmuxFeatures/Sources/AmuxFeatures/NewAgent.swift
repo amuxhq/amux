@@ -35,7 +35,6 @@ public enum NewAgentAction: Equatable, Sendable {
 /// unstated on the one control where it matters.
 public struct NewAgent: View {
     @Environment(\.design) private var design
-    @Environment(\.reducesTransparency) private var reducesTransparency
     /// How tall the Start bar floating at the foot is, so the last rows can
     /// always scroll clear of it, at any text size.
     @State private var footHeight: CGFloat = 110
@@ -78,7 +77,6 @@ public struct NewAgent: View {
                     actions(.cancel)
                 }
             }
-            .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
         }
         // The chooser is a sheet of its own over this one: what is being
         // chosen is one field of the thing being built, and the rest of it
@@ -456,7 +454,6 @@ public struct NewAgent: View {
 /// field is the answer to everything it does not cover.
 public struct NewAgentDirectories: View {
     @Environment(\.design) private var design
-    @Environment(\.reducesTransparency) private var reducesTransparency
     let model: NewAgentStore
     let actions: @MainActor (NewAgentAction) -> Void
 
@@ -488,7 +485,6 @@ public struct NewAgentDirectories: View {
                         model.browsing = false
                     }
                 }
-                .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
             }
         }
         .tint(design.accentColor)

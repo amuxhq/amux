@@ -5,8 +5,9 @@ import SwiftUI
 /// The agent's own page, as a chat app's contact page is the person's: its
 /// name and where it runs, then what runs around the chat, as the terminal's
 /// overview pane lists it: the background jobs, the changed files by folder for the chosen comparison,
-/// the tool servers that failed and the usage windows near a limit. The
-/// task list is not repeated here; it docks above the composer.
+/// the tool servers that failed, the usage windows near a limit and the
+/// context near its end. The task list is not repeated here; it docks above
+/// the composer.
 ///
 /// Opened by tapping the chat's title, or from its menu. It asks for the changed
 /// files while it is on screen, and again when the comparison or the
@@ -43,6 +44,9 @@ public struct ChatOverview: View {
                 changes(overview?.changes)
                 if let overview, !overview.failedServers.isEmpty { servers(overview.failedServers) }
                 if let usage = overview?.usageNearLimit { self.usage(usage) }
+                if let context = model.frame?.context, let left = ChatWords.contextLeft(context) {
+                    self.context(left, context)
+                }
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -304,6 +308,21 @@ public struct ChatOverview: View {
                 .identified("chat.overview.server.\(server.name)", label: ChatWords.failed(server))
             }
         }
+    }
+
+    // MARK: Context
+
+    /// How full the conversation's context is, while that is worth saying:
+    /// near its end the agent compacts what it remembers.
+    private func context(_ left: String, _ context: ContextView) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHead(title: String(localized: "Context"), trailing: left)
+            Text(verbatim: ChatWords.contextUsed(context))
+                .designFont(.body, design)
+                .foregroundStyle(design.ink.color)
+        }
+        .accessibilityElement(children: .combine)
+        .identified("chat.overview.context", label: left)
     }
 
     // MARK: Usage

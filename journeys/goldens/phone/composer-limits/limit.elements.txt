@@ -4,18 +4,16 @@ chat.row.boundary | Started |  | 16,124,370,34
 chat.row.prompt | Rewrite the pricing page's FAQ. |  | 16,158,370,40
 chat.row.prose | The FAQ is rewritten. | final | 16,210,370,20
 chat.prose.render |  | rendered | 16,210,370,20
-chat.row.turn-end | Worked <t> |  | 16,237,74,16
-chat.strip | <volatile>
-chat.field | Message limited |  | 28,750,346,24
+chat.row.turn-end | Worked <t> |  | 16,237,62,16
+chat.field | <volatile>
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
-chat.title | limited | limited | 96,66,160,36
- | 5-hour limit reached · resets <time> |  | 12,698,378,30
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
+chat.title | limited | limited | 80,66,152,36
  | Attach |  | 23,779,44,44
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
@@ -23,7 +21,7 @@ chat.title | limited | limited | 96,66,160,36
  | Started |  | 16,124,370,34
  | Rewrite the pricing page's FAQ. |  | 16,158,370,40
  | The FAQ is rewritten. |  | 16,210,370,20
- | Worked <t> |  | 16,237,74,16
- | Back |  | 20,66,56,36
- | limited, /t/a/n/d/work · desk |  | 96,66,160,36
- | More |  | 342,66,36,36
+ | Worked <t> |  | 16,237,62,16
+ | Back |  | 20,66,40,36
+ | limited, /t/a/n/d/work · desk |  | 80,66,152,36
+ | More |  | 350,66,28,36

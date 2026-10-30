@@ -13,11 +13,11 @@ chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
-chat.changes | +2 −1 | Uncommitted | 295,66,51,36
-chat.more | More |  | 346,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
-chat.title | reviewer | reviewer | 96,66,160,36
+chat.changes | +2 −1 | Uncommitted | 277,66,51,36
+chat.more | More |  | 344,66,38,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
+chat.title | reviewer | reviewer | 80,66,152,36
  | Attach |  | 23,779,44,44
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
@@ -26,8 +26,8 @@ chat.title | reviewer | reviewer | 96,66,160,36
  | Resumed |  | 16,158,370,34
  | Please check against, Pasted text · 12 lines, Review · 1 comment |  | 16,192,370,104
  | I read the review. |  | 16,308,370,20
- | Worked <t> |  | 16,335,74,16
- | Back |  | 20,66,56,36
- | reviewer, /t/a/n/d/work · desk |  | 96,66,160,36
- | 1 file, 2 added, 1 removed |  | 295,66,51,36
- | More |  | 346,66,36,36
+ | Worked <t> |  | 16,335,62,16
+ | Back |  | 20,66,40,36
+ | reviewer, /t/a/n/d/work · desk |  | 80,66,152,36
+ | 1 file, 2 added, 1 removed |  | 277,66,51,36
+ | More |  | 344,66,38,36

@@ -5,7 +5,7 @@ chat.row.prompt | Add a settings screen. |  | 16,158,370,40
 chat.row.question | Answered, 2 of 3 questions |  | 16,210,370,203
 chat.row.prose | Thanks, I'll build it that way. | final | 16,427,370,20
 chat.prose.render |  | rendered | 16,427,370,20
-chat.row.turn-end | Worked <t> |  | 16,454,74,16
+chat.row.turn-end | Worked <t> |  | 16,454,62,16
 chat.row.prompt | Pick the palette too. |  | 16,484,370,40
 chat.row.question | Asking |  | 16,536,370,20
 ask | Question | open | 12,614,378,216
@@ -13,10 +13,10 @@ ask.more | More |  | 338,622,44,44
 ask.reply.back | Back |  | 334,658,46,42
 ask.reply.text |  | Let me see both palettes on the desk first. | 28,699,346,59
 ask.reply.send | Send reply |  | 28,770,346,44
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
-chat.title | asker | asker | 96,66,160,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
+chat.title | asker | asker | 80,66,152,36
  | Question |  | 62,634,70,20
  | More |  | 338,622,44,44
  | Reply in your own words |  | 28,672,180,17
@@ -27,9 +27,9 @@ chat.title | asker | asker | 96,66,160,36
  | Add a settings screen. |  | 16,158,370,40
  | Answered, 2 of 3 questions, Layout, Stacked, Entry, “From the help panel”, Order, Skipped |  | 16,210,370,203
  | Thanks, I'll build it that way. |  | 16,427,370,20
- | Worked <t> |  | 16,454,74,16
+ | Worked <t> |  | 16,454,62,16
  | Pick the palette too. |  | 16,484,370,40
  | Asking |  | 16,536,370,20
- | Back |  | 20,66,56,36
- | asker, /t/a/n/d/work · desk |  | 96,66,160,36
- | More |  | 342,66,36,36
+ | Back |  | 20,66,40,36
+ | asker, /t/a/n/d/work · desk |  | 80,66,152,36
+ | More |  | 350,66,28,36

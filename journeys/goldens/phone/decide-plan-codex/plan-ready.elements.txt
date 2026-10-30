@@ -4,15 +4,15 @@ chat.row.boundary | Started |  | 16,124,370,34
 chat.row.prompt | Move the journal. |  | 16,158,370,40
 chat.row.plan | Plan proposed, Move the journal |  | 16,210,370,160
 chat.prose.render |  | rendered | 58,249,316,109
-chat.row.turn-end | Worked <t> |  | 16,379,74,16
+chat.row.turn-end | Worked <t> |  | 16,379,62,16
 ask | Plan ready | open | 12,702,378,128
 ask.more | More |  | 338,710,44,44
 ask.approve | Approve |  | 28,770,169,44
 ask.choice.1 | Send back… |  | 205,770,169,44
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
-chat.title | planner-codex | planner-codex | 96,66,160,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
+chat.title | planner-codex | planner-codex | 80,66,152,36
  | Plan ready |  | 62,722,79,20
  | More |  | 338,710,44,44
  | Approve |  | 28,770,169,44
@@ -20,7 +20,7 @@ chat.title | planner-codex | planner-codex | 96,66,160,36
  | Started |  | 16,124,370,34
  | Move the journal. |  | 16,158,370,40
  | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 16,210,370,160
- | Worked <t> |  | 16,379,74,16
- | Back |  | 20,66,56,36
- | planner-codex, /t/a/n/d/work · desk |  | 96,66,160,36
- | More |  | 342,66,36,36
+ | Worked <t> |  | 16,379,62,16
+ | Back |  | 20,66,40,36
+ | planner-codex, /t/a/n/d/work · desk |  | 80,66,152,36
+ | More |  | 350,66,28,36

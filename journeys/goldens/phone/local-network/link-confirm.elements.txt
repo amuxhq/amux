@@ -6,13 +6,13 @@ pair-confirm.expiry | <volatile>
 pair-confirm.fingerprint | <volatile>
 pair-confirm.trust | Pair |  | 16,726,370,44
 pair-confirm.abandon | Not Now |  | 16,780,370,44
-pair.close | Close |  | 20,82,56,36
+pair.close | Close |  | 20,82,40,36
  | Pair your first host |  | 16,204,214,32
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
  | desk is nearby, Pair it to see its agents here, Pair |  | 16,305,370,60
  | Have an amux account? |  | 16,389,164,18
  | Sign In |  | 184,376,48,44
- | Switch account |  | 24,66,37,36
+ | Switch account |  | 24,66,29,36
  | Agents |  | 16,127,116,42
  | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
@@ -28,7 +28,7 @@ pair.close | Close |  | 20,82,56,36
  | Fingerprint, <key> |  | 16,652,351,56
  | Pair |  | 16,726,370,44
  | Not Now |  | 16,780,370,44
- | Close |  | 20,82,56,36
+ | Close |  | 20,82,40,36
  | Pair desk |  | 165,82,73,21
  | On this network |  | 159,103,84,14
  | Agents | selected | 111,795,94,54

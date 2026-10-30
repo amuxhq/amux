@@ -10,10 +10,10 @@ chat.attach | Attach | closed | 23,779,44,44
 chat.model | gpt-fake · medium · Custom · Plan |  | 71,779,175,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.stop | Interrupt |  | 335,779,44,44
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/d/work · desk | live | 96,66,160,36
-chat.title | planner-codex | planner-codex | 96,66,160,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
+chat.title | planner-codex | planner-codex | 80,66,152,36
  | Working · <t> |  | 28,713,346,27
  | Attach |  | 23,779,44,44
  | gpt-fake · Custom · Plan |  | 71,779,175,44
@@ -22,6 +22,6 @@ chat.title | planner-codex | planner-codex | 96,66,160,36
  | Started |  | 16,124,370,34
  | Move the journal. |  | 16,158,370,40
  | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 16,210,370,160
- | Back |  | 20,66,56,36
- | planner-codex, /t/a/n/d/work · desk |  | 96,66,160,36
- | More |  | 342,66,36,36
+ | Back |  | 20,66,40,36
+ | planner-codex, /t/a/n/d/work · desk |  | 80,66,152,36
+ | More |  | 350,66,28,36

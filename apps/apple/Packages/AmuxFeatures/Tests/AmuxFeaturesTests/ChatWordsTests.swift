@@ -13,7 +13,10 @@ final class ChatWordsTests: XCTestCase {
     func testDurationsAndCountsReadTheWayTheVocabularyWritesThem() {
         XCTAssertEqual(ChatWords.duration(102_000), "1m 42s")
         XCTAssertEqual(ChatWords.duration(8_000), "8s")
-        XCTAssertEqual(ChatWords.duration(4_200), "4.2s")
+        XCTAssertEqual(ChatWords.duration(3_300), "4s")
+        XCTAssertEqual(ChatWords.duration(120), "1s")
+        XCTAssertEqual(ChatWords.duration(0), "0s")
+        XCTAssertEqual(ChatWords.duration(59_400), "1m")
         XCTAssertEqual(ChatWords.tokens(148_000), "148k")
         XCTAssertEqual(
             ChatWords.compaction(before: 148_000, after: 22_000, automatic: false),
@@ -195,7 +198,7 @@ final class ChatWordsTests: XCTestCase {
             "a has exited · a message resumes it")
     }
 
-    func testAReachedLimitIsNamedWithItsResetAboveAComposerThatStillSends() {
+    func testAReachedLimitIsNamedWithItsResetInAComposerThatStillSends() {
         let now = Date(milliseconds: 1_800_000_000_000)
         let nowMs: Int64 = 1_800_000_000_000
         let usage = UsageView(blocked: true, windows: [
@@ -204,9 +207,10 @@ final class ChatWordsTests: XCTestCase {
         ], credits: nil)
         let reached = ChatWords.limitReached(usage, now: now)
         XCTAssertTrue(reached.hasPrefix("5-hour limit reached · resets "), reached)
-        let overview = Overview(jobs: [], failedServers: [], changes: nil, tasks: nil, usageNearLimit: usage)
-        XCTAssertEqual(ChatWords.strip(context: nil, overview: overview, now: now).first?.text, reached)
-        XCTAssertEqual(ChatWords.strip(context: nil, overview: overview, now: now).first?.warn, true)
+        XCTAssertEqual(
+            ChatWords.placeholder(
+                .send, agent: "a", host: "Studio", reach: .online(.direct), working: false, limit: reached),
+            reached, "the limit is said where the next message is typed")
         var past = usage
         past.windows[0].resetsAtMs = nowMs - 1
         XCTAssertEqual(ChatWords.limitReached(past, now: now), "5-hour limit reached", "a reset already past is not promised")
@@ -222,11 +226,6 @@ final class ChatWordsTests: XCTestCase {
         XCTAssertEqual(
             ChatWords.limitReached(UsageView(blocked: true, windows: [unknown, known], credits: nil), now: now),
             "5-hour limit reached")
-        let near = UsageView(blocked: false, windows: [known, unknown], credits: nil)
-        let overview = Overview(jobs: [], failedServers: [], changes: nil, tasks: nil, usageNearLimit: near)
-        XCTAssertEqual(
-            ChatWords.strip(context: nil, overview: overview, now: now).first?.text,
-            "Near the usage limit · 5-hour limit 60%")
     }
 
     func testSigningInIsAskedForOnTheAgentsHost() {
@@ -358,6 +357,16 @@ final class ChatWordsTests: XCTestCase {
         custom.displayName = ""
         XCTAssertEqual(ChatWords.permission(custom), "Custom")
         XCTAssertNil(ChatWords.chip(ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil)))
+    }
+
+    func testAContextNearItsEndIsSaidOnTheModelPillAndOnlyThen() {
+        let summary = ControlsSummary(effort: "high", mode: nil, model: "Sonnet 5", permission: nil)
+        let full = ContextView(usedTokens: 184_000, nearFull: true, percent: 92, windowTokens: 200_000)
+        XCTAssertEqual(ChatWords.chip(summary, context: full)?.unusual, ["92% context"])
+        var roomy = full
+        roomy.nearFull = false
+        XCTAssertEqual(ChatWords.chip(summary, context: roomy)?.unusual, [])
+        XCTAssertEqual(ChatWords.contextUsed(full), "184k of 200k tokens")
     }
 
     /// Where only the agent's own commands change the model and effort,

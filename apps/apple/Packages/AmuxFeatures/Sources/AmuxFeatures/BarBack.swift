@@ -19,10 +19,7 @@ public struct BarBack: View {
 }
 
 /// A symbol in a circle of its own in the system's bar: back, cancel, done.
-/// The system's role buttons draw their own glass whatever the app's
-/// less-transparency setting says; this one stands on the bar's glass, or on
-/// a flat circle when less transparency is asked for, as every other item in
-/// the app's bars does.
+/// It stands on the bar's glass, as every other item in the app's bars does.
 public struct BarButton: View {
     @Environment(\.design) private var design
     let symbol: String
@@ -46,7 +43,6 @@ public struct BarButton: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(design.ink.color)
                 .frame(width: 36, height: 36)
-                .barItemSurface()
         }
         .accessibilityLabel(label)
         .identified(identifier, label: label)
@@ -116,7 +112,6 @@ extension View {
 }
 
 private struct BackBar: ViewModifier {
-    @Environment(\.reducesTransparency) private var reducesTransparency
     let identifier: String
     let back: @MainActor () -> Void
 
@@ -128,7 +123,6 @@ private struct BackBar: ViewModifier {
                 ToolbarItem(placement: .topBarLeading) {
                     BarBack(identifier: identifier) { back() }
                 }
-                .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
             }
     }
 }

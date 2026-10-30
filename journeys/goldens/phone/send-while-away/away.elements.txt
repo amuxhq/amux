@@ -9,10 +9,10 @@ chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | cabin · away | detached | 96,66,131,36
-chat.title | backups | backups | 96,66,131,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | cabin · away | detached | 80,66,123,36
+chat.title | backups | backups | 80,66,123,36
  | Clock |  | 30,691,14,14
  | Check last night's backup. |  | 58,679,189,20
  | held · sends when cabin is back |  | 58,701,182,16
@@ -22,6 +22,6 @@ chat.title | backups | backups | 96,66,131,36
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
  | cabin is away. This chat fills in when it is back. |  | 16,124,370,54
- | Back |  | 20,66,56,36
- | backups, cabin · away |  | 96,66,131,36
- | More |  | 342,66,36,36
+ | Back |  | 20,66,40,36
+ | backups, cabin · away |  | 80,66,123,36
+ | More |  | 350,66,28,36

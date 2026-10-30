@@ -21,14 +21,13 @@ you.support | Contact Support |  | 16,922,370,46
 you.report | Report a Problem |  | 16,968,370,46
 you.dump | Export Diagnostics |  | 16,1014,370,46
 you.help.caption |  |  | 16,1068,310,32
-you.close | Close |  | 326,82,56,36
+you.close | Close |  | 342,82,40,36
  | All |  | 16,172,44,44
  | Needs you |  | 68,172,87,44
  | Working |  | 163,172,76,44
- | Sign in to reach your agents from anywhere |  | 16,222,370,60
- | desk-work, desk is offline, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,290,370,65
+ | desk-work, desk is offline, Reached through the relay., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,218,370,65
  | Agents |  | 16,127,116,42
- | Switch account |  | 20,66,44,36
+ | Switch account |  | 20,66,36,36
  | Search |  | 16,175,370,0
  | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
@@ -62,7 +61,7 @@ you.close | Close |  | 326,82,56,36
  | Export Diagnostics |  | 16,1014,370,46
  | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,1068,282,32
  | Settings |  | 167,89,68,21
- | Close |  | 326,82,56,36
+ | Close |  | 342,82,40,36
  | Signed in as another account |  | 48,386,306,20
  | You signed in as grace@example.com, not ada@example.com. |  | 48,414,306,38
  | Continue as grace@example.com |  | 34,472,334,48

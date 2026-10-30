@@ -10,10 +10,10 @@ chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
-chat.more | More |  | 342,66,36,36
-chat.back | Back |  | 20,66,56,36
-chat.header | /t/a/n/c/work · cabin | live | 96,66,163,36
-chat.title | backups | backups | 96,66,163,36
+chat.more | More |  | 350,66,28,36
+chat.back | Back |  | 20,66,40,36
+chat.header | /t/a/n/c/work · cabin | live | 80,66,155,36
+chat.title | backups | backups | 80,66,155,36
  | Attach |  | 23,779,44,44
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
@@ -21,7 +21,7 @@ chat.title | backups | backups | 96,66,163,36
  | Started |  | 16,124,370,34
  | Check last night's backup. |  | 16,158,370,40
  | Last night's backup finished with no errors. |  | 16,210,370,20
- | Worked <t> |  | 16,237,74,16
- | Back |  | 20,66,56,36
- | backups, /t/a/n/c/work · cabin |  | 96,66,163,36
- | More |  | 342,66,36,36
+ | Worked <t> |  | 16,237,62,16
+ | Back |  | 20,66,40,36
+ | backups, /t/a/n/c/work · cabin |  | 80,66,155,36
+ | More |  | 350,66,28,36

@@ -361,6 +361,18 @@
         }
       }
     },
+    "%@ is away" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is away"
+          }
+        }
+      }
+    },
     "%@ is away because the free plan does not relay between hosts. This chat fills in once it can be reached." : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
       "extractionState" : "manual",
@@ -465,6 +477,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ is offline"
+          }
+        }
+      }
+    },
+    "%@ is out of reach" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is out of reach"
           }
         }
       }
@@ -697,6 +721,18 @@
         }
       }
     },
+    "%@ of %@ tokens" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ of %@ tokens"
+          }
+        }
+      }
+    },
     "%@ offline" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",
@@ -825,6 +861,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ subagents working"
+          }
+        }
+      }
+    },
+    "%@ tokens" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ tokens"
           }
         }
       }
@@ -2725,6 +2773,18 @@
         }
       }
     },
+    "Context" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatOverview.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Context"
+          }
+        }
+      }
+    },
     "Continue as %@" : {
       "comment" : "Button keeping the account a sign-in came back as when another was asked for; %@ is its address. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SigningIn.swift.",
       "extractionState" : "manual",
@@ -4117,30 +4177,6 @@
         }
       }
     },
-    "Near the usage limit" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Near the usage limit"
-          }
-        }
-      }
-    },
-    "Near the usage limit · %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Near the usage limit · %@"
-          }
-        }
-      }
-    },
     "Needs you" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxCore/Sources/AmuxCore/FleetOrder.swift, ios/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift.",
       "extractionState" : "manual",
@@ -5025,6 +5061,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pro is on for this account"
+          }
+        }
+      }
+    },
+    "Pro reaches it from anywhere" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro reaches it from anywhere"
           }
         }
       }
@@ -6129,6 +6177,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sign in again to reach your hosts through the relay"
+          }
+        }
+      }
+    },
+    "Sign in to reach it from anywhere" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to reach it from anywhere"
           }
         }
       }

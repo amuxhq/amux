@@ -1563,7 +1563,11 @@ extension ComponentCatalog {
     }
 
     private static func hostPage(_ id: String, host: HostView) -> ComponentExample {
-        ComponentExample(id: "host.\(id)", family: .hosts, canvas: CGSize(width: 390, height: 844)) {
+        ComponentExample(
+            id: "host.\(id)", family: .hosts, canvas: CGSize(width: 390, height: 844),
+            // The system bar lays its items out a frame after the page.
+            settlesLate: true
+        ) {
             hostPageView(host: host)
         }
     }
@@ -1616,7 +1620,11 @@ extension ComponentCatalog {
         confirm("link-refused", machine: nil) { store in
             store.reached(.failure(RuntimeFailure("expired")), attempt: store.checking())
         },
-        ComponentExample(id: "pair.needs-account", family: .pairing, canvas: CGSize(width: 390, height: 844)) {
+        ComponentExample(
+            id: "pair.needs-account", family: .pairing, canvas: CGSize(width: 390, height: 844),
+            // The system bar lays its items out a frame after the page.
+            settlesLate: true
+        ) {
             NavigationStack { PairNeedsAnAccount { _ in } }
         },
     ]
@@ -1643,7 +1651,11 @@ extension ComponentCatalog {
         _ id: String, machine: HostView? = CatalogFixtures.nearbyLaptop,
         setUp: @escaping @MainActor (PairingStore) -> Void
     ) -> ComponentExample {
-        ComponentExample(id: "pair.\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844)) {
+        ComponentExample(
+            id: "pair.\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844),
+            // The system bar lays its items out a frame after the page.
+            settlesLate: true
+        ) {
             let store = PairingStore(clock: { CatalogFixtures.now })
             store.open(machine: machine)
             setUp(store)
@@ -1718,7 +1730,9 @@ extension ComponentCatalog {
         build: @escaping @MainActor () -> some View
     ) -> ComponentExample {
         ComponentExample(
-            id: "settings.\(id)", family: .settings, canvas: CGSize(width: 390, height: height), dynamicTypeSize: size
+            id: "settings.\(id)", family: .settings, canvas: CGSize(width: 390, height: height), dynamicTypeSize: size,
+            // The system bar lays its items out a frame after the page.
+            settlesLate: true
         ) {
             NavigationStack { build() }
         }

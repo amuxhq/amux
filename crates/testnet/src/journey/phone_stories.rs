@@ -1133,17 +1133,17 @@ const SIGN_IN: &str = "Run claude and sign in with /login on desk.";
 fn composer_limits(journey: &mut PhoneJourney) -> Proved {
     journey.launch(Launch::plain())?;
     pair_by_code(journey, "desk")?;
-    // At a usage limit the strip over the composer names the window and
-    // when it resets, and sending still works. The reset is a time of day,
-    // so the strip is masked and its words checked here.
-    let limit_named = |drawn: &Drawn| drawn.label("chat.strip").starts_with(LIMIT);
+    // At a usage limit the composer names the window and when it resets
+    // where the next message is typed, and sending still works. The reset
+    // is a time of day, so the field is masked and its words checked here.
+    let limit_named = |drawn: &Drawn| drawn.label("chat.field").starts_with(LIMIT);
     let limited = open_agent(journey, "limited")?;
     journey.wait(
         |drawn| limit_named(drawn) && drawn.has("chat.field"),
         "the limit named over the composer",
     )?;
     reopen(journey, &limited, limit_named)?;
-    journey.screen("limit", &["chat.strip"])?;
+    journey.screen("limit", &["chat.field"])?;
     send(journey, "Try again.")?;
     journey.wait(
         |drawn| labelled(drawn, "Done after the limit.") && drawn.has("chat.row.turn-end"),

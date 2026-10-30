@@ -6,7 +6,7 @@ pair-confirm.expiry | <volatile>
 pair-confirm.fingerprint | <volatile>
 pair-confirm.trust | Pair |  | 16,726,370,44
 pair-confirm.abandon | Not Now |  | 16,780,370,44
-pair.close | Close |  | 20,82,56,36
+pair.close | Close |  | 20,82,40,36
  | desk is nearby, Pair it to see its agents here, Pair |  | 16,180,370,60
  | Hosts |  | 16,127,93,42
  | Agents |  | 111,795,94,54
@@ -23,7 +23,7 @@ pair.close | Close |  | 20,82,56,36
  | Fingerprint, <key> |  | 16,652,351,56
  | Pair |  | 16,726,370,44
  | Not Now |  | 16,780,370,44
- | Close |  | 20,82,56,36
+ | Close |  | 20,82,40,36
  | Pair desk |  | 165,82,73,21
  | On this network |  | 159,103,84,14
  | Agents |  | 111,795,94,54

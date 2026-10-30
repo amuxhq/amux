@@ -8,7 +8,7 @@ paywall.yearly | Yearly £79.99 | chosen | 16,303,370,68
 paywall.terms |  |  | 16,371,333,51
 paywall.buy | Subscribe · £79.99 a year | yearly | 26,744,350,44
 paywall.restore | Restore Purchases |  | 133,784,136,48
-paywall.back | Back |  | 20,66,56,36
+paywall.back | Back |  | 20,66,40,36
  | Reach your agents
 anywhere |  | 16,124,218,64
  | A subscription reaches your hosts from anywhere. Hosts on this network work without one. |  | 16,194,367,39
@@ -17,4 +17,4 @@ anywhere |  | 16,124,218,64
  | Cancel any time in the App Store. A subscription bought on the web carries over. |  | 16,385,333,37
  | Subscribe · £79.99 a year |  | 26,744,350,44
  | Restore Purchases |  | 133,784,136,48
- | Back |  | 20,66,56,36
+ | Back |  | 20,66,40,36

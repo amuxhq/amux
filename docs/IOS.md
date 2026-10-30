@@ -478,11 +478,12 @@ against are on [the testnet page](TESTNET.md).
 ### Compared pictures are drawn flat
 
 The pictures a check compares are the component snapshots, drawn in-process
-with the app's reduce-transparency flag on. Each frosted surface then takes
-the flat branch of `Frosted` in `AmuxDesign/Glass.swift`: a raised fill with
-a hairline rim, exactly what a person who turned on Reduce Transparency sees.
-The app itself is unchanged and still draws Liquid Glass and material on a
-phone.
+with the system's Reduce Transparency setting switched on, as a person
+switches it on in Settings. The system then draws its own glass flat — the
+bars' capsules and its buttons — and each of the app's frosted surfaces
+takes the flat branch of `Frosted` in `AmuxDesign/Glass.swift`: a raised
+fill with a hairline rim. Both are exactly what that person sees. The app
+itself is unchanged and still draws Liquid Glass and material on a phone.
 
 Glass is not something an exact comparison can hold. The render server
 finishes it after SwiftUI has drawn, out of the app's sight and on its own

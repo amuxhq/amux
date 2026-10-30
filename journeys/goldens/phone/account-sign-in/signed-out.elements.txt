@@ -16,7 +16,7 @@ you.support | Contact Support |  | 16,693,370,46
 you.report | Report a Problem |  | 16,739,370,46
 you.dump | Export Diagnostics |  | 16,785,370,46
 you.help.caption |  |  | 16,839,310,32
-you.close | Close |  | 326,82,56,36
+you.close | Close |  | 342,82,40,36
  | Pair your first host |  | 16,204,214,32
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
  | Looking on this network… |  | 36,305,174,18
@@ -28,7 +28,7 @@ you.close | Close |  | 326,82,56,36
  | Have an amux account? |  | 16,524,164,18
  | Sign In |  | 184,511,48,44
  | Agents |  | 16,127,116,42
- | Switch account |  | 24,66,37,36
+ | Switch account |  | 24,66,29,36
  | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
  | Hosts |  | 197,795,94,54
@@ -56,6 +56,6 @@ you.close | Close |  | 326,82,56,36
  | Export Diagnostics |  | 16,785,370,46
  | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,839,282,32
  | Settings |  | 167,89,68,21
- | Close |  | 326,82,56,36
+ | Close |  | 342,82,40,36
  | Agents | selected | 111,795,94,54
  | Hosts |  | 197,795,94,54

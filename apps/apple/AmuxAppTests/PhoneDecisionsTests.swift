@@ -95,6 +95,14 @@ final class PhoneDecisionsTests: XCTestCase {
         MenuSource.item(title, in: try XCTUnwrap(window))
     }
 
+    /// The chat's menu, opened as a person opens it: the system's menu
+    /// fills its rows in as it opens.
+    private func chatMenuItem(_ title: String) async throws -> (UIButton, UIAction)? {
+        try activate("chat.more")
+        await spin()
+        return try menuItem(title)
+    }
+
     private var oneChild: FamilyHeader {
         FamilyHeader(
             children: [CatalogFixtures.family.children[1]], attention: .working, needYou: 0, parent: nil)
@@ -105,13 +113,15 @@ final class PhoneDecisionsTests: XCTestCase {
     /// A live agent is stopped, not deleted; only an exited one is deleted.
     func testALiveAgentOffersStopAndOnlyAnExitedOneOffersDelete() async throws {
         _ = try await chat(ScriptedChat(rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .working)))
-        XCTAssertNotNil(try menuItem("Stop Agent"), "a live agent's menu offers Stop Agent")
+        let stop = try await chatMenuItem("Stop Agent")
+        XCTAssertNotNil(stop, "a live agent's menu offers Stop Agent")
         XCTAssertNil(try menuItem("Delete Agent"), "a live agent's menu offers Delete Agent; only an exited agent may be deleted")
 
         tearDownWindow()
         _ = try await chat(ScriptedChat(
             rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .exited(cause: .ended))))
-        XCTAssertNotNil(try menuItem("Delete Agent"), "an exited agent's menu offers Delete Agent")
+        let delete = try await chatMenuItem("Delete Agent")
+        XCTAssertNotNil(delete, "an exited agent's menu offers Delete Agent")
         XCTAssertNil(try menuItem("Stop Agent"), "an exited agent has nothing to stop")
     }
 
@@ -143,7 +153,8 @@ final class PhoneDecisionsTests: XCTestCase {
                 rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(name: "desk-1", phase: .working),
                 strip: ScriptedChat.strip(background: 2)),
             family: oneChild)
-        let (button, stop) = try XCTUnwrap(try menuItem("Stop Agent"))
+        let found = try await chatMenuItem("Stop Agent")
+        let (button, stop) = try XCTUnwrap(found)
         MenuSource.run(stop, from: button)
         await spin()
         XCTAssertFalse(acted.contains(.stopAgent), "the agent was stopped with no confirm naming what it cut")

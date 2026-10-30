@@ -952,7 +952,6 @@ struct LinkAsked {
 /// and deleting all leave here, because each of them either changes what the
 /// whole app is pointed at or reaches something outside it.
 private struct YouTabRoot: View {
-    @Environment(\.reducesTransparency) private var reducesTransparency
     let router: Router
     let accounts: AccountRegistry
     let stores: StoreBundle
@@ -1004,7 +1003,6 @@ private struct YouTabRoot: View {
                     router.select(router.beneath)
                 }
             }
-            .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
         }
     }
 

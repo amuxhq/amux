@@ -9,8 +9,6 @@
 
 #![cfg(unix)]
 
-mod support;
-
 use std::time::Duration;
 
 use node::RelayCarrier;
@@ -21,6 +19,8 @@ use support::*;
 use testnet::{AgentDecl, HostDecl, Net, PATIENCE, Topology, observe, until};
 use wire::begin_pair_request;
 use wire::session_service_server::SessionService as _;
+
+use crate::support;
 
 /// Two hosts bound to IPv6 alone pair, link over IPv6, and one
 /// streams the other's session live.

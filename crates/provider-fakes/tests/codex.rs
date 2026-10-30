@@ -2,11 +2,11 @@
 //! shape, injected items are acknowledged and drained, steering and
 //! interrupting act on the running turn, and every ask blocks the turn.
 
-mod support;
-
 use provider_fakes::Kind;
 use serde_json::{Value, json};
 use support::Host as Line;
+
+use crate::support;
 
 /// Steering is not in any recording yet; the host's interpreter reads only
 /// whether the request succeeded. The offered lists are pinned from a

@@ -4,8 +4,6 @@
 
 #![cfg(unix)]
 
-mod support;
-
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -28,6 +26,8 @@ use support::{amux_binary, grpc_channel, until};
 use tokio::io::{AsyncBufReadExt as _, BufReader};
 use wire::installation_service_client::InstallationServiceClient;
 use wire::{BindProfileRequest, RelayCarrier};
+
+use crate::support;
 
 /// The id the stand-in cloud's key set names its signing key by.
 const KID: &str = "relay-test-key";

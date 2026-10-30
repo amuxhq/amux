@@ -4,7 +4,7 @@
 use ui_state::{BlobStatus, Msg, SessionState};
 use wire::{Kind, Phase};
 
-use crate::harness::*;
+use crate::spec::harness::*;
 
 fn open_with(kind: Kind, orders: std::ops::RangeInclusive<u64>) -> SessionState {
     let mut state = SessionState::new(agent(kind), CAP);

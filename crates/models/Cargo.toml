@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "The protocol's promises as properties a checker explores over the real code"
 publish = false
+autotests = false
 
 [dependencies]
 agent-core = { workspace = true }
@@ -36,3 +37,7 @@ test = false
 name = "properties"
 path = "src/bin/properties.rs"
 test = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

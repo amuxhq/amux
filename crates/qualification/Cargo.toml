@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 publish = false
+autotests = false
 
 # `store` is a dependency only so `bundled` can name its feature.
 [package.metadata.cargo-shear]
@@ -89,3 +90,7 @@ name = "codex_live"
 path = "tests/codex_live.rs"
 harness = false
 required-features = ["live"]
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

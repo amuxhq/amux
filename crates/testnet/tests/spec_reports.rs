@@ -6,14 +6,14 @@
 
 #![cfg(unix)]
 
-mod support;
-
 use analytics::{Event, Recording};
 use prost::Message as _;
 use provider_fakes::script::Step;
 use support::*;
 use testnet::{AgentDecl, Net, NetOptions, Relay, Topology, until};
 use wire::{BindProfileRequest, DumpFile, DumpRequest, DumpScope, SubmitReportRequest};
+
+use crate::support;
 
 const SCOPE: &str = "reports-test";
 

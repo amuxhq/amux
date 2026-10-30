@@ -36,6 +36,8 @@ import re
 import subprocess
 import sys
 import tomllib
+
+from suites import INTEGRATION
 from typing import Any
 
 
@@ -77,6 +79,8 @@ def catalog_targets() -> set[tuple[str, str, str]]:
     targets: set[tuple[str, str, str]] = set()
     for suite in load(CATALOG)["suite"]:
         for selector in suite.get("cargo", []):
+            if selector.get("modules"):
+                targets.add((selector["package"], "test", INTEGRATION))
             kind = selector.get("kind", "test")
             for target in selector.get("targets", []):
                 targets.add((selector["package"], kind, target.replace("-", "_") if kind == "lib" else target))

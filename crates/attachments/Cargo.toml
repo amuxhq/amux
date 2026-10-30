@@ -5,6 +5,11 @@ edition.workspace = true
 license.workspace = true
 description = "The amux attachment element: positioned attachments as the model sees them"
 publish = false
+autotests = false
 
 [dependencies]
 wire = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

@@ -6,14 +6,14 @@
 //! because it attaches only on macOS and Linux.
 #![cfg(unix)]
 
-mod support;
-
 use std::time::Duration;
 
 use agent::ExitCause;
 use agent::attach::Attached;
 use support::*;
 use wire::{Kind, PtyMode};
+
+use crate::support;
 
 const PATIENCE: Duration = Duration::from_secs(30);
 

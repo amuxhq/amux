@@ -4,14 +4,14 @@
 
 #![cfg(unix)]
 
-mod support;
-
 use std::process::Stdio;
 
 use provider_fakes::Step;
 use support::desk::{Desk, LONG_GRACE_SECS, say};
 use support::{created_id, line_of, until};
 use tokio::io::AsyncWriteExt as _;
+
+use crate::support;
 
 fn desk(steps: Vec<Step>) -> Desk {
     Desk::new(

@@ -3,13 +3,13 @@
 //! the provider, the person and the spec carried taken out by the kind's
 //! own redactor.
 
-mod support;
-
 use agent::ExitCause;
 use prost::Message as _;
 use provider_fakes::Step;
 use support::*;
 use wire::{AgentSpec, Kind};
+
+use crate::support;
 
 /// Every planted secret contains this, so one search finds any survivor.
 const PLANTED: &str = "PLANTED";

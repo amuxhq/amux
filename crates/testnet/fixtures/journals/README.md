@@ -42,7 +42,7 @@ listing claims (`turn_end`, `ask`, `follow_up`, `exit`).
 To add a journal, add its listing (and its script under `generated/` for a
 generated one), then cut it:
 
-    cargo test -p testnet --test journal_fixtures -- --ignored cut_missing_journals
+    just test-crate testnet -- --run-ignored only cut_missing_journals
 
 The cutter writes only listed journals whose file does not exist yet. To
 change a journal, delete its file on purpose and cut it again; the diff is

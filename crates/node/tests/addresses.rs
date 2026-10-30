@@ -3,13 +3,13 @@
 //! link-local, and the peer keeps the list with where each address came
 //! from beside the address it last answered at, across a restart.
 
-mod support;
-
 use std::net::IpAddr;
 
 use node::LanOptions;
 use support::synthetic::quiet_launch;
 use support::*;
+
+use crate::support;
 
 /// Edge options listening on every address of both families, with the
 /// machine's interfaces stood in for by `interfaces`.

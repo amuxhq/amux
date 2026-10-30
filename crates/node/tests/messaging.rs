@@ -7,8 +7,6 @@
 //! socket speaking the agent's protocol), so each window can be opened on
 //! purpose; the last test runs real agent processes on the fake provider.
 
-mod support;
-
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,6 +21,8 @@ use wire::{
     AgentRef, ClaudeSdkInput, Input, Lifecycle, PromptInput, SendInputRequest, SendInputResponse,
     SendMessageRequest, claude_sdk_input, send_input_response, sender,
 };
+
+use crate::support;
 
 const SEGMENTS: u64 = 1 << 20;
 

@@ -75,7 +75,7 @@ test-store *ARGS: nextest
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo nextest run --locked -p store --features bundled "$@"
 
 # Cross-compile every store test target and run it on the leased, booted iOS
-# simulator, after proving the SQLite suite's binary carries SQLite itself.
+# simulator, after proving the store's integration binary carries SQLite itself.
 test-store-ios:
     scripts/with iphone -- {{bounded}} 2300 scripts/python -B apps/apple/Tools/ios-store-test.py
 
@@ -162,7 +162,7 @@ embedded-check:
 
 # Exercise the public embedded owner and client boundary.
 embedded-test: nextest
-    {{bounded}} 900 cargo nextest run --locked -p app-embedded --test embedded
+    {{bounded}} 900 cargo nextest run --locked -p app-embedded -E 'binary_id(app-embedded::integration) & test(/^embedded::/)'
 
 # Check the provider-free graph for iOS devices and simulators.
 mobile-check:
@@ -217,7 +217,7 @@ journey CLIENT NAME *ARGS:
     system)
         # --keep leaves the install running for other clients to open.
         if [ "${1-}" = --keep ]; then export AMUX_JOURNEY_KEEP=1; fi
-        {{bounded}} 1500 cargo nextest run --locked -p amux {{desktop_features}} --test system_journeys --no-capture -- --exact "$(echo "{{NAME}}" | tr - _)"
+        {{bounded}} 1500 cargo nextest run --locked -p amux {{desktop_features}} --no-capture -- --exact "system_journeys::$(echo "{{NAME}}" | tr - _)"
         ;;
     *)
         echo "no {{CLIENT}} journeys: terminal or system" >&2
@@ -291,6 +291,14 @@ shear:
 # Warm the product and ordinary test build graphs used by new worktrees.
 warm: build test-build
 
+# `just suite desktop-cli-system` runs exactly the Cargo tests that suite of
+# tests/catalog.toml lists, and builds only its packages; anything after the
+# name goes to nextest (a test-name filter, `--no-capture`). The bound is the
+# protocol models' at their CI bounds, one after another on a four-core machine.
+# Run one catalogued suite's Cargo tests.
+suite NAME *ARGS: nextest
+    {{bounded}} 2400 scripts/python -B scripts/tests-catalog.py run "$@"
+
 # Print the suite catalogue with its boundaries, lanes and focused recipes.
 tests-list:
     scripts/python -B scripts/tests-catalog.py list
@@ -310,13 +318,14 @@ parked-check:
     {{bounded}} 600 cargo run --locked -q -p models --bin parked-check
 
 # Check the protocol models at their nightly bounds: each model's ignored
-# test, one test binary after another, every core each. Names of test
-# targets (`just models-nightly family`) narrow it to those models. The bound
+# test, one after another, every core each. Model names, the modules of the
+# models' integration tests (`just models-nightly family`), narrow it to
+# those models. The bound
 # leaves the nightly job, one model each on a four-core runner, a quarter of an
 # hour of its six for the build; the single daemon's peer alone took two hours
 # on the twelve-core Mac.
-models-nightly *TARGETS: nextest
-    if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 20700 cargo nextest run --locked -p models --profile nightly $targets --run-ignored only --no-capture
+models-nightly *MODELS: nextest
+    if [ "${1-}" = -- ]; then shift; fi; models='[a-z_]+'; [ $# -eq 0 ] || models=$(echo "$*" | tr ' ' '|'); {{bounded}} 20700 cargo nextest run --locked -p models --profile nightly --run-ignored only --no-capture -E "binary_id(models::integration) & test(/^($models)::/)"
 
 # Walk the testnet's simulated stories by seed: every suite tests/catalog.toml
 # declares a simulated mode for, under TESTNET_MODE=simulated, a few seeds per

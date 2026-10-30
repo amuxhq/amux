@@ -474,5 +474,6 @@ A walk is reproducible: one seed walks one schedule on every run, and
 another seed walks another (`one_seed_walks_one_replication_schedule`).
 
 Run the models with `just test-crate models`, one with
-`just test-crate models -- --test <target>`, and the nightly bounds with
+`just suite protocol-models <model>::` (each model is a module of the
+crate's integration test binary), and the nightly bounds with
 `just models-nightly`.

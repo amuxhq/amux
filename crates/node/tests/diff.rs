@@ -4,8 +4,6 @@
 //! left its base to the working tree, and an exited agent's folder is
 //! compared as it is now.
 
-mod support;
-
 use std::path::Path;
 use std::process::Command;
 
@@ -13,6 +11,8 @@ use node::{BlobError, PATCH_MIME};
 use support::synthetic::*;
 use support::*;
 use wire::{DiffBase, DiffFile, DiffFileChange, ErrorCode, GetDiffRequest, Lifecycle, diff_base};
+
+use crate::support;
 
 const SEGMENTS: u64 = 1 << 20;
 

@@ -2,12 +2,12 @@
 //! launch, handshake, a turn, and a later incarnation continuing the
 //! provider's own session.
 
-mod support;
-
 use agent::ExitCause;
 use provider_fakes::Step;
 use support::*;
 use wire::Kind;
+
+use crate::support;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_codex_agent_handshakes_runs_a_turn_and_resumes_its_thread() {

@@ -4,8 +4,6 @@
 //! `testnet::modes::seeds` names, a few by default and thousands at night;
 //! the harness's stories that hold on either net are in `harness_stories`.
 
-mod stories;
-
 use std::cell::Cell;
 use std::time::Duration;
 
@@ -14,6 +12,8 @@ use testnet::modes::{seeds, walk_seeds};
 use testnet::sim::Faults;
 use testnet::{AgentDecl, NetError, SimNet, SimOptions, Stuck, Topology, World as _};
 use wire::{ExitCause, Lifecycle};
+
+use crate::stories;
 
 /// The schedule a story's first turn and its replication take under
 /// `seed`.

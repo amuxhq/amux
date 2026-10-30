@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "The many-daemons harness: topologies of production runtimes, faults, observations and the served door"
 publish = false
+autotests = false
 
 [[bin]]
 name = "testnet"
@@ -58,3 +59,7 @@ zstd = { workspace = true }
 analytics = { workspace = true }
 ui-runtime = { workspace = true }
 ui-state = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

@@ -8,7 +8,7 @@ use proptest::sample::Index;
 use ui_state::{Run, SessionState};
 use wire::{Kind, Phase, ToolState};
 
-use crate::harness::*;
+use crate::spec::harness::*;
 
 fn open(kind: Kind) -> SessionState {
     let mut state = SessionState::new(agent(kind), CAP);

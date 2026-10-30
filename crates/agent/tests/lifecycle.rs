@@ -2,14 +2,14 @@
 //! with real sockets, files and child processes, and a clock the test moves
 //! by hand: every deadline fires exactly when the test says so.
 
-mod support;
-
 use std::time::Duration;
 
 use agent::ExitCause;
 use provider_fakes::{Ask, Outcome, Step, Tool, ToolClass};
 use support::*;
 use wire::{Kind, Phase};
+
+use crate::support;
 
 fn text(chunk: &str) -> Step {
     Step::Text {

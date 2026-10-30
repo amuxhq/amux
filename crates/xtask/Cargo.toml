@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "Developer tasks: `cargo run -p xtask -- codegen` regenerates the committed protobuf code"
 publish = false
+autotests = false
 
 [dependencies]
 release = { workspace = true }
@@ -18,3 +19,7 @@ version-stamp = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

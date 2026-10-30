@@ -15,7 +15,7 @@ env:
 
 jobs:
   nightly:
-    name: Nightly bounds (${{ matrix.target }})
+    name: Nightly bounds (${{ matrix.model }})
     runs-on: ubuntu-latest
     # GitHub's cap for a hosted job: the single daemon's peer took two hours
     # on the enrolled Mac's 12 threads, and the runner is several times slower.
@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [client, composed, family, lifecycle, path, presence, relay, replication, single_daemon, socket, supervisor]
+        model: [client, composed, family, lifecycle, path, presence, relay, replication, single_daemon, socket, supervisor]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.98.0
@@ -35,7 +35,7 @@ jobs:
       - uses: ./.github/actions/setup-just
       - uses: ./.github/actions/setup-nextest
       - name: Check the model at its nightly bounds
-        run: just models-nightly ${{ matrix.target }}
+        run: just models-nightly ${{ matrix.model }}
 
   seeds:
     name: Simulated stories, many seeds

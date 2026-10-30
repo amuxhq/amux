@@ -3,8 +3,6 @@
 //! open, what a pairing call must name, and what a rename and a delete
 //! change.
 
-mod support;
-
 use std::sync::Arc;
 
 use support::synthetic::*;
@@ -16,6 +14,8 @@ use wire::{
     CreateProfileRequest, DeleteProfileRequest, Empty, RenameProfileRequest, StartPairingRequest,
     start_pairing_request,
 };
+
+use crate::support;
 
 /// The five minutes a window lasts when the request names no length.
 const DEFAULT_TTL_SECONDS: u64 = 5 * 60;

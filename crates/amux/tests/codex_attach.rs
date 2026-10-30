@@ -10,8 +10,6 @@
 
 #![cfg(unix)]
 
-mod support;
-
 use provider_fakes::{Ask, Step, Tool, ToolClass};
 use support::desk::{Desk, LONG_GRACE_SECS, say};
 use support::term::Term;
@@ -20,6 +18,8 @@ use wire::{
     CodexInput, Decision, Input, Phase, ResolveAgentRequest, SendInputRequest, codex_input,
     send_input_response,
 };
+
+use crate::support;
 
 const DETACH: &[u8] = b"\x01d";
 

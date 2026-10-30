@@ -4,8 +4,6 @@
 
 #![cfg(unix)]
 
-mod support;
-
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -14,6 +12,8 @@ use support::{
     Channel, amux_binary, chat, client, count, created_id, gated_turn, line_of, says, texts,
     turns_ended, until, until_within,
 };
+
+use crate::support;
 
 /// Three agents, one of each kind, are mid-turn when amux is killed. They
 /// finish their turns with nobody reading, outlive their grace and exit.

@@ -7,8 +7,6 @@
 //! answers the daemon's dial with a Hello, so the daemon adopts it and
 //! ingests on its Nudges exactly as it does a real agent's.
 
-mod support;
-
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,6 +18,8 @@ use wire::{
     AmbiguousAgentName, ErrorCode, GetItemRequest, InventoryEvent, Lifecycle, ListItemsRequest,
     Phase, SessionEvent, Step, inventory_event, session_event,
 };
+
+use crate::support;
 
 const BIG_SEGMENTS: u64 = 1 << 20;
 

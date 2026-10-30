@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "The daemon's profile runtime hosted in the phone's process: its store, replica rows, pairing and relay link"
 publish = false
+autotests = false
 
 [dependencies]
 log-file = { workspace = true }
@@ -28,3 +29,7 @@ tempfile = { workspace = true }
 testnet = { workspace = true }
 tracing = { workspace = true }
 ui-view = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

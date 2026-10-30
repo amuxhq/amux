@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 publish = false
+autotests = false
 
 [dependencies]
 chrono.workspace = true
@@ -27,3 +28,7 @@ ui-view.workspace = true
 unicode-width = "0.2"
 wire.workspace = true
 zstd.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

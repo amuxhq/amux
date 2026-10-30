@@ -1,10 +1,10 @@
 //! The fleet list's entries for other hosts: what a host's handshake said
 //! about itself reaches the entry another host lists it under.
 
-mod support;
-
 use support::synthetic::*;
 use support::*;
+
+use crate::support;
 
 /// After a handshake, the laptop lists the desk with the version and the
 /// capabilities the desk's handshake gave, the kinds it runs among them.

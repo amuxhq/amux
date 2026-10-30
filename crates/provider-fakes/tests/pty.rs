@@ -8,8 +8,6 @@
 // docs/ARCHITECTURE.md, "Windows, as a stated cost".
 #![cfg(unix)]
 
-mod support;
-
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -19,6 +17,8 @@ use provider_fakes::Kind;
 use provider_fakes::shape::Classifier;
 use serde_json::{Value, json};
 use support::{corpus, script_file};
+
+use crate::support;
 
 const DEADLINE: Duration = Duration::from_secs(20);
 const SESSION: &str = "5e55e55e-0000-4000-8000-0000000000aa";

@@ -7,13 +7,13 @@
 
 #![cfg(feature = "fixtures")]
 
-mod common;
-
 use std::collections::BTreeSet;
 
 use common::{assert_golden, capture, golden_dir, themes};
 use tui::Theme;
 use tui::vocabulary::components;
+
+use crate::common;
 
 #[test]
 fn every_vocabulary_component_matches_its_golden_in_both_themes() {

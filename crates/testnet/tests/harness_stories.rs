@@ -6,9 +6,9 @@
 
 #![cfg(unix)]
 
-mod stories;
-
 use testnet::modes::run_story;
+
+use crate::stories;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stuck_observation_fails_at_its_deadline_and_a_closed_one_at_once() {

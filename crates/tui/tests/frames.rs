@@ -16,8 +16,6 @@
 #![cfg(unix)]
 #![cfg(feature = "fixtures")]
 
-mod common;
-
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -36,6 +34,8 @@ use ui_state::{
 };
 use ui_view::SessionLine;
 use wire::{InventoryEvent, SessionEvent, session_event};
+
+use crate::common;
 
 fn theme() -> Theme {
     Theme::dark(ColorMode::TrueColor)

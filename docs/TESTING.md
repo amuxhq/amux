@@ -63,7 +63,7 @@ instead, slower and far hungrier, and prints the shortest.
 
 ```sh
 just test-crate models                     # every machine at its CI bounds, within its state count
-just test-crate models -- --test family    # one machine
+just suite protocol-models family::        # one machine
 just models-nightly [machine..]            # the larger nightly bounds, one machine after another
 cargo run -p models --bin properties       # every property's sentence, by machine
 ```
@@ -142,17 +142,21 @@ Under `cargo nextest run` the same switch is the environment: `TESTNET_MODE=simu
 
 `tests/catalog.toml` lists every suite once: its contract in a sentence, paths, focused recipe, boundary, oracle,
 what is real and what is substituted, its time requirement (`none`, `driven` or `real`), required capabilities,
-lane, evidence location, update command, and the Cargo targets, features and journeys it owns.
+lane, evidence location, update command, and the Cargo targets, features and journeys it owns. A crate's
+integration suites are modules of its one integration test binary (`tests/integration.rs` declares one per suite, so
+the crate links its tests once rather than once a suite), and a suite names them as `modules`; `just suite <name>`
+runs exactly what a suite lists.
 
 ```sh
 just tests-list    # print the catalogue: suite, boundary, lane, time, recipe
-just tests-check   # fail on a missing recipe, target, feature, journey or baseline,
-                   # or on a test target the catalogue does not list
+just tests-check   # fail on a missing recipe, target, module, feature, journey or baseline,
+                   # or on a test target or suite module the catalogue does not list
 ```
 
 `tests/contracts.toml` lists every promise the design makes that a test must hold, grouped by source (a worked
 failure, an invariant, a suite contract, or a model property), each with the tests that hold it. A test is named as
-`<package>/<target>::<test path>` for Cargo (`<target>` is a test target, `lib`, or `bin:<name>`),
+`<package>/<target>::<test path>` for Cargo (`<target>` is `lib`, `bin:<name>`, or `integration`, whose test paths
+start with the suite's module, as in `node/integration::supervisor::<test>`),
 `swift:<Target>/<Class>/<method>` for XCTest, or `journey:<client>/<story>` for a story in
 `journeys/manifest.json`. A model property is named by its crate, machine and sentence, which must be one the
 crate's `properties` binary lists (`cargo run -p models --bin properties`), with the checker test that explores
@@ -176,12 +180,14 @@ setup script ([`scripts/test-binaries.sh`](../scripts/test-binaries.sh)) builds 
 `TESTNET_BINARIES`, and a test started without it fails saying so rather than running binaries older than the
 source. A test is reported slow after a minute and ended after three; a test that ends while a process it started
 still holds its output fails, since that process would outlive it. The documentation tests, the live lane (whose
-tests have their own harness), Miri and the sanitizers still run under `cargo test`.
+tests have their own harness), the C ABI's pointer checks (`just miri`) and the sanitizers still run under
+`cargo test`.
 
 ```sh
 just test                                  # every ordinary workspace target
-just test -- --test spec_replication       # one Cargo target across the workspace
-just test-crate interpret -- --test codex  # one crate, then Cargo arguments
+just suite many-daemon-protocol-spec       # one suite of tests/catalog.toml, building only its packages
+just suite link-stories relaunch           # the same, then a test-name filter
+just test-crate interpret -- codex::       # one crate, then nextest arguments
 just test-store                            # the store's reader and writer suite, retention and SQLite file
 just test-ui                               # the client model spec
 just test-tui                              # terminal presentation and goldens
@@ -274,7 +280,7 @@ production code, and small authored scenarios. Ordinary runs compare and never r
 | Interpreter emission goldens (`*.json` input, `*.golden` output) per kind | `crates/interpret/fixtures` | `INTERPRET_UPDATE_GOLDENS=1` |
 | View data goldens | `crates/ui-view/tests/goldens` | `UI_VIEW_UPDATE_GOLDENS=1` |
 | Terminal component goldens (text plus style map, both themes) | `crates/tui/tests/golden` | `UPDATE_GOLDENS=1 just test-tui` |
-| Login-unit goldens | `crates/amux/tests/goldens/login` | `AMUX_UPDATE_GOLDENS=1 just test-crate amux -- --test supervise_cli` |
+| Login-unit goldens | `crates/amux/tests/goldens/login` | `AMUX_UPDATE_GOLDENS=1 just suite desktop-cli-system supervise_cli::` |
 | Fake-provider scripts and served topologies | `journeys/scripts`, `journeys/topologies` | by hand |
 | Hand-written provider traffic | `journeys/recordings` | by hand |
 | Journey screen goldens: terminal frames and styles, phone element geometry | `journeys/goldens/terminal/<story>`, `journeys/goldens/phone/<story>` | `UPDATE_JOURNEY_GOLDENS=1` |

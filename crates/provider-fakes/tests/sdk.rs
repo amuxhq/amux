@@ -1,14 +1,14 @@
 //! fake-claude-sdk as a host sees it: every frame it composes has a recorded
 //! shape, and it echoes, queues, folds and cancels the way Claude does.
 
-mod support;
-
 use std::process::Stdio;
 use std::time::Duration;
 
 use provider_fakes::Kind;
 use serde_json::{Value, json};
 use support::Host as Line;
+
+use crate::support;
 
 /// A cancel answer was seen in a probe of Claude 2.1.282, not in any
 /// recording yet.

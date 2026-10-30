@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 description = "The per-kind interpreters: provider facts and inputs in, journal steps and effects out"
 publish = false
+autotests = false
 
 [dependencies]
 attachments = { workspace = true }
@@ -28,3 +29,7 @@ testkind = []
 
 [dev-dependencies]
 toml = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

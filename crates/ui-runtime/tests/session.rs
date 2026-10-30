@@ -1,8 +1,6 @@
 //! The session driver against an in-memory runtime: every call it makes is
 //! answered by hand, and time moves only when the test moves it.
 
-mod support;
-
 use std::sync::Arc;
 
 use client::{ManualClock, RpcError};
@@ -15,6 +13,8 @@ use wire::{
     ErrorCode, GetBlobResponse, Input, Kind, ListItemsResponse, SendInputRequest, claude_pty_input,
     claude_sdk_input, codex_input,
 };
+
+use crate::support;
 
 const KIND: Kind = Kind::ClaudeSdk;
 /// The window's cap in cases about something else.

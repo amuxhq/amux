@@ -12,8 +12,6 @@
 
 #![cfg(unix)]
 
-mod support;
-
 use std::time::Duration;
 
 use node::RelayCarrier;
@@ -23,6 +21,8 @@ use testnet::{Net, RELAY_HOST, Topology, holds_for, until};
 use wire::agent_service_server::AgentService as _;
 use wire::begin_pair_request;
 use wire::session_service_server::SessionService as _;
+
+use crate::support;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tcp() {

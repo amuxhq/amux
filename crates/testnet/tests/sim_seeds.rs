@@ -2,11 +2,11 @@
 //! another, a failure is reported by the seed that reproduces it on demand,
 //! and a failing run shrinks to a shorter one that fails the same way.
 
-mod stories;
-
 use testnet::modes::{attempt, walk};
 use testnet::sim::{Faults, SimOptions, same_failure, shrink};
 use testnet::{SimNet, Topology, World as _};
+
+use crate::stories;
 
 /// The story every run here tells: the agent's first turn ends and its
 /// replica on the laptop holds it.

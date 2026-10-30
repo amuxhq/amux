@@ -25,6 +25,8 @@ import sys
 import time
 import tomllib
 
+import suites as selections
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "tests" / "catalog.toml"
@@ -36,27 +38,18 @@ WALKED = re.compile(
 )
 
 
-def simulated_targets() -> list[tuple[str, str]]:
-    """Every (package, test target) of a suite with a simulated mode."""
+def simulated_suites() -> list[dict[str, object]]:
+    """Every suite of the catalogue with a simulated mode."""
     with CATALOG.open("rb") as source:
         suites = tomllib.load(source)["suite"]
-    targets: list[tuple[str, str]] = []
-    for suite in suites:
-        if SIMULATED not in suite.get("modes", []):
-            continue
-        for selector in suite.get("cargo", []):
-            if selector.get("kind", "test") != "test":
-                continue
-            for target in selector.get("targets", []):
-                targets.append((selector["package"], target))
-    return targets
+    return [suite for suite in suites if SIMULATED in suite.get("modes", [])]
 
 
 def walk(seed: int | None, seeds: int | None, filters: list[str]) -> tuple[int, list[dict[str, object]]]:
     """Runs the simulated stories, streaming their output; returns
     nextest's exit status and each story's walked line."""
-    targets = simulated_targets()
-    if not targets:
+    suites = simulated_suites()
+    if not suites:
         print("no suite in tests/catalog.toml declares a simulated mode", file=sys.stderr)
         return 1, []
     env = dict(os.environ, TESTNET_MODE=SIMULATED)
@@ -70,8 +63,7 @@ def walk(seed: int | None, seeds: int | None, filters: list[str]) -> tuple[int, 
     # reuse its build: naming the package instead unifies the dependencies'
     # features differently and rebuilds every workspace crate beneath it.
     command = ["cargo", "nextest", "run", "--locked", "--no-fail-fast", "--workspace", "--features", "bundled"]
-    for _, target in targets:
-        command += ["--test", target]
+    command += ["-E", " | ".join(selections.filterset(selector) for suite in suites for selector in suite["cargo"])]
     # Each story's output whole as it ends, unindented, so its walked line
     # reads as the story printed it; the stories still run side by side.
     command += ["--success-output", "immediate", "--failure-output", "immediate", "--no-output-indent"]

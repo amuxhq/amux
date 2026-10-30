@@ -1,7 +1,5 @@
 //! The fleet driver against an in-memory runtime.
 
-mod support;
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -11,6 +9,8 @@ use support::*;
 use ui_runtime::{DriverEvent, Fleet, HELD_ROWS, TraceEvent, Window};
 use ui_state::{AgentKey, Connection};
 use wire::{Kind, ListItemsResponse, SessionEvent};
+
+use crate::support;
 
 fn named(id: &[u8]) -> wire::Agent {
     wire::Agent {

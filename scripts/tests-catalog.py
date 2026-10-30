@@ -13,6 +13,8 @@ import sys
 import tomllib
 from typing import Any
 
+import suites as selections
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "tests" / "catalog.toml"
@@ -85,17 +87,27 @@ def cargo_kind(target: dict[str, Any]) -> str:
     return "lib"
 
 
-def cargo_inventory() -> tuple[dict[tuple[str, str, str], dict[str, Any]], dict[str, set[str]]]:
+def cargo_inventory() -> tuple[
+    dict[tuple[str, str, str], dict[str, Any]], dict[str, set[str]], dict[str, set[str]]
+]:
+    """Every Cargo target that holds tests, each package's features, and the
+    suite modules of each package's integration binary."""
     metadata = json.loads(run("cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"))
     targets: dict[tuple[str, str, str], dict[str, Any]] = {}
     features: dict[str, set[str]] = {}
+    modules: dict[str, set[str]] = {}
     for package in metadata["packages"]:
         name = package["name"]
         features[name] = set(package.get("features", {}))
         for target in package["targets"]:
-            if target.get("test"):
-                targets[(name, cargo_kind(target), target["name"])] = target
-    return targets, features
+            if not target.get("test"):
+                continue
+            kind = cargo_kind(target)
+            if kind == "test" and target["name"] == selections.INTEGRATION:
+                modules[name] = selections.integration_modules(Path(package["manifest_path"]).parent)
+            else:
+                targets[(name, kind, target["name"])] = target
+    return targets, features, modules
 
 
 def swift_inventory() -> set[str]:
@@ -140,50 +152,21 @@ def recipe_name(command: str) -> str | None:
     return words[1]
 
 
-def validate_cargo_recipe(
-    label: str,
-    command: str,
-    selectors: list[dict[str, Any]],
-    errors: list[str],
-) -> None:
-    if not selectors:
+def validate_cargo_recipe(label: str, command: str, selectors: list[dict[str, Any]], errors: list[str]) -> None:
+    """A suite run by `just suite` names itself, so its recipe runs exactly
+    what its selectors list; any other recipe is its own."""
+    if not selectors or recipe_name(command) != "suite":
         return
     words = shlex.split(command)
-    selected = {
-        (selector["package"], selector.get("kind", "test"), target)
-        for selector in selectors
-        for target in selector.get("targets", [])
-    }
-    packages = {package for package, _, _ in selected}
-    recipe = recipe_name(command)
-    if recipe == "test-crate" and len(words) >= 3:
-        package = words[2]
-        if package not in packages:
-            errors.append(f"{label}: recipe selects unlisted Cargo package {package}")
-        if "--test" in words:
-            position = words.index("--test")
-            if position + 1 >= len(words) or (package, "test", words[position + 1]) not in selected:
-                value = words[position + 1] if position + 1 < len(words) else "<missing>"
-                errors.append(f"{label}: recipe selects zero catalogued tests named {value!r}")
-    elif recipe == "test":
-        requested = {words[index + 1] for index, word in enumerate(words[:-1]) if word == "-p"}
-        if requested and not requested <= packages:
-            errors.append(
-                f"{label}: recipe selects unlisted Cargo packages "
-                + ", ".join(sorted(requested - packages))
-            )
-        if "--test" in words:
-            position = words.index("--test")
-            value = words[position + 1] if position + 1 < len(words) else "<missing>"
-            if not any(kind == "test" and target == value for _, kind, target in selected):
-                errors.append(f"{label}: recipe selects zero catalogued tests named {value!r}")
+    if words[2:3] != [label]:
+        errors.append(f"{label}: recipe runs suite {' '.join(words[2:3]) or '<missing>'!r}, not its own")
 
 
 def runs_testnet_stories(suite: dict[str, Any]) -> bool:
     """Whether the suite's tests run nets: a testnet test target in a suite
     whose time moves."""
     return suite.get("time") != "none" and any(
-        selector.get("package") == "testnet" and selector.get("kind", "test") == "test"
+        selector.get("package") == "testnet" and "modules" in selector
         for selector in suite.get("cargo", [])
     )
 
@@ -223,11 +206,12 @@ def journey_inventory(manifest: str) -> set[str]:
 
 def validate(suites: list[dict[str, Any]]) -> tuple[list[str], set[tuple[str, str, str]], set[str]]:
     errors: list[str] = []
-    cargo_targets, cargo_features = cargo_inventory()
+    cargo_targets, cargo_features, cargo_modules = cargo_inventory()
     swift_targets = swift_inventory()
     recipes = just_recipes()
     seen_names: set[str] = set()
     catalog_cargo: dict[tuple[str, str, str], str] = {}
+    catalog_modules: dict[tuple[str, str], str] = {}
     catalog_swift: dict[str, str] = {}
     catalog_journeys: dict[tuple[str, str], str] = {}
     catalog_baselines: dict[str, str] = {}
@@ -287,6 +271,20 @@ def validate(suites: list[dict[str, Any]]) -> tuple[list[str], set[tuple[str, st
                     f"{label}: Cargo package {package} has no features "
                     + ", ".join(sorted(unknown_features))
                 )
+            for module in selector.get("modules", []):
+                selected += 1
+                if module not in cargo_modules.get(package, set()):
+                    errors.append(
+                        f"{label}: {package}'s {selections.INTEGRATION} test binary has no suite module {module}"
+                    )
+                    continue
+                if (package, module) in catalog_modules:
+                    errors.append(
+                        f"{label}: suite module {package}/{module} is already listed by {catalog_modules[(package, module)]}"
+                    )
+                catalog_modules[(package, module)] = label
+            if "modules" in selector and selector.get("targets"):
+                errors.append(f"{label}: a selector names modules or targets, not both")
             for target_name in selector.get("targets", []):
                 selected += 1
                 key = (package, kind, target_name)
@@ -353,6 +351,10 @@ def validate(suites: list[dict[str, Any]]) -> tuple[list[str], set[tuple[str, st
     missing_cargo = sorted(set(cargo_targets) - set(catalog_cargo))
     for package, kind, target in missing_cargo:
         errors.append(f"Cargo test target {package}/{kind}:{target} is not listed")
+    for package, modules in sorted(cargo_modules.items()):
+        for module in sorted(modules):
+            if (package, module) not in catalog_modules:
+                errors.append(f"suite module {package}/{module} of its {selections.INTEGRATION} test binary is not listed")
     missing_swift = sorted(swift_targets - set(catalog_swift))
     for target in missing_swift:
         errors.append(f"Swift test target {target} is not listed")
@@ -379,40 +381,43 @@ def validate(suites: list[dict[str, Any]]) -> tuple[list[str], set[tuple[str, st
 
     errors.extend(validate_models_matrix(suites, CI_WORKFLOW.read_text()))
 
-    return errors, set(catalog_cargo), set(catalog_swift)
+    listed = set(catalog_cargo) | {
+        (package, "test", f"{selections.INTEGRATION}::{module}") for package, module in catalog_modules
+    }
+    return errors, listed, set(catalog_swift)
 
 
 def models_matrix(text: str) -> set[str] | None:
-    """The test targets a CI workflow's models job runs, one per matrix entry."""
+    """The models a CI workflow's models job runs, one per matrix entry."""
     job = re.search(r"^  models:\n((?:    .*\n|\s*\n)*)", text, re.MULTILINE)
     if job is None:
         return None
-    targets = re.search(r"^\s+target: \[([^\]]*)\]", job.group(1), re.MULTILINE)
+    targets = re.search(r"^\s+model: \[([^\]]*)\]", job.group(1), re.MULTILINE)
     if targets is None:
         return None
     return {target.strip() for target in targets.group(1).split(",") if target.strip()}
 
 
 def validate_models_matrix(suites: list[dict[str, Any]], workflow: str) -> list[str]:
-    """Every protocol model's test target is its own entry of the CI models job."""
+    """Every protocol model's suite module is its own entry of the CI models job."""
     suite = next((suite for suite in suites if suite["name"] == MODELS_SUITE), None)
     if suite is None:
         return [f"suite {MODELS_SUITE} is missing"]
     targets = {
-        target
+        module
         for entry in suite.get("cargo", [])
-        if entry.get("kind", "test") == "test" and entry.get("package") == "models"
-        for target in entry.get("targets", [])
+        if entry.get("package") == "models"
+        for module in entry.get("modules", [])
     }
     matrix = models_matrix(workflow)
     if matrix is None:
-        return [f"{CI_WORKFLOW.relative_to(ROOT)} has no models job with a target matrix"]
+        return [f"{CI_WORKFLOW.relative_to(ROOT)} has no models job with a model matrix"]
     errors = [
-        f"{MODELS_SUITE} test target {target} is not in the CI models job's matrix"
+        f"{MODELS_SUITE} model {target} is not in the CI models job's matrix"
         for target in sorted(targets - matrix)
     ]
     errors.extend(
-        f"the CI models job's matrix names {target}, which is no {MODELS_SUITE} test target"
+        f"the CI models job's matrix names {target}, which is no {MODELS_SUITE} model"
         for target in sorted(matrix - targets)
     )
     return errors
@@ -429,7 +434,7 @@ def print_table(suites: list[dict[str, Any]], cargo: set[tuple[str, str, str]], 
     print("  ".join("-" * width for width in widths))
     for row in rows:
         print("  ".join(str(row[column]).ljust(widths[column]) for column in range(5)))
-    print("\nCargo test targets:")
+    print("\nCargo test targets and integration suites:")
     for package, kind, target in sorted(cargo):
         print(f"  {package}/{kind}:{target}")
     print("\nPhone test targets:")
@@ -437,10 +442,31 @@ def print_table(suites: list[dict[str, Any]], cargo: set[tuple[str, str, str]], 
         print(f"  {target}")
 
 
+def run_suite(suites: list[dict[str, Any]], name: str, extra: list[str]) -> int:
+    """Run one suite's Cargo tests, and only those, under nextest."""
+    suite = next((suite for suite in suites if suite["name"] == name), None)
+    if suite is None:
+        print(f"tests catalogue: no suite {name!r}; `just tests-list` names them", file=sys.stderr)
+        return 2
+    if not suite.get("cargo"):
+        print(f"tests catalogue: {name} has no Cargo tests; its recipe is {suite['recipe']}", file=sys.stderr)
+        return 2
+    command = ["cargo", "nextest", "run", "--locked", *selections.selection(suite), *extra]
+    print("$", shlex.join(command), flush=True)
+    return subprocess.run(command, cwd=ROOT).returncode
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=("list", "check"))
+    parser.add_argument("mode", choices=("list", "check", "run"))
+    parser.add_argument("suite", nargs="?", help="the suite `run` runs")
+    parser.add_argument("extra", nargs=argparse.REMAINDER, help="more `cargo nextest run` arguments")
     arguments = parser.parse_args()
+    if arguments.mode == "run":
+        if arguments.suite is None:
+            parser.error("run needs a suite name")
+        extra = arguments.extra[1:] if arguments.extra[:1] == ["--"] else arguments.extra
+        return run_suite(load_catalog(), arguments.suite, extra)
     try:
         suites = load_catalog()
         errors, cargo, swift = validate(suites)

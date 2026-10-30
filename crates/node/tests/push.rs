@@ -3,8 +3,6 @@
 //! sender once due; an answer before then cancels it; the agent's exit and
 //! delete remove it.
 
-mod support;
-
 use std::sync::{Arc, Mutex};
 
 use agent_dir::{Clock as _, ManualClock};
@@ -12,6 +10,8 @@ use node::{Daemon, NoopSender, ProfileRuntime, Push, PushFuture, PushSender, Sta
 use support::synthetic::*;
 use support::*;
 use wire::Phase;
+
+use crate::support;
 
 const SEGMENTS: u64 = 1 << 20;
 const DELAY: i64 = 30_000;

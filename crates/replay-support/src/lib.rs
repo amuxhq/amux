@@ -5,7 +5,6 @@ pub mod replay;
 mod sanitize;
 pub mod show;
 pub mod transport;
-pub mod wire_size;
 
 use std::path::Path;
 

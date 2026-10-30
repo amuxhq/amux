@@ -455,25 +455,6 @@ cargo = [
 ]
 
 [[suite]]
-name = "wire-size"
-contract = "The size meter replays a headless Claude recording through the interpreter and reports the snapshot count, the largest and median encoded snapshot, and per tool call the bytes its items and appends took."
-paths = ["crates/replay-support/src/wire_size.rs", "crates/replay-support/src/bin/wire-size.rs", "crates/replay-support/tests/wire_size.rs", "crates/replay-support/tests/fixtures/wire_size"]
-recipe = "just suite wire-size"
-boundary = "Interpreter"
-oracle = "Encoded sizes counted by hand, and the counts of a five-line recording."
-real = ["headless Claude interpreter", "a hand-written recording"]
-substituted = ["provider", "daemon"]
-time = "none"
-capabilities = ["Rust toolchain"]
-lane = "tool"
-evidence = "`just wire-size RECORDING` prints the numbers"
-update = ""
-cargo = [
-  { package = "replay-support", kind = "bin", targets = ["wire-size"], features = [] },
-  { package = "replay-support", modules = ["wire_size"], features = [] },
-]
-
-[[suite]]
 name = "dump-show"
 contract = "The dump printer prints a bundle's manifest, each agent's row, its journal in the interpreter's emission-golden format beside the facts replayed through the same renderer, its store slice with orders and revisions, its facts lines and checkpoints as written, and names or prints every other file; it refuses a directory that is not a bundle."
 paths = ["crates/replay-support/src/show.rs", "crates/replay-support/src/bin/dump-show.rs", "crates/replay-support/tests/dump_show.rs", "crates/replay-support/tests/fixtures/bundle"]

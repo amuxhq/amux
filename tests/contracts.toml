@@ -774,7 +774,6 @@ section = "Boundaries"
 claim = "Native presentation: the supplied view is drawn correctly and interaction produces the right command on that platform; paging fires while held rows still sit above the screen and asks for a larger page at an open collapsed run."
 tests = [
   "tui/integration::golden::every_vocabulary_component_matches_its_golden_in_both_themes",
-  "tui/integration::frames::served_frames_match_their_goldens",
   "tui/lib::tests::fewer_than_a_page_of_held_rows_above_the_screen_asks_for_an_older_page",
   "tui/lib::tests::an_open_collapsed_run_at_the_top_asks_for_a_larger_page",
   "swift:AmuxComponentSnapshotTests/ComponentSnapshotTests/testComponents",
@@ -1279,7 +1278,7 @@ tests = [
   "testnet/integration::spec_links::entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once",
   "daemon-core/lib::presence::tests::a_forward_refused_after_the_forwarder_let_the_host_go_says_nothing",
   "daemon-core/lib::presence::tests::a_forwarder_holding_no_link_to_the_host_reads_it_offline_at_once",
-  "tui/integration::frames::a_prompt_held_when_no_call_reaches_its_host_goes_once_one_does",
+  "tui/integration::served::a_prompt_held_when_no_call_reaches_its_host_goes_once_one_does",
 ]
 
 [[contract]]

@@ -890,7 +890,7 @@ evidence = "crates/tui/tests/golden"
 update = "UPDATE_GOLDENS=1 just test-tui"
 cargo = [
   { package = "tui", kind = "lib", targets = ["tui"], features = ["fixtures"] },
-  { package = "tui", modules = ["frames", "golden"], features = ["fixtures"] },
+  { package = "tui", modules = ["served", "golden"], features = ["fixtures"] },
 ]
 
 [[suite]]

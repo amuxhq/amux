@@ -6,7 +6,6 @@ use clap::{Parser, Subcommand, ValueEnum};
 use shot::{
     ShotError, rasterize, render_vocabulary, report_frame, verify, vocabulary_index, write_png,
 };
-use tui::vocabulary::FRAMES;
 use tui::{ColorMode, Theme};
 
 /// The one render set: every component the terminal's goldens hold.
@@ -156,15 +155,6 @@ fn index(themes: &[&str]) -> String {
             goldens.join(" "),
             pngs.join(" ")
         );
-    }
-    out.push_str(
-        "\n## Whole frames from served hosts\n\n\
-         Drawn by `crates/tui/tests/frames.rs` from a testnet desk and laptop, \
-         observed at the laptop, in the dark theme.\n\n\
-         | Golden | What it shows |\n| --- | --- |\n",
-    );
-    for (name, shows) in FRAMES {
-        let _ = writeln!(out, "| `frame_{name}.txt` | {shows} |");
     }
     out
 }

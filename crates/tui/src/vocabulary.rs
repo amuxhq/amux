@@ -39,48 +39,6 @@ const PAGE_HEIGHT: u16 = 30;
 /// form in its own terminal.
 const UNANSWERABLE: &str = "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.";
 
-/// The whole frames drawn from served hosts, with what each shows; the
-/// frames test draws exactly these.
-pub const FRAMES: &[(&str, &str)] = &[
-    (
-        "home",
-        "Home at 110 columns as the laptop sees it: a terminal Claude, a headless Claude and a Codex on the desk, every one idle, the one whose turn ended last first, each row with its mark, name, folder and host and how long it has been idle, and under it the first line of what it last said; the first selected, its age giving way to the close mark; the keys under the list.",
-    ),
-    (
-        "home_60col",
-        "The same home at 60 columns: rows keep their mark, name, folder and host, and what each last said.",
-    ),
-    (
-        "home_standings",
-        "Home with every standing at 110 columns: the top line says the studio is away and counts who is working and who needs you; a headless Claude asking to run a command under Needs you; under Live, an unfolded family whose one-shot child finished, an agent on the offline studio saying so, an idle agent with what it last said and a working one; and the exited Codex folded under Exited.",
-    ),
-    ("home_standings_80col", "The same home at 80 columns."),
-    (
-        "hosts",
-        "The hosts overlay over that home: every trusted host with how it is reached (the desk direct, this machine, the studio offline), with how to pair another and esc to close.",
-    ),
-    (
-        "chat",
-        "A headless Claude chat on the desk read from the laptop: the header with its folder and the way to the diff and home, the first turn, the composer with its model and mode, and its keys.",
-    ),
-    (
-        "tool_form",
-        "A terminal Claude on the desk asking for a tool server's sign-in form, read from the laptop: the form in the composer's box, a step per field, with the conversation still above it: the prompt, the text that introduced the tool server's call, and the call folded.",
-    ),
-    (
-        "running_call",
-        "A terminal Claude on the desk mid-call, read from the laptop: the text that introduced the call above it and the call drawn running while it runs, before any result.",
-    ),
-    (
-        "rewind_before_swap",
-        "The same headless chat after the desk rewound under it: the Reset is pending, the second turn's rows stay on screen, and the header and the composer's edge say the host is away until the rebuilt transcript catches up.",
-    ),
-    (
-        "rewind_after_swap",
-        "After the CaughtUp: the rebuilt transcript swapped in, the rewound turn gone, and the composer live again.",
-    ),
-];
-
 /// The chat surroundings' frames: columns and rows.
 const CHAT_SIZE: (u16, u16) = (120, 28);
 

@@ -21,11 +21,10 @@ use super::link_log::{EarlyData, LinkEvent, LinkTransition};
 use super::{QuicCarrier, read_message, write_message};
 use crate::net_error::{self, status as protocol_status};
 use crate::routing::{
-    ConnectHandshake, ConnectHandshakeEvent, Host, LinkAdmission, LinkCloseRequest, LinkId,
-    LinkProperties, LinkRegistry, LinkRole, LiveLocalHost, Registration, RuntimeInstance,
-    core_host, host_from_wire, host_to_wire, inbound_host_from_wire, neighbor_down_from_wire,
-    neighbor_up_from_wire, protocol_error_hello_ack, protocol_error_link_close,
-    validate_remote_host,
+    Host, LinkAdmission, LinkCloseRequest, LinkId, LinkProperties, LinkRegistry, LinkRole,
+    LiveLocalHost, Registration, RuntimeInstance, core_host, host_from_wire, host_to_wire,
+    inbound_host_from_wire, neighbor_down_from_wire, neighbor_up_from_wire,
+    protocol_error_hello_ack, protocol_error_link_close, validate_remote_host,
 };
 use crate::{Clock, HostId};
 
@@ -420,7 +419,6 @@ pub async fn run_link(
     role: crate::routing::ConnectRole,
 ) -> Result<(), LinkError> {
     let (mut sink, mut source) = carrier.control();
-    let mut handshake = ConnectHandshake::new(role);
     // A host lists where it can be reached to its peers, and to the relay
     // nothing: punching needs only what the relay sees.
     let mut addresses = ctx
@@ -463,17 +461,24 @@ pub async fn run_link(
                     return Err(status.into());
                 }
                 let frame = first.body.clone();
-                match handshake.receive(first) {
-                    Ok(ConnectHandshakeEvent::Accepted(accepted)) => {
+                match first.body {
+                    Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
+                        outcome: Some(wire::pb::hello_ack::Outcome::Accepted(accepted)),
+                    })) => {
                         let (peer, neighbors, runtime_instance) =
                             accept_peer_hello_ack(&ctx, accepted).map_err(protocol_status)?;
                         Ok((frame, (peer, runtime_instance), neighbors))
                     }
-                    Ok(ConnectHandshakeEvent::Rejected(error)) => {
-                        Err(protocol_status(error).into())
-                    }
-                    Ok(_) => Err(tonic::Status::invalid_argument("expected HelloAck").into()),
-                    Err(error) => Err(tonic::Status::invalid_argument(error.to_string()).into()),
+                    Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
+                        outcome: Some(wire::pb::hello_ack::Outcome::Error(error)),
+                    })) => Err(protocol_status(error).into()),
+                    Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
+                        outcome: None,
+                    })) => Err(tonic::Status::invalid_argument(
+                        "hello_ack is missing an accepted/error outcome",
+                    )
+                    .into()),
+                    _ => Err(tonic::Status::invalid_argument("expected hello_ack").into()),
                 }
             };
             match answered.await {
@@ -513,31 +518,17 @@ pub async fn run_link(
                         return Ok(());
                     }
                 };
-            let hello = match handshake.receive(first) {
-                Ok(ConnectHandshakeEvent::Hello(hello)) => {
-                    // The core records its inputs on the drive, so the
-                    // credential stays here.
-                    peer_frame = Some(wire::pb::message::Body::Hello(wire::pb::Hello {
-                        auth_token: None,
-                        ..hello.clone()
-                    }));
-                    hello
-                }
-                Ok(_) => {
-                    write_message(
-                        &mut sink,
-                        &protocol_error_hello_ack("unexpected message while awaiting Hello"),
-                    )
-                    .await?;
-                    carrier.close(wire::pb::LinkCloseReason::ProtocolError);
-                    return Ok(());
-                }
-                Err(error) => {
-                    write_message(&mut sink, &protocol_error_hello_ack(error.to_string())).await?;
-                    carrier.close(wire::pb::LinkCloseReason::ProtocolError);
-                    return Ok(());
-                }
+            let Some(wire::pb::message::Body::Hello(hello)) = first.body else {
+                write_message(&mut sink, &protocol_error_hello_ack("expected hello")).await?;
+                carrier.close(wire::pb::LinkCloseReason::ProtocolError);
+                return Ok(());
             };
+            // The core records its inputs on the drive, so the credential
+            // stays here.
+            peer_frame = Some(wire::pb::message::Body::Hello(wire::pb::Hello {
+                auth_token: None,
+                ..hello.clone()
+            }));
             let mut session = match authenticate_hello(&ctx, &hello).await {
                 Ok(session) => session,
                 Err(status) => {
@@ -582,9 +573,6 @@ pub async fn run_link(
             } else {
                 ctx.refund();
                 write_message(&mut sink, &ack).await?;
-                handshake
-                    .acceptor_ack_sent()
-                    .map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;
             }
             ctx.acceptor_session = session;
             ((peer.0, peer.2), peer.1, snapshot)
@@ -596,7 +584,7 @@ pub async fn run_link(
         carrier,
         sink,
         source,
-        (handshake, held_ack),
+        held_ack,
         (peer_host, peer_instance, peer_neighbors, role, peer_frame),
         Told {
             neighbors: snapshot.into_iter().map(|host| host.id).collect(),
@@ -681,7 +669,7 @@ async fn run_established(
     carrier: Arc<QuicCarrier>,
     mut sink: super::ControlSink,
     mut source: super::ControlSource,
-    (mut handshake, held_ack): (ConnectHandshake, Option<wire::pb::Message>),
+    held_ack: Option<wire::pb::Message>,
     peer: (
         Host,
         RuntimeInstance,
@@ -691,7 +679,6 @@ async fn run_established(
     ),
     mut told: Told,
 ) -> Result<(), LinkError> {
-    debug_assert!(held_ack.is_some() || handshake.is_established());
     let (peer_host, peer_instance, _neighbors, connect_role, peer_frame) = peer;
     if ctx
         .shutdown_rx
@@ -810,9 +797,6 @@ async fn run_established(
             }
             ctx.refund();
             write_message(&mut sink, &ack).await?;
-            handshake
-                .acceptor_ack_sent()
-                .map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;
         }
     }
     let logged = LinkEvent {
@@ -859,29 +843,21 @@ async fn run_established(
                         break;
                     }
                 };
-                match handshake.receive(message) {
-                    Ok(ConnectHandshakeEvent::PostHandshake(body)) => {
-                        match handle_control_body(&ctx, link, body, acceptor_auth.as_mut()).await {
-                            ControlAction::Continue => {}
-                            ControlAction::Close(reason, status) => {
-                                close_reason = reason;
-                                close_status = status;
-                                break;
-                            }
-                            ControlAction::ReplyAndClose(message, reason) => {
-                                let _ = out_tx.send(*message).await;
-                                close_reason = reason;
-                                break;
-                            }
-                        }
+                let Some(body) = message.body else {
+                    let _ = out_tx.send(protocol_error_link_close("message body is missing")).await;
+                    close_reason = wire::pb::LinkCloseReason::ProtocolError;
+                    break;
+                };
+                match handle_control_body(&ctx, link, body, acceptor_auth.as_mut()).await {
+                    ControlAction::Continue => {}
+                    ControlAction::Close(reason, status) => {
+                        close_reason = reason;
+                        close_status = status;
+                        break;
                     }
-                    Ok(ConnectHandshakeEvent::Unknown) => {
-                        tracing::debug!(?link, "ignored a control message this build does not know");
-                    }
-                    Ok(_) => unreachable!("handshake cannot repeat after establishment"),
-                    Err(error) => {
-                        let _ = out_tx.send(protocol_error_link_close(error.to_string())).await;
-                        close_reason = wire::pb::LinkCloseReason::ProtocolError;
+                    ControlAction::ReplyAndClose(message, reason) => {
+                        let _ = out_tx.send(*message).await;
+                        close_reason = reason;
                         break;
                     }
                 }
@@ -922,7 +898,7 @@ async fn run_established(
             stream = carrier.accept_stream() => {
                 let Some(stream) = stream else {
                     if let Some((reason, status)) =
-                        last_word(&ctx, link, &mut handshake, &mut source).await
+                        last_word(&ctx, link, &mut source).await
                     {
                         close_reason = reason;
                         close_status = status;
@@ -994,7 +970,7 @@ async fn run_established(
             reason = carrier.closed() => {
                 close_reason = reason;
                 if let Some((reason, status)) =
-                    last_word(&ctx, link, &mut handshake, &mut source).await
+                    last_word(&ctx, link, &mut source).await
                 {
                     close_reason = reason;
                     close_status = status;
@@ -1037,13 +1013,10 @@ async fn run_established(
 async fn last_word(
     ctx: &LinkCtx,
     link: LinkId,
-    handshake: &mut ConnectHandshake,
     source: &mut super::ControlSource,
 ) -> Option<(wire::pb::LinkCloseReason, Option<tonic::Status>)> {
     while let Ok(Some(message)) = read_message(source).await {
-        if let Ok(ConnectHandshakeEvent::PostHandshake(
-            body @ wire::pb::message::Body::LinkClose(_),
-        )) = handshake.receive(message)
+        if let Some(body @ wire::pb::message::Body::LinkClose(_)) = message.body
             && let ControlAction::Close(reason, status) =
                 handle_control_body(ctx, link, body, None).await
         {
@@ -1187,8 +1160,12 @@ async fn handle_control_body(
             ctx.report_frame(link, body);
             ControlAction::Continue
         }
+        // The handshake is one exchange; a repeat is a protocol error.
         wire::pb::message::Body::Hello(_) | wire::pb::message::Body::HelloAck(_) => {
-            unreachable!("repeated handshake message is rejected by ConnectHandshake")
+            ControlAction::ReplyAndClose(
+                Box::new(protocol_error_link_close("illegal post-handshake message")),
+                wire::pb::LinkCloseReason::ProtocolError,
+            )
         }
     }
 }

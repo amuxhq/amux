@@ -18,9 +18,7 @@ pub(crate) use host::{
     validate_remote_host,
 };
 pub use link::ConnectRole;
-pub(crate) use link::{
-    ConnectHandshake, ConnectHandshakeEvent, protocol_error_hello_ack, protocol_error_link_close,
-};
+pub(crate) use link::{protocol_error_hello_ack, protocol_error_link_close};
 pub(crate) use link_registry::{
     LinkAdmission, LinkCloseRequest, LinkOutputTx, LinkProperties, Registration, direct_order,
 };

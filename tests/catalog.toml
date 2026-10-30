@@ -214,25 +214,6 @@ cargo = [
 ]
 
 [[suite]]
-name = "claude-transport-boundary"
-contract = "The claude crate carries provider transport only: no session host, and its SDK module holds only the error a stream host reports; the stream-JSON frames live in claude-protocol."
-paths = ["crates/claude/tests/boundary.rs", "crates/claude/src"]
-recipe = "just suite claude-transport-boundary"
-boundary = "Provider adapter"
-oracle = "Source-boundary assertions over the crate's modules."
-real = ["repository source"]
-substituted = ["Claude process"]
-time = "none"
-capabilities = ["Rust toolchain"]
-lane = "tool"
-evidence = ""
-update = ""
-cargo = [
-  { package = "claude", kind = "lib", targets = ["claude"], features = [] },
-  { package = "claude", modules = ["boundary"], features = [] },
-]
-
-[[suite]]
 name = "claude-recorded-adapter"
 contract = "Recorded Claude PTY and SDK traffic replays completely and remains tied to its wire provenance."
 paths = ["crates/claude-specs/tests", "crates/claude-specs/fixtures"]
@@ -249,7 +230,7 @@ update = "Run `claude-probe record` for the spec and review its manifest."
 cargo = [
   { package = "claude-specs", kind = "lib", targets = ["claude_specs"], features = [] },
   { package = "claude-specs", kind = "bin", targets = ["claude-probe"], features = [] },
-  { package = "claude-specs", modules = ["capture_proxy", "driver_boundary", "scrub", "sdk_boundary", "spec_replay"], features = [] },
+  { package = "claude-specs", modules = ["capture_proxy", "scrub", "sdk_boundary", "spec_replay"], features = [] },
 ]
 
 [[suite]]
@@ -632,8 +613,8 @@ cargo = [
 
 [[suite]]
 name = "provider-io-library-units"
-contract = "PTY ownership, capture redaction and the Codex app-server client preserve process, signal, byte, sanitization and protocol contracts."
-paths = ["crates/codex/src", "crates/pty-host/src", "crates/redaction/src"]
+contract = "PTY ownership, capture redaction, the Codex app-server client and Claude's launch settings, hook receiver, transcript tailer and version probe preserve process, signal, byte, sanitization and protocol contracts."
+paths = ["crates/claude/src", "crates/codex/src", "crates/pty-host/src", "crates/redaction/src"]
 recipe = "just suite provider-io-library-units"
 boundary = "Provider adapter"
 oracle = "Process-group observations, byte streams, exit status, exact sanitized values and decoded protocol messages."
@@ -645,6 +626,7 @@ lane = "fast"
 evidence = ""
 update = ""
 cargo = [
+  { package = "claude", kind = "lib", targets = ["claude"], features = [] },
   { package = "codex", kind = "lib", targets = ["codex"], features = [] },
   { package = "pty-host", kind = "lib", targets = ["pty_host"], features = [] },
   { package = "redaction", kind = "lib", targets = ["redaction"], features = [] },

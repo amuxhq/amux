@@ -209,85 +209,8 @@ impl LinkRegistry {
     /// Registers a live link and runs the adjacency discipline atomically:
     /// other links learn `NeighborUp(peer)` if this is the first link to the
     /// peer, and this link receives the diff between `advertised_snapshot`
-    /// (the neighbor set its handshake carried) and the current one.
-    #[cfg(test)]
-    pub(crate) async fn register(
-        &self,
-        link: LinkId,
-        host: Host,
-        outgoing_tx: LinkOutputTx,
-        role: LinkRole,
-        advertised_snapshot: &[HostId],
-    ) -> mpsc::Receiver<LinkCloseRequest> {
-        self.register_with_details(
-            link,
-            host,
-            outgoing_tx,
-            LinkProperties {
-                role,
-                admission: LinkAdmission::PinnedKey,
-                carrier: CarrierKind::Direct,
-                runtime_instance: crate::routing::RuntimeInstance::random(),
-                direct_order: None,
-            },
-            advertised_snapshot,
-            None,
-        )
-        .await
-        .expect("test registration has no ordered direct duplicate")
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn register_with_admission(
-        &self,
-        link: LinkId,
-        host: Host,
-        outgoing_tx: LinkOutputTx,
-        role: LinkRole,
-        admission: LinkAdmission,
-        advertised_snapshot: &[HostId],
-    ) -> mpsc::Receiver<LinkCloseRequest> {
-        self.register_with_details(
-            link,
-            host,
-            outgoing_tx,
-            LinkProperties {
-                role,
-                admission,
-                carrier: CarrierKind::Direct,
-                runtime_instance: crate::routing::RuntimeInstance::random(),
-                direct_order: None,
-            },
-            advertised_snapshot,
-            None,
-        )
-        .await
-        .expect("test registration has no ordered direct duplicate")
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn register_with_details(
-        &self,
-        link: LinkId,
-        host: Host,
-        outgoing_tx: LinkOutputTx,
-        properties: LinkProperties,
-        advertised_snapshot: &[HostId],
-        native_carrier: Option<Arc<QuicCarrier>>,
-    ) -> Option<mpsc::Receiver<LinkCloseRequest>> {
-        self.register_displacing(
-            link,
-            host,
-            outgoing_tx,
-            properties,
-            advertised_snapshot,
-            native_carrier,
-        )
-        .await
-        .map(|registration| registration.close_rx)
-    }
-
-    /// Registers a link and names the direct links it superseded, or refuses
+    /// (the neighbor set its handshake carried) and the current one. It
+    /// names the direct links it superseded, or refuses
     /// it where the same runtime instance of the peer already holds a direct link
     /// that wins against it.
     pub(crate) async fn register_displacing(
@@ -921,6 +844,31 @@ mod tests {
         }
     }
 
+    /// A direct link a peer was pinned for, ordered against no other.
+    fn direct_peer() -> LinkProperties {
+        LinkProperties {
+            role: LinkRole::Peer,
+            admission: LinkAdmission::PinnedKey,
+            carrier: CarrierKind::Direct,
+            runtime_instance: RuntimeInstance::random(),
+            direct_order: None,
+        }
+    }
+
+    /// Registers a direct link to `host`, as its handshake would.
+    async fn register(
+        registry: &LinkRegistry,
+        link: LinkId,
+        host: Host,
+        tx: LinkOutputTx,
+    ) -> mpsc::Receiver<LinkCloseRequest> {
+        registry
+            .register_displacing(link, host, tx, direct_peer(), &[], None)
+            .await
+            .expect("a lone link is usable")
+            .close_rx
+    }
+
     /// A link to a host carried through a forwarder: one end of a QUIC
     /// pair, marked as carried through `through`.
     async fn carried_through(through: LinkId) -> Arc<QuicCarrier> {
@@ -950,7 +898,7 @@ mod tests {
             let (tx, _) = mpsc::channel(8);
             closes.push(
                 registry
-                    .register_with_details(
+                    .register_displacing(
                         link(3, instance),
                         phone.clone(),
                         tx,
@@ -959,7 +907,8 @@ mod tests {
                         Some(carried_through(through).await),
                     )
                     .await
-                    .expect("a forwarded link is usable"),
+                    .expect("a forwarded link is usable")
+                    .close_rx,
             );
         }
         let mut via_daemon = closes.pop().unwrap();
@@ -1006,7 +955,7 @@ mod tests {
             let (tx, _) = mpsc::channel(8);
             closes.push(
                 registry
-                    .register_with_details(
+                    .register_displacing(
                         link(3, instance),
                         phone.clone(),
                         tx,
@@ -1015,7 +964,8 @@ mod tests {
                         Some(carried_through(link(1, instance)).await),
                     )
                     .await
-                    .expect("a forwarded link is usable"),
+                    .expect("a forwarded link is usable")
+                    .close_rx,
             );
         }
         let mut newer = closes.pop().unwrap();
@@ -1061,7 +1011,7 @@ mod tests {
             let dead = link(2, 1);
             let (dead_tx, _) = mpsc::channel(8);
             let mut dead_close = registry
-                .register_with_details(
+                .register_displacing(
                     dead,
                     peer.clone(),
                     dead_tx,
@@ -1070,7 +1020,8 @@ mod tests {
                     None,
                 )
                 .await
-                .expect("a lone link is usable");
+                .expect("a lone link is usable")
+                .close_rx;
 
             let (restarted_tx, _) = mpsc::channel(8);
             let _registration = registry
@@ -1097,7 +1048,7 @@ mod tests {
             let life = RuntimeInstance::random();
             let (first_tx, _) = mpsc::channel(8);
             registry
-                .register_with_details(
+                .register_displacing(
                     link(2, 1),
                     peer.clone(),
                     first_tx,
@@ -1111,7 +1062,7 @@ mod tests {
             let (second_tx, _) = mpsc::channel(8);
             assert!(
                 registry
-                    .register_with_details(
+                    .register_displacing(
                         link(2, 2),
                         peer.clone(),
                         second_tx,
@@ -1133,15 +1084,9 @@ mod tests {
         let (first_tx, _first_rx) = mpsc::channel(8);
         let (second_tx, _second_rx) = mpsc::channel(8);
         let (other_tx, _other_rx) = mpsc::channel(8);
-        registry
-            .register(link(2, 1), host(2), first_tx, LinkRole::Peer, &[])
-            .await;
-        registry
-            .register(link(2, 2), host(2), second_tx, LinkRole::Peer, &[])
-            .await;
-        registry
-            .register(link(3, 1), host(3), other_tx, LinkRole::Peer, &[])
-            .await;
+        register(&registry, link(2, 1), host(2), first_tx).await;
+        register(&registry, link(2, 2), host(2), second_tx).await;
+        register(&registry, link(3, 1), host(3), other_tx).await;
 
         let snapshot = registry.neighbor_snapshot().await;
         assert_eq!(
@@ -1155,14 +1100,10 @@ mod tests {
         let registry = LinkRegistry::new(HostId::nil());
         let (full_tx, _full_rx) = mpsc::channel(1);
         full_tx.try_send(pb::Message { body: None }).unwrap();
-        let mut close_rx = registry
-            .register(link(1, 1), host(1), full_tx, LinkRole::Peer, &[])
-            .await;
+        let mut close_rx = register(&registry, link(1, 1), host(1), full_tx).await;
 
         let (new_tx, _new_rx) = mpsc::channel(8);
-        registry
-            .register(link(2, 1), host(2), new_tx, LinkRole::Peer, &[])
-            .await;
+        register(&registry, link(2, 1), host(2), new_tx).await;
 
         assert_eq!(
             close_rx.recv().await,
@@ -1175,9 +1116,7 @@ mod tests {
         let registry = LinkRegistry::new(HostId::nil());
         let (tx, _rx) = mpsc::channel(1);
         tx.try_send(pb::Message { body: None }).unwrap();
-        registry
-            .register(link(1, 1), host(1), tx, LinkRole::Peer, &[])
-            .await;
+        register(&registry, link(1, 1), host(1), tx).await;
 
         tokio::time::timeout(
             Duration::from_millis(50),
@@ -1191,9 +1130,7 @@ mod tests {
     async fn send_link_close_to_all_sends_typed_reason() {
         let registry = LinkRegistry::new(HostId::nil());
         let (tx, mut rx) = mpsc::channel(8);
-        registry
-            .register(link(99, 1), host(99), tx, LinkRole::Peer, &[])
-            .await;
+        register(&registry, link(99, 1), host(99), tx).await;
 
         registry
             .send_link_close_to_all(pb::LinkCloseReason::UserShutdown)
@@ -1216,19 +1153,22 @@ mod tests {
         let pinned = link(2, 1);
         let (cloud_tx, _cloud_rx) = mpsc::channel(8);
         registry
-            .register_with_admission(
+            .register_displacing(
                 cloud,
                 host(1),
                 cloud_tx,
-                LinkRole::CloudRelay,
-                LinkAdmission::CloudToken { tier: Tier::Free },
+                LinkProperties {
+                    role: LinkRole::CloudRelay,
+                    admission: LinkAdmission::CloudToken { tier: Tier::Free },
+                    ..direct_peer()
+                },
                 &[],
+                None,
             )
-            .await;
+            .await
+            .expect("a lone link is usable");
         let (pinned_tx, _pinned_rx) = mpsc::channel(8);
-        registry
-            .register(pinned, host(2), pinned_tx, LinkRole::Peer, &[])
-            .await;
+        register(&registry, pinned, host(2), pinned_tx).await;
 
         registry.update_cloud_tier(&cloud, Tier::Pro).await;
         registry.update_cloud_tier(&pinned, Tier::Free).await;

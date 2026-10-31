@@ -352,8 +352,8 @@ pub struct ChannelPool {
     opening: std::sync::Mutex<HashMap<ChannelKey, Arc<tokio::sync::Mutex<()>>>>,
     lifetimes: RwLock<HashMap<ChannelKey, Vec<Weak<CancellationToken>>>>,
     links: Arc<LinkRegistry>,
-    /// Where a channel's pin comes from when no core gives one.
-    trust_store: Option<SharedTrustStore>,
+    /// Where the key the core opens a channel under is pinned.
+    trust_store: SharedTrustStore,
     /// How a link through a forwarder is dialled, once the edge is up.
     forwarded: OnceLock<Arc<dyn ForwardedDial>>,
     /// How a link resuming with a ticket is dialled, once the edge is up.
@@ -397,24 +397,26 @@ impl Drop for Telling {
 }
 
 impl ChannelPool {
-    pub(crate) fn new(links: Arc<LinkRegistry>) -> Self {
+    pub(crate) fn new(links: Arc<LinkRegistry>, trust_store: SharedTrustStore) -> Self {
         Self {
             by_key: RwLock::new(HashMap::new()),
             opening: std::sync::Mutex::new(HashMap::new()),
             lifetimes: RwLock::new(HashMap::new()),
             links,
-            trust_store: None,
+            trust_store,
             forwarded: OnceLock::new(),
             resumed: OnceLock::new(),
             refused: std::sync::Mutex::default(),
         }
     }
 
-    pub(crate) fn with_trust(links: Arc<LinkRegistry>, trust_store: SharedTrustStore) -> Self {
-        Self {
-            trust_store: Some(trust_store),
-            ..Self::new(links)
-        }
+    /// The key pinned for `peer`, which the core opens its channels under.
+    fn pinned(&self, peer: HostId) -> Option<Vec<u8>> {
+        self.trust_store
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .pubkey_for_host(peer)
+            .map(<[u8]>::to_vec)
     }
 
     /// Dials links through forwarders with `dial` from now on.
@@ -528,13 +530,7 @@ impl ChannelPool {
         lifetime: Arc<CancellationToken>,
     ) {
         if let Some(core) = self.links.core() {
-            let pinned = self.trust_store.as_ref().and_then(|trust_store| {
-                trust_store
-                    .read()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .pubkey_for_host(key.peer)
-                    .map(<[u8]>::to_vec)
-            });
+            let pinned = self.pinned(key.peer);
             match core.want_channel(link, key.peer, key.class, pinned).await {
                 Ok(opening) => {
                     let telling = Telling {
@@ -655,42 +651,27 @@ impl ChannelPool {
 
         let opened = std::time::Instant::now();
         let (link, carrier) = self.carrier(key.peer, key.route).await?;
-        let pinned = self.trust_store.as_ref().and_then(|trust_store| {
-            trust_store
-                .read()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .pubkey_for_host(key.peer)
-                .map(<[u8]>::to_vec)
-        });
-        // A profile's channels open at its core's word, which refuses a
-        // host no key is pinned for; a pool with no core asks the trust
-        // store itself.
-        let telling = match self.links.core() {
-            Some(core) => match core.want_channel(link, key.peer, key.class, pinned).await {
-                Ok(opening) => Some(Telling {
-                    core: core.clone(),
-                    channel: opening.channel,
-                    told: false,
-                }),
-                Err(refusal) => {
-                    return Err(match refusal {
-                        daemon_core::payload::ChannelError::Unpinned => unpinned(key.peer),
-                        _ => ChannelError::LinkUnavailable {
-                            host_id: route_link_peer(key.route),
-                        },
-                    });
-                }
+        let unavailable = || ChannelError::LinkUnavailable {
+            host_id: route_link_peer(key.route),
+        };
+        // A channel opens at the profile core's word, which refuses a host
+        // no key is pinned for.
+        let core = self.links.core().ok_or_else(unavailable)?;
+        let telling = match core
+            .want_channel(link, key.peer, key.class, self.pinned(key.peer))
+            .await
+        {
+            Ok(opening) => Telling {
+                core: core.clone(),
+                channel: opening.channel,
+                told: false,
             },
-            None if pinned.is_none() && self.trust_store.is_some() => {
-                return Err(unpinned(key.peer));
-            }
-            None => None,
+            Err(daemon_core::payload::ChannelError::Unpinned) => return Err(unpinned(key.peer)),
+            Err(_) => return Err(unavailable()),
         };
         if refused {
             let refusal = streams_refused();
-            if let Some(telling) = telling {
-                telling.failed(core_error(&refusal));
-            }
+            telling.failed(core_error(&refusal));
             self.close_failed(link);
             return Err(refusal);
         }
@@ -712,14 +693,12 @@ impl ChannelPool {
         if let Err(ChannelError::Handshake(_)) = &secured {
             self.close_failed(link);
         }
-        if let Some(telling) = telling {
-            match &secured {
-                Ok(_) => {
-                    let (core, channel) = telling.opened(link, key);
-                    ended.arm(core, channel);
-                }
-                Err(error) => telling.failed(core_error(error)),
+        match &secured {
+            Ok(_) => {
+                let (core, channel) = telling.opened(link, key);
+                ended.arm(core, channel);
             }
+            Err(error) => telling.failed(core_error(error)),
         }
         let channel = secured?;
         tracing::debug!(
@@ -1138,7 +1117,10 @@ mod tests {
 
     #[test]
     fn dropping_a_link_a_route_or_a_host_forgets_their_opener_locks() {
-        let pool = ChannelPool::new(Arc::new(LinkRegistry::new(crate::HostId::nil())));
+        let pool = ChannelPool::new(
+            Arc::new(LinkRegistry::new(crate::HostId::nil())),
+            SharedTrustStore::default(),
+        );
         let host = Uuid::new_v4();
         let relay = Uuid::new_v4();
         let other = Uuid::new_v4();
@@ -1231,7 +1213,6 @@ mod tests {
         use std::sync::atomic::AtomicUsize;
         use std::time::Duration;
 
-        use tokio::sync::watch;
         use tonic::{Request, Response, Status};
         use wire::peer_agent_service_server::PeerAgentService;
         use wire::peer_session_service_server::PeerSessionService;
@@ -1466,9 +1447,12 @@ mod tests {
                             continue;
                         };
                         let links = Arc::new(LinkRegistry::new(local.id));
-                        let ctx = crate::link::LinkCtx::new(local.clone(), links)
-                            .with_authenticated_peer(peer)
-                            .with_incoming_streams(inbound_tx.clone());
+                        let ctx = crate::link::LinkCtx::new_live(
+                            LiveLocalHost::new(local.clone()),
+                            links,
+                        )
+                        .with_authenticated_peer(peer)
+                        .with_incoming_streams(inbound_tx.clone());
                         tokio::spawn(crate::link::run_link(
                             ctx,
                             Arc::new(QuicCarrier::from_accepted(connection)),
@@ -1518,17 +1502,13 @@ mod tests {
                         .await
                         .map_err(|error| ChannelError::Handshake(error.to_string()))?,
                     );
-                    let ctx = crate::link::run::LinkConnectorCtx::new_live(
+                    let ctx = crate::link::LinkCtx::new_live(
                         LiveLocalHost::new(self.local.clone()),
                         self.links.clone(),
                     )
                     .with_expected_peer(peer);
                     let (_task, established) =
-                        crate::routing::spawn_connector_with_establishment_and_shutdown(
-                            ctx,
-                            carrier.clone(),
-                            watch::channel(false).1,
-                        );
+                        crate::routing::spawn_connector(ctx, carrier.clone());
                     let links = self.links.clone();
                     let up = Box::pin(async move {
                         established
@@ -1556,14 +1536,15 @@ mod tests {
 
         fn dialler(identity: DeviceIdentity, host: &DeviceIdentity, at: &LoopbackHost) -> Dialler {
             let links = Arc::new(LinkRegistry::new(identity.host_id));
-            let pool = ChannelPool::new(links.clone());
+            let trust = trust_for(host);
+            let pool = ChannelPool::new(links.clone(), trust.clone());
             let dial = Arc::new(LoopbackDial {
                 // Handshakes take a fifth of a second, so the early calls
                 // are written before they finish.
                 endpoint: crate::link::quic::slow_arrivals_endpoint(Duration::from_millis(200)),
                 local: host_named(&identity),
                 identity,
-                trust: trust_for(host),
+                trust,
                 links,
                 addr: std::sync::Mutex::new(at.endpoint.local_addr().unwrap()),
             });

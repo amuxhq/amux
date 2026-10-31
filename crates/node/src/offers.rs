@@ -306,12 +306,6 @@ impl ProfileRuntime {
         }
     }
 
-    /// The copy for `provider` as held, asking nothing.
-    pub fn held_host_catalogue(&self, provider: Provider) -> Option<HostCatalogue> {
-        let held = self.offers().held.lock().unwrap();
-        held.get(&provider).map(|held| held.offer.clone())
-    }
-
     /// Runs `amux catalogue <provider>` in `folder`, in its own process
     /// group, and reads what it wrote to the profile's providers directory.
     /// The caller holds the provider's run lock.

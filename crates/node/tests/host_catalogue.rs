@@ -296,7 +296,8 @@ async fn a_new_provider_version_is_asked_again() {
     );
     assert_eq!(
         runtime
-            .held_host_catalogue(node::Provider::Claude)
+            .host_catalogue(node::Provider::Claude)
+            .await
             .unwrap()
             .provider_version,
         "2.1.300 (Claude Code)"

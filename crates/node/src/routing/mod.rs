@@ -15,26 +15,20 @@ mod wire;
 pub use host::local_kinds;
 pub(crate) use host::{
     LiveLocalHost, OwnAddresses, RuntimeInstance, listed_addrs, local_host, local_platform,
-    validate_remote_host,
 };
 pub use link::ConnectRole;
-pub(crate) use link::{
-    ConnectHandshake, ConnectHandshakeEvent, protocol_error_hello_ack, protocol_error_link_close,
-};
+pub(crate) use link::{protocol_error_hello_ack, protocol_error_link_close};
 pub(crate) use link_registry::{
     LinkAdmission, LinkCloseRequest, LinkOutputTx, LinkProperties, Registration, direct_order,
 };
 pub use link_registry::{LinkRegistry, LinkRole};
 pub use types::{Capabilities, Host, LinkId, LiveRoute, Route, host_to_wire};
 pub(crate) use types::{core_host, host_from_core, host_from_wire};
-pub(crate) use wire::{inbound_host_from_wire, neighbor_down_from_wire, neighbor_up_from_wire};
 
-pub(crate) use crate::link::run::{
-    AuthenticatedLinkContextProvider, LinkConnectorCtx, LinkConnectorRefreshReceiver,
-    LinkConnectorRefreshRequest, LinkCtx, spawn_connector_with_auth_establishment_and_shutdown,
-    spawn_connector_with_establishment_and_shutdown,
-};
 pub use crate::link::run::{
     AuthenticatedLinkUser, LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher,
     LinkTokenAuthenticator,
+};
+pub(crate) use crate::link::run::{
+    LinkConnectorRefreshReceiver, LinkConnectorRefreshRequest, LinkCtx, spawn_connector,
 };

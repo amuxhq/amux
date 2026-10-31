@@ -30,9 +30,8 @@ use crate::driver::CoreLinks;
 use crate::link::QuicCarrier;
 use crate::link::framed::FramedKind;
 use crate::routing::{
-    Host, LinkConnectorAuth, LinkConnectorCtx, LinkConnectorRefreshReceiver,
-    LinkConnectorRefreshRequest, LinkConnectorToken, LinkConnectorTokenRefresher,
-    spawn_connector_with_auth_establishment_and_shutdown,
+    Host, LinkConnectorAuth, LinkConnectorRefreshReceiver, LinkConnectorRefreshRequest,
+    LinkConnectorToken, LinkConnectorTokenRefresher, LinkCtx, spawn_connector,
 };
 use crate::transport::tls_connect_stream;
 
@@ -132,7 +131,7 @@ struct CloudConnectionContext {
     /// Where the relay token is kept between launches.
     profile: PathBuf,
     clock: Arc<dyn Clock>,
-    connector: LinkConnectorCtx,
+    connector: LinkCtx,
     status: RuntimeStatus,
     refresh_rx: LinkConnectorRefreshReceiver,
     transport: CloudTransport,
@@ -191,7 +190,7 @@ pub(crate) fn establish_cloud_link(
     credentials: Arc<dyn CredentialProvider>,
     profile: PathBuf,
     clock: Arc<dyn Clock>,
-    connector_ctx: LinkConnectorCtx,
+    connector_ctx: LinkCtx,
     status: RuntimeStatus,
     transport: CloudTransport,
     core: CoreLinks,
@@ -683,12 +682,12 @@ async fn run_cloud_connection_with_details(
             carrier: relay_carrier,
         });
     });
-    let (connector_task, established_rx) = spawn_connector_with_auth_establishment_and_shutdown(
-        ctx.connector.clone(),
+    let (connector_task, established_rx) = spawn_connector(
+        ctx.connector
+            .clone()
+            .with_connector_auth(connector_auth, Some(ctx.refresh_rx.clone()))
+            .with_shutdown(stop_rx),
         carrier,
-        connector_auth,
-        stop_rx,
-        Some(ctx.refresh_rx.clone()),
     );
     let _abort_connector_on_drop = AbortTaskOnDrop(connector_task.abort_handle());
     let established = await_cloud_establishment(

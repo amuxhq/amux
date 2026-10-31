@@ -464,35 +464,6 @@ pub(crate) struct EarlyForwarding {
 }
 
 impl QuicCarrier {
-    /// Dials `peer` at `addr` alone, for a test of one link.
-    #[cfg(test)]
-    pub(crate) async fn connect_direct(
-        endpoint: &LinkEndpoint,
-        addr: SocketAddr,
-        identity: &DeviceIdentity,
-        trust_store: SharedTrustStore,
-        peer: HostId,
-    ) -> Result<Self, ConnectError> {
-        let config = endpoint.client_config(identity, &trust_store, peer)?;
-        let dialled = std::time::Instant::now();
-        let connection = endpoint
-            .connect_to(config, addr, Server::Host(peer), DEVICE_SERVER_NAME)?
-            .await?;
-        let stats = connection.stats();
-        tracing::debug!(
-            %addr,
-            elapsed_ms = dialled.elapsed().as_millis(),
-            rtt_ms = stats.path.rtt.as_millis(),
-            sent = stats.path.sent_packets,
-            lost = stats.path.lost_packets,
-            "QUIC connection established"
-        );
-        let control = open_control(&connection, None).await?;
-        Ok(Self::new(connection, CarrierKind::Direct, Some(control))
-            .with_path(PathKind::of_addr(addr))
-            .following(endpoint.socket.clone()))
-    }
-
     /// Dials `peer` at `addr` resuming with the ticket its last link
     /// left: the link carries data at once, and what is written before the
     /// handshake finishes goes out as early data. With no ticket this is
@@ -1541,12 +1512,14 @@ mod tests {
                 .await
                 .expect("server handshake failed")
         };
-        let connect = QuicCarrier::connect_direct(
+        let connect = QuicCarrier::first_flight(
             &client_endpoint,
-            server_addr,
+            vec![crate::link::socket::Path::Direct(server_addr)],
+            false,
             &client_identity,
             client_trust,
             server_identity.host_id,
+            std::time::Duration::from_secs(5),
         );
         let (server_connection, client) = tokio::join!(accept, connect);
         let client = Arc::new(client.unwrap());
@@ -1627,12 +1600,14 @@ mod tests {
                     .await
                     .expect("server handshake failed")
             };
-            let connect = QuicCarrier::connect_direct(
+            let connect = QuicCarrier::first_flight(
                 &client,
-                server_addr,
+                vec![crate::link::socket::Path::Direct(server_addr)],
+                false,
                 &client_identity,
                 trust_for(&server_identity),
                 server_identity.host_id,
+                std::time::Duration::from_secs(5),
             );
             let (accepted, dialled) = tokio::join!(accept, connect);
             let dialled = dialled.expect("the dial over {server_addr} connects");

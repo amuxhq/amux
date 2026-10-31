@@ -31,7 +31,7 @@ use crate::link::framed::{FramedKind, StreamEndpoint};
 use crate::link::quic::DEVICE_SERVER_NAME;
 use crate::link::socket::Path;
 use crate::link::{ChannelError, ChannelPool, LinkEndpoint, QuicCarrier};
-use crate::routing::{LinkConnectorCtx, LinkId, LiveLocalHost, core_host};
+use crate::routing::{LinkCtx, LinkId, LiveLocalHost, core_host};
 use crate::transport::spawn_ssh_relay;
 use crate::trust::SharedTrustStore;
 
@@ -223,9 +223,9 @@ impl ReachabilityLinkConnector {
         self.inner.discovery.requery();
     }
 
-    /// Records the whole set an outside browser resolved, so a caller that
-    /// hands one over and then asks what it may pair with is answered from
-    /// that set rather than from whatever the browse task has caught up with.
+    /// Replaces what discovery found with the whole set an outside browser
+    /// resolved (the phone's system, the only browser it has), and tells
+    /// the core.
     pub(crate) fn hand_over_found(&self, found: Vec<crate::discovery::Advertisement>) {
         self.inner.found_hosts.hand_over(found);
         self.inner
@@ -556,16 +556,13 @@ async fn ssh_carrier(
 /// Brings a link up over `carrier`: its connector says Hello and the host
 /// answers. The link lives on in its connector, kept until it ends.
 async fn establish(me: &Inner, peer: HostId, carrier: Arc<QuicCarrier>) -> Result<(), DialFailure> {
-    let connector_ctx =
-        LinkConnectorCtx::new_live(me.local_host.clone(), me.channels.link_registry())
-            .with_expected_peer(peer)
-            .with_incoming_streams(me.incoming_streams_tx.clone());
-    let (connector_task, established) =
-        crate::routing::spawn_connector_with_establishment_and_shutdown(
-            connector_ctx,
-            carrier,
-            me.shutdown.subscribe(),
-        );
+    let connector_ctx = LinkCtx::new_live(me.local_host.clone(), me.channels.link_registry())
+        .with_expected_peer(peer)
+        .with_incoming_streams(me.incoming_streams_tx.clone());
+    let (connector_task, established) = crate::routing::spawn_connector(
+        connector_ctx.with_shutdown(me.shutdown.subscribe()),
+        carrier,
+    );
     let abort_on_failure = AbortTaskOnDrop(connector_task.abort_handle());
     match tokio::time::timeout(LINK_ESTABLISHMENT_TIMEOUT, established).await {
         Ok(Ok(Ok(host))) => {
@@ -639,15 +636,13 @@ impl ForwardedDialer {
         );
         // The carrier names the path its link came up on: the connector
         // reads it there.
-        let connector_ctx = LinkConnectorCtx::new_live(inner.local_host.clone(), registry.clone())
+        let connector_ctx = LinkCtx::new_live(inner.local_host.clone(), registry.clone())
             .with_expected_peer(peer)
             .with_incoming_streams(inner.incoming_streams_tx.clone());
-        let (connector_task, established) =
-            crate::routing::spawn_connector_with_establishment_and_shutdown(
-                connector_ctx,
-                carrier.clone(),
-                inner.shutdown.subscribe(),
-            );
+        let (connector_task, established) = crate::routing::spawn_connector(
+            connector_ctx.with_shutdown(inner.shutdown.subscribe()),
+            carrier.clone(),
+        );
         let abort_on_failure = AbortTaskOnDrop(connector_task.abort_handle());
         let weak = Arc::downgrade(&inner);
         drop(inner);

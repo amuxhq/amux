@@ -34,6 +34,7 @@ use account::Binding;
 pub(crate) use account::{Account, AccountCredentials};
 pub use cloud::{FREE_TIER_REFRESH_INTERVAL, UDP_BLOCKED_MEMORY};
 use futures_util::stream;
+pub(crate) use relay_server::Accounts;
 pub use relay_server::{CloudLinkServer, JwtCloudLinkAuthenticator, RelayIdentity, RelayServing};
 pub use status::{Cloud, Relay, RelayCarrier};
 pub use token::RELAY_TOKEN_FILE;
@@ -57,8 +58,7 @@ use crate::link::resumption::{HOST_TICKETS, SessionTickets, TICKETS_DIR};
 use crate::link::socket::{Datagrams, LinkSocket};
 use crate::link::{ChannelPool, LinkEndpoint, QuicCarrier, run_link, serve_inbound_streams};
 use crate::routing::{
-    Capabilities, ConnectRole, LinkConnectorCtx, LinkCtx, LinkRegistry, LiveLocalHost, LiveRoute,
-    local_host,
+    Capabilities, ConnectRole, LinkCtx, LinkRegistry, LiveLocalHost, LiveRoute, local_host,
 };
 use crate::runtime::ProfileRuntime;
 use crate::services::{
@@ -113,14 +113,15 @@ pub struct EdgeOptions {
 
 pub type DiscoveryFactory = Arc<dyn Fn() -> Result<Arc<dyn Discovery>, String> + Send + Sync>;
 
-/// The platform's local-network discovery: mDNS, except where only the
-/// system may browse (the phone hands its results over instead), with one
-/// browser for every profile the factory serves. A debug build can swap in
-/// a scripted stand-in with `AMUX_TEST_DISCOVERY_MODE`.
+/// The desktop's local-network discovery: mDNS, with one browser for every
+/// profile the factory serves. (The phone has none; only the system may
+/// browse there, and the app hands its results over.) A debug build can
+/// swap in a scripted stand-in with `AMUX_TEST_DISCOVERY_MODE`.
+#[cfg(not(target_os = "ios"))]
 pub fn mdns_discovery() -> DiscoveryFactory {
     let shared = crate::discovery::MdnsShared::default();
     Arc::new(move || {
-        #[cfg(all(debug_assertions, not(target_os = "ios")))]
+        #[cfg(debug_assertions)]
         match std::env::var("AMUX_TEST_DISCOVERY_MODE").as_deref() {
             Ok("scripted" | "disabled") => {
                 return Ok(
@@ -359,7 +360,7 @@ impl Edge {
                 .relaying()
                 .report_to(runtime.reports.clone(), runtime.analytics().clone());
         }
-        let channels = Arc::new(ChannelPool::with_trust(links, trust.clone()));
+        let channels = Arc::new(ChannelPool::new(links, trust.clone()));
         let connections = ConnectionManager::new(channels.clone(), analytics.clone());
         if let Some(runtime) = runtime.upgrade() {
             runtime
@@ -627,8 +628,7 @@ impl Edge {
             .into_iter()
             .filter(|advert| advert.scope == self.scope)
             .collect::<Vec<_>>();
-        self.reachability.hand_over_found(found.clone());
-        self.discovery.hand_over(found);
+        self.reachability.hand_over_found(found);
     }
 
     /// The hosts this profile trusts: host id, name and key.
@@ -912,8 +912,8 @@ impl Edge {
         let core = crate::driver::CoreLinks::new(self.runtime.clone());
         self.local_host.set_signed_in(true);
         self.status.report(Relay::Connecting);
-        let connector: LinkConnectorCtx =
-            LinkConnectorCtx::new_live(self.local_host.clone(), self.channels.link_registry())
+        let connector: LinkCtx =
+            LinkCtx::new_live(self.local_host.clone(), self.channels.link_registry())
                 .with_incoming_streams(self.incoming_streams_tx.clone())
                 .with_clock(self.clock.clone());
         *cloud = Some(establish_cloud_link(
@@ -1032,10 +1032,7 @@ impl Edge {
         tokio::spawn(async move {
             match QuicCarrier::connect_over_stream(connecting, client, DEVICE_SERVER_NAME).await {
                 Ok(carrier) => {
-                    let _ = crate::link::run::spawn_connector_with_establishment(
-                        connect_ctx,
-                        Arc::new(carrier),
-                    );
+                    let _ = crate::link::run::spawn_connector(connect_ctx, Arc::new(carrier));
                 }
                 Err(error) => tracing::warn!(%error, "an in-process link failed its handshake"),
             }

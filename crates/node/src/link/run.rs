@@ -21,11 +21,9 @@ use super::link_log::{EarlyData, LinkEvent, LinkTransition};
 use super::{QuicCarrier, read_message, write_message};
 use crate::net_error::{self, status as protocol_status};
 use crate::routing::{
-    ConnectHandshake, ConnectHandshakeEvent, Host, LinkAdmission, LinkCloseRequest, LinkId,
-    LinkProperties, LinkRegistry, LinkRole, LiveLocalHost, Registration, RuntimeInstance,
-    core_host, host_from_wire, host_to_wire, inbound_host_from_wire, neighbor_down_from_wire,
-    neighbor_up_from_wire, protocol_error_hello_ack, protocol_error_link_close,
-    validate_remote_host,
+    Host, LinkAdmission, LinkCloseRequest, LinkId, LinkProperties, LinkRegistry, LinkRole,
+    LiveLocalHost, Registration, RuntimeInstance, core_host, host_from_wire, host_to_wire,
+    protocol_error_hello_ack, protocol_error_link_close,
 };
 use crate::{Clock, HostId};
 
@@ -57,11 +55,6 @@ pub struct AuthenticatedLinkUser {
 pub trait LinkTokenAuthenticator: Send + Sync + 'static {
     async fn authenticate_token(&self, token: &str)
     -> Result<AuthenticatedLinkUser, tonic::Status>;
-}
-
-#[tonic::async_trait]
-pub(crate) trait AuthenticatedLinkContextProvider: Send + Sync + 'static {
-    async fn context_for(&self, user: &AuthenticatedLinkUser) -> LinkCtx;
 }
 
 #[tonic::async_trait]
@@ -237,7 +230,9 @@ pub struct LinkCtx {
     link_role: LinkRole,
     acceptor_session: Option<LinkAuthSession>,
     authenticator: Option<Arc<dyn LinkTokenAuthenticator>>,
-    authenticated_context_provider: Option<Arc<dyn AuthenticatedLinkContextProvider>>,
+    /// On a relay: the accounts whose registry a link joins once its
+    /// token names its account.
+    accounts: Option<Arc<crate::edge::Accounts>>,
     clock: Arc<dyn Clock>,
     connector_auth: Option<LinkConnectorAuth>,
     established_tx: Option<Arc<StdRwLock<Option<EstablishmentSender>>>>,
@@ -261,17 +256,11 @@ struct Resumed {
     handshaken: watch::Receiver<bool>,
 }
 
-pub(crate) type LinkConnectorCtx = LinkCtx;
 type ConnectorTask = tokio::task::JoinHandle<Result<(), tonic::Status>>;
 type EstablishmentSender = oneshot::Sender<Result<Host, tonic::Status>>;
 pub(crate) type EstablishmentReceiver = oneshot::Receiver<Result<Host, tonic::Status>>;
 
 impl LinkCtx {
-    #[cfg(test)]
-    pub fn new(local_host: Host, links: Arc<LinkRegistry>) -> Self {
-        Self::new_live(LiveLocalHost::new(local_host), links)
-    }
-
     pub(crate) fn new_live(local_host: LiveLocalHost, links: Arc<LinkRegistry>) -> Self {
         Self {
             local_host,
@@ -283,7 +272,7 @@ impl LinkCtx {
             link_role: LinkRole::Peer,
             acceptor_session: None,
             authenticator: None,
-            authenticated_context_provider: None,
+            accounts: None,
             clock: Arc::new(SystemClock),
             connector_auth: None,
             established_tx: None,
@@ -326,11 +315,6 @@ impl LinkCtx {
     /// `handshaken` turns true once the connection's handshake is over.
     pub(crate) fn with_resumed(mut self, key: Vec<u8>, handshaken: watch::Receiver<bool>) -> Self {
         self.resumed = Some(Resumed { key, handshaken });
-        self
-    }
-
-    pub fn with_link_role(mut self, role: LinkRole) -> Self {
-        self.link_role = role;
         self
     }
 
@@ -379,6 +363,18 @@ impl LinkCtx {
         }
     }
 
+    /// Presents `auth` to the relay this connector dials, refreshing it
+    /// when `refresh_rx` asks.
+    pub(crate) fn with_connector_auth(
+        mut self,
+        auth: LinkConnectorAuth,
+        refresh_rx: Option<LinkConnectorRefreshReceiver>,
+    ) -> Self {
+        self.connector_auth = Some(auth);
+        self.refresh_rx = refresh_rx;
+        self
+    }
+
     pub(crate) fn with_shutdown(mut self, shutdown_rx: watch::Receiver<bool>) -> Self {
         self.shutdown_rx = Some(shutdown_rx);
         self
@@ -398,11 +394,9 @@ impl LinkCtx {
         self
     }
 
-    pub(crate) fn with_authenticated_context_provider(
-        mut self,
-        provider: Arc<dyn AuthenticatedLinkContextProvider>,
-    ) -> Self {
-        self.authenticated_context_provider = Some(provider);
+    /// A relay's link, which joins the account its token names.
+    pub(crate) fn joining(mut self, accounts: Arc<crate::edge::Accounts>) -> Self {
+        self.accounts = Some(accounts);
         self
     }
 
@@ -420,7 +414,6 @@ pub async fn run_link(
     role: crate::routing::ConnectRole,
 ) -> Result<(), LinkError> {
     let (mut sink, mut source) = carrier.control();
-    let mut handshake = ConnectHandshake::new(role);
     // A host lists where it can be reached to its peers, and to the relay
     // nothing: punching needs only what the relay sees.
     let mut addresses = ctx
@@ -463,17 +456,24 @@ pub async fn run_link(
                     return Err(status.into());
                 }
                 let frame = first.body.clone();
-                match handshake.receive(first) {
-                    Ok(ConnectHandshakeEvent::Accepted(accepted)) => {
+                match first.body {
+                    Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
+                        outcome: Some(wire::pb::hello_ack::Outcome::Accepted(accepted)),
+                    })) => {
                         let (peer, neighbors, runtime_instance) =
                             accept_peer_hello_ack(&ctx, accepted).map_err(protocol_status)?;
                         Ok((frame, (peer, runtime_instance), neighbors))
                     }
-                    Ok(ConnectHandshakeEvent::Rejected(error)) => {
-                        Err(protocol_status(error).into())
-                    }
-                    Ok(_) => Err(tonic::Status::invalid_argument("expected HelloAck").into()),
-                    Err(error) => Err(tonic::Status::invalid_argument(error.to_string()).into()),
+                    Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
+                        outcome: Some(wire::pb::hello_ack::Outcome::Error(error)),
+                    })) => Err(protocol_status(error).into()),
+                    Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
+                        outcome: None,
+                    })) => Err(tonic::Status::invalid_argument(
+                        "hello_ack is missing an accepted/error outcome",
+                    )
+                    .into()),
+                    _ => Err(tonic::Status::invalid_argument("expected hello_ack").into()),
                 }
             };
             match answered.await {
@@ -513,32 +513,18 @@ pub async fn run_link(
                         return Ok(());
                     }
                 };
-            let hello = match handshake.receive(first) {
-                Ok(ConnectHandshakeEvent::Hello(hello)) => {
-                    // The core records its inputs on the drive, so the
-                    // credential stays here.
-                    peer_frame = Some(wire::pb::message::Body::Hello(wire::pb::Hello {
-                        auth_token: None,
-                        ..hello.clone()
-                    }));
-                    hello
-                }
-                Ok(_) => {
-                    write_message(
-                        &mut sink,
-                        &protocol_error_hello_ack("unexpected message while awaiting Hello"),
-                    )
-                    .await?;
-                    carrier.close(wire::pb::LinkCloseReason::ProtocolError);
-                    return Ok(());
-                }
-                Err(error) => {
-                    write_message(&mut sink, &protocol_error_hello_ack(error.to_string())).await?;
-                    carrier.close(wire::pb::LinkCloseReason::ProtocolError);
-                    return Ok(());
-                }
+            let Some(wire::pb::message::Body::Hello(hello)) = first.body else {
+                write_message(&mut sink, &protocol_error_hello_ack("expected hello")).await?;
+                carrier.close(wire::pb::LinkCloseReason::ProtocolError);
+                return Ok(());
             };
-            let mut session = match authenticate_hello(&ctx, &hello).await {
+            // The core records its inputs on the drive, so the credential
+            // stays here.
+            peer_frame = Some(wire::pb::message::Body::Hello(wire::pb::Hello {
+                auth_token: None,
+                ..hello.clone()
+            }));
+            let session = match authenticate_hello(&ctx, &hello).await {
                 Ok(session) => session,
                 Err(status) => {
                     tracing::warn!(%status, "the link's hello was refused");
@@ -547,20 +533,14 @@ pub async fn run_link(
                     return Ok(());
                 }
             };
-            if let (Some(provider), Some(authenticated)) =
-                (ctx.authenticated_context_provider.clone(), session.as_ref())
-            {
-                let user = authenticated.user();
-                let authenticator = authenticated.authenticator.clone();
-                let observes = ctx.observes.take();
-                let refund = ctx.refund.take();
-                ctx = provider.context_for(&user).await;
-                ctx.observes = observes;
-                ctx.refund = refund;
-                session = Some(LinkAuthSession::new(user, authenticator));
+            if let (Some(accounts), Some(session)) = (ctx.accounts.clone(), session.as_ref()) {
+                let (links, incoming) = accounts.account(session.user().user_id).await;
+                ctx.links = links;
+                ctx.incoming_streams_tx = Some(incoming);
+                ctx.link_role = LinkRole::CloudRelay;
             }
             let snapshot = neighbor_snapshot(&ctx, carrier.as_ref()).await;
-            let peer = match accept_peer_hello(&ctx, hello, session.as_ref()) {
+            let peer = match accept_peer_hello(&ctx, hello) {
                 Ok(peer) => peer,
                 Err(error) => {
                     write_message(&mut sink, &error_hello_ack(error)).await?;
@@ -582,9 +562,6 @@ pub async fn run_link(
             } else {
                 ctx.refund();
                 write_message(&mut sink, &ack).await?;
-                handshake
-                    .acceptor_ack_sent()
-                    .map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;
             }
             ctx.acceptor_session = session;
             ((peer.0, peer.2), peer.1, snapshot)
@@ -596,7 +573,7 @@ pub async fn run_link(
         carrier,
         sink,
         source,
-        (handshake, held_ack),
+        held_ack,
         (peer_host, peer_instance, peer_neighbors, role, peer_frame),
         Told {
             neighbors: snapshot.into_iter().map(|host| host.id).collect(),
@@ -681,7 +658,7 @@ async fn run_established(
     carrier: Arc<QuicCarrier>,
     mut sink: super::ControlSink,
     mut source: super::ControlSource,
-    (mut handshake, held_ack): (ConnectHandshake, Option<wire::pb::Message>),
+    held_ack: Option<wire::pb::Message>,
     peer: (
         Host,
         RuntimeInstance,
@@ -691,7 +668,6 @@ async fn run_established(
     ),
     mut told: Told,
 ) -> Result<(), LinkError> {
-    debug_assert!(held_ack.is_some() || handshake.is_established());
     let (peer_host, peer_instance, _neighbors, connect_role, peer_frame) = peer;
     if ctx
         .shutdown_rx
@@ -810,9 +786,6 @@ async fn run_established(
             }
             ctx.refund();
             write_message(&mut sink, &ack).await?;
-            handshake
-                .acceptor_ack_sent()
-                .map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;
         }
     }
     let logged = LinkEvent {
@@ -859,29 +832,21 @@ async fn run_established(
                         break;
                     }
                 };
-                match handshake.receive(message) {
-                    Ok(ConnectHandshakeEvent::PostHandshake(body)) => {
-                        match handle_control_body(&ctx, link, body, acceptor_auth.as_mut()).await {
-                            ControlAction::Continue => {}
-                            ControlAction::Close(reason, status) => {
-                                close_reason = reason;
-                                close_status = status;
-                                break;
-                            }
-                            ControlAction::ReplyAndClose(message, reason) => {
-                                let _ = out_tx.send(*message).await;
-                                close_reason = reason;
-                                break;
-                            }
-                        }
+                let Some(body) = message.body else {
+                    let _ = out_tx.send(protocol_error_link_close("message body is missing")).await;
+                    close_reason = wire::pb::LinkCloseReason::ProtocolError;
+                    break;
+                };
+                match handle_control_body(&ctx, link, body, acceptor_auth.as_mut()).await {
+                    ControlAction::Continue => {}
+                    ControlAction::Close(reason, status) => {
+                        close_reason = reason;
+                        close_status = status;
+                        break;
                     }
-                    Ok(ConnectHandshakeEvent::Unknown) => {
-                        tracing::debug!(?link, "ignored a control message this build does not know");
-                    }
-                    Ok(_) => unreachable!("handshake cannot repeat after establishment"),
-                    Err(error) => {
-                        let _ = out_tx.send(protocol_error_link_close(error.to_string())).await;
-                        close_reason = wire::pb::LinkCloseReason::ProtocolError;
+                    ControlAction::ReplyAndClose(message, reason) => {
+                        let _ = out_tx.send(*message).await;
+                        close_reason = reason;
                         break;
                     }
                 }
@@ -922,7 +887,7 @@ async fn run_established(
             stream = carrier.accept_stream() => {
                 let Some(stream) = stream else {
                     if let Some((reason, status)) =
-                        last_word(&ctx, link, &mut handshake, &mut source).await
+                        last_word(&ctx, link, &mut source).await
                     {
                         close_reason = reason;
                         close_status = status;
@@ -994,7 +959,7 @@ async fn run_established(
             reason = carrier.closed() => {
                 close_reason = reason;
                 if let Some((reason, status)) =
-                    last_word(&ctx, link, &mut handshake, &mut source).await
+                    last_word(&ctx, link, &mut source).await
                 {
                     close_reason = reason;
                     close_status = status;
@@ -1037,13 +1002,10 @@ async fn run_established(
 async fn last_word(
     ctx: &LinkCtx,
     link: LinkId,
-    handshake: &mut ConnectHandshake,
     source: &mut super::ControlSource,
 ) -> Option<(wire::pb::LinkCloseReason, Option<tonic::Status>)> {
     while let Ok(Some(message)) = read_message(source).await {
-        if let Ok(ConnectHandshakeEvent::PostHandshake(
-            body @ wire::pb::message::Body::LinkClose(_),
-        )) = handshake.receive(message)
+        if let Some(body @ wire::pb::message::Body::LinkClose(_)) = message.body
             && let ControlAction::Close(reason, status) =
                 handle_control_body(ctx, link, body, None).await
         {
@@ -1088,27 +1050,10 @@ async fn handle_control_body(
     acceptor_auth: Option<&mut LinkAuthSession>,
 ) -> ControlAction {
     match body {
-        wire::pb::message::Body::NeighborUp(event) => match neighbor_up_from_wire(event.clone()) {
-            Ok(_) => {
-                ctx.report_frame(link, wire::pb::message::Body::NeighborUp(event));
-                ControlAction::Continue
-            }
-            Err(error) => ControlAction::ReplyAndClose(
-                Box::new(protocol_error_link_close(error.to_string())),
-                wire::pb::LinkCloseReason::ProtocolError,
-            ),
-        },
-        wire::pb::message::Body::NeighborDown(event) => {
-            match neighbor_down_from_wire(event.clone()) {
-                Ok(_) => {
-                    ctx.report_frame(link, wire::pb::message::Body::NeighborDown(event));
-                    ControlAction::Continue
-                }
-                Err(error) => ControlAction::ReplyAndClose(
-                    Box::new(protocol_error_link_close(error.to_string())),
-                    wire::pb::LinkCloseReason::ProtocolError,
-                ),
-            }
+        body @ (wire::pb::message::Body::NeighborUp(_)
+        | wire::pb::message::Body::NeighborDown(_)) => {
+            ctx.report_frame(link, body);
+            ControlAction::Continue
         }
         wire::pb::message::Body::Reauth(reauth) => {
             let Some(auth) = acceptor_auth else {
@@ -1187,8 +1132,12 @@ async fn handle_control_body(
             ctx.report_frame(link, body);
             ControlAction::Continue
         }
+        // The handshake is one exchange; a repeat is a protocol error.
         wire::pb::message::Body::Hello(_) | wire::pb::message::Body::HelloAck(_) => {
-            unreachable!("repeated handshake message is rejected by ConnectHandshake")
+            ControlAction::ReplyAndClose(
+                Box::new(protocol_error_link_close("illegal post-handshake message")),
+                wire::pb::LinkCloseReason::ProtocolError,
+            )
         }
     }
 }
@@ -1196,7 +1145,6 @@ async fn handle_control_body(
 fn accept_peer_hello(
     ctx: &LinkCtx,
     hello: wire::pb::Hello,
-    _auth_session: Option<&LinkAuthSession>,
 ) -> Result<(Host, Vec<Host>, RuntimeInstance), wire::pb::Error> {
     if !hello
         .supported_protocol_versions
@@ -1212,7 +1160,6 @@ fn accept_peer_hello(
         .ok_or_else(|| "Hello.host is required".to_string())
         .and_then(|host| host_from_wire(host).map_err(|error| error.to_string()))
         .map_err(invalid_argument_error)?;
-    validate_remote_host(&host).map_err(invalid_argument_error)?;
     if let Some(authenticated_peer) = ctx.authenticated_peer
         && host.id != authenticated_peer
     {
@@ -1251,7 +1198,6 @@ fn accept_peer_hello_ack(
         .ok_or_else(|| "HelloAccepted.host is required".to_string())
         .and_then(|host| host_from_wire(host).map_err(|error| error.to_string()))
         .map_err(invalid_argument_error)?;
-    validate_remote_host(&host).map_err(invalid_argument_error)?;
     if let Some(expected_peer) = ctx.expected_peer
         && host.id != expected_peer
     {
@@ -1346,10 +1292,7 @@ fn accepted_hello_ack(
 fn neighbors_from_wire(neighbors: Vec<wire::pb::Host>) -> Result<Vec<Host>, wire::pb::Error> {
     neighbors
         .into_iter()
-        .map(|host| {
-            inbound_host_from_wire(host, "handshake neighbor")
-                .map_err(|error| invalid_argument_error(error.to_string()))
-        })
+        .map(|host| host_from_wire(host).map_err(invalid_argument_error))
         .collect()
 }
 
@@ -1508,44 +1451,15 @@ fn signal_establishment(sender: Option<EstablishmentSender>, result: Result<Host
     }
 }
 
-pub fn spawn_connector_with_establishment(
-    ctx: LinkConnectorCtx,
+/// Runs the dialling side of a link over `carrier`, answering once the
+/// link is established or has failed to be.
+pub(crate) fn spawn_connector(
+    mut ctx: LinkCtx,
     carrier: Arc<QuicCarrier>,
-) -> (ConnectorTask, EstablishmentReceiver) {
-    spawn_connector(ctx, carrier, None, None, None)
-}
-
-pub(crate) fn spawn_connector_with_establishment_and_shutdown(
-    ctx: LinkConnectorCtx,
-    carrier: Arc<QuicCarrier>,
-    shutdown_rx: watch::Receiver<bool>,
-) -> (ConnectorTask, EstablishmentReceiver) {
-    spawn_connector(ctx, carrier, None, Some(shutdown_rx), None)
-}
-
-pub(crate) fn spawn_connector_with_auth_establishment_and_shutdown(
-    ctx: LinkConnectorCtx,
-    carrier: Arc<QuicCarrier>,
-    auth: LinkConnectorAuth,
-    shutdown_rx: watch::Receiver<bool>,
-    refresh_rx: Option<LinkConnectorRefreshReceiver>,
-) -> (ConnectorTask, EstablishmentReceiver) {
-    spawn_connector(ctx, carrier, Some(auth), Some(shutdown_rx), refresh_rx)
-}
-
-fn spawn_connector(
-    mut ctx: LinkConnectorCtx,
-    carrier: Arc<QuicCarrier>,
-    auth: Option<LinkConnectorAuth>,
-    shutdown_rx: Option<watch::Receiver<bool>>,
-    refresh_rx: Option<LinkConnectorRefreshReceiver>,
 ) -> (ConnectorTask, EstablishmentReceiver) {
     let (established_tx, established_rx) = oneshot::channel();
     let established = Arc::new(StdRwLock::new(Some(established_tx)));
-    ctx.connector_auth = auth;
     ctx.established_tx = Some(established.clone());
-    ctx.shutdown_rx = shutdown_rx;
-    ctx.refresh_rx = refresh_rx;
     let task = tokio::spawn(async move {
         let result = run_link(ctx, carrier, crate::routing::ConnectRole::Connector)
             .await
@@ -1748,19 +1662,24 @@ mod tests {
             let from = server.address_of(connection.remote_address());
             QuicCarrier::from_accepted(connection).with_path(PathKind::of_addr(from))
         };
-        let dial = QuicCarrier::connect_direct(
+        let dial = QuicCarrier::first_flight(
             &client,
-            server.local_addr().unwrap(),
+            vec![crate::link::socket::Path::Direct(
+                server.local_addr().unwrap(),
+            )],
+            false,
             &dialler,
             trust_for(&listener),
             listener.host_id,
+            Duration::from_secs(5),
         );
         let (accepted, dialled) = tokio::join!(accept, dial);
         let dialled = dialled.unwrap();
 
         let (local, peer) = (host_for(&listener), host_for(&dialler));
         let links = Arc::new(LinkRegistry::new(local.id));
-        let ctx = LinkCtx::new(local.clone(), links.clone()).with_authenticated_peer(peer.id);
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local.clone()), links.clone())
+            .with_authenticated_peer(peer.id);
         let task = tokio::spawn(run_link(
             ctx,
             Arc::new(accepted),
@@ -1816,19 +1735,24 @@ mod tests {
             let from = server.address_of(connection.remote_address());
             QuicCarrier::from_accepted(connection).with_path(PathKind::of_addr(from))
         };
-        let dial = QuicCarrier::connect_direct(
+        let dial = QuicCarrier::first_flight(
             &client,
-            server.local_addr().unwrap(),
+            vec![crate::link::socket::Path::Direct(
+                server.local_addr().unwrap(),
+            )],
+            false,
             &dialler,
             trust_for(&listener),
             listener.host_id,
+            Duration::from_secs(5),
         );
         let (accepted, dialled) = tokio::join!(accept, dial);
         let dialled = dialled.unwrap();
 
         let (local, peer) = (host_for(&listener), host_for(&dialler));
         let links = Arc::new(LinkRegistry::new(local.id));
-        let ctx = LinkCtx::new(local.clone(), links.clone()).with_authenticated_peer(peer.id);
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local.clone()), links.clone())
+            .with_authenticated_peer(peer.id);
         let task = tokio::spawn(run_link(
             ctx,
             Arc::new(accepted),
@@ -1881,7 +1805,7 @@ mod tests {
             crate::Tier::Free,
         );
         let (connector_carrier, acceptor_carrier) = carrier_pair().await;
-        let ctx = LinkCtx::new(local, links.clone())
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local), links.clone())
             .with_authenticated_peer(peer.id)
             .with_token_authenticator(Arc::new(FixedAuthenticator(user)));
         let task = tokio::spawn(run_link(
@@ -1927,7 +1851,8 @@ mod tests {
         let session = LinkAuthSession::new(initial, FixedAuthenticator(other_user));
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = carrier_pair().await;
-        let mut ctx = LinkCtx::new(local, links).with_authenticated_peer(peer.id);
+        let mut ctx =
+            LinkCtx::new_live(LiveLocalHost::new(local), links).with_authenticated_peer(peer.id);
         ctx.acceptor_session = Some(session.clone());
         let task = tokio::spawn(run_link(
             ctx,
@@ -1965,7 +1890,8 @@ mod tests {
         let peer = host(2);
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = carrier_pair().await;
-        let ctx = LinkCtx::new(local, links.clone()).with_authenticated_peer(peer.id);
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local), links.clone())
+            .with_authenticated_peer(peer.id);
         let task = tokio::spawn(run_link(
             ctx,
             acceptor_carrier.clone(),
@@ -2011,7 +1937,8 @@ mod tests {
         let peer = host(2);
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = carrier_pair().await;
-        let ctx = LinkCtx::new(local, links.clone()).with_authenticated_peer(peer.id);
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local), links.clone())
+            .with_authenticated_peer(peer.id);
         let task = tokio::spawn(run_link(
             ctx,
             acceptor_carrier.clone(),

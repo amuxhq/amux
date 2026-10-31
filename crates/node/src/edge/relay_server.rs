@@ -23,11 +23,11 @@ use crate::link::framed::{FramedKind, FramedPath};
 use crate::link::quic::{stream_carrier_kind, stream_path};
 use crate::link::relaying::Relaying;
 use crate::link::socket::{LinkSocket, Path, PathId};
-use crate::link::{ChannelPool, LinkEndpoint, QuicCarrier, run_link};
+use crate::link::{LinkEndpoint, QuicCarrier, run_link};
 use crate::resource_limits::{Admitted, HandshakeAdmission};
 use crate::routing::{
-    AuthenticatedLinkContextProvider, AuthenticatedLinkUser, Capabilities, LinkCtx, LinkRegistry,
-    LinkTokenAuthenticator, LiveLocalHost, local_host,
+    AuthenticatedLinkUser, Capabilities, LinkCtx, LinkRegistry, LinkTokenAuthenticator,
+    LiveLocalHost, local_host,
 };
 use crate::transport::tcp_incoming;
 use crate::{Clock, HostId};
@@ -104,17 +104,51 @@ pub struct CloudLinkServer {
 struct CloudLinkServerInner {
     identity: RelayIdentity,
     local_host: LiveLocalHost,
-    users: RwLock<HashMap<Uuid, RelayUser>>,
+    accounts: Arc<Accounts>,
     /// The one core every account's links are paired by: accounts are
     /// kept apart by its adjacency, not by a core each.
     relaying: Arc<Relaying>,
     admission: HandshakeAdmission,
 }
 
+/// The accounts a relay serves. A link accepted here joins its account's
+/// registry once its Hello's token names the account; until then it is in
+/// `unclaimed`, which no link is ever registered in.
+pub(crate) struct Accounts {
+    users: RwLock<HashMap<Uuid, RelayUser>>,
+    relaying: Arc<Relaying>,
+    unclaimed: Arc<LinkRegistry>,
+}
+
+impl Accounts {
+    /// The registry of `user`'s links, and where a stream one of its hosts
+    /// opens to the relay itself goes.
+    pub(crate) async fn account(
+        &self,
+        user: Uuid,
+    ) -> (Arc<LinkRegistry>, mpsc::Sender<crate::link::InboundStream>) {
+        let parts =
+            |account: &RelayUser| (account.links.clone(), account.incoming_streams_tx.clone());
+        if let Some(account) = self.users.read().await.get(&user) {
+            return parts(account);
+        }
+        let mut users = self.users.write().await;
+        parts(
+            users
+                .entry(user)
+                .or_insert_with(|| RelayUser::new(self.relaying.clone(), user)),
+        )
+    }
+
+    async fn links_of(&self, user: Uuid) -> Option<Arc<LinkRegistry>> {
+        Some(self.users.read().await.get(&user)?.links.clone())
+    }
+}
+
 /// One account's side of the relay: the links its hosts hold here and the
 /// adjacency they advertise to each other. Accounts never see each other.
 struct RelayUser {
-    channels: Arc<ChannelPool>,
+    links: Arc<LinkRegistry>,
     incoming_streams_tx: mpsc::Sender<crate::link::InboundStream>,
     drain: JoinHandle<()>,
 }
@@ -136,16 +170,10 @@ impl RelayUser {
         // relay serves no calls of its own.
         let drain = tokio::spawn(async move { while incoming.recv().await.is_some() {} });
         Self {
-            channels: Arc::new(ChannelPool::new(links)),
+            links,
             incoming_streams_tx,
             drain,
         }
-    }
-
-    fn link_ctx(&self, local_host: &LiveLocalHost, clock: &Arc<dyn Clock>) -> LinkCtx {
-        LinkCtx::new_live(local_host.clone(), self.channels.link_registry())
-            .with_incoming_streams(self.incoming_streams_tx.clone())
-            .with_clock(clock.clone())
     }
 }
 
@@ -167,12 +195,20 @@ impl CloudLinkServer {
         if let Some(reports) = reports {
             relaying.report_to(reports, analytics::Analytics::off());
         }
+        let accounts = Arc::new(Accounts {
+            users: RwLock::new(HashMap::new()),
+            unclaimed: Arc::new(LinkRegistry::relayed(
+                relaying.clone(),
+                relay_core::UserId::default(),
+            )),
+            relaying: relaying.clone(),
+        });
         Self {
             inner: Arc::new(CloudLinkServerInner {
                 relaying,
                 identity,
                 local_host,
-                users: RwLock::new(HashMap::new()),
+                accounts,
                 admission: HandshakeAdmission::default(),
             }),
         }
@@ -346,7 +382,6 @@ impl CloudLinkServer {
                     };
                     let ctx = service
                         .accepting_link_ctx()
-                        .await
                         .observing(socket)
                         .refunding(spent);
                     if let Err(error) = run_link(
@@ -398,48 +433,17 @@ impl CloudLinkServer {
         self.inner.admission.limited()
     }
 
-    async fn link_ctx_for_user(&self, user_id: Uuid) -> LinkCtx {
+    fn accepting_link_ctx(&self) -> LinkCtx {
         let inner = &self.inner;
-        if let Some(ctx) = inner
-            .users
-            .read()
-            .await
-            .get(&user_id)
-            .map(|user| user.link_ctx(&inner.local_host, &inner.identity.clock))
-        {
-            return ctx;
-        }
-        let mut users = inner.users.write().await;
-        users
-            .entry(user_id)
-            .or_insert_with(|| RelayUser::new(inner.relaying.clone(), user_id))
-            .link_ctx(&inner.local_host, &inner.identity.clock)
-    }
-
-    async fn accepting_link_ctx(&self) -> LinkCtx {
-        LinkCtx::new_live(
-            self.inner.local_host.clone(),
-            Arc::new(LinkRegistry::new(self.inner.identity.host_id)),
-        )
-        .with_token_authenticator(self.inner.identity.authenticator.clone())
-        .with_authenticated_context_provider(Arc::new(self.clone()))
-        .with_clock(self.inner.identity.clock.clone())
+        LinkCtx::new_live(inner.local_host.clone(), inner.accounts.unclaimed.clone())
+            .with_token_authenticator(inner.identity.authenticator.clone())
+            .joining(inner.accounts.clone())
+            .with_clock(inner.identity.clock.clone())
     }
 
     pub async fn user_has_link_to(&self, user_id: Uuid, host_id: HostId) -> bool {
-        let tunnels = self
-            .inner
-            .users
-            .read()
-            .await
-            .get(&user_id)
-            .map(|services| services.channels.clone());
-        match tunnels {
-            Some(tunnels) => tunnels
-                .link_registry()
-                .link_to_peer(host_id)
-                .await
-                .is_some(),
+        match self.inner.accounts.links_of(user_id).await {
+            Some(links) => links.link_to_peer(host_id).await.is_some(),
             None => false,
         }
     }
@@ -449,39 +453,23 @@ impl CloudLinkServer {
     /// its work over a single connection looks like from here.
     #[doc(hidden)]
     pub async fn user_links(&self, user_id: Uuid) -> Vec<(HostId, usize)> {
-        let channels = self
-            .inner
-            .users
-            .read()
-            .await
-            .get(&user_id)
-            .map(|services| services.channels.clone());
-        match channels {
-            Some(channels) => channels.link_registry().links_per_peer().await,
+        match self.inner.accounts.links_of(user_id).await {
+            Some(links) => links.links_per_peer().await,
             None => Vec::new(),
         }
     }
 
     pub async fn send_link_close_to_all(&self, reason: wire::pb::LinkCloseReason) {
-        let tunnels = {
-            let users = self.inner.users.read().await;
+        let links = {
+            let users = self.inner.accounts.users.read().await;
             users
                 .values()
-                .map(|services| services.channels.clone())
+                .map(|user| user.links.clone())
                 .collect::<Vec<_>>()
         };
-        for tunnels in tunnels {
-            tunnels.link_registry().send_link_close_to_all(reason).await;
+        for links in links {
+            links.send_link_close_to_all(reason).await;
         }
-    }
-}
-
-#[tonic::async_trait]
-impl AuthenticatedLinkContextProvider for CloudLinkServer {
-    async fn context_for(&self, user: &AuthenticatedLinkUser) -> LinkCtx {
-        self.link_ctx_for_user(user.user_id)
-            .await
-            .with_link_role(crate::routing::LinkRole::CloudRelay)
     }
 }
 
@@ -615,7 +603,7 @@ mod tests {
 
     use super::*;
     use crate::Tier;
-    use crate::link::run::spawn_connector_with_auth_establishment_and_shutdown;
+    use crate::link::run::spawn_connector;
     use crate::link::socket::LinkId;
     use crate::routing::{LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher};
 
@@ -744,12 +732,10 @@ mod tests {
             None,
         );
         let (shutdown, shutdown_rx) = watch::channel(false);
-        let (task, established) = spawn_connector_with_auth_establishment_and_shutdown(
-            ctx,
+        let (task, established) = spawn_connector(
+            ctx.with_connector_auth(auth, None)
+                .with_shutdown(shutdown_rx),
             carrier,
-            auth,
-            shutdown_rx,
-            None,
         );
         established.await.unwrap().unwrap();
         (task, shutdown)

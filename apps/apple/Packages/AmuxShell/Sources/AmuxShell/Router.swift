@@ -30,7 +30,6 @@ public final class Router {
     public var tab: Tab = .agents {
         didSet {
             if tab != .you { beneath = tab }
-            arrived?()
         }
     }
 
@@ -38,16 +37,6 @@ public final class Router {
     /// sheet is up, the one it was raised over and that putting it away
     /// returns to.
     public private(set) var beneath: Tab = .agents
-
-    /// Told after every arrival: a tab reached for, a page pushed, a page
-    /// gone back from.
-    ///
-    /// Nothing in the shipping app sets this. It exists so a build with the
-    /// reporting tools in it can keep a recording of where somebody has been,
-    /// which is what a report of a screen is replayed from — and it is a
-    /// closure rather than a recorder this file knows about, because the
-    /// recording is a debug build's and navigation must not link it.
-    @ObservationIgnored public var arrived: (@MainActor () -> Void)?
 
     /// One stack per tab, written to by the shell's navigation as well as
     /// read: the back gesture and the tab bar are the system's to drive, and
@@ -65,10 +54,10 @@ public final class Router {
     /// Whether New Agent is up: a sheet over whichever tab asked for it, as
     /// a new message is in a chat app, rather than a page in a stack. Putting
     /// it away leaves everything beneath it where it was.
-    public var composing = false { didSet { arrived?() } }
+    public var composing = false
 
     /// The pairing up, if one is: a sheet with an end, like New Agent.
-    public var pairing: Pairing? { didSet { arrived?() } }
+    public var pairing: Pairing?
 
     /// Whether the pairing sheet is on screen. Subscribing is a page of the
     /// tab beneath, so the sheet steps aside while it is open and comes back,
@@ -154,7 +143,6 @@ public final class Router {
     /// stack it was in.
     private func departed(_ before: [Route], _ now: [Route]) {
         for route in before where !now.contains(route) { loader?.left(route) }
-        arrived?()
     }
 
     /// Empties every stack of the pages about the account that just left the

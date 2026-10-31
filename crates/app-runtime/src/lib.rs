@@ -439,7 +439,6 @@ impl AppRuntime {
         dump_path: String,
         header: Vec<u8>,
         frame_png: Vec<u8>,
-        trace: Option<String>,
     ) -> Result<values::ReportSent, RpcError> {
         let file = |name: &str, contents: Vec<u8>| wire::DumpFile {
             name: name.to_owned(),
@@ -448,9 +447,6 @@ impl AppRuntime {
         let mut files = vec![file("report.json", header)];
         if !frame_png.is_empty() {
             files.push(file("frame.png", frame_png));
-        }
-        if let Some(trace) = trace {
-            files.push(file("trace.jsonl", trace.into_bytes()));
         }
         let sent = self
             .client

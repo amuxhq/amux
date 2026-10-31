@@ -47,25 +47,16 @@ extension FrozenFrame {
 
 /// Everything a report is made of, taken in one instant.
 ///
-/// The three recordings are frozen together and before anything else happens,
+/// The frame and the dump are frozen together and before anything else happens,
 /// which is the whole point of the flow: what is reported is what was on
 /// screen when something looked wrong, not what the app looks like once the
 /// person has finished describing it. A capture taken after the report UI
 /// opened would be a picture of the report.
-///
-/// The view-state trace is held as the text that goes into the bundle rather
-/// than as parsed values. Nothing between the freeze and the send needs to read
-/// it, and holding it as text means the bytes written into `trace.jsonl` are
-/// the bytes that were frozen — a re-encode in between could differ from what
-/// the phone saw.
 public struct ReportCapture: Sendable, Equatable {
     public var frame: FrozenFrame
     /// The runtime's dump of this profile, started when the screen froze so
     /// it describes the same moment; its directory, or why there is none.
     public var dump: Task<Result<URL, PartAbsent>, Never>?
-    /// The view-state recording, where this build keeps one.
-    public var trace: String?
-    public var traceAbsent: String?
     /// The page the person was on.
     public var route: String?
     public var runtimeFailure: String?
@@ -73,15 +64,11 @@ public struct ReportCapture: Sendable, Equatable {
     public init(
         frame: FrozenFrame,
         dump: Task<Result<URL, PartAbsent>, Never>? = nil,
-        trace: String? = nil,
-        traceAbsent: String? = nil,
         route: String? = nil,
         runtimeFailure: String? = nil
     ) {
         self.frame = frame
         self.dump = dump
-        self.trace = trace
-        self.traceAbsent = traceAbsent
         self.route = route
         self.runtimeFailure = runtimeFailure
     }
@@ -168,16 +155,14 @@ public struct ReportUpload: Sendable, Equatable {
     /// the dump's declaration.
     public var header: Data
     public var frame: Data
-    public var trace: String?
     /// Where the runtime finds the report's dump: the directory it wrote,
     /// empty when there is none, and after the first send the report's own
     /// directory, which a retry names to send that same report again.
     public var path: String
 
-    public init(header: Data, frame: Data, trace: String?, path: String) {
+    public init(header: Data, frame: Data, path: String) {
         self.header = header
         self.frame = frame
-        self.trace = trace
         self.path = path
     }
 }

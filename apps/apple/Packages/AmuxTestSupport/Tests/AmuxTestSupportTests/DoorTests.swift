@@ -193,7 +193,7 @@ final class DoorTests: XCTestCase {
             .bridge(bridge),
             .conversation(ConversationReading(agent: "helper", frame: nil, rows: [], ask: nil)),
             .captured(path: "/tmp/home.png", width: 1206, height: 2622, scale: 3),
-            .bundle(path: "/tmp/report", parts: ["frame.png", "trace.jsonl"]),
+            .bundle(path: "/tmp/report", parts: ["frame.png", "report.json"]),
             .paired(host: "workstation"),
             .states([
                 DrawnState(screen: "home", state: "home", typeSize: nil),

@@ -332,7 +332,6 @@ The bundle, in the runtime's `reports/report-<unix ms>-<id>/`, holds:
 | --- | --- |
 | `report.json` | Build and git revision, time, note, marks in points with the frame's size and scale, and every part declared present or absent with a reason |
 | `frame.png` | The frozen screen, without the status bar |
-| `trace.jsonl` | The view-state trace, in builds with the driving tools only; a shipping build declares it absent |
 | `dump/…` | The profile's `report` dump, as above, with the app runtime's client parts |
 
 ## Sending reports

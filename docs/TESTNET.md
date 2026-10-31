@@ -647,8 +647,8 @@ from the net's account service, as the app does from amux.sh.
 **Accounts.** The relay's account service answers sign-in, relay credentials and the plan read a phone makes
 (`/api/graphql`): a Pro account has access given to it, one moved from Pro to Free had that access end when it
 moved, and one that was always Free has none. `tier ACCOUNT pro|free` changes the account, and every host signed in
-to it learns at once: an in-process host asks over its relay link, and a process host's profile is paused and
-resumed, which dials the relay afresh (its relay link drops for that moment). `status` prints each account's tier
+to it learns at once: an in-process host asks over its relay link, and a process host's profile signs out and in
+again, which dials the relay afresh (its relay link drops for that moment). `status` prints each account's tier
 as it is now. A process host's debug daemon trusts the relay's certificate through `AMUX_CLOUD_TLS_CA`, so it reaches
 the relay where the account service names it, but not through the net's gates: `block-udp` and `net` do not touch
 its way to the relay.

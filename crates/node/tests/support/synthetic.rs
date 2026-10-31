@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use agent_dir::local_socket::{LocalListener, LocalStream};
 use journal::synthetic::SyntheticWriter;
-use node::{Launch, ProfileRuntime};
+use node::Launch;
 use store::{AgentKey, AgentRow};
 use tokio::io::WriteHalf;
 use tokio::task::JoinHandle;

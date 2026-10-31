@@ -211,8 +211,9 @@ pub struct AgentDecl {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<Provider>,
     /// A recorded journal its process plays as what it writes, in place of
-    /// a script: the name of one of the journal fixtures in
-    /// `fixtures/journals`. Only a simulated net plays one.
+    /// a script: the name of a headless Claude recording among the
+    /// interpreter's fixtures, cut into a journal as the net starts (see
+    /// [`crate::sim::recorded_journal`]). Only a simulated net plays one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub journal: Option<String>,
 }
@@ -607,7 +608,7 @@ impl AgentDecl {
         self
     }
 
-    /// Plays the named journal fixture as what its process writes.
+    /// Plays the named headless Claude recording as what its process writes.
     pub fn journal(mut self, name: &str) -> Self {
         self.journal = Some(name.to_owned());
         self

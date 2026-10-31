@@ -177,8 +177,7 @@ fn process_tag() -> u32 {
     *TAG.get_or_init(|| uuid::Uuid::new_v4().as_u128() as u32)
 }
 
-/// The Claude Code version the fakes report: the newest one the corpora
-/// were recorded against.
+/// The Claude Code version the fakes report unless a script names one.
 pub const VERSION: &str = "2.1.283";
 
 /// Carries out a file tool's change, as Claude's own Write and Edit do: a

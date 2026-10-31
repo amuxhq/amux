@@ -185,7 +185,7 @@ busy agent at once in the queue. A prompt sent while the chat is not current (th
 this machine's daemon reconnecting) is held: it shows pending in the queue, `sends when desk is back`, with
 `[Cancel]`, and goes by itself under its own id once the host can be reached. A draft left in a
 chat for home or another chat waits in its composer until the chat opens again; one cleared before leaving stays
-cleared, even before this machine's daemon has forgotten its copy, and quitting waits until it has. A prompt the agent
+cleared, as the chat reopens only once this machine's daemon has its copy, and quitting waits for it too. A prompt the agent
 refuses, an exited agent's included, comes back into the composer with the reason, worded from the typed reason
 the view hands over, the same as the phone's; one whose connection dropped before a reply waits in the
 queue as `may not have arrived`, to resend or discard, and nothing is resent by itself.

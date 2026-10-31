@@ -952,7 +952,9 @@ fn with_store<R>(f: impl FnOnce(Sqlite) -> R) -> R {
 /// The core restored from its checkpoint over this thread's store.
 fn restore(core: &[u8]) -> Daemon {
     let checkpoint = Checkpoint::from_bytes(core).expect("a checkpoint reads");
-    with_store(|store| Daemon::restore(checkpoint, store).expect("a checkpoint restores"))
+    with_store(|store| {
+        Daemon::restore(checkpoint, store, Default::default()).expect("a checkpoint restores")
+    })
 }
 
 /// Reads the core restored from its checkpoint, and sends its store home.

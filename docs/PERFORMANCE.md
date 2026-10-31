@@ -95,9 +95,8 @@ just suite flood-workload-smoke
 cargo nextest run -p qualification --features perf flood
 ```
 
-The same test file holds the served flood to the measured one: `journeys/topologies/flood.json` must equal the
-topology the perf lane builds, so `testnet serve journeys/topologies/flood.json` (see [TestNet](TESTNET.md)) hands a
-real client the flood the lane measures. `FLOOD_TOPOLOGY_UPDATE=1` rewrites the file after the workload changes.
+To hand a real client the flood the lane measures, write its topology and serve it (see [TestNet](TESTNET.md)):
+`target/debug/perf-topology flood target/flood.json`, then `testnet serve target/flood.json`.
 
 ## Budgets and baselines
 

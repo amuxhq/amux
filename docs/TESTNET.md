@@ -504,13 +504,12 @@ verb without fields is a bare string (`"Shutdown"`).
 | --- | --- |
 | `{"Sever": {"a", "b"}}`, `{"Restore": {"a", "b"}}` | Cut or restore a link: a declared or added one, or on a gated LAN any pairing between the two. |
 | `{"Link": {"a", "b"}}` | Whether both ends route to each other directly: `{"up": true}`. |
-| `{"Trust": {"a", "b"}}`, `{"Untrust": {"a", "b"}}` | Trust as pairing does; forget as unpairing does. |
+| `{"Trust": {"a", "b"}}` | Trust as pairing does. |
 | `{"SetTier": {"account", "tier"}}` | Change what an account has bought (`pro` or `free`). |
 | `{"SignIn": {"host", "account"}}` | Sign a host's profile in to a declared account. |
 | `{"KillDaemon": {"host"}}`, `{"StopDaemon": {"host"}}` | Crash or cleanly stop a host's daemon. |
 | `{"RestartDaemon": {"host"}}` | Kill it if it is running, then start it again. |
 | `{"Checkpoint": {"host"}}`, `{"Rewind": {"host", "cuts": [{"agent", "byte"}]}}` | Record what reached the drive; lose power back to it. |
-| `{"Advance": {"ms"}}` | Refused: a served net runs on wall time. |
 | `{"Spawn": {"agent": {…}}}` | Start an agent declared as in a topology: `{"id": "…"}`. |
 | `{"Resume": {"agent", "text"}}` | Start an exited agent again, optionally with a prompt: `{"incarnation": n}`. |
 | `{"Send": {"agent", "text"}}` | Send a prompt through the agent's host: `{"verdict": "…", "input_id": "<hex>"}`. |
@@ -523,14 +522,9 @@ verb without fields is a bare string (`"Shutdown"`).
 | `{"AddAccount": {"account": {"name", "tier"}}}` | Add an account to the relay, starting the relay if none runs. |
 | `{"NetFaults": {"target", "delay_ms", "loss_percent", "jitter_ms", "reorder_percent", "rate_bytes_per_sec"}}` | Make a host's network, or the relay's (`"relay"`), bad; all zero makes it clean. Every field but `target` may be left out. |
 | `{"LanGate": {"host"}}`, `{"LanFaults": {"host", …}}` | A host's front gate for a client outside the net: `{"addr": "…"}`; its faults, with the fields `NetFaults` takes. |
-| `{"RelayGate": {}}`, `{"RelayFaults": {…}}` | A gate in front of the relay's QUIC carrier: `{"addr": "…"}`; its faults. |
+| `{"RelayGate": {}}` | A gate in front of the relay's QUIC carrier: `{"addr": "…"}`; `NetFaults` with `"relay"` makes it bad. |
 | `{"PairGate": {"from", "to"}}` | The gate `from` dials to reach `to`'s LAN listener: `{"addr": "…"}`. |
 | `{"BlockUdp": {"host", "blocked"}}` | Drop every datagram on the host's way to the relay, or stop. |
-| `{"SetRouter": {"host", "kind"}}` | Put a router (`open`, `ordinary` or `strict`) in front of the host's link socket, now and on every start after. |
-| `{"ChangeNetwork": {"host"}}` | Move a running host onto another network: its link socket rebinds and its links migrate. |
-| `{"BindIpv6Only": {"host"}}` | Bind the host's socket to IPv6 loopback alone from its next start. |
-| `{"CarryingPath": {"host", "peer"}}` | The path carrying the host's link to the peer, by its link log: `{"path": "lan"}`, or `{"path": null}` while the link is down. |
-| `{"LinkLog": {"host"}}` | Every line the host has written to the link log, oldest first: `[{"peer", "event", "path", "resumed", "early_data", "first_packet_to_catch_up_ms"}]`. |
 | `{"Flap": {"a", "b", "down_ms", "up_ms"}}`, `{"FlapStop": {}}` | Sever and restore a link on a period, until stopped; stop every flap, leaving each link restored. |
 | `{"Release": {"version", "channel", "rollout", "broken"}}` | Publish the build under test on the release feed (channel `stable` by default) and have supervised hosts check now. |
 | `{"Status": {}}` | The readiness record as it stands now, with `topology`: the declaration that would start this net again, run-time additions included. |
@@ -547,7 +541,7 @@ A reply is `{"ok": <value>}`, where a verb's value is usually its acknowledgemen
 | Kind | Meaning |
 | --- | --- |
 | `invalid` | The request did not parse, or named a host, agent or link the net does not have. |
-| `refused` | The net refused: a host down or running, no checkpoint, wall time. |
+| `refused` | The net refused: a host down or running, no checkpoint. |
 | `stuck` | An observation did not see its consequence in time. |
 | `violation` | The replica block invariant does not hold. |
 | `closed` | The net has shut down. |
@@ -556,10 +550,6 @@ An error does not undo a verb that had already started.
 
 `Shutdown` is the clean end. An interrupt (Ctrl-C) also shuts the net down; in both cases the root directory is
 removed, so copy anything you need (a dump, a log) out of it first.
-
-Every door verb is a net capability or a declared composition of two. The map is `door::CAPABILITIES`, the crate
-documentation in `crates/testnet/src/lib.rs` lists the same table, and a test holds the two to each other. Adding a
-verb means adding the capability to `Net` first.
 
 ## `testnet ctl`
 

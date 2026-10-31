@@ -202,7 +202,7 @@ rather than with the CPU. To see what the net's in-process hosts did in a failin
 (`RUST_LOG=warn,daemon_core=debug,node=info`): their tracing goes to the test's standard error, which nextest shows
 for a test that failed. Hosts the net runs as processes do not inherit it; their daemon logs are theirs.
 
-`just coverage` writes `tests/coverage.md`: line coverage per crate and the commit it measured. Each crate's lines
+`just coverage` writes `target/coverage/coverage.md`: line coverage per crate and the commit it measured. Each crate's lines
 count whichever tests ran them, so a core's figure includes what the models and the testnet reach. It is a reading
 aid for judging which tests earn their keep, not a gate. The recipe's comment names the coverage tool and the
 toolchain component it needs.
@@ -210,7 +210,7 @@ toolchain component it needs.
 `just fuzz-smoke` fuzzes the code that reads bytes amux did not write: the tolerant Claude and Codex decoders, the
 journal's frame decoder and its reader over segments cut anywhere, and redaction of JSON values and free text. The
 targets live in `fuzz/`, a workspace of their own built on the pinned nightly with debug assertions on. Each starts
-from seeds cut from the recorded provider captures and journal fixtures and runs for 30 seconds (`--seconds N`;
+from seeds cut from the recorded provider captures and a real agent's journal and runs for 30 seconds (`--seconds N`;
 target names narrow the run); its corpus and any crashing input stay under `target/fuzz/`, and a crash prints the
 command that replays it. The recipe's comment names the tool it needs installed.
 

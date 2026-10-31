@@ -5,9 +5,7 @@ use std::collections::BTreeMap;
 
 use unicode_width::UnicodeWidthChar as _;
 
-/// One cell's style: SGR attributes by name, kept sorted so equal styles
-/// are equal keys.
-type Style = BTreeMap<&'static str, String>;
+use crate::ctl::tui::{Style, styled_cells};
 
 /// The columns a character takes: none for a combining mark, two for a
 /// wide one.
@@ -23,80 +21,43 @@ fn cells(text: &str) -> usize {
     text.chars().map(cell_width).sum()
 }
 
-/// The style after one SGR sequence's parameters.
-fn apply_sgr(mut style: Style, params: &str) -> Style {
-    let codes: Vec<u32> = params
-        .split([';', ':'])
-        .map(|code| code.parse().unwrap_or(0))
-        .collect();
-    let mut i = 0;
-    while i < codes.len() {
-        let code = codes[i];
-        match code {
-            0 => style.clear(),
-            1 | 2 | 3 | 4 | 7 | 9 => {
-                let name = match code {
-                    1 => "bold",
-                    2 => "dim",
-                    3 => "italic",
-                    4 => "underline",
-                    7 => "reverse",
-                    _ => "strike",
-                };
-                style.insert(name, "true".to_owned());
-            }
-            22 => {
-                style.remove("bold");
-                style.remove("dim");
-            }
-            23 => {
-                style.remove("italic");
-            }
-            24 => {
-                style.remove("underline");
-            }
-            27 => {
-                style.remove("reverse");
-            }
-            29 => {
-                style.remove("strike");
-            }
-            30..=37 | 90..=97 => {
-                style.insert("fg", format!("\"{code}\""));
-            }
-            40..=47 | 100..=107 => {
-                style.insert("bg", format!("\"{code}\""));
-            }
-            39 => {
-                style.remove("fg");
-            }
-            49 => {
-                style.remove("bg");
-            }
-            38 | 48 if i + 1 < codes.len() => {
-                let key = if code == 38 { "fg" } else { "bg" };
-                if codes[i + 1] == 5 && i + 2 < codes.len() {
-                    style.insert(key, format!("\"5;{}\"", codes[i + 2]));
-                    i += 2;
-                } else if codes[i + 1] == 2 && i + 4 < codes.len() {
-                    style.insert(
-                        key,
-                        format!("\"2;{};{};{}\"", codes[i + 2], codes[i + 3], codes[i + 4]),
-                    );
-                    i += 4;
-                }
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    style
-}
-
-/// A style as the legend names it: the JSON object of its attributes,
-/// keys sorted, as the goldens were first written.
+/// A style as the legend names it: the JSON object of its SGR attributes,
+/// keys sorted, colours in SGR's own spelling (`5;n`, `2;r;g;b`), as the
+/// goldens were first written.
 fn style_key(style: &Style) -> String {
-    let fields: Vec<String> = style
+    let colour = |colour: &str| {
+        if let Some(index) = colour.strip_prefix("ansi:") {
+            Some(format!("\"5;{index}\""))
+        } else {
+            let hex = colour.strip_prefix('#')?;
+            let channel = |at: usize| u8::from_str_radix(&hex[at..at + 2], 16).unwrap_or(0);
+            Some(format!(
+                "\"2;{};{};{}\"",
+                channel(0),
+                channel(2),
+                channel(4)
+            ))
+        }
+    };
+    let mut fields: BTreeMap<&str, String> = BTreeMap::new();
+    for (name, value) in [("fg", &style.fg), ("bg", &style.bg)] {
+        if let Some(value) = colour(value) {
+            fields.insert(name, value);
+        }
+    }
+    for (on, name) in [
+        (style.bold, "bold"),
+        (style.dim, "dim"),
+        (style.italic, "italic"),
+        (style.underlined, "underline"),
+        (style.reversed, "reverse"),
+        (style.crossed_out, "strike"),
+    ] {
+        if on {
+            fields.insert(name, "true".to_owned());
+        }
+    }
+    let fields: Vec<String> = fields
         .iter()
         .map(|(name, value)| format!("\"{name}\": {value}"))
         .collect();
@@ -105,69 +66,20 @@ fn style_key(style: &Style) -> String {
 
 /// tmux `capture-pane -e` output as text rows and one style key per cell.
 pub(crate) fn parse_styled(dump: &str, cols: usize) -> (Vec<String>, Vec<Vec<String>>) {
-    let mut texts = Vec::new();
-    let mut styles = Vec::new();
-    let mut style = Style::new();
-    let blank = style_key(&Style::new());
-    for line in dump.split('\n') {
-        let mut text = String::new();
-        let mut keys = Vec::new();
-        let mut rest = line;
-        loop {
-            let (before, after) = match sgr(rest) {
-                Some((start, params, end)) => {
-                    (&rest[..start], Some((params.to_owned(), &rest[end..])))
-                }
-                None => (rest, None),
-            };
-            for character in before.chars() {
-                text.push(character);
-                let key = style_key(&style);
-                for _ in 0..cell_width(character) {
-                    keys.push(key.clone());
-                }
-            }
-            match after {
-                Some((params, next)) => {
-                    style = apply_sgr(style, &params);
-                    rest = next;
-                }
-                None => break,
-            }
-        }
-        while keys.len() < cols {
-            keys.push(blank.clone());
-        }
-        keys.truncate(cols);
-        texts.push(text.trim_end().to_owned());
-        styles.push(keys);
-    }
-    (texts, styles)
-}
-
-/// The first `ESC [ params m` in `text`: where it starts, its parameters
-/// and where it ends.
-fn sgr(text: &str) -> Option<(usize, &str, usize)> {
-    let mut from = 0;
-    while let Some(at) = text[from..].find("\x1b[") {
-        let start = from + at;
-        let params_start = start + 2;
-        let params_len = text[params_start..]
-            .find(|c: char| !(c.is_ascii_digit() || c == ';' || c == ':'))
-            .unwrap_or(text.len() - params_start);
-        let end = params_start + params_len;
-        if text[end..].starts_with('m') {
-            return Some((start, &text[params_start..end], end + 1));
-        }
-        from = params_start;
-    }
-    None
+    styled_cells(dump, cols)
+        .into_iter()
+        .map(|row| {
+            let text: String = row.iter().map(|(text, _)| text.as_str()).collect();
+            let keys = row.iter().map(|(_, style)| style_key(style)).collect();
+            (text.trim_end().to_owned(), keys)
+        })
+        .unzip()
 }
 
 /// One character per cell: `.` for the default style, then letters in
 /// order of first appearance, with a legend naming each.
 pub(crate) fn style_map(styles: &[Vec<String>]) -> String {
-    let blank = style_key(&Style::new());
+    let blank = style_key(&Style::plain());
     let mut legend: Vec<(String, char)> = vec![(blank, '.')];
     let mut letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".chars();
     let mut rows = Vec::new();
@@ -586,14 +498,14 @@ mod tests {
 
     #[test]
     fn a_styled_capture_reads_as_text_and_one_style_per_cell() {
-        let (texts, styles) = parse_styled("\x1b[1;33mhi\x1b[0m there  ", 6);
+        let (texts, styles) = parse_styled("\x1b[1;38;5;3mhi\x1b[0m there", 10);
         assert_eq!(texts, ["hi there"]);
-        assert_eq!(styles[0][0], "{\"bold\": true, \"fg\": \"33\"}");
+        assert_eq!(styles[0][0], "{\"bold\": true, \"fg\": \"5;3\"}");
         assert_eq!(styles[0][2], "{}");
-        assert_eq!(styles[0].len(), 6);
+        assert_eq!(styles[0].len(), 10);
         assert_eq!(
             style_map(&styles),
-            "aa....\n--- legend\na = {\"bold\": true, \"fg\": \"33\"}\n"
+            "aa........\n--- legend\na = {\"bold\": true, \"fg\": \"5;3\"}\n"
         );
     }
 

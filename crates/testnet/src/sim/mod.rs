@@ -385,27 +385,14 @@ impl SimNet {
         }
         let agent = AgentId(sim.ids.bytes());
         let host_id = sim.net.host_id(h);
-        let spec = wire::AgentSpec {
-            agent_id: agent.0.to_vec(),
-            kind: FakeKind::ClaudeSdk.wire() as i32,
-            cwd: cwd.clone(),
+        let spec = models::net::agent_spec(
+            agent,
+            &cwd,
             parent,
-            config: Some(wire::EffectiveConfig {
-                grace_ms: AGENT_GRACE_MS,
-                // A seed's run is a function of the seed alone.
-                step_budget_micros: agent_core::StepBudget::UNLIMITED.micros,
-                ..wire::EffectiveConfig::default()
-            }),
-            created_at_ms: sim.net.now_ms() as i64,
-            incarnation: 1,
-            bootstrap: decl.prompt.as_deref().map(|text| wire::Bootstrap {
-                of: Some(wire::bootstrap::Of::Prompt(submission(
-                    b"testnet-first",
-                    text,
-                ))),
-            }),
-            ..wire::AgentSpec::default()
-        };
+            decl.prompt.as_deref(),
+            AGENT_GRACE_MS,
+            sim.net.now_ms(),
+        );
         let create = Create {
             agent,
             cwd,
@@ -418,7 +405,7 @@ impl SimNet {
         match &decl.journal {
             Some(name) => sim
                 .net
-                .add_agent_playing(agent, &decl.name, journal_fixture(name)?),
+                .add_agent_playing(agent, &decl.name, recorded_journal(name)?),
             None => sim.net.add_agent(agent, &decl.name, &steps),
         }
         let what = format!("{} to start on {}", decl.name, decl.host);
@@ -616,12 +603,6 @@ impl World for SimNet {
     fn change_network(&mut self, _: &str) -> Result<Ack, NetError> {
         Err(NetError::Unsupported(
             "changing a host's network in a simulated net",
-        ))
-    }
-
-    fn bind_ipv6_only(&mut self, _: &str) -> Result<Ack, NetError> {
-        Err(NetError::Unsupported(
-            "binding IPv6 only in a simulated net",
         ))
     }
 
@@ -1306,40 +1287,25 @@ fn refuse_agent(agent: &AgentDecl) -> Result<(), NetError> {
     Ok(())
 }
 
-/// The steps of the named journal fixture, from its initial snapshot on.
-/// Its agent is created as headless Claude, so the journal must be one.
-fn journal_fixture(name: &str) -> Result<Vec<wire::Step>, NetError> {
+/// The journal headless Claude's process would write for the named
+/// recording among the interpreter's fixtures (`recorded_multi_turn`):
+/// the recording run through its interpreter, the initial snapshot first,
+/// with empty steps left out as the journal's writer leaves them out.
+pub fn recorded_journal(name: &str) -> Result<Vec<wire::Step>, NetError> {
+    use prost::Message as _;
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("fixtures/journals")
-        .join(format!("{name}.frames"));
-    let bytes = std::fs::read(&path)?;
-    let mut steps = Vec::new();
-    let mut at = 0;
-    while at < bytes.len() {
-        match journal::decode_frame(&bytes[at..]) {
-            journal::Frame::Whole(step, length) => {
-                steps.push(*step);
-                at += length;
-            }
-            other => {
-                return Err(NetError::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!(
-                        "{}: byte {at} is not a whole frame: {other:?}",
-                        path.display()
-                    ),
-                )));
-            }
-        }
-    }
-    let kind = steps
-        .first()
-        .and_then(|step| step.snapshot.as_ref())
-        .map(|snapshot| snapshot.kind);
-    if kind != Some(FakeKind::ClaudeSdk.wire() as i32) {
-        return Err(NetError::Unsupported(
-            "a recorded journal of another kind than headless Claude",
-        ));
-    }
-    Ok(steps)
+        .join("../interpret/fixtures/claude_sdk")
+        .join(format!("{name}.json"));
+    let replayed =
+        interpret::replay::<interpret::claude_sdk::ClaudeSdk>(&path).map_err(|error| {
+            NetError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("{}: {error}", path.display()),
+            ))
+        })?;
+    Ok(replayed
+        .into_iter()
+        .map(|frame| frame.step)
+        .filter(|step| step.encoded_len() > 0)
+        .collect())
 }

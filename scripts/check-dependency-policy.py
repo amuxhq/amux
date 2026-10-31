@@ -135,8 +135,8 @@ SUPPORT_ALLOWED_LOCAL = {
     # Its simulated mode holds every daemon and agent core in one process,
     # the agents on the test kind's interpreter.
     "testnet": {
-        "agent-core", "agent-dir", "daemon-core", "interpret", "journal", "models", "node",
-        "patience", "provider-fakes", "release", "shot", "store", "tui", "wire",
+        "agent-dir", "daemon-core", "interpret", "journal", "models", "node", "patience",
+        "provider-fakes", "release", "shot", "store", "tui", "wire",
     },
     # Qualification owns environment-dependent provider and performance
     # checks while reusing the network harness rather than shipping it.

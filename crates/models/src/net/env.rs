@@ -974,10 +974,8 @@ impl Net {
         let id = self.plan.hosts[h].id;
         let mut held = self.w.hosts[h].held.clone();
         Some(with_scratch(|scratch| {
-            let (slot, dir) = scratch.of(id);
-            let home = agents_home(id);
-            slot.with_core(&mut held, (dir.path(), &home), |daemon| read(daemon))
-                .0
+            let (slot, _) = scratch.of(id);
+            slot.with_core(&mut held, |daemon| read(daemon)).0
         }))
     }
 
@@ -1187,8 +1185,6 @@ impl Net {
     }
 }
 
-/// Where a host's core is told its agents' directories live whenever it
-/// is taken back, so its checkpoint names the same place on every thread.
 /// How long a cut link goes unnoticed at the least: its keepalives must go
 /// unanswered first, so a link that was cut never reads as one that
 /// dropped as soon as it came up, which its host pauses before dialling
@@ -1428,7 +1424,7 @@ impl Transition<'_> {
         dir.lay_out(&host.journals);
         let home = agents_home(id);
         let mut broke = None;
-        let (out, print) = slot.with_core(&mut host.held, (dir.path(), &home), |daemon| {
+        let (out, print) = slot.with_core(&mut host.held, |daemon| {
             let mut out = Vec::new();
             for input in inputs {
                 let kind = input.kind();
@@ -1532,9 +1528,9 @@ impl Transition<'_> {
         });
         let options = StartOptions {
             generation,
-            agents: agents.clone(),
             replicas: home.join("replicas"),
             budget: StepBudget::UNLIMITED,
+            ..StartOptions::default()
         };
         let entry = wire::HostEntry {
             generation,
@@ -1549,50 +1545,45 @@ impl Transition<'_> {
         let running = &self.w.running;
         let (slot, dir) = self.scratch.of(id);
         dir.lay_out(&host.journals);
-        let (out, print) = slot.start_with(
-            &mut host.held,
-            (dir.path(), &agents),
-            |store| Daemon::new(store, options),
-            |daemon| {
-                let mut out = Vec::new();
-                let mut step = |daemon: &mut Daemon, input: Input| daemon.step(input, &mut out);
-                step(
-                    daemon,
-                    Input::Tick {
-                        now_ms: now,
-                        link_ms: link,
-                    },
-                );
-                step(daemon, Input::Configure(settings));
-                step(daemon, Input::Entropy(entropy));
-                daemon.trust_for_test(trust_of(trusted));
-                step(daemon, Input::Started);
-                step(daemon, Input::OwnHost(Box::new(entry)));
-                let live: Vec<AgentId> = daemon
-                    .store()
-                    .agents()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|row| row.agent.host == id.0 && row.lifecycle == Lifecycle::Live as i32)
-                    .filter_map(|row| AgentId::from_slice(&row.agent.agent))
-                    .collect();
-                for agent in live {
-                    if running.contains_key(&agent) {
-                        step(daemon, Input::Adopted { agent });
-                        step(daemon, Input::Nudge { agent });
-                    } else {
-                        let ended = Ended::Away;
-                        step(daemon, Input::ControlClosed { agent, ended });
-                    }
+        let (out, print) = slot.start_with(&mut host.held, options, |daemon| {
+            let mut out = Vec::new();
+            let mut step = |daemon: &mut Daemon, input: Input| daemon.step(input, &mut out);
+            step(
+                daemon,
+                Input::Tick {
+                    now_ms: now,
+                    link_ms: link,
+                },
+            );
+            step(daemon, Input::Configure(settings));
+            step(daemon, Input::Entropy(entropy));
+            daemon.trust_for_test(trust_of(trusted));
+            step(daemon, Input::Started);
+            step(daemon, Input::OwnHost(Box::new(entry)));
+            let live: Vec<AgentId> = daemon
+                .store()
+                .agents()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|row| row.agent.host == id.0 && row.lifecycle == Lifecycle::Live as i32)
+                .filter_map(|row| AgentId::from_slice(&row.agent.agent))
+                .collect();
+            for agent in live {
+                if running.contains_key(&agent) {
+                    step(daemon, Input::Adopted { agent });
+                    step(daemon, Input::Nudge { agent });
+                } else {
+                    let ended = Ended::Away;
+                    step(daemon, Input::ControlClosed { agent, ended });
                 }
-                step(daemon, Input::Swept);
-                // The edge is up: every host listens at its address in the
-                // net, and dials what it trusts.
-                step(daemon, Input::Listening(true));
-                step(daemon, Input::Dialling(Dialling::All));
-                out
-            },
-        );
+            }
+            step(daemon, Input::Swept);
+            // The edge is up: every host listens at its address in the
+            // net, and dials what it trusts.
+            step(daemon, Input::Listening(true));
+            step(daemon, Input::Dialling(Dialling::All));
+            out
+        });
         host.print = Some(print);
         dir.reclaimed(&mut host.journals);
         let scratch = dir.path().to_path_buf();
@@ -2613,8 +2604,7 @@ fn rehome(output: Output, scratch: &Path, home: &Path) -> Output {
             dir: moved(dir),
             spec,
         },
-        // The core's checkpoint names the directory it was taken in, and
-        // nothing here reads the state back.
+        // Nothing here reads the state back, so the net need not hold it.
         Output::Checkpoint { .. } => Output::Checkpoint { state: Vec::new() },
         other => other,
     }
@@ -2832,9 +2822,10 @@ struct Scratch {
 
 impl Scratch {
     fn of(&mut self, id: HostId) -> &mut (Slot, Dir) {
-        self.hosts
-            .entry(id)
-            .or_insert_with(|| (Slot::new(&id.0), Dir::new()))
+        self.hosts.entry(id).or_insert_with(|| {
+            let dir = Dir::new();
+            (Slot::beside(&id.0, &dir), dir)
+        })
     }
 }
 

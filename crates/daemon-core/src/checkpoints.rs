@@ -552,6 +552,7 @@ mod tests {
         let mut restored = Daemon::restore(
             crate::Checkpoint::from_bytes(&state).expect("it reads"),
             main,
+            dir.path().join("agents"),
         )
         .expect("it restores");
         assert_eq!(restored.checkpoint(), daemon.checkpoint());

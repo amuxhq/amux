@@ -2142,18 +2142,6 @@ impl Net {
         )?)
     }
 
-    /// Binds `host`'s socket to IPv6 loopback alone from its next start,
-    /// so it reaches and is reached over IPv6 only. In-process hosts only.
-    pub fn bind_ipv6_only(&mut self, host: &str) -> Result<Ack, NetError> {
-        self.in_process(host, "binding IPv6 only")?;
-        self.hosts
-            .get_mut(host)
-            .ok_or_else(|| NetError::NoHost(host.to_owned()))?
-            .decl
-            .ipv6_only = true;
-        Ok(self.ack(format!("{host} binds IPv6 only from its next start")))
-    }
-
     /// The SSH target that reaches `host`: give it to a peer as its way
     /// there. The stand-in on the PATH runs the far host's `amux` for it.
     pub fn ssh_target(&self, host: &str) -> Result<String, NetError> {
@@ -2269,17 +2257,6 @@ impl Net {
         let addr = gate.addr();
         self.relay_gate = Some(gate);
         Ok(addr)
-    }
-
-    /// What the gate in front of the relay does to each datagram from now
-    /// on: delay, loss, or neither.
-    pub fn set_relay_faults(&self, faults: Faults) -> Result<Ack, NetError> {
-        let gate = self.relay_gate.as_ref().ok_or_else(|| NetError::Host {
-            host: "relay".to_owned(),
-            error: "has no gate; ask for one first".to_owned(),
-        })?;
-        gate.set_faults(faults);
-        Ok(self.ack(format!("the relay's gate: {}", faults.describe())))
     }
 
     /// Takes UDP away from the host's way to the relay, or gives it back:

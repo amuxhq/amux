@@ -10,14 +10,9 @@ use support::Host as Line;
 
 use crate::support;
 
-/// A cancel answer was seen in a probe of Claude 2.1.282, not in any
-/// recording yet.
 /// Claude 2.1.283 sends control_cancel_request when an interrupt lands on an
 /// open permission request, as seen live; no recording has one yet.
-const EXEMPT: &[&str] = &[
-    "control_response/cancel_async_message/success",
-    "control_cancel_request",
-];
+const EXEMPT: &[&str] = &["control_cancel_request"];
 
 struct Host(Line);
 
@@ -219,43 +214,6 @@ async fn a_default_message_mid_turn_folds_at_the_next_tool_result_and_later_wait
             "lifecycle cccccccc completed",
         ]
     );
-    assert_eq!(host.close().await, 0);
-}
-
-#[tokio::test]
-async fn cancel_withdraws_only_a_message_still_queued() {
-    let dir = tempfile::tempdir().unwrap();
-    let gate = dir.path().join("gate");
-    let mut host = Host::start(json!({"steps": [
-        {"wait_for": {"path": gate}},
-        "turn_end",
-    ]}))
-    .await;
-    host.prompt(A, "Wait", None).await;
-    host.until(|frame| frame["isReplay"] == true).await;
-    host.prompt(B, "Queued", None).await;
-    host.until(|frame| frame["state"] == "queued" && frame["command_uuid"] == B)
-        .await;
-    for (id, target) in [("req_1", B), ("req_2", A)] {
-        host.send(json!({"type":"control_request","request_id":id,
-            "request":{"subtype":"cancel_async_message","message_uuid":target}}))
-            .await;
-    }
-    let first = host
-        .until(|frame| frame["type"] == "control_response")
-        .await;
-    assert_eq!(first["response"]["response"]["cancelled"], true);
-    let second = host
-        .until(|frame| frame["type"] == "control_response")
-        .await;
-    assert_eq!(second["response"]["response"]["cancelled"], false);
-    assert!(
-        host.trace()
-            .contains(&"lifecycle bbbbbbbb cancelled".to_owned())
-    );
-    std::fs::write(&gate, "").unwrap();
-    host.until(|frame| frame["type"] == "result").await;
-    host.until(|frame| frame["state"] == "completed").await;
     assert_eq!(host.close().await, 0);
 }
 
@@ -534,7 +492,6 @@ async fn account_and_session_facts_play_in_recorded_shapes() {
             {"name": "grafana", "status": "needs-auth"},
             {"name": "broken", "status": "failed"},
         ],
-        "context_tokens": 64000,
         "edit_files": true,
         "chunk_ms": 30,
         "steps": [
@@ -612,11 +569,7 @@ async fn account_and_session_facts_play_in_recorded_shapes() {
         .until(|frame| frame["type"] == "rate_limit_event")
         .await;
     assert_eq!(reached["rate_limit_info"]["status"], "rejected");
-    let result = host.until(|frame| frame["type"] == "result").await;
-    assert_eq!(
-        result["modelUsage"]["claude-fake-1"]["contextWindow"],
-        200000
-    );
+    host.until(|frame| frame["type"] == "result").await;
     host.prompt(B, "Again", None).await;
     let error = host
         .until(|frame| frame["is_api_error_message"] == true)

@@ -13,36 +13,36 @@ use provider_fakes::script::{Outcome, Script, Step, Tool, ToolClass};
 use testnet::{AgentDecl, HostDecl, Topology};
 
 /// The machines the phone pairs with, every one with a LAN listener.
-pub const HOSTS: [&str; 3] = ["desk", "laptop", "studio"];
+const HOSTS: [&str; 3] = ["desk", "laptop", "studio"];
 /// The relay account every machine, and the phone away from home, signs in to.
-pub const ACCOUNT: &str = "ada";
+const ACCOUNT: &str = "ada";
 /// The agents the fleet holds, spread over the machines.
-pub const FLEET_AGENTS: usize = 40;
+const FLEET_AGENTS: usize = 40;
 /// The agent that streams on cue, on the first machine, into a
 /// conversation already `LONG_ROWS` long: the transcript is measured with
 /// history behind it, as a person's is.
-pub const STREAM_AGENT: &str = "stream";
+const STREAM_AGENT: &str = "stream";
 /// The rows its turn writes before the first cue.
-pub const LONG_ROWS: usize = 1_000;
+const LONG_ROWS: usize = 1_000;
 /// How many streamed samples a run can take: each waits for its own gate.
-pub const STREAM_SAMPLES: usize = 5;
+const STREAM_SAMPLES: usize = 5;
 /// Rows per streamed sample, and the pause between them: 50 rows a second
 /// for 20 seconds, the rate the transcript is held to.
-pub const STREAM_ROWS: usize = 1_000;
-pub const STREAM_PACE_MS: u64 = 20;
+const STREAM_ROWS: usize = 1_000;
+const STREAM_PACE_MS: u64 = 20;
 
 /// The gate the runner opens to start streamed sample `at`.
-pub fn stream_gate(at: usize) -> String {
+fn stream_gate(at: usize) -> String {
     format!("stream-{at}")
 }
 
 /// A fleet agent's name.
-pub fn fleet_agent(at: usize) -> String {
+fn fleet_agent(at: usize) -> String {
     format!("agent-{at:02}")
 }
 
 /// The machine fleet agent `at` runs on: dealt round the machines.
-pub fn fleet_host(at: usize) -> &'static str {
+fn fleet_host(at: usize) -> &'static str {
     HOSTS[at % HOSTS.len()]
 }
 
@@ -69,7 +69,7 @@ impl Dealer {
 /// fixed seed. Percentages are of rows: 55 prose, 20 short tool calls, 10
 /// exploring reads, 5 commands with output over two hundred lines, 5 edits,
 /// 5 thinking.
-pub fn long_rows(rows: usize) -> Vec<Step> {
+fn long_rows(rows: usize) -> Vec<Step> {
     let mut dealer = Dealer(1);
     let mut steps = Vec::with_capacity(rows);
     for at in 0..rows {
@@ -185,7 +185,7 @@ fn prose(at: usize, shape: u64) -> String {
 /// The streaming agent's one turn: `LONG_ROWS` of history, then
 /// `STREAM_SAMPLES` bursts, each waiting on its gate, each `STREAM_ROWS`
 /// numbered rows `STREAM_PACE_MS` apart.
-pub fn stream_script() -> Script {
+fn stream_script() -> Script {
     let mut steps = long_rows(LONG_ROWS);
     for at in 0..STREAM_SAMPLES {
         steps.push(Step::WaitFor {

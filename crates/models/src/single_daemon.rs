@@ -56,10 +56,6 @@ use crate::{Machine, Property};
 
 const OWN: &[u8; 16] = b"own-host-0000000";
 const AGENT: AgentId = AgentId(*b"agent-0000000000");
-/// Where the core is told agent directories live whenever it checkpoints,
-/// so its checkpoint names the same place on every thread. A step points it
-/// at this thread's directory first.
-const AGENTS: &str = "/agents";
 /// Each frame the agent writes is a segment of its own, so reclaiming a
 /// segment is reclaiming a frame.
 const SEGMENT_BYTES: u64 = 1;
@@ -1030,7 +1026,6 @@ fn start(next: &mut State) {
             store,
             StartOptions {
                 generation,
-                agents: PathBuf::from(AGENTS),
                 // The model is a function of its actions alone, so no step
                 // may ask for a dump because the machine ran slowly.
                 budget: StepBudget::UNLIMITED,
@@ -1386,16 +1381,13 @@ impl Scratch {
         self.lay_out(journal);
         let checkpoint = Checkpoint::from_bytes(core).expect("a checkpoint reads");
         let store = self.store.take().expect("the scratch store is home");
-        let mut daemon = Daemon::restore(checkpoint, store).expect("a checkpoint restores");
-        daemon.move_agents(self.agents.path().to_path_buf());
-        daemon
+        let agents = self.agents.path().to_path_buf();
+        Daemon::restore(checkpoint, store, agents).expect("a checkpoint restores")
     }
 
-    /// Takes the store back from a core, and the core's checkpoint as it
-    /// names the agents' place on every thread. The store is then this
-    /// scratch's, holding whatever the core left in it.
-    fn put_back(&mut self, mut daemon: Daemon) -> (Vec<u8>, &Sqlite) {
-        daemon.move_agents(PathBuf::from(AGENTS));
+    /// Takes the store back from a core, and the core's checkpoint. The
+    /// store is then this scratch's, holding whatever the core left in it.
+    fn put_back(&mut self, daemon: Daemon) -> (Vec<u8>, &Sqlite) {
         let core = daemon.checkpoint().to_bytes();
         self.store = Some(daemon.into_store());
         self.holds = Dump::default();

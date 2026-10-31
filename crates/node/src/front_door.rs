@@ -51,8 +51,6 @@ pub(crate) fn info(state: ProfileState) -> wire::Profile {
     wire::Profile {
         email: account.email.unwrap_or_default(),
         account_name: account.name.unwrap_or_default(),
-        account_subject: account.subject,
-        account_picture: account.picture.unwrap_or_default(),
         cloud: Some(wire::CloudStanding {
             standing: Some(standing),
         }),

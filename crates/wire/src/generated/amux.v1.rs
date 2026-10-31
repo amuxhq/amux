@@ -10288,14 +10288,6 @@ pub struct Profile {
     pub socket_path: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "6")]
     pub cloud: ::core::option::Option<CloudStanding>,
-    /// The bound account's subject at its service, which stays after a
-    /// sign-out; empty when unbound. What tells two profiles' accounts apart.
-    #[prost(string, tag = "7")]
-    pub account_subject: ::prost::alloc::string::String,
-    /// Where the bound account's profile picture is, as its service said at
-    /// sign-in; empty when it has none or the profile is unbound.
-    #[prost(string, tag = "8")]
-    pub account_picture: ::prost::alloc::string::String,
 }
 impl ::prost::Name for Profile {
     const NAME: &'static str = "Profile";

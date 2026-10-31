@@ -201,8 +201,8 @@ The account disc at the top left of the Agents list opens a menu of the
 accounts, Add Account and Settings, a sheet with its own navigation stack.
 The disc shows the account's profile picture: amux.sh names it in the
 `picture` claim of its userinfo answer, the daemon keeps it with the account
-when it binds the profile, and `Profile.account_picture` carries it to
-the app. Initials stand in until it loads, and where there is none.
+when it binds the profile, and the embedded runtime's account view carries
+it to the app. Initials stand in until it loads, and where there is none.
 
 What the account buys changes away from the phone: bought on amux.sh,
 cancelled in the App Store, lapsed. `EntitlementWatch` asks amux.sh again as

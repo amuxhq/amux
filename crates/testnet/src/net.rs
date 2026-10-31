@@ -2069,7 +2069,7 @@ impl Net {
             // Only a host whose relay link is up has anything to learn now;
             // any other learns the tier when its link comes up.
             if !info.is_some_and(|info| {
-                info.account_subject == account && info.relay_connected().is_some()
+                info.account_name == account && info.relay_connected().is_some()
             }) {
                 continue;
             }

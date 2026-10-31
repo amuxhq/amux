@@ -10,7 +10,7 @@
 //! beside the binary.
 //!
 //! - One pipe joins it to the child: the child writes `prepared` after
-//!   migrating and looking without writing, the supervisor answers `go`,
+//!   opening its stores and looking without writing, the supervisor answers `go`,
 //!   and end of file means the supervisor is gone and the daemon exits.
 //! - The swap stages the release beside the binary, verifies hash and
 //!   signature, hard-links the current binary to prev and renames the

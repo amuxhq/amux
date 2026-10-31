@@ -280,17 +280,6 @@ tests = [
 ]
 
 [[contract]]
-id = "a-store-with-another-history-is-refused"
-source = "invariant"
-section = "Daemon"
-claim = "A profile store whose recorded migrations are not this build's, as every store written before the release schema is, is refused at open with a message that names the file and says it predates the schema; the daemon does not start on it and the file is left exactly as it was."
-tests = [
-  "store/integration::sqlite::a_store_with_another_history_is_refused_and_named",
-  "store/integration::sqlite::a_store_migrated_by_different_text_is_refused",
-  "node/integration::registry::a_store_from_before_the_release_schema_stops_the_daemon_and_is_kept",
-]
-
-[[contract]]
 id = "a-lagged-stream-says-so"
 source = "invariant"
 section = "Daemon"

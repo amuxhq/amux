@@ -15,8 +15,8 @@
 use prost::Message as _;
 pub use wire::{Append, Attachment, Item, Snapshot, Step};
 
-mod migrations;
 mod rows;
+mod schema;
 mod sqlite;
 
 mod blobs;
@@ -26,8 +26,8 @@ mod retention;
 
 pub use blobs::BlobLru;
 pub use explore::{BlockOrders, Dump};
-pub use migrations::{MIGRATIONS, SCHEMA_STAMP, migration_hash};
 pub use retention::{Sweep, SweepStep};
+pub use schema::SCHEMA_VERSION;
 pub use sqlite::{Durability, OpenError, Sqlite};
 
 /// A paired host as the store keeps it. The two address lists are JSON the

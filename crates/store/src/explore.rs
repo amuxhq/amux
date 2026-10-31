@@ -2,7 +2,7 @@
 //! every row that restores to an equal in-memory store, and read-only views
 //! of an agent's block that checks judge.
 //!
-//! A dump lists every table but the migration record, each row's columns
+//! A dump lists every table, each row's columns
 //! as stored and the rows sorted by their columns, so two stores holding
 //! the same rows dump equal whatever order they were written in. The
 //! markers and reset counts the store keeps in memory travel with it.
@@ -91,7 +91,7 @@ impl Sqlite {
                 .conn
                 .prepare(
                     "SELECT name FROM sqlite_master WHERE type = 'table' \
-                     AND name <> 'schema_migrations' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+                     AND name NOT LIKE 'sqlite_%' ORDER BY name",
                 )?
                 .query_map([], |row| row.get::<_, String>(0))?
                 .collect::<Result<Vec<_>, _>>()?;

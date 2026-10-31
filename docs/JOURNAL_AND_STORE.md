@@ -369,8 +369,8 @@ the connection and are rebuilt as ingest and sources run.
 
 ### Schema
 
-The schema is the migration in
-[`crates/store/src/migrations.rs`](../crates/store/src/migrations.rs).
+The schema is the text in
+[`crates/store/src/schema.rs`](../crates/store/src/schema.rs).
 
 `agents`: one row per agent, own or replica, keyed by `(origin_host, agent_id)`.
 
@@ -425,7 +425,6 @@ The rest:
 | `trusted_hosts` | One row per paired host: its pinned key, name, when it was paired, whether it is on the account, what it last said of itself (signed in, platform), its SSH target, the addresses it last answered at and the addresses it listed with their sources (both JSON). Pairing, unpairing, a key replacement and a rollback commit synced; the rest are ordinary commits. |
 | `drafts` | This machine's clients' unsent draft per agent, an encoded `amux.v1.Draft`. Deleted when it is emptied and when the agent goes. |
 | `recent_directories` | The directories agents were started in, with when each was last used: the 200 newest are kept, and a directory stays after the agents that ran there are deleted. |
-| `schema_migrations` | Each applied migration's number and SHA-256 |
 
 The schema's own text comments every column.
 
@@ -438,39 +437,17 @@ The shipped daemon and the phone runtime install `NoopSender` as the push
 sender, so notification rows are written, fall due and are deleted without a
 push being sent.
 
-### Migrations
+### Schema version
 
-The first migration is the schema the first release ships. From that release
-on, migrations are forward only, append only and additive: a column with a
-default, a table, an index. Every table is `STRICT`, so a value of the wrong
-type is refused rather than stored. Opening a store takes the write lock, checks
-its history and applies the migrations it lacks in one transaction, so the
-history it checked is the one it migrates. Shipped
-text is never edited: the store records each migration's hash in
-`schema_migrations` and refuses to open a file whose history disagrees
-(`OpenError::OtherHistory`).
-
-That refusal is also what happens to a store written before the release
-schema: its history is a different first migration, so it is never carried
-forward. Opening it fails with an error that names the file and says it
-predates the release schema; the daemon does not start, and the file is left
-exactly as it was, for the person to move aside.
-
-`user_version` holds the schema stamp, `SCHEMA_STAMP`: the minimum number of
-migrations a binary must know to read the file. A binary opens any store whose
-stamp is at most the migrations it ships, so an older binary opens a store a
-later one migrated; one that is too old fails with `OpenError::TooNew`. The
-history is checked before the stamp, so a store from before the release reads
-as that, not as one from a newer build. Because an older binary keeps writing
-a store a later one migrated, every write names its columns and updates a held
-row in place (`ON CONFLICT ... DO UPDATE`), never `INSERT OR REPLACE`: a
-replace rewrites the whole row and would reset a column the older binary does
-not know. `crates/store/tests/fixtures/store-v1.sqlite` is a store the first
-release's schema wrote; every later build must open it and read its rows. A
-drop, rename or rewrite ships only after the stamp has been raised past every
-binary that read the earlier shape.
-The file's `application_id` marks it as an amux store; any other SQLite file is
-refused as foreign.
+The schema is one text and there are no migrations. Every table is `STRICT`, so a value of the wrong
+type is refused rather than stored. Opening a fresh file takes the write lock
+and creates the whole schema in one transaction, stamping the file's
+`application_id` (an amux store) and `user_version` (`SCHEMA_VERSION`). Any
+other SQLite file is refused as foreign, and a store stamped with another
+version, as every store written before a schema change is, fails with
+`OpenError::OtherSchema`: the error names the file, the daemon does not start,
+and the file is left exactly as it was, for the person to move aside. A schema
+change raises `SCHEMA_VERSION`.
 
 ### Own rows and replica rows
 
@@ -589,14 +566,14 @@ loss and unclean reboots:
 
 `cargo run -p models --bin properties` prints each in full. What the models
 do not reach, the files themselves (a torn tail, a frame cut at a byte, a
-migration, the SQLite file on another platform), is held by named tests,
+store of another schema, the SQLite file on another platform), is held by named tests,
 mapped in [`tests/contracts.toml`](../tests/contracts.toml). The main ones:
 
 | Where | What it holds |
 | --- | --- |
 | [`crates/journal/tests/journal.rs`](../crates/journal/tests/journal.rs) | Segment naming, rotation, torn tails, reclaim below a cursor |
 | [`crates/store/tests/conformance.rs`](../crates/store/tests/conformance.rs) | Commit, absorb, pages, cuts, lookups and deletes |
-| [`crates/store/tests/sqlite.rs`](../crates/store/tests/sqlite.rs) | Migrations, refusing a store with another history, one transaction per commit, reopening |
+| [`crates/store/tests/sqlite.rs`](../crates/store/tests/sqlite.rs) | Refusing a store of another schema, one transaction per commit, reopening |
 | [`crates/store/tests/retention.rs`](../crates/store/tests/retention.rs) | Own and replica sweeps |
 | [`crates/node/tests/single_daemon.rs`](../crates/node/tests/single_daemon.rs) | Ingest, re-derivation, power loss and the generation bump |
 

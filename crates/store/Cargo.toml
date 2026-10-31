@@ -14,7 +14,6 @@ bundled = ["rusqlite/bundled"]
 [dependencies]
 prost = { workspace = true }
 rusqlite = { workspace = true }
-sha2 = { workspace = true }
 thiserror = { workspace = true }
 wire = { workspace = true }
 

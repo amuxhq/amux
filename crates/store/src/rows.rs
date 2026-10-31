@@ -628,9 +628,6 @@ impl Rows<'_> {
             End::TurnEnded(turn) => (Some(turn.text.clone()), None, Some(turn.outcome), turn.last),
             End::Exited(exited) => (None, exited.ended.clone(), None, false),
         };
-        // An upsert naming its columns, never a replace: a replace rewrites
-        // the whole row, so a binary older than a migration that added a
-        // column would reset that column on every write.
         self.conn
             .prepare_cached(
                 "INSERT INTO deliveries (child_id, incarnation, turn_id, parent_incarnation, \
@@ -685,7 +682,6 @@ impl Rows<'_> {
     }
 
     pub(crate) fn put_notification(&self, notification: &Notification) -> Result<(), StoreError> {
-        // An upsert, for the reason `put_delivery` gives.
         self.conn
             .prepare_cached(
                 "INSERT INTO notifications (agent_id, revision, due_at_ms, name, working_on, \

@@ -640,7 +640,7 @@ pub struct Profile {
     pub generation: u64,
     /// The profile's directory.
     pub dir: PathBuf,
-    /// The profile's store, open and migrated.
+    /// The profile's store, open.
     pub store: Sqlite,
     pub launch: Launch,
     pub clock: Arc<dyn Clock>,

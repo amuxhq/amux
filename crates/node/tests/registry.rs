@@ -36,63 +36,6 @@ async fn working(runtime: &node::ProfileRuntime, id: uuid::Uuid) -> Result<(), S
         .ok_or_else(|| format!("phase {phase}"))
 }
 
-/// A profile store written before the release schema stops the daemon:
-/// the error names the file and says why, and the file stays as it was
-/// for the person to move aside.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_store_from_before_the_release_schema_stops_the_daemon_and_is_kept() {
-    let install = Install::new();
-    let host = install.profile;
-    let path = install.profile_dir().join(node::STORE);
-    {
-        // The history a store written before the release recorded: seven
-        // migrations, the first of them not this build's.
-        let store = store::Sqlite::open(&path, host.as_bytes().to_vec()).unwrap();
-        let conn = store.connection();
-        conn.execute(
-            "UPDATE schema_migrations SET sha256 = \
-             'c12ecbd4ad0f378ef242319c0f137863c19e1dc5ef5a7310deeb951276b15a04' WHERE id = 1",
-            [],
-        )
-        .unwrap();
-        for id in 2..=7 {
-            conn.execute(
-                "INSERT INTO schema_migrations (id, sha256) VALUES (?1, 'pre-release')",
-                [id],
-            )
-            .unwrap();
-        }
-        conn.pragma_update(None, "user_version", 7).unwrap();
-    }
-    let before = std::fs::read(&path).unwrap();
-
-    let started = node::start(
-        install.options("boot-1", install.launch("idle", vec![])),
-        None,
-    )
-    .await;
-    let Err(error) = started else {
-        panic!("a daemon started on a store from before the release schema");
-    };
-    assert!(
-        matches!(
-            error,
-            StartError::Store {
-                error: store::OpenError::OtherHistory { id: 1, .. },
-                ..
-            }
-        ),
-        "{error}"
-    );
-    let message = error.to_string();
-    assert!(message.contains(&path.display().to_string()), "{message}");
-    assert!(
-        message.contains("predates this release's store schema"),
-        "{message}"
-    );
-    assert_eq!(std::fs::read(&path).unwrap(), before, "the store is kept");
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn the_installation_lock_admits_one_daemon() {
     let install = Install::new();
@@ -249,7 +192,7 @@ async fn startup_prepares_after_looking_and_writes_only_after_go() {
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(stamp, store::SCHEMA_STAMP, "migrated before prepared");
+        assert_eq!(stamp, store::SCHEMA_VERSION, "created before prepared");
     }
     assert!(
         install.agent_dir(orphan).exists(),

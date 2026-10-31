@@ -155,7 +155,7 @@ before anything else runs, so nothing it starts inherits them. The pipe carries
 three things:
 
 1. **`prepared`**, written by the daemon once it has taken the installation
-   lock, migrated its stores and looked at every agent directory without
+   lock, opened its stores and looked at every agent directory without
    writing to any of them.
 2. **`go`**, the supervisor's answer. Only after `go` does the daemon finish
    its startup sweep, bind its sockets and serve.
@@ -164,8 +164,8 @@ three things:
 
 A daemon with no pipe has no supervisor and goes straight on. Before `go`,
 nothing the daemon has done needs undoing if the supervisor puts the previous
-binary back: the only writes are the generation file and the store migration,
-which from the first release on is additive. That is what makes activation the
+binary back: the only writes are the generation file and creating a profile
+store that did not exist. That is what makes activation the
 rollback checkpoint. The
 daemon's startup order is described in [Architecture](ARCHITECTURE.md).
 
@@ -297,8 +297,8 @@ three ways:
 
 Rollback restores the binary only, and only before activation. There is no
 store backup: the store the previous binary reopens holds nothing the new one
-wrote except its migration, which from the first release on is additive,
-transactional and stamped as a minimum version. A bad release that has already activated is fixed by a
+wrote, because a binary refuses a store of another schema version rather than
+change it. A bad release that has already activated is fixed by a
 corrective release with a higher version, never by moving back.
 
 The supervisor needs write access to the directory holding the `amux` binary,

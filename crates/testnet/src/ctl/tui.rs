@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use clap::{Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 use unicode_width::UnicodeWidthChar as _;
 
 use super::session::{Folder, Outcome, binary};
@@ -1359,15 +1359,15 @@ fn run_end(run: &Run) -> usize {
             .sum::<usize>()
 }
 
-/// For the frame's JSON in tests.
-#[allow(dead_code)]
-fn frame_value(styled: &str, cols: u16, rows: u16) -> Value {
-    serde_json::to_value(frame(styled, cols, rows, "#ffffff", "#000000", None)).unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The frame's JSON.
+    fn frame_value(styled: &str, cols: u16, rows: u16) -> serde_json::Value {
+        serde_json::to_value(frame(styled, cols, rows, "#ffffff", "#000000", None))
+            .unwrap_or_default()
+    }
 
     /// A copied file reaches the clipboard as a file manager writes it, so
     /// a name with spaces or other bytes comes back as the same path.

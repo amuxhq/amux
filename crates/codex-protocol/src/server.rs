@@ -403,7 +403,6 @@ method_enum! {
         "item/fileChange/requestApproval" => FileChangeApproval(FileChangeApprovalParams),
         "item/permissions/requestApproval" => PermissionsApproval(PermissionsApprovalParams),
         "item/tool/requestUserInput" => RequestUserInput(RequestUserInputParams),
-        "item/tool/call" => ToolCall(ToolCallParams),
         "mcpServer/elicitation/request" => Elicitation(ElicitationParams),
     }
 }
@@ -415,7 +414,6 @@ impl ServerRequest {
             Self::FileChangeApproval(p) => &p.thread_id,
             Self::PermissionsApproval(p) => &p.thread_id,
             Self::RequestUserInput(p) => &p.thread_id,
-            Self::ToolCall(p) => &p.thread_id,
             Self::Elicitation(p) => &p.thread_id,
         }
     }
@@ -606,18 +604,6 @@ pub struct QuestionOption {
     pub extra: Extra,
 }
 
-/// A call of one of the dynamic tools amux gave the thread.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolCallParams {
-    pub thread_id: String,
-    pub tool: String,
-    /// The tool's arguments, as the model wrote them.
-    pub arguments: Value,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
 /// An MCP server asking the person something through Codex.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -781,16 +767,6 @@ pub struct Skill {
     pub path: String,
     pub enabled: bool,
     pub scope: String,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadListResponse {
-    pub data: Vec<Thread>,
-    #[serde(default)]
-    pub next_cursor: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }

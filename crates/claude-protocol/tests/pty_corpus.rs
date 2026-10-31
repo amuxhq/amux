@@ -1,12 +1,11 @@
 //! Every transcript row and hook payload in every terminal Claude recording
-//! decodes with nothing left unknown and encodes back to the same JSON. A
-//! failure here is provider drift, or a type that does not match what Claude
-//! writes.
+//! decodes with nothing left unknown. A failure here is provider drift, or a
+//! type that does not match what Claude writes.
 
 use claude_protocol::{hooks, transcript};
 use serde_json::Value;
 
-use crate::{differ, fixtures};
+use crate::fixtures;
 
 /// A row the recorder's transcript tailer adds when it has read the file
 /// to its end; amux's, not Claude's.
@@ -97,36 +96,6 @@ fn every_recorded_row_and_payload_is_known() {
 }
 
 #[test]
-fn every_recorded_row_and_payload_encodes_back_to_the_same_json() {
-    let mut failures = Vec::new();
-    for (place, line) in lines() {
-        let (written, encoded) = match &line {
-            Line::Row(row) => (
-                row,
-                transcript::encode(&transcript::decode(row.as_bytes()).expect("decodes")),
-            ),
-            Line::Hook(payload) => (
-                payload,
-                hooks::encode(&hooks::decode(payload.as_bytes()).expect("decodes")),
-            ),
-        };
-        let written: Value = serde_json::from_str(written).expect("line is JSON");
-        let again: Value = serde_json::from_slice(&encoded).expect("encoded is JSON");
-        if written != again {
-            let mut differences = Vec::new();
-            differ("", &written, &again, &mut differences);
-            failures.push(format!("{place}: {}", differences.join(", ")));
-        }
-    }
-    assert!(
-        failures.is_empty(),
-        "{} lines changed:\n{}",
-        failures.len(),
-        failures.join("\n")
-    );
-}
-
-#[test]
 fn an_invented_row_or_payload_is_unknown_and_fails_strict() {
     let row = br#"{"type":"teleport","destination":"mars","sessionId":"s"}"#;
     match transcript::decode(row).expect("an object decodes") {
@@ -180,6 +149,4 @@ fn a_queued_prompt_with_an_image_reads_as_blocks() {
         blocks.iter().map(|block| block.kind()).collect::<Vec<_>>(),
         ["text", "image"]
     );
-    let again: Value = serde_json::from_slice(&transcript::encode(&decoded)).unwrap();
-    assert_eq!(again, row);
 }

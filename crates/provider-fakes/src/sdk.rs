@@ -4,9 +4,8 @@
 //! message's `uuid` is echoed on its `isReplay` reflection (with
 //! `--replay-user-messages`) and names its `command_lifecycle` frames
 //! (queued, started, completed or cancelled); a message written while a turn
-//! runs is queued, and at default priority folded into that turn at its next
-//! tool result, so one `result` closes the turn for all of them; `later`
-//! waits for its own turn; `now` cuts the running turn short and runs next.
+//! runs is queued, and folded into that turn at its next tool result, so one
+//! `result` closes the turn for all of them.
 //! Asks are control requests (`can_use_tool` for permissions, questions and
 //! plans, `elicitation` for a tool server's form) that block the turn until
 //! the host's control response.
@@ -87,19 +86,6 @@ struct Queued {
     message: Value,
 }
 
-enum Priority {
-    Now,
-    Next,
-    Later,
-}
-
-/// Why a turn stopped before its steps did.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Cut {
-    Interrupted,
-    Preempted,
-}
-
 struct Engine {
     out: Out<Stdout>,
     input: mpsc::UnboundedReceiver<Value>,
@@ -124,8 +110,7 @@ struct Engine {
     ids: Ids,
     /// Messages that start turns of their own, in order.
     queue: VecDeque<Queued>,
-    /// Default-priority messages written mid-turn, folded at the next tool
-    /// result.
+    /// Messages written mid-turn, folded at the next tool result.
     folding: Vec<Queued>,
     /// Whether a turn is running.
     busy: bool,
@@ -133,7 +118,8 @@ struct Engine {
     running: Option<String>,
     /// Command uuids folded into the running turn.
     absorbed: Vec<String>,
-    cut: Option<Cut>,
+    /// The host interrupted the running turn.
+    interrupting: bool,
     /// The interrupt refused a call whose permission it cancelled.
     refused_call: bool,
     answers: BTreeMap<String, Value>,
@@ -229,7 +215,7 @@ impl Engine {
             busy: false,
             running: None,
             absorbed: Vec::new(),
-            cut: None,
+            interrupting: false,
             refused_call: false,
             answers: BTreeMap::new(),
             turns: 0,
@@ -401,7 +387,7 @@ impl Engine {
             }
             "interrupt" => {
                 if self.busy {
-                    self.cut = Some(Cut::Interrupted);
+                    self.interrupting = true;
                 }
                 Some(json!({ "still_queued": self.still_queued() }))
             }
@@ -485,25 +471,13 @@ impl Engine {
             uuid: frame["uuid"].as_str().map(str::to_owned),
             message: frame["message"].clone(),
         };
-        let priority = match frame["priority"].as_str() {
-            Some("now") => Priority::Now,
-            Some("later") => Priority::Later,
-            _ => Priority::Next,
-        };
         if let Some(uuid) = queued.uuid.clone() {
             self.lifecycle(&uuid, "queued").await;
         }
-        if !self.busy {
+        if self.busy {
+            self.folding.push(queued);
+        } else {
             self.queue.push_back(queued);
-            return;
-        }
-        match priority {
-            Priority::Later => self.queue.push_back(queued),
-            Priority::Next => self.folding.push(queued),
-            Priority::Now => {
-                self.cut = Some(Cut::Preempted);
-                self.queue.push_front(queued);
-            }
         }
     }
 
@@ -641,7 +615,7 @@ impl Engine {
     async fn turn(&mut self, first: Queued) -> Option<i32> {
         self.busy = true;
         self.turns += 1;
-        self.cut = None;
+        self.interrupting = false;
         self.running = None;
         self.absorbed.clear();
         self.last_text.clear();
@@ -681,7 +655,7 @@ impl Engine {
         } else {
             loop {
                 self.drain().await;
-                if self.cut.is_some() {
+                if self.interrupting {
                     break None;
                 }
                 let Some(step) = crate::script::next_step(&mut self.steps) else {
@@ -722,7 +696,7 @@ impl Engine {
                     Step::Ask(ask) => {
                         calls += 1;
                         self.ask(&request, &message, ask).await;
-                        if self.cut.is_none() {
+                        if !self.interrupting {
                             self.fold().await;
                         }
                         request = self.ids.next("req_fake");
@@ -730,7 +704,7 @@ impl Engine {
                         self.blocks = 0;
                     }
                     Step::WaitFor { path } => {
-                        while !path.exists() && self.cut.is_none() {
+                        while !path.exists() && !self.interrupting {
                             self.pump().await;
                         }
                     }
@@ -738,7 +712,7 @@ impl Engine {
                     Step::Pause { ms } => {
                         let until =
                             tokio::time::Instant::now() + std::time::Duration::from_millis(ms);
-                        while tokio::time::Instant::now() < until && self.cut.is_none() {
+                        while tokio::time::Instant::now() < until && !self.interrupting {
                             self.pump().await;
                         }
                     }
@@ -771,42 +745,21 @@ impl Engine {
             return None;
         }
         // Commands folded into a finished turn complete before its result,
-        // the one that started it after; a preempted turn's are cancelled.
+        // the one that started it after.
         let absorbed = std::mem::take(&mut self.absorbed);
         let prompts = self.prompts(&absorbed);
-        let commands = match self.cut {
-            None => {
-                for command in &absorbed {
-                    self.lifecycle(command, "completed").await;
-                }
-                self.succeed(calls, &prompts).await;
-                self.running
-                    .take()
-                    .into_iter()
-                    .map(|c| (c, "completed"))
-                    .collect()
+        let commands: Vec<String> = if self.interrupting {
+            self.interrupted(calls, &prompts).await;
+            self.running.take().into_iter().chain(absorbed).collect()
+        } else {
+            for command in &absorbed {
+                self.lifecycle(command, "completed").await;
             }
-            Some(Cut::Preempted) => {
-                self.preempted(calls, &prompts).await;
-                self.running
-                    .take()
-                    .into_iter()
-                    .chain(absorbed)
-                    .map(|c| (c, "cancelled"))
-                    .collect()
-            }
-            Some(Cut::Interrupted) => {
-                self.interrupted(calls, &prompts).await;
-                self.running
-                    .take()
-                    .into_iter()
-                    .chain(absorbed)
-                    .map(|c| (c, "completed"))
-                    .collect::<Vec<_>>()
-            }
+            self.succeed(calls, &prompts).await;
+            self.running.take().into_iter().collect()
         };
-        for (command, state) in commands {
-            self.lifecycle(&command, state).await;
+        for command in commands {
+            self.lifecycle(&command, "completed").await;
         }
         // Messages waiting to fold when the turn ended run as the next turn.
         let folding = std::mem::take(&mut self.folding);
@@ -839,7 +792,7 @@ impl Engine {
         self.send(frame).await;
     }
 
-    /// Fold every default-priority message written since the last boundary
+    /// Fold every message written since the last boundary
     /// into the running turn: their reflections, then their starts.
     async fn fold(&mut self) {
         self.drain().await;
@@ -859,11 +812,11 @@ impl Engine {
     /// while it runs; an interrupt stops waiting for it.
     async fn run_tool(&mut self, tool: &Tool) {
         let until = tool.outcome.until();
-        while tokio::time::Instant::now() < until && self.cut != Some(Cut::Interrupted) {
+        while tokio::time::Instant::now() < until && !self.interrupting {
             self.pump().await;
         }
         let Some(path) = &tool.wait_for else { return };
-        while !path.exists() && self.cut != Some(Cut::Interrupted) {
+        while !path.exists() && !self.interrupting {
             self.pump().await;
         }
     }
@@ -1057,7 +1010,7 @@ impl Engine {
     /// Stay busy for `ms`, still taking the host's frames.
     async fn pause(&mut self, ms: u64) {
         let until = tokio::time::Instant::now() + std::time::Duration::from_millis(ms);
-        while tokio::time::Instant::now() < until && self.cut.is_none() {
+        while tokio::time::Instant::now() < until && !self.interrupting {
             self.pump().await;
         }
     }
@@ -1343,7 +1296,7 @@ impl Engine {
             }
             // An interrupt cancels an open permission request, as Claude
             // does, and refuses the call it was for.
-            if self.cut == Some(Cut::Interrupted)
+            if self.interrupting
                 && let Some(call) = &call
             {
                 self.send(json!({ "type": "control_cancel_request", "request_id": id }))
@@ -1358,7 +1311,7 @@ impl Engine {
                 self.refused_call = true;
                 return None;
             }
-            if self.cut.is_some() {
+            if self.interrupting {
                 return None;
             }
             if self.eof {
@@ -1584,45 +1537,6 @@ impl Engine {
                 break;
             }
         }
-    }
-
-    /// A `now` message ends the running turn once its call returns, as
-    /// Claude does: a successful result whose terminal reason says the turn
-    /// was cut, with no interruption marker.
-    async fn preempted(&mut self, calls: u32, prompts: &[String]) {
-        self.skip_turn();
-        let mut frame = json!({
-            "type": "result",
-            "subtype": "success",
-            "api_error_status": null,
-            "duration_api_ms": 1,
-            "duration_ms": 1,
-            "fast_mode_disabled_reason": "sdk_opt_in_required",
-            "fast_mode_state": "off",
-            // Claude 2.1.289 also times each response.
-            "first_content_frame_ms": 1,
-            "time_to_request_ms": 1,
-            "ttft_ms": 1,
-            "ttft_stream_ms": 1,
-            "is_error": false,
-            "modelUsage": {},
-            "model_usage_since_last_result": {},
-            "result_index": 0,
-            "safety_stops": 0,
-            "subagent_stats": subagent_stats(),
-            "num_turns": calls + 1,
-            "permission_denials": [],
-            "queued_turn_count": 0,
-            "result": self.last_text,
-            "session_id": self.session,
-            "stop_reason": "tool_use",
-            "terminal_reason": if calls > 0 { "aborted_tools" } else { "aborted_streaming" },
-            "total_cost_usd": 0.0,
-            "usage": result_usage(),
-            "uuid": uuid(),
-        });
-        answered(&mut frame, prompts);
-        self.send(frame).await;
     }
 
     /// An interrupt cuts the turn short the way Claude does: the

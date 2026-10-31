@@ -35,8 +35,10 @@ Decoding is tolerant, because a provider update must not stop a running
 agent. A message the crate does not know is kept whole as `Unknown`; an
 unknown kind of a nested object, or an unknown spelling of a string value,
 is kept as written; unknown fields of a known message are kept in its
-`extra` (Codex) or `extensions` (Claude) map. Encoding writes all of it
-back, so decoding and then encoding a recorded line gives the same JSON.
+`extra` (Codex) or `extensions` (Claude) map. Codex's crate encodes all of
+it back, so decoding and then encoding a recorded Codex line gives the same
+JSON; Claude's encodes only the lines amux writes, since nothing writes
+Claude's output back.
 A missing field the provider always writes, which amux's hand-written test
 inputs often leave out, reads as empty, zero, or none where amux treats it
 as optional. Each crate also has a `strict` decoder that refuses every one
@@ -89,7 +91,7 @@ corpus.
 
 | Check | Where | What it holds |
 |---|---|---|
-| Recording corpus | `codex-protocol/tests/corpus.rs`, `claude-protocol/tests/stream_corpus.rs` and `pty_corpus.rs` | Every recorded line decodes strictly and encodes back to the same JSON, and every recorded answer reads strictly as the response type of the request it answers. |
+| Recording corpus | `codex-protocol/tests/corpus.rs`, `claude-protocol/tests/stream_corpus.rs` and `pty_corpus.rs` | Every recorded line decodes strictly (and, for Codex, encodes back to the same JSON), and every recorded answer reads strictly as the response type of the request it answers. |
 | Specification replay | `codex-specs/tests/spec_replay.rs`, `claude-specs/tests/spec_replay.rs` | The clients, on the protocol types, send exactly what the recordings show. |
 | Fakes' shape check | [`provider-fakes/src/shape.rs`](../crates/provider-fakes/src/shape.rs) | Every frame a fake provider composes has a recorded shape and decodes strictly with its protocol crate. The fakes never use the host crates, so a host bug cannot hide behind code the fakes share. |
 | Dependency policy | `scripts/check-dependency-policy.py` | The protocol crates stay pure, and only the crates listed there use them. |

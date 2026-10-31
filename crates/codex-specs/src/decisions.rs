@@ -16,6 +16,7 @@ use codex_protocol::server::{
 };
 use codex_protocol::thread::{ApprovalsReviewer, AskForApproval, GranularApproval, SandboxMode};
 use codex_protocol::{ClientResponse, Extra};
+use replay_support::live::ASK_TOOL;
 use serde_json::{Value, json};
 
 use super::{
@@ -25,9 +26,8 @@ use super::{
 use crate::client::{Codex, Event, Thread, ThreadEvent, ThreadEventStream};
 
 /// The tool server capture registers in the Codex home for the tool-server
-/// specification, and the one tool it offers.
+/// specification.
 pub const SPEC_TOOL_SERVER: &str = "spec";
-pub const SPEC_TOOL: &str = "ask_the_operator";
 
 /// Reads one turn to completion, answering each server request with what
 /// `respond` returns for it.
@@ -96,7 +96,7 @@ pub(super) async fn tool_server_form(
     let (thread, mut events) = open(codex, thread_config(model, project)).await?;
     thread
         .say(format!(
-            "Call the {SPEC_TOOL} tool from the {SPEC_TOOL_SERVER} tool server twice, one call \
+            "Call the {ASK_TOOL} tool from the {SPEC_TOOL_SERVER} tool server twice, one call \
              at a time: first with word BLUE, then with word LINK. Then reply with what each \
              call returned."
         ))

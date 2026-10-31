@@ -1,7 +1,6 @@
 //! Every line of every headless Claude recording, in both directions,
-//! decodes with nothing left unknown and encodes back to the same JSON. A
-//! failure here is provider drift, or a type that does not match what Claude
-//! writes.
+//! decodes with nothing left unknown. A failure here is provider drift, or a
+//! type that does not match what Claude writes.
 
 use std::collections::HashMap;
 
@@ -83,31 +82,6 @@ fn every_recorded_line_is_known() {
         "{} of {} lines are not known:\n{}",
         failures.len(),
         all.len(),
-        failures.join("\n")
-    );
-}
-
-#[test]
-fn every_recorded_line_encodes_back_to_the_same_json() {
-    let mut failures = Vec::new();
-    for (place, from_claude, line) in lines() {
-        let encoded = if from_claude {
-            stream::encode_output(&stream::decode(line.as_bytes()).expect("decodes"))
-        } else {
-            stream::encode(&stream::decode_input(line.as_bytes()).expect("decodes"))
-        };
-        let written: Value = serde_json::from_str(&line).expect("line is JSON");
-        let again: Value = serde_json::from_slice(&encoded).expect("encoded is JSON");
-        if written != again {
-            let mut differences = Vec::new();
-            differ("", &written, &again, &mut differences);
-            failures.push(format!("{place}: {}", differences.join(", ")));
-        }
-    }
-    assert!(
-        failures.is_empty(),
-        "{} lines changed:\n{}",
-        failures.len(),
         failures.join("\n")
     );
 }

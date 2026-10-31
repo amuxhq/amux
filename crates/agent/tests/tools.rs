@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use agent::local_socket::{LocalListener, LocalStream};
-use agent::{NOT_RUNNING, TOOLS_SOCK, ToolsConfig};
+use agent::{NOT_RUNNING, RETRY_WINDOW, TOOLS_SOCK};
 use prost::Message as _;
 use provider_fakes::{Step, Tool, ToolClass};
 use serde_json::{Value, json};
@@ -468,7 +468,7 @@ struct Mcp {
 }
 
 impl Mcp {
-    async fn start(retry_window: Duration) -> Self {
+    async fn start() -> Self {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("agents").join(interpret::to_hex(&ME));
         let cwd = root.path().join("work");
@@ -484,12 +484,7 @@ impl Mcp {
         std::fs::write(dir.join("spec.1"), spec.encode_to_vec()).unwrap();
         let (to_server, server_in) = tokio::io::duplex(1 << 20);
         let (server_out, from_server) = tokio::io::duplex(1 << 20);
-        tokio::spawn(agent::serve_tools_on(
-            dir.clone(),
-            server_in,
-            server_out,
-            ToolsConfig { retry_window },
-        ));
+        tokio::spawn(agent::serve_tools_on(dir.clone(), server_in, server_out));
         let mut mcp = Self {
             _root: root,
             dir,
@@ -560,11 +555,9 @@ impl Mcp {
     }
 }
 
-const WINDOW: Duration = Duration::from_secs(3);
-
 #[tokio::test(flavor = "multi_thread")]
 async fn the_server_lists_the_seven_tools() {
-    let mut mcp = Mcp::start(WINDOW).await;
+    let mut mcp = Mcp::start().await;
     let listed = mcp.request("tools/list", json!({})).await;
     let names = listed["result"]["tools"]
         .as_array()
@@ -594,7 +587,7 @@ async fn the_server_lists_the_seven_tools() {
 /// they say briefly what each tool the server lists is for, naming it.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_server_says_at_initialize_what_each_tool_is_for() {
-    let mut mcp = Mcp::start(WINDOW).await;
+    let mut mcp = Mcp::start().await;
     let init = mcp
         .request(
             "initialize",
@@ -617,7 +610,7 @@ async fn the_server_says_at_initialize_what_each_tool_is_for() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn agents_lists_the_fleet_read_to_caught_up_and_marks_you() {
-    let mut mcp = Mcp::start(WINDOW).await;
+    let mut mcp = Mcp::start().await;
     let mut fleet = fleet();
     // A live row can already hold the cause its journal ended with, until
     // its daemon marks it exited; the tool says none for a live agent.
@@ -644,7 +637,7 @@ async fn agents_lists_the_fleet_read_to_caught_up_and_marks_you() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn hosts_lists_trusted_hosts_and_this_one() {
-    let mut mcp = Mcp::start(WINDOW).await;
+    let mut mcp = Mcp::start().await;
     let _daemon = Daemon::listen(&mcp.dir, fleet());
     let listed = mcp.ok("hosts", json!({})).await;
     assert_eq!(
@@ -660,7 +653,7 @@ async fn hosts_lists_trusted_hosts_and_this_one() {
 /// call arrived on. The answer is the id the interpreter reads.
 #[tokio::test(flavor = "multi_thread")]
 async fn send_resolves_the_recipient_and_answers_the_envelope_id() {
-    let mut mcp = Mcp::start(WINDOW).await;
+    let mut mcp = Mcp::start().await;
     let fleet = fleet();
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
     let sent = mcp
@@ -691,7 +684,7 @@ async fn send_resolves_the_recipient_and_answers_the_envelope_id() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_says_plainly_when_the_name_or_the_delivery_fails() {
-    let mut mcp = Mcp::start(WINDOW).await;
+    let mut mcp = Mcp::start().await;
     let mut fleet = fleet();
     fleet.ambiguous = vec!["twin".into()];
     fleet.refuse_send = Some(Status::failed_precondition("reviewer has exited"));
@@ -723,7 +716,7 @@ async fn send_says_plainly_when_the_name_or_the_delivery_fails() {
 /// looked up among the trusted ones and the directory is left to it.
 #[tokio::test(flavor = "multi_thread")]
 async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
-    let mut mcp = Mcp::start(WINDOW).await;
+    let mut mcp = Mcp::start().await;
     let fleet = fleet();
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
 
@@ -802,7 +795,7 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
 /// now and its descendants with it. It is not an interrupt.
 #[tokio::test(flavor = "multi_thread")]
 async fn stop_stops_the_named_child_through_the_daemon() {
-    let mut mcp = Mcp::start(WINDOW).await;
+    let mut mcp = Mcp::start().await;
     let fleet = fleet();
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
     assert_eq!(mcp.ok("stop", json!({ "name": "helper" })).await, json!({}));
@@ -829,7 +822,7 @@ async fn stop_stops_the_named_child_through_the_daemon() {
 /// status and attach never dial: here no daemon exists at all.
 #[tokio::test(flavor = "multi_thread")]
 async fn status_answers_ok_without_the_daemon() {
-    let mut mcp = Mcp::start(WINDOW).await;
+    let mut mcp = Mcp::start().await;
     let started = tokio::time::Instant::now();
     assert_eq!(
         mcp.ok("status", json!({ "working_on": "Splitting the parser" }))
@@ -840,14 +833,14 @@ async fn status_answers_ok_without_the_daemon() {
         mcp.ok("status", json!({ "working_on": null })).await,
         json!("ok")
     );
-    assert!(started.elapsed() < WINDOW, "no daemon was waited for");
+    assert!(started.elapsed() < RETRY_WINDOW, "no daemon was waited for");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn attach_stores_the_file_by_its_hash_and_answers_the_element() {
     use sha2::Digest as _;
 
-    let mut mcp = Mcp::start(WINDOW).await;
+    let mut mcp = Mcp::start().await;
     let bytes = b"\x89PNG\r\n\x1a\nnot really a picture";
     std::fs::write(mcp.cwd.join("chart.png"), bytes).unwrap();
     let hash = sha2::Sha256::digest(bytes).to_vec();
@@ -855,7 +848,7 @@ async fn attach_stores_the_file_by_its_hash_and_answers_the_element() {
 
     let (element, error) = mcp.call("attach", json!({ "path": "chart.png" })).await;
     assert!(!error, "{element}");
-    assert!(started.elapsed() < WINDOW, "no daemon was waited for");
+    assert!(started.elapsed() < RETRY_WINDOW, "no daemon was waited for");
     let stored = mcp.dir.join(agent::BLOBS).join(interpret::to_hex(&hash));
     assert_eq!(std::fs::read(&stored).unwrap(), bytes);
     let expected = wire::Attachment {
@@ -886,7 +879,7 @@ async fn attach_stores_the_file_by_its_hash_and_answers_the_element() {
 /// a JPEG named `.png` is a JPEG.
 #[tokio::test(flavor = "multi_thread")]
 async fn attach_calls_a_file_an_image_by_its_bytes() {
-    let mut mcp = Mcp::start(WINDOW).await;
+    let mut mcp = Mcp::start().await;
     std::fs::write(
         mcp.cwd.join("logo.svg"),
         b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
@@ -915,7 +908,7 @@ async fn attach_calls_a_file_an_image_by_its_bytes() {
 /// before its bytes are read or stored: the recipient could not be sent it.
 #[tokio::test(flavor = "multi_thread")]
 async fn attach_refuses_a_file_over_the_attachment_limit() {
-    let mut mcp = Mcp::start(WINDOW).await;
+    let mut mcp = Mcp::start().await;
     let huge = std::fs::File::create(mcp.cwd.join("huge.bin")).unwrap();
     huge.set_len(wire::ATTACHMENT_SIZE_LIMIT as u64 + 1)
         .unwrap();
@@ -934,7 +927,7 @@ async fn attach_refuses_a_file_over_the_attachment_limit() {
 /// one over the limit is refused naming it, and nothing is sent.
 #[tokio::test(flavor = "multi_thread")]
 async fn send_refuses_an_attachment_stored_over_the_limit() {
-    let mut mcp = Mcp::start(WINDOW).await;
+    let mut mcp = Mcp::start().await;
     let fleet = fleet();
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
     let hash = vec![7u8; 32];
@@ -979,7 +972,7 @@ async fn send_refuses_an_attachment_stored_over_the_limit() {
 /// says so once the window has passed.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_fleet_call_retries_over_an_update_and_reports_a_missing_daemon() {
-    let mut mcp = Mcp::start(WINDOW).await;
+    let mut mcp = Mcp::start().await;
     let dir = mcp.dir.clone();
     let fleet = fleet();
     let restarted = tokio::spawn({
@@ -1001,7 +994,7 @@ async fn a_fleet_call_retries_over_an_update_and_reports_a_missing_daemon() {
     );
     let waited = started.elapsed();
     assert!(
-        waited >= WINDOW - Duration::from_millis(600) && waited < WINDOW * 2,
+        waited >= RETRY_WINDOW - Duration::from_millis(600) && waited < RETRY_WINDOW * 2,
         "retried for the window: {waited:?}"
     );
 }
@@ -1020,7 +1013,7 @@ async fn a_call_the_daemon_may_have_taken_is_never_made_again() {
         ..fleet()
     };
     for fleet in [dropped, unavailable] {
-        let mut mcp = Mcp::start(WINDOW).await;
+        let mut mcp = Mcp::start().await;
         let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
         let calls = [
             ("send", json!({ "to": "reviewer", "text": "Look at this" })),

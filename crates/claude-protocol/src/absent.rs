@@ -19,7 +19,6 @@ macro_rules! absent {
 
 absent! {
     api_key_source => "apiKeySource",
-    claude_code_version => "claude_code_version",
     content => "content",
     cwd => "cwd",
     description => "description",
@@ -36,12 +35,10 @@ absent! {
     role => "role",
     session_id => "session_id",
     skills => "skills",
-    stop_reason => "stop_reason",
     task_id => "task_id",
     task_type => "task_type",
     tasks => "tasks",
     tools => "tools",
-    total_cost_usd => "total_cost_usd",
     usage => "usage",
     uuid => "uuid",
     compact_metadata => "compactMetadata",
@@ -49,7 +46,6 @@ absent! {
     id => "id",
     is_meta => "isMeta",
     level => "level",
-    message_count => "messageCount",
     parent_uuid => "parentUuid",
     pre_tokens => "preTokens",
     prompt => "prompt",

@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-const FORWARD_ENVELOPE_FIELD: &str = "amux_hook_forward_v1";
+const FORWARD_ENVELOPE_FIELD: &str = "amux_hook_forward";
 
 /// The hook events whose payload the agent answers: Claude waits on the
 /// hook command for its decision.
@@ -44,8 +44,6 @@ pub enum ForwardedError {
     Json(#[from] serde_json::Error),
     #[error("forwarded hook envelope omitted `{0}`")]
     Missing(&'static str),
-    #[error("forwarded hook envelope field `{0}` had the wrong shape")]
-    Invalid(&'static str),
 }
 
 /// The variables Claude sets on a hook command for its messaging socket.
@@ -62,12 +60,9 @@ pub fn unwrap_forwarded(
     let Some(envelope) = raw.get(FORWARD_ENVELOPE_FIELD) else {
         return Ok((bytes.to_vec(), None));
     };
-    if envelope.get("version").and_then(Value::as_u64) != Some(1) {
-        return Err(ForwardedError::Invalid("amux_hook_forward_v1.version"));
-    }
     let payload = envelope
         .get("payload")
-        .ok_or(ForwardedError::Missing("amux_hook_forward_v1.payload"))?;
+        .ok_or(ForwardedError::Missing("amux_hook_forward.payload"))?;
     let messaging = envelope
         .get("messaging")
         .cloned()
@@ -103,7 +98,6 @@ pub fn forward_with_messaging(
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
     let envelope = serde_json::json!({
         FORWARD_ENVELOPE_FIELD: {
-            "version": 1,
             "payload": payload,
             "messaging": messaging,
         }

@@ -4,7 +4,6 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use claude::hooks::HOOK_SOCKET_ENV;
-use claude::launch::MergedSettings;
 use uuid::Uuid;
 
 /// What a recording starts Claude with.
@@ -14,17 +13,14 @@ pub struct Launch {
     pub cwd: PathBuf,
     pub args: Vec<String>,
     pub session_id: Uuid,
-    pub settings: MergedSettings,
+    pub settings: serde_json::Value,
     pub env_scrub: &'static [&'static str],
 }
 
 /// The launch's arguments, then its one `--settings` value.
 pub fn pty_spawn_args(launch: &Launch) -> Vec<String> {
     let mut args = launch.args.clone();
-    args.extend([
-        "--settings".to_string(),
-        launch.settings.as_value().to_string(),
-    ]);
+    args.extend(["--settings".to_string(), launch.settings.to_string()]);
     args
 }
 

@@ -5,12 +5,11 @@ use std::collections::BTreeSet;
 use codex_protocol::client::{
     BackgroundTerminalsListParams, BackgroundTerminalsTerminateParams, CommandApprovalResponse,
     ElicitationAction, ModelListParams, SkillsListParams, ThreadIdParams, ThreadReadParams,
-    ThreadResumeParams, ThreadSetNameParams, ToolCallResponse, TurnInterruptParams,
+    ThreadResumeParams, ThreadSetNameParams, TurnInterruptParams,
 };
 use codex_protocol::items::{
-    CommandAction, DynamicToolCallItem, FileUpdateChange, McpToolCallItem, MessagePhase,
-    PatchChangeKind, TextContent, ThreadItem, ToolOutputContent, UserInput, WebSearchAction,
-    WebSearchItem,
+    CommandAction, FileUpdateChange, McpToolCallItem, MessagePhase, PatchChangeKind, ThreadItem,
+    UserInput, WebSearchAction, WebSearchItem,
 };
 use codex_protocol::server::{
     AccountReadResponse, AutoApprovalReview, BackgroundTerminalTerminateResponse,
@@ -1191,19 +1190,6 @@ impl State {
             ServerRequest::Elicitation(params) => {
                 return self.elicitation(emit, key, method, params, payload, child);
             }
-            ServerRequest::ToolCall(_) => {
-                // Tools amux offers Codex are served by amux's tool server;
-                // a client-side tool is nothing this agent hosts.
-                let refused = ToolCallResponse {
-                    content_items: vec![ToolOutputContent::Text(TextContent {
-                        text: "This client hosts no dynamic tools.".into(),
-                        extra: Default::default(),
-                    })],
-                    success: false,
-                    extra: Default::default(),
-                };
-                return self.respond(emit, &key, Ok(ClientResponse::ToolCall(refused)));
-            }
         };
         let (decisions, responses) = decisions
             .iter()
@@ -2019,7 +2005,6 @@ impl State {
             ThreadItem::CommandExecution(_)
             | ThreadItem::FileChange(_)
             | ThreadItem::McpToolCall(_)
-            | ThreadItem::DynamicToolCall(_)
             | ThreadItem::WebSearch(_)
             | ThreadItem::ImageView(_)
             | ThreadItem::ImageGeneration(_)
@@ -2190,7 +2175,6 @@ impl State {
             ThreadItem::CommandExecution(command) => command.status.as_str(),
             ThreadItem::FileChange(change) => change.status.as_str(),
             ThreadItem::McpToolCall(call) => call.status.as_str(),
-            ThreadItem::DynamicToolCall(call) => call.status.as_str(),
             ThreadItem::CollabAgentToolCall(call) => call.status.as_str(),
             ThreadItem::ImageGeneration(image) => image.status.as_str(),
             _ => "",
@@ -2257,12 +2241,6 @@ impl State {
                     ToolClass::Consequential
                 },
             ),
-            ThreadItem::DynamicToolCall(call) => {
-                if completed && call.success == Some(false) {
-                    state = ToolState::Failed;
-                }
-                (work::Of::Mcp(dynamic_work(call)), ToolClass::Consequential)
-            }
             ThreadItem::WebSearch(search) => (
                 work::Of::WebSearch(web_search(search)),
                 ToolClass::WebSearch,
@@ -2359,7 +2337,6 @@ impl State {
         let duration_ms = match item {
             ThreadItem::CommandExecution(command) => command.duration_ms,
             ThreadItem::McpToolCall(call) => call.duration_ms,
-            ThreadItem::DynamicToolCall(call) => call.duration_ms,
             _ => None,
         };
         let at_ms = started.or(at_ms).unwrap_or(self.shared.now_ms());
@@ -2795,18 +2772,6 @@ fn mcp_work(call: &McpToolCallItem) -> wire::McpToolCall {
             .as_ref()
             .map(|error| error.message.clone())
             .unwrap_or_default(),
-        subject: crate::shared::first_string(&call.arguments),
-    }
-}
-
-/// A dynamic tool call's work, drawn as a tool-server call.
-fn dynamic_work(call: &DynamicToolCallItem) -> wire::McpToolCall {
-    wire::McpToolCall {
-        server: call.namespace.clone().unwrap_or_default(),
-        tool: call.tool.clone(),
-        arguments_json: compact_json(&call.arguments).into_bytes(),
-        result_json: compact_json(&as_written(&call.content_items)).into_bytes(),
-        error: String::new(),
         subject: crate::shared::first_string(&call.arguments),
     }
 }

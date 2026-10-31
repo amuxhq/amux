@@ -99,8 +99,6 @@ async fn persist(events: &mpsc::Sender<ProviderEvent>, path: &Path, bytes: impl 
 pub enum ProviderError {
     #[error("starting {command}: {source}")]
     Spawn { command: String, source: io::Error },
-    #[error("agents of kind {0} cannot be hosted yet")]
-    Unhosted(i32),
     /// Terminal Claude is hosted on Unix only: ConPTY re-renders the child's
     /// output in its own escape sequences, and Claude's messaging socket and
     /// the fake's raw console mode are Unix-only. docs/ARCHITECTURE.md
@@ -162,7 +160,7 @@ impl Provider {
             Ok(wire::Kind::ClaudeSdk) => Self::spawn_sdk(spec, dir, events).await,
             Ok(wire::Kind::ClaudePty) => Self::spawn_terminal(spec, dir, events).await,
             Ok(wire::Kind::Codex) => Self::spawn_codex(spec, dir, events).await,
-            Ok(wire::Kind::Unspecified) | Err(_) => Err(ProviderError::Unhosted(spec.kind)),
+            Ok(wire::Kind::Unspecified) | Err(_) => unreachable!("run refuses any other kind"),
         }
     }
 
@@ -894,7 +892,6 @@ impl Provider {
             parent_tool_use_id: None,
             session_id: self.session.clone(),
             uuid: Some(uuid.to_owned()),
-            priority: None,
             extensions: Default::default(),
         });
         self.write_line(&claude_stream::encode(&line)).await
@@ -1302,7 +1299,7 @@ fn claude_launch(
             .chain([format!("Read(/{}/**)", rule_path(&dir.join(dir::BLOBS)))])
             .collect(),
     };
-    let settings = claude::launch::merged_settings(user, &managed).into_value();
+    let settings = claude::launch::merged_settings(user, &managed);
     Ok((args, settings.to_string(), withheld))
 }
 

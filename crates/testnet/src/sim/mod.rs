@@ -418,7 +418,7 @@ impl SimNet {
         match &decl.journal {
             Some(name) => sim
                 .net
-                .add_agent_playing(agent, &decl.name, journal_fixture(name)?),
+                .add_agent_playing(agent, &decl.name, recorded_journal(name)?),
             None => sim.net.add_agent(agent, &decl.name, &steps),
         }
         let what = format!("{} to start on {}", decl.name, decl.host);
@@ -1300,40 +1300,25 @@ fn refuse_agent(agent: &AgentDecl) -> Result<(), NetError> {
     Ok(())
 }
 
-/// The steps of the named journal fixture, from its initial snapshot on.
-/// Its agent is created as headless Claude, so the journal must be one.
-fn journal_fixture(name: &str) -> Result<Vec<wire::Step>, NetError> {
+/// The journal headless Claude's process would write for the named
+/// recording among the interpreter's fixtures (`recorded_multi_turn`):
+/// the recording run through its interpreter, the initial snapshot first,
+/// with empty steps left out as the journal's writer leaves them out.
+pub fn recorded_journal(name: &str) -> Result<Vec<wire::Step>, NetError> {
+    use prost::Message as _;
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("fixtures/journals")
-        .join(format!("{name}.frames"));
-    let bytes = std::fs::read(&path)?;
-    let mut steps = Vec::new();
-    let mut at = 0;
-    while at < bytes.len() {
-        match journal::decode_frame(&bytes[at..]) {
-            journal::Frame::Whole(step, length) => {
-                steps.push(*step);
-                at += length;
-            }
-            other => {
-                return Err(NetError::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!(
-                        "{}: byte {at} is not a whole frame: {other:?}",
-                        path.display()
-                    ),
-                )));
-            }
-        }
-    }
-    let kind = steps
-        .first()
-        .and_then(|step| step.snapshot.as_ref())
-        .map(|snapshot| snapshot.kind);
-    if kind != Some(FakeKind::ClaudeSdk.wire() as i32) {
-        return Err(NetError::Unsupported(
-            "a recorded journal of another kind than headless Claude",
-        ));
-    }
-    Ok(steps)
+        .join("../interpret/fixtures/claude_sdk")
+        .join(format!("{name}.json"));
+    let replayed =
+        interpret::replay::<interpret::claude_sdk::ClaudeSdk>(&path).map_err(|error| {
+            NetError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("{}: {error}", path.display()),
+            ))
+        })?;
+    Ok(replayed
+        .into_iter()
+        .map(|frame| frame.step)
+        .filter(|step| step.encoded_len() > 0)
+        .collect())
 }

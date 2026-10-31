@@ -210,7 +210,7 @@ toolchain component it needs.
 `just fuzz-smoke` fuzzes the code that reads bytes amux did not write: the tolerant Claude and Codex decoders, the
 journal's frame decoder and its reader over segments cut anywhere, and redaction of JSON values and free text. The
 targets live in `fuzz/`, a workspace of their own built on the pinned nightly with debug assertions on. Each starts
-from seeds cut from the recorded provider captures and journal fixtures and runs for 30 seconds (`--seconds N`;
+from seeds cut from the recorded provider captures and a real agent's journal and runs for 30 seconds (`--seconds N`;
 target names narrow the run); its corpus and any crashing input stay under `target/fuzz/`, and a crash prints the
 command that replays it. The recipe's comment names the tool it needs installed.
 

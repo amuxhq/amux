@@ -472,11 +472,11 @@ by `MESSAGE_SIZE_LIMIT` (16 MiB). The complete control vocabulary is:
   would; nothing else answers it.
 - `LinkClose`: an immediate close with a reason and optional error.
 
-After the handshake a receiver ignores a control message it does not know,
-and the link carries on: a later version may add one only when a host that
-predates it loses nothing by ignoring it. A message both ends must understand
-moves `PROTOCOL_VERSION` instead. Before the handshake is done, anything but
-the `Hello` or `HelloAck` expected is a protocol error.
+Both ends of a link speak one protocol version, so after the handshake a
+control message the receiver cannot read, or a second `Hello` or `HelloAck`,
+closes the link as a protocol error; a new control message moves
+`PROTOCOL_VERSION`. Before the handshake is done, anything but the `Hello` or
+`HelloAck` expected is a protocol error.
 
 A host keeps what each trusted peer listed, tagged by where it came from:
 listed over a direct link, over a forwarded one, or the peer's public address,

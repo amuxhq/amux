@@ -218,7 +218,7 @@ bounded number of times so the machine settles, and its liveness is judged
 there.
 
 Two more worlds add what the peer and the relay say beside the probes,
-each on a smaller world so that it fits its budget. In the first, one of
+each on a smaller world so that it stays quick to explore. In the first, one of
 the link's packets arrives, on a path the machine sends on or on a byte
 stream it has not heard on, and a paired daemon's forwarding link comes up
 and goes, while the network stays put, the relay link stays up and the

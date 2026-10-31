@@ -960,8 +960,8 @@ to the kind's bodies and to a golden, together. Run it on its own with
 - Give every item a key derived from the provider's own ids, stable across
   re-emission and across incarnations.
 - When a snapshot body gains a field, give it an unknown in `unknown.rs`.
-- Record the behaviour you depend on with the spec crate's probe, point a
-  fixture at the recording, and author fixtures only for what no recording
+- Record the behaviour you depend on in a live scenario and join it (see
+  [Re-recording](#re-recording)), point a fixture at the recording, and author fixtures only for what no recording
   can show.
 - Update `vocabulary.toml` and a golden when the change affects what a chat
   can show, and the client's per-kind layer when a body changes (see

@@ -255,7 +255,7 @@ message PermissionAnswer {
 }
 
 message PermissionAllow {
-  // A ScopeChoice.index from the ask; absent allows once.
+  // The position of a scope in the ask's scopes; absent allows once.
   optional uint32 scope = 1;
 }
 

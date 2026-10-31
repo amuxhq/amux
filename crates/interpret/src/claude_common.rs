@@ -14,7 +14,7 @@ use serde_json::Value;
 use wire::{
     Ask, Attachment, BackgroundJob, BlobRef, ClaudeGrant, ClaudeUsage, DecisionOutcome, EditInput,
     HealthState, Limit, NotebookCell, NotebookEditMode, OfferedCommand, OfferedModel,
-    OfferedPermission, PatchHunk, Question, QuestionAsk, QuestionOption, Replacement, ScopeChoice,
+    OfferedPermission, PatchHunk, Question, QuestionAsk, QuestionOption, Replacement,
     ScopeDestination, ShellInput, TaskList, TaskListEntry, TaskListStatus, ToolCall, ToolClass,
     ToolInput, ToolServer, ToolServerHealth, ToolServerStatus, ToolState, UsageState, attachment,
     codex_grant, tool_decision, tool_input,
@@ -831,12 +831,6 @@ pub(crate) fn describe_grant(granted: Option<&tool_decision::Granted>) -> String
     }
 }
 
-/// What allowing with a scope choice grants: the grant Claude offered,
-/// verbatim.
-pub(crate) fn claude_grant(scope: &ScopeChoice) -> ClaudeGrant {
-    scope.grant.clone().unwrap_or_default()
-}
-
 /// Where a suggestion would be saved: amux's value for it, and Claude's
 /// word, which a client shows for a destination it does not know.
 fn destination(suggestion: &PermissionUpdate) -> (ScopeDestination, String) {
@@ -1087,11 +1081,10 @@ fn subject(input: &Value) -> String {
 }
 
 /// Every scope choice Claude offered with a permission request, in order.
-pub(crate) fn permission_scopes(suggestions: &[PermissionUpdate]) -> Vec<ScopeChoice> {
+pub(crate) fn permission_scopes(suggestions: &[PermissionUpdate]) -> Vec<ClaudeGrant> {
     suggestions
         .iter()
-        .enumerate()
-        .map(|(index, suggestion)| {
+        .map(|suggestion| {
             let (rules, directories, mode) = match suggestion {
                 PermissionUpdate::AddRules { rules, .. }
                 | PermissionUpdate::ReplaceRules { rules, .. }
@@ -1116,15 +1109,12 @@ pub(crate) fn permission_scopes(suggestions: &[PermissionUpdate]) -> Vec<ScopeCh
                 PermissionUpdate::Unknown(_) => (Vec::new(), Vec::new(), None),
             };
             let (destination, destination_word) = destination(suggestion);
-            ScopeChoice {
-                index: index as u32,
-                grant: Some(ClaudeGrant {
-                    rules,
-                    directories,
-                    mode,
-                    destination: destination as i32,
-                    destination_word,
-                }),
+            ClaudeGrant {
+                rules,
+                directories,
+                mode,
+                destination: destination as i32,
+                destination_word,
             }
         })
         .collect()
@@ -1293,13 +1283,13 @@ pub(crate) fn describe_asks(asks: &[Ask]) -> String {
                     permission
                         .scopes
                         .iter()
-                        .map(|scope| {
-                            let grant = claude_grant(scope);
+                        .map(|grant| {
                             format!(
                                 "/{}{}{}",
                                 grant.destination_word,
                                 grant
                                     .mode
+                                    .as_ref()
                                     .map(|mode| format!(" mode={mode}"))
                                     .unwrap_or_default(),
                                 grant

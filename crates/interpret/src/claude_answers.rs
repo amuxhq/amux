@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{AskClosed, ClaudeGrant, DecisionOutcome, FormAction, claude_answer, permission_answer};
 
-use crate::claude_common::{Verdict, claude_grant, permission_scopes};
+use crate::claude_common::{Verdict, permission_scopes};
 use crate::{ask_item, serde_pb};
 
 /// What answering an ask decided, for the call it held.
@@ -134,8 +134,9 @@ pub(crate) fn decide(
                     let suggestion =
                         serde_json::from_str::<PermissionUpdate>(suggestions.get(index as usize)?)
                             .ok()?;
-                    let scopes = permission_scopes(std::slice::from_ref(&suggestion));
-                    grant = scopes.first().map(claude_grant);
+                    grant = permission_scopes(std::slice::from_ref(&suggestion))
+                        .into_iter()
+                        .next();
                     permissions = Some(vec![suggestion]);
                 }
                 Some((

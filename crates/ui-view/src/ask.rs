@@ -349,8 +349,7 @@ fn claude(
                 ChoiceOutcome::AllowOnce,
                 permission(P::Allow(wire::PermissionAllow { scope: None })),
             )];
-            for scope in &p.scopes {
-                let grant = scope.grant.clone().unwrap_or_default();
+            for (index, grant) in p.scopes.iter().enumerate() {
                 let mode = grant.mode.clone().unwrap_or_default();
                 choices.push(choice(
                     ChoiceOutcome::AllowAlways {
@@ -362,10 +361,10 @@ fn claude(
                             .map(|permission| permission.display_name.clone())
                             .unwrap_or_default(),
                         mode,
-                        scope: scope_of(&grant),
+                        scope: scope_of(grant),
                     },
                     permission(P::Allow(wire::PermissionAllow {
-                        scope: Some(scope.index),
+                        scope: Some(index as u32),
                     })),
                 ));
             }

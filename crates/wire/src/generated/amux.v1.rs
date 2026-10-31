@@ -2277,9 +2277,10 @@ pub struct PermissionAsk {
     pub tool_name: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "2")]
     pub input: ::core::option::Option<ToolInput>,
-    /// Every scope the provider offered, in order.
+    /// Every scope the provider offered, in order; an answer names one by
+    /// its position.
     #[prost(message, repeated, tag = "3")]
-    pub scopes: ::prost::alloc::vec::Vec<ScopeChoice>,
+    pub scopes: ::prost::alloc::vec::Vec<ClaudeGrant>,
     #[prost(string, tag = "4")]
     pub reason: ::prost::alloc::string::String,
     #[prost(string, tag = "5")]
@@ -2306,24 +2307,6 @@ impl ::prost::Name for PermissionAsk {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.PermissionAsk".into()
-    }
-}
-/// One scope the provider offered; answers name its index.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ScopeChoice {
-    #[prost(uint32, tag = "1")]
-    pub index: u32,
-    #[prost(message, optional, tag = "2")]
-    pub grant: ::core::option::Option<ClaudeGrant>,
-}
-impl ::prost::Name for ScopeChoice {
-    const NAME: &'static str = "ScopeChoice";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ScopeChoice".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ScopeChoice".into()
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -4974,7 +4957,7 @@ impl ::prost::Name for PermissionAnswer {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PermissionAllow {
-    /// A ScopeChoice.index from the ask; absent allows once.
+    /// The position of a scope in the ask's scopes; absent allows once.
     #[prost(uint32, optional, tag = "1")]
     pub scope: ::core::option::Option<u32>,
 }

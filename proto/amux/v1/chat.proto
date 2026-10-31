@@ -458,8 +458,9 @@ message Ask {
 message PermissionAsk {
   string tool_name = 1;
   ToolInput input = 2;
-  // Every scope the provider offered, in order.
-  repeated ScopeChoice scopes = 3;
+  // Every scope the provider offered, in order; an answer names one by
+  // its position.
+  repeated ClaudeGrant scopes = 3;
   string reason = 4;
   string description = 5;
   // Denying always ends the turn (terminal Claude).
@@ -471,12 +472,6 @@ message PermissionAsk {
   // opens it on deny and takes no digit shortcut, and nothing pre-selects
   // approve.
   bool default_to_no = 9;
-}
-
-// One scope the provider offered; answers name its index.
-message ScopeChoice {
-  uint32 index = 1;
-  ClaudeGrant grant = 2;
 }
 
 message QuestionAsk {

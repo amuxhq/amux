@@ -294,14 +294,11 @@ fn a_long_commands_choices_stay_on_a_short_screen() {
         "command": command,
         "description": "Write a long line to a file",
     });
-    let grant = |rules: Vec<String>, directories: Vec<String>| wire::ScopeChoice {
-        index: 0,
-        grant: Some(wire::ClaudeGrant {
-            rules,
-            directories,
-            destination_word: "localSettings".into(),
-            ..Default::default()
-        }),
+    let grant = |rules: Vec<String>, directories: Vec<String>| wire::ClaudeGrant {
+        rules,
+        directories,
+        destination_word: "localSettings".into(),
+        ..Default::default()
     };
     let body = wire::ClaudeSdkSnapshot {
         asks: vec![wire::Ask {

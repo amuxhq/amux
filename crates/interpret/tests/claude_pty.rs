@@ -1295,7 +1295,7 @@ fn a_permission_ask_offers_claudes_switch_to_auto_mode() {
     let modes: Vec<Option<String>> = permission
         .scopes
         .iter()
-        .map(|scope| scope.grant.as_ref().and_then(|grant| grant.mode.clone()))
+        .map(|grant| grant.mode.clone())
         .collect();
     assert_eq!(
         modes,

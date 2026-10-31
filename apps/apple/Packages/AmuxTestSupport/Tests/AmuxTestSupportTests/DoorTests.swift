@@ -29,16 +29,11 @@ final class DoorTests: XCTestCase {
             .connect(relay: "http://127.0.0.1:8080", token: "bearer", user: "ada", tier: .pro),
             .connect(relay: "http://127.0.0.1:8080", token: "bearer", user: "ada", tier: .free),
             .addAccount(user: "work", token: "another-bearer"),
-            .restoreSession(
-                account: "9f1c1f8e-0000-4000-8000-000000000003", refresh: "a-refresh-token"),
             .awaitReconciled(seconds: 90),
-            .awaitOffline(seconds: 30),
-            .bridge,
             .conversation(agent: "00000000-0000-0000-0000-000000000001"),
             .appearance(.dark),
             .dynamicType("accessibility3"),
             .assist(motion: true, transparency: true),
-            .states,
             .settle,
             .query,
             .capture(path: "/tmp/home.png"),
@@ -56,18 +51,7 @@ final class DoorTests: XCTestCase {
                 name: "screenshot.png", mime: "image/png", base64: "iVBORw0KGgo="),
             .pair(qr: #"{"host_id":"…","cloud_url":"http://127.0.0.1:9","secret":[1]}"#),
             .pairByCode(host: "9f1c1f8e-0000-4000-8000-000000000002", pin: "419507"),
-            .revoke(host: "9f1c1f8e-0000-4000-8000-000000000002"),
-            .send(agent: "6f1c1f8e-0000-4000-8000-000000000001", text: "carry on"),
             .awaitAgent(agent: "6f1c1f8e-0000-4000-8000-000000000001", seconds: 120),
-            .awaitSendable(agent: "6f1c1f8e-0000-4000-8000-000000000001", seconds: 30),
-            .awaitReply(
-                agent: "6f1c1f8e-0000-4000-8000-000000000001", saying: "Paris", seconds: 240),
-            .watch(agent: "6f1c1f8e-0000-4000-8000-000000000001"),
-            .requestChanges(agent: "6f1c1f8e-0000-4000-8000-000000000001", base: "HEAD~1"),
-            .requestChanges(agent: "6f1c1f8e-0000-4000-8000-000000000001", base: ""),
-            .report(
-                path: "/tmp/report", note: "the badge counted twice",
-                marks: [ReportMark(x: 12, y: 40.5, width: 96, height: 24, note: "here")]),
             .screenshot,
             .holdBackground,
             .awaitBackground(seconds: 10),
@@ -128,29 +112,13 @@ final class DoorTests: XCTestCase {
         let assist = try wire(.assist(motion: true, transparency: false))
         XCTAssertEqual(assist["motion"] as? Bool, true)
         XCTAssertEqual(assist["transparency"] as? Bool, false)
-        XCTAssertEqual(try wire(.states)["kind"] as? String, "states")
         XCTAssertEqual(try wire(.capture(path: "/tmp/x.png"))["path"] as? String, "/tmp/x.png")
         XCTAssertEqual(try wire(.settle)["kind"] as? String, "settle")
         XCTAssertEqual(try wire(.awaitReconciled(seconds: 90))["seconds"] as? Double, 90)
-        XCTAssertEqual(try wire(.awaitOffline(seconds: 30))["kind"] as? String, "awaitOffline")
-        XCTAssertEqual(try wire(.bridge)["kind"] as? String, "bridge")
-        let report = try wire(.report(
-            path: "/tmp/report", note: "the badge counted twice",
-            marks: [ReportMark(x: 12, y: 40.5, width: 96, height: 24, note: "here")]))
-        XCTAssertEqual(report["path"] as? String, "/tmp/report")
-        XCTAssertEqual(report["note"] as? String, "the badge counted twice")
-        // The rectangles travel in the frame's own points, fractions and all:
-        // a driver asks for the report a person would have written.
-        XCTAssertEqual((report["marks"] as? [[String: Any]])?.first?["y"] as? Double, 40.5)
         XCTAssertEqual(try wire(.pair(qr: "payload"))["qr"] as? String, "payload")
         let code = try wire(.pairByCode(host: "workstation", pin: "419507"))
         XCTAssertEqual(code["host"] as? String, "workstation")
         XCTAssertEqual(code["pin"] as? String, "419507")
-        XCTAssertEqual(try wire(.revoke(host: "workstation"))["host"] as? String, "workstation")
-        XCTAssertEqual(try wire(.requestChanges(agent: "aurora", base: "HEAD~1"))["base"] as? String, "HEAD~1")
-        let attempt = try wire(.send(agent: "aurora", text: "carry on"))
-        XCTAssertEqual(attempt["agent"] as? String, "aurora")
-        XCTAssertEqual(attempt["text"] as? String, "carry on")
         let pasting = try wire(.paste(identifier: "composer.field", text: "a long paste"))
         XCTAssertEqual(pasting["identifier"] as? String, "composer.field")
         XCTAssertEqual(pasting["text"] as? String, "a long paste")
@@ -182,26 +150,12 @@ final class DoorTests: XCTestCase {
                 identifier: "home.title", label: "Agents", value: nil,
                 frame: VisibleFrame(x: 16, y: 64, width: 200, height: 32), enabled: true)],
             reconciled: true, unconfirmed: 3)
-        let bridge = BridgeState(
-            build: "0.1.0+debug-tools", started: true, connection: "connected",
-            reconciled: true, hosts: [], agents: ["helper"], relayAttempts: 3, relayRetries: 1,
-            discovered: ["desktop", "laptop"], watching: ["6f1c1f8e-0000-4000-8000-000000000001"],
-            failure: "installation profile path disagrees with its namespace")
         let replies: [DoorReply] = [
             .ack,
             .state(state),
-            .bridge(bridge),
             .conversation(ConversationReading(agent: "helper", frame: nil, rows: [], ask: nil)),
             .captured(path: "/tmp/home.png", width: 1206, height: 2622, scale: 3),
-            .bundle(path: "/tmp/report", parts: ["frame.png", "report.json"]),
             .paired(host: "workstation"),
-            .states([
-                DrawnState(screen: "home", state: "home", typeSize: nil),
-                DrawnState(screen: "home", state: "home-accessibility",
-                           typeSize: "accessibility5"),
-            ]),
-            .sendAttempt(delivered: true, reason: nil),
-            .sendAttempt(delivered: false, reason: "This session is replaying what it missed."),
             .error("unimplemented: home"),
         ]
         for reply in replies {

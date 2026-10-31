@@ -73,30 +73,6 @@
         }
       }
     },
-    "%@ saying %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Amux/Debug/DoorHost.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ saying %@"
-          }
-        }
-      }
-    },
-    "%@ taking a message" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Amux/Debug/DoorHost.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ taking a message"
-          }
-        }
-      }
-    },
     "%@ · %@ %@ pt" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Amux/Debug/Stories.swift.",
       "extractionState" : "manual",

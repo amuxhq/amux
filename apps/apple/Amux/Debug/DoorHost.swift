@@ -84,10 +84,6 @@ final class DoorHost {
             return await signIn(user: user, relay: relay, token: token)
         case .awaitReconciled(let seconds):
             return await until(seconds, "the fleet to be read") { self.stores?.applied ?? 0 > 0 }
-        case .awaitOffline(let seconds):
-            return await until(seconds, "a host to go offline") {
-                self.stores?.hosts.hosts.contains { !$0.online } ?? false
-            }
         case .conversation(let agent): return reading(agent)
         case .signposts: return .signposts(Signposts.marks)
         case .condition: return .condition(DeviceCondition.now())
@@ -154,10 +150,6 @@ final class DoorHost {
             else { return .error("nothing is running") }
             stores.hosts.sawLocalNetwork(seen)
             return .ack
-        case .revoke(let host):
-            guard let id = HostId(host) else { return .error("no host named \(host)") }
-            stores?.revoke(id)
-            return .ack
         case .awaitAgent(let agent, let seconds):
             return await until(seconds, "\(agent) in the fleet") {
                 self.stores?.fleet.rows.contains { $0.name == agent || "\($0.id)" == agent }
@@ -167,34 +159,9 @@ final class DoorHost {
         case .open(let screen, let subject): return open(screen, about: subject)
         case .attach(let agent, let kind, let name, let mime, let base64):
             guard let data = Data(base64Encoded: base64) else { return .error("not base64") }
-            return chatting(agent) { model in
-                model.attach(data, name: name, mime: mime, image: kind == "image")
-                return .ack
-            }
-        case .send(let agent, let text):
-            return chatting(agent) { model in
-                model.draft = text
-                guard model.canSend else {
-                    return .sendAttempt(delivered: false, reason: model.frame?.waiting.map { "\($0)" })
-                }
-                model.send()
-                return .sendAttempt(delivered: true, reason: nil)
-            }
-        case .awaitSendable(let agent, let seconds):
             guard let model = chat(agent) else { return .error("no agent named \(agent)") }
-            return await until(seconds, "\(agent) taking a message") {
-                model.frame?.caughtUp == true && model.frame?.composer.mode == .send
-            }
-        case .awaitReply(let agent, let saying, let seconds):
-            guard let model = chat(agent) else { return .error("no agent named \(agent)") }
-            return await until(seconds, "\(agent) saying \(saying)") {
-                model.ids.contains { id in
-                    guard case .prose(let text, _, _)? = model.cell(for: id).row?.kind else {
-                        return false
-                    }
-                    return ChatWords.text(of: text).contains(saying)
-                }
-            }
+            model.attach(data, name: name, mime: mime, image: kind == "image")
+            return .ack
         case .holdBackground: return holdBackground()
         case .awaitBackground(let seconds):
             return await until(seconds, "the app in the background") {
@@ -202,8 +169,6 @@ final class DoorHost {
                     && self.composition?.runtime.active == false
             }
         case .push(let path): return await push(from: path)
-        case .restoreSession, .bridge, .states, .report, .requestChanges, .watch:
-            return .error("this build's door does not \(Self.verb(request))")
         }
     }
 
@@ -356,11 +321,6 @@ final class DoorHost {
         return try? stores.chat(row.id)
     }
 
-    private func chatting(_ agent: String, _ body: (ChatModel) -> DoorReply) -> DoorReply {
-        guard let model = chat(agent) else { return .error("no agent named \(agent)") }
-        return body(model)
-    }
-
     /// The chat the page on screen shows, if it shows one.
     private var shownChat: (agent: AgentKey, model: ChatModel)? {
         guard let stores, case .conversation(let agent)? = composition?.router.top,
@@ -472,12 +432,6 @@ final class DoorHost {
         case .finish(let transaction): "finish \(transaction)"
         case .unfinished: "unfinished"
         }
-    }
-
-    private static func verb(_ request: DoorRequest) -> String {
-        let data = (try? JSONEncoder().encode(request)) ?? Data()
-        let fields = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        return (fields?["kind"] as? String) ?? "that"
     }
 
     private static func permission(_ named: String) -> LocalNetworkPermission? {

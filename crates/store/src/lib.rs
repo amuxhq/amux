@@ -201,14 +201,6 @@ pub struct Committed {
     pub cursor: u64,
 }
 
-/// A record from a peer source.
-#[derive(Clone, Debug, PartialEq)]
-pub enum SourceEvent {
-    Item(Item),
-    Append(Append),
-    Snapshot(Snapshot),
-}
-
 /// The one write primitive for replica rows. Built per call and consumed at
 /// once, so the snapshot a reset carries is not worth boxing.
 #[derive(Clone, Debug, PartialEq)]
@@ -217,10 +209,7 @@ pub enum Absorb {
     /// Records that join the block above its newest row. `live` is false
     /// during a catch-up, which leaves the source cursor alone; live
     /// records advance it to their revision.
-    Delta {
-        events: Vec<SourceEvent>,
-        live: bool,
-    },
+    Delta { events: Vec<Record>, live: bool },
     /// Forget the block: the tail replaces it and complete_from_order moves
     /// to the tail's oldest order. Rows below stay stored for Get but no
     /// longer count, unless `generation` is not the one the block was

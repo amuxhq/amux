@@ -278,7 +278,6 @@ fn a_host_is_in_one_attempt_at_a_time() {
         Vec::new()
     );
 
-
     // A path the attempt was not given: the attempt gives way to one on
     // every path at once.
     let out = found(&mut daemon, DESK, &["192.168.1.5:7000"]);

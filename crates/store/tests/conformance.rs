@@ -1,8 +1,8 @@
 //! The store's reader and writer suite, against a temp-file SQLite store.
 
 use store::{
-    Absorb, AgentKey, AgentRow, CommitClock, Cut, Delivery, Marker, PageEnd, Record, SourceEvent,
-    Sqlite, StoreError,
+    Absorb, AgentKey, AgentRow, CommitClock, Cut, Delivery, Marker, PageEnd, Record, Sqlite,
+    StoreError,
 };
 use wire::{Append, Item, Phase, Snapshot, Step, TurnEnd};
 
@@ -757,7 +757,7 @@ fn a_delta_joins_above_and_only_live_records_move_the_cursor() {
         .absorb(
             &agent,
             Absorb::Delta {
-                events: vec![SourceEvent::Item(origin_item("k2", 2, 12, "two"))],
+                events: vec![Record::Item(origin_item("k2", 2, 12, "two"))],
                 live: false,
             },
         )
@@ -771,8 +771,8 @@ fn a_delta_joins_above_and_only_live_records_move_the_cursor() {
             &agent,
             Absorb::Delta {
                 events: vec![
-                    SourceEvent::Item(origin_item("k3", 3, 13, "Hel")),
-                    SourceEvent::Append(Append {
+                    Record::Item(origin_item("k3", 3, 13, "Hel")),
+                    Record::Append(Append {
                         agent_id: b"remote".to_vec(),
                         key: "k3".into(),
                         base_revision: 13,
@@ -781,14 +781,14 @@ fn a_delta_joins_above_and_only_live_records_move_the_cursor() {
                     }),
                     // A base the replica does not hold is left for the full
                     // item every stream ends with.
-                    SourceEvent::Append(Append {
+                    Record::Append(Append {
                         agent_id: b"remote".to_vec(),
                         key: "k3".into(),
                         base_revision: 99,
                         revision: 100,
                         text: "??".into(),
                     }),
-                    SourceEvent::Snapshot(Snapshot {
+                    Record::Snapshot(Snapshot {
                         revision: 15,
                         ..snapshot(Phase::NeedsYou, Some("asking"), 70)
                     }),
@@ -832,7 +832,7 @@ fn an_older_snapshot_never_overwrites_a_newer_envelope() {
         .absorb(
             &agent,
             Absorb::Delta {
-                events: vec![SourceEvent::Snapshot(Snapshot {
+                events: vec![Record::Snapshot(Snapshot {
                     revision: 29,
                     ..snapshot(Phase::Working, Some("older"), 1)
                 })],
@@ -857,7 +857,7 @@ fn a_replica_without_a_block_serves_nothing() {
         .absorb(
             &agent,
             Absorb::Delta {
-                events: vec![SourceEvent::Item(origin_item("k1", 1, 1, ""))],
+                events: vec![Record::Item(origin_item("k1", 1, 1, ""))],
                 live: false,
             },
         )

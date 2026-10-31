@@ -160,7 +160,6 @@ fn writes(input: &Input, copying: JobId) -> bool {
         | Input::ChannelClosed { .. }
         | Input::ChannelAnswered { .. }
         | Input::PlanChanged
-
         | Input::Candidates { .. }
         | Input::Dialling(_)
         | Input::RecoverRelay

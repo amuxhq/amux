@@ -43,7 +43,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use store::{Absorb, AgentKey, AgentRow, Marker, Record, SourceEvent, StoreError};
+use store::{Absorb, AgentKey, AgentRow, Marker, Record, StoreError};
 use wire::{
     Agent, AgentRemoved, Item, ListItemsResponse, PeerSubscribeSessionRequest, SessionEvent,
     inventory_event, peer_subscribe_session_request, session_event,
@@ -1328,7 +1328,7 @@ impl Daemon {
         let Some(row) = self.store.agent(key)? else {
             return Ok(None);
         };
-        let events: Vec<SourceEvent> = catch_up
+        let events: Vec<Record> = catch_up
             .events
             .into_iter()
             .filter_map(|event| event.of.map(source_event))
@@ -1411,7 +1411,7 @@ impl Daemon {
         &mut self,
         key: &AgentKey,
         session: u64,
-        record: SourceEvent,
+        record: Record,
         out: &mut Vec<Output>,
     ) -> Result<bool, StoreError> {
         let current = HostId::from_slice(&key.host)
@@ -1419,7 +1419,7 @@ impl Daemon {
         if !current || self.store.agent(key)?.is_none() {
             return Ok(false);
         }
-        let envelope = matches!(record, SourceEvent::Snapshot(_));
+        let envelope = matches!(record, Record::Snapshot(_));
         let absorbed = self.store.absorb(
             key,
             Absorb::Delta {
@@ -1594,16 +1594,13 @@ fn streaming(call: CallId, tail: bool) -> Feeding {
 /// A replacing catch-up as the store absorbs it: the tail with each key in
 /// its newest state, the newest snapshot, and the appends that do not
 /// apply to a row of the tail, kept in order for a delta.
-fn fold_tail(
-    events: Vec<SourceEvent>,
-    row: &AgentRow,
-) -> (Vec<Item>, wire::Snapshot, Vec<SourceEvent>) {
+fn fold_tail(events: Vec<Record>, row: &AgentRow) -> (Vec<Item>, wire::Snapshot, Vec<Record>) {
     let mut items: HashMap<String, Item> = HashMap::new();
     let mut snapshot: Option<wire::Snapshot> = None;
     let mut rest = Vec::new();
     for event in events {
         match event {
-            SourceEvent::Item(item) => {
+            Record::Item(item) => {
                 if items
                     .get(&item.key)
                     .is_none_or(|held| held.revision < item.revision)
@@ -1611,14 +1608,14 @@ fn fold_tail(
                     items.insert(item.key.clone(), item);
                 }
             }
-            SourceEvent::Append(append) => match items.get_mut(&append.key) {
+            Record::Append(append) => match items.get_mut(&append.key) {
                 Some(held) if held.revision == append.base_revision => {
                     held.text.push_str(&append.text);
                     held.revision = append.revision;
                 }
-                _ => rest.push(SourceEvent::Append(append)),
+                _ => rest.push(Record::Append(append)),
             },
-            SourceEvent::Snapshot(next) => {
+            Record::Snapshot(next) => {
                 if snapshot
                     .as_ref()
                     .is_none_or(|held| held.revision < next.revision)
@@ -1654,11 +1651,11 @@ fn event_of(of: session_event::Of) -> SessionEvent {
 
 /// A record of a source's stream as the store absorbs it. Only records are
 /// held or landed.
-fn source_event(of: session_event::Of) -> SourceEvent {
+fn source_event(of: session_event::Of) -> Record {
     match of {
-        session_event::Of::Item(item) => SourceEvent::Item(item),
-        session_event::Of::Append(append) => SourceEvent::Append(append),
-        session_event::Of::Snapshot(snapshot) => SourceEvent::Snapshot(snapshot),
+        session_event::Of::Item(item) => Record::Item(item),
+        session_event::Of::Append(append) => Record::Append(append),
+        session_event::Of::Snapshot(snapshot) => Record::Snapshot(snapshot),
         other => unreachable!("only records are held: {other:?}"),
     }
 }
@@ -2322,7 +2319,7 @@ mod tests {
             revision: 1,
             ..Item::default()
         };
-        let (tail, snapshot, _) = fold_tail(vec![SourceEvent::Item(item)], &row);
+        let (tail, snapshot, _) = fold_tail(vec![Record::Item(item)], &row);
         assert_eq!(
             snapshot.kind, UNKNOWN,
             "the default snapshot takes the row's kind"

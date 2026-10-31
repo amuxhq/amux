@@ -23,7 +23,7 @@ async fn remote_entry_carries_version_and_capabilities() {
     desk_edge.trust(&laptop_edge).await.unwrap();
     laptop_edge.trust(&desk_edge).await.unwrap();
     let _link = laptop_edge.link_in_process(&desk_edge).unwrap();
-    assert!(laptop_edge.wait_for_route(desk_host, PATIENCE).await);
+    assert!(wait_for_route(&laptop_edge, desk_host, PATIENCE).await);
 
     let expected = wire::Capabilities {
         cloud_relay: false,
@@ -74,11 +74,7 @@ async fn a_link_and_its_channels_reach_the_core_as_inputs() {
     desk_edge.trust(&laptop_edge).await.unwrap();
     laptop_edge.trust(&desk_edge).await.unwrap();
     let link = laptop_edge.link_in_process(&desk_edge).unwrap();
-    assert!(
-        laptop_edge
-            .wait_for_route(desk_runtime.host(), PATIENCE)
-            .await
-    );
+    assert!(wait_for_route(&laptop_edge, desk_runtime.host(), PATIENCE).await);
 
     let ring = laptop.profile_dir().join(node::CORE_RING);
     let inputs = || {

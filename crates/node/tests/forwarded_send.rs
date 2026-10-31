@@ -71,11 +71,7 @@ impl Pair {
 
     async fn link(&self) -> node::LoopbackLink {
         let link = self.laptop_edge.link_in_process(&self.desk_edge).unwrap();
-        assert!(
-            self.laptop_edge
-                .wait_for_route(self.desk_runtime.host(), PATIENCE)
-                .await
-        );
+        assert!(wait_for_route(&self.laptop_edge, self.desk_runtime.host(), PATIENCE).await);
         link
     }
 

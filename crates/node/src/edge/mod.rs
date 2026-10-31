@@ -655,20 +655,6 @@ impl Edge {
         self.connections.via_for(host).await
     }
 
-    /// Waits until calls to `host` have a route, or the timeout passes.
-    pub async fn wait_for_route(&self, host: HostId, timeout: Duration) -> bool {
-        tokio::time::timeout(timeout, async {
-            loop {
-                if self.via(host).await != LiveRoute::Offline {
-                    return;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .is_ok()
-    }
-
     /// Peer service clients for a trusted host, over whichever route
     /// reaches it: a direct link, or the relay.
     pub async fn peer(&self, host: HostId) -> Result<crate::PeerClient, crate::link::ChannelError> {

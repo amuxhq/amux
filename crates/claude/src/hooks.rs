@@ -74,7 +74,7 @@ pub fn unwrap_forwarded(
 /// Forward hook stdin to a session socket and wait for what the agent
 /// answers, which is empty unless it decides the hook.
 #[cfg(unix)]
-pub fn forward(stdin: &[u8], socket: &Path) -> Result<Vec<u8>, std::io::Error> {
+fn forward(stdin: &[u8], socket: &Path) -> Result<Vec<u8>, std::io::Error> {
     use std::io::{Read, Write};
     let mut stream = std::os::unix::net::UnixStream::connect(socket)?;
     stream.write_all(stdin)?;
@@ -139,7 +139,7 @@ pub fn forward_from_env(stdin: &[u8], socket: &Path) -> Result<Vec<u8>, std::io:
 }
 
 #[cfg(not(unix))]
-pub fn forward(_stdin: &[u8], _socket: &Path) -> Result<Vec<u8>, std::io::Error> {
+fn forward(_stdin: &[u8], _socket: &Path) -> Result<Vec<u8>, std::io::Error> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
         "Claude hook sockets require Unix",
@@ -186,12 +186,14 @@ mod tests {
         drop(stream);
 
         let (payload, credentials) = unwrap_forwarded(&bytes).unwrap();
-        let received = hooks::decode(&payload).unwrap();
-        assert!(matches!(received, Payload::SessionStart(_)));
+        assert!(matches!(
+            hooks::decode(&payload).unwrap(),
+            Payload::SessionStart(_)
+        ));
         assert_eq!(credentials.unwrap().token, "secret");
-        let encoded = String::from_utf8(hooks::encode(&received)).unwrap();
-        assert!(!encoded.contains(FORWARD_ENVELOPE_FIELD));
-        assert!(!encoded.contains("secret"));
+        let unwrapped = String::from_utf8(payload).unwrap();
+        assert!(!unwrapped.contains(FORWARD_ENVELOPE_FIELD));
+        assert!(!unwrapped.contains("secret"));
         assert_eq!(forwarded.join().unwrap().unwrap(), Vec::<u8>::new());
     }
 }

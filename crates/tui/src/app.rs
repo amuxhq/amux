@@ -372,16 +372,6 @@ struct ChatGone {
     deleted: bool,
 }
 
-impl Drop for App {
-    /// A client dropped without quitting (a test, an embedding) still
-    /// hands its drafts on, where a runtime is there to send them.
-    fn drop(&mut self) {
-        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            runtime.spawn(self.keep_drafts());
-        }
-    }
-}
-
 fn plain(error: InputError) -> String {
     match error {
         InputError::Rejected(reason) => {
@@ -1649,7 +1639,11 @@ impl App {
         };
         if std::mem::take(&mut self.report_asked) {
             let frozen = paint.buffer_mut().clone();
-            self.report = Some(crate::report::Report::new(frozen, theme, self.start_dump()));
+            self.report = Some(crate::report::Report::new(
+                frozen,
+                theme,
+                Some(self.start_dump()),
+            ));
         }
         if let Some(report) = &self.report {
             let area = paint.area();

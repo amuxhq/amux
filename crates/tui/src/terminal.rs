@@ -56,7 +56,7 @@ pub fn shift_enter_reported() -> bool {
 /// pasted CR from submitting a partial prompt; mouse capture lets the
 /// alternate-screen feed own wheel events. Raw mode is termios, not bytes,
 /// and is handled by the guard.
-pub fn write_enter_chrome(out: &mut impl Write) -> io::Result<()> {
+fn write_enter_chrome(out: &mut impl Write) -> io::Result<()> {
     crossterm::execute!(
         out,
         EnterAlternateScreen,
@@ -94,7 +94,7 @@ pub fn write_end_frame(out: &mut impl Write) -> io::Result<()> {
 /// Ctrl chord arrive as `CSI 27 ; 5 ; key ~`, which the client's key reader
 /// does not read. Every exit path — orderly, error, panic, signal — must
 /// emit these.
-pub fn write_restore(out: &mut impl Write) -> io::Result<()> {
+fn write_restore(out: &mut impl Write) -> io::Result<()> {
     // `CSI > 4 m` resets modifyOtherKeys; crossterm has no command for it.
     out.write_all(MODIFY_OTHER_KEYS_OFF)?;
     crossterm::execute!(
@@ -162,7 +162,7 @@ fn restore_now() {
 /// Install (once) a panic hook that restores the terminal before the
 /// default hook reports — a panic report on the alternate screen would
 /// vanish with it.
-pub fn install_panic_hook() {
+fn install_panic_hook() {
     #[cfg(unix)]
     signal_restore::install();
     PANIC_HOOK.call_once(|| {

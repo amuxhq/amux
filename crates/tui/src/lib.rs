@@ -37,10 +37,7 @@ mod tests;
 
 pub use app::{App, Flow, Tone, TuiConfig};
 pub use run::{AttachFn, AttachReturn, run};
-pub use terminal::{
-    RESTORE_BYTES, TerminalGuard, install_panic_hook, query_terminal_colors, write_enter_chrome,
-    write_osc52, write_restore,
-};
+pub use terminal::{RESTORE_BYTES, TerminalGuard, query_terminal_colors, write_osc52};
 pub use theme::{
     ColorMode, ColorPreference, TerminalColors, Theme, ThemeName, Token, Tokens, detect_color_mode,
     nearest_ansi,

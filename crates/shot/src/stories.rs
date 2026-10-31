@@ -104,7 +104,7 @@ impl Scene {
             Scene::Report(under) => {
                 under.draw(frame, area, theme);
                 let frozen = frame.buffer_mut().clone();
-                Report::without_dump(frozen, theme).draw(frame, area, theme);
+                Report::new(frozen, theme, None).draw(frame, area, theme);
             }
         }
     }

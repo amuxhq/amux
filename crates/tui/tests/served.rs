@@ -208,6 +208,8 @@ async fn a_draft_outlives_the_terminal_client_closing() {
     for c in "important unsent draft".chars() {
         press(&mut app, crossterm::event::KeyCode::Char(c));
     }
+    // Quitting saves the drafts before the client goes, as `run` does.
+    app.keep_drafts().await;
     drop(app);
 
     let mut app = app_listing(client, config, &[worker.as_bytes()]).await;

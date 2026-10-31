@@ -1729,11 +1729,10 @@ impl ProfileRuntime {
         } = connected;
         *handle.peer.lock().unwrap() = peer;
         *handle.ctl.lock().await = Some(writer);
-        handle.hello.send_replace(Some(hello.clone()));
+        handle.hello.send_replace(Some(hello));
         self.driver()
             .feed(daemon_core::Input::AgentHello {
                 agent: core_agent(id),
-                hello,
             })
             .await;
         if let Err(error) = self.ingest(id).await {

@@ -47,7 +47,7 @@ use daemon_core::{
     Output, Recorded, Retain, Retained, Settings, ShellWork, StartOptions, TimerId,
 };
 pub(crate) use feed::{Feed, WeakFeed};
-pub(crate) use links::{CoreLinks, Wanted, core_error};
+pub(crate) use links::{CoreLinks, Wanted};
 pub use stepped::Cores;
 use store::Sqlite;
 pub use streams::{InventorySubscription, Subscription};
@@ -1179,10 +1179,7 @@ impl CoreThread {
                 Some(reply) => {
                     if reply.send(Ok(Opened { channel })).is_err() {
                         // Nobody waits to open it: it never opened.
-                        self.again.push_back(Input::ChannelClosed {
-                            channel,
-                            reason: ChannelError::LinkClosed,
-                        });
+                        self.again.push_back(Input::ChannelClosed { channel });
                     }
                 }
                 None => tracing::error!(

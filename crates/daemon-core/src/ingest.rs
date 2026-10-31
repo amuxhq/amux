@@ -395,13 +395,7 @@ mod tests {
                 request: subscribe,
             },
         );
-        step(
-            &mut rig.daemon,
-            Input::AgentHello {
-                agent: AGENT,
-                hello: Default::default(),
-            },
-        );
+        step(&mut rig.daemon, Input::AgentHello { agent: AGENT });
 
         let first = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
         let keys = answered(&first, call);

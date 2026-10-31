@@ -20,8 +20,6 @@ pub type LinkFrame = wire::Message;
 pub type LinkCloseReason = wire::LinkCloseReason;
 /// One message of a pairing conversation.
 pub type PairMessage = wire::PairMessage;
-/// An agent process's hello on its control socket.
-pub type Hello = wire::AgentHello;
 /// A frame to an agent process's control socket.
 pub type ControlFrame = wire::CtlFrame;
 /// What an agent is started with.
@@ -97,7 +95,7 @@ pub struct PeerAddress {
     pub source: Source,
 }
 
-/// Why a channel closed or could not open.
+/// Why the core would not open a channel.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ChannelError {
     /// The link it was asked on is not up.
@@ -105,14 +103,10 @@ pub enum ChannelError {
     /// No key is pinned for the peer: it is not paired, or its pairing is
     /// being replaced.
     Unpinned,
-    /// The link went before the channel opened.
+    /// The link went before the channel opened, or the profile with it.
     LinkClosed,
     /// The forwarder between the two hosts would not carry the link.
     Refused(#[serde(with = "codec::numbered")] ForwardRefusal),
-    /// The handshake failed or took too long, in the driver's words.
-    Handshake(String),
-    /// The connection under an open channel ended.
-    Ended,
 }
 
 /// The key a channel's handshake must find at the other end: the peer's

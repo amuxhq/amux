@@ -14,7 +14,7 @@ use crate::ids::{
     AgentId, AttemptId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId,
 };
 use crate::payload::{
-    AgentSpec, Answer, CarrierKind, ChannelClass, ChannelError, ClientRequest, ControlFrame, Hello,
+    AgentSpec, Answer, CarrierKind, ChannelClass, ChannelError, ClientRequest, ControlFrame,
     JobResult, LinkCloseReason, LinkFrame, PairMessage, PeerRequest, PublicKey, Push, Response,
     Status,
 };
@@ -84,13 +84,10 @@ pub enum Input {
     /// verified the pin the core gave it.
     ChannelOpened {
         channel: ChannelId,
-        link: LinkId,
-        peer: HostId,
-        class: ChannelClass,
     },
+    /// A channel closed, or never opened.
     ChannelClosed {
         channel: ChannelId,
-        reason: ChannelError,
     },
     /// The account's plan changed: what the relay carries changed with it.
     PlanChanged,
@@ -199,8 +196,6 @@ pub enum Input {
     /// A connection to the agent's process said Hello.
     AgentHello {
         agent: AgentId,
-        #[serde(with = "codec::message")]
-        hello: Hello,
     },
     /// An agent's journal grew.
     Nudge {
@@ -789,9 +784,7 @@ pub enum Job {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::payload::{
-        Answer, ClientRequest, ForwardRefusal, JobResult, PeerFailure, PeerReply, PeerRequest,
-    };
+    use crate::payload::{Answer, ClientRequest, JobResult, PeerFailure, PeerReply, PeerRequest};
 
     #[test]
     fn every_kind_of_input_reads_back_as_written() {
@@ -826,13 +819,9 @@ mod tests {
             },
             Input::ChannelOpened {
                 channel: ChannelId(4),
-                link: LinkId(1),
-                peer: HostId([1; 16]),
-                class: ChannelClass::Session,
             },
             Input::ChannelClosed {
                 channel: ChannelId(4),
-                reason: ChannelError::Refused(ForwardRefusal::PaymentRequired),
             },
             Input::LinkDown {
                 link: LinkId(1),

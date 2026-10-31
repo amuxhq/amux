@@ -90,18 +90,21 @@ async fn a_link_and_its_channels_reach_the_core_as_inputs() {
             })
             .collect::<Vec<_>>()
     };
-    until("the laptop's core to hear a channel to the desk opened", || {
-        let inputs = inputs();
-        async move {
-            match inputs
-                .iter()
-                .any(|input| matches!(input, Input::ChannelOpened { peer, .. } if *peer == desk_host))
-            {
-                true => Ok(()),
-                false => Err(format!("{} inputs", inputs.len())),
+    until(
+        "the laptop's core to hear a channel to the desk opened",
+        || {
+            let inputs = inputs();
+            async move {
+                match inputs
+                    .iter()
+                    .any(|input| matches!(input, Input::ChannelOpened { .. }))
+                {
+                    true => Ok(()),
+                    false => Err(format!("{} inputs", inputs.len())),
+                }
             }
-        }
-    })
+        },
+    )
     .await
     .unwrap();
     let seen = inputs();

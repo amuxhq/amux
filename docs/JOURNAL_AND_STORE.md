@@ -126,7 +126,7 @@ Ingest is a step of the profile's core, in
 [`crates/daemon-core/src/ingest.rs`](../crates/daemon-core/src/ingest.rs).
 Each live agent has one watcher task in
 [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs). It dials
-`ctl.sock`, hands the agent's `AgentHello` to the core, and calls
+`ctl.sock`, keeps the agent's `AgentHello`, tells the core it arrived, and calls
 `ProfileRuntime::ingest` on every `Nudge`, which feeds the core a `Nudge`
 input and waits until the journal has been read to its end. It also ingests
 when it first adopts a connection, when the startup sweep finds an agent, and

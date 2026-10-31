@@ -214,7 +214,7 @@ impl Daemon {
                 }
             }
             Input::Nudge { agent } => self.ingest(agent, out),
-            Input::AgentHello { agent, .. } => {
+            Input::AgentHello { agent } => {
                 self.hello(agent);
                 self.process_hello(agent, out);
             }
@@ -284,8 +284,8 @@ impl Daemon {
                 class,
                 pin,
             } => self.want_channel(link, peer, class, pin, out),
-            Input::ChannelOpened { channel, .. } => self.channel_opened(channel),
-            Input::ChannelClosed { channel, .. } => self.channel_closed(channel),
+            Input::ChannelOpened { channel } => self.channel_opened(channel),
+            Input::ChannelClosed { channel } => self.channel_closed(channel),
             Input::PlanChanged => self.plan_changed(out),
             Input::TryAgain { host } => {
                 self.reconsider(host, out);

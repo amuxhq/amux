@@ -20,7 +20,7 @@ use tonic::transport::{Channel, Endpoint};
 use super::{ByteStream, OpenError, QuicCarrier};
 use crate::HostId;
 use crate::dispatcher::TunnelDispatcher;
-use crate::driver::{CoreLinks, core_error};
+use crate::driver::CoreLinks;
 use crate::identity::IdentityError;
 use crate::routing::{LinkId, LinkRegistry, Route};
 use crate::transport::{Compressed, channel_from_single_io};
@@ -330,7 +330,7 @@ impl Ending {
 
     fn tell_ended(&self) {
         if let Some((core, channel)) = self.tell.get() {
-            core.closed(*channel, daemon_core::payload::ChannelError::Ended);
+            core.closed(*channel);
         }
     }
 
@@ -360,8 +360,8 @@ pub struct ChannelPool {
 }
 
 /// A channel the core said to open, whose outcome the core is told exactly
-/// once. One dropped before it was told, as a caller that gives up waiting
-/// drops its open, is told it was abandoned.
+/// once: opened, or closed when it is dropped untold, as when the open
+/// failed or a caller that gave up waiting dropped it.
 struct Telling {
     core: CoreLinks,
     channel: daemon_core::ChannelId,
@@ -369,25 +369,17 @@ struct Telling {
 }
 
 impl Telling {
-    fn opened(mut self, link: LinkId, key: ChannelKey) -> (CoreLinks, daemon_core::ChannelId) {
+    fn opened(mut self) -> (CoreLinks, daemon_core::ChannelId) {
         self.told = true;
-        self.core.opened(self.channel, link, key.peer, key.class);
+        self.core.opened(self.channel);
         (self.core.clone(), self.channel)
-    }
-
-    fn failed(mut self, reason: daemon_core::payload::ChannelError) {
-        self.told = true;
-        self.core.closed(self.channel, reason);
     }
 }
 
 impl Drop for Telling {
     fn drop(&mut self) {
         if !self.told {
-            self.core.closed(
-                self.channel,
-                daemon_core::payload::ChannelError::Handshake("the open was abandoned".to_owned()),
-            );
+            self.core.closed(self.channel);
         }
     }
 }
@@ -528,13 +520,8 @@ impl ChannelPool {
             let pinned = self.pinned(key.peer);
             match core.want_channel(link, key.peer, key.class, pinned).await {
                 Ok(opening) => {
-                    let telling = Telling {
-                        core: core.clone(),
-                        channel: opening.channel,
-                        told: false,
-                    };
-                    let (core, channel) = telling.opened(link, key);
-                    ended.arm(core, channel);
+                    core.opened(opening.channel);
+                    ended.arm(core.clone(), opening.channel);
                 }
                 Err(_) => {
                     lifetime.cancel();
@@ -648,12 +635,9 @@ impl ChannelPool {
         if let Err(ChannelError::Handshake(_)) = &secured {
             self.close_failed(link);
         }
-        match &secured {
-            Ok(_) => {
-                let (core, channel) = telling.opened(link, key);
-                ended.arm(core, channel);
-            }
-            Err(error) => telling.failed(core_error(error)),
+        if secured.is_ok() {
+            let (core, channel) = telling.opened();
+            ended.arm(core, channel);
         }
         let channel = secured?;
         tracing::debug!(

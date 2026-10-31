@@ -739,15 +739,7 @@ mod tests {
             "the handshake checks the key pinned for the peer"
         );
         let channel = *channel;
-        step(
-            &mut daemon,
-            Input::ChannelOpened {
-                channel,
-                link: LINK,
-                peer: PEER,
-                class: ChannelClass::Calls,
-            },
-        );
+        step(&mut daemon, Input::ChannelOpened { channel });
         assert!(daemon.links().channel(channel).is_some_and(|c| c.open));
 
         // A second channel gets an id of its own; closing one forgets it.
@@ -761,13 +753,7 @@ mod tests {
             panic!("the second channel is opened: {out:?}");
         };
         assert_ne!(*second, channel);
-        step(
-            &mut daemon,
-            Input::ChannelClosed {
-                channel,
-                reason: ChannelError::Ended,
-            },
-        );
+        step(&mut daemon, Input::ChannelClosed { channel });
         assert!(daemon.links().channel(channel).is_none());
 
         // The link going takes its channels with it.

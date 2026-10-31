@@ -125,15 +125,7 @@ fn channel(daemon: &mut Daemon, link: u64, peer: HostId) -> ChannelId {
             _ => None,
         })
         .expect("the core opens the channel");
-    step(
-        daemon,
-        Input::ChannelOpened {
-            channel,
-            link: LinkId(link),
-            peer,
-            class: ChannelClass::Calls,
-        },
-    );
+    step(daemon, Input::ChannelOpened { channel });
     channel
 }
 

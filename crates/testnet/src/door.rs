@@ -896,8 +896,9 @@ fn running_model(snapshot: &wire::Snapshot) -> Option<String> {
     use prost::Message;
     let body = snapshot.body.as_slice();
     match wire::Kind::try_from(snapshot.kind).ok()? {
-        wire::Kind::ClaudeSdk => wire::ClaudeSnapshot::decode(body).ok()?.model,
-        wire::Kind::ClaudePty => wire::ClaudeSnapshot::decode(body).ok()?.model,
+        wire::Kind::ClaudeSdk | wire::Kind::ClaudePty => {
+            wire::ClaudeSnapshot::decode(body).ok()?.model
+        }
         wire::Kind::Codex => wire::CodexSnapshot::decode(body).ok()?.model,
         wire::Kind::Unspecified => None,
     }

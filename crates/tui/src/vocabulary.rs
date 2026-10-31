@@ -2680,17 +2680,6 @@ fn control_chats() -> Vec<(
                 }
                 .encode_to_vec()
             }
-            Kind::ClaudePty => {
-                use wire::claude_item::Kind as K;
-                wire::ClaudeItem {
-                    kind: Some(if prompt {
-                        K::Prompt(wire::Prompt {})
-                    } else {
-                        K::Message(wire::Text { complete: true })
-                    }),
-                }
-                .encode_to_vec()
-            }
             _ => {
                 use wire::claude_item::Kind as K;
                 wire::ClaudeItem {

@@ -1149,12 +1149,7 @@ fn drawn(kind: Kind, item: &wire::Item) -> Option<Drawn> {
     use wire::{claude_item, codex_item, work};
     let body = item.body.as_slice();
     match kind {
-        Kind::ClaudePty => match wire::ClaudeItem::decode(body).ok()?.kind? {
-            claude_item::Kind::AgentMessage(message) => Some(Drawn::Message(message)),
-            claude_item::Kind::Tool(tool) => Some(Drawn::Tool(tool.name)),
-            _ => None,
-        },
-        Kind::ClaudeSdk => match wire::ClaudeItem::decode(body).ok()?.kind? {
+        Kind::ClaudePty | Kind::ClaudeSdk => match wire::ClaudeItem::decode(body).ok()?.kind? {
             claude_item::Kind::AgentMessage(message) => Some(Drawn::Message(message)),
             claude_item::Kind::Tool(tool) => Some(Drawn::Tool(tool.name)),
             _ => None,

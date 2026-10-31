@@ -836,13 +836,8 @@ impl Log {
         };
         let keys = |asks: Vec<wire::Ask>| asks.into_iter().map(|ask| ask.key).collect();
         match snapshot.kind() {
-            Kind::ClaudeSdk => keys(
+            Kind::ClaudeSdk | Kind::ClaudePty => keys(
                 ClaudeSnapshot::decode(snapshot.body.as_slice())
-                    .unwrap()
-                    .asks,
-            ),
-            Kind::ClaudePty => keys(
-                wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .asks,
             ),
@@ -862,13 +857,8 @@ impl Log {
             return Vec::new();
         };
         let jobs = match snapshot.kind() {
-            Kind::ClaudeSdk => {
+            Kind::ClaudeSdk | Kind::ClaudePty => {
                 ClaudeSnapshot::decode(snapshot.body.as_slice())
-                    .unwrap()
-                    .background_jobs
-            }
-            Kind::ClaudePty => {
-                wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .background_jobs
             }
@@ -888,13 +878,8 @@ impl Log {
             return Vec::new();
         };
         let servers = match snapshot.kind() {
-            Kind::ClaudeSdk => {
+            Kind::ClaudeSdk | Kind::ClaudePty => {
                 ClaudeSnapshot::decode(snapshot.body.as_slice())
-                    .unwrap()
-                    .servers
-            }
-            Kind::ClaudePty => {
-                wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .servers
             }
@@ -918,14 +903,12 @@ impl Log {
 /// A boundary item's kind and cause as the log prints it.
 pub fn boundary(item: &wire::Item) -> Option<String> {
     let boundary = match item.kind() {
-        Kind::ClaudeSdk => match ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
-            claude_item::Kind::Boundary(boundary) => boundary,
-            _ => return None,
-        },
-        Kind::ClaudePty => match ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
-            claude_item::Kind::Boundary(boundary) => boundary,
-            _ => return None,
-        },
+        Kind::ClaudeSdk | Kind::ClaudePty => {
+            match ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+                claude_item::Kind::Boundary(boundary) => boundary,
+                _ => return None,
+            }
+        }
         Kind::Codex => match CodexItem::decode(item.body.as_slice()).ok()?.kind? {
             codex_item::Kind::Boundary(boundary) => boundary,
             _ => return None,

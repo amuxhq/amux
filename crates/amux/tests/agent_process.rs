@@ -332,14 +332,12 @@ impl Log {
 
 fn boundary(item: &wire::Item) -> Option<String> {
     let boundary = match item.kind() {
-        Kind::ClaudeSdk => match ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
-            claude_item::Kind::Boundary(boundary) => boundary,
-            _ => return None,
-        },
-        Kind::ClaudePty => match ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
-            claude_item::Kind::Boundary(boundary) => boundary,
-            _ => return None,
-        },
+        Kind::ClaudeSdk | Kind::ClaudePty => {
+            match ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+                claude_item::Kind::Boundary(boundary) => boundary,
+                _ => return None,
+            }
+        }
         Kind::Codex => match CodexItem::decode(item.body.as_slice()).ok()?.kind? {
             codex_item::Kind::Boundary(boundary) => boundary,
             _ => return None,

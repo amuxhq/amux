@@ -448,7 +448,9 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dump_of_named_agents_covers_only_them_and_an_unknown_one_is_an_error() {
     let install = Install::new();
-    let daemon = install.start("boot-1", unbudgeted()).await;
+    let daemon = install
+        .start("boot-1", support::synthetic::quiet_launch())
+        .await;
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
     let mut one = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
     let two = support::synthetic::SyntheticAgent::new(&install, "two", 1 << 20);
@@ -496,7 +498,9 @@ async fn a_dump_of_named_agents_covers_only_them_and_an_unknown_one_is_an_error(
 #[tokio::test(flavor = "multi_thread")]
 async fn each_scope_carries_what_its_stage_replays() {
     let install = Install::new();
-    let daemon = install.start("boot-1", unbudgeted()).await;
+    let daemon = install
+        .start("boot-1", support::synthetic::quiet_launch())
+        .await;
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
     let mut one = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
     let two = support::synthetic::SyntheticAgent::new(&install, "two", 1 << 20);
@@ -564,18 +568,6 @@ async fn each_scope_carries_what_its_stage_replays() {
     kill_all(&runtime).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();
-}
-
-/// A synthetic installation's launch whose cores never dump for a slow
-/// step, for a test that lists every bundle under reports/: a loaded run
-/// can stretch a step past even the test budget, and its dump would land
-/// beside the bundles the test made.
-fn unbudgeted() -> node::Launch {
-    node::Launch {
-        step_budget: daemon_core::StepBudget::UNLIMITED,
-        agent_step_budget_micros: daemon_core::StepBudget::UNLIMITED.micros,
-        ..support::synthetic::quiet_launch()
-    }
 }
 
 /// Waits for the installation to hold `count` bundles the daemon core asked
@@ -880,7 +872,9 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
     asking.go_live();
     // The bundles here are the agent's alone: the daemon's core never
     // dumps for a slow step of its own.
-    let daemon = install.start("boot-1", unbudgeted()).await;
+    let daemon = install
+        .start("boot-1", support::synthetic::quiet_launch())
+        .await;
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
 
     let violation = format!("the agent core: {INVARIANT}: two asks open");
@@ -974,10 +968,9 @@ async fn an_agents_step_over_its_budget_leaves_a_bundle_of_that_agent() {
     // Not told to expect dumps: a step over its budget is tolerated at
     // teardown, only a broken invariant fails it.
     let install = Install::new();
-    // The one bundle is the agent's: the daemon's core never dumps for a
-    // slow step of its own.
+    // The one bundle is the agent's: the daemon's core, untimed as in
+    // every test installation, never dumps for a slow step of its own.
     let launch = node::Launch {
-        step_budget: daemon_core::StepBudget::UNLIMITED,
         agent_step_budget_micros: 1,
         ..install.launch(
             "slow",

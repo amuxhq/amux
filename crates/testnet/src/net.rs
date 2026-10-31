@@ -1563,10 +1563,11 @@ impl Net {
                 .fake(FakeKind::Codex)
                 .to_string_lossy()
                 .into_owned(),
-            step_budget: daemon_core::StepBudget::TEST,
-            // An agent's core gets the daemon's test budget, for the same
-            // reason: a loaded debug-build run stretches ordinary steps.
-            agent_step_budget_micros: daemon_core::StepBudget::TEST.micros,
+            // Untimed, daemon and agent cores alike: a loaded debug-build
+            // run stretches ordinary steps past any budget, and a dump for
+            // that overrun would land in `reports/` while a test reads it.
+            step_budget: daemon_core::StepBudget::UNLIMITED,
+            agent_step_budget_micros: daemon_core::StepBudget::UNLIMITED.micros,
             ..Launch::default()
         };
         let provider = agent.map_or(own.decl.provider, |(_, _, provider)| provider);

@@ -262,16 +262,15 @@ passes by timing out. An absence is shown by draining to a declared boundary or 
 never by one empty poll.
 
 A daemon core reports a step that runs past its budget with a dump. Test installations (node's test support and
-testnet's real hosts) run under `StepBudget::TEST`, one second, not the daemon's 100 ms: debug builds on a loaded
-four-core CI runner take 118 to 143 ms for such steps, and a dump for that overrun would land in `reports/` while
-a test may be reading it. Tests see the tripwire only where they set a budget themselves (node's dump tests set 0 µs;
-a testnet `NetOptions.launch` hook may set any), and `just perf` judges the real daemon at its own budget. A test
-that lists every bundle under `reports/` runs the cores it does not mean to dump under `StepBudget::UNLIMITED`: a
-loaded run can stretch a step past even one second. A test
-installation's teardown prints any over-budget dump and fails only on a broken invariant's. The agents those
-installations start get the same one second (`Launch.agent_step_budget_micros`) for the same reason, and the
-supervisor tests' stand-in binary gives its supervisor one too; the models and the simulated net run every core
-under `StepBudget::UNLIMITED`, so a verdict is a function of its inputs alone.
+testnet's real hosts) run their daemon and agent cores under `StepBudget::UNLIMITED`
+(`Launch.step_budget` and `Launch.agent_step_budget_micros`): debug builds on a loaded four-core CI runner take
+118 to 143 ms for steps the daemon allows 100 ms, and a dump for that overrun would land in `reports/` while a
+test may be reading it; a step genuinely stuck shows as the test's own timeout. Tests see the tripwire only where
+they set a budget themselves (node's dump tests set 0 µs; a testnet `NetOptions.launch` hook may set any), and
+`just perf` judges the real daemon at its own budget. A test installation's teardown prints any over-budget dump
+and fails only on a broken invariant's. The supervisor tests' stand-in binary gives its supervisor one second;
+the models and the simulated net run every core under `StepBudget::UNLIMITED`, so a verdict is a function of
+its inputs alone.
 
 ## Fixtures and goldens
 

@@ -18,12 +18,6 @@ impl StepBudget {
     /// batch at the performance budget's ceiling of 100 µs a frame takes
     /// about 26 ms, so a step past this is doing something no step should.
     pub const DAEMON: StepBudget = StepBudget { micros: 100_000 };
-    /// Test installations': debug builds on a loaded four-core CI runner
-    /// take 118 to 143 ms for steps the daemon's budget allows 100 ms, and
-    /// a dump written for that overrun lands in `reports/` while a test may
-    /// be reading it. A second is still short enough that a step genuinely
-    /// stuck is reported. Tests of the tripwire set their own budget.
-    pub const TEST: StepBudget = StepBudget { micros: 1_000_000 };
     /// The agent process's: a step stands between the provider and its
     /// journal.
     pub const AGENT: StepBudget = StepBudget { micros: 10_000 };

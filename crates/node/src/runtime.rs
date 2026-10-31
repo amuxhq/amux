@@ -832,16 +832,6 @@ impl ProfileRuntime {
             .unwrap_or(Err(StoreError::Closed))
     }
 
-    /// For tests: writes the store beneath the core's own steps, between
-    /// them, to set up what no input produces.
-    #[doc(hidden)]
-    pub async fn write_store_beneath<T: Send + 'static>(
-        &self,
-        write: impl FnOnce(&mut Sqlite) -> T + Send + 'static,
-    ) -> Result<T, Stopped> {
-        self.driver.beneath(write).await.ok_or(Stopped)
-    }
-
     /// For tests: runs `hook` inside every subscribe between joining the
     /// agent's channel and reading the cut, so a test can try to commit in
     /// that window.

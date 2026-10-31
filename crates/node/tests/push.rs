@@ -121,7 +121,7 @@ impl Rig {
 async fn a_needs_you_push_is_sent_once_due_and_cancelled_by_an_answer_exit_or_delete() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "deployer", SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     agent.append(&item("ask", "May I run the migration?"));
     agent.go_live();
     let mut rig = Rig::start(install).await;
@@ -208,7 +208,7 @@ async fn a_needs_you_push_is_sent_once_due_and_cancelled_by_an_answer_exit_or_de
 
     // Delete removes it too.
     let mut other = SyntheticAgent::new(&rig.install, "reviewer", SEGMENTS);
-    other.register(&rig.install, &rig.runtime).await;
+    other.register(&rig.install);
     other.append(&item("ask", "Approve the plan?"));
     other.append(&snapshot(Phase::NeedsYou, &[], rig.clock.now_ms()));
     rig.runtime.ingest(other.id).await.unwrap();

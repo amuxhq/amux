@@ -716,10 +716,7 @@ async fn delete_aborts_first_and_its_children_here_follow() {
     {
         let mut row = AgentRow::new(remote.clone(), wire::Kind::Codex, "/");
         row.parent = Some(key(&runtime, parent));
-        runtime
-            .write_store_beneath(move |store| store.put_agent(&row).unwrap())
-            .await
-            .unwrap();
+        install.store().put_agent(&row).unwrap();
     }
     for id in [parent, child] {
         until("the turn to start", || working(&runtime, id))

@@ -321,25 +321,26 @@ async fn a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page
             now_ms: net.now_ms(),
             notify_delay_ms: 0,
         };
-        let key = key.clone();
-        runtime
-            .write_store_beneath(move |store| {
-                let at = store.cursor(&key).unwrap();
-                store
-                    .commit(
-                        &key,
-                        &[(
-                            at,
-                            wire::Step {
-                                items: vec![revised],
-                                ..wire::Step::default()
-                            },
-                        )],
-                        clock,
-                    )
-                    .unwrap();
-            })
-            .await
+        // Written through a connection of the test's own, beside the
+        // daemon's.
+        let mut store = store::Sqlite::open(
+            &runtime.dir().join(node::STORE),
+            runtime.host().as_bytes().to_vec(),
+        )
+        .unwrap();
+        let at = store.cursor(&key).unwrap();
+        store
+            .commit(
+                &key,
+                &[(
+                    at,
+                    wire::Step {
+                        items: vec![revised],
+                        ..wire::Step::default()
+                    },
+                )],
+                clock,
+            )
             .unwrap();
     }
     let revised = origin_rows(&net, "worker").await[0].clone();

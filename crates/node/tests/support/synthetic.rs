@@ -198,24 +198,11 @@ impl SyntheticAgent {
         row
     }
 
-    /// Writes the row with no daemon running, as a spawn before a crash
-    /// would have left it.
-    pub fn register_offline(&self, install: &Install) {
-        let mut store = store::Sqlite::open(
-            &install.profile_dir().join(node::STORE),
-            host(install).as_bytes().to_vec(),
-        )
-        .unwrap();
-        store.put_agent(&self.row(install)).unwrap();
-    }
-
-    /// Writes the row through a running daemon's store.
-    pub async fn register(&self, install: &Install, runtime: &ProfileRuntime) {
-        let row = self.row(install);
-        runtime
-            .write_store_beneath(move |store| store.put_agent(&row).unwrap())
-            .await
-            .unwrap();
+    /// Writes the row through a store connection of its own, beside any
+    /// daemon's: with none running, as a spawn before a crash would have
+    /// left it.
+    pub fn register(&self, install: &Install) {
+        install.store().put_agent(&self.row(install)).unwrap();
     }
 
     pub fn append(&mut self, step: &Step) -> u64 {

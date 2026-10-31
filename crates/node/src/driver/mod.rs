@@ -127,8 +127,6 @@ pub(crate) enum Fed {
     },
     /// A read of the store, between steps.
     Read(Box<dyn FnOnce(&Sqlite) + Send>),
-    /// For tests: a write beneath the core's own, between steps.
-    Beneath(Box<dyn FnOnce(&mut Sqlite) + Send>),
     /// The shell wants a channel, and waits for the core's word on it.
     Channel {
         want: Input,
@@ -495,19 +493,6 @@ impl Driver {
         word.await.unwrap_or(false)
     }
 
-    /// For tests: writes the store beneath the core, between steps.
-    pub(crate) async fn beneath<T: Send + 'static>(
-        &self,
-        write: impl FnOnce(&mut Sqlite) -> T + Send + 'static,
-    ) -> Option<T> {
-        let (done, value) = oneshot::channel();
-        let write = Box::new(move |store: &mut Sqlite| {
-            let _ = done.send(write(store));
-        });
-        self.inputs.send(Fed::Beneath(write)).await.ok()?;
-        value.await.ok()
-    }
-
     /// Feeds the core an input.
     pub(crate) async fn feed(&self, input: Input) {
         let _ = self.inputs.send(Fed::Input(input)).await;
@@ -722,10 +707,6 @@ impl CoreThread {
                 look(&self.daemon);
                 return true;
             }
-            Fed::Beneath(write) => {
-                write(self.daemon.store_beneath());
-                return true;
-            }
             Fed::Capture { store, done } => {
                 let _ = done.send(self.capture(&store));
                 return true;
@@ -832,7 +813,6 @@ impl CoreThread {
             | Fed::Forward { .. }
             | Fed::Look(_)
             | Fed::Read(_)
-            | Fed::Beneath(_)
             | Fed::Capture { .. } => None,
         };
         let launch = runtime.launch();

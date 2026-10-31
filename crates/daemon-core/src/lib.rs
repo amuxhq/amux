@@ -565,13 +565,6 @@ impl Daemon {
         self.options.agents = agents;
     }
 
-    /// The store, for a write beneath the core's own: only a test setting
-    /// up what no input produces writes through it.
-    #[doc(hidden)]
-    pub fn store_beneath(&mut self) -> &mut Sqlite {
-        &mut self.store
-    }
-
     /// Sets how long one step may take before it is reported: a replay of
     /// a checkpoint the daemon took under its own budget runs under none,
     /// so that its steps are a function of their inputs alone.

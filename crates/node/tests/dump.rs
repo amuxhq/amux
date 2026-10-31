@@ -454,8 +454,8 @@ async fn a_dump_of_named_agents_covers_only_them_and_an_unknown_one_is_an_error(
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
     let mut one = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
     let two = support::synthetic::SyntheticAgent::new(&install, "two", 1 << 20);
-    one.register(&install, &runtime).await;
-    two.register(&install, &runtime).await;
+    one.register(&install);
+    two.register(&install);
     one.append(&support::synthetic::item("a", "hello"));
     runtime.ingest(one.id).await.unwrap();
 
@@ -504,8 +504,8 @@ async fn each_scope_carries_what_its_stage_replays() {
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
     let mut one = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
     let two = support::synthetic::SyntheticAgent::new(&install, "two", 1 << 20);
-    one.register(&install, &runtime).await;
-    two.register(&install, &runtime).await;
+    one.register(&install);
+    two.register(&install);
     one.append(&support::synthetic::item("a", "hello"));
     runtime.ingest(one.id).await.unwrap();
     runtime.checkpoint().await.unwrap();
@@ -599,7 +599,7 @@ async fn steps_over_their_budget_are_one_dump_within_the_interval() {
     let daemon = install.start("boot-1", launch).await;
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
     let mut agent = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
-    agent.register(&install, &runtime).await;
+    agent.register(&install);
     agent.append(&support::synthetic::item("a", "hello"));
     runtime.ingest(agent.id).await.unwrap();
     let first = core_dumps(&install, 1).await;
@@ -631,7 +631,7 @@ async fn steps_over_their_budget_dump_again_after_the_interval_counting_the_rest
     let daemon = install.start("boot-1", launch).await;
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
     let mut agent = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
-    agent.register(&install, &runtime).await;
+    agent.register(&install);
     agent.append(&support::synthetic::item("a", "hello"));
     runtime.ingest(agent.id).await.unwrap();
     core_dumps(&install, 1).await;
@@ -696,7 +696,7 @@ async fn a_clean_shutdown_ends_a_dump_still_waiting_for_an_agents_part() {
     // A live agent that never reads the dump request, so never answers it:
     // the dump waits on its part, holding the runtime.
     let mut silent = support::synthetic::SyntheticAgent::new(&install, "silent", 1 << 20);
-    silent.register_offline(&install);
+    silent.register(&install);
     silent.go_live();
     let daemon = install
         .start("boot-1", support::synthetic::quiet_launch())
@@ -867,8 +867,8 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
     install.expect_core_dumps();
     let mut asking = support::synthetic::SyntheticAgent::new(&install, "asking", 1 << 20);
     let other = support::synthetic::SyntheticAgent::new(&install, "other", 1 << 20);
-    asking.register_offline(&install);
-    other.register_offline(&install);
+    asking.register(&install);
+    other.register(&install);
     asking.go_live();
     // The bundles here are the agent's alone: the daemon's core never
     // dumps for a slow step of its own.

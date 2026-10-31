@@ -33,7 +33,7 @@ impl Pair {
     async fn new() -> (Self, node::LoopbackLink) {
         let desk = Install::new();
         let mut agent = SyntheticAgent::new(&desk, "coder", SEGMENTS);
-        agent.register_offline(&desk);
+        agent.register(&desk);
         agent.append(&snapshot(wire::Phase::Idle, &[], 1_000));
         agent.go_live();
         let desk_daemon = desk.start("boot-1", quiet_launch()).await;

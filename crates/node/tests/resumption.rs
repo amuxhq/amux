@@ -364,7 +364,7 @@ async fn first_flight_on_every_path_reaches_the_host_once() {
     captured();
     let desk = Install::new();
     let mut agent = SyntheticAgent::new(&desk, "coder", 1 << 20);
-    agent.register_offline(&desk);
+    agent.register(&desk);
     agent.append(&snapshot(wire::Phase::Idle, &[], 1_000));
     agent.go_live();
     let mut options = desk.options("boot-1", quiet_launch());

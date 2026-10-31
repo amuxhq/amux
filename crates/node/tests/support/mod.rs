@@ -126,10 +126,14 @@ impl Install {
         self.profile_dir().join(node::AGENTS).join(id.to_string())
     }
 
-    /// The profile store, opened beside the daemon's own connection.
-    fn store(&self) -> store::Sqlite {
-        store::Sqlite::open(&self.profile_dir().join(node::STORE), [0; 16])
-            .expect("the profile store opens")
+    /// The profile store, opened beside the daemon's own connection: a
+    /// test sets up what no input produces by writing through it.
+    pub fn store(&self) -> store::Sqlite {
+        store::Sqlite::open(
+            &self.profile_dir().join(node::STORE),
+            self.profile.as_bytes().to_vec(),
+        )
+        .expect("the profile store opens")
     }
 
     /// The row this profile keeps for the paired `peer`, when it has one.

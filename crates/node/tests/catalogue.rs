@@ -173,7 +173,7 @@ impl Pair {
 fn desk_agent() -> (Install, SyntheticAgent) {
     let desk = Install::new();
     let agent = SyntheticAgent::new(&desk, "coder", SEGMENTS);
-    agent.register_offline(&desk);
+    agent.register(&desk);
     (desk, agent)
 }
 

@@ -616,14 +616,14 @@ impl State {
         &self.shared
     }
 
-    fn new(spec: &AgentSpec, producer_version: &str) -> Self {
+    fn new(spec: &AgentSpec) -> Self {
         let created_mode = spec
             .config
             .as_ref()
             .and_then(|config| config.mode.clone())
             .filter(|mode| MODES.iter().any(|(value, _)| value == mode));
         Self {
-            shared: Shared::new(spec, KIND, producer_version),
+            shared: Shared::new(spec, KIND),
             incarnation: spec.incarnation,
             name: spec.name.clone(),
             names_set: 0,
@@ -1822,14 +1822,14 @@ impl Interpreter for Codex {
     type State = State;
     const KIND: wire::Kind = KIND;
 
-    fn initial(spec: &AgentSpec, producer_version: &str) -> (State, Step) {
-        let mut state = State::new(spec, producer_version);
+    fn initial(spec: &AgentSpec) -> (State, Step) {
+        let mut state = State::new(spec);
         let step = state.shared.initial_step(Self::unknown_snapshot());
         (state, step)
     }
 
-    fn reincarnate(mut state: State, spec: &AgentSpec, producer_version: &str) -> (State, Step) {
-        state.shared.reincarnate(spec, producer_version);
+    fn reincarnate(mut state: State, spec: &AgentSpec) -> (State, Step) {
+        state.shared.reincarnate(spec);
         state.incarnation = spec.incarnation;
         state.name = spec.name.clone();
         state.resume()

@@ -633,8 +633,8 @@ impl State {
         &self.shared
     }
 
-    fn new(spec: &AgentSpec, producer_version: &str) -> Self {
-        let mut shared = Shared::new(spec, ClaudePty::KIND, producer_version);
+    fn new(spec: &AgentSpec) -> Self {
+        let mut shared = Shared::new(spec, ClaudePty::KIND);
         // Keys typed into a terminal may land in one of Claude's own
         // screens and never reach the conversation: a turn starts when
         // Claude records the prompt.
@@ -1678,14 +1678,14 @@ impl Interpreter for ClaudePty {
     type State = State;
     const KIND: wire::Kind = wire::Kind::ClaudePty;
 
-    fn initial(spec: &AgentSpec, producer_version: &str) -> (State, Step) {
-        let mut state = State::new(spec, producer_version);
+    fn initial(spec: &AgentSpec) -> (State, Step) {
+        let mut state = State::new(spec);
         let step = state.shared.initial_step(Self::unknown_snapshot());
         (state, step)
     }
 
-    fn reincarnate(mut state: State, spec: &AgentSpec, producer_version: &str) -> (State, Step) {
-        state.shared.reincarnate(spec, producer_version);
+    fn reincarnate(mut state: State, spec: &AgentSpec) -> (State, Step) {
+        state.shared.reincarnate(spec);
         state.jobs.clear();
         // The launch fact of the new process is its first, not a relaunch:
         // the session it resumes is a resume, not a restart.

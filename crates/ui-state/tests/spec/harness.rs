@@ -176,7 +176,6 @@ pub fn item(kind: Kind, order: u64, revision: u64, text: &str, body: Body) -> It
         key: format!("k{order}"),
         order,
         revision,
-        producer_version: "test".into(),
         text: text.into(),
         kind: kind as i32,
         body: encode(kind, &body),

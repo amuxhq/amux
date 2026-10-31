@@ -54,7 +54,7 @@ impl Run {
 
     fn resume(spec: &AgentSpec, resumed: Option<Resumed<<Kind as Interpreter>::State>>) -> Self {
         let mut out = Vec::new();
-        let agent = Agent::<Kind>::start(spec, resumed, "0.0.0", 1_000, &mut out);
+        let agent = Agent::<Kind>::start(spec, resumed, 1_000, &mut out);
         Self {
             agent,
             now_ms: 1_000,

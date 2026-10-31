@@ -341,7 +341,7 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
         created_at_ms: 1_800_000_000_000,
         ..AgentSpec::default()
     };
-    let (mut state, first) = I::initial(&spec, "redaction-test");
+    let (mut state, first) = I::initial(&spec);
     let mut steps = vec![first];
     let mut inputs = vec![answer_input::<I>()];
     // An agent message is a ring entry of its own, with a person's words.

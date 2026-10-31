@@ -440,11 +440,10 @@ impl<I: Interpreter> Agent<I> {
     pub fn start(
         spec: &AgentSpec,
         resumed: Option<Resumed<I::State>>,
-        producer_version: &str,
         now_ms: u64,
         out: &mut Vec<Output>,
     ) -> Self {
-        let (interpreter, first) = start::starting::<I>(spec, resumed, producer_version);
+        let (interpreter, first) = start::starting::<I>(spec, resumed);
         let params = Params::of(spec);
         let grace = now_ms.saturating_add(params.grace_ms);
         let mut agent = Self {

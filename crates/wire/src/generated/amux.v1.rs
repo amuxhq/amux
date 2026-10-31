@@ -324,9 +324,6 @@ pub struct Item {
     pub order: u64,
     #[prost(uint64, tag = "4")]
     pub revision: u64,
-    /// The agent binary that wrote it.
-    #[prost(string, tag = "5")]
-    pub producer_version: ::prost::alloc::string::String,
     /// Set on a prompt's reflection, and on an agent message's item (the
     /// envelope id).
     #[prost(bytes = "vec", tag = "6")]

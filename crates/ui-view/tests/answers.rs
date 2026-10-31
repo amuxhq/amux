@@ -51,12 +51,8 @@ struct Driven<S> {
 }
 
 impl<S: Checkpoint + Clone> Driven<S> {
-    fn start<I: Interpreter<State = S>>(
-        kind: Kind,
-        spec: &wire::AgentSpec,
-        producer: &str,
-    ) -> Self {
-        let (interpreter, first) = I::initial(spec, producer);
+    fn start<I: Interpreter<State = S>>(kind: Kind, spec: &wire::AgentSpec) -> Self {
+        let (interpreter, first) = I::initial(spec);
         let mut driven = Driven {
             interpreter,
             session: SessionState::new(agent(kind), support::CAP),
@@ -275,7 +271,7 @@ where
     for path in &names {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
         let script = interpret::fixture_script::<I>(path).unwrap();
-        let mut driven = Driven::start::<I>(kind, &script.spec, &script.producer);
+        let mut driven = Driven::start::<I>(kind, &script.spec);
         let mut tried = BTreeSet::new();
         for (label, event) in script.events {
             driven.step::<I>(event);
@@ -377,7 +373,7 @@ where
     for path in &names {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
         let script = interpret::fixture_script::<I>(path).unwrap();
-        let mut driven = Driven::start::<I>(kind, &script.spec, &script.producer);
+        let mut driven = Driven::start::<I>(kind, &script.spec);
         for (_, event) in script.events {
             driven.step::<I>(event);
         }
@@ -471,7 +467,7 @@ fn settings_picks_reach_the_interpreter() {
 fn a_multi_select_answer_keeps_its_picks_beside_something_else() {
     let path = fixtures("claude_pty").join("recorded_question_multi_other.json");
     let script = interpret::fixture_script::<ClaudePty>(&path).unwrap();
-    let mut driven = Driven::start::<ClaudePty>(Kind::ClaudePty, &script.spec, &script.producer);
+    let mut driven = Driven::start::<ClaudePty>(Kind::ClaudePty, &script.spec);
     let mut card = None;
     for (_, event) in script.events {
         driven.step::<ClaudePty>(event);

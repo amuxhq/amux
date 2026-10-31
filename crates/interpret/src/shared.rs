@@ -340,7 +340,6 @@ pub struct Shared<A: OpenAsk> {
     agent: Vec<u8>,
     /// The wire Kind's integer.
     kind: i32,
-    producer_version: String,
     now_ms: i64,
     /// The provider accepts input.
     started: bool,
@@ -400,11 +399,10 @@ impl<A: OpenAsk> Shared<A> {
     /// The state an agent starts from: its queue seeded from the spawn's
     /// prompt, working_on from that prompt's first line, the clock at the
     /// spec's creation time.
-    pub fn new(spec: &AgentSpec, kind: wire::Kind, producer_version: &str) -> Self {
+    pub fn new(spec: &AgentSpec, kind: wire::Kind) -> Self {
         let mut shared = Self {
             agent: spec.agent_id.clone(),
             kind: kind as i32,
-            producer_version: producer_version.to_owned(),
             now_ms: spec.created_at_ms,
             started: false,
             busy: false,
@@ -433,10 +431,9 @@ impl<A: OpenAsk> Shared<A> {
     }
 
     /// Carries this state into the agent's next incarnation under `spec`:
-    /// the producer and clock move on, and a prompt the spec brings (a
+    /// the clock moves on, and a prompt the spec brings (a
     /// resume with a prompt, or a parent's message) joins the queue.
-    pub fn reincarnate(&mut self, spec: &AgentSpec, producer_version: &str) {
-        self.producer_version = producer_version.to_owned();
+    pub fn reincarnate(&mut self, spec: &AgentSpec) {
         self.stopping = false;
         self.leaving = false;
         // A new provider process runs nothing in the background yet.
@@ -589,7 +586,6 @@ impl<A: OpenAsk> Shared<A> {
             key: draft.key,
             order: 0,
             revision: 0,
-            producer_version: self.producer_version.clone(),
             input_id: draft.input_id,
             text: draft.text,
             attachments: draft.attachments,
@@ -1584,7 +1580,7 @@ mod tests {
             created_at_ms: 10,
             ..Default::default()
         };
-        Shared::new(&spec, wire::Kind::Unspecified, "v")
+        Shared::new(&spec, wire::Kind::Unspecified)
     }
 
     #[test]
@@ -1769,7 +1765,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let mut shared: Shared<Ask> = Shared::new(&spec, wire::Kind::Unspecified, "v");
+        let mut shared: Shared<Ask> = Shared::new(&spec, wire::Kind::Unspecified);
         assert_eq!(shared.working_on(), Some("Run the first thing"));
         shared.provider_started();
         assert!(shared.next_queued().is_some());

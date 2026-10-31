@@ -111,7 +111,7 @@ fn started() -> State {
         incarnation: 1,
         ..Default::default()
     };
-    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let (mut state, _) = ClaudeSdk::initial(&spec);
     ClaudeSdk::step(
         &mut state,
         stream(json!({"type": "system", "subtype": "init", "uuid": "i", "session_id": "s"})),
@@ -504,7 +504,7 @@ fn an_interrupt_before_claude_starts_leaves_the_queued_prompt_to_run() {
         incarnation: 1,
         ..Default::default()
     };
-    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let (mut state, _) = ClaudeSdk::initial(&spec);
     let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
         text: "Run the test suite and report.".into(),
         ..Default::default()
@@ -584,7 +584,7 @@ fn the_job_list_empties_when_headless_claude_exits() {
         incarnation: spec.incarnation + 1,
         ..spec
     };
-    let (_, step) = ClaudeSdk::reincarnate(listed, &next, "test");
+    let (_, step) = ClaudeSdk::reincarnate(listed, &next);
     assert_eq!(
         (jobs(&exited.step), jobs(&step)),
         (Some((true, 0)), Some((true, 0))),
@@ -605,7 +605,7 @@ fn only_a_blocked_path_beyond_the_agents_folder_is_outside_the_allowed_directori
         cwd: "/net/desk/work".to_owned(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let (mut state, _) = ClaudeSdk::initial(&spec);
     ClaudeSdk::step(
         &mut state,
         stream(json!({"type": "system", "subtype": "init", "uuid": "i", "session_id": "s"})),
@@ -739,7 +739,7 @@ fn permissions_launched_with(args: &[&str]) -> Vec<(String, Vec<String>, bool)> 
         provider_args: args.iter().map(|arg| (*arg).to_owned()).collect(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let (mut state, _) = ClaudeSdk::initial(&spec);
     let mut answer = initialized(&["compact"]);
     answer["response"]["response"]["models"] = json!([
         {"value": "opus", "displayName": "Opus", "description": "", "supportsAutoMode": true},
@@ -944,7 +944,7 @@ fn a_parents_message_that_resumes_its_child_reaches_claude_labelled() {
         }),
         ..Default::default()
     };
-    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let (mut state, _) = ClaudeSdk::initial(&spec);
     let stepped = ClaudeSdk::step(
         &mut state,
         stream(json!({"type": "system", "subtype": "init", "uuid": "i", "session_id": "s"})),
@@ -1892,7 +1892,7 @@ fn a_plan_approval_switches_to_never_ask_where_claude_offers_it() {
         provider_args: vec!["--allow-dangerously-skip-permissions".into()],
         ..Default::default()
     };
-    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let (mut state, _) = ClaudeSdk::initial(&spec);
     ClaudeSdk::step(
         &mut state,
         stream(
@@ -2084,7 +2084,7 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
         incarnation: 1,
         ..Default::default()
     };
-    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let (mut state, _) = ClaudeSdk::initial(&spec);
     let withheld = ClaudeSdk::step(
         &mut state,
         Event::Fact(interpret::Fact {
@@ -2097,6 +2097,6 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
         incarnation: 2,
         ..spec
     };
-    let (_, step) = ClaudeSdk::reincarnate(state, &next, "test");
+    let (_, step) = ClaudeSdk::reincarnate(state, &next);
     assert!(!failed(&step), "the next incarnation does not");
 }

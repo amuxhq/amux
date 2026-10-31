@@ -283,9 +283,9 @@ impl State {
         &self.shared
     }
 
-    fn new(spec: &AgentSpec, producer_version: &str) -> Self {
+    fn new(spec: &AgentSpec) -> Self {
         Self {
-            shared: Shared::new(spec, ClaudeSdk::KIND, producer_version),
+            shared: Shared::new(spec, ClaudeSdk::KIND),
             incarnation: spec.incarnation,
             session: None,
             version: None,
@@ -1154,14 +1154,14 @@ impl Interpreter for ClaudeSdk {
     type State = State;
     const KIND: wire::Kind = wire::Kind::ClaudeSdk;
 
-    fn initial(spec: &AgentSpec, producer_version: &str) -> (State, Step) {
-        let mut state = State::new(spec, producer_version);
+    fn initial(spec: &AgentSpec) -> (State, Step) {
+        let mut state = State::new(spec);
         let step = state.shared.initial_step(Self::unknown_snapshot());
         (state, step)
     }
 
-    fn reincarnate(mut state: State, spec: &AgentSpec, producer_version: &str) -> (State, Step) {
-        state.shared.reincarnate(spec, producer_version);
+    fn reincarnate(mut state: State, spec: &AgentSpec) -> (State, Step) {
+        state.shared.reincarnate(spec);
         state.jobs.clear();
         // A new process: its first init is the incarnation's boundary.
         state.incarnation = spec.incarnation;

@@ -530,7 +530,6 @@ pub fn item(key: &str, text: &str) -> Step {
             text: text.to_owned(),
             kind: KIND as i32,
             at_ms: 1_000,
-            producer_version: "synthetic".to_owned(),
             ..Item::default()
         }],
         ..Step::default()

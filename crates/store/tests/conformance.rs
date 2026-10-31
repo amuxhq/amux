@@ -28,7 +28,6 @@ fn item(key: &str, text: &str) -> Item {
         kind: wire::Kind::ClaudeSdk as i32,
         body: vec![1, 2, 3],
         at_ms: 5,
-        producer_version: "1.0.0".into(),
         ..Default::default()
     }
 }

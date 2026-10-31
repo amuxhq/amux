@@ -304,9 +304,9 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
     type State = State<FORGET>;
     const KIND: wire::Kind = wire::Kind::Unspecified;
 
-    fn initial(spec: &AgentSpec, producer_version: &str) -> (Self::State, Step) {
+    fn initial(spec: &AgentSpec) -> (Self::State, Step) {
         let mut state = State {
-            shared: Shared::new(spec, Self::KIND, producer_version),
+            shared: Shared::new(spec, Self::KIND),
             model: None,
             tools: BTreeMap::new(),
             interrupted: false,
@@ -315,12 +315,8 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
         (state, step)
     }
 
-    fn reincarnate(
-        mut state: Self::State,
-        spec: &AgentSpec,
-        producer_version: &str,
-    ) -> (Self::State, Step) {
-        state.shared.reincarnate(spec, producer_version);
+    fn reincarnate(mut state: Self::State, spec: &AgentSpec) -> (Self::State, Step) {
+        state.shared.reincarnate(spec);
         state.resume()
     }
 

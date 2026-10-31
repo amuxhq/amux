@@ -165,7 +165,6 @@ struct FixtureSpec {
     #[serde(default)]
     parent: bool,
     initial_prompt: Option<String>,
-    producer_version: Option<String>,
     /// The provider arguments the daemon resolved, as a recording's spawn
     /// passed them.
     #[serde(default)]
@@ -302,8 +301,7 @@ pub fn replay<I: Interpreter>(fixture: &Path) -> Result<Vec<Replayed>, String> {
         serde_json::from_str(&text).map_err(|error| format!("parse fixture: {error}"))?;
     let script = script::<I>(fixture, &parsed)?;
     let spec = spec::<I>(&parsed.spec);
-    let producer = parsed.spec.producer_version.as_deref().unwrap_or("test");
-    let frames = execute::<I>(&spec, producer, &script, None)?;
+    let frames = execute::<I>(&spec, &script, None)?;
     let mut inputs = script.iter().filter_map(|scripted| match &scripted.action {
         Action::Event(Event::Input(input)) => Some((scripted.label.as_str(), input.clone())),
         _ => None,
@@ -352,7 +350,6 @@ pub fn replay<I: Interpreter>(fixture: &Path) -> Result<Vec<Replayed>, String> {
 /// one themselves.
 pub struct FixtureScript {
     pub spec: AgentSpec,
-    pub producer: String,
     /// Each event with its label, in order; `None` is a checkpoint the
     /// fixture takes there.
     pub events: Vec<(String, Option<Event>)>,
@@ -376,11 +373,6 @@ pub fn fixture_script<I: Interpreter>(fixture: &Path) -> Result<FixtureScript, S
         .collect();
     Ok(FixtureScript {
         spec: spec::<I>(&parsed.spec),
-        producer: parsed
-            .spec
-            .producer_version
-            .clone()
-            .unwrap_or_else(|| "test".into()),
         events,
     })
 }
@@ -394,7 +386,7 @@ pub fn run_until<I: Interpreter>(
     until: impl Fn(&Step) -> bool,
 ) -> Result<Option<(I::State, AgentSpec)>, String> {
     let script = fixture_script::<I>(fixture)?;
-    let (mut state, _) = I::initial(&script.spec, &script.producer);
+    let (mut state, _) = I::initial(&script.spec);
     for (_, event) in script.events {
         let Some(event) = event else {
             continue;
@@ -422,7 +414,6 @@ pub fn run_golden<I: Interpreter>(fixture: &Path) -> GoldenReport {
         Err(error) => return GoldenReport::fail(fixture, error),
     };
     let spec = spec::<I>(&parsed.spec);
-    let producer = parsed.spec.producer_version.as_deref().unwrap_or("test");
 
     let mut report = GoldenReport {
         fixture: fixture.to_owned(),
@@ -433,7 +424,7 @@ pub fn run_golden<I: Interpreter>(fixture: &Path) -> GoldenReport {
         failures: Vec::new(),
     };
 
-    let frames = match execute::<I>(&spec, producer, &script, None) {
+    let frames = match execute::<I>(&spec, &script, None) {
         Ok(frames) => frames,
         Err(error) => return GoldenReport::fail(fixture, error),
     };
@@ -450,7 +441,7 @@ pub fn run_golden<I: Interpreter>(fixture: &Path) -> GoldenReport {
     // The checkpoint property, at every prefix.
     let whole = merge(&frames);
     for at in 0..=script.len() {
-        match execute::<I>(&spec, producer, &script, Some(at)) {
+        match execute::<I>(&spec, &script, Some(at)) {
             Ok(resumed) => {
                 if let Some(problem) = check_resumes(&resumed).into_iter().next() {
                     report
@@ -1066,11 +1057,10 @@ fn codex_answer(ask: &str, answer: &Value) -> Option<CodexAnswer> {
 /// and resumed before event `checkpoint_at`, as a restart would.
 fn execute<I: Interpreter>(
     spec: &AgentSpec,
-    producer: &str,
     script: &[Scripted],
     checkpoint_at: Option<usize>,
 ) -> Result<Vec<Frame>, String> {
-    let (mut state, first) = I::initial(spec, producer);
+    let (mut state, first) = I::initial(spec);
     let mut frames = vec![Frame {
         label: "initial".into(),
         step: first,

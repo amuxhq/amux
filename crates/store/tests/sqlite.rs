@@ -109,7 +109,7 @@ fn the_unique_position_index_trips_on_a_second_key_at_one_position() {
         .connection()
         .execute(
             "INSERT INTO items (origin_host, agent_id, key, position, revision, at_ms, \
-             producer_version, kind, body) VALUES (?1, ?2, 'k2', 1, 9, 0, '', 3, x'')",
+             kind, body) VALUES (?1, ?2, 'k2', 1, 9, 0, 3, x'')",
             params![OWN, b"a".to_vec()],
         )
         .unwrap_err();

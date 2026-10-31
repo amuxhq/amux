@@ -137,8 +137,6 @@ message Item {
   string key = 2;
   uint64 order = 3;
   uint64 revision = 4;
-  // The agent binary that wrote it.
-  string producer_version = 5;
   // Set on a prompt's reflection, and on an agent message's item (the
   // envelope id).
   bytes input_id = 6;

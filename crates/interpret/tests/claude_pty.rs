@@ -116,7 +116,7 @@ fn agent_messages_leave_the_pending_set_when_claude_shows_them_to_the_model() {
         agent_id: b"recipient".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     for (id, text) in [
         ("env-idle", "A2A_SOCKET_IDLE_21240"),
         ("env-busy", "A2A_SOCKET_BUSY_21240"),
@@ -190,7 +190,7 @@ fn an_attachment_element_in_a_reply_becomes_an_item_attachment() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let mut item = None;
     for event in ClaudePty::recording("transcript_rows", format!("{row}\n").as_bytes()).unwrap() {
         let step = ClaudePty::step(&mut state, event).step;
@@ -226,7 +226,7 @@ fn a_queued_prompt_with_an_image_is_still_the_steer() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     // Up to Claude taking the steered prompt from its queue.
     let mut queued_row = None;
     for event in events {
@@ -322,7 +322,7 @@ fn the_job_list_empties_when_terminal_claude_exits() {
         incarnation: spec.incarnation + 1,
         ..spec
     };
-    let (_, step) = ClaudePty::reincarnate(listed, &next, "test");
+    let (_, step) = ClaudePty::reincarnate(listed, &next);
     assert_eq!(
         (jobs(&exited.step), jobs(&step)),
         (Some((true, 0)), Some((true, 0))),
@@ -346,7 +346,7 @@ fn a_new_incarnation_holds_forms_whoever_watched_the_last() {
             payload: json.to_string().into_bytes(),
         })
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     ClaudePty::step(
         &mut state,
         fact(
@@ -359,7 +359,7 @@ fn a_new_incarnation_holds_forms_whoever_watched_the_last() {
         incarnation: spec.incarnation + 1,
         ..spec
     };
-    let (mut state, _) = ClaudePty::reincarnate(state, &next, "test");
+    let (mut state, _) = ClaudePty::reincarnate(state, &next);
     let mut effects = Vec::new();
     for event in [
         fact(
@@ -418,7 +418,7 @@ fn failed_report(id: &[u8]) -> Event {
 /// transcript shows the words alone.
 #[test]
 fn a_failed_report_is_worded_for_the_parents_provider() {
-    let (mut state, _) = ClaudePty::initial(&wire::AgentSpec::default(), "test");
+    let (mut state, _) = ClaudePty::initial(&wire::AgentSpec::default());
     let stepped = ClaudePty::step(&mut state, failed_report(b"env-failed"));
     let injected = stepped.effects.iter().find_map(|effect| match effect {
         Effect::Inject { text, .. } => Some(text.clone()),
@@ -452,7 +452,7 @@ fn plan_ask_launched(version: &str, launched: impl FnOnce(&mut wire::AgentSpec))
         interpret::fixture_script::<ClaudePty>(&fixtures().join("recorded_plan_auto.json"))
             .unwrap();
     launched(&mut script.spec);
-    let (mut state, _) = ClaudePty::initial(&script.spec, &script.producer);
+    let (mut state, _) = ClaudePty::initial(&script.spec);
     for (_, event) in script.events {
         let Some(mut event) = event else { continue };
         if let Event::Fact(fact) = &mut event
@@ -607,7 +607,7 @@ fn a_parents_message_that_resumes_its_child_reaches_terminal_claude_labelled() {
         ..Default::default()
     };
     let labelled = "[message from agent lead]\nPick it up again.";
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let stepped = ClaudePty::step(
         &mut state,
         Event::Fact(Fact {
@@ -651,7 +651,7 @@ fn items_from_rows(rows: &[serde_json::Value]) -> Vec<wire::Item> {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let text: String = rows.iter().map(|row| format!("{row}\n")).collect();
     let mut items = Vec::new();
     for event in ClaudePty::recording("transcript_rows", text.as_bytes()).unwrap() {
@@ -763,7 +763,7 @@ fn a_model_switch_shows_before_the_next_turn() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let hook = |json: serde_json::Value| {
         Event::Fact(interpret::Fact {
             channel: interpret::Channel::Hook,
@@ -824,7 +824,7 @@ fn a_background_subagents_ask_stays_open_past_the_main_turns_stop() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let command = serde_json::json!({"command": "python3 -c 'import time; time.sleep(60)'", "description": "Sleep"});
     let mut last = None;
     let mut seen = Vec::new();
@@ -919,7 +919,7 @@ fn started_claude() -> (
         incarnation: 1,
         ..Default::default()
     };
-    let (mut state, step) = ClaudePty::initial(&spec, "test");
+    let (mut state, step) = ClaudePty::initial(&spec);
     let mut last = step.snapshot.as_ref().map(|snapshot| {
         use prost::Message as _;
         (
@@ -1232,7 +1232,7 @@ fn claude_offering_auto() -> interpret::claude_pty::State {
         offered: Some(catalogue),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let launch = serde_json::json!({"type": "launch", "version": "2.1.296"});
     for event in [
         Event::Fact(interpret::Fact {
@@ -1434,7 +1434,7 @@ fn before_claude_names_its_model_the_launched_one_decides_auto_mode() {
         provider_args: vec!["--model".into(), "haiku".into()],
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let launch = serde_json::json!({"type": "launch", "version": "2.1.296"});
     ClaudePty::step(
         &mut state,
@@ -1542,7 +1542,7 @@ fn a_background_subagents_open_ask() -> interpret::claude_pty::State {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let command = serde_json::json!({"command": "sleep 60", "description": "Sleep"});
     let agent = serde_json::json!({"description": "Sleep", "prompt": "Sleep.", "subagent_type": "general-purpose"});
     for event in [
@@ -1665,7 +1665,7 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
         incarnation: 1,
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let withheld = ClaudePty::step(
         &mut state,
         Event::Fact(interpret::Fact {
@@ -1678,7 +1678,7 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
         incarnation: 2,
         ..spec
     };
-    let (_, step) = ClaudePty::reincarnate(state, &next, "test");
+    let (_, step) = ClaudePty::reincarnate(state, &next);
     assert!(!failed(&step), "the next incarnation does not");
 }
 

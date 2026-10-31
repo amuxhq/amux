@@ -284,7 +284,6 @@ message Item {
   string key = 2;             // from the interpreter
   uint64 order = 3;           // assigned once per key by the owning daemon
   uint64 revision = 4;        // assigned on every upsert by the owning daemon
-  string producer_version = 5;
   bytes input_id = 6;         // on a prompt's reflection and an agent message
   string text = 7;            // the one appendable field
   repeated Attachment attachments = 8;
@@ -802,8 +801,7 @@ Nothing else carries a version integer:
   compare its own version with its host's `HostEntry.host.version`; the terminal
   client shows "amux *version* is running · restart to update" when they
   differ.
-- **`ctl.sock` and the journal** have no version integer at all. Every item
-  carries the `producer_version` of the binary that wrote it.
+- **`ctl.sock` and the journal** have no version integer at all.
 - **The store** has a schema version; a store of another version is
   refused, by name, and left as it is (see
   [the journal and store](JOURNAL_AND_STORE.md)).

@@ -23,14 +23,13 @@ const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent_host
     descendants";
 
 const ITEM_COLUMNS: &str =
-    "key, position, revision, at_ms, producer_version, input_id, text, kind, attachments, body";
+    "key, position, revision, at_ms, input_id, text, kind, attachments, body";
 
 /// What one held row costs against a retention budget: the byte lengths
 /// (not character counts) of its variable fields, 4 bytes for its kind and
 /// a fixed 48 for the other integers and the index entries beside them.
 const ITEM_BYTES: &str = "(length(CAST(key AS BLOB)) + length(CAST(text AS BLOB)) + length(body) \
-    + IFNULL(length(attachments), 0) + IFNULL(length(input_id), 0) \
-    + length(CAST(producer_version AS BLOB)) + 4 + 48)";
+    + IFNULL(length(attachments), 0) + IFNULL(length(input_id), 0) + 4 + 48)";
 
 /// The columns the registry owns: what an own row's daemon or a replica's
 /// inventory says about the agent itself.
@@ -198,14 +197,13 @@ fn item_row(row: &Row<'_>, agent: &AgentKey) -> rusqlite::Result<(Item, Option<V
             order: row.get::<_, i64>(1)? as u64,
             revision: row.get::<_, i64>(2)? as u64,
             at_ms: row.get(3)?,
-            producer_version: row.get(4)?,
-            input_id: row.get::<_, Option<Vec<u8>>>(5)?.unwrap_or_default(),
-            text: row.get(6)?,
-            kind: row.get(7)?,
+            input_id: row.get::<_, Option<Vec<u8>>>(4)?.unwrap_or_default(),
+            text: row.get(5)?,
+            kind: row.get(6)?,
             attachments: Vec::new(),
-            body: row.get(9)?,
+            body: row.get(8)?,
         },
-        row.get(8)?,
+        row.get(7)?,
     ))
 }
 
@@ -497,11 +495,10 @@ impl Rows<'_> {
             .conn
             .prepare_cached(&format!(
                 "INSERT INTO items (origin_host, agent_id, {ITEM_COLUMNS}) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
                  ON CONFLICT (origin_host, agent_id, key) DO UPDATE SET \
                  revision = excluded.revision, at_ms = excluded.at_ms, \
-                 producer_version = excluded.producer_version, input_id = excluded.input_id, \
-                 text = excluded.text, kind = excluded.kind, \
+                 input_id = excluded.input_id, text = excluded.text, kind = excluded.kind, \
                  attachments = excluded.attachments, body = excluded.body \
                  RETURNING position"
             ))?
@@ -519,11 +516,11 @@ impl Rows<'_> {
             .conn
             .prepare_cached(&format!(
                 "INSERT INTO items (origin_host, agent_id, {ITEM_COLUMNS}) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
                  ON CONFLICT (origin_host, agent_id, key) DO UPDATE SET \
                  position = excluded.position, revision = excluded.revision, \
-                 at_ms = excluded.at_ms, producer_version = excluded.producer_version, \
-                 input_id = excluded.input_id, text = excluded.text, kind = excluded.kind, \
+                 at_ms = excluded.at_ms, input_id = excluded.input_id, \
+                 text = excluded.text, kind = excluded.kind, \
                  attachments = excluded.attachments, body = excluded.body \
                  WHERE excluded.revision > items.revision"
             ))?
@@ -567,8 +564,8 @@ impl Rows<'_> {
         self.conn
             .prepare_cached(
                 "INSERT INTO items (origin_host, agent_id, key, position, revision, at_ms, \
-                 producer_version, text, kind, body) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, 0, '', ?6, 0, x'') \
+                 text, kind, body) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, 0, x'') \
                  ON CONFLICT (origin_host, agent_id, key) DO UPDATE SET \
                  text = items.text || excluded.text, revision = excluded.revision",
             )?
@@ -936,7 +933,7 @@ impl Rows<'_> {
     }
 }
 
-/// An item's twelve column values, in `ITEM_COLUMNS` order after its agent.
+/// An item's eleven column values, in `ITEM_COLUMNS` order after its agent.
 fn item_params<'a>(
     agent: &'a AgentKey,
     item: &'a Item,
@@ -949,7 +946,6 @@ fn item_params<'a>(
         Box::new(signed(position)),
         Box::new(signed(item.revision)),
         Box::new(item.at_ms),
-        Box::new(&item.producer_version),
         Box::new((!item.input_id.is_empty()).then_some(&item.input_id)),
         Box::new(&item.text),
         Box::new(item.kind),

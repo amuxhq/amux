@@ -70,8 +70,6 @@ type Kind = TestKind;
 
 /// Where a net's clock starts.
 pub const START_MS: u64 = 1_000_000;
-/// The version the agents' journals say wrote them.
-const PRODUCER: &str = env!("CARGO_PKG_VERSION");
 /// The segment size the agents' journals rotate at.
 const SEGMENT_BYTES: u64 = 1 << 20;
 
@@ -2217,7 +2215,7 @@ impl Transition<'_> {
                 inputs: Vec::new(),
             });
         let mut out = Vec::new();
-        let core = Agent::<Kind>::start(&spec, resumed, PRODUCER, self.w.now_ms, &mut out);
+        let core = Agent::<Kind>::start(&spec, resumed, self.w.now_ms, &mut out);
         self.w.specs.insert(agent_id, Dbg(spec));
         let p = self.w.processes.len();
         self.w.processes.push(Process {

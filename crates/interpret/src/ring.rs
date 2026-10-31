@@ -207,7 +207,7 @@ mod tests {
             text: Some(format!(r#"{{"type":"text","id":"{id}","delta":"hi"}}"#)),
             hex: None,
         };
-        let (mut state, _) = TestKind::<false>::initial(&wire::AgentSpec::default(), "test");
+        let (mut state, _) = TestKind::<false>::initial(&wire::AgentSpec::default());
         let rerun = rerun::<TestKind>(
             &mut state,
             [

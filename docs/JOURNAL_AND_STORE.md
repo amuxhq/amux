@@ -404,7 +404,6 @@ a newer peer is stored and served rather than refused.
 | `position` | The wire `order`: transcript position, assigned once per key |
 | `revision` | Assigned on every upsert |
 | `at_ms` | When it happened, from the envelope |
-| `producer_version` | The agent binary that wrote it |
 | `input_id` | Set on a prompt's reflection and on an agent message's item |
 | `text` | The one appendable field |
 | `kind` | The envelope's `Kind`, as its wire integer: which per-kind body this is |

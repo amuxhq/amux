@@ -35,7 +35,7 @@ use crate::dir::{self, PtyLog};
 use crate::hook_answers::HookAnswers;
 use crate::local_socket::{LocalListener, LocalStream};
 use crate::provider::{Provider, ProviderEvent};
-use crate::{AgentError, ExitCause, VERSION, attach, ctl};
+use crate::{AgentError, ExitCause, attach, ctl};
 
 /// Journal segment size, when the spec leaves it unset.
 const DEFAULT_SEGMENT_BYTES: u64 = 1024 * 1024;
@@ -224,7 +224,6 @@ pub(crate) async fn run<I: Interpreter>(
     let agent = Agent::<I>::start(
         &spec,
         resumed::<I>(&facts),
-        VERSION,
         now_ms(clock.as_ref()),
         &mut first,
     );

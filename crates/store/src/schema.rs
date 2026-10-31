@@ -5,7 +5,7 @@
 
 /// The version of [`SCHEMA`], kept in the file's `user_version`. Raise it
 /// with every change to the schema.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// The whole schema, run once on a fresh file.
 pub(crate) const SCHEMA: &str = r#"
@@ -114,7 +114,6 @@ CREATE TABLE items (
   position            INTEGER NOT NULL,  -- the wire `order`: once per key, in arrival order
   revision            INTEGER NOT NULL,  -- on every upsert
   at_ms               INTEGER NOT NULL,  -- when it happened, from the envelope
-  producer_version    TEXT    NOT NULL,  -- the agent binary that wrote it
   input_id            BLOB,              -- the prompt or message this item reflects, when any
   text                TEXT    NOT NULL DEFAULT '', -- the one appendable field
   kind                INTEGER NOT NULL,  -- amux.v1.Kind: which per-kind body this is

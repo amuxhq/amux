@@ -35,7 +35,6 @@ pub use google::rpc;
 
 mod error;
 pub use amux::v1::*;
-pub use error::DOMAIN as ERROR_DOMAIN;
 /// An error's code, gRPC's own.
 pub use rpc::Code as ErrorCode;
 /// amux's error, a `google.rpc.Status`: named apart so it never reads as
@@ -650,7 +649,7 @@ mod tests {
             messages.insert(name, message.clone());
         }
         let (mut messages, mut enums) = (BTreeMap::new(), BTreeSet::new());
-        // The vendored googleapis files are whole, used or not.
+        // The vendored googleapis files are google's, outside amux's package.
         for file in set
             .file
             .iter()

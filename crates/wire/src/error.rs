@@ -9,7 +9,7 @@ use crate::ErrorReason;
 use crate::rpc::{Code, ErrorInfo, Status};
 
 /// The domain of every `ErrorInfo` amux writes.
-pub const DOMAIN: &str = "amux.sh";
+const DOMAIN: &str = "amux.sh";
 
 const REASON_PREFIX: &str = "ERROR_REASON_";
 

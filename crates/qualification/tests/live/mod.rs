@@ -1396,7 +1396,7 @@ impl Log {
                 items[at + 1..].iter().any(|item| {
                     !matches!(
                         ItemBody::decode(kind, &item.body),
-                        ItemBody::ClaudeSdk(wire::claude_item::Kind::Status(_))
+                        ItemBody::Claude(wire::claude_item::Kind::Status(_))
                     )
                 })
             })
@@ -1551,7 +1551,7 @@ fn expect_outcome(outcome: wire::TurnOutcome, want: wire::TurnOutcome) -> Result
 }
 
 fn item_token(kind: Kind, item: &Item) -> Option<String> {
-    use wire::claude_item::{Kind as Pty, Kind as Sdk};
+    use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     if let Some(boundary) = boundary(kind, item) {
         return Some(format!(
@@ -1584,23 +1584,14 @@ fn item_token(kind: Kind, item: &Item) -> Option<String> {
         format!("ask {outcome}")
     };
     match ItemBody::decode(kind, &item.body) {
-        ItemBody::ClaudePty(body) => match body {
-            Pty::Prompt(_) => Some("prompt".into()),
-            Pty::Steer(_) => Some("steer".into()),
-            Pty::Tool(call) => Some(tool(call.state, call.decision.as_ref())),
-            Pty::ApiError(_) => Some("error".into()),
-            Pty::AgentMessage(_) => Some("agent message".into()),
-            Pty::Plan(plan) => Some(plan_token(&plan)),
-            _ => None,
-        },
-        ItemBody::ClaudeSdk(body) => match body {
-            Sdk::Prompt(_) => Some("prompt".into()),
-            Sdk::Steer(_) => Some("steer".into()),
-            Sdk::Tool(call) => Some(tool(call.state, call.decision.as_ref())),
-            Sdk::ApiError(_) => Some("error".into()),
-            Sdk::AgentMessage(_) => Some("agent message".into()),
-            Sdk::Ask(item) => Some(ask(&item)),
-            Sdk::Plan(plan) => Some(plan_token(&plan)),
+        ItemBody::Claude(body) => match body {
+            Claude::Prompt(_) => Some("prompt".into()),
+            Claude::Steer(_) => Some("steer".into()),
+            Claude::Tool(call) => Some(tool(call.state, call.decision.as_ref())),
+            Claude::ApiError(_) => Some("error".into()),
+            Claude::AgentMessage(_) => Some("agent message".into()),
+            Claude::Ask(item) => Some(ask(&item)),
+            Claude::Plan(plan) => Some(plan_token(&plan)),
             _ => None,
         },
         ItemBody::Codex(body) => match body {
@@ -1625,23 +1616,20 @@ fn plan_token(plan: &wire::Plan) -> String {
 }
 
 fn boundary(kind: Kind, item: &Item) -> Option<wire::Boundary> {
-    use wire::claude_item::{Kind as Pty, Kind as Sdk};
+    use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     match ItemBody::decode(kind, &item.body) {
-        ItemBody::ClaudePty(Pty::Boundary(boundary))
-        | ItemBody::ClaudeSdk(Sdk::Boundary(boundary))
+        ItemBody::Claude(Claude::Boundary(boundary))
         | ItemBody::Codex(Codex::Boundary(boundary)) => Some(boundary),
         _ => None,
     }
 }
 
 fn turn(kind: Kind, item: &Item) -> Option<wire::Turn> {
-    use wire::claude_item::{Kind as Pty, Kind as Sdk};
+    use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     match ItemBody::decode(kind, &item.body) {
-        ItemBody::ClaudePty(Pty::Turn(turn))
-        | ItemBody::ClaudeSdk(Sdk::Turn(turn))
-        | ItemBody::Codex(Codex::Turn(turn)) => Some(turn),
+        ItemBody::Claude(Claude::Turn(turn)) | ItemBody::Codex(Codex::Turn(turn)) => Some(turn),
         _ => None,
     }
 }

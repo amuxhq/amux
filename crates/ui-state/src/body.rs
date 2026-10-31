@@ -15,8 +15,8 @@ use wire::{
 /// an item kind this build does not know; views draw it as unrecognized.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ItemBody {
-    ClaudePty(wire::claude_item::Kind),
-    ClaudeSdk(wire::claude_item::Kind),
+    /// Either Claude kind's item.
+    Claude(wire::claude_item::Kind),
     Codex(wire::codex_item::Kind),
     Undecodable,
 }
@@ -24,14 +24,10 @@ pub enum ItemBody {
 impl ItemBody {
     pub fn decode(kind: Kind, body: &[u8]) -> ItemBody {
         let decoded = match kind {
-            Kind::ClaudePty => ClaudeItem::decode(body)
+            Kind::ClaudePty | Kind::ClaudeSdk => ClaudeItem::decode(body)
                 .ok()
                 .and_then(|item| item.kind)
-                .map(ItemBody::ClaudePty),
-            Kind::ClaudeSdk => ClaudeItem::decode(body)
-                .ok()
-                .and_then(|item| item.kind)
-                .map(ItemBody::ClaudeSdk),
+                .map(ItemBody::Claude),
             Kind::Codex => CodexItem::decode(body)
                 .ok()
                 .and_then(|item| item.kind)
@@ -46,7 +42,7 @@ impl ItemBody {
         use wire::claude_item::Kind as Claude;
         use wire::codex_item::Kind as Codex;
         match self {
-            ItemBody::ClaudePty(kind) | ItemBody::ClaudeSdk(kind) => match kind {
+            ItemBody::Claude(kind) => match kind {
                 Claude::Prompt(_) => ItemClass::Prompt,
                 Claude::Steer(_) => ItemClass::Steer,
                 Claude::Message(text) => ItemClass::Prose {

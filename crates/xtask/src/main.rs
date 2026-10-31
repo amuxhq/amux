@@ -125,9 +125,9 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
     // though every field here is Eq; the views that hold a Diff compare it.
     config.type_attribute("amux.v1.Diff", "#[derive(Eq)]");
     tonic_prost_build::configure()
-        // Keep generated clients, but omit tonic's transport convenience
-        // constructors. Otherwise `RoutingService.Connect` collides with the
-        // inherent `RoutingServiceClient::connect(endpoint)` constructor.
+        // Keep generated clients, but omit tonic's `connect(uri)`
+        // constructors: every client is built on a channel its caller dials
+        // through its own connector (a local socket or an amux channel).
         .build_transport(false)
         // The services need tonic and through it tokio; the messages need
         // neither, so the cores that only speak the messages leave the

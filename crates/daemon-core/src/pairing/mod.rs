@@ -28,6 +28,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crypto::{Entropy, Keys, Side, Spake2};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use wire::ErrorCode;
 use wire::pair_message::Body;
 use wire::pairing_error::Reason;
 
@@ -123,31 +124,18 @@ pub struct PairingEvent {
     pub outcome: Outcome,
 }
 
-/// A pairing's refusal, as the carrier's status says it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum FailureCode {
-    PermissionDenied,
-    DeadlineExceeded,
-    InvalidArgument,
-    Unavailable,
-    FailedPrecondition,
-    Internal,
-    ResourceExhausted,
-    Cancelled,
-    /// Any other status a carrier ended with.
-    Unknown,
-}
-
 /// Why a pairing conversation or call ended unpaired, in the words the
 /// other side and the person are told.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PairFailure {
-    pub code: FailureCode,
+    /// The carrier's status code.
+    #[serde(with = "codec::numbered")]
+    pub code: ErrorCode,
     pub message: String,
 }
 
 impl PairFailure {
-    fn new(code: FailureCode, message: impl Into<String>) -> PairFailure {
+    fn new(code: ErrorCode, message: impl Into<String>) -> PairFailure {
         PairFailure {
             code,
             message: message.into(),
@@ -156,24 +144,24 @@ impl PairFailure {
 
     /// Every refusal a guessing peer could learn from reads the same.
     pub fn invalid_pin() -> PairFailure {
-        PairFailure::new(FailureCode::PermissionDenied, "INVALID_PIN")
+        PairFailure::new(ErrorCode::PermissionDenied, "INVALID_PIN")
     }
 
     fn locked() -> PairFailure {
-        PairFailure::new(FailureCode::PermissionDenied, "PAIRING_LOCKED")
+        PairFailure::new(ErrorCode::PermissionDenied, "PAIRING_LOCKED")
     }
 
     fn timeout() -> PairFailure {
-        PairFailure::new(FailureCode::DeadlineExceeded, "PAIRING_TIMEOUT")
+        PairFailure::new(ErrorCode::DeadlineExceeded, "PAIRING_TIMEOUT")
     }
 
     fn closed() -> PairFailure {
-        PairFailure::new(FailureCode::Unavailable, "pairing stream closed")
+        PairFailure::new(ErrorCode::Unavailable, "pairing stream closed")
     }
 
     fn violation(detail: &str) -> PairFailure {
         PairFailure::new(
-            FailureCode::InvalidArgument,
+            ErrorCode::InvalidArgument,
             format!("PROTOCOL_VIOLATION: {detail}"),
         )
     }
@@ -183,9 +171,9 @@ impl PairFailure {
     /// reached, a self pairing and a lockout say so.
     pub fn opaque(self) -> PairFailure {
         match self.code {
-            FailureCode::Unavailable | FailureCode::Internal => self,
-            FailureCode::InvalidArgument if self.message.contains("SELF_PAIRING") => self,
-            FailureCode::PermissionDenied if self.message == "PAIRING_LOCKED" => self,
+            ErrorCode::Unavailable | ErrorCode::Internal => self,
+            ErrorCode::InvalidArgument if self.message.contains("SELF_PAIRING") => self,
+            ErrorCode::PermissionDenied if self.message == "PAIRING_LOCKED" => self,
             _ => PairFailure::invalid_pin(),
         }
     }
@@ -193,12 +181,12 @@ impl PairFailure {
     /// How analytics counts this refusal.
     pub fn counted(&self) -> Failure {
         match self.code {
-            FailureCode::PermissionDenied => Failure::WrongSecret,
-            FailureCode::InvalidArgument if self.message.contains("SELF_PAIRING") => {
+            ErrorCode::PermissionDenied => Failure::WrongSecret,
+            ErrorCode::InvalidArgument if self.message.contains("SELF_PAIRING") => {
                 Failure::SelfPairing
             }
-            FailureCode::Unavailable => Failure::Unreachable,
-            FailureCode::DeadlineExceeded => Failure::TimedOut,
+            ErrorCode::Unavailable => Failure::Unreachable,
+            ErrorCode::DeadlineExceeded => Failure::TimedOut,
             _ => Failure::Other,
         }
     }
@@ -210,13 +198,13 @@ impl PairFailure {
             return PairFailure::invalid_pin();
         }
         let code = match reason {
-            Reason::NotInPairingMode => FailureCode::FailedPrecondition,
-            Reason::InvalidPin => FailureCode::PermissionDenied,
+            Reason::NotInPairingMode => ErrorCode::FailedPrecondition,
+            Reason::InvalidPin => ErrorCode::PermissionDenied,
             Reason::ProtocolViolation | Reason::SelfPairing | Reason::Unspecified => {
-                FailureCode::InvalidArgument
+                ErrorCode::InvalidArgument
             }
-            Reason::Timeout => FailureCode::DeadlineExceeded,
-            Reason::UserRejected => FailureCode::Cancelled,
+            Reason::Timeout => ErrorCode::DeadlineExceeded,
+            Reason::UserRejected => ErrorCode::Cancelled,
         };
         let label = reason.as_str_name();
         if error.detail.is_empty() {
@@ -230,7 +218,7 @@ impl PairFailure {
     fn from_trust(error: &TrustError) -> PairFailure {
         match error {
             TrustError::DuplicatePubkey(_) => PairFailure::violation("pubkey is already trusted"),
-            other => PairFailure::new(FailureCode::Internal, other.to_string()),
+            other => PairFailure::new(ErrorCode::Internal, other.to_string()),
         }
     }
 }
@@ -629,7 +617,7 @@ impl Daemon {
             return Self::end_pairing(
                 session,
                 Some(PairFailure::new(
-                    FailureCode::Internal,
+                    ErrorCode::Internal,
                     "failed to generate SPAKE2 scalar",
                 )),
                 out,
@@ -822,7 +810,7 @@ impl Daemon {
                 let failure = match (status, &current.stage) {
                     (Some(status), _) => status,
                     (None, Stage::Abandoning { .. }) => PairFailure::new(
-                        FailureCode::Unavailable,
+                        ErrorCode::Unavailable,
                         "pairing stream closed before abandonment acknowledgement",
                     ),
                     (None, _) => PairFailure::closed(),
@@ -909,7 +897,7 @@ impl Daemon {
                     return Self::end_pairing(
                         session,
                         Some(PairFailure::new(
-                            FailureCode::Internal,
+                            ErrorCode::Internal,
                             "failed to generate SPAKE2 scalar",
                         )),
                         out,
@@ -1237,7 +1225,7 @@ impl Daemon {
                     Err(detail) => {
                         return self.initiator_fails(
                             session,
-                            PairFailure::new(FailureCode::InvalidArgument, detail),
+                            PairFailure::new(ErrorCode::InvalidArgument, detail),
                             out,
                         );
                     }
@@ -1245,7 +1233,7 @@ impl Daemon {
                 if is_self(&initiate.local, &peer) {
                     return self.initiator_fails(
                         session,
-                        PairFailure::new(FailureCode::InvalidArgument, "SELF_PAIRING"),
+                        PairFailure::new(ErrorCode::InvalidArgument, "SELF_PAIRING"),
                         out,
                     );
                 }
@@ -1268,7 +1256,7 @@ impl Daemon {
             ),
             (Stage::Completing { .. }, _) => self.initiator_fails(
                 session,
-                PairFailure::new(FailureCode::InvalidArgument, "expected pairing completion"),
+                PairFailure::new(ErrorCode::InvalidArgument, "expected pairing completion"),
                 out,
             ),
             (Stage::Abandoning { .. }, _) => {
@@ -1310,14 +1298,14 @@ impl Daemon {
         if self.pairing.tokens.len() >= MAX_PENDING {
             return self.initiator_fails(
                 session,
-                PairFailure::new(FailureCode::ResourceExhausted, "too many pending pairings"),
+                PairFailure::new(ErrorCode::ResourceExhausted, "too many pending pairings"),
                 out,
             );
         }
         let Some(random) = self.pairing.entropy.draw() else {
             return self.initiator_fails(
                 session,
-                PairFailure::new(FailureCode::Internal, "no entropy for a pairing token"),
+                PairFailure::new(ErrorCode::Internal, "no entropy for a pairing token"),
                 out,
             );
         };
@@ -1475,7 +1463,7 @@ impl Daemon {
                 return out.push(Output::EndCall {
                     call,
                     status: Status::Failed(CallError::Pairing(PairFailure::new(
-                        FailureCode::InvalidArgument,
+                        ErrorCode::InvalidArgument,
                         format!("PairingIdentity.{detail}"),
                     ))),
                 });
@@ -1485,7 +1473,7 @@ impl Daemon {
             return out.push(Output::EndCall {
                 call,
                 status: Status::Failed(CallError::Pairing(PairFailure::new(
-                    FailureCode::InvalidArgument,
+                    ErrorCode::InvalidArgument,
                     "SELF_PAIRING",
                 ))),
             });

@@ -224,10 +224,9 @@ impl SyntheticAgent {
 
     /// Writes the first incarnation's spec, as the spawn that created this
     /// agent would have, so a resume can start its next incarnation.
-    pub fn write_spec(&self, install: &Install) {
+    pub fn write_spec(&self) {
         let spec = wire::AgentSpec {
             agent_id: self.id.as_bytes().to_vec(),
-            profile_id: install.profile.as_bytes().to_vec(),
             kind: KIND as i32,
             cwd: self.cwd.to_string_lossy().into_owned(),
             name: self.name.clone(),

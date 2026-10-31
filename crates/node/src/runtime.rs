@@ -1025,7 +1025,6 @@ impl ProfileRuntime {
             &launch,
             spec::Incarnation {
                 agent_id: id.as_bytes(),
-                profile_id: self.profile.as_bytes(),
                 kind,
                 cwd: &request.cwd,
                 name: "",
@@ -1215,7 +1214,6 @@ impl ProfileRuntime {
             &self.launch(),
             spec::Incarnation {
                 agent_id: id.as_bytes(),
-                profile_id: self.profile.as_bytes(),
                 kind: previous.kind(),
                 cwd: &previous.cwd,
                 name: "",

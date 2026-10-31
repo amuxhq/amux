@@ -380,13 +380,11 @@ async fn spawn_writes_spec_one_and_starts_the_agent_process() {
 
     let spec = spec(&dir, 1);
     assert_eq!(spec.agent_id, id.as_bytes().to_vec());
-    assert_eq!(spec.profile_id, install.profile.as_bytes().to_vec());
     assert_eq!(spec.kind(), wire::Kind::ClaudeSdk);
     assert_eq!(spec.cwd, install.work.to_string_lossy());
     assert_eq!(spec.name, "first");
     assert_eq!(spec.incarnation, 1);
     assert_eq!(spec.provider_command, launch.claude_command);
-    assert_eq!(spec.daemon_version, node::version());
     assert!(spec.bootstrap.is_some(), "spec.1 carries the first prompt");
     let config = spec.config.as_ref().unwrap();
     assert_eq!(config.install_path, launch.install_path.to_string_lossy());

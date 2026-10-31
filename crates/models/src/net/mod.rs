@@ -66,7 +66,6 @@ pub struct AgentPlan {
 /// test kind speaks for: its first incarnation, its prompt queued.
 pub fn agent_spec(
     agent: AgentId,
-    host: HostId,
     cwd: &str,
     parent: Option<wire::AgentRef>,
     prompt: Option<&str>,
@@ -75,7 +74,6 @@ pub fn agent_spec(
 ) -> wire::AgentSpec {
     wire::AgentSpec {
         agent_id: agent.0.to_vec(),
-        profile_id: host.0.to_vec(),
         kind: wire::Kind::ClaudeSdk as i32,
         cwd: cwd.to_owned(),
         parent,
@@ -85,7 +83,6 @@ pub fn agent_spec(
             step_budget_micros: agent_core::StepBudget::UNLIMITED.micros,
             ..wire::EffectiveConfig::default()
         }),
-        daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
         created_at_ms: now_ms as i64,
         incarnation: 1,
         bootstrap: prompt.map(|text| wire::Bootstrap {
@@ -494,7 +491,6 @@ impl Machine for ComposedNet {
             net.add_agent(agent, &plan.name, &plan.script);
             let spec = agent_spec(
                 agent,
-                ids[plan.host],
                 "/work",
                 None,
                 plan.prompt.as_deref(),

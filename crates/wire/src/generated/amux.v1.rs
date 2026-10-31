@@ -13756,8 +13756,6 @@ pub struct AgentSpec {
     /// The directory name; ours, never the provider's.
     #[prost(bytes = "vec", tag = "1")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", tag = "2")]
-    pub profile_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(enumeration = "Kind", tag = "3")]
     pub kind: i32,
     /// The project directory the provider child is launched in, frozen at
@@ -13787,17 +13785,11 @@ pub struct AgentSpec {
     /// consumes.
     #[prost(message, optional, tag = "10")]
     pub config: ::core::option::Option<EffectiveConfig>,
-    /// Which binary wrote this.
-    #[prost(string, tag = "11")]
-    pub daemon_version: ::prost::alloc::string::String,
     #[prost(int64, tag = "12")]
     pub created_at_ms: i64,
     /// The n in spec.<n>.
     #[prost(uint32, tag = "13")]
     pub incarnation: u32,
-    /// The path that ran for this incarnation: a record, not an instruction.
-    #[prost(string, tag = "14")]
-    pub provider_binary: ::prost::alloc::string::String,
     /// What seeds the child's queue: the spawn's prompt, or a parent's
     /// message on a parent-driven resume. Daemon-owned; a client never
     /// supplies an envelope.

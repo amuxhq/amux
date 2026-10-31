@@ -265,7 +265,6 @@ impl Agent {
         }
         let spec = AgentSpec {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-            profile_id: vec![9; 16],
             kind: setup.kind as i32,
             cwd: work.to_str().unwrap().to_owned(),
             name: "test".into(),
@@ -285,7 +284,6 @@ impl Agent {
                 install_path: install_path(),
                 ..Default::default()
             }),
-            daemon_version: "test".into(),
             created_at_ms: T0,
             incarnation: 1,
             bootstrap: setup.initial_prompt.map(|text| bootstrap(b"p0", text)),

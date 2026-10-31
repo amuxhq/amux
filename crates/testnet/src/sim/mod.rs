@@ -387,7 +387,6 @@ impl SimNet {
         let host_id = sim.net.host_id(h);
         let spec = wire::AgentSpec {
             agent_id: agent.0.to_vec(),
-            profile_id: host_id.0.to_vec(),
             kind: FakeKind::ClaudeSdk.wire() as i32,
             cwd: cwd.clone(),
             parent,
@@ -397,7 +396,6 @@ impl SimNet {
                 step_budget_micros: agent_core::StepBudget::UNLIMITED.micros,
                 ..wire::EffectiveConfig::default()
             }),
-            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             created_at_ms: sim.net.now_ms() as i64,
             incarnation: 1,
             bootstrap: decl.prompt.as_deref().map(|text| wire::Bootstrap {

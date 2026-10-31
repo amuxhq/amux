@@ -80,7 +80,6 @@ impl Fixture {
         });
         let spec = AgentSpec {
             agent_id: self.agent_id.clone(),
-            profile_id: vec![9; 16],
             kind: self.kind as i32,
             cwd: self.work.to_str().unwrap().to_owned(),
             name: name.to_owned(),
@@ -102,7 +101,6 @@ impl Fixture {
                 install_path: env!("CARGO_BIN_EXE_amux").to_owned(),
                 ..Default::default()
             }),
-            daemon_version: "test".into(),
             incarnation: n,
             ..Default::default()
         };

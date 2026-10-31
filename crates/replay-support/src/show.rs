@@ -509,11 +509,6 @@ fn row(out: &mut String, agent: &Agent) {
 fn spec_lines(out: &mut String, mut spec: AgentSpec) {
     let env: BTreeMap<_, _> = std::mem::take(&mut spec.provider_env).into_iter().collect();
     let _ = writeln!(out, "agent_id {}", id(&std::mem::take(&mut spec.agent_id)));
-    let _ = writeln!(
-        out,
-        "profile_id {}",
-        id(&std::mem::take(&mut spec.profile_id))
-    );
     let _ = writeln!(out, "provider_env {env:?}");
     let _ = writeln!(out, "{spec:?}");
 }

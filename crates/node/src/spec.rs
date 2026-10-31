@@ -164,29 +164,9 @@ pub fn provider_command(launch: &Launch, kind: Kind) -> String {
     }
 }
 
-/// Where a command resolves on the PATH, the way the agent process will
-/// launch it; the command itself when it names a path or is not found.
-pub fn resolve_binary(command: &str) -> String {
-    let path = Path::new(command);
-    if path.components().count() > 1 {
-        return command.to_owned();
-    }
-    let Some(dirs) = std::env::var_os("PATH") else {
-        return command.to_owned();
-    };
-    for dir in std::env::split_paths(&dirs) {
-        let candidate = dir.join(format!("{command}{}", std::env::consts::EXE_SUFFIX));
-        if candidate.is_file() {
-            return candidate.to_string_lossy().into_owned();
-        }
-    }
-    command.to_owned()
-}
-
 /// Everything one incarnation's spec is built from.
 pub struct Incarnation<'a> {
     pub agent_id: &'a [u8],
-    pub profile_id: &'a [u8],
     pub kind: Kind,
     pub cwd: &'a str,
     pub name: &'a str,
@@ -206,7 +186,6 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
     let agent = &launch.agent;
     AgentSpec {
         agent_id: at.agent_id.to_vec(),
-        profile_id: at.profile_id.to_vec(),
         kind: at.kind as i32,
         cwd: at.cwd.to_owned(),
         name: at.name.to_owned(),
@@ -217,7 +196,6 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
             .iter()
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect::<HashMap<_, _>>(),
-        provider_binary: resolve_binary(&command),
         provider_command: command,
         config: Some(EffectiveConfig {
             grace_ms: millis(agent.grace_secs),
@@ -231,7 +209,6 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
             install_path: launch.install_path.to_string_lossy().into_owned(),
             step_budget_micros: launch.agent_step_budget_micros,
         }),
-        daemon_version: crate::version().to_owned(),
         created_at_ms: at.created_at_ms,
         incarnation: at.incarnation,
         bootstrap: at.bootstrap,

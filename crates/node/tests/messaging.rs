@@ -712,7 +712,7 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
     let mut child = SyntheticAgent::new(&install, "child", SEGMENTS);
     child.parent = Some(parent.key(&install));
     child.register_offline(&install);
-    child.write_spec(&install);
+    child.write_spec();
     child.go_live();
     child.answer_with(Answer::Reject(wire::Refusal::Exiting));
     let (daemon, runtime) = start_resuming(&install).await;
@@ -771,7 +771,7 @@ async fn an_input_answered_exiting_lets_a_resume_wait_for_the_lock() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "leaving", SEGMENTS);
     agent.register_offline(&install);
-    agent.write_spec(&install);
+    agent.write_spec();
     agent.go_live();
     agent.answer_with(Answer::Reject(wire::Refusal::Exiting));
     let (daemon, runtime) = start_resuming(&install).await;

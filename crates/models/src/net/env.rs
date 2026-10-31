@@ -1325,7 +1325,7 @@ impl Transition<'_> {
                     }
                     _ => {}
                 }
-                let input = self.served_by_the_shell(h, input);
+                let input = self.served_by_the_shell(input);
                 self.feed(h, input);
             }
             Delivery::Agent(p, Dbg(input)) => self.feed_agent(p, input),
@@ -1884,7 +1884,7 @@ impl Transition<'_> {
     /// A paired host's call as node's peer edge hands it to the core: a
     /// message as [`peer_message`] makes it, a create as [`peer_create`]
     /// does.
-    fn served_by_the_shell(&self, h: usize, input: Input) -> Input {
+    fn served_by_the_shell(&self, input: Input) -> Input {
         match input {
             Input::PeerCall {
                 call,
@@ -1898,7 +1898,7 @@ impl Transition<'_> {
                 from,
                 call,
                 request: PeerRequest::CreateAgent(create),
-            } => match peer_create(self.plan.hosts[h].id, create.clone(), self.w.now_ms) {
+            } => match peer_create(create.clone(), self.w.now_ms) {
                 Some(request) => Input::ClientCall { call, request },
                 None => Input::PeerCall {
                     from,
@@ -2630,15 +2630,10 @@ fn rehome(output: Output, scratch: &Path, home: &Path) -> Output {
 /// core through the client service: its spec built as a client's create's
 /// is, with the parent and the first prompt the request names. None when
 /// the request names no agent id.
-fn peer_create(
-    host: HostId,
-    request: wire::CreateAgentRequest,
-    now_ms: u64,
-) -> Option<ClientRequest> {
+fn peer_create(request: wire::CreateAgentRequest, now_ms: u64) -> Option<ClientRequest> {
     let agent = AgentId::from_slice(&request.agent_id)?;
     let mut spec = super::agent_spec(
         agent,
-        host,
         &request.cwd,
         request.parent,
         None,

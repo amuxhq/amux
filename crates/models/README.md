@@ -20,10 +20,9 @@ to a failing state. It explores depth first, holding only each state's
 fingerprint and the path it is on; breadth first holds every frontier state with
 its path, and at nightly bounds the client model passed 53 GB that way on the
 enrolled Mac without finishing, where depth first finished in 175 s and peaked
-at 1.3 GB. `MODELS_SEARCH=breadth` (or `Bounds::breadth_first`) explores breadth
-first, to print the shortest path to a failure depth first found; a bounded
-depth always does, since depth first would skip a state first met past the
-bound. `walk(model, bounds, seed)` follows
+at 1.3 GB. A bounded depth explores breadth first, since depth first would
+skip a state first met past the bound, and so prints the shortest path to a
+failure. `walk(model, bounds, seed)` follows
 one schedule chosen by the seed: the same seed walks the same schedule on every
 run, so a failing walk is reproduced by its seed alone.
 

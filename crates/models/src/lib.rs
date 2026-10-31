@@ -133,16 +133,11 @@ pub fn parked() -> Vec<(&'static str, &'static str, Parked)> {
         .collect()
 }
 
-/// How many threads a model's test explores with: `MODELS_THREADS` when
-/// set, so a run can price a model on a CI runner's core count, otherwise
-/// every core. The verdict and the state count are the same on any number
-/// of threads; only which counterexample is printed may differ.
+/// How many threads a model's test explores with: every core. The verdict
+/// is the same on any number of threads; only which counterexample is
+/// printed may differ.
 pub fn threads() -> usize {
-    std::env::var("MODELS_THREADS")
-        .ok()
-        .and_then(|threads| threads.parse().ok())
-        .filter(|threads| *threads > 0)
-        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |threads| threads.get()))
+    std::thread::available_parallelism().map_or(1, |threads| threads.get())
 }
 
 /// Turns off SQLite's memory statistics for this process before any
@@ -282,44 +277,33 @@ pub struct Bounds {
     /// Exploration threads. One keeps the reported counterexample the same on
     /// every run; more only change which path is reported.
     pub threads: usize,
-    /// Explore breadth first, so a failure prints the shortest path to it.
-    /// Depth first, the default, holds only each state's fingerprint and the
-    /// path being explored, where breadth first holds every state of the
-    /// frontier with its path, which at nightly bounds outgrew a 16 GB
-    /// runner where depth first stays near a gigabyte. A bounded depth always explores breadth first, since depth
-    /// first would skip a state it first met past the bound however short
-    /// its other paths are. `MODELS_SEARCH=breadth` sets this for every check.
-    pub breadth_first: bool,
 }
 
 impl Bounds {
-    /// Every reachable state, on one thread.
+    /// Every reachable state, on one thread, depth first: it holds only each
+    /// state's fingerprint and the path being explored, where breadth first
+    /// holds every state of the frontier with its path, which at nightly
+    /// bounds outgrew a 16 GB runner where depth first stays near a
+    /// gigabyte.
     pub const fn exhaustive() -> Self {
         Self {
             depth: None,
             threads: 1,
-            breadth_first: false,
         }
     }
 
-    /// Paths of at most `depth` actions, on one thread.
+    /// Paths of at most `depth` actions, on one thread, breadth first, since
+    /// depth first would skip a state it first met past the bound however
+    /// short its other paths are; a failure prints the shortest path to it.
     pub const fn depth(depth: usize) -> Self {
         Self {
             depth: Some(depth),
             threads: 1,
-            breadth_first: true,
         }
     }
 
     pub const fn threads(self, threads: usize) -> Self {
         Self { threads, ..self }
-    }
-
-    pub const fn breadth_first(self) -> Self {
-        Self {
-            breadth_first: true,
-            ..self
-        }
     }
 }
 
@@ -368,8 +352,6 @@ pub struct Judged {
 pub struct Verdict {
     pub properties: Vec<Judged>,
     pub measured: Measured,
-    /// The longest path explored, in actions.
-    pub depth: usize,
 }
 
 impl Verdict {
@@ -397,11 +379,7 @@ impl Verdict {
 impl Display for Verdict {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Measured { states, seconds } = self.measured;
-        writeln!(
-            f,
-            "{states} states to depth {} in {seconds:.3}s",
-            self.depth
-        )?;
+        writeln!(f, "{states} states in {seconds:.3}s")?;
         for judged in &self.properties {
             let (mark, path) = match &judged.outcome {
                 Outcome::Holds => ("holds", None),
@@ -432,11 +410,8 @@ pub fn check<M: Machine>(model: &M, bounds: Bounds) -> Verdict {
     if let Some(depth) = bounds.depth {
         builder = builder.target_max_depth(depth);
     }
-    let breadth_first = bounds.breadth_first
-        || bounds.depth.is_some()
-        || std::env::var("MODELS_SEARCH").is_ok_and(|search| search == "breadth");
     let started = Instant::now();
-    if breadth_first {
+    if bounds.depth.is_some() {
         judge(model, &builder.spawn_bfs().join(), started)
     } else {
         judge(model, &builder.spawn_dfs().join(), started)
@@ -505,7 +480,6 @@ fn judge<M: Machine>(model: &M, checker: &impl Checker<Adapter<M>>, started: Ins
             states: checker.unique_state_count() as u64,
             seconds,
         },
-        depth: checker.max_depth(),
     }
 }
 

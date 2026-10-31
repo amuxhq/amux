@@ -878,10 +878,6 @@ impl Net {
         self.w.running.get(&agent).copied()
     }
 
-    pub fn agent_name(&self, agent: AgentId) -> Option<&str> {
-        self.plan.names.get(&agent).map(String::as_str)
-    }
-
     pub fn client(&self, h: usize, call: CallId) -> Option<&ClientCall> {
         self.w.clients.get(&(h, call))
     }

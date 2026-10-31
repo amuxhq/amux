@@ -64,10 +64,7 @@ fn every_property_of_a_sound_switch_holds() {
 
 #[test]
 fn a_wrong_promise_fails_with_the_shortest_path_to_it() {
-    let verdict = check(
-        &Switch { fragile: true },
-        Bounds::exhaustive().breadth_first(),
-    );
+    let verdict = check(&Switch { fragile: true }, Bounds::depth(10));
     println!("{verdict}");
     assert!(!verdict.holds());
     let Some(Outcome::Fails(path)) = verdict.outcome("the lamp never burns out") else {

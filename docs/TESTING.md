@@ -58,8 +58,7 @@ client model, and the composed net of several daemons and their agents; a lamp a
 itself). A machine holds real state, calls the real cores, store and session model on small instances, and lists
 the faults its environment may inject. A checker explores every state the machine reaches within its bounds and judges every
 property in each: an always must hold everywhere, a sometimes must be reached, an eventually must hold on every
-path that ends. A failure prints a path to the state that broke it; `MODELS_SEARCH=breadth` explores breadth first
-instead, slower and far hungrier, and prints the shortest.
+path that ends. A failure prints a path to the state that broke it.
 
 ```sh
 just test-crate models                     # every machine at its CI bounds

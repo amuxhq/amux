@@ -11,8 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_LOCAL = {
     "wire": set(),
     # The plain values the views and the phone bridge share; the Swift
-    # mirrors are generated from them, so they depend on nothing.
-    "model": set(),
+    # mirrors are generated from them. They hold the wire's own enums
+    # (a refusal reason) rather than copies, so they see `wire` and nothing else.
+    "model": {"wire"},
     "settings": set(),
     # The typed events a device may send and their uploader: a leaf, so the
     # daemon, the phone bridge and the CLI share one definition.
@@ -55,7 +56,7 @@ ALLOWED_LOCAL = {
     # shares both without building the daemon.
     "version-stamp": set(),
     "release": set(),
-    "xtask": {"release", "version-stamp"},
+    "xtask": {"release"},
     # The Swift mirrors of the view values are generated from their
     # definitions, so the generator reads them.
     "ios-tools": {"app-runtime", "model", "ui-view", "wire"},

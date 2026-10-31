@@ -455,7 +455,8 @@ fn a_replacement_under_way_survives_a_checkpoint() {
     );
     let checkpoint = daemon.checkpoint();
     let store = Sqlite::restore(&daemon.store().dump().unwrap()).unwrap();
-    let restored = Daemon::restore(checkpoint.clone(), store).expect("it restores");
+    let restored =
+        Daemon::restore(checkpoint.clone(), store, Default::default()).expect("it restores");
     assert_eq!(restored.checkpoint(), checkpoint);
     assert_eq!(restored.trust, daemon.trust);
     assert!(restored.trust().pubkey_for_host(PEER).is_none());

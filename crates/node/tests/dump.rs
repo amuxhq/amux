@@ -287,7 +287,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         2,
         "the store as of the checkpoint holds both agents"
     );
-    let restored = daemon_core::Daemon::restore(checkpoint, copy);
+    let restored = daemon_core::Daemon::restore(checkpoint, copy, scratch.path().join("agents"));
     assert!(restored.is_ok(), "the core restores from its part");
 
     let live_part: Vec<&&str> = names
@@ -811,7 +811,7 @@ async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
     let store =
         store::Sqlite::open_in_memory(support::synthetic::host(&install).as_bytes().to_vec())
             .unwrap();
-    let mut restored = Daemon::restore(checkpoint, store).unwrap();
+    let mut restored = Daemon::restore(checkpoint, store, Default::default()).unwrap();
     restored.set_budget(StepBudget::UNLIMITED);
     let mut out = Vec::new();
     let recorded: Vec<Recorded> = core_ring::inputs(&std::fs::read(core.join("inputs")).unwrap());

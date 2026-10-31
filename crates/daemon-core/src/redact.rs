@@ -521,7 +521,7 @@ mod tests {
         let mut daemon = Daemon::new(
             store,
             StartOptions {
-                agents: PathBuf::from("/home/PLANTED/agents"),
+                replicas: PathBuf::from("/home/PLANTED/replicas"),
                 ..StartOptions::default()
             },
         );
@@ -541,7 +541,8 @@ mod tests {
             redactor.names.borrow()
         );
         let store = Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens");
-        let restored = Daemon::restore(redacted, store).expect("the redacted checkpoint restores");
+        let restored = Daemon::restore(redacted, store, PathBuf::new())
+            .expect("the redacted checkpoint restores");
         let again = restored.checkpoint().state;
         let kept = hex(&own("the desk REMOVED").encode_to_vec());
         assert!(

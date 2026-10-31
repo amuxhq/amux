@@ -179,16 +179,14 @@ impl Bundle {
                 error: error.to_string(),
             })?;
         let checkpoint_path = self.dir.join(crate::bundle::CORE).join("checkpoint");
-        let restored = Checkpoint::from_bytes(&core.checkpoint)
-            .and_then(|checkpoint| Daemon::restore(checkpoint, store))
+        let agents = scratch.path().join("agents");
+        let mut daemon = Checkpoint::from_bytes(&core.checkpoint)
+            .and_then(|checkpoint| Daemon::restore(checkpoint, store, agents.clone()))
             .map_err(|error| BundleError::Decode {
                 path: checkpoint_path,
                 what: "checkpoint",
                 error: error.to_string(),
             })?;
-        let mut daemon = restored;
-        let agents = scratch.path().join("agents");
-        daemon.move_agents(agents.clone());
         daemon.set_budget(StepBudget::UNLIMITED);
 
         let journals = self.journals()?;

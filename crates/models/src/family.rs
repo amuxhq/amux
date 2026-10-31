@@ -26,7 +26,6 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
 
 use daemon_core::payload::{
     Answer, CarrierKind, ClientRequest, JobResult, MessageFrom, PeerFailure, PeerReply,
@@ -49,9 +48,6 @@ const PARENTS: usize = 0;
 const CHILDS: usize = 1;
 const PARENT: AgentId = AgentId(*b"parent-000000000");
 const CHILD: AgentId = AgentId(*b"child-0000000000");
-/// Where each host's core is told its agents' directories live whenever it
-/// checkpoints, so its checkpoint names the same place on every thread.
-const HOMES: [&str; 2] = ["/parent-host", "/child-host"];
 /// Each agent's journal fits one segment.
 const SEGMENT_BYTES: u64 = 1 << 20;
 /// The person's calls: creating the child, stopping and deleting the
@@ -378,7 +374,7 @@ impl Machine for FamilyDeliveries {
         crate::share_sqlite_across_threads();
         let host = |index: usize| {
             let store = Sqlite::open_in_memory(HOSTS[index].0).expect("a store opens");
-            let daemon = Daemon::new(store, options(index));
+            let daemon = Daemon::new(store, options());
             let print = daemon.fingerprint();
             let (held, _) = Held::of(daemon);
             HostState {
@@ -650,10 +646,9 @@ impl State {
 /// The options both cores run under: no step budget, since the model is a
 /// function of its actions alone and no step may ask for a dump because
 /// the machine ran slowly.
-fn options(index: usize) -> StartOptions {
+fn options() -> StartOptions {
     StartOptions {
         generation: 1,
-        agents: PathBuf::from(HOMES[index]),
         budget: StepBudget::UNLIMITED,
         ..StartOptions::default()
     }
@@ -720,11 +715,9 @@ impl<'a> Transition<'a> {
         let state = &mut self.next.hosts[host];
         let scratch = &mut self.scratch.dirs[host];
         scratch.lay_out(&state.journals);
-        let home = PathBuf::from(HOMES[host]);
-        let place = Some((scratch.path(), home.as_path()));
         let before = state.held.store.clone();
         let (out, print) =
-            self.scratch.slots[host].step_in(&mut state.held, input, place, Daemon::fingerprint);
+            self.scratch.slots[host].step_reading(&mut state.held, input, Daemon::fingerprint);
         state.print = print;
         if state.held.store != before {
             self.store_changed(host);
@@ -1294,7 +1287,7 @@ impl<'a> Transition<'a> {
                 daemon_core::trust::TrustStore::of_hosts([HOSTS[PARENTS]])
                     .write_for_test(&mut store);
             }
-            let daemon = Daemon::new(store, options(host));
+            let daemon = Daemon::new(store, options());
             print = Some(daemon.fingerprint());
             daemon
         });
@@ -1351,9 +1344,15 @@ fn with_scratch<R>(f: impl FnOnce(&mut Scratch) -> R) -> R {
     }
     SCRATCH.with(|scratch| {
         let mut scratch = scratch.borrow_mut();
-        let scratch = scratch.get_or_insert_with(|| Scratch {
-            slots: [Slot::new(&HOSTS[PARENTS].0), Slot::new(&HOSTS[CHILDS].0)],
-            dirs: [Dir::new(), Dir::new()],
+        let scratch = scratch.get_or_insert_with(|| {
+            let dirs = [Dir::new(), Dir::new()];
+            Scratch {
+                slots: [
+                    Slot::beside(&HOSTS[PARENTS].0, &dirs[PARENTS]),
+                    Slot::beside(&HOSTS[CHILDS].0, &dirs[CHILDS]),
+                ],
+                dirs,
+            }
         });
         f(scratch)
     })

@@ -111,6 +111,9 @@ pub struct StartOptions {
     /// own rows are served under.
     pub generation: u64,
     /// The directory holding each own agent's directory, named by its id.
+    /// Not part of the checkpoint: a restored core is handed the place it
+    /// reads its agents from, which a dump's replay unpacks elsewhere.
+    #[serde(skip)]
     pub agents: PathBuf,
     /// The directory holding each paired host's replicas' files, by host
     /// and then by agent.
@@ -496,9 +499,14 @@ impl Daemon {
         }
     }
 
-    /// Rebuilds a core from a checkpoint and the store it was taken beside.
-    /// A checkpoint that does not decode is refused, never half applied.
-    pub fn restore(checkpoint: Checkpoint, store: Sqlite) -> Result<Daemon, RestoreError> {
+    /// Rebuilds a core from a checkpoint and the store it was taken beside,
+    /// its agents' directories under `agents`. A checkpoint that does not
+    /// decode is refused, never half applied.
+    pub fn restore(
+        checkpoint: Checkpoint,
+        store: Sqlite,
+        agents: PathBuf,
+    ) -> Result<Daemon, RestoreError> {
         let (
             routing,
             presence,
@@ -514,8 +522,9 @@ impl Daemon {
             timers,
             pending,
             settings,
-            options,
+            mut options,
         ) = checkpoint_parts(&checkpoint)?;
+        options.agents = agents;
         let trust = trust.restored(&store);
         Ok(Daemon {
             routing,
@@ -551,13 +560,6 @@ impl Daemon {
     /// The store the core owned, once the core is done with.
     pub fn into_store(self) -> Sqlite {
         self.store
-    }
-
-    /// Points the core at agent directories that now live under `agents`:
-    /// a replay reads a dump's journals where it unpacked them. The core
-    /// checkpoints the place it was last pointed at.
-    pub fn move_agents(&mut self, agents: PathBuf) {
-        self.options.agents = agents;
     }
 
     /// Sets how long one step may take before it is reported: a replay of
@@ -808,7 +810,7 @@ mod tests {
     fn a_checkpoint_that_does_not_decode_is_refused() {
         let checkpoint = Checkpoint { state: vec![0xff] };
         let store = Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens");
-        assert!(Daemon::restore(checkpoint, store).is_err());
+        assert!(Daemon::restore(checkpoint, store, PathBuf::new()).is_err());
         assert!(Checkpoint::from_bytes(&[]).is_err());
     }
 }

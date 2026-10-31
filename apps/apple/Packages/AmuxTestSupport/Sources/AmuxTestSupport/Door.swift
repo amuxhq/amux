@@ -36,25 +36,6 @@ public enum DoorRequest: Sendable, Equatable {
     /// every account this phone has been given and leaves the same one on
     /// screen. Which account is read is then the switcher's to change.
     case addAccount(user: String, token: String)
-    /// Ask the link to read again what the account on screen may do.
-    ///
-    /// What a purchase leaves behind, without the purchase. A subscription is
-    /// bought at the App Store, whose sheet belongs to another process and
-    /// cannot be pressed from here; what the app does the moment one goes
-    /// through is tell its own link to re-authenticate, because the relay
-    /// reads the tier off the credential the link holds and nothing on this
-    /// device knows the money moved until somebody asks. That is the half a
-    /// driver can perform, and it is the half a machine's reachability turns
-    /// on.
-    case refreshEntitlement
-    /// Deliver again, under the name of the account it answered for, the last
-    /// thing that account's connection produced.
-    ///
-    /// A result that arrives after somebody has switched away cannot be asked
-    /// for: it is a race with a network. This is that result, played at the
-    /// moment the race would have lost — the same batch, from the same
-    /// connection, still answering for the account it was about.
-    case late(account: String)
     /// Start the shared runtime against a relay with a credential, and
     /// what that credential buys.
     ///
@@ -93,14 +74,8 @@ public enum DoorRequest: Sendable, Equatable {
     case awaitBackground(seconds: Double)
     /// What library this app linked and what its connection has arrived at.
     case bridge
-    /// The end of what this launch's runtime wrote about what it decided.
-    /// Only a build with the driving tools writes it at all.
-    case runtimeLog(bytes: Int)
     /// Read the production conversation's projection, including its native layer.
     case conversation(agent: String)
-    /// Attempt the same typed model change as the settings sheet, including
-    /// where the shared core refuses it and the screen disables the control.
-    case setModel(agent: String, name: String)
     /// Every moment this launch has marked, in order. A driver reads them to
     /// tell a screen that was drawn from a frame that was shown, and to see
     /// when the fleet stopped being a memory.
@@ -176,15 +151,6 @@ public enum DoorRequest: Sendable, Equatable {
     /// only by hitting a floating bar nobody can name; the paste it performs
     /// is the field's own, and that is what this is.
     case paste(identifier: String, text: String)
-    /// Pick the character at `from` up and put it down before what is at
-    /// `to`, through the named field's own draft.
-    ///
-    /// This is how a token moves, because in the sentence a token is one
-    /// character. A finger does it by dragging the chip, which is a text
-    /// view's own drag interaction — the system starts it from a long press
-    /// on drawn text and no accessibility client can synthesize one, so a
-    /// driver reaches the same edit the drag would make.
-    case move(identifier: String, from: Int, to: Int)
     /// Store an attachment for an agent as though a picker had just handed it
     /// back: the kind, the name, the type and the bytes, base64 for the wire.
     ///
@@ -275,14 +241,6 @@ public enum DoorRequest: Sendable, Equatable {
     /// refusing to send is a thing this app does deliberately, and a driver
     /// asks for it on purpose.
     case send(agent: String, text: String)
-    /// Say something beside the review a conversation is already holding, and
-    /// send the two together.
-    ///
-    /// The composer is not built, so there is nowhere on screen to write the
-    /// remark that goes with a review. This puts the words where the composer
-    /// will keep them and sends the draft the conversation holds — the same
-    /// message, through the same gate, with the patch attached.
-    case sendDraft(agent: String, prose: String)
     /// Write the report this app would send into this directory: the frozen
     /// picture of the screen, the shared runtime's own recording, the
     /// view-state trace, the daemon's state and `report.json` declaring them,
@@ -324,9 +282,6 @@ public enum DoorReply: Sendable, Equatable {
     case ack
     case state(VisibleState)
     case bridge(BridgeState)
-    /// What the runtime wrote, ending at the moment this was asked, and
-    /// empty in a build that writes none.
-    case runtimeLog(String)
     case conversation(ConversationReading)
     case signposts([SignpostMark])
     case measurement(Measurement)
@@ -595,12 +550,12 @@ extension DoorRequest: Codable {
     private enum Key: String, CodingKey {
         case kind, screen, fixture, cloud, store, relay, token, user, appearance, size, path
         case account, refresh, saying
-        case identifier, text, seconds, after, qr, agent, base, prose, from, to
+        case identifier, text, seconds, after, qr, agent, base
         case attachment, name, mime, base64, host, pin
         case note, marks
         case motion, transparency, on
         case permission, tier
-        case bytes, label, action, direction
+        case label, action, direction
     }
 
     public init(from decoder: any Decoder) throws {
@@ -621,9 +576,6 @@ extension DoorRequest: Codable {
             self = .addAccount(
                 user: try fields.decode(String.self, forKey: .user),
                 token: try fields.decode(String.self, forKey: .token))
-        case "refreshEntitlement": self = .refreshEntitlement
-        case "late":
-            self = .late(account: try fields.decode(String.self, forKey: .account))
         case "connect":
             self = .connect(
                 relay: try fields.decode(String.self, forKey: .relay),
@@ -642,13 +594,7 @@ extension DoorRequest: Codable {
             self = .awaitBackground(seconds: try fields.decode(Double.self, forKey: .seconds))
         case "conversation":
             self = .conversation(agent: try fields.decode(String.self, forKey: .agent))
-        case "setModel":
-            self = .setModel(agent: try fields.decode(String.self, forKey: .agent),
-                             name: try fields.decode(String.self, forKey: .name))
         case "bridge": self = .bridge
-        case "runtimeLog":
-            self = .runtimeLog(
-                bytes: try fields.decodeIfPresent(Int.self, forKey: .bytes) ?? 64_000)
         case "signposts": self = .signposts
         case "condition": self = .condition
         case "measure":
@@ -694,11 +640,6 @@ extension DoorRequest: Codable {
             self = .paste(
                 identifier: try fields.decode(String.self, forKey: .identifier),
                 text: try fields.decode(String.self, forKey: .text))
-        case "move":
-            self = .move(
-                identifier: try fields.decode(String.self, forKey: .identifier),
-                from: try fields.decode(Int.self, forKey: .from),
-                to: try fields.decode(Int.self, forKey: .to))
         case "attach":
             self = .attach(
                 agent: try fields.decode(String.self, forKey: .agent),
@@ -739,10 +680,6 @@ extension DoorRequest: Codable {
             self = .send(
                 agent: try fields.decode(String.self, forKey: .agent),
                 text: try fields.decode(String.self, forKey: .text))
-        case "sendDraft":
-            self = .sendDraft(
-                agent: try fields.decode(String.self, forKey: .agent),
-                prose: try fields.decode(String.self, forKey: .prose))
         case "report":
             self = .report(
                 path: try fields.decode(String.self, forKey: .path),
@@ -780,11 +717,6 @@ extension DoorRequest: Codable {
             try fields.encode("addAccount", forKey: .kind)
             try fields.encode(user, forKey: .user)
             try fields.encode(token, forKey: .token)
-        case .refreshEntitlement:
-            try fields.encode("refreshEntitlement", forKey: .kind)
-        case .late(let account):
-            try fields.encode("late", forKey: .kind)
-            try fields.encode(account, forKey: .account)
         case .connect(let relay, let token, let user, let tier):
             try fields.encode("connect", forKey: .kind)
             try fields.encode(relay, forKey: .relay)
@@ -807,15 +739,8 @@ extension DoorRequest: Codable {
         case .conversation(let agent):
             try fields.encode("conversation", forKey: .kind)
             try fields.encode(agent, forKey: .agent)
-        case .setModel(let agent, let name):
-            try fields.encode("setModel", forKey: .kind)
-            try fields.encode(agent, forKey: .agent)
-            try fields.encode(name, forKey: .name)
         case .bridge:
             try fields.encode("bridge", forKey: .kind)
-        case .runtimeLog(let bytes):
-            try fields.encode("runtimeLog", forKey: .kind)
-            try fields.encode(bytes, forKey: .bytes)
         case .signposts:
             try fields.encode("signposts", forKey: .kind)
         case .condition:
@@ -874,11 +799,6 @@ extension DoorRequest: Codable {
             try fields.encode("paste", forKey: .kind)
             try fields.encode(identifier, forKey: .identifier)
             try fields.encode(text, forKey: .text)
-        case .move(let identifier, let from, let to):
-            try fields.encode("move", forKey: .kind)
-            try fields.encode(identifier, forKey: .identifier)
-            try fields.encode(from, forKey: .from)
-            try fields.encode(to, forKey: .to)
         case .attach(let agent, let kind, let name, let mime, let base64):
             try fields.encode("attach", forKey: .kind)
             try fields.encode(agent, forKey: .agent)
@@ -923,10 +843,6 @@ extension DoorRequest: Codable {
             try fields.encode("send", forKey: .kind)
             try fields.encode(agent, forKey: .agent)
             try fields.encode(text, forKey: .text)
-        case .sendDraft(let agent, let prose):
-            try fields.encode("sendDraft", forKey: .kind)
-            try fields.encode(agent, forKey: .agent)
-            try fields.encode(prose, forKey: .prose)
         case .report(let path, let note, let marks):
             try fields.encode("report", forKey: .kind)
             try fields.encode(path, forKey: .path)
@@ -949,7 +865,7 @@ extension DoorReply: Codable {
     private enum Key: String, CodingKey {
         case kind, state, bridge, path, width, height, scale, message, parts, marks, measurement
         case host, delivered, reason, cloud, store, known, states, conversation, reportJSON
-        case log, condition
+        case condition
     }
 
     public init(from decoder: any Decoder) throws {
@@ -963,8 +879,6 @@ extension DoorReply: Codable {
             self = .state(try fields.decode(VisibleState.self, forKey: .state))
         case "bridge":
             self = .bridge(try fields.decode(BridgeState.self, forKey: .bridge))
-        case "runtimeLog":
-            self = .runtimeLog(try fields.decode(String.self, forKey: .log))
         case "signposts":
             self = .signposts(try fields.decode([SignpostMark].self, forKey: .marks))
         case "measurement":
@@ -1018,9 +932,6 @@ extension DoorReply: Codable {
         case .bridge(let state):
             try fields.encode("bridge", forKey: .kind)
             try fields.encode(state, forKey: .bridge)
-        case .runtimeLog(let log):
-            try fields.encode("runtimeLog", forKey: .kind)
-            try fields.encode(log, forKey: .log)
         case .signposts(let marks):
             try fields.encode("signposts", forKey: .kind)
             try fields.encode(marks, forKey: .marks)

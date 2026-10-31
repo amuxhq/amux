@@ -107,8 +107,6 @@ final class DoorHost {
             return await until(seconds, "a host to go offline") {
                 self.stores?.hosts.hosts.contains { !$0.online } ?? false
             }
-        case .runtimeLog(let bytes):
-            return .runtimeLog(composition?.runtime.logTail(bytes: bytes) ?? "")
         case .conversation(let agent): return reading(agent)
         case .signposts: return .signposts(Signposts.marks)
         case .condition: return .condition(DeviceCondition.now())
@@ -225,8 +223,7 @@ final class DoorHost {
                     && self.composition?.runtime.active == false
             }
         case .push(let path): return await push(from: path)
-        case .refreshEntitlement, .late, .restoreSession, .bridge, .setModel, .states,
-             .report, .move, .requestChanges, .watch, .sendDraft:
+        case .restoreSession, .bridge, .states, .report, .requestChanges, .watch:
             return .error("this build's door does not \(Self.verb(request))")
         }
     }

@@ -492,17 +492,6 @@ public final class RuntimeCoordinator {
         else { return false }
         return true
     }
-
-    /// The tail of the installation's log, for a report.
-    public func logTail(bytes: Int = 64 * 1024) -> String? {
-        guard let handle = try? FileHandle(
-            forReadingFrom: directory.appendingPathComponent("runtime.log"))
-        else { return nil }
-        defer { try? handle.close() }
-        let end = (try? handle.seekToEnd()) ?? 0
-        try? handle.seek(toOffset: end > UInt64(bytes) ? end - UInt64(bytes) : 0)
-        return (try? handle.readToEnd()).map { String(decoding: $0, as: UTF8.self) }
-    }
 }
 
 /// How a push's chat was brought current.

@@ -253,35 +253,6 @@ public struct ActionLabel: View {
     }
 }
 
-/// A round glass button — the shape iOS uses for a bare action in a bar.
-public struct GlassIcon: View {
-    @Environment(\.design) private var design
-    private let glyph: String
-    private let prominent: Bool
-    private let size: CGFloat
-
-    public init(glyph: String, prominent: Bool = false, size: CGFloat = 34) {
-        self.glyph = glyph
-        self.prominent = prominent
-        self.size = size
-    }
-
-    public var body: some View {
-        Image(systemName: glyph)
-            .font(.system(size: size * 0.44, weight: .semibold))
-            .foregroundStyle(prominent ? design.onAccent.color : design.ink.color)
-            .frame(width: size, height: size)
-            .background {
-                if prominent {
-                    Circle().fill(design.accent.color)
-                } else {
-                    Color.clear.frosted(Circle(), as: .glass)
-                }
-            }
-            .contentShape(Circle())
-    }
-}
-
 /// A screen's primary action on glass above the home indicator.
 ///
 /// Kept separate from the full-height screen so scrolling content can run

@@ -9,8 +9,9 @@ use model::{AgentKey, Connection, InputState, Key, PhaseView, Refusal, Waiting};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ui_view::{
-    AskCard, ComposerView, ContextView, ControlsSummary, FleetView, Overview, PLACEHOLDER,
-    QueuedRow, Reach, RefusedPrompt, Row, SentPrompt, SettingsView, SignInView,
+    AskCard, ComposerView, ContextView, ControlsSummary, FleetView, FormValue, Overview,
+    PLACEHOLDER, QuestionResponse, QueuedRow, Reach, RefusedPrompt, Row, SentPrompt, SettingChange,
+    SettingsView, SignInView,
 };
 use wire::{BlobRef, Kind, Platform, RouteKind};
 
@@ -481,6 +482,66 @@ pub struct Directories {
     pub recent: Vec<Directory>,
     pub repositories: Vec<Directory>,
     pub roots: Vec<String>,
+}
+
+/// An act on an open chat. Its answer is a `SendOutcome` for `Send` (as
+/// `{"Ok": SendOutcome}`), a `CommandOutcome` for `Command`, a `SendOutcome`
+/// or null for `Resend`, a `PageOutcome` for `PageOlder`, and an
+/// `ActOutcome` for every other.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub enum ChatAct {
+    Send(Draft),
+    /// A draft that names a command the client handles itself (`/model`,
+    /// `/effort`, `/rename`) or one the agent does not run; the outcome's
+    /// `Send` says to send it as typed.
+    Command(Draft),
+    /// Answers the head ask, named by its key, with the choice at `choice`
+    /// on its card; `note` goes back with a choice that takes one.
+    Answer {
+        ask: String,
+        choice: u32,
+        note: String,
+    },
+    /// Submits the head form ask with one value per field, in the form's
+    /// order; the shared view checks and encodes them.
+    AnswerForm {
+        ask: String,
+        values: Vec<FormValue>,
+    },
+    /// Answers the head question ask with one response per question.
+    AnswerQuestions {
+        ask: String,
+        responses: Vec<QuestionResponse>,
+    },
+    /// Replies to the head question ask in the person's own words instead,
+    /// with what they had answered so far.
+    ReplyInstead {
+        ask: String,
+        reply: String,
+        so_far: Vec<QuestionResponse>,
+    },
+    /// A pick from the settings view.
+    ChangeSetting(SettingChange),
+    /// Takes a queued prompt, by input id, back out of the queue.
+    Withdraw(Vec<u8>),
+    /// Steers a queued prompt into the running turn.
+    SendNow(Vec<u8>),
+    /// Sends a not-confirmed input again under a new id.
+    Resend(Vec<u8>),
+    /// Stops the agent's turn; the agent stays.
+    Interrupt,
+    /// Stops one background job by the key its `JobStop` gives.
+    StopJob(String),
+    /// Takes terminal Claude's own view back to the agent's conversation
+    /// after it switched to another.
+    SwitchBack,
+    /// The exited composer's one tap: resumes the agent with the draft as
+    /// its first prompt; on anything but Done the draft stays the
+    /// composer's.
+    Resume(Draft),
+    /// Up to this many rows older than the oldest held; they arrive below
+    /// the oldest.
+    PageOlder(u32),
 }
 
 /// A change to one agent from outside its chat.

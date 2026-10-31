@@ -150,13 +150,13 @@ from a host's catalogue), and `amux_form_problems` (each field's
 
 Acts that wait on the agent return a ticket at once (0 when the handle is
 gone), and their JSON result comes back in a later step's answers under it:
-`amux_session_send`, `amux_session_command` (a draft that may be one of the client's own commands or a refused one; the result says which), `amux_session_answer` (by choice index),
-`amux_session_answer_questions`, `amux_session_reply_instead`, `amux_session_answer_form`
-(one `FormValue` per field, checked and encoded in Rust), `amux_session_change_setting` (a pick from
-the settings view), `amux_session_withdraw`,
-`amux_session_send_now`, `amux_session_resend`, `amux_session_interrupt`, `amux_session_stop_job`, `amux_session_switch_back`,
-`amux_session_resume` (the exited composer's draft), `amux_session_page_older`,
-`amux_session_put_blob`, `amux_session_open_overview` (the changed files for
+`amux_session_act` (a `ChatAct`: sending a draft, running one that may be
+one of the client's own commands, answering an ask by choice index, by one
+`QuestionResponse` per question or by one `FormValue` per field, replying
+instead, a pick from the settings view, withdrawing, steering or resending a
+prompt, interrupting, stopping a job, switching back, resuming with the
+exited composer's draft and paging older rows; `ChatAct` says what each
+answers), `amux_session_put_blob`, `amux_session_open_overview` (the changed files for
 a `Comparison`, fetched without a patch as the overview opens),
 `amux_session_review` (the diff for a `Comparison` and its patch, frozen for
 the review page), `amux_profile_host_catalogue` (what a provider offers on a

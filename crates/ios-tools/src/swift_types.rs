@@ -83,6 +83,7 @@ pub fn definitions() -> Map<String, Value> {
         wire::Catalogue,
         app_runtime::values::Directories,
         app_runtime::values::AgentAct,
+        app_runtime::values::ChatAct,
         app_runtime::values::UsageEvent,
         app_runtime::values::ReportSent,
     );

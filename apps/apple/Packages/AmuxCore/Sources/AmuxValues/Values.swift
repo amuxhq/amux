@@ -1609,6 +1609,217 @@ public struct Changes: Codable, Hashable, Sendable {
     }
 }
 
+/// An act on an open chat. Its answer is a `SendOutcome` for `Send` (as
+/// `{"Ok": SendOutcome}`), a `CommandOutcome` for `Command`, a `SendOutcome`
+/// or null for `Resend`, a `PageOutcome` for `PageOlder`, and an
+/// `ActOutcome` for every other.
+public enum ChatAct: Codable, Hashable, Sendable {
+    case send(Draft)
+    /// A draft that names a command the client handles itself (`/model`,
+    /// `/effort`, `/rename`) or one the agent does not run; the outcome's
+    /// `Send` says to send it as typed.
+    case command(Draft)
+    /// Answers the head ask, named by its key, with the choice at `choice`
+    /// on its card; `note` goes back with a choice that takes one.
+    case answer(ask: String, choice: UInt32, note: String)
+    /// Submits the head form ask with one value per field, in the form's
+    /// order; the shared view checks and encodes them.
+    case answerForm(ask: String, values: [FormValue])
+    /// Answers the head question ask with one response per question.
+    case answerQuestions(ask: String, responses: [QuestionResponse])
+    /// Replies to the head question ask in the person's own words instead,
+    /// with what they had answered so far.
+    case replyInstead(ask: String, reply: String, soFar: [QuestionResponse])
+    /// A pick from the settings view.
+    case changeSetting(SettingChange)
+    /// Takes a queued prompt, by input id, back out of the queue.
+    case withdraw([UInt8])
+    /// Steers a queued prompt into the running turn.
+    case sendNow([UInt8])
+    /// Sends a not-confirmed input again under a new id.
+    case resend([UInt8])
+    /// Stops the agent's turn; the agent stays.
+    case interrupt
+    /// Stops one background job by the key its `JobStop` gives.
+    case stopJob(String)
+    /// Takes terminal Claude's own view back to the agent's conversation
+    /// after it switched to another.
+    case switchBack
+    /// The exited composer's one tap: resumes the agent with the draft as
+    /// its first prompt; on anything but Done the draft stays the
+    /// composer's.
+    case resume(Draft)
+    /// Up to this many rows older than the oldest held; they arrive below
+    /// the oldest.
+    case pageOlder(UInt32)
+
+    private enum Tag: String, CodingKey {
+        case send = "Send"
+        case command = "Command"
+        case answer = "Answer"
+        case answerForm = "AnswerForm"
+        case answerQuestions = "AnswerQuestions"
+        case replyInstead = "ReplyInstead"
+        case changeSetting = "ChangeSetting"
+        case withdraw = "Withdraw"
+        case sendNow = "SendNow"
+        case resend = "Resend"
+        case stopJob = "StopJob"
+        case resume = "Resume"
+        case pageOlder = "PageOlder"
+    }
+
+    private enum AnswerKeys: String, CodingKey {
+        case ask
+        case choice
+        case note
+    }
+
+    private enum AnswerFormKeys: String, CodingKey {
+        case ask
+        case values
+    }
+
+    private enum AnswerQuestionsKeys: String, CodingKey {
+        case ask
+        case responses
+    }
+
+    private enum ReplyInsteadKeys: String, CodingKey {
+        case ask
+        case reply
+        case soFar = "so_far"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "Interrupt": self = .interrupt
+            case "SwitchBack": self = .switchBack
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no ChatAct is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a ChatAct names exactly one variant"))
+        }
+        switch _tag {
+        case .send:
+            self = .send(try _container.decode(Draft.self, forKey: .send))
+        case .command:
+            self = .command(try _container.decode(Draft.self, forKey: .command))
+        case .answer:
+            let _fields = try _container.nestedContainer(
+                keyedBy: AnswerKeys.self, forKey: .answer)
+            self = .answer(
+                ask: try _fields.decode(String.self, forKey: .ask),
+                choice: try _fields.decode(UInt32.self, forKey: .choice),
+                note: try _fields.decode(String.self, forKey: .note))
+        case .answerForm:
+            let _fields = try _container.nestedContainer(
+                keyedBy: AnswerFormKeys.self, forKey: .answerForm)
+            self = .answerForm(
+                ask: try _fields.decode(String.self, forKey: .ask),
+                values: try _fields.decode([FormValue].self, forKey: .values))
+        case .answerQuestions:
+            let _fields = try _container.nestedContainer(
+                keyedBy: AnswerQuestionsKeys.self, forKey: .answerQuestions)
+            self = .answerQuestions(
+                ask: try _fields.decode(String.self, forKey: .ask),
+                responses: try _fields.decode([QuestionResponse].self, forKey: .responses))
+        case .replyInstead:
+            let _fields = try _container.nestedContainer(
+                keyedBy: ReplyInsteadKeys.self, forKey: .replyInstead)
+            self = .replyInstead(
+                ask: try _fields.decode(String.self, forKey: .ask),
+                reply: try _fields.decode(String.self, forKey: .reply),
+                soFar: try _fields.decode([QuestionResponse].self, forKey: .soFar))
+        case .changeSetting:
+            self = .changeSetting(try _container.decode(SettingChange.self, forKey: .changeSetting))
+        case .withdraw:
+            self = .withdraw(try _container.decode([UInt8].self, forKey: .withdraw))
+        case .sendNow:
+            self = .sendNow(try _container.decode([UInt8].self, forKey: .sendNow))
+        case .resend:
+            self = .resend(try _container.decode([UInt8].self, forKey: .resend))
+        case .stopJob:
+            self = .stopJob(try _container.decode(String.self, forKey: .stopJob))
+        case .resume:
+            self = .resume(try _container.decode(Draft.self, forKey: .resume))
+        case .pageOlder:
+            self = .pageOlder(try _container.decode(UInt32.self, forKey: .pageOlder))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .send(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .send)
+        case .command(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .command)
+        case .answer(let ask, let choice, let note):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: AnswerKeys.self, forKey: .answer)
+            try _fields.encode(ask, forKey: .ask)
+            try _fields.encode(choice, forKey: .choice)
+            try _fields.encode(note, forKey: .note)
+        case .answerForm(let ask, let values):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: AnswerFormKeys.self, forKey: .answerForm)
+            try _fields.encode(ask, forKey: .ask)
+            try _fields.encode(values, forKey: .values)
+        case .answerQuestions(let ask, let responses):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: AnswerQuestionsKeys.self, forKey: .answerQuestions)
+            try _fields.encode(ask, forKey: .ask)
+            try _fields.encode(responses, forKey: .responses)
+        case .replyInstead(let ask, let reply, let soFar):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: ReplyInsteadKeys.self, forKey: .replyInstead)
+            try _fields.encode(ask, forKey: .ask)
+            try _fields.encode(reply, forKey: .reply)
+            try _fields.encode(soFar, forKey: .soFar)
+        case .changeSetting(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .changeSetting)
+        case .withdraw(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .withdraw)
+        case .sendNow(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .sendNow)
+        case .resend(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .resend)
+        case .interrupt:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Interrupt")
+        case .stopJob(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .stopJob)
+        case .switchBack:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("SwitchBack")
+        case .resume(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .resume)
+        case .pageOlder(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .pageOlder)
+        }
+    }
+}
+
 /// What moved in an open chat since the host last heard: each field only
 /// when it moved.
 public struct ChatDelta: Codable, Hashable, Sendable {

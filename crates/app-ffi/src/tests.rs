@@ -74,6 +74,13 @@ fn take(text: *mut c_char) -> Value {
     value
 }
 
+/// Starts a `ChatAct` on an open chat.
+fn chat_act(chat: *const AmuxChat, act: Value) -> u64 {
+    let act = c(&act.to_string());
+    // SAFETY: the chat is open; the string lives for the call.
+    unsafe { amux_session_act(chat, act.as_ptr()) }
+}
+
 fn c(text: &str) -> CString {
     CString::new(text).unwrap()
 }
@@ -616,9 +623,10 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     assert!(overview.is_object(), "{overview}");
     let before = phone.chat(chat, |held| held.keys.clone());
 
-    let draft = c(&json!({"parts": [{"Text": "please run it"}]}).to_string());
-    // SAFETY: the chat is open; the string lives for the call.
-    phone.started(unsafe { amux_session_send(chat, draft.as_ptr()) });
+    phone.started(chat_act(
+        chat,
+        json!({"Send": {"parts": [{"Text": "please run it"}]}}),
+    ));
     let sent = phone.result();
     assert!(sent["Ok"]["input_id"].is_array(), "{sent}");
     phone.until("the permission ask", || !card(&phone, chat).is_null());
@@ -629,11 +637,10 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
         .iter()
         .position(|choice| choice["outcome"] == "AllowOnce")
         .expect("allow once is offered");
-    let ask_key = c(ask["key"].as_str().unwrap());
-    // SAFETY: the chat is open; the strings live for the call.
-    phone.started(unsafe {
-        amux_session_answer(chat, ask_key.as_ptr(), allow as u32, std::ptr::null())
-    });
+    phone.started(chat_act(
+        chat,
+        json!({"Answer": {"ask": ask["key"], "choice": allow, "note": ""}}),
+    ));
     let acted: ActOutcome = outcome(phone.result());
     assert_eq!(acted, ActOutcome::Done);
     phone.until("the call to run", || {
@@ -647,36 +654,35 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     );
 
     // A question, answered with picks.
-    let draft = c(&json!({"parts": [{"Text": "ask me"}]}).to_string());
-    // SAFETY: the chat is open; the string lives for the call.
-    phone.started(unsafe { amux_session_send(chat, draft.as_ptr()) });
+    phone.started(chat_act(
+        chat,
+        json!({"Send": {"parts": [{"Text": "ask me"}]}}),
+    ));
     phone.result();
     phone.until("the question", || !card(&phone, chat).is_null());
     let ask = card(&phone, chat);
     assert!(ask["body"]["Question"].is_array(), "{ask}");
-    let ask_key = c(ask["key"].as_str().unwrap());
-    let picks = c(&json!([{"pick": {"Options": [1]}}]).to_string());
-    // SAFETY: the chat is open; the strings live for the call.
-    phone.started(unsafe { amux_session_answer_questions(chat, ask_key.as_ptr(), picks.as_ptr()) });
+    let responses = json!([{"pick": {"Options": [1]}}]);
+    phone.started(chat_act(
+        chat,
+        json!({"AnswerQuestions": {"ask": ask["key"], "responses": responses}}),
+    ));
     assert_eq!(outcome::<ActOutcome>(phone.result()), ActOutcome::Done);
     phone.until("the answer", || says(&phone, chat, "answered"));
 
     // A draft naming one of the client's own commands answers with the
     // command's outcome itself, which is what the phone decodes.
-    let draft = c(&json!({"parts": [{"Text": "/rename"}]}).to_string());
-    // SAFETY: the chat is open; the string lives for the call.
-    phone.started(unsafe { amux_session_command(chat, draft.as_ptr()) });
+    phone.started(chat_act(
+        chat,
+        json!({"Command": {"parts": [{"Text": "/rename"}]}}),
+    ));
     assert_eq!(
         outcome::<CommandOutcome>(phone.result()),
         CommandOutcome::AskName
     );
-    let not_a_draft = c("[]");
-    // SAFETY: the chat is open; the string lives for the call.
-    phone.started(unsafe { amux_session_command(chat, not_a_draft.as_ptr()) });
-    assert!(matches!(
-        outcome::<CommandOutcome>(phone.result()),
-        CommandOutcome::Acted(ActOutcome::Failed(_))
-    ));
+    // An act that does not parse is refused without running.
+    phone.started(chat_act(chat, json!({"Command": []})));
+    assert!(phone.result()["Err"].is_string());
     // SAFETY: the chat is open, and closed once.
     unsafe { amux_session_close(chat) };
 
@@ -701,8 +707,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
         phone.chat(chat, |held| held.keys.len()) == 1
     });
     let held = phone.chat(chat, |held| held.keys.clone());
-    // SAFETY: the chat is open; the string lives for the call.
-    phone.started(unsafe { amux_session_page_older(chat, 2) });
+    phone.started(chat_act(chat, json!({"PageOlder": 2})));
     assert_eq!(
         outcome::<PageOutcome>(phone.result()),
         PageOutcome::Arrived(2)
@@ -762,9 +767,10 @@ fn nothing_closed_is_handed_over_while_its_acts_are_in_flight() {
     // With the agent frozen, a send waits on it for seconds, holding the
     // chat past its close.
     net.freeze("worker").unwrap();
-    let draft = c(&json!({"parts": [{"Text": "are you there"}]}).to_string());
-    // SAFETY: the chat is open; the string lives for the call.
-    phone.started(unsafe { amux_session_send(chat, draft.as_ptr()) });
+    phone.started(chat_act(
+        chat,
+        json!({"Send": {"parts": [{"Text": "are you there"}]}}),
+    ));
     settle(&phone, closing_fleet);
     // SAFETY: from `amux_session_open`, not used again.
     unsafe { amux_session_close(chat) };

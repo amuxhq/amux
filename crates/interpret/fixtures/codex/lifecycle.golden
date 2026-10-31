@@ -4,7 +4,7 @@ snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? turn=-
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"t1\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
-item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=t1 version=0.157.0
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 2 git {"base_branch":"main","branch":"fix-tests","on_branch":{"added":30,"files":2,"removed":4},"uncommitted":{"added":0,"files":0,"removed":0}}
 snapshot git(branch=fix-tests base=main uncommitted=0f+0-0 on_branch=2f+30-4)
@@ -24,11 +24,11 @@ snapshot NEEDS_YOU queue=[] working_on="Deploy it." at=1800000000000 asks=[7→c
 snapshot git(branch=fix-tests base=main uncommitted=1f+12-3 on_branch=3f+42-7)
 snapshot NEEDS_YOU queue=[] working_on="Deploy it." at=1800000000000 asks=[7→cmd-1 command "curl -s https://api.example.com/status" reason="Reach the status API." prefix=["curl", "-s"] hosts=["api.example.com"] decisions=[APPROVE,APPROVE_SIMILAR,APPROVE_NETWORK,DENY,ABORT]] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 8 daemon_lost {}
-item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_DAEMON_LOST session=t1 version=0.157.0
+item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_DAEMON_LOST
 ## 9 stop {}
 effect write "{\"id\":\"amux-2\",\"method\":\"turn/interrupt\",\"params\":{\"threadId\":\"t1\",\"turnId\":\"turn-1\"}}"
 ## 10 exiting "stopped"
 item cmd-1 work final at=1800000000000 text="" command "curl -s https://api.example.com/status" cwd=/work TOOL_STATE_CANCELLED
-item boundary:3 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED session=t1 version=0.157.0 cause=STOPPED
+item boundary:3 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED cause=STOPPED
 snapshot STARTING queue=[] working_on="Deploy it." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=[]
 incarnation_end STOPPED

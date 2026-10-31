@@ -520,7 +520,6 @@ pub struct State {
     /// How many times the thread was named, for the requests' ids.
     names_set: u64,
     thread_id: Option<String>,
-    version: Option<String>,
     model: Option<String>,
     launch_model: Option<String>,
     effort: Option<String>,
@@ -628,7 +627,6 @@ impl State {
             name: spec.name.clone(),
             names_set: 0,
             thread_id: None,
-            version: None,
             model: None,
             launch_model: None,
             effort: None,
@@ -943,8 +941,6 @@ impl State {
                 key: format!("boundary:{}", self.next_boundary),
                 body: item_body(codex_item::Kind::Boundary(wire::Boundary {
                     kind: kind as i32,
-                    provider_session: self.thread_id.clone().unwrap_or_default(),
-                    provider_version: self.version.clone().unwrap_or_default(),
                     cause: exit.cause,
                     cause_detail: exit.detail,
                 })),
@@ -2050,10 +2046,8 @@ fn describe_item(body: &[u8]) -> ItemView {
             "boundary",
             true,
             format!(
-                "{} session={} version={}{}",
+                "{}{}",
                 wire::BoundaryKind::try_from(boundary.kind).map_or("?", |kind| kind.as_str_name()),
-                or_dash(&boundary.provider_session),
-                or_dash(&boundary.provider_version),
                 crate::claude_common::describe_cause(&boundary)
             ),
         ),

@@ -739,26 +739,6 @@ impl Log {
             .count()
     }
 
-    /// Terminal Claude's boundaries in order, as `KIND version`.
-    pub fn launches(&self) -> Vec<String> {
-        self.items()
-            .into_iter()
-            .filter_map(|(_, item)| {
-                match ClaudePtyItem::decode(item.body.as_slice()).ok()?.kind? {
-                    claude_pty_item::Kind::Boundary(boundary) => Some(format!(
-                        "{} {}",
-                        boundary
-                            .kind()
-                            .as_str_name()
-                            .trim_start_matches("BOUNDARY_KIND_"),
-                        boundary.provider_version,
-                    )),
-                    _ => None,
-                }
-            })
-            .collect()
-    }
-
     /// Boundaries in order, as `KIND` or `KIND cause`.
     pub fn boundaries(&self) -> Vec<String> {
         self.sequence()

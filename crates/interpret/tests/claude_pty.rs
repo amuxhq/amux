@@ -927,7 +927,7 @@ fn started_claude() -> (
             wire::ClaudePtySnapshot::decode(snapshot.body.as_slice()).unwrap(),
         )
     });
-    let launch = serde_json::json!({"type": "launch", "version": "2.1.296"});
+    let launch = serde_json::json!({"type": "launch"});
     for event in [
         Event::Fact(interpret::Fact {
             channel: interpret::Channel::Agent,
@@ -1233,7 +1233,7 @@ fn claude_offering_auto() -> interpret::claude_pty::State {
         ..Default::default()
     };
     let (mut state, _) = ClaudePty::initial(&spec);
-    let launch = serde_json::json!({"type": "launch", "version": "2.1.296"});
+    let launch = serde_json::json!({"type": "launch"});
     for event in [
         Event::Fact(interpret::Fact {
             channel: interpret::Channel::Agent,
@@ -1435,7 +1435,7 @@ fn before_claude_names_its_model_the_launched_one_decides_auto_mode() {
         ..Default::default()
     };
     let (mut state, _) = ClaudePty::initial(&spec);
-    let launch = serde_json::json!({"type": "launch", "version": "2.1.296"});
+    let launch = serde_json::json!({"type": "launch"});
     ClaudePty::step(
         &mut state,
         Event::Fact(interpret::Fact {

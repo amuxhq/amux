@@ -10,7 +10,7 @@ effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"7030\",\"input\":[{\"text\":\"Plan it.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
-item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=t1 version=0.157.0
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
 item prompt:7030 prompt final input=p0 at=1800000000000 text="Plan it."
 snapshot WORKING queue=[] working_on="Plan it." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 4 input {"id":"n1","send_now":{"target":"p1"}}

@@ -8,11 +8,11 @@ snapshot IDLE queue=[] working_on=- at=1793268131099 asks=[] session=? model=? m
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Track this work with your task or todo tool: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop."
-item boundary:1 boundary final at=1793268131101 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793268131101 text="" BOUNDARY_KIND_STARTED
 item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793268131101 text="Track this work with your task or todo tool: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop."
 snapshot WORKING queue=[] working_on="Track this work with your task or todo tool: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop." at=1793268131101 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 6 recorded 5: fact Stream type=system subtype=init uuid=e6ac7e40-8c6b-4543-854f-89b3c5dc8f19
-item boundary:1 boundary final at=1793268131152 text="" BOUNDARY_KIND_STARTED session=f4c48023-d639-478d-857e-86c3cb1ee94f version=2.1.312
+item boundary:1 boundary final at=1793268131152 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Track this work with your task or todo tool: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop." at=1793268131152 asks=[] session=f4c48023-d639-478d-857e-86c3cb1ee94f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 12 recorded 11: fact Stream type=assistant uuid=ae1c4999-3643-4aab-8505-80506993ee78
 item msg_011CgWLTAoFUdPKfgqCqbuWn:0 thinking final at=1793268133613 text=""

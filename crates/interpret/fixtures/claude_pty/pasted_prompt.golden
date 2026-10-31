@@ -1,12 +1,12 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.283"}}
+## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 2 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
 effect follow "/t/s1.jsonl"
-item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=s1 version=2.1.283
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 3 input {"id":"p1","prompt":{"text":"Call the AskUserQuestion tool exactly once, now, with these four questions and nothing else first. Q1 header \"Database\", question \"Which database should the service use?\", single select, options: \"SQLite\" (description \"One file, no server\"), \"Postgres\" (description \"A server, more features\"). Q2 header \"Checks\", question \"Which checks should run before merge?\", multiSelect true, options: \"Lint\", \"Unit tests\", \"Integration tests\". Q3 header \"Layout\", question \"Which config layout do you prefer?\", single select, options \"Flat\" with preview \"port = 8080\\nhost = localhost\" and \"Nested\" with preview \"[server]\\nport = 8080\\nhost = localhost\". Q4 header \"Name\", question \"What should the service be called?\", single select, options \"api\", \"backend\". After the answers arrive, repeat each answer back in one short line per question and stop."}}
 effect reply p1 accepted

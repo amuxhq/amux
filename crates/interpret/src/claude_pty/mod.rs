@@ -123,7 +123,7 @@ use wire::{
 use crate::claude_answers::{self, AnswerShape, Decided};
 use crate::claude_common::{
     FileStep, Jobs, Task, Verdict, describe_asks, describe_tasks, describe_tool, file_step,
-    or_dash, plan_item, question_item, same_json, task_list, tool_input,
+    plan_item, question_item, same_json, task_list, tool_input,
 };
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
@@ -195,7 +195,7 @@ impl fmt::Display for TerminalInput {
 pub(crate) enum AgentFact {
     /// Sent before the provider's first fact, and again after the agent
     /// process relaunches it.
-    Launch { version: String },
+    Launch,
     /// Claude's terminal first drew with bracketed paste on: its input is
     /// live, so a prompt can be typed. Some versions report their session
     /// start only after the first prompt, so nothing else says a new
@@ -220,11 +220,8 @@ impl AgentFact {
 }
 
 /// The launch fact, as the agent process sends it.
-pub fn launch_fact(version: &str) -> Vec<u8> {
-    AgentFact::Launch {
-        version: version.to_owned(),
-    }
-    .encode()
+pub fn launch_fact() -> Vec<u8> {
+    AgentFact::Launch.encode()
 }
 
 /// The fact that Claude's terminal takes input.
@@ -254,7 +251,6 @@ pub fn tools_withheld_fact() -> Vec<u8> {
 struct Provider {
     session: Option<String>,
     transcript: Option<String>,
-    version: Option<String>,
     launches: u32,
     /// Launched again after an earlier launch; the next session start is a
     /// restart whatever its source says.
@@ -1344,8 +1340,6 @@ impl State {
                 key,
                 body: item_body(claude_pty_item::Kind::Boundary(Boundary {
                     kind: kind as i32,
-                    provider_session: self.provider.session.clone().unwrap_or_default(),
-                    provider_version: self.provider.version.clone().unwrap_or_default(),
                     cause: exit.cause,
                     cause_detail: exit.detail,
                 })),
@@ -1836,10 +1830,8 @@ fn describe_item(body: &[u8]) -> ItemView {
             "boundary",
             true,
             format!(
-                "{} session={} version={}{}",
+                "{}{}",
                 BoundaryKind::try_from(boundary.kind).map_or("?", |kind| kind.as_str_name()),
-                or_dash(&boundary.provider_session),
-                or_dash(&boundary.provider_version),
                 crate::claude_common::describe_cause(&boundary)
             ),
         ),

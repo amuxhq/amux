@@ -10,11 +10,11 @@ snapshot IDLE queue=[] working_on=- at=1791344082753 asks=[] session=? model=cla
 ## 6 recorded 5: input 0x8744b179efef4c7db68436727acd1e63
 effect reply 0x8744b179efef4c7db68436727acd1e63 accepted
 effect user 8744b179-efef-4c7d-b684-36727acd1e63 "Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval."
-item boundary:1 boundary final at=1791344082858 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1791344082858 text="" BOUNDARY_KIND_STARTED
 item 8744b179-efef-4c7d-b684-36727acd1e63 prompt final input=0x8744b179efef4c7db68436727acd1e63 at=1791344082858 text="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval."
 snapshot WORKING queue=[] working_on="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval." at=1791344082858 asks=[] session=? model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 12 recorded 11: fact Stream type=system subtype=init uuid=b74125ff-46d5-4043-89a6-e338fb05415b
-item boundary:1 boundary final at=1791344082880 text="" BOUNDARY_KIND_STARTED session=513299b0-01fe-4d8c-9f53-1db4e708a4fa version=2.1.292
+item boundary:1 boundary final at=1791344082880 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval." at=1791344082880 asks=[] session=513299b0-01fe-4d8c-9f53-1db4e708a4fa model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 14 recorded 13: fact Stream type=system subtype=status uuid=52646844-f0bc-4e9b-9488-204897e68a44
 item 52646844-f0bc-4e9b-9488-204897e68a44 status final at=1791344082882 text="" SDK_STATUS_REQUESTING requesting

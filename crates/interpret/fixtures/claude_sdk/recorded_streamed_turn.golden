@@ -8,11 +8,11 @@ snapshot IDLE queue=[] working_on=- at=1793267890566 asks=[] session=? model=? m
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Think briefly about the number seven, then reply with exactly SEVEN."
-item boundary:1 boundary final at=1793267890570 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793267890570 text="" BOUNDARY_KIND_STARTED
 item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793267890570 text="Think briefly about the number seven, then reply with exactly SEVEN."
 snapshot WORKING queue=[] working_on="Think briefly about the number seven, then reply with exactly SEVEN." at=1793267890570 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 6 recorded 5: fact Stream type=system subtype=init uuid=be2e0c36-8af3-4f37-8f31-82270b7b7eb4
-item boundary:1 boundary final at=1793267890624 text="" BOUNDARY_KIND_STARTED session=95afdfa5-62ca-4887-9267-dcaacb8afc35 version=2.1.312
+item boundary:1 boundary final at=1793267890624 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Think briefly about the number seven, then reply with exactly SEVEN." at=1793267890624 asks=[] session=95afdfa5-62ca-4887-9267-dcaacb8afc35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 8 recorded 7: fact Stream type=system subtype=status uuid=4877ce12-32af-4fe9-bda1-2d7be57bf485
 item 4877ce12-32af-4fe9-bda1-2d7be57bf485 status final at=1793267890626 text="" SDK_STATUS_REQUESTING requesting

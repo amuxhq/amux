@@ -13,7 +13,7 @@ effect write "{\"id\":\"amux-2\",\"method\":\"turn/start\",\"params\":{\"clientU
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"t1\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
-item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=t1 version=0.157.0
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
 item prompt:7031 prompt final input=p1 at=1800000000000 text="Review the parser change."
 snapshot WORKING queue=[] working_on="Review the parser change." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 4 fact {"channel":"rpc","json":{"id":"amux-1","result":{}}}

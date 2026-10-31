@@ -1252,8 +1252,8 @@ fn auto_mode_names_each_model_by_alias_and_by_the_model_it_resolves_to() {
     assert_eq!(auto.models, ["haiku", "claude-haiku-5-5"]);
 }
 
-/// The session and kind of every boundary a step writes.
-fn boundaries(stepped: &interpret::Stepped) -> Vec<(String, wire::BoundaryKind, String)> {
+/// The kind of every boundary a step writes.
+fn boundaries(stepped: &interpret::Stepped) -> Vec<wire::BoundaryKind> {
     use prost::Message as _;
     stepped
         .step
@@ -1261,9 +1261,7 @@ fn boundaries(stepped: &interpret::Stepped) -> Vec<(String, wire::BoundaryKind, 
         .iter()
         .filter_map(
             |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
-                wire::claude_sdk_item::Kind::Boundary(boundary) => {
-                    Some((item.key.clone(), boundary.kind(), boundary.provider_session))
-                }
+                wire::claude_sdk_item::Kind::Boundary(boundary) => Some(boundary.kind()),
                 _ => None,
             },
         )
@@ -1280,9 +1278,9 @@ fn snapshot_session(stepped: &interpret::Stepped) -> Option<String> {
 }
 
 /// Claude's reset frame names an id it made up before it made the new
-/// session; the next init names the real one. That one is adopted, drawn
-/// on the cleared boundary and saved for the next incarnation, with no
-/// fork, whatever started the reset.
+/// session; the next init names the real one. That one is adopted behind
+/// a cleared boundary and saved for the next incarnation, with no fork,
+/// whatever started the reset.
 #[test]
 fn a_reset_adopts_and_saves_the_next_inits_session() {
     for trigger in ["clear", "plan_mode_exit", "fresh_session", "onboarding"] {
@@ -1303,28 +1301,20 @@ fn a_reset_adopts_and_saves_the_next_inits_session() {
         );
         for stepped in [&reset, &init] {
             assert!(
-                boundaries(stepped)
-                    .iter()
-                    .all(|(_, _, session)| session != "made-up")
-                    && snapshot_session(stepped).as_deref() != Some("made-up"),
+                snapshot_session(stepped).as_deref() != Some("made-up"),
                 "{trigger}: the made-up id is never used"
             );
             assert!(
-                boundaries(stepped)
-                    .iter()
-                    .all(|(_, kind, _)| *kind != wire::BoundaryKind::Forked),
+                !boundaries(stepped).contains(&wire::BoundaryKind::Forked),
                 "{trigger}: no fork"
             );
         }
-        let cleared: Vec<_> = boundaries(&reset)
-            .into_iter()
-            .chain(boundaries(&init))
-            .filter(|(_, kind, _)| *kind == wire::BoundaryKind::Cleared)
-            .collect();
-        assert_eq!(
-            cleared.last().map(|(_, _, session)| session.as_str()),
-            Some("s2"),
-            "{trigger}: the cleared boundary names the new session"
+        assert!(
+            boundaries(&reset)
+                .into_iter()
+                .chain(boundaries(&init))
+                .any(|kind| kind == wire::BoundaryKind::Cleared),
+            "{trigger}: a cleared boundary"
         );
         assert_eq!(snapshot_session(&init).as_deref(), Some("s2"), "{trigger}");
         assert!(

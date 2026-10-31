@@ -8,8 +8,7 @@
       "fact": {
         "channel": "agent",
         "json": {
-          "type": "launch",
-          "version": "2.1.240"
+          "type": "launch"
         }
       }
     },

@@ -4,7 +4,7 @@ snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? turn=-
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"t1\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
-item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=t1 version=0.157.0
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 2 input {"id":"p1","prompt":{"text":"Deploy it."}}
 effect reply p1 accepted
@@ -14,14 +14,14 @@ snapshot WORKING queue=[] working_on="Deploy it." at=1800000000000 asks=[] threa
 ## 3 input {"id":"i1","interrupt":{}}
 effect reply i1 accepted
 ## 4 provider_exit {"code":1}
-item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED session=t1 version=0.157.0 cause=PROVIDER_EXITED detail="exit code 1"
+item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED cause=PROVIDER_EXITED detail="exit code 1"
 snapshot STARTING queue=[] working_on="Deploy it." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=[]
 incarnation_end PROVIDER_EXITED "exit code 1"
 ## 5 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"t1\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
-item boundary:3 boundary final at=1800000000000 text="" BOUNDARY_KIND_RESUMED session=t1 version=0.157.0
+item boundary:3 boundary final at=1800000000000 text="" BOUNDARY_KIND_RESUMED
 snapshot IDLE queue=[] working_on="Deploy it." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=[]
 ## 6 input {"id":"p2","prompt":{"text":"Summarise the plan."}}
 effect reply p2 accepted

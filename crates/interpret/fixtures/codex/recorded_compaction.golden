@@ -6,7 +6,7 @@ snapshot STARTING queue=[] working_on=- at=1790388546868 asks=[] thread=? turn=-
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a0db79-2df5-70a1-b898-0c60bb9e7636\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
-item boundary:1 boundary final at=1790388547074 text="" BOUNDARY_KIND_STARTED session=01a0db79-2df5-70a1-b898-0c60bb9e7636 version=0.157.0
+item boundary:1 boundary final at=1790388547074 text="" BOUNDARY_KIND_STARTED
 snapshot IDLE queue=[] working_on=- at=1790388547074 asks=[] thread=01a0db79-2df5-70a1-b898-0c60bb9e7636 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never context=? plan=? usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 11 recorded 10: input stdin-4
 effect reply stdin-4 accepted
@@ -55,7 +55,7 @@ snapshot WORKING queue=[] working_on="Reply with exactly CODEX_SPEC_BEFORE_COMPA
 ## 60 recorded 59: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on="Reply with exactly CODEX_SPEC_BEFORE_COMPACT and nothing else." at=1790388554148 asks=[] thread=01a0db79-2df5-70a1-b898-0c60bb9e7636 turn=01a0db79-3deb-7b32-901e-059e0eac06fc model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never context=4567/258400 plan=? usage=ok 7d:1%(ok) credits=0 servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
 ## 63 recorded 62: fact Rpc method=item/completed
-item boundary:2 boundary final at=1790388554149 text="" BOUNDARY_KIND_COMPACTED session=01a0db79-2df5-70a1-b898-0c60bb9e7636 version=0.157.0
+item boundary:2 boundary final at=1790388554149 text="" BOUNDARY_KIND_COMPACTED
 ## 67 recorded 66: fact Rpc method=turn/completed
 item turn:2 turn final at=1790388554151 text="" #2 TURN_OUTCOME_COMPLETED started=1790388551160
 snapshot IDLE queue=[] working_on="Reply with exactly CODEX_SPEC_BEFORE_COMPACT and nothing else." at=1790388554151 asks=[] thread=01a0db79-2df5-70a1-b898-0c60bb9e7636 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never context=4567/258400 plan=? usage=ok 7d:1%(ok) credits=0 servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]

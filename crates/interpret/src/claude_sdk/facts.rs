@@ -428,9 +428,6 @@ impl State {
         let session = written(&init.session_id);
         let previous = self.session.clone();
         self.session = session.clone().or(previous.clone());
-        if let Some(version) = written(&init.claude_code_version) {
-            self.version = Some(version);
-        }
         if let Some(model) = written(&init.model) {
             self.model = Some(model);
         }

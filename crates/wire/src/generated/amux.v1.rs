@@ -1886,10 +1886,6 @@ impl ::prost::Name for SubagentProgress {
 pub struct Boundary {
     #[prost(enumeration = "BoundaryKind", tag = "1")]
     pub kind: i32,
-    #[prost(string, tag = "2")]
-    pub provider_session: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub provider_version: ::prost::alloc::string::String,
     /// For EXITED: why, and the cause's own words.
     #[prost(enumeration = "ExitCause", tag = "4")]
     pub cause: i32,

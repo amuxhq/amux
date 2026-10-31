@@ -8,11 +8,11 @@ snapshot IDLE queue=[] working_on=- at=1793268121104 asks=[] session=? model=? m
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Name the color of the attached image in one word. Then read square.png in the working directory with the Read tool and say whether it is the same image."
-item boundary:1 boundary final at=1793268121106 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793268121106 text="" BOUNDARY_KIND_STARTED
 item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793268121106 text="Name the color of the attached image in one word. Then read square.png in the working directory with the Read tool and say whether it is the same image."
 snapshot WORKING queue=[] working_on="Name the color of the attached image in one word. Then read square.png in the working directory with the Read tool and say whether it is the same image." at=1793268121106 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 6 recorded 5: fact Stream type=system subtype=init uuid=e2966cad-38df-4365-b742-2b8d2eb0cb3e
-item boundary:1 boundary final at=1793268121169 text="" BOUNDARY_KIND_STARTED session=634def0a-df73-40e6-bd10-399168a79c45 version=2.1.312
+item boundary:1 boundary final at=1793268121169 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Name the color of the attached image in one word. Then read square.png in the working directory with the Read tool and say whether it is the same image." at=1793268121169 asks=[] session=634def0a-df73-40e6-bd10-399168a79c45 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 12 recorded 11: fact Stream type=assistant uuid=989a6ed6-3afd-4322-b404-cfa4222c8632
 item msg_011CgWLSRvZZcNKv1idAYXP1:0 thinking final at=1793268123298 text=""

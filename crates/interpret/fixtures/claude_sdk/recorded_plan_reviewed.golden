@@ -8,11 +8,11 @@ snapshot IDLE queue=[] working_on=- at=1793267953268 asks=[] session=? model=? m
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Plan changing README.md's only line from CURRENT to AUTO, then call ExitPlanMode. Do not ask questions. Once approved, do not edit; reply exactly AUTO_APPROVED."
-item boundary:1 boundary final at=1793267953270 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793267953270 text="" BOUNDARY_KIND_STARTED
 item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793267953270 text="Plan changing README.md's only line from CURRENT to AUTO, then call ExitPlanMode. Do not ask questions. Once approved, do not edit; reply exactly AUTO_APPROVED."
 snapshot WORKING queue=[] working_on="Plan changing README.md's only line from CURRENT to AUTO, then call ExitPlanMode. Do not ask questions. Once approved, do not edit; reply exactly AUTO_APPROVED." at=1793267953270 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 6 recorded 5: fact Stream type=system subtype=init uuid=041cf9ee-0e3d-454d-8116-059965a85477
-item boundary:1 boundary final at=1793267953321 text="" BOUNDARY_KIND_STARTED session=69ddf936-4a19-4e52-89e8-aba0f358cdbd version=2.1.312
+item boundary:1 boundary final at=1793267953321 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Plan changing README.md's only line from CURRENT to AUTO, then call ExitPlanMode. Do not ask questions. Once approved, do not edit; reply exactly AUTO_APPROVED." at=1793267953321 asks=[] session=69ddf936-4a19-4e52-89e8-aba0f358cdbd model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 14 recorded 13: fact Stream type=assistant uuid=211fad79-2de1-44a8-b269-2edeeb7aa510
 item msg_011CgWLE4aaiqhaHPUXFoJnn:0 thinking final at=1793267957003 text=""

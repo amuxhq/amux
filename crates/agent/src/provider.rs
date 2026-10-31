@@ -560,20 +560,16 @@ impl Provider {
         let (session, resume) = claude_session(spec, dir)?;
         // A version that cannot be read starts anyway: a wrapper or an odd
         // banner is likelier than an old Claude.
-        let version = match claude::version::probe_version(Path::new(&spec.provider_command)).await
-        {
+        match claude::version::probe_version(Path::new(&spec.provider_command)).await {
             Ok(version) if version.0 < claude::version::MIN_TERMINAL => {
                 return Err(ProviderError::ClaudeTooOld {
                     found: version.to_string(),
                 });
             }
-            Ok(version) => version.to_string(),
-            Err(error) => {
-                eprintln!("amux agent: reading the Claude version: {error}");
-                String::new()
-            }
-        };
-        let launch = interpret::claude_pty::launch_fact(&version);
+            Ok(_) => {}
+            Err(error) => eprintln!("amux agent: reading the Claude version: {error}"),
+        }
+        let launch = interpret::claude_pty::launch_fact();
         let _ = events
             .send(ProviderEvent::Fact(Fact {
                 channel: Channel::Agent,

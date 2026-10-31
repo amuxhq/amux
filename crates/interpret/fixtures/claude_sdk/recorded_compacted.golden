@@ -8,11 +8,11 @@ snapshot IDLE queue=[] working_on=- at=1793267899564 asks=[] session=? model=? m
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Write three paragraphs about the history of rope-making."
-item boundary:1 boundary final at=1793267899565 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793267899565 text="" BOUNDARY_KIND_STARTED
 item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793267899565 text="Write three paragraphs about the history of rope-making."
 snapshot WORKING queue=[] working_on="Write three paragraphs about the history of rope-making." at=1793267899565 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 6 recorded 5: fact Stream type=system subtype=init uuid=6fa428e5-6150-432c-8514-3e8f667277f7
-item boundary:1 boundary final at=1793267899617 text="" BOUNDARY_KIND_STARTED session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 version=2.1.312
+item boundary:1 boundary final at=1793267899617 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Write three paragraphs about the history of rope-making." at=1793267899617 asks=[] session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 12 recorded 11: fact Stream type=assistant uuid=027adff7-4add-4d48-9e53-f2c59369857e
 item msg_011CgWLA6y5rpxvkBF57axBT:0 thinking final at=1793267901499 text=""
@@ -48,7 +48,7 @@ snapshot WORKING queue=[] working_on="Now three more paragraphs about knots." at
 item 335a34cf-0794-4ca4-8a83-3fa3e1d49ae7 status final at=1793267912622 text="" SDK_STATUS_COMPACTING compacting
 ## 42 recorded 41: fact Stream type=system subtype=compact_boundary uuid=be835eab-7b1e-4c04-927b-1f6e8dcdb955
 item be835eab-7b1e-4c04-927b-1f6e8dcdb955 compaction final at=1793267924410 text="" 25097→4034
-item boundary:2 boundary final at=1793267924410 text="" BOUNDARY_KIND_COMPACTED session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 version=2.1.312
+item boundary:2 boundary final at=1793267924410 text="" BOUNDARY_KIND_COMPACTED
 snapshot WORKING queue=[] working_on="Now three more paragraphs about knots." at=1793267924410 asks=[] session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=4034/200000 tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 44 recorded 43: fact Stream type=user uuid=261f445f-8fc0-40c3-8cee-fc75d36a06a2
 item 261f445f-8fc0-40c3-8cee-fc75d36a06a2 slash final at=1793267924410 text="Compacted" /compact args=""

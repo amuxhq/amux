@@ -1,12 +1,12 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.312"}}
+## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
-item boundary:1 boundary final at=1793308271188 text="" BOUNDARY_KIND_STARTED session=d9c92ab0-1e08-408b-bcf3-85c5f3db8b23 version=2.1.312
+item boundary:1 boundary final at=1793308271188 text="" BOUNDARY_KIND_STARTED
 snapshot IDLE queue=[] working_on=- at=1793308271188 asks=[] session=d9c92ab0-1e08-408b-bcf3-85c5f3db8b23 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
 snapshot IDLE queue=[] working_on=- at=1793308271596 asks=[] session=d9c92ab0-1e08-408b-bcf3-85c5f3db8b23 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?

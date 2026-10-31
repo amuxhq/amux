@@ -6,7 +6,7 @@ snapshot STARTING queue=[] working_on=- at=1791344875909 asks=[] thread=? turn=-
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a11479-98c6-7920-a1cc-1589acc2902a\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
-item boundary:1 boundary final at=1791344876131 text="" BOUNDARY_KIND_STARTED session=01a11479-98c6-7920-a1cc-1589acc2902a version=0.160.0
+item boundary:1 boundary final at=1791344876131 text="" BOUNDARY_KIND_STARTED
 snapshot IDLE queue=[] working_on=- at=1791344876131 asks=[] thread=01a11479-98c6-7920-a1cc-1589acc2902a turn=- model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 9 recorded 8: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1791344876131 asks=[] thread=01a11479-98c6-7920-a1cc-1589acc2902a turn=- model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_STARTING] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?

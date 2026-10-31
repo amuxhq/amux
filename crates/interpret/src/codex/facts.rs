@@ -1067,9 +1067,6 @@ impl State {
             return;
         }
         self.thread_id = Some(id);
-        if let Some(version) = some_of(thread.cli_version.as_deref()) {
-            self.version = Some(version);
-        }
         self.shared.provider_started();
         let kind = if some_of(thread.forked_from_id.as_deref()).is_some() {
             wire::BoundaryKind::Forked

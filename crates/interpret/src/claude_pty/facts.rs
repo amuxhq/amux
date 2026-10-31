@@ -176,8 +176,8 @@ impl State {
     }
 
     fn agent_fact(&mut self, emit: &mut Emit, fact: AgentFact) {
-        let version = match fact {
-            AgentFact::Launch { version } => version,
+        match fact {
+            AgentFact::Launch => {}
             // Waiting on its trust dialog, Claude takes no prompt; it
             // starts its session once trusted, and that start says so.
             AgentFact::Ready if self.trust_ask().is_some() => return,
@@ -198,7 +198,6 @@ impl State {
             }
         };
         let provider = &mut self.provider;
-        provider.version = (!version.is_empty()).then_some(version);
         provider.relaunched = provider.launches > 0;
         provider.launches += 1;
         self.publish_catalogue(emit);
@@ -1189,11 +1188,6 @@ impl State {
     // --- rows ------------------------------------------------------------
 
     fn row(&mut self, emit: &mut Emit, row: &Row) {
-        if self.provider.version.is_none()
-            && let Some(version) = row.version().filter(|version| !version.is_empty())
-        {
-            self.provider.version = Some(version.to_owned());
-        }
         if self.provider.session.is_none()
             && let Some(session) = row.session_id().filter(|session| !session.is_empty())
         {

@@ -8,11 +8,11 @@ snapshot IDLE queue=[] working_on=- at=1793267942956 asks=[] session=? model=? m
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Use the Write tool once to create tool.txt containing exactly TOOL_OK, then reply exactly DONE."
-item boundary:1 boundary final at=1793267942958 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793267942958 text="" BOUNDARY_KIND_STARTED
 item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793267942958 text="Use the Write tool once to create tool.txt containing exactly TOOL_OK, then reply exactly DONE."
 snapshot WORKING queue=[] working_on="Use the Write tool once to create tool.txt containing exactly TOOL_OK, then reply exactly DONE." at=1793267942958 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 6 recorded 5: fact Stream type=system subtype=init uuid=1c55df49-66db-44c6-8c81-e52559bb5383
-item boundary:1 boundary final at=1793267943011 text="" BOUNDARY_KIND_STARTED session=6431a106-59c8-4802-8634-3163444f5db0 version=2.1.312
+item boundary:1 boundary final at=1793267943011 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Use the Write tool once to create tool.txt containing exactly TOOL_OK, then reply exactly DONE." at=1793267943011 asks=[] session=6431a106-59c8-4802-8634-3163444f5db0 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 12 recorded 11: fact Stream type=assistant uuid=5646e68c-3ce6-4f96-9063-1fc3b7a6ae26
 item msg_011CgWLDJXTR41oLqEzozmCq:0 thinking final at=1793267945028 text=""

@@ -8,13 +8,13 @@ snapshot IDLE queue=[] working_on=- at=1793268174050 asks=[] session=? model=? m
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Reply with exactly PONG and nothing else."
-item boundary:1 boundary final at=1793268174052 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793268174052 text="" BOUNDARY_KIND_STARTED
 item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793268174052 text="Reply with exactly PONG and nothing else."
 snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268174052 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 6 recorded 5: fact Stream type=control_response
 snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268174093 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=HEALTH_STATE_DEGRADED[broken:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 8 recorded 7: fact Stream type=system subtype=init uuid=948bec53-da3d-4788-81ce-1db4128ab628
-item boundary:1 boundary final at=1793268174118 text="" BOUNDARY_KIND_STARTED session=1124cd39-4239-40c2-b064-526ac8ff5ea5 version=2.1.312
+item boundary:1 boundary final at=1793268174118 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268174118 asks=[] session=1124cd39-4239-40c2-b064-526ac8ff5ea5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_DEGRADED[broken:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 10 recorded 9: fact Stream type=assistant uuid=3c504533-e005-4ca7-9ad9-4e1ab94b7db4
 item msg_011CgWLWLF7Fx1kuf9o6g464:0 thinking final at=1793268175389 text=""

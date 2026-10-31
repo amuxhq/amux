@@ -256,8 +256,6 @@ message SubagentProgress {
 
 message Boundary {
   BoundaryKind kind = 1;
-  string provider_session = 2;
-  string provider_version = 3;
   // For EXITED: why, and the cause's own words.
   ExitCause cause = 4;
   optional string cause_detail = 5;

@@ -4,7 +4,7 @@ snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? turn=- model=? mod
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a04f52-5ec1-7d20-a553-3efc75f82bf5\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
-item boundary:1 boundary final at=1788037193431 text="" BOUNDARY_KIND_STARTED session=01a04f52-5ec1-7d20-a553-3efc75f82bf5 version=0.150.1
+item boundary:1 boundary final at=1788037193431 text="" BOUNDARY_KIND_STARTED
 snapshot IDLE queue=[] working_on=- at=1788037193431 asks=[] thread=01a04f52-5ec1-7d20-a553-3efc75f82bf5 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 10 recorded 9: input stdin-4
 effect reply stdin-4 accepted
@@ -40,4 +40,4 @@ item turn:1 turn final at=1788037196971 text="" #1 TURN_OUTCOME_COMPLETED starte
 snapshot IDLE queue=[] working_on="Reply with exactly CODEX_SPEC_RESUME and nothing else." at=1788037196971 asks=[] thread=01a04f52-5ec1-7d20-a553-3efc75f82bf5 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=14529/258400 plan=? usage=ok 7d:13%(ok) credits=0 servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=[]
 turn_end 1 last=msg_08f09d0809947ff5016a93484caf6087d2bba7960eab88b03d
 ## 49 recorded 48: fact Rpc "{\"id\":6,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"on-…
-item boundary:2 boundary final at=1788037196987 text="" BOUNDARY_KIND_RESUMED session=01a04f52-5ec1-7d20-a553-3efc75f82bf5 version=0.150.1
+item boundary:2 boundary final at=1788037196987 text="" BOUNDARY_KIND_RESUMED

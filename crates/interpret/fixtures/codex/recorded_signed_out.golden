@@ -6,7 +6,7 @@ snapshot STARTING queue=[] working_on=- at=1790388564973 asks=[] thread=? turn=-
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a0db79-73ef-7e43-854f-9f9d3a931f3d\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
-item boundary:1 boundary final at=1790388564985 text="" BOUNDARY_KIND_STARTED session=01a0db79-73ef-7e43-854f-9f9d3a931f3d version=0.157.0
+item boundary:1 boundary final at=1790388564985 text="" BOUNDARY_KIND_STARTED
 snapshot IDLE queue=[] working_on=- at=1790388564985 asks=[] thread=01a0db79-73ef-7e43-854f-9f9d3a931f3d turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never context=? plan=? usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_OUT - background=?
 ## 10 recorded 9: input stdin-5
 effect reply stdin-5 accepted

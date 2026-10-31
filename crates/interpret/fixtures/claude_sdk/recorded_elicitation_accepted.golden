@@ -8,11 +8,11 @@ snapshot IDLE queue=[] working_on=- at=1793268021888 asks=[] session=? model=? m
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Call the mcp__external__ask_the_operator tool with word set to PELICAN, then reply with exactly what it returned."
-item boundary:1 boundary final at=1793268021890 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793268021890 text="" BOUNDARY_KIND_STARTED
 item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793268021890 text="Call the mcp__external__ask_the_operator tool with word set to PELICAN, then reply with exactly what it returned."
 snapshot WORKING queue=[] working_on="Call the mcp__external__ask_the_operator tool with word set to PELICAN, then reply with exactly what it returned." at=1793268021890 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 6 recorded 5: fact Stream type=system subtype=init uuid=1f23ad89-3b2e-4648-8a57-70bc65c441fa
-item boundary:1 boundary final at=1793268021923 text="" BOUNDARY_KIND_STARTED session=2b3b91f9-ce5f-4227-b011-a052bd728235 version=2.1.312
+item boundary:1 boundary final at=1793268021923 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Call the mcp__external__ask_the_operator tool with word set to PELICAN, then reply with exactly what it returned." at=1793268021923 asks=[] session=2b3b91f9-ce5f-4227-b011-a052bd728235 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[external:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 8 recorded 7: fact Stream type=assistant uuid=0d748623-bbff-496e-bbbc-0f9ef493f381
 item msg_011CgWLK8AGt1XU42Jeezmq1:0 thinking final at=1793268027976 text=""

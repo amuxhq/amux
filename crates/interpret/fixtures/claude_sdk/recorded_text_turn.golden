@@ -8,11 +8,11 @@ snapshot IDLE queue=[] working_on=- at=1793267836530 asks=[] session=? model=? m
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Reply with exactly PONG and nothing else."
-item boundary:1 boundary final at=1793267836534 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793267836534 text="" BOUNDARY_KIND_STARTED
 item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793267836534 text="Reply with exactly PONG and nothing else."
 snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793267836534 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 6 recorded 5: fact Stream type=system subtype=init uuid=76804b88-cfb9-43ec-9c48-b9ed6e25f11d
-item boundary:1 boundary final at=1793267836592 text="" BOUNDARY_KIND_STARTED session=52653548-d939-4911-86e9-b5ac004acc0a version=2.1.312
+item boundary:1 boundary final at=1793267836592 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793267836592 asks=[] session=52653548-d939-4911-86e9-b5ac004acc0a model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 8 recorded 7: fact Stream type=assistant uuid=d1a78a60-94ad-4f4c-aec1-4574280d2470
 item msg_011CgWL5TRXAp5JfK8kw97tk:0 thinking final at=1793267837970 text=""

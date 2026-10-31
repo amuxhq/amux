@@ -180,7 +180,6 @@ pub struct State {
     shared: Shared<wire::Ask>,
     incarnation: u32,
     session: Option<String>,
-    version: Option<String>,
     model: Option<String>,
     /// The offered model amux last chose, which names the running one
     /// while it stands for it.
@@ -287,7 +286,6 @@ impl State {
             shared: Shared::new(spec, ClaudeSdk::KIND),
             incarnation: spec.incarnation,
             session: None,
-            version: None,
             model: None,
             chosen_model: launch_arg(&spec.provider_args, "--model"),
             // The launch argument until Claude says what it applied.
@@ -1107,8 +1105,6 @@ impl State {
                 key,
                 body: item_body(claude_sdk_item::Kind::Boundary(wire::Boundary {
                     kind: kind as i32,
-                    provider_session: self.session.clone().unwrap_or_default(),
-                    provider_version: self.version.clone().unwrap_or_default(),
                     cause: exit.cause,
                     cause_detail: exit.detail,
                 })),
@@ -1285,10 +1281,8 @@ fn describe_item(body: &[u8]) -> ItemView {
             "boundary",
             true,
             format!(
-                "{} session={} version={}{}",
+                "{}{}",
                 wire::BoundaryKind::try_from(boundary.kind).map_or("?", |kind| kind.as_str_name()),
-                or_dash(&boundary.provider_session),
-                or_dash(&boundary.provider_version),
                 crate::claude_common::describe_cause(&boundary)
             ),
         ),

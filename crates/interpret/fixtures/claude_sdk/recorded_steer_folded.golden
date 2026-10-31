@@ -8,11 +8,11 @@ snapshot IDLE queue=[] working_on=- at=1793268188133 asks=[] session=? model=? m
 ## 4 recorded 3: input 0x22222222222242228222222222222201
 effect reply 0x22222222222242228222222222222201 accepted
 effect user 22222222-2222-4222-8222-222222222201 "Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly DONE-A plus any extra words the user asked for."
-item boundary:1 boundary final at=1793268188135 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793268188135 text="" BOUNDARY_KIND_STARTED
 item 22222222-2222-4222-8222-222222222201 prompt final input=0x22222222222242228222222222222201 at=1793268188135 text="Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly DONE-A plus any extra words the user asked for."
 snapshot WORKING queue=[] working_on="Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly DONE-A plus any extra words the user asked for." at=1793268188135 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 10 recorded 9: fact Stream type=system subtype=init uuid=d35210de-55a6-4b56-9ebf-7f41728b9f3b
-item boundary:1 boundary final at=1793268188189 text="" BOUNDARY_KIND_STARTED session=f5f1d27e-aae5-4909-8c44-e673907804cf version=2.1.312
+item boundary:1 boundary final at=1793268188189 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly DONE-A plus any extra words the user asked for." at=1793268188189 asks=[] session=f5f1d27e-aae5-4909-8c44-e673907804cf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 18 recorded 17: fact Stream type=assistant uuid=ff96880c-55e9-44a3-808a-a5c05690c4f4
 item msg_011CgWLXcM1aujP3XipbysKS:0 thinking final at=1793268191312 text=""

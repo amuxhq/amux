@@ -8,11 +8,11 @@ snapshot IDLE queue=[] working_on=- at=1793267948539 asks=[] session=? model=? m
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Use AskUserQuestion to ask exactly one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue. Then repeat my answer."
-item boundary:1 boundary final at=1793267948541 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793267948541 text="" BOUNDARY_KIND_STARTED
 item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793267948541 text="Use AskUserQuestion to ask exactly one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue. Then repeat my answer."
 snapshot WORKING queue=[] working_on="Use AskUserQuestion to ask exactly one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue. Then repeat my answer." at=1793267948541 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 6 recorded 5: fact Stream type=system subtype=init uuid=ac6b74db-5e41-4421-b669-308b4734e385
-item boundary:1 boundary final at=1793267948592 text="" BOUNDARY_KIND_STARTED session=d34066a8-442f-45df-b6b9-8c7054bd21c6 version=2.1.312
+item boundary:1 boundary final at=1793267948592 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Use AskUserQuestion to ask exactly one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue. Then repeat my answer." at=1793267948592 asks=[] session=d34066a8-442f-45df-b6b9-8c7054bd21c6 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 12 recorded 11: fact Stream type=assistant uuid=bd4ac4e1-8b96-4037-bfc4-3539c17c1bb7
 item msg_011CgWLDiQPXbB4tGh5dLgBQ:0 thinking final at=1793267950256 text=""

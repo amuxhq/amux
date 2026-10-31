@@ -8,11 +8,11 @@ snapshot IDLE queue=[] working_on=- at=1793268060329 asks=[] session=? model=? m
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Delegate to the `counter` subagent, then reply with exactly what it said."
-item boundary:1 boundary final at=1793268060331 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793268060331 text="" BOUNDARY_KIND_STARTED
 item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793268060331 text="Delegate to the `counter` subagent, then reply with exactly what it said."
 snapshot WORKING queue=[] working_on="Delegate to the `counter` subagent, then reply with exactly what it said." at=1793268060331 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 6 recorded 5: fact Stream type=system subtype=init uuid=1c2581bf-0c5f-41a4-840e-98449558927e
-item boundary:1 boundary final at=1793268060390 text="" BOUNDARY_KIND_STARTED session=716aff5e-14f0-4160-a3aa-1245d6d7538a version=2.1.312
+item boundary:1 boundary final at=1793268060390 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Delegate to the `counter` subagent, then reply with exactly what it said." at=1793268060390 asks=[] session=716aff5e-14f0-4160-a3aa-1245d6d7538a model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 12 recorded 11: fact Stream type=assistant uuid=f2973ef4-e528-4d2d-be0c-f9cfcc67aa1d
 item msg_011CgWLMxM1p6kzYpPuhwn4Q:0 thinking final at=1793268062396 text=""

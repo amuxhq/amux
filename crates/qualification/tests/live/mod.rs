@@ -1136,14 +1136,8 @@ impl Install {
             .filter_map(|item| boundary(self.kind, item))
             .filter(|boundary| boundary.kind() == wire::BoundaryKind::Resumed)
             .collect();
-        let Some(boundary) = resumed.first() else {
+        if resumed.is_empty() {
             return Err("the new incarnation has no resume boundary".into());
-        };
-        if !boundary.provider_session.is_empty() && boundary.provider_session != session {
-            return Err(format!(
-                "resumed into session {} instead of {session}",
-                boundary.provider_session
-            ));
         }
         let now = live.state(self.kind).provider_session;
         if now.as_deref() != Some(session.as_str()) {

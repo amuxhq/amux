@@ -8,7 +8,7 @@ snapshot IDLE queue=[] working_on=- at=1793267926316 asks=[] session=? model=? m
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Reply with exactly CONTROL_OK and nothing else."
-item boundary:1 boundary final at=1793267926318 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793267926318 text="" BOUNDARY_KIND_STARTED
 item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793267926318 text="Reply with exactly CONTROL_OK and nothing else."
 snapshot WORKING queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1793267926318 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 5 recorded 4: input stdin-3
@@ -20,7 +20,7 @@ effect reply stdin-4 accepted
 ## 10 recorded 9: fact Stream type=system subtype=status uuid=9a208335-1c34-4f41-a8fe-9e951bec3e3b
 snapshot WORKING queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1793267926348 asks=[] session=? model=? model_name=? effort=? mode=acceptEdits context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 12 recorded 11: fact Stream type=system subtype=init uuid=7ac550ed-3ef4-4800-8518-ed638ee33ccc
-item boundary:1 boundary final at=1793267926439 text="" BOUNDARY_KIND_STARTED session=1da67650-924f-4846-b311-3c726f75235b version=2.1.312
+item boundary:1 boundary final at=1793267926439 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Reply with exactly CONTROL_OK and nothing else." at=1793267926439 asks=[] session=1da67650-924f-4846-b311-3c726f75235b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=acceptEdits context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 16 recorded 15: fact Stream type=assistant uuid=c6e53c97-144e-45de-a87a-be8a155077dd
 item msg_011CgWLC5qw9RH1cLbqvad3s:0 thinking final at=1793267927819 text=""

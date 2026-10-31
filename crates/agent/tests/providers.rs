@@ -392,8 +392,7 @@ async fn a_restart_from_the_checkpoint_re_emits_open_items_and_carries_keys_on()
     assert_eq!(agent.exit().await, ExitCause::Killed);
 }
 
-/// Terminal Claude: the agent reads the version the binary reports and
-/// records it on the boundary; the prompt is pasted into the terminal;
+/// Terminal Claude: the prompt is pasted into the terminal;
 /// hooks arrive through the hook command on private/hooks.sock and the
 /// transcript is followed from the path the session start names.
 // Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
@@ -422,11 +421,6 @@ fn a_terminal_claude_agent_types_its_prompt_and_hears_its_hooks() {
         let log = agent.log();
         assert!(log.has_text("hello from the terminal"));
         assert!(log.has_text("say hello"), "the typed prompt is reflected");
-        assert_eq!(
-            log.launches().first().map(String::as_str),
-            Some("STARTED 2.1.283"),
-            "the boundary records the version"
-        );
         daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
     });

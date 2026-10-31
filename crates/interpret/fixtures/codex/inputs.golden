@@ -8,7 +8,7 @@ effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"7031\",\"input\":[{\"text\":\"Start.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
-item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=t1 version=0.157.0
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
 item prompt:7031 prompt final input=p1 at=1800000000000 text="Start."
 snapshot WORKING queue=[] working_on="Start." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 3 fact {"channel":"rpc","json":{"id":"amux-1","result":{"turn":{"id":"turn-1"}}}}
@@ -89,13 +89,13 @@ snapshot WORKING queue=[] working_on="Try again." at=1800000000000 asks=[] threa
 snapshot WORKING queue=[] working_on="Try again." at=1800000000000 asks=[] thread=t1 turn=turn-3 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=high permission=auto mode=plan approval=on-request context=? plan=? usage=? servers=? sign_in=? background=[]
 ## 29 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"cc-1","type":"contextCompaction"},"threadId":"t1","turnId":"turn-3"}}}
 ## 30 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"cc-1","type":"contextCompaction"},"threadId":"t1","turnId":"turn-3"}}}
-item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_COMPACTED session=t1 version=0.157.0
+item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_COMPACTED
 ## 31 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-3","status":"completed"}}}}
 item turn:4 turn final at=1800000000000 text="" #4 TURN_OUTCOME_COMPLETED started=1800000000000
 snapshot IDLE queue=[] working_on="Try again." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=high permission=auto mode=plan approval=on-request context=? plan=? usage=? servers=? sign_in=? background=[]
 turn_end 4 last=-
 ## 32 provider_exit {"code":1}
-item boundary:3 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED session=t1 version=0.157.0 cause=PROVIDER_EXITED detail="exit code 1"
+item boundary:3 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED cause=PROVIDER_EXITED detail="exit code 1"
 snapshot STARTING queue=[] working_on="Try again." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=high permission=auto mode=plan approval=on-request context=? plan=? usage=? servers=? sign_in=? background=[]
 incarnation_end PROVIDER_EXITED "exit code 1"
 ## 33 agent_message {"envelope":"e9","from":"lead","text":"Status?"}
@@ -108,7 +108,7 @@ effect write "{\"id\":\"amux-9\",\"method\":\"turn/start\",\"params\":{\"input\"
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"t1\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
-item boundary:4 boundary final at=1800000000000 text="" BOUNDARY_KIND_RESUMED session=t1 version=0.157.0
+item boundary:4 boundary final at=1800000000000 text="" BOUNDARY_KIND_RESUMED
 snapshot WORKING queue=[] working_on="Try again." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=high permission=auto mode=plan approval=on-request context=? plan=? usage=? servers=? sign_in=? background=[]
 ## 35 fact {"channel":"rpc","json":{"id":"amux-9","result":{"turn":{"id":"turn-5"}}}}
 snapshot WORKING queue=[] working_on="Try again." at=1800000000000 asks=[] thread=t1 turn=turn-5 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=high permission=auto mode=plan approval=on-request context=? plan=? usage=? servers=? sign_in=? background=[]

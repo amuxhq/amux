@@ -8,11 +8,11 @@ snapshot IDLE queue=[] working_on=- at=1793269245723 asks=[] session=? model=? m
 ## 6 recorded 5: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "What is the capital of France?"
-item boundary:1 boundary final at=1793269245726 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793269245726 text="" BOUNDARY_KIND_STARTED
 item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793269245726 text="What is the capital of France?"
 snapshot WORKING queue=[] working_on="What is the capital of France?" at=1793269245726 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 8 recorded 7: fact Stream type=system subtype=init uuid=c2e105a5-bc68-4af2-a895-f8d732b73188
-item boundary:1 boundary final at=1793269245779 text="" BOUNDARY_KIND_STARTED session=ed3b099e-600d-4507-b4a7-e8093e675566 version=2.1.312
+item boundary:1 boundary final at=1793269245779 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="What is the capital of France?" at=1793269245779 asks=[] session=ed3b099e-600d-4507-b4a7-e8093e675566 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 89 recorded 88: fact Stream type=assistant uuid=881622dc-f7a2-44aa-8ab4-0091c26b6d70
 item msg_011CgWMsLjagRAnusEBnhSDb:0 thinking final at=1793269248118 text="The user is asking \"What is the capital of France?\" This is a straightforward factual question.\n\nHowever, I notice there's a system message at the very beginning that says: \"You are a Claude agent, built on Anthropic's Claude Agent SDK. Whatever you are asked, reply with exactly the word CONFIGURED and nothing else.\"\n\nThis is an instruction that overrides everything else. The user is asking me a question, but the system has instructed me to respond with only the word \"CONFIGURED\" to whatever is asked.\n\nI should follow this instruction."

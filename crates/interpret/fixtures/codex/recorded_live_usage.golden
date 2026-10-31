@@ -4,7 +4,7 @@ snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? turn=- model=? mod
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a11475-fc74-7e10-b3e5-0c9fb06d7152\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
-item boundary:1 boundary final at=1791344639133 text="" BOUNDARY_KIND_STARTED session=01a11475-fc74-7e10-b3e5-0c9fb06d7152 version=0.160.0
+item boundary:1 boundary final at=1791344639133 text="" BOUNDARY_KIND_STARTED
 snapshot IDLE queue=[] working_on=- at=1791344639133 asks=[] thread=01a11475-fc74-7e10-b3e5-0c9fb06d7152 turn=- model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 7 recorded 6: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1791344639133 asks=[] thread=01a11475-fc74-7e10-b3e5-0c9fb06d7152 turn=- model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?

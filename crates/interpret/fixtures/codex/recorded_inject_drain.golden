@@ -4,7 +4,7 @@ snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? turn=- model=? mod
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a0db6e-5eb0-71e0-ae6c-0293baf2bb48\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
-item boundary:1 boundary final at=1790387838661 text="" BOUNDARY_KIND_STARTED session=01a0db6e-5eb0-71e0-ae6c-0293baf2bb48 version=0.157.0
+item boundary:1 boundary final at=1790387838661 text="" BOUNDARY_KIND_STARTED
 snapshot IDLE queue=[] working_on=- at=1790387838661 asks=[] thread=01a0db6e-5eb0-71e0-ae6c-0293baf2bb48 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never context=? plan=? usage=? servers=? sign_in=? background=?
 ## 9 recorded 8: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1790387838663 asks=[] thread=01a0db6e-5eb0-71e0-ae6c-0293baf2bb48 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?

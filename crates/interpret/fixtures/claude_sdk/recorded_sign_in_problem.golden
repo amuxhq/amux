@@ -8,11 +8,11 @@ snapshot IDLE queue=[] working_on=- at=1793268544049 asks=[] session=? model=? m
 ## 4 recorded 3: input stdin-2
 effect reply stdin-2 accepted
 effect user 73746469-6e2d-4200-8000-000000000000 "Reply with exactly PONG and nothing else."
-item boundary:1 boundary final at=1793268544053 text="" BOUNDARY_KIND_STARTED session=- version=-
+item boundary:1 boundary final at=1793268544053 text="" BOUNDARY_KIND_STARTED
 item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793268544053 text="Reply with exactly PONG and nothing else."
 snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268544053 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
 ## 6 recorded 5: fact Stream type=system subtype=init uuid=49b5e6a8-f6fa-462e-bf33-883aecac4251
-item boundary:1 boundary final at=1793268544165 text="" BOUNDARY_KIND_STARTED session=af07af0f-5492-4717-bcd9-a585df50edd9 version=2.1.312
+item boundary:1 boundary final at=1793268544165 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Reply with exactly PONG and nothing else." at=1793268544165 asks=[] session=af07af0f-5492-4717-bcd9-a585df50edd9 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
 ## 8 recorded 7: fact Stream type=assistant uuid=2040d8e5-627b-45e0-81e1-dcc7f8fb815b
 item 2040d8e5-627b-45e0-81e1-dcc7f8fb815b api_error final at=1793268544466 text="" authentication_failed "Invalid API key · Fix external API key" retry=false 0/0

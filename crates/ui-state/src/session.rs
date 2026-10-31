@@ -10,9 +10,7 @@ use wire::{Agent, HostEntry, Input, Item, Kind, QueuedInput, SessionEvent, sessi
 
 use crate::Key;
 use crate::body::{AgentState, ItemClass, OpenAsk};
-use crate::inputs::{
-    InputId, InputOutcome, InputState, InputWhat, Inputs, RefusalReason, SentInput,
-};
+use crate::inputs::{InputId, InputOutcome, InputState, InputWhat, Inputs, SentInput};
 use crate::transcript::{Appended, Changed, Held, Transcript};
 
 /// Everything the driver forwards to a session.
@@ -973,7 +971,7 @@ impl SessionState {
                 }
                 Some(Of::Rejected(rejected)) => {
                     let refusal = crate::refusal(&rejected);
-                    if refusal.reason == RefusalReason::Exited {
+                    if refusal.reason == wire::Refusal::Exited {
                         self.exited_under = Some(incarnation);
                     }
                     InputState::Rejected(refusal)

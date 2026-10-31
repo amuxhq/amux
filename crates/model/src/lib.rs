@@ -169,7 +169,7 @@ pub enum InputState {
 /// Why the agent or its host refused an input, as every client tells it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Refusal {
-    pub reason: RefusalReason,
+    pub reason: wire::Refusal,
     /// The agent's or its provider's own words, when it has any; a client
     /// says them in place of the reason's.
     pub detail: Option<String>,
@@ -177,32 +177,12 @@ pub struct Refusal {
 
 impl Refusal {
     /// A refusal that has no words of its own.
-    pub fn of(reason: RefusalReason) -> Self {
+    pub fn of(reason: wire::Refusal) -> Self {
         Self {
             reason,
             detail: None,
         }
     }
-}
-
-/// The reasons the wire's refusals carry, one for one: the agent had exited
-/// or was exiting, its host is shutting down or cannot be reached, this
-/// agent cannot take an input of the kind, the ask the answer names had
-/// closed, the queued prompt it names was no longer queued, terminal
-/// Claude's own view is on another conversation, or the prompt is longer
-/// than the agent takes. A reason this build does not know is unspecified.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub enum RefusalReason {
-    Unspecified,
-    Exited,
-    Exiting,
-    Draining,
-    HostUnreachable,
-    Unsupported,
-    ClosedAsk,
-    NotQueued,
-    ConversationElsewhere,
-    TooLong,
 }
 
 #[cfg(test)]

@@ -4997,22 +4997,22 @@ public struct Refusal: Codable, Hashable, Sendable {
     }
 }
 
-/// The reasons the wire's refusals carry, one for one: the agent had exited
-/// or was exiting, its host is shutting down or cannot be reached, this
-/// agent cannot take an input of the kind, the ask the answer names had
-/// closed, the queued prompt it names was no longer queued, terminal
-/// Claude's own view is on another conversation, or the prompt is longer
-/// than the agent takes. A reason this build does not know is unspecified.
 public enum RefusalReason: String, Codable, Hashable, Sendable, CaseIterable {
     case unspecified = "Unspecified"
-    case exited = "Exited"
-    case exiting = "Exiting"
     case draining = "Draining"
+    case exiting = "Exiting"
+    case exited = "Exited"
     case hostUnreachable = "HostUnreachable"
-    case unsupported = "Unsupported"
+    /// The answer's ask is not open.
     case closedAsk = "ClosedAsk"
+    /// The withdraw or send-now target is not waiting in the queue.
     case notQueued = "NotQueued"
+    /// This agent version, kind or state cannot take the input.
+    case unsupported = "Unsupported"
+    /// Terminal Claude's own view switched to another conversation; this
+    /// agent's conversation is not the one on its screen.
     case conversationElsewhere = "ConversationElsewhere"
+    /// The prompt is longer than the agent takes; the detail names the limit.
     case tooLong = "TooLong"
 }
 

@@ -40,6 +40,7 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.OfferedPermission",
     "amux.v1.Platform",
     "amux.v1.Provider",
+    "amux.v1.Refusal",
     "amux.v1.ReviewComment",
     "amux.v1.ReviewStatus",
     "amux.v1.RouteKind",
@@ -118,6 +119,9 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
             "#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]",
         );
     }
+    // The chat model's Refusal holds the wire's reason; the mirrors name
+    // the reason apart from it.
+    config.type_attribute("amux.v1.Refusal", "#[schemars(rename = \"RefusalReason\")]");
     // prost never derives Eq for a message with a repeated message field,
     // though every field here is Eq; the views that hold a Diff compare it.
     config.type_attribute("amux.v1.Diff", "#[derive(Eq)]");

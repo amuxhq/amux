@@ -140,7 +140,7 @@ of ask has one anatomy, the [`AskCard`](../crates/ui-view/src/ask.rs):
   agent does that.
 - **Sending, then a row.** After an answer, `CardState` goes `Sending` and the card shrinks to one line until the
   agent confirms; the decision then lands in the chat. A rejection brings the card back as `Rejected(refusal)`:
-  a typed `RefusalReason` each client words, and the provider's own sentence when it gave one, shown instead. If the connection dropped before any reply,
+  the wire's typed `Refusal` reason, which each client words, and the provider's own sentence when it gave one, shown instead. If the connection dropped before any reply,
   `NotConfirmed` offers resend and discard; nothing is resent on its own. An exited agent's open asks are drawn `Dismissed`, and the composer offers Resume.
 
 An answer names its ask by key, so any open ask can be answered from any client, not only the head one. Before

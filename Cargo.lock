@@ -2117,6 +2117,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "wire",
 ]
 
 [[package]]

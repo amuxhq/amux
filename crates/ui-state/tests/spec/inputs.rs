@@ -1,7 +1,7 @@
 //! The five input states, resolution at CaughtUp, the exited composer and
 //! steering a queued prompt.
 
-use ui_state::{Composer, InputOutcome, InputState, Msg, Refusal, RefusalReason, SessionState};
+use ui_state::{Composer, InputOutcome, InputState, Msg, Refusal, SessionState};
 use wire::{Kind, Phase};
 
 use crate::spec::harness::*;
@@ -129,7 +129,7 @@ fn a_rejection_is_final_and_touches_no_row() {
         assert!(outcome.changed.is_empty());
         assert_eq!(
             state.input_state(b"p1"),
-            Some(InputState::Rejected(Refusal::of(RefusalReason::Draining)))
+            Some(InputState::Rejected(Refusal::of(wire::Refusal::Draining)))
         );
         assert_eq!(projection(state.transcript()), before);
     }
@@ -245,7 +245,7 @@ fn a_send_that_raced_the_exit_flips_the_composer_to_resume() {
         );
         assert_eq!(
             state.input_state(b"p1"),
-            Some(InputState::Rejected(Refusal::of(RefusalReason::Exited)))
+            Some(InputState::Rejected(Refusal::of(wire::Refusal::Exited)))
         );
         let draft = &state.inputs().get(b"p1").unwrap().input;
         assert_eq!(

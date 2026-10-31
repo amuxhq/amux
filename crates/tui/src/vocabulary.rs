@@ -18,8 +18,7 @@ use ui_view::{
     AnswerView, AskBody, AskCard, AskRow, AttachmentView, CallPhase, CardState, Choice,
     ChoiceOutcome, Decision, DecisionView, EditLine, ExploreVerb, FileChangeView, FileRow, Granted,
     LineKind, Offline, OptionView, PatchHead, PatchLine, PermissionGrant, PlanVerdict,
-    QuestionView, QueuedRow, Reach, Refusal, RefusalReason, Resolution, Row, RowKind, Scope,
-    Segment,
+    QuestionView, QueuedRow, Reach, Refusal, Resolution, Row, RowKind, Scope, Segment,
 };
 use wire::{BlobRef, BoundaryKind, EnvelopeKind, SendState};
 
@@ -1778,7 +1777,7 @@ fn cards() -> Vec<CardSet> {
     let mut sending = card(command(), command_choices());
     sending.state = CardState::Sending;
     let mut rejected = card(command(), command_choices());
-    rejected.state = CardState::Rejected(Refusal::of(RefusalReason::ClosedAsk));
+    rejected.state = CardState::Rejected(Refusal::of(wire::Refusal::ClosedAsk));
     let mut not_confirmed = card(command(), command_choices());
     not_confirmed.state = CardState::NotConfirmed;
     let mut second = card(command(), command_choices());

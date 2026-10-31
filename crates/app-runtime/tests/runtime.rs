@@ -12,7 +12,7 @@ use app_runtime::values::{
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use client::{Client, InProcess, SystemClock};
-use model::{AgentKey, InputState, PhaseView, Refusal, RefusalReason};
+use model::{AgentKey, InputState, PhaseView, Refusal};
 use provider_fakes::script::{Ask, Question, Step, Tool, ToolClass};
 use testnet::{AgentDecl, FakeKind, Net, Topology};
 use tokio::sync::mpsc;
@@ -300,7 +300,7 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
         .expect("allow once is offered");
     assert_eq!(
         chat.answer_choice("some other ask", allow, "").await,
-        ActOutcome::Rejected(Refusal::of(RefusalReason::ClosedAsk))
+        ActOutcome::Rejected(Refusal::of(wire::Refusal::ClosedAsk))
     );
     assert_eq!(
         chat.answer_choice(&card.key, allow, "").await,

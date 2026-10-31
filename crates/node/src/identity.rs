@@ -318,17 +318,6 @@ pub fn quic_endpoint_config() -> quinn::EndpointConfig {
     config
 }
 
-/// A QUIC endpoint on a UDP socket of its own at `bind`.
-pub fn quic_endpoint(
-    server: Option<quinn::ServerConfig>,
-    bind: std::net::SocketAddr,
-) -> std::io::Result<quinn::Endpoint> {
-    let socket = std::net::UdpSocket::bind(bind)?;
-    let runtime = quinn::default_runtime()
-        .ok_or_else(|| std::io::Error::other("no async runtime for a QUIC endpoint"))?;
-    quinn::Endpoint::new(quic_endpoint_config(), server, socket, runtime)
-}
-
 pub(crate) fn host_id_for_certificate(
     trust_store: &TrustStore,
     cert: &CertificateDer<'_>,

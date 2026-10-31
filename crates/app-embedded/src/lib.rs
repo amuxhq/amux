@@ -31,8 +31,8 @@ pub use app_runtime::values::{PairRequest, ProfileView, StartConfig, UsageEvent}
 use client::{Client, Clock, InProcess};
 use node::{
     ClientApi, Cloud, CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, LanOptions,
-    ProfileRefusal, ProfileRuntime, ProfileState, ProfileSubscription, Registry, Relay, SignIn,
-    SourcePolicy, StartError, StartOptions, Tier,
+    ProfileRefusal, ProfileRuntime, ProfileState, Registry, Relay, SignIn, SourcePolicy,
+    StartError, StartOptions, Tier,
 };
 pub use node::{Cores, ProfileId};
 pub use phone::Phone;
@@ -134,13 +134,12 @@ pub struct EmbeddedRuntime {
 
 /// The registry's bell: it rings whenever the profile list moves, and the
 /// list is read afresh with [`EmbeddedRuntime::profiles`].
-pub struct ProfileWatch(ProfileSubscription);
+pub struct ProfileWatch(tokio::sync::watch::Receiver<()>);
 
 impl ProfileWatch {
-    /// Waits for the list to move; none once the daemon stops or the watch
-    /// falls too far behind, when the list has to be watched again.
+    /// Waits for the list to move; none once the daemon stops.
     pub async fn moved(&mut self) -> Option<()> {
-        self.0.next().await?.ok().map(drop)
+        self.0.changed().await.ok()
     }
 }
 

@@ -384,20 +384,20 @@ pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxR
         open: Mutex::new(HashMap::new()),
         ring: Box::new(phone.bell()),
     });
+    // The watch begins before the list is first read, so no move falls
+    // between them.
+    let mut moves = phone
+        .embedded()
+        .watch_profiles()
+        .map_err(|error| error.to_string())?;
     // The list as the start left it waits for the first step, so the app
     // has it before anything else the runtime hands over.
     outbox.post_profiles(phone.embedded());
     let watching = phone.embedded().clone();
     let posting = outbox.clone();
     let watch = phone.handle().spawn(async move {
-        // A watch that falls behind ends; the list is read again under a
-        // fresh one, which may have missed a move the last one did not ring.
-        while let Ok(mut watch) = watching.watch_profiles() {
+        while moves.moved().await.is_some() {
             posting.post_profiles(&watching);
-            while watch.moved().await.is_some() {
-                posting.post_profiles(&watching);
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     });
     Ok(Box::new(AmuxRuntime {

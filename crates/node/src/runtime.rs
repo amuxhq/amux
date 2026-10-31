@@ -420,7 +420,7 @@ pub struct ProfileRuntime {
     pub(crate) daemon_log: Option<PathBuf>,
     pub(crate) supervisor_log: Option<PathBuf>,
     pub(crate) auto_reports: crate::reports::AutoReports,
-    worktrees: Arc<dyn crate::worktree::MakeWorktree>,
+    worktrees: crate::worktree::GitWorktrees,
     pub(crate) me: Weak<ProfileRuntime>,
     /// The network edge, once the profile is in service.
     edge: std::sync::OnceLock<Arc<crate::edge::Edge>>,
@@ -646,7 +646,7 @@ pub struct Profile {
     /// Whether the dumps a check asks for are sent to the account service.
     pub auto_reports: crate::reports::AutoReports,
     /// What makes the worktree an agent asked to start in one starts in.
-    pub worktrees: Arc<dyn crate::worktree::MakeWorktree>,
+    pub worktrees: crate::worktree::GitWorktrees,
 }
 
 impl ProfileRuntime {
@@ -729,18 +729,13 @@ impl ProfileRuntime {
         if let Some(edge) = self.edge.get() {
             return Ok(edge.clone());
         }
-        let edge = crate::edge::Edge::start(
-            &self.dir,
-            self.profile,
-            options,
-            self.clock.clone(),
-            Arc::downgrade(self),
-            self.analytics.clone(),
-        )
-        .await?;
-        let edge = self.edge.get_or_init(|| edge).clone();
+        let edge = crate::edge::Edge::start(self, options).await?;
+        let started = self.edge.get_or_init(|| edge.clone());
+        if Arc::ptr_eq(started, &edge) {
+            edge.begin(options).await;
+        }
         self.tell_own_host();
-        Ok(edge)
+        Ok(started.clone())
     }
 
     /// The profile's network edge, once started.

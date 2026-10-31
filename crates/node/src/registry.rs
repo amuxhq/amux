@@ -1,13 +1,12 @@
 //! The installation's profiles as a person manages them: listed and
-//! watched, created, renamed and deleted, signed in and out, paused. The
+//! watched, created, renamed and deleted, signed in and out. The
 //! front door serves these on its socket; an embedder that serves no
 //! sockets calls them here.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 
-use tokio::sync::broadcast;
-use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::watch;
 use wire::ErrorCode;
 
 use crate::ProfileId;
@@ -43,36 +42,6 @@ pub struct AccountState {
     pub name: Option<String>,
     pub email: Option<String>,
     pub picture: Option<String>,
-}
-
-/// A change the registry's watchers see.
-#[derive(Clone, Debug)]
-pub enum ProfileEvent {
-    Upserted(Box<ProfileState>),
-    Removed(ProfileId),
-}
-
-/// Every profile as it was when the watch began, then each change after.
-pub struct ProfileSubscription {
-    pub listed: Vec<ProfileState>,
-    events: broadcast::Receiver<ProfileEvent>,
-}
-
-/// A watcher fell too far behind the changes: it watches again for a
-/// fresh list.
-#[derive(Debug, thiserror::Error)]
-#[error("the watch fell behind; watch again")]
-pub struct FellBehind;
-
-impl ProfileSubscription {
-    /// The next change; none once the daemon stops.
-    pub async fn next(&mut self) -> Option<Result<ProfileEvent, FellBehind>> {
-        match self.events.recv().await {
-            Ok(event) => Some(Ok(event)),
-            Err(RecvError::Lagged(_)) => Some(Err(FellBehind)),
-            Err(RecvError::Closed) => None,
-        }
-    }
 }
 
 /// A sign-in to bind a profile with: the refresh token the client's login
@@ -252,18 +221,10 @@ impl Registry {
             .ok_or(ProfileRefusal::NotInService)
     }
 
-    /// Every profile as it is now, then each change as it happens.
-    pub fn subscribe(&self) -> Result<ProfileSubscription, ProfileRefusal> {
-        let installation = self.installation()?;
-        // The publishing lock is held while every change is published, so
-        // the list read under it is exactly the state before the first
-        // event the receiver sees.
-        let _publishing = installation.publishing.lock().unwrap();
-        let events = installation.events.subscribe();
-        Ok(ProfileSubscription {
-            listed: Self::listed(&installation),
-            events,
-        })
+    /// Rings whenever the profile list moves from now on; the list is
+    /// read afresh with [`Registry::list`].
+    pub fn subscribe(&self) -> Result<watch::Receiver<()>, ProfileRefusal> {
+        Ok(self.installation()?.moved.subscribe())
     }
 
     /// A new profile nobody has signed in on, named `label` or "profile".
@@ -308,7 +269,7 @@ impl Registry {
             hosted.entry = entry;
             state(hosted)
         };
-        installation.publish(ProfileEvent::Upserted(Box::new(renamed.clone())));
+        installation.publish();
         Ok(renamed)
     }
 
@@ -361,7 +322,7 @@ impl Registry {
         // The profile file goes first, so a removal cut short leaves a
         // directory the next start tidies away rather than a profile.
         profiles::discard(&installation.data_dir, id).map_err(ProfileRefusal::failed)?;
-        installation.publish(ProfileEvent::Removed(id));
+        installation.publish();
         Ok(())
     }
 
@@ -396,7 +357,7 @@ impl Registry {
             });
         }
         let id = bound?;
-        installation.republish(id);
+        installation.publish();
         Self::one(&installation, id)
     }
 
@@ -407,7 +368,7 @@ impl Registry {
         let edge = Self::edge_of(&installation, id)?;
         edge.sign_out().await.map_err(ProfileRefusal::failed)?;
         edge.analytics().record(analytics::Event::SignedOut);
-        installation.republish(id);
+        installation.publish();
         Self::one(&installation, id)
     }
 }

@@ -7,28 +7,16 @@
 //! catalogue are the profile's core's.
 
 mod host;
-mod link;
 mod link_registry;
 mod types;
-mod wire;
 
 pub use host::local_kinds;
 pub(crate) use host::{
     LiveLocalHost, OwnAddresses, RuntimeInstance, listed_addrs, local_host, local_platform,
 };
-pub use link::ConnectRole;
-pub(crate) use link::{protocol_error_hello_ack, protocol_error_link_close};
 pub(crate) use link_registry::{
     LinkAdmission, LinkCloseRequest, LinkOutputTx, LinkProperties, Registration, direct_order,
 };
 pub use link_registry::{LinkRegistry, LinkRole};
 pub use types::{Capabilities, Host, LinkId, LiveRoute, Route, host_to_wire};
 pub(crate) use types::{core_host, host_from_core, host_from_wire};
-
-pub use crate::link::run::{
-    AuthenticatedLinkUser, LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher,
-    LinkTokenAuthenticator,
-};
-pub(crate) use crate::link::run::{
-    LinkConnectorRefreshReceiver, LinkConnectorRefreshRequest, LinkCtx, spawn_connector,
-};

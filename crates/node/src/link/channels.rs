@@ -23,6 +23,7 @@ use crate::dispatcher::TunnelDispatcher;
 use crate::driver::CoreLinks;
 use crate::identity::IdentityError;
 use crate::routing::{LinkId, LinkRegistry, Route};
+use crate::services::ForwardedDialer;
 use crate::transport::{Compressed, channel_from_single_io};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize)]
@@ -94,24 +95,6 @@ impl ChannelError {
     }
 }
 
-/// What a call reaches a host it has no link to by, and a pairing a host
-/// through a forwarder by.
-pub(crate) trait ForwardedDial: Send + Sync + 'static {
-    /// Asks for a link of `peer`'s own now, returning once the attempt it
-    /// brought about has ended, however it ended.
-    fn want(&self, peer: HostId) -> BoxFuture<'_, Result<(), ChannelError>>;
-
-    /// Dials `peer`'s pairing service through the forwarder at the far end
-    /// of `through`, presenting no certificate: the host answers only while
-    /// its pairing window is open. The dial is given up after `deadline`.
-    fn pair_through(
-        &self,
-        peer: HostId,
-        through: LinkId,
-        deadline: std::time::Duration,
-    ) -> BoxFuture<'_, Result<Channel, ChannelError>>;
-}
-
 /// Where a session subscription starts: the origin's tail, or after a
 /// revision this host already holds.
 pub type Cursor = wire::peer_subscribe_session_request::From;
@@ -120,14 +103,6 @@ pub type Cursor = wire::peer_subscribe_session_request::From;
 /// finishes, as early data the far end may see more than once: each reads
 /// and changes nothing. A send, a stop or a pairing call has no variant
 /// here, so it cannot be early data.
-///
-/// ```compile_fail
-/// let _ = node::EarlyCall::SendInput(wire::SendInputRequest::default());
-/// ```
-///
-/// ```
-/// let _ = node::EarlyCall::ListItems(wire::ListItemsRequest::default());
-/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum EarlyCall {
     /// The host's inventory, which always opens with all of it: the wire
@@ -137,19 +112,13 @@ pub enum EarlyCall {
         session: Vec<u8>,
         from: Cursor,
     },
-    ListItems(wire::ListItemsRequest),
-    GetBlob(wire::GetBlobRequest),
-    GetDiff(wire::GetDiffRequest),
 }
 
 impl EarlyCall {
     /// The channel the call rides, as the same call made later would.
     fn class(&self) -> ChannelClass {
         match self {
-            EarlyCall::SubscribeInventory
-            | EarlyCall::ListItems(_)
-            | EarlyCall::GetBlob(_)
-            | EarlyCall::GetDiff(_) => ChannelClass::Calls,
+            EarlyCall::SubscribeInventory => ChannelClass::Calls,
             EarlyCall::SubscribeSession { .. } => ChannelClass::Session,
         }
     }
@@ -159,9 +128,6 @@ impl EarlyCall {
         match self {
             EarlyCall::SubscribeInventory => "SubscribeInventory",
             EarlyCall::SubscribeSession { .. } => "SubscribeSession",
-            EarlyCall::ListItems(_) => "ListItems",
-            EarlyCall::GetBlob(_) => "GetBlob",
-            EarlyCall::GetDiff(_) => "GetDiff",
         }
     }
 
@@ -184,28 +150,15 @@ impl EarlyCall {
                     .await?
                     .into_inner(),
             ),
-            EarlyCall::ListItems(request) => {
-                EarlyAnswer::Fetched(client.sessions.list_items(request).await?.into_inner())
-            }
-            EarlyCall::GetBlob(request) => {
-                EarlyAnswer::Blob(client.agents.get_blob(request).await?.into_inner())
-            }
-            EarlyCall::GetDiff(request) => {
-                EarlyAnswer::Diff(client.agents.get_diff(request).await?.into_inner())
-            }
         })
     }
 }
 
-/// The answer to an early call: the stream a subscription opened, or a
-/// unary call's reply.
+/// The answer to an early call: the stream the subscription opened.
 #[derive(Debug)]
 pub enum EarlyAnswer {
     Inventory(tonic::Streaming<wire::InventoryEvent>),
     Session(tonic::Streaming<wire::SessionEvent>),
-    Fetched(wire::ListItemsResponse),
-    Blob(wire::GetBlobResponse),
-    Diff(wire::Diff),
 }
 
 /// An early call under way: it went out with the link's first packets, and
@@ -226,7 +179,6 @@ impl Future for EarlyReply {
 /// A link a resumed dial brought up, and the calls written on it before
 /// its handshake finished, in the order they were given.
 pub struct ResumedLink {
-    pub link: LinkId,
     pub early_data: super::link_log::EarlyData,
     pub replies: Vec<EarlyReply>,
     /// What carries the link, which names the path it came up on.
@@ -351,7 +303,7 @@ pub struct ChannelPool {
     lifetimes: RwLock<HashMap<ChannelKey, Vec<Weak<CancellationToken>>>>,
     links: Arc<LinkRegistry>,
     /// How a link through a forwarder is dialled, once the edge is up.
-    forwarded: OnceLock<Arc<dyn ForwardedDial>>,
+    forwarded: OnceLock<Arc<ForwardedDialer>>,
     /// How a link resuming with a ticket is dialled, once the edge is up.
     resumed: OnceLock<Arc<dyn ResumedDial>>,
 }
@@ -394,7 +346,7 @@ impl ChannelPool {
     }
 
     /// Dials links through forwarders with `dial` from now on.
-    pub(crate) fn dial_forwarded_with(&self, dial: Arc<dyn ForwardedDial>) {
+    pub(crate) fn dial_forwarded_with(&self, dial: Arc<ForwardedDialer>) {
         let _ = self.forwarded.set(dial);
     }
 
@@ -484,7 +436,6 @@ impl ChannelPool {
             .await;
         }
         Ok(ResumedLink {
-            link,
             early_data: carrier.early_data(),
             replies,
             carrier,
@@ -659,7 +610,7 @@ impl ChannelPool {
         self.forwarded
             .get()
             .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?
-            .pair_through(peer, through, deadline)
+            .pair(peer, through, deadline)
             .await
     }
 
@@ -1072,56 +1023,6 @@ mod tests {
         assert_eq!(opener_count(&pool), 0, "the host's lock went with the host");
     }
 
-    /// The early-call type has a variant for each call that reads, and for
-    /// nothing that writes: the match below has no wildcard, so a variant
-    /// added to it fails to compile here until it is listed.
-    #[test]
-    fn an_early_call_is_only_a_call_that_changes_nothing() {
-        let every = [
-            EarlyCall::SubscribeInventory,
-            EarlyCall::SubscribeSession {
-                session: Vec::new(),
-                from: Cursor::Tail(10),
-            },
-            EarlyCall::ListItems(wire::ListItemsRequest::default()),
-            EarlyCall::GetBlob(wire::GetBlobRequest::default()),
-            EarlyCall::GetDiff(wire::GetDiffRequest::default()),
-        ];
-        for call in &every {
-            match call {
-                EarlyCall::SubscribeInventory
-                | EarlyCall::SubscribeSession { .. }
-                | EarlyCall::ListItems(_)
-                | EarlyCall::GetBlob(_)
-                | EarlyCall::GetDiff(_) => {}
-            }
-        }
-        let methods: Vec<_> = every.iter().map(EarlyCall::method).collect();
-        assert_eq!(
-            methods,
-            [
-                "SubscribeInventory",
-                "SubscribeSession",
-                "ListItems",
-                "GetBlob",
-                "GetDiff"
-            ]
-        );
-        for writes in [
-            "SendInput",
-            "StopAgent",
-            "CreateAgent",
-            "RenameAgent",
-            "ResumeAgent",
-            "DeleteAgent",
-            "SendMessage",
-            "PutBlob",
-            "Pair",
-        ] {
-            assert!(!methods.contains(&writes), "{writes} cannot be early data");
-        }
-    }
-
     mod early {
         use std::sync::atomic::AtomicUsize;
         use std::time::Duration;
@@ -1144,7 +1045,6 @@ mod tests {
         struct Answering {
             inventory: Arc<AtomicUsize>,
             sessions: Arc<AtomicUsize>,
-            fetches: Arc<AtomicUsize>,
         }
 
         type Answer<T> = Result<Response<T>, Status>;
@@ -1261,8 +1161,7 @@ mod tests {
                 &self,
                 _: Request<wire::ListItemsRequest>,
             ) -> Answer<wire::ListItemsResponse> {
-                self.fetches.fetch_add(1, Ordering::SeqCst);
-                Ok(Response::new(wire::ListItemsResponse::default()))
+                unanswered()
             }
 
             async fn get_item(&self, _: Request<wire::GetItemRequest>) -> Answer<wire::Item> {
@@ -1369,7 +1268,6 @@ mod tests {
                         tokio::spawn(crate::link::run_link(
                             ctx,
                             Arc::new(QuicCarrier::from_accepted(connection)),
-                            crate::routing::ConnectRole::Acceptor,
                         ));
                     }
                 });
@@ -1421,7 +1319,7 @@ mod tests {
                     )
                     .with_expected_peer(peer);
                     let (_task, established) =
-                        crate::routing::spawn_connector(ctx, carrier.clone());
+                        crate::link::run::spawn_connector(ctx, carrier.clone());
                     let links = self.links.clone();
                     let up = Box::pin(async move {
                         established
@@ -1472,7 +1370,6 @@ mod tests {
                     session: b"agent".to_vec(),
                     from: Cursor::Tail(10),
                 },
-                EarlyCall::ListItems(wire::ListItemsRequest::default()),
             ]
         }
 
@@ -1499,35 +1396,29 @@ mod tests {
                         events.message().await.unwrap().expect("the session");
                         answered.push("session");
                     }
-                    EarlyAnswer::Fetched(_) => answered.push("fetch"),
-                    other => panic!("an answer to no call made: {other:?}"),
                 }
             }
-            assert_eq!(answered, ["inventory", "session", "fetch"]);
-            let key = ChannelKey {
-                peer: host,
-                route: Route::Direct(opened.link),
-                class: ChannelClass::Calls,
-            };
+            assert_eq!(answered, ["inventory", "session"]);
             assert!(
-                dialler.pool.by_key.read().unwrap().contains_key(&key),
+                dialler
+                    .pool
+                    .by_key
+                    .read()
+                    .unwrap()
+                    .keys()
+                    .any(|key| key.peer == host
+                        && matches!(key.route, Route::Direct(_))
+                        && key.class == ChannelClass::Calls),
                 "the link's calls channel serves the calls that follow"
             );
-            let carrier = dialler
-                .pool
-                .links
-                .native_carrier(&opened.link)
-                .await
-                .unwrap();
-            carrier.close(wire::LinkCloseReason::UserShutdown);
+            opened.carrier.close(wire::LinkCloseReason::UserShutdown);
             opened.early_data
         }
 
-        fn answered(host: &LoopbackHost) -> [usize; 3] {
+        fn answered(host: &LoopbackHost) -> [usize; 2] {
             [
                 host.answering.inventory.load(Ordering::SeqCst),
                 host.answering.sessions.load(Ordering::SeqCst),
-                host.answering.fetches.load(Ordering::SeqCst),
             ]
         }
 
@@ -1548,7 +1439,7 @@ mod tests {
                 [false, false],
                 "a calls and a session stream"
             );
-            assert_eq!(answered(&host), [1, 1, 1]);
+            assert_eq!(answered(&host), [1, 1]);
         }
 
         #[tokio::test]
@@ -1570,7 +1461,7 @@ mod tests {
                 [true, true],
                 "both channels' streams arrive as early data"
             );
-            assert_eq!(answered(&host), [2, 2, 2], "each call answered once a link");
+            assert_eq!(answered(&host), [2, 2], "each call answered once a link");
         }
 
         #[tokio::test]
@@ -1596,7 +1487,7 @@ mod tests {
             assert_eq!(restarted.arrived_early(), [false, false]);
             assert_eq!(
                 answered(&restarted),
-                [1, 1, 1],
+                [1, 1],
                 "the refused calls are made again, each once"
             );
         }

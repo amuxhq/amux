@@ -1,7 +1,7 @@
 //! A profile's standing with its cloud account: what the person asked for
 //! and, while signed in, what its relay link is doing. The front door and
 //! an embedder report it as one value, so no reader sees a link connected
-//! on a profile that is paused or signed out.
+//! on a profile that is signed out.
 
 use tokio::sync::watch;
 

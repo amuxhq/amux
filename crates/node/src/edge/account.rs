@@ -1,11 +1,10 @@
-//! A profile's account: which cloud account the profile is bound to, the
-//! credential that signs it in, and whether its connection is paused.
+//! A profile's account: which cloud account the profile is bound to, and
+//! the credential that signs it in.
 //!
 //! One private file, `profiles/<id>/account`, written whole on every change.
 //! Its absence is an unbound profile; a binding without a refresh token is a
-//! profile that signed out but stays tied to its account; `paused` keeps the
-//! credential and holds the cloud link down. Signing in or out also forgets
-//! the relay token the profile keeps beside it.
+//! profile that signed out but stays tied to its account. Signing in or out
+//! also forgets the relay token the profile keeps beside it.
 
 use std::io;
 use std::path::{Path, PathBuf};

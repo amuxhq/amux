@@ -23,8 +23,7 @@ use crate::link::link_log::PathKind;
 use crate::link::paths::PathDriver;
 use crate::link::relaying::Relaying;
 use crate::routing::types::{LinkId, core_host, host_from_core};
-use crate::routing::wire::{neighbor_down_message, neighbor_up_message};
-use crate::routing::{ConnectRole, Host, RuntimeInstance};
+use crate::routing::{Host, RuntimeInstance, host_to_wire};
 use crate::{HostId, Tier};
 
 pub(crate) type LinkOutputTx = mpsc::Sender<wire::Message>;
@@ -154,14 +153,10 @@ pub(crate) struct LinkProperties {
 /// core's to decide.
 pub(crate) type DirectLinkOrder = relay_core::DialOrder;
 
-/// The order of a direct link `local` holds to `peer`, in the role it
-/// played opening it.
-pub(crate) fn direct_order(local: HostId, peer: HostId, role: ConnectRole) -> DirectLinkOrder {
-    relay_core::DialOrder::for_hosts(
-        core_host(local),
-        core_host(peer),
-        role == ConnectRole::Connector,
-    )
+/// The order of a direct link `local` holds to `peer`, by whether `local`
+/// dialled it.
+pub(crate) fn direct_order(local: HostId, peer: HostId, dialled: bool) -> DirectLinkOrder {
+    relay_core::DialOrder::for_hosts(core_host(local), core_host(peer), dialled)
 }
 
 #[derive(Clone)]
@@ -786,6 +781,23 @@ fn try_send_or_spawn(tx: LinkOutputTx, message: wire::Message) {
             });
         }
         Err(mpsc::error::TrySendError::Closed(_)) => {}
+    }
+}
+
+/// A claim of a direct link to `host`: adjacency is all a link advertises.
+fn neighbor_up_message(host: &Host) -> wire::Message {
+    wire::Message {
+        body: Some(wire::message::Body::NeighborUp(wire::NeighborUp {
+            host: Some(host_to_wire(host)),
+        })),
+    }
+}
+
+fn neighbor_down_message(host_id: HostId) -> wire::Message {
+    wire::Message {
+        body: Some(wire::message::Body::NeighborDown(wire::NeighborDown {
+            host_id: host_id.as_bytes().to_vec(),
+        })),
     }
 }
 

@@ -821,9 +821,7 @@ folder outside a repository or with no branch checked out is
 the name needs no translating, since every agent name is valid as a branch
 and a folder (lowercase letters, digits and hyphens, `wire::agent_name_problem`);
 either way no agent is made. Renaming the agent leaves its branch alone, and
-amux never removes a worktree or its branch. The worktree is made behind one
-seam, `MakeWorktree`, so another tool could make it instead; the daemon takes
-the folder, branch and base it gets back as given.
+amux never removes a worktree or its branch.
 
 ### PeerAgentService and PeerSessionService
 

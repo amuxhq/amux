@@ -22,10 +22,8 @@ use super::run::spawn_connector;
 use super::socket::LinkSocket;
 use super::{ByteStream, LinkCtx, QuicCarrier};
 use crate::identity::DeviceIdentity;
-use crate::routing::{
-    Capabilities, LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher, LinkRegistry,
-    LiveLocalHost, local_host,
-};
+use crate::link::run::{LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher};
+use crate::routing::{Capabilities, LinkRegistry, LiveLocalHost, local_host};
 use crate::trust::{SharedTrustStore, TrustStore};
 use crate::{HostId, Tier};
 

@@ -26,12 +26,12 @@ use crate::connection::ConnectionManager;
 use crate::discovery::{Discovery, DiscoveryEvent, FoundHosts};
 use crate::edge::first_flight::FirstFlights;
 use crate::identity::DeviceIdentity;
-use crate::link::channels::{Flight, ForwardedDial, ResumedDial, Resuming, says_revoked};
+use crate::link::channels::{Flight, ResumedDial, Resuming, says_revoked};
 use crate::link::framed::{FramedKind, StreamEndpoint};
 use crate::link::quic::DEVICE_SERVER_NAME;
 use crate::link::socket::Path;
-use crate::link::{ChannelError, ChannelPool, LinkEndpoint, QuicCarrier};
-use crate::routing::{LinkCtx, LinkId, LiveLocalHost, core_host};
+use crate::link::{ChannelError, ChannelPool, LinkCtx, LinkEndpoint, QuicCarrier};
+use crate::routing::{LinkId, LiveLocalHost, core_host};
 use crate::transport::spawn_ssh_relay;
 use crate::trust::SharedTrustStore;
 
@@ -52,35 +52,6 @@ const WANT_PATIENCE: Duration =
 #[derive(Clone)]
 pub struct ReachabilityLinkConnector {
     inner: Arc<Inner>,
-}
-
-/// What the core's outputs reach the attempts by.
-pub(crate) struct Dialer(Weak<Inner>);
-
-impl Dialer {
-    pub(crate) fn dial(
-        &self,
-        host: HostId,
-        attempt: AttemptId,
-        plan: Plan,
-        early: Vec<PeerRequest>,
-    ) {
-        if let Some(inner) = self.0.upgrade() {
-            ReachabilityLinkConnector { inner }.dial(host, attempt, plan, early);
-        }
-    }
-
-    pub(crate) fn abandon(&self, host: HostId, attempt: AttemptId) {
-        if let Some(inner) = self.0.upgrade() {
-            inner.abandon(host, Some(attempt));
-        }
-    }
-
-    pub(crate) fn rediscover(&self) {
-        if let Some(inner) = self.0.upgrade() {
-            inner.discovery.requery();
-        }
-    }
 }
 
 struct Inner {
@@ -168,7 +139,6 @@ impl ReachabilityLinkConnector {
         let dialer = Arc::new(ForwardedDialer(Arc::downgrade(&inner)));
         inner.channels.dial_forwarded_with(dialer.clone());
         inner.channels.dial_resumed_with(dialer);
-        inner.connections.set_dialer(Dialer(Arc::downgrade(&inner)));
         Self { inner }
     }
 
@@ -261,7 +231,19 @@ impl ReachabilityLinkConnector {
         }
     }
 
-    fn dial(&self, host: HostId, attempt: AttemptId, plan: Plan, early: Vec<PeerRequest>) {
+    /// The core gave up on `attempt` to `host`.
+    pub(crate) fn abandon(&self, host: HostId, attempt: AttemptId) {
+        self.inner.abandon(host, Some(attempt));
+    }
+
+    /// The core says to dial `host` on every path of `plan`.
+    pub(crate) fn dial(
+        &self,
+        host: HostId,
+        attempt: AttemptId,
+        plan: Plan,
+        early: Vec<PeerRequest>,
+    ) {
         let inner = &self.inner;
         if inner.stopped.load(Ordering::SeqCst) {
             return;
@@ -559,7 +541,7 @@ async fn establish(me: &Inner, peer: HostId, carrier: Arc<QuicCarrier>) -> Resul
     let connector_ctx = LinkCtx::new_live(me.local_host.clone(), me.channels.link_registry())
         .with_expected_peer(peer)
         .with_incoming_streams(me.incoming_streams_tx.clone());
-    let (connector_task, established) = crate::routing::spawn_connector(
+    let (connector_task, established) = crate::link::run::spawn_connector(
         connector_ctx.with_shutdown(me.shutdown.subscribe()),
         carrier,
     );
@@ -607,7 +589,7 @@ async fn await_connector(
 
 /// Dials links for the channel pool: a host's first flight, a call's need
 /// for a link, and a pairing through a forwarder.
-struct ForwardedDialer(Weak<Inner>);
+pub(crate) struct ForwardedDialer(Weak<Inner>);
 
 impl ForwardedDialer {
     fn inner(&self) -> Result<Arc<Inner>, ChannelError> {
@@ -639,7 +621,7 @@ impl ForwardedDialer {
         let connector_ctx = LinkCtx::new_live(inner.local_host.clone(), registry.clone())
             .with_expected_peer(peer)
             .with_incoming_streams(inner.incoming_streams_tx.clone());
-        let (connector_task, established) = crate::routing::spawn_connector(
+        let (connector_task, established) = crate::link::run::spawn_connector(
             connector_ctx.with_shutdown(inner.shutdown.subscribe()),
             carrier.clone(),
         );
@@ -688,7 +670,7 @@ impl ForwardedDialer {
     /// one as no longer trusted, or a forwarder that refused to carry the
     /// dial, is what the call is told; otherwise it finds the link up or
     /// not.
-    async fn want(&self, peer: HostId) -> Result<(), ChannelError> {
+    pub(crate) async fn want(&self, peer: HostId) -> Result<(), ChannelError> {
         let inner = self.inner()?;
         let registry = inner.channels.link_registry().clone();
         if registry.native_carrier_to_peer(peer).await.is_some() {
@@ -757,7 +739,10 @@ impl ForwardedDialer {
         }
     }
 
-    async fn pair(
+    /// Dials `peer`'s pairing service through the forwarder at the far end
+    /// of `through`, presenting no certificate: the host answers only while
+    /// its pairing window is open. The dial is given up after `deadline`.
+    pub(crate) async fn pair(
         &self,
         peer: HostId,
         through: LinkId,
@@ -817,21 +802,6 @@ impl ResumedDial for ForwardedDialer {
         flight: Flight,
     ) -> BoxFuture<'_, Result<Resuming, ChannelError>> {
         Box::pin(self.resume(peer, flight))
-    }
-}
-
-impl ForwardedDial for ForwardedDialer {
-    fn want(&self, peer: HostId) -> BoxFuture<'_, Result<(), ChannelError>> {
-        Box::pin(self.want(peer))
-    }
-
-    fn pair_through(
-        &self,
-        peer: HostId,
-        through: LinkId,
-        deadline: Duration,
-    ) -> BoxFuture<'_, Result<tonic::transport::Channel, ChannelError>> {
-        Box::pin(self.pair(peer, through, deadline))
     }
 }
 

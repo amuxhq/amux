@@ -348,7 +348,6 @@ impl TunnelDispatcher {
                         .carried_through(through)
                         .following(socket.clone()),
                 ),
-                crate::routing::ConnectRole::Acceptor,
             )
         };
         let link_ctx = || {

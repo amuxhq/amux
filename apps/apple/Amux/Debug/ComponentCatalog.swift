@@ -1459,13 +1459,13 @@ extension CatalogFixtures {
         store.open(on: desk)
         store.listed(.success(Directories(
             recent: [
-                Directory(path: "~/src/amux", name: "amux", lastUsedMs: 5),
-                Directory(path: "~/src/amuxcloud", name: "amuxcloud", lastUsedMs: 4),
-                Directory(path: "~/src/promo", name: "promo", lastUsedMs: 3),
+                Directory(path: "~/src/amux", name: "amux"),
+                Directory(path: "~/src/amuxcloud", name: "amuxcloud"),
+                Directory(path: "~/src/promo", name: "promo"),
             ],
             repositories: [
-                Directory(path: "~/src/dotfiles", name: "dotfiles", lastUsedMs: 0),
-                Directory(path: "~/src/skills", name: "skills", lastUsedMs: 0),
+                Directory(path: "~/src/dotfiles", name: "dotfiles"),
+                Directory(path: "~/src/skills", name: "skills"),
             ], roots: ["~/src"])), asked: store.asking())
         for offered in NewAgentStore.Provider.allCases {
             let catalogue = offered == .codex ? codexCatalogue : claudeCatalogue

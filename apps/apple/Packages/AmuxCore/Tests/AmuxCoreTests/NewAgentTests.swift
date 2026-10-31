@@ -6,10 +6,10 @@ import XCTest
 @MainActor
 final class NewAgentTests: XCTestCase {
     private let listed = Directories(
-        recent: [Directory(path: "/src/amux", name: "amux", lastUsedMs: 5)],
+        recent: [Directory(path: "/src/amux", name: "amux")],
         repositories: [
-            Directory(path: "/src/amux", name: "amux", lastUsedMs: nil),
-            Directory(path: "/src/relay", name: "relay", lastUsedMs: nil),
+            Directory(path: "/src/amux", name: "amux"),
+            Directory(path: "/src/relay", name: "relay"),
         ],
         roots: ["/src"])
 

@@ -2395,18 +2395,15 @@ public struct Directories: Codable, Hashable, Sendable {
 public struct Directory: Codable, Hashable, Sendable {
     public var path: String
     public var name: String
-    public var lastUsedMs: Int64?
 
-    public init(path: String, name: String, lastUsedMs: Int64?) {
+    public init(path: String, name: String) {
         self.path = path
         self.name = name
-        self.lastUsedMs = lastUsedMs
     }
 
     private enum CodingKeys: String, CodingKey {
         case path
         case name
-        case lastUsedMs = "last_used_ms"
     }
 }
 

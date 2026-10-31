@@ -472,7 +472,6 @@ pub struct NewAgent {
 pub struct Directory {
     pub path: String,
     pub name: String,
-    pub last_used_ms: Option<i64>,
 }
 
 /// What a host offers to start an agent in: where agents ran lately and the

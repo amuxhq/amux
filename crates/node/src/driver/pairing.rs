@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use daemon_core::pairing::{Initiate, Opened, PairFailure, PairingEvent};
+use daemon_core::pairing::{Failure, Initiate, Opened, PairFailure, PairingEvent};
 use daemon_core::payload::{CallError, ClientRequest, PairMessage, Response, Status};
 use daemon_core::{Input, PairingId};
 use futures_util::{Stream, stream};
@@ -144,6 +144,18 @@ pub(crate) fn failure(status: &tonic::Status) -> PairFailure {
     }
 }
 
+/// A failure as analytics counts it.
+pub(crate) fn counted_as(failure: Failure) -> analytics::PairingFailure {
+    match failure {
+        Failure::Abandoned => analytics::PairingFailure::Abandoned,
+        Failure::WrongSecret => analytics::PairingFailure::WrongSecret,
+        Failure::TimedOut => analytics::PairingFailure::TimedOut,
+        Failure::SelfPairing => analytics::PairingFailure::SelfPairing,
+        Failure::Unreachable => analytics::PairingFailure::Unreachable,
+        Failure::Other => analytics::PairingFailure::Other,
+    }
+}
+
 /// Reads a pairing stream's messages into the core until it ends.
 fn read_into_core(
     inputs: super::WeakFeed,
@@ -265,7 +277,7 @@ impl Driver {
 /// Records what a pairing did: one line in the daemon's log, and the
 /// analytics events.
 pub(crate) fn record(event: &PairingEvent, analytics: &analytics::Analytics) {
-    use daemon_core::pairing::{Failure, Method, Outcome, Role};
+    use daemon_core::pairing::{Method, Outcome, Role};
 
     let method = match event.method {
         Method::Pin | Method::Demo => analytics::Method::Pin,
@@ -288,14 +300,7 @@ pub(crate) fn record(event: &PairingEvent, analytics: &analytics::Analytics) {
                 analytics.record(analytics::Event::PairingFailed {
                     role,
                     method,
-                    reason: match counted {
-                        Failure::Abandoned => analytics::PairingFailure::Abandoned,
-                        Failure::WrongSecret => analytics::PairingFailure::WrongSecret,
-                        Failure::TimedOut => analytics::PairingFailure::TimedOut,
-                        Failure::SelfPairing => analytics::PairingFailure::SelfPairing,
-                        Failure::Unreachable => analytics::PairingFailure::Unreachable,
-                        Failure::Other => analytics::PairingFailure::Other,
-                    },
+                    reason: counted_as(*counted),
                 });
             }
         }

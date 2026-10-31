@@ -26,7 +26,7 @@ use super::Edge;
 use super::account::AccountRecord;
 use crate::HostId;
 use crate::auth::AccessToken;
-use crate::driver::pairing::status as pairing_status;
+use crate::driver::pairing::{self, status as pairing_status};
 use crate::pairing::PAIR_MODE_TTL;
 use crate::runtime::ProfileRuntime;
 use crate::services::LocalPairingIdentity;
@@ -39,21 +39,7 @@ const PAIR_MODE_MAX_TTL: Duration = Duration::from_secs(90 * 86_400);
 
 /// Every refusal a guessing peer could learn from reads the same.
 fn invalid_pin() -> Status {
-    Status::permission_denied("INVALID_PIN")
-}
-
-/// Why a pairing failed, as analytics reads a refusal.
-fn pairing_failure(status: &Status) -> analytics::PairingFailure {
-    use analytics::PairingFailure;
-    match status.code() {
-        tonic::Code::PermissionDenied => PairingFailure::WrongSecret,
-        tonic::Code::InvalidArgument if status.message().contains("SELF_PAIRING") => {
-            PairingFailure::SelfPairing
-        }
-        tonic::Code::Unavailable => PairingFailure::Unreachable,
-        tonic::Code::DeadlineExceeded => PairingFailure::TimedOut,
-        _ => PairingFailure::Other,
-    }
+    pairing_status(&PairFailure::invalid_pin())
 }
 
 /// A call the core refused, as the front door says it.
@@ -268,7 +254,7 @@ impl Edge {
             self.analytics.record(analytics::Event::PairingFailed {
                 role: analytics::Role::Joiner,
                 method,
-                reason: pairing_failure(status),
+                reason: pairing::counted_as(pairing::failure(status).counted()),
             });
         }
         begun

@@ -23,4 +23,5 @@ wire = { workspace = true }
 
 [dev-dependencies]
 journal = { workspace = true, features = ["synthetic"] }
+store = { workspace = true, features = ["explore"] }
 tempfile = { workspace = true }

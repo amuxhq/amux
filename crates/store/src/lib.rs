@@ -20,11 +20,13 @@ mod schema;
 mod sqlite;
 
 mod blobs;
+#[cfg(feature = "explore")]
 mod explore;
 pub mod redact;
 mod retention;
 
 pub use blobs::BlobLru;
+#[cfg(feature = "explore")]
 pub use explore::{BlockOrders, Dump};
 pub use retention::{Sweep, SweepStep};
 pub use schema::SCHEMA_VERSION;

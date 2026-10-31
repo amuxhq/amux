@@ -52,6 +52,7 @@ pub struct Sqlite {
     /// How many resets each replica row has absorbed since the store
     /// opened: what a replica that was told to forget its block went
     /// through, for the checks that judge it.
+    #[cfg(feature = "explore")]
     pub(crate) resets: HashMap<AgentKey, u64>,
 }
 
@@ -98,6 +99,7 @@ impl Sqlite {
             conn,
             own_host,
             markers: HashMap::new(),
+            #[cfg(feature = "explore")]
             resets: HashMap::new(),
         })
     }
@@ -331,10 +333,6 @@ impl Sqlite {
         &self.markers
     }
 
-    pub fn markers_mut(&mut self) -> &mut HashMap<AgentKey, Marker> {
-        &mut self.markers
-    }
-
     pub fn agent(&self, agent: &AgentKey) -> Result<Option<AgentRow>, StoreError> {
         self.read(|rows| rows.agent(agent))
     }
@@ -505,6 +503,7 @@ impl Sqlite {
     /// Removes an agent whole: row, items, deliveries and notifications.
     pub fn delete_agent(&mut self, agent: &AgentKey) -> Result<(), StoreError> {
         self.markers.remove(agent);
+        #[cfg(feature = "explore")]
         self.resets.remove(agent);
         self.write(|rows| rows.remove_agent(agent))
     }
@@ -546,11 +545,13 @@ impl Sqlite {
             Absorb::Reset { .. } => Some(None),
             _ => None,
         };
+        #[cfg(feature = "explore")]
         let reset = matches!(what, Absorb::Reset { .. });
         let absorbed = self.write(|rows| absorb(rows, agent, what))?;
         if let Some(marker) = marker {
             self.set_marker(agent, marker);
         }
+        #[cfg(feature = "explore")]
         if reset {
             *self.resets.entry(agent.clone()).or_default() += 1;
         }
@@ -645,6 +646,7 @@ impl Sqlite {
         let sweep = self.write(|rows| retention::sweep_own(rows, budget, chunk, floor_k))?;
         for agent in &sweep.removed {
             self.markers.remove(agent);
+            #[cfg(feature = "explore")]
             self.resets.remove(agent);
         }
         Ok(sweep)
@@ -668,6 +670,7 @@ impl Sqlite {
             .write(|rows| retention::sweep_replicas(rows, budget, floor_k, sourced, last_used))?;
         for agent in &sweep.removed {
             self.markers.remove(agent);
+            #[cfg(feature = "explore")]
             self.resets.remove(agent);
         }
         Ok(sweep)

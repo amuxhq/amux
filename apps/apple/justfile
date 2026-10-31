@@ -23,11 +23,11 @@ python := "scripts/py"
 default:
     @just --list ios
 
-# The Rust tools the phone recipes drive: the screenshot comparator and door
-# client, and the served test network the journeys connect a simulator to with
-# the amux and fake providers its machines run. One cargo invocation builds
-# them all, so the served net runs binaries whose features match its own and
-# builds nothing itself.
+# The Rust tools the phone recipes drive: the screenshot comparator and the
+# served test network the journeys connect a simulator to with the amux and
+# fake providers its machines run. One cargo invocation builds them all, so the
+# served net runs binaries whose features match its own and builds nothing
+# itself.
 # Build the Rust tools the phone recipes drive.
 tools:
     {{bounded}} 900 cargo build --locked -p ios-tools -p testnet -p qualification -p amux -p provider-fakes --bins
@@ -250,25 +250,3 @@ qa-cloud-signin:
 qa-sandbox-purchase *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 3600 {{python}} -B scripts/qa-sandbox-purchase.py "$@"
 
-# The one run that reaches everything at once: an entitled QA account signed
-# into the real amux.sh, the simulator app connected to the production relay on
-# the credential that service minted, this checkout's own daemon on the other
-# side, and a real Claude session answering a question asked from the phone.
-# Every other journey runs against a relay started beside it with credentials a
-# harness minted, so this is the only place the production handshake — the
-# audience, port and client the relay compares with its own configuration, and
-# the signature it validates — is exercised at all. It spends real money on a
-# real agent and reaches a real account, so it is evidence a person runs by
-# hand, never a test and never in CI, and it is deliberately absent from the
-# verification list in crates/ios-tools/src/ios_verify.rs. The checkout's daemon
-# is a worktree resource (`wt run daemon`); the script refuses to start
-# without it.
-# Run the whole product once against the real cloud (by hand only).
-qa-live-journey: build desktop
-    scripts/with iphone -- {{bounded}} 2100 {{python}} -B scripts/qa-live-journey.py
-
-# The desktop product, built through the root recipe so the phone recipes that
-# need a daemon beside them share its configuration.
-# Build the desktop product through the root recipe.
-desktop:
-    just build

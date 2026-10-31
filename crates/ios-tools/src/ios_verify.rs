@@ -472,7 +472,6 @@ mod tests {
             "ios verify",
             "ios qa-cloud-signin",
             "ios qa-sandbox-purchase",
-            "ios qa-live-journey",
             "ios release",
         ] {
             assert!(!all_recipes().contains(&excluded));

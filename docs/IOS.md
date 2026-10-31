@@ -430,18 +430,8 @@ signs the app into a served relay, and `cloud` and `store` script what the
 account service and the App Store answer, for journeys about accounts and
 purchases.
 
-`ios-tools door` launches the installed app on a pinned simulator, speaks the
-requests it is given and prints the answers:
-
-```sh
-just ios build && just ios tools
-timeout 120 target/debug/ios-tools door --simulator golden \
-  --install target/ios/DerivedData/Build/Products/Debug-iphonesimulator/Amux.app \
-  '{"kind":"open","screen":"home"}' \
-  '{"kind":"appearance","appearance":"dark"}' \
-  '{"kind":"settle"}' '{"kind":"query"}' \
-  '{"kind":"capture","path":"/tmp/amux-home.png"}'
-```
+By hand, `testnet ctl phone` speaks the door to the app on a leased
+simulator ([TestNet](TESTNET.md)).
 
 A sheet is a presentation of its own, and SwiftUI hands what a sheet's
 views declare up only as far as the sheet. So every surface that can be on

@@ -34,7 +34,7 @@ fn every_golden_file_belongs_to_a_component() {
     let on_disk: BTreeSet<String> = std::fs::read_dir(golden_dir())
         .expect("golden directory")
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .filter(|name| name.ends_with(".txt") && !name.starts_with("frame_"))
+        .filter(|name| name.ends_with(".txt"))
         .collect();
     let stale: Vec<_> = on_disk.difference(&expected).collect();
     assert!(stale.is_empty(), "goldens no component draws: {stale:?}");

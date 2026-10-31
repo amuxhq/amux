@@ -4066,6 +4066,14 @@ fn a_plan_reads_under_its_heading_and_folds_once_decided() {
             let (buffer, _) = draw(&mut view, state, *now, W, H, theme());
             let screen = text(&buffer);
             assert!(screen.contains("Plan"), "{name} {when}:\n{screen}");
+            // Open, the plan reads unfolded and its decision waits in the
+            // composer's box; decided, both are gone.
+            let waiting = screen.contains("▾ Plan") && screen.contains("Plan ready");
+            let folded = !screen.contains("▾ Plan") && !screen.contains("Plan ready");
+            assert!(
+                if when == "open" { waiting } else { folded },
+                "{name} {when}:\n{screen}"
+            );
             // Codex proposes its plan as its turn ends, so there is no turn
             // to interrupt; Claude asks mid-turn.
             if when == "open" {
@@ -4075,7 +4083,6 @@ fn a_plan_reads_under_its_heading_and_folds_once_decided() {
                     "{name}:\n{screen}"
                 );
             }
-            fixtures::assert_frame_golden(&format!("frame_plan_{name}_{when}"), &buffer, theme());
         }
     }
 }

@@ -224,7 +224,6 @@ fn appends_extend_text_and_carry_their_base() {
         ..Default::default()
     };
     let committed = store.commit(&agent, &[(2, step)], CLOCK).unwrap();
-    assert_eq!(committed.skipped_appends, 1);
     assert_eq!(
         committed.records,
         vec![

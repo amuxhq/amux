@@ -51,8 +51,8 @@ a global offset: it opens the segment whose name is the largest at or below
 that offset and seeks to the difference.
 
 The writer closes a segment before it creates the next one. A segment is
-therefore final, never written again, exactly when a later segment exists
-(`journal::is_final`). Nothing else needs to record which files are complete.
+therefore final, never written again, exactly when a later segment exists.
+Nothing else needs to record which files are complete.
 
 ![Segment naming makes a reader's state a single integer and makes "is this file final?" answerable by the existence of the next file. The writer closes a segment before it creates the next, so once 0002097152 exists, 0001048576 never changes again. The same scheme is used for pty/.](figures/journal-segments.svg)
 

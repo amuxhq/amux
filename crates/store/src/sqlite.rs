@@ -725,7 +725,7 @@ fn commit(
             let Some(base_revision) =
                 rows.extend(agent, &append.key, &append.text, revision, None)?
             else {
-                committed.skipped_appends += 1;
+                // The item it extends was never committed: nothing to extend.
                 continue;
             };
             row.next_revision += 1;

@@ -198,9 +198,6 @@ pub struct Committed {
     pub records: Vec<Record>,
     /// The journal offset the row is now committed through.
     pub cursor: u64,
-    /// Appends naming a key the store does not hold; the item they extend
-    /// was never committed, so there is nothing to extend.
-    pub skipped_appends: usize,
 }
 
 /// A record from a peer source.

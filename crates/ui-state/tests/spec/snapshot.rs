@@ -134,7 +134,6 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
                 effort: Some("high".into()),
                 permission: Some("plan".into()),
                 approval_policy: Some("on-request".into()),
-                sandbox: Some("workspace-write".into()),
                 usage: Some(codex_usage.clone()),
                 servers: Some(servers.clone()),
                 sign_in: Some(sign_in.clone()),

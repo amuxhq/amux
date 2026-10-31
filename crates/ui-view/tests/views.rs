@@ -813,7 +813,6 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
             model: Some("gpt".into()),
             effort: Some("high".into()),
             approval_policy: Some("on-request".into()),
-            sandbox: Some("workspace-write".into()),
             usage: Some(codex_usage),
             servers: Some(servers),
             sign_in: Some(sign_in),
@@ -1499,7 +1498,6 @@ fn codex_offers_permissions_and_modes_and_settings_outside_them_read_custom() {
         permission: Some("full-access".into()),
         mode: Some("plan".into()),
         approval_policy: Some("never".into()),
-        sandbox: Some("danger-full-access".into()),
         ..Default::default()
     });
     let permissions: Vec<(&str, bool, bool)> = view
@@ -1557,7 +1555,6 @@ fn codex_offers_permissions_and_modes_and_settings_outside_them_read_custom() {
 
     let view = codex(wire::CodexSnapshot {
         approval_policy: Some("untrusted".into()),
-        sandbox: Some("workspace-write".into()),
         ..Default::default()
     });
     let custom = view.permissions.last().unwrap();
@@ -1747,7 +1744,6 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
     };
     let codex = custom(wire::CodexSnapshot {
         approval_policy: Some("untrusted".into()),
-        sandbox: Some("workspace-write".into()),
         mode: Some("plan".into()),
         ..Default::default()
     });

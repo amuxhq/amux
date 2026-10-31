@@ -191,18 +191,14 @@ message CodexSnapshot {
   // The running model as a person reads it: the catalogue entry whose value
   // is its id, else its id tidied. Absent while the model is.
   optional string model_name = 4;
-  // The permission the raw settings below name; absent when they match no
-  // name, which reads as custom.
+  // The permission Codex's approval policy, sandbox and reviewer name;
+  // absent when they match no name, which reads as custom.
   optional string permission = 5;
   // The mode the collaboration mode names: "default" or "plan"; absent
   // until Codex says, or when it names neither.
   optional string mode = 6;
-  // Codex's own settings, absent until Codex says.
+  // Codex's own approval policy, absent until Codex says.
   optional string approval_policy = 7;
-  optional string sandbox = 8;
-  // Who answers approvals: "user", or a reviewer model ("auto_review").
-  optional string approvals_reviewer = 9;
-  optional string collaboration_mode = 10;
   // Absent while no turn is known to be running.
   optional string active_turn = 11;
   ToolServerHealth servers = 12;

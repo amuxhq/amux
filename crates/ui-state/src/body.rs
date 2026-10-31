@@ -286,10 +286,9 @@ pub struct AgentState {
     /// The mode in force by its catalogue value (Codex's collaboration
     /// mode); None for Claude, which has none.
     pub mode: Option<String>,
-    /// Codex's own settings, None until Codex says. Set with no
-    /// `permission`, they match no named permission.
+    /// Codex's own approval policy, None until Codex says. Set with no
+    /// `permission`, Codex's settings match no named permission.
     pub approval_policy: Option<String>,
-    pub sandbox: Option<String>,
     /// The hash of the catalogue the agent offers now; None until its
     /// provider says.
     pub catalogue: Option<Vec<u8>>,
@@ -409,7 +408,6 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
             state.permission = snapshot.permission;
             state.mode = snapshot.mode;
             state.approval_policy = snapshot.approval_policy;
-            state.sandbox = snapshot.sandbox;
             state.provider_session = snapshot.thread_id;
             state.usage = snapshot.usage.map_or(Usage::Unknown, Usage::Codex);
             state.servers = snapshot.servers.unwrap_or_default();

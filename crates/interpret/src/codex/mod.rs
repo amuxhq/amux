@@ -711,9 +711,6 @@ impl State {
                 .clone()
                 .filter(|mode| MODES.iter().any(|(value, _)| value == mode)),
             approval_policy: self.approval.clone(),
-            sandbox: self.sandbox.clone(),
-            approvals_reviewer: self.reviewer.clone(),
-            collaboration_mode: self.collaboration.clone(),
             active_turn: self.active_turn.clone(),
             servers: Some(
                 self.servers
@@ -2280,7 +2277,7 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
             .map(|ask| (ask.key.clone(), ask.item_key.clone()))
             .collect(),
         text: format!(
-            "asks=[{}] thread={} turn={} model={} model_name={} effort={} permission={} mode={} approval={} sandbox={} reviewer={} collaboration={} context={} plan={} usage={} servers={} sign_in={} background={}",
+            "asks=[{}] thread={} turn={} model={} model_name={} effort={} permission={} mode={} approval={} context={} plan={} usage={} servers={} sign_in={} background={}",
             snapshot
                 .asks
                 .iter()
@@ -2295,9 +2292,6 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
             snapshot.permission.as_deref().unwrap_or("custom"),
             snapshot.mode.as_deref().unwrap_or("?"),
             snapshot.approval_policy.as_deref().unwrap_or("?"),
-            snapshot.sandbox.as_deref().unwrap_or("?"),
-            snapshot.approvals_reviewer.as_deref().unwrap_or("?"),
-            snapshot.collaboration_mode.as_deref().unwrap_or("?"),
             if context.known {
                 format!(
                     "{}/{}",

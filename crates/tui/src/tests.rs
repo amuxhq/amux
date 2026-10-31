@@ -397,7 +397,6 @@ fn codex_moves_mode_with_shift_tab_and_permission_from_the_settings_key() {
             permission: Some("full-access".into()),
             mode: Some("plan".into()),
             approval_policy: Some("never".into()),
-            sandbox: Some("danger-full-access".into()),
             ..Default::default()
         },
     );

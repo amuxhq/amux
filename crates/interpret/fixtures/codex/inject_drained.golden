@@ -1,18 +1,18 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? sandbox=? reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"t1\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=t1 version=0.157.0
-snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 2 input {"id":"p1","prompt":{"text":"Count to ten slowly."}}
 effect reply p1 accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"7031\",\"input\":[{\"text\":\"Count to ten slowly.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
 item prompt:7031 prompt final input=p1 at=1800000000000 text="Count to ten slowly."
-snapshot WORKING queue=[] working_on="Count to ten slowly." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="Count to ten slowly." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 3 fact {"channel":"rpc","json":{"id":"amux-1","result":{"turn":{"id":"turn-1","status":"inProgress"}}}}
-snapshot WORKING queue=[] working_on="Count to ten slowly." at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="Count to ten slowly." at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 4 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-1","status":"inProgress"}}}}
 ## 5 tick 1800000001000
 ## 6 agent_message {"envelope":"e1","from":"reviewer","text":"Also say DONE at the end."}
@@ -37,5 +37,5 @@ item msg-2 message final at=1800000001000 text="DONE"
 ## 14 tick 1800000002000
 ## 15 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
 item turn:1 turn final at=1800000002000 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000000
-snapshot IDLE queue=[] working_on="Count to ten slowly." at=1800000002000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=[]
+snapshot IDLE queue=[] working_on="Count to ten slowly." at=1800000002000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=[]
 turn_end 1 last=msg-2

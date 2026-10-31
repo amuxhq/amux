@@ -913,16 +913,9 @@ fn the_settings_notice_names_the_mode_and_who_answers_approvals() {
         .expect("the notice moves the snapshot");
     let snapshot = wire::CodexSnapshot::decode(snapshot.body.as_slice()).unwrap();
     println!(
-        "permission={:?} mode={:?} approval={:?} sandbox={:?} reviewer={:?} collaboration={:?}",
-        snapshot.permission,
-        snapshot.mode,
-        snapshot.approval_policy,
-        snapshot.sandbox,
-        snapshot.approvals_reviewer,
-        snapshot.collaboration_mode
+        "permission={:?} mode={:?} approval={:?}",
+        snapshot.permission, snapshot.mode, snapshot.approval_policy,
     );
-    assert_eq!(snapshot.approvals_reviewer.as_deref(), Some("auto_review"));
-    assert_eq!(snapshot.collaboration_mode.as_deref(), Some("plan"));
     assert_eq!(snapshot.permission.as_deref(), Some("auto"));
     assert_eq!(snapshot.mode.as_deref(), Some("plan"));
 }

@@ -1551,7 +1551,6 @@ fn known(state: &AgentState) -> BTreeSet<&'static str> {
         ("permission", state.permission.is_some()),
         ("mode", state.mode.is_some()),
         ("approval_policy", state.approval_policy.is_some()),
-        ("sandbox", state.sandbox.is_some()),
         ("session", state.provider_session.is_some()),
         ("context", state.context.known),
         ("usage", state.usage.state() != wire::UsageState::Unknown),

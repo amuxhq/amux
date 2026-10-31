@@ -5470,24 +5470,17 @@ pub struct CodexSnapshot {
     /// is its id, else its id tidied. Absent while the model is.
     #[prost(string, optional, tag = "4")]
     pub model_name: ::core::option::Option<::prost::alloc::string::String>,
-    /// The permission the raw settings below name; absent when they match no
-    /// name, which reads as custom.
+    /// The permission Codex's approval policy, sandbox and reviewer name;
+    /// absent when they match no name, which reads as custom.
     #[prost(string, optional, tag = "5")]
     pub permission: ::core::option::Option<::prost::alloc::string::String>,
     /// The mode the collaboration mode names: "default" or "plan"; absent
     /// until Codex says, or when it names neither.
     #[prost(string, optional, tag = "6")]
     pub mode: ::core::option::Option<::prost::alloc::string::String>,
-    /// Codex's own settings, absent until Codex says.
+    /// Codex's own approval policy, absent until Codex says.
     #[prost(string, optional, tag = "7")]
     pub approval_policy: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "8")]
-    pub sandbox: ::core::option::Option<::prost::alloc::string::String>,
-    /// Who answers approvals: "user", or a reviewer model ("auto_review").
-    #[prost(string, optional, tag = "9")]
-    pub approvals_reviewer: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "10")]
-    pub collaboration_mode: ::core::option::Option<::prost::alloc::string::String>,
     /// Absent while no turn is known to be running.
     #[prost(string, optional, tag = "11")]
     pub active_turn: ::core::option::Option<::prost::alloc::string::String>,

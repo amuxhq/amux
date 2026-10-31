@@ -1,24 +1,24 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? sandbox=? reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 5 recorded 4: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"on-…
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a04f52-8736-7b70-94f8-b501fa13264f\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1788037203788 text="" BOUNDARY_KIND_STARTED session=01a04f52-8736-7b70-94f8-b501fa13264f version=0.150.1
-snapshot IDLE queue=[] working_on=- at=1788037203788 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1788037203788 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 8 recorded 7: agent_message stdin-4
 effect write "{\"id\":\"amux-1\",\"method\":\"thread/inject_items\",\"params\":{\"items\":[{\"content\":[{\"text\":\"Reply with exactly CODEX_SPEC_INJECT_IDLE and nothing else.\",\"type\":\"input_text\"}],\"role\":\"user\",\"type\":\"message\"}],\"threadId\":\"01a04f52-8736-7b70-94f8-b501fa13264f\"}}"
 effect write "{\"id\":\"amux-2\",\"method\":\"turn/start\",\"params\":{\"input\":[],\"threadId\":\"01a04f52-8736-7b70-94f8-b501fa13264f\"}}"
 effect reply stdin-4 accepted
 item agent-message:737464696e2d34 agent_message final input=stdin-4 at=1788037203790 text="Reply with exactly CODEX_SPEC_INJECT_IDLE and nothing else." envelope=737464696e2d34
-snapshot WORKING queue=[] working_on=- at=1788037203790 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1788037203790 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 pending [stdin-4]
 ## 9 recorded 8: fact Rpc method=mcpServer/startupStatus/updated
-snapshot WORKING queue=[] working_on=- at=1788037203790 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1788037203790 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
 ## 11 recorded 10: fact Rpc method=mcpServer/startupStatus/updated
-snapshot WORKING queue=[] working_on=- at=1788037204525 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1788037204525 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 15 recorded 14: fact Rpc "{\"id\":\"amux-2\",\"result\":{\"turn\":{\"completedAt\":null,\"durationMs\":nu…
-snapshot WORKING queue=[] working_on=- at=1788037204919 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=01a04f52-8bb4-7f73-959d-eaba28cf0206 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1788037204919 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=01a04f52-8bb4-7f73-959d-eaba28cf0206 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 pending []
 ## 20 recorded 19: fact Rpc method=item/started
 item msg_055115bef0bf2729016a9348574dc087d28574870349ece42c message open at=1788037207376 text=""
@@ -37,10 +37,10 @@ append msg_055115bef0bf2729016a9348574dc087d28574870349ece42c "_IDLE"
 ## 34 recorded 33: fact Rpc method=item/completed
 item msg_055115bef0bf2729016a9348574dc087d28574870349ece42c message final at=1788037207376 text="CODEX_SPEC_INJECT_IDLE"
 ## 36 recorded 35: fact Rpc method=thread/tokenUsage/updated
-snapshot WORKING queue=[] working_on=- at=1788037207556 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=01a04f52-8bb4-7f73-959d-eaba28cf0206 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=14531/258400 plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1788037207556 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=01a04f52-8bb4-7f73-959d-eaba28cf0206 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=14531/258400 plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 37 recorded 36: fact Rpc method=account/rateLimits/updated
-snapshot WORKING queue=[] working_on=- at=1788037207556 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=01a04f52-8bb4-7f73-959d-eaba28cf0206 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=14531/258400 plan=? usage=ok 7d:13%(ok) credits=0 servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1788037207556 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=01a04f52-8bb4-7f73-959d-eaba28cf0206 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=14531/258400 plan=? usage=ok 7d:13%(ok) credits=0 servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 40 recorded 39: fact Rpc method=turn/completed
 item turn:1 turn final at=1788037207557 text="" #1 TURN_OUTCOME_COMPLETED started=1788037204919
-snapshot IDLE queue=[] working_on=- at=1788037207557 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=14531/258400 plan=? usage=ok 7d:13%(ok) credits=0 servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=[]
+snapshot IDLE queue=[] working_on=- at=1788037207557 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=14531/258400 plan=? usage=ok 7d:13%(ok) credits=0 servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=[]
 turn_end 1 last=msg_055115bef0bf2729016a9348574dc087d28574870349ece42c

@@ -2523,7 +2523,6 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
             model: Some("gpt-5.5".into()),
             model_name: Some("GPT-5.5".into()),
             approval_policy: Some("on-request".into()),
-            sandbox: Some("workspace-write".into()),
             usage: Some(codex_usage),
             ..Default::default()
         }
@@ -2813,13 +2812,11 @@ fn control_chats() -> Vec<(
         permission: Some("full-access".into()),
         mode: Some("plan".into()),
         approval_policy: Some("never".into()),
-        sandbox: Some("danger-full-access".into()),
         ..Default::default()
     });
     let codex_custom = codex_settings(wire::CodexSnapshot {
         mode: Some("default".into()),
         approval_policy: Some("untrusted".into()),
-        sandbox: Some("workspace-write".into()),
         ..Default::default()
     });
     let claude_pty = session(

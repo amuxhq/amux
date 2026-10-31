@@ -1,24 +1,24 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? sandbox=? reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 5 recorded 4: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"on-…
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a04f52-5abf-7332-8a53-7614a3dfa237\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1788037192405 text="" BOUNDARY_KIND_STARTED session=01a04f52-5abf-7332-8a53-7614a3dfa237 version=0.150.1
-snapshot IDLE queue=[] working_on=- at=1788037192405 asks=[] thread=01a04f52-5abf-7332-8a53-7614a3dfa237 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1788037192405 asks=[] thread=01a04f52-5abf-7332-8a53-7614a3dfa237 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 8 recorded 7: input stdin-4
 effect reply stdin-4 accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"737464696e2d34\",\"input\":[{\"text\":\"Count slowly from one to one hundred, one number per line.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a04f52-5abf-7332-8a53-7614a3dfa237\"}}"
 item prompt:737464696e2d34 prompt final input=stdin-4 at=1788037192406 text="Count slowly from one to one hundred, one number per line."
-snapshot WORKING queue=[] working_on="Count slowly from one to one hundred, one number per line." at=1788037192406 asks=[] thread=01a04f52-5abf-7332-8a53-7614a3dfa237 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="Count slowly from one to one hundred, one number per line." at=1788037192406 asks=[] thread=01a04f52-5abf-7332-8a53-7614a3dfa237 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 10 recorded 9: fact Rpc method=mcpServer/startupStatus/updated
-snapshot WORKING queue=[] working_on="Count slowly from one to one hundred, one number per line." at=1788037192407 asks=[] thread=01a04f52-5abf-7332-8a53-7614a3dfa237 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
+snapshot WORKING queue=[] working_on="Count slowly from one to one hundred, one number per line." at=1788037192407 asks=[] thread=01a04f52-5abf-7332-8a53-7614a3dfa237 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
 ## 12 recorded 11: fact Rpc "{\"id\":\"amux-1\",\"result\":{\"turn\":{\"completedAt\":null,\"durationMs\":nu…
-snapshot WORKING queue=[] working_on="Count slowly from one to one hundred, one number per line." at=1788037192410 asks=[] thread=01a04f52-5abf-7332-8a53-7614a3dfa237 turn=01a04f52-5ad8-7713-8daa-5d4485672da7 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
+snapshot WORKING queue=[] working_on="Count slowly from one to one hundred, one number per line." at=1788037192410 asks=[] thread=01a04f52-5abf-7332-8a53-7614a3dfa237 turn=01a04f52-5ad8-7713-8daa-5d4485672da7 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
 ## 16 recorded 15: input stdin-5
 effect write "{\"id\":\"amux-2\",\"method\":\"turn/interrupt\",\"params\":{\"threadId\":\"01a04f52-5abf-7332-8a53-7614a3dfa237\",\"turnId\":\"01a04f52-5ad8-7713-8daa-5d4485672da7\"}}"
 effect reply stdin-5 accepted
 ## 23 recorded 22: fact Rpc method=turn/completed
 item turn:1 turn final at=1788037192415 text="" #1 TURN_OUTCOME_INTERRUPTED started=1788037192409
-snapshot IDLE queue=[] working_on="Count slowly from one to one hundred, one number per line." at=1788037192415 asks=[] thread=01a04f52-5abf-7332-8a53-7614a3dfa237 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=[]
+snapshot IDLE queue=[] working_on="Count slowly from one to one hundred, one number per line." at=1788037192415 asks=[] thread=01a04f52-5abf-7332-8a53-7614a3dfa237 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=[]
 turn_end 1 last=-

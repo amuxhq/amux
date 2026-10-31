@@ -1,64 +1,64 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? sandbox=? reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.160.0","id":"t1","turns":[]}}}}
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"t1\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=t1 version=0.160.0
-snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 2 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-1","status":"inProgress"}}}}
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 3 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"tui-1","content":[{"text":"Fix the flaky test.","type":"text"}],"id":"u-1","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
 item u-1 prompt final at=1800000000000 text="Fix the flaky test."
 ## 4 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"tui-2","content":[{"text":"Only the parser tests.","type":"text"}],"id":"u-2","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
 item u-2 steer final at=1800000000000 text="Only the parser tests."
 ## 5 input {"id":"p1","prompt":{"text":"Keep the old fixtures."}}
 effect reply p1 queued
-snapshot WORKING queue=[p1] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[p1] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 6 input {"id":"n1","send_now":{"target":"p1"}}
 effect reply n1 accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/steer\",\"params\":{\"clientUserMessageId\":\"7031\",\"expectedTurnId\":\"turn-1\",\"input\":[{\"text\":\"Keep the old fixtures.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
-snapshot WORKING queue=[p1(steered)] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[p1(steered)] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 7 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"tui-3","content":[{"text":"And run them twice.","type":"text"}],"id":"u-3","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
 item u-3 steer final at=1800000000000 text="And run them twice."
 ## 8 fact {"channel":"rpc","json":{"id":"amux-1","result":{"turnId":"turn-1"}}}
 ## 9 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"7031","content":[{"text":"Keep the old fixtures.","type":"text"}],"id":"u-4","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
 item steer:7031 steer final input=p1 at=1800000000000 text="Keep the old fixtures."
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 10 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"command":"/bin/zsh -lc 'cargo test -p parser'","commandActions":[],"cwd":"/work","id":"cmd-1","status":"inProgress","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
 item cmd-1 work open at=1800000000000 text="" command "cargo test -p parser" cwd=/work TOOL_STATE_RUNNING
 ## 11 fact {"channel":"rpc","json":{"id":40,"method":"item/commandExecution/requestApproval","params":{"command":"/bin/zsh -lc 'cargo test -p parser'","cwd":"/work","itemId":"cmd-1","reason":"Needs approval.","threadId":"t1","turnId":"turn-1"}}}
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[40→cmd-1 command "cargo test -p parser" reason="Needs approval." decisions=[APPROVE,APPROVE_SESSION,DENY,ABORT]] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[40→cmd-1 command "cargo test -p parser" reason="Needs approval." decisions=[APPROVE,APPROVE_SESSION,DENY,ABORT]] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 12 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":40,"threadId":"t1"}}}
 item cmd-1 work open at=1800000000000 text="" command "cargo test -p parser" cwd=/work TOOL_STATE_RUNNING decision=DECISION_OUTCOME_UNKNOWN elsewhere
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 13 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"command":"/bin/zsh -lc 'cargo test -p parser'","commandActions":[],"cwd":"/work","id":"cmd-1","status":"completed","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
 item cmd-1 work final at=1800000000000 text="" command "cargo test -p parser" cwd=/work TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere ended=1800000000000
 ## 14 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"command":"/bin/zsh -lc 'rm -rf fixtures'","commandActions":[],"cwd":"/work","id":"cmd-2","status":"inProgress","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
 item cmd-2 work open at=1800000000000 text="" command "rm -rf fixtures" cwd=/work TOOL_STATE_RUNNING
 ## 15 fact {"channel":"rpc","json":{"id":41,"method":"item/commandExecution/requestApproval","params":{"command":"/bin/zsh -lc 'rm -rf fixtures'","cwd":"/work","itemId":"cmd-2","reason":"Needs approval.","threadId":"t1","turnId":"turn-1"}}}
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[41→cmd-2 command "rm -rf fixtures" reason="Needs approval." decisions=[APPROVE,APPROVE_SESSION,DENY,ABORT]] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[41→cmd-2 command "rm -rf fixtures" reason="Needs approval." decisions=[APPROVE,APPROVE_SESSION,DENY,ABORT]] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 16 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":41,"threadId":"t1"}}}
 item cmd-2 work open at=1800000000000 text="" command "rm -rf fixtures" cwd=/work TOOL_STATE_RUNNING decision=DECISION_OUTCOME_UNKNOWN elsewhere
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 17 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"command":"/bin/zsh -lc 'rm -rf fixtures'","commandActions":[],"cwd":"/work","id":"cmd-2","status":"declined","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
 item cmd-2 work final at=1800000000000 text="" command "rm -rf fixtures" cwd=/work TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED elsewhere ended=1800000000000
 ## 18 fact {"channel":"rpc","json":{"method":"thread/settings/updated","params":{"threadId":"t1","threadSettings":{"approvalPolicy":"never","collaborationMode":{"mode":"default","settings":{"model":"gpt-5.6","reasoning_effort":"high"}},"cwd":"/work","effort":"high","model":"gpt-5.6","sandboxPolicy":{"type":"dangerFullAccess"}}}}}
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6 model_name="GPT-5.6" effort=high permission=full-access mode=default approval=never sandbox=danger-full-access reviewer=? collaboration=default context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6 model_name="GPT-5.6" effort=high permission=full-access mode=default approval=never context=? plan=? usage=? servers=? sign_in=? background=?
 ## 19 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"interrupted"}}}}
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_INTERRUPTED started=1800000000000
-snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6 model_name="GPT-5.6" effort=high permission=full-access mode=default approval=never sandbox=danger-full-access reviewer=? collaboration=default context=? plan=? usage=? servers=? sign_in=? background=[]
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6 model_name="GPT-5.6" effort=high permission=full-access mode=default approval=never context=? plan=? usage=? servers=? sign_in=? background=[]
 turn_end 1 last=-
 ## 20 input {"id":"p2","prompt":{"text":"Now commit."}}
 effect reply p2 accepted
 effect write "{\"id\":\"amux-2\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"7032\",\"input\":[{\"text\":\"Now commit.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
 item prompt:7032 prompt final input=p2 at=1800000000000 text="Now commit."
-snapshot WORKING queue=[] working_on="Now commit." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6 model_name="GPT-5.6" effort=high permission=full-access mode=default approval=never sandbox=danger-full-access reviewer=? collaboration=default context=? plan=? usage=? servers=? sign_in=? background=[]
+snapshot WORKING queue=[] working_on="Now commit." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6 model_name="GPT-5.6" effort=high permission=full-access mode=default approval=never context=? plan=? usage=? servers=? sign_in=? background=[]
 ## 21 fact {"channel":"rpc","json":{"id":"amux-2","result":{"turn":{"id":"turn-2"}}}}
-snapshot WORKING queue=[] working_on="Now commit." at=1800000000000 asks=[] thread=t1 turn=turn-2 model=gpt-5.6 model_name="GPT-5.6" effort=high permission=full-access mode=default approval=never sandbox=danger-full-access reviewer=? collaboration=default context=? plan=? usage=? servers=? sign_in=? background=[]
+snapshot WORKING queue=[] working_on="Now commit." at=1800000000000 asks=[] thread=t1 turn=turn-2 model=gpt-5.6 model_name="GPT-5.6" effort=high permission=full-access mode=default approval=never context=? plan=? usage=? servers=? sign_in=? background=[]
 ## 22 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-2","status":"inProgress"}}}}
 ## 23 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"7032","content":[{"text":"Now commit.","type":"text"}],"id":"u-5","type":"userMessage"},"threadId":"t1","turnId":"turn-2"}}}
 ## 24 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-2","status":"completed"}}}}
 item turn:2 turn final at=1800000000000 text="" #2 TURN_OUTCOME_COMPLETED started=1800000000000
-snapshot IDLE queue=[] working_on="Now commit." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6 model_name="GPT-5.6" effort=high permission=full-access mode=default approval=never sandbox=danger-full-access reviewer=? collaboration=default context=? plan=? usage=? servers=? sign_in=? background=[]
+snapshot IDLE queue=[] working_on="Now commit." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6 model_name="GPT-5.6" effort=high permission=full-access mode=default approval=never context=? plan=? usage=? servers=? sign_in=? background=[]
 turn_end 2 last=-

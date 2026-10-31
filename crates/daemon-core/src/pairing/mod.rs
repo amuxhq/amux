@@ -270,8 +270,10 @@ pub struct Initiate {
     /// Whether the carrier dialled an address discovery found: a machine
     /// that already has a key here must then present that key.
     pub found: bool,
-    /// How the peer is reached once paired: the route this carrier took.
-    pub reachability: Reachability,
+    /// How the peer is reached once paired: the route this carrier took,
+    /// when that is something to keep. Through a paired host forwarding
+    /// for both there is none: that host announcing the peer is the route.
+    pub reachability: Option<Reachability>,
     /// How the secret was handed over, as analytics counts it.
     pub method: Method,
 }
@@ -1203,13 +1205,7 @@ impl Daemon {
                 out.push(Output::CancelTimer {
                     id: TimerId::Pairing(session),
                 });
-                self.commit_peer(
-                    session,
-                    host,
-                    peer,
-                    Some(initiate.reachability.clone()),
-                    out,
-                );
+                self.commit_peer(session, host, peer, initiate.reachability.clone(), out);
             }
             (Stage::Joining { .. } | Stage::Pending { .. }, _) => {}
             (_, Some(Body::Error(peer_error))) => {

@@ -116,7 +116,7 @@ impl Host {
                 secret: secret.to_vec(),
                 expect: None,
                 found: false,
-                reachability: Reachability::Cloud,
+                reachability: Some(Reachability::Cloud),
                 method: Method::Pin,
             })),
         });

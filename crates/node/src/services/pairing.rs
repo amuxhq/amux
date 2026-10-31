@@ -97,7 +97,7 @@ fn pairing_request_reachability<T>(
         .and_then(|info| match &info.auth {
             BoxedGrpcAuth::PreTrustPairing { reachability } => Some(match reachability {
                 PreTrustPairingReachability::Cloud => Some(Reachability::Cloud),
-                PreTrustPairingReachability::Forwarded => Some(Reachability::Forwarded),
+                PreTrustPairingReachability::Forwarded => None,
                 PreTrustPairingReachability::Direct(addr) => {
                     Some(Reachability::Direct { addrs: vec![*addr] })
                 }

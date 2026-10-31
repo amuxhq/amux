@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
-use claude_specs::specs::{SpecSource, execute, fixtures_root, pty_registry, sdk_registry};
+use claude_specs::specs::pty::registry as pty_registry;
 use redaction::Redaction;
 use replay_support::{Manifest, Recorded, SpecEntry, load_recording, registry_rows, sanitize};
 use semver::Version;
@@ -23,43 +23,15 @@ pub(super) async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let program = command.next().ok_or("a wrapped hook names its command")?;
         return super::capture::hook(&program, &command.collect::<Vec<_>>());
     }
-    if std::env::current_exe()?
-        .file_stem()
-        .is_some_and(|name| name == claude_specs::specs::channels::PEER_MESSAGE_HELPER)
-    {
-        return post_peer_message().await;
-    }
     // The tool server the live lane's form scenarios hand Claude; it runs
     // under the capture proxy's environment, so it is told apart first.
-    if std::env::args().nth(1).as_deref() == Some("__tool-server")
-        || std::env::var_os("CLAUDE_SPEC_MCP_SERVER").is_some()
-        || std::env::current_exe()?
-            .file_stem()
-            .is_some_and(|name| name == "spec-mcp-server")
-    {
-        run_spec_mcp_server();
+    if std::env::args().nth(1).as_deref() == Some("__tool-server") {
+        run_tool_server();
         return Ok(());
     }
     if std::env::var_os("CLAUDE_CAPTURE_PROXY").is_some() {
         return run_capture_proxy().await;
     }
-    if let (Some(entry), Some(out)) = (
-        std::env::var_os("CLAUDE_PROBE_CAPTURE_ENTRY"),
-        std::env::var_os("CLAUDE_PROBE_CAPTURE_OUT"),
-    ) {
-        let entry = find_entry(entry.to_str().ok_or("capture entry is not UTF-8")?)?;
-        let capture = capture_direct(entry).await?;
-        let out = PathBuf::from(out);
-        std::fs::create_dir_all(&out)?;
-        write_events(&out.join("io.jsonl"), &capture.events)?;
-        std::fs::write(out.join("spawn.jsonl"), &capture.spawn)?;
-        std::fs::write(
-            out.join("capture.json"),
-            serde_json::to_vec(&CaptureMetadata::from(&capture))?,
-        )?;
-        return Ok(());
-    }
-
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.as_slice() {
         [command, rest @ ..] if command == "list" => list(rest),
@@ -70,96 +42,34 @@ pub(super) async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn usage() -> &'static str {
-    "usage: claude-probe list [--sdk|--pty] | record (--sdk|--pty) <spec>... | join <capture dir> <name>"
+    "usage: claude-probe list | record <spec>... | join <capture dir> <name>"
 }
 
+/// The terminal specifications and whether each is recorded.
 fn list(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let sdk = args.is_empty() || args.iter().any(|arg| arg == "--sdk");
-    let pty = args.is_empty() || args.iter().any(|arg| arg == "--pty");
-    if args.iter().any(|arg| arg != "--sdk" && arg != "--pty") {
+    if !args.is_empty() {
         return Err(usage().into());
     }
-    if sdk {
-        list_registry("sdk", &fixtures_root(), sdk_registry())?;
-    }
-    if pty && claude_specs::specs::pty::fixtures_root().exists() {
-        list_registry(
-            "pty",
-            &claude_specs::specs::pty::fixtures_root(),
-            pty_registry(),
-        )?;
-    } else if pty {
-        for entry in pty_registry() {
-            println!(
-                "driver=pty spec={} recording={} recorded=pending",
-                entry.name, entry.recording
-            );
-        }
-    }
-    Ok(())
-}
-
-fn list_registry(
-    driver: &str,
-    root: &Path,
-    registry: &[SpecEntry],
-) -> Result<(), Box<dyn std::error::Error>> {
-    for row in registry_rows(root, registry)? {
+    let root = claude_specs::specs::pty::fixtures_root();
+    for row in registry_rows(&root, pty_registry())? {
         println!(
-            "driver={driver} spec={} recording={} recorded={}",
+            "spec={} recording={} recorded={}",
             row.spec, row.recording, row.recorded
         );
     }
     Ok(())
 }
 
-async fn record_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let (driver, names) = parse_record_names(args)?;
-    if names.is_empty() {
+async fn record_command(names: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if names.is_empty() || names.iter().any(|name| name.starts_with('-')) {
         return Err(usage().into());
     }
     for name in names {
-        match driver {
-            "sdk" => {
-                let entry = find_entry(name)?;
-                record_one(entry, &fixtures_root()).await?;
-                println!("driver=sdk spec={} outcome=recorded", entry.name);
-            }
-            "pty" => {
-                let entry = find_pty_entry(name)?;
-                record_pty_one(entry).await?;
-                println!("driver=pty spec={} outcome=recorded", entry.name);
-            }
-            _ => unreachable!(),
-        }
+        let entry = find_pty_entry(name)?;
+        record_pty_one(entry).await?;
+        println!("spec={} outcome=recorded", entry.name);
     }
     Ok(())
-}
-
-fn parse_record_names(args: &[String]) -> Result<(&str, Vec<&str>), Box<dyn std::error::Error>> {
-    let mut driver = None;
-    let mut names = Vec::new();
-    for arg in args {
-        if arg == "--sdk" || arg == "--pty" {
-            let selected = arg.trim_start_matches('-');
-            if driver.replace(selected).is_some() {
-                return Err("record accepts exactly one of --sdk or --pty".into());
-            }
-        } else if arg.starts_with('-') {
-            return Err(usage().into());
-        } else {
-            names.push(arg.as_str());
-        }
-    }
-    Ok((driver.ok_or("record requires --sdk or --pty")?, names))
-}
-
-fn find_entry(name: &str) -> Result<SpecEntry, Box<dyn std::error::Error>> {
-    sdk_registry()
-        .iter()
-        .copied()
-        .find(|entry| entry.name == name || entry.recording == name)
-        .ok_or_else(|| format!("unknown Claude SDK specification {name}").into())
 }
 
 fn find_pty_entry(name: &str) -> Result<SpecEntry, Box<dyn std::error::Error>> {
@@ -338,165 +248,6 @@ fn forward_pty_hook() -> Result<(), Box<dyn std::error::Error>> {
     let mut payload = Vec::new();
     std::io::Read::read_to_end(&mut std::io::stdin(), &mut payload)?;
     claude::hooks::forward(&payload, &socket)?;
-    Ok(())
-}
-
-struct Capture {
-    report: claude_specs::specs::RunReport,
-    version: Version,
-    events: Vec<replay_support::IoEvent>,
-    spawn: Vec<u8>,
-    scratch: PathBuf,
-}
-
-#[derive(serde::Deserialize, serde::Serialize)]
-struct CaptureMetadata {
-    version: Version,
-    model: String,
-    session_ids: Vec<String>,
-    scratch: PathBuf,
-}
-
-impl From<&Capture> for CaptureMetadata {
-    fn from(capture: &Capture) -> Self {
-        Self {
-            version: capture.version.clone(),
-            model: capture.report.model.clone(),
-            session_ids: capture.report.session_ids.clone(),
-            scratch: capture.scratch.clone(),
-        }
-    }
-}
-
-async fn capture(entry: SpecEntry) -> Result<Capture, Box<dyn std::error::Error>> {
-    let isolated = tempfile::Builder::new()
-        .prefix("claude-sdk-capture-result-")
-        .tempdir()?;
-    let status = tokio::process::Command::new(std::env::current_exe()?)
-        .env("CLAUDE_PROBE_CAPTURE_ENTRY", entry.name)
-        .env("CLAUDE_PROBE_CAPTURE_OUT", isolated.path())
-        .status()
-        .await?;
-    if !status.success() {
-        return Err(format!("live capture subprocess exited with {status}").into());
-    }
-    let metadata: CaptureMetadata =
-        serde_json::from_slice(&std::fs::read(isolated.path().join("capture.json"))?)?;
-    Ok(Capture {
-        report: claude_specs::specs::RunReport {
-            provider_version: None,
-            model: metadata.model,
-            session_ids: metadata.session_ids,
-        },
-        version: metadata.version,
-        events: replay_support::load_script(isolated.path().join("io.jsonl")),
-        spawn: std::fs::read(isolated.path().join("spawn.jsonl"))?,
-        scratch: metadata.scratch,
-    })
-}
-
-async fn capture_direct(entry: SpecEntry) -> Result<Capture, Box<dyn std::error::Error>> {
-    let binary = claude_binary();
-    let version = claude::version::probe_version(&binary).await?.0;
-    let scratch = tempfile::Builder::new()
-        .prefix("claude-sdk-spec-")
-        .tempdir()?;
-    let work = scratch.path().join("work");
-    let capture_dir = scratch.path().join("capture");
-    let helpers = scratch.path().join("bin");
-    std::fs::create_dir_all(&work)?;
-    std::fs::create_dir_all(&capture_dir)?;
-    std::fs::create_dir_all(&helpers)?;
-    install_mcp_helper(&helpers)?;
-    std::fs::write(work.join("config.txt"), "VALUE=1\n")?;
-    std::fs::write(work.join("README.md"), "CURRENT\n")?;
-    std::fs::write(work.join("square.png"), claude_specs::specs::SQUARE_PNG)?;
-
-    let old_path = std::env::var_os("PATH");
-    let mut paths = vec![helpers];
-    paths.extend(std::env::split_paths(
-        old_path.as_deref().unwrap_or_default(),
-    ));
-    let helper_path = std::env::join_paths(paths)?;
-    let proxy = std::env::current_exe()?;
-    // Capture is deliberately serial: these variables are inherited by the
-    // one specification's subprocesses and restored before the next starts.
-    unsafe {
-        std::env::set_var("PATH", &helper_path);
-        std::env::set_var("CLAUDE_CAPTURE_PROXY", "1");
-        std::env::set_var("CLAUDE_CAPTURE_DIR", &capture_dir);
-        std::env::set_var("CLAUDE_REAL_PATH", &binary);
-    }
-    let outcome = execute(
-        &entry,
-        SpecSource::Live {
-            binary: proxy,
-            cwd: work,
-            environment: None,
-        },
-    )
-    .await;
-    unsafe {
-        std::env::remove_var("CLAUDE_CAPTURE_PROXY");
-        std::env::remove_var("CLAUDE_CAPTURE_DIR");
-        std::env::remove_var("CLAUDE_REAL_PATH");
-        match old_path {
-            Some(path) => std::env::set_var("PATH", path),
-            None => std::env::remove_var("PATH"),
-        }
-    }
-    let report = outcome?;
-    let events = replay_support::load_script(capture_dir.join("io.jsonl"));
-    let spawn = std::fs::read(capture_dir.join("spawn.jsonl"))?;
-    Ok(Capture {
-        report,
-        version,
-        events,
-        spawn,
-        scratch: scratch.path().to_path_buf(),
-    })
-}
-
-async fn record_one(entry: SpecEntry, root: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let mut capture = capture(entry).await?;
-    scrub_settings(&mut capture.events)?;
-    let redaction = sanitize(
-        &mut capture.events,
-        &Redaction {
-            home: owner_home(),
-            extra_paths: vec![capture.scratch.clone()],
-            secret_env: secret_values(),
-            hostname: None,
-            user: None,
-            extra_personal_identifiers: Vec::new(),
-            personal_identifier_keys: Vec::new(),
-        },
-    );
-    let stage = root.join(format!(".{}.{}", entry.recording, Uuid::new_v4()));
-    std::fs::create_dir_all(&stage)?;
-    write_events(&stage.join("io.jsonl"), &capture.events)?;
-    let sanitized_spawn = sanitize_json_lines(&capture.spawn, &capture.scratch)?;
-    std::fs::write(stage.join("spawn.jsonl"), sanitized_spawn)?;
-
-    let mut manifest = Manifest::inventory(
-        &stage,
-        entry.name,
-        Recorded {
-            provider: "claude".to_owned(),
-            version: capture.version.clone(),
-            model: capture.report.model.clone(),
-            at: Utc::now(),
-        },
-    )?;
-    manifest.session_ids = capture.report.session_ids.clone();
-    manifest.redaction = redaction;
-    write_manifest(&stage.join("manifest.json"), &manifest)?;
-
-    let destination = root.join(entry.recording);
-    if destination.exists() {
-        std::fs::remove_dir_all(&destination)?;
-    }
-    std::fs::rename(stage, destination)?;
     Ok(())
 }
 
@@ -941,36 +692,10 @@ fn append_json(path: &Path, value: &serde_json::Value) -> io::Result<()> {
     writeln!(file, "{value}")
 }
 
-fn install_mcp_helper(dir: &Path) -> io::Result<()> {
-    for name in [
-        "spec-mcp-server",
-        claude_specs::specs::channels::PEER_MESSAGE_HELPER,
-    ] {
-        let destination = dir.join(name);
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(std::env::current_exe()?, destination)?;
-        #[cfg(not(unix))]
-        std::fs::copy(std::env::current_exe()?, destination)?;
-    }
-    Ok(())
-}
-
-/// Run as a Claude hook: post the first argument through the messaging
-/// socket Claude handed the hook, as another program would.
-async fn post_peer_message() -> Result<(), Box<dyn std::error::Error>> {
-    let text = std::env::args()
-        .nth(1)
-        .ok_or("usage: spec-peer-message <text>")?;
-    let socket = std::env::var_os("CLAUDE_CODE_MESSAGING_SOCKET")
-        .ok_or("the hook has no CLAUDE_CODE_MESSAGING_SOCKET")?;
-    let token = std::env::var("CLAUDE_CODE_MESSAGING_TOKEN")?;
-    let mut messaging =
-        claude::messaging::MessagingSocket::connect(Path::new(&socket), &token).await?;
-    messaging.send(&text).await?;
-    Ok(())
-}
-
-fn run_spec_mcp_server() {
+/// The tool server the live lane's form scenarios hand Claude: one tool
+/// that asks the person to confirm a word with a form, or, for the word
+/// `LINK`, with a link.
+fn run_tool_server() {
     const PROTOCOL_VERSION: &str = "2025-11-25";
     const TOOL: &str = "ask_the_operator";
     let stdin = std::io::stdin();

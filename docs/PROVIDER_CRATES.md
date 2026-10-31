@@ -10,7 +10,7 @@ own:
 |---|---|---|---|
 | Protocol | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | [`codex-protocol`](../crates/codex-protocol/src/lib.rs) | Every message in both directions, as types, with a decoder and an encoder. Nothing else. |
 | Host | [`claude`](../crates/claude/src/lib.rs) | [`codex`](../crates/codex/src/lib.rs) | Starting the provider and carrying its bytes: launch arguments, the process, the terminal, sockets, the transcript file, the hook command. |
-| Client | the agent process and the [interpreters](INTERPRETERS.md); the spec driver in [`claude-specs`](../crates/claude-specs/src/driver/mod.rs) | the agent process and the [interpreters](INTERPRETERS.md); the client in [`codex-specs`](../crates/codex-specs/src/client/mod.rs) | Deciding what to send and what what was received means. |
+| Client | the agent process and the [interpreters](INTERPRETERS.md); the terminal driver in [`claude-specs`](../crates/claude-specs/src/driver/pty.rs) | the agent process and the [interpreters](INTERPRETERS.md); the client in [`codex-specs`](../crates/codex-specs/src/client/mod.rs) | Deciding what to send and what what was received means. |
 
 ## Protocol
 
@@ -75,12 +75,15 @@ The recording tools are clients too:
   name. It drives a live Codex for the Codex
   [specifications](../crates/codex-specs/src/specs.rs) and the
   `codex-probe` recorder.
-- The spec driver in `claude-specs`, shaped after Claude's published SDK,
-  drives headless Claude for the Claude specifications and `claude-probe`.
+- The terminal driver in `claude-specs` runs Claude in a terminal and reads
+  its hooks and transcript for the terminal Claude specifications and
+  `claude-probe`.
 
 Both replay their recordings strictly: the bytes they write must equal the
 recorded ones, so a client that sends something different fails its
-specification.
+specification. Headless Claude has no recording client of its own: amux's
+agent process drives it in the live lane, and those captures are its
+corpus.
 
 ## Who checks what
 

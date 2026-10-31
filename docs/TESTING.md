@@ -260,9 +260,9 @@ production code, and small authored scenarios. Ordinary runs compare and never r
 
 | Fixture | Where | Updated by |
 | --- | --- | --- |
-| Terminal Claude (played back on Unix only) and headless Claude recordings | `crates/claude-specs/fixtures/pty`, `crates/claude-specs/fixtures/sdk` | `claude-probe record (--sdk\|--pty) <spec>` |
+| Terminal Claude recordings (played back on Unix only) | `crates/claude-specs/fixtures/pty` | `claude-probe record <spec>` |
 | Codex recordings | `crates/codex-specs/fixtures/runtime` | `codex-probe record <spec>` |
-| Live-run captures: sessions amux's own interpreter drove on the installed provider, which no spec produced or replays | `crates/claude-specs/fixtures/live/{sdk,pty}`, `crates/codex-specs/fixtures/live` | `just live <kind>`, then `claude-probe join` or `codex-probe join` from `target/live/recordings/<kind>/<scenario>`; see each README |
+| Live-run captures: sessions amux's own interpreter drove on the installed provider, which no spec produced or replays; `sdk` is the whole headless Claude corpus | `crates/claude-specs/fixtures/live/{sdk,pty}`, `crates/codex-specs/fixtures/live` | `just live <kind>`, then `claude-probe join` or `codex-probe join` from `target/live/recordings/<kind>/<scenario>`; see each README |
 | Terminal Claude transcripts no recording covers | `crates/claude-specs/fixtures/claude-pty` | a new capture; see its README |
 | Agent-process replays cut from those recordings | `crates/agent/tests/replay` | by hand; see its README |
 | Interpreter emission goldens (`*.json` input, `*.golden` output) per kind | `crates/interpret/fixtures` | `INTERPRET_UPDATE_GOLDENS=1` |

@@ -215,7 +215,7 @@ cargo = [
 
 [[suite]]
 name = "claude-recorded-adapter"
-contract = "Recorded Claude PTY and SDK traffic replays completely and remains tied to its wire provenance."
+contract = "Recorded terminal Claude traffic replays completely through its specifications and remains tied to its wire provenance, and the capture tools record, sanitize and join captures as the live lane needs."
 paths = ["crates/claude-specs/tests", "crates/claude-specs/fixtures"]
 recipe = "just suite claude-recorded-adapter"
 boundary = "Provider adapter"
@@ -226,11 +226,11 @@ time = "driven"
 capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = "crates/claude-specs/fixtures"
-update = "Run `claude-probe record` for the spec and review its manifest."
+update = "Run `claude-probe record <spec>` and review its manifest."
 cargo = [
   { package = "claude-specs", kind = "lib", targets = ["claude_specs"], features = [] },
   { package = "claude-specs", kind = "bin", targets = ["claude-probe"], features = [] },
-  { package = "claude-specs", modules = ["capture_proxy", "scrub", "sdk_boundary", "spec_replay"], features = [] },
+  { package = "claude-specs", modules = ["capture_proxy", "scrub", "spec_replay"], features = [] },
 ]
 
 [[suite]]
@@ -265,7 +265,7 @@ substituted = ["live Claude process"]
 time = "none"
 capabilities = ["Rust toolchain"]
 lane = "fast"
-evidence = "crates/claude-specs/fixtures/sdk and crates/claude-specs/fixtures/pty"
+evidence = "crates/claude-specs/fixtures/live/sdk and crates/claude-specs/fixtures/pty"
 update = "A failing line is provider drift or a wrong type: fix the type in crates/claude-protocol/src, never a live recording."
 cargo = [
   { package = "claude-protocol", kind = "lib", targets = ["claude_protocol"], features = [] },

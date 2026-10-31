@@ -840,7 +840,7 @@ spec crates and sanitized so it replays offline:
 
 | Crate | Recordings |
 |---|---|
-| [`claude-specs`](../crates/claude-specs/src/lib.rs) | `fixtures/sdk/<spec>/` for headless Claude, `fixtures/pty/<spec>/` for terminal Claude, two transcript captures in `fixtures/claude-pty/` that cannot be regenerated in the tree ([their README](../crates/claude-specs/fixtures/claude-pty/README.md)), and the live run's captures in `fixtures/live/{sdk,pty}/<scenario>/`, driven by amux's own interpreter ([their README](../crates/claude-specs/fixtures/live/README.md)) |
+| [`claude-specs`](../crates/claude-specs/src/lib.rs) | `fixtures/pty/<spec>/` for terminal Claude, two transcript captures in `fixtures/claude-pty/` that cannot be regenerated in the tree ([their README](../crates/claude-specs/fixtures/claude-pty/README.md)), and the live run's captures in `fixtures/live/{sdk,pty}/<scenario>/`, driven by amux's own interpreter; `fixtures/live/sdk` is the whole headless Claude corpus ([their README](../crates/claude-specs/fixtures/live/README.md)) |
 | [`codex-specs`](../crates/codex-specs/src/lib.rs) | `fixtures/runtime/<spec>/`, with the capture conditions in [`PROVENANCE.md`](../crates/codex-specs/fixtures/runtime/PROVENANCE.md), and the live run's captures in `fixtures/live/<scenario>/` ([their README](../crates/codex-specs/fixtures/live/README.md)) |
 
 A recording is a directory holding `manifest.json` (the provider, version and
@@ -861,11 +861,14 @@ The probes run the real provider under your own login, so they are never
 part of an ordinary test run.
 
 ```sh
-# Claude: list the specs and what each was recorded with.
-cargo run -p claude-specs --bin claude-probe -- list [--sdk|--pty]
-# Record one or more specs again, terminal or headless.
-cargo run -p claude-specs --bin claude-probe -- record --pty <spec>...
-cargo run -p claude-specs --bin claude-probe -- record --sdk <spec>...
+# Terminal Claude: list the specs and what each was recorded with.
+cargo run -p claude-specs --bin claude-probe -- list
+# Record one or more specs again.
+cargo run -p claude-specs --bin claude-probe -- record <spec>...
+
+# Headless Claude: run its live scenarios, then join each passing capture.
+just live claude_sdk <scenario>...
+cargo run -p claude-specs --bin claude-probe -- join target/live/recordings/claude_sdk/<scenario> <name>
 
 # Codex, the same two commands.
 cargo run -p codex-specs --bin codex-probe -- list
@@ -875,9 +878,10 @@ cargo run -p codex-specs --bin codex-probe -- record <spec>...
 `claude-probe` runs the `claude` on your `PATH`, or the one named by
 `CLAUDE_REAL_PATH`; `codex-probe` runs `codex` and records with the model its
 specs pin (`CAPTURE_MODEL` in `crates/codex-specs/src/specs.rs`). A Claude
-capture, terminal or headless, reads only project and local settings and only
-the tool servers its spec names (`--setting-sources project,local
---strict-mcp-config`, unless the spec names its own sources), so your own
+terminal capture reads only project and local settings and only the tool
+servers its spec names (`--setting-sources project,local
+--strict-mcp-config`, unless the spec names its own sources), and a live
+agent only project settings and the tool servers its scenario names, so your own
 plugins, skills, agents, permission rules, default mode and connected accounts
 stay out of the recording. A terminal capture's transcript drops the rows that copy each API request and scrubs the
 attachments that carry your instructions, environment, attribution and what

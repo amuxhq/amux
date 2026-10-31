@@ -3,5 +3,4 @@
 
 mod capture_proxy;
 mod scrub;
-mod sdk_boundary;
 mod spec_replay;

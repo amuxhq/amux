@@ -364,7 +364,6 @@ impl AppRuntime {
         let directory = |entry: ProjectEntry| Directory {
             path: entry.path,
             name: entry.name,
-            last_used_ms: entry.last_used_ms,
         };
         Ok(Directories {
             recent: listed.recent.into_iter().map(directory).collect(),

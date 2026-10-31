@@ -609,7 +609,6 @@ impl State {
             .filter(|agent| !agent.is_empty());
         let call = self.announced_call(name, input, agent.as_deref());
         let key = self.new_ask(AskMeta {
-            seq: 0,
             tool_name: name.to_owned(),
             input: input.to_string(),
             suggestions: offered
@@ -647,8 +646,7 @@ impl State {
     }
 
     /// Records an ask under a new key.
-    fn new_ask(&mut self, mut meta: AskMeta) -> String {
-        meta.seq = self.next_seq();
+    fn new_ask(&mut self, meta: AskMeta) -> String {
         self.next_ask += 1;
         let key = format!("ask:{}", self.next_ask);
         self.asks.insert(key.clone(), meta);
@@ -666,7 +664,6 @@ impl State {
             return;
         }
         let key = self.new_ask(AskMeta {
-            seq: 0,
             tool_name: String::new(),
             input: String::new(),
             suggestions: Vec::new(),
@@ -750,7 +747,6 @@ impl State {
         let awaits_row = landed.is_none() && announced.is_some();
         let call = landed.or(announced);
         let key = self.new_ask(AskMeta {
-            seq: 0,
             tool_name: String::new(),
             input: String::new(),
             suggestions: Vec::new(),

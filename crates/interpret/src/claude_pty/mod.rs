@@ -31,8 +31,7 @@
 //!   the PreToolUse before it announced. Claude writes a gated call's row
 //!   only once the call is decided (AskUserQuestion's once it is answered),
 //!   so the card points at no row until that call's row lands, and then at
-//!   that row. A recording made before amux registered PreToolUse names no
-//!   call, and the oldest ask for the same tool and input takes the row.
+//!   that row.
 //! - An answer through amux goes back on the hook, built as headless
 //!   Claude's control reply is, and closes the ask with the outcome it
 //!   carries. An ask that closes any other way releases its hook with no
@@ -124,7 +123,7 @@ use wire::{
 use crate::claude_answers::{self, AnswerShape, Decided};
 use crate::claude_common::{
     FileStep, Jobs, Task, Verdict, describe_asks, describe_tasks, describe_tool, file_step,
-    or_dash, plan_item, question_item, same_json, split_tool_name, task_list, tool_input,
+    or_dash, plan_item, question_item, same_json, task_list, tool_input,
 };
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
@@ -451,7 +450,6 @@ impl Decision {
 /// it was raised for, and the hook Claude waits on for its answer.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct AskMeta {
-    seq: u64,
     tool_name: String,
     input: String,
     /// Each scope choice offered, as Claude sends a permission change: the
@@ -914,26 +912,8 @@ impl State {
 
     /// A call's row is drawn: the asks raised for it point at it.
     fn bind_asks_for(&mut self, emit: &mut Emit, tool_id: &str) {
-        let Some(tool) = self.tools.get(tool_id).filter(|tool| !tool.hidden) else {
+        if !self.tools.get(tool_id).is_some_and(|tool| !tool.hidden) {
             return;
-        };
-        // Claude older than amux's PreToolUse hook names no call: the
-        // oldest such ask for the same tool and input is this call's.
-        let adopted = self
-            .asks
-            .iter()
-            .filter(|(_, meta)| {
-                meta.call.is_none()
-                    && meta.agent.is_none()
-                    && matches!(meta.shape, AskShape::Answer(ref shape) if !shape.is_dialog())
-                    && split_tool_name(&meta.tool_name) == (tool.server.clone(), tool.name.clone())
-                    && serde_json::from_str::<Value>(&meta.input)
-                        .is_ok_and(|input| same_json(&tool.input, &input))
-            })
-            .min_by_key(|(_, meta)| meta.seq)
-            .map(|(key, _)| key.clone());
-        if let Some(meta) = adopted.and_then(|key| self.asks.get_mut(&key)) {
-            meta.call = Some(tool_id.to_owned());
         }
         let keys = self
             .asks

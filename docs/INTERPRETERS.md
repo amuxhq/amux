@@ -440,9 +440,7 @@ Besides the session boundary `SessionStart` marks, a tool server's dialog,
 a streamed reply and a plan are the only items hooks make. When the call a
 dialog was raised under has only been announced by `PreToolUse` and its row
 has not landed, the dialog's item waits for that row, so it sits below the
-call. Recordings made before amux registered `PreToolUse` carry none, so an
-ask with no announced call is the oldest one for the same tool and input
-when that call's row lands.
+call.
 
 A subagent's calls reach the hooks socket carrying its agent id and never
 reach the followed transcript. They are counted as steps on the Agent row

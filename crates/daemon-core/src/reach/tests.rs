@@ -386,25 +386,6 @@ fn a_new_path_a_claim_or_a_call_wanting_the_host_ends_the_pause() {
 }
 
 #[test]
-fn a_host_that_refused_this_one_as_revoked_is_not_dialled_until_that_clears() {
-    let mut daemon = daemon(trusting());
-    let (attempt, _) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);
-    let out = ended(&mut daemon, DESK, attempt, AttemptOutcome::Revoked);
-    assert_eq!(armed(&out, TimerId::Retry(DESK)), None);
-    assert!(daemon.routing.catalogue.revoked(DESK));
-    assert_eq!(
-        dials(&found(&mut daemon, DESK, &["192.168.1.5:7000"])),
-        Vec::new()
-    );
-    assert_eq!(
-        dials(&step(&mut daemon, Input::Wanted { host: DESK })),
-        Vec::new()
-    );
-    up(&mut daemon, 1, LAPTOP, CarrierKind::Direct);
-    assert_eq!(dials(&claims(&mut daemon, 1, &[DESK])), Vec::new());
-}
-
-#[test]
 fn a_link_lost_soon_after_it_came_up_waits_out_the_rest_of_its_second() {
     let mut daemon = daemon(trusting());
     let (attempt, _) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);

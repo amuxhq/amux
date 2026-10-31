@@ -1,11 +1,12 @@
 shell |  | agents | 0,62,402,778
 chat |  | linker | 0,116,402,724
 chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | Check the relay's error rate. |  | 16,158,370,40
-chat.row.run | 1 call | folded | 16,198,370,44
-chat.row.link | Opened link from, grafana | folded | 16,228,370,44
-chat.row.prose | I'll read the dashboards another way. | final | 16,274,370,20
-chat.prose.render |  | rendered | 16,274,370,20
+chat.row.error | deprecationNotice | folded | 16,146,370,98
+chat.row.prompt | Check the relay's error rate. |  | 16,246,370,40
+chat.row.run | 1 call | folded | 16,286,370,44
+chat.row.link | Opened link from, grafana | folded | 16,316,370,44
+chat.row.prose | I'll read the dashboards another way. | final | 16,362,370,20
+chat.prose.render |  | rendered | 16,362,370,20
 chat.row.turn-end | <volatile>
 chat.field | Message linker |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
@@ -21,11 +22,12 @@ chat.title | linker | linker | 80,66,152,36
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
  | Started |  | 16,124,370,34
- | Check the relay's error rate. |  | 16,158,370,40
- | 1 call |  | 16,198,370,44
- | Opened link from, grafana |  | 16,228,370,44
- | I'll read the dashboards another way. |  | 16,274,370,20
- | Worked <t> |  | 16,301,62,16
+ | deprecationNotice, Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`. |  | 16,146,370,98
+ | Check the relay's error rate. |  | 16,246,370,40
+ | 1 call |  | 16,286,370,44
+ | Opened link from, grafana |  | 16,316,370,44
+ | I'll read the dashboards another way. |  | 16,362,370,20
+ | Worked <t> |  | 16,389,62,16
  | Back |  | 20,66,40,36
  | linker, /t/a/n/d/work · desk |  | 80,66,152,36
  | More |  | 350,66,28,36

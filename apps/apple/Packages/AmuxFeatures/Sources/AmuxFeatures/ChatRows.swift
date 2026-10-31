@@ -205,7 +205,7 @@ public struct ChatRowView: View {
                     ? String(localized: "gave up after \(attempts) tries") : ""),
                 detail: detailed ? message : nil, detailLines: expanded ? nil : 3,
                 opens: detailed, open: expanded, toggle: toggle)
-        case .modelSwitch(_, let to, let reason):
+        case .modelSwitch(let to, let reason):
             GridRow(
                 kind: "model-switch", glyph: "arrow.left.arrow.right", rail: rail,
                 verb: String(localized: "Switched to"), subject: to,

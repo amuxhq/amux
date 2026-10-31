@@ -186,7 +186,7 @@ enum ComponentCatalog {
             row("error", height: 140, expanded: false, r("z4", 28, .error(
                 errorKind: "Provider overloaded", message: "The API returned 529 ten times in a row.",
                 attempts: 10, gaveUp: true))),
-            row("model-switch", r("z5", 29, .modelSwitch(from: "opus", to: "sonnet 4.6", reason: "Opus declined this request"))),
+            row("model-switch", r("z5", 29, .modelSwitch(to: "sonnet 4.6", reason: "Opus declined this request"))),
             row("boundary", r("z6", 30, .boundary(kind: .resumed, cause: "after an update"))),
             row("agent-message", height: 130, r("m1", 31, .agentMessage(
                 from: "worker-2", kind: .finished, text: [.text("3 specs updated, all green.")], to: "",

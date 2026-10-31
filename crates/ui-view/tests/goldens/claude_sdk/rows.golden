@@ -18,7 +18,7 @@
      3 lc SlashOutput { command: "/cost", args: "", output: "Total cost: $0.12" }
      4 turn:1 TurnEnd { duration_ms: Some(1000), failed: false }
      5 70320000-0000-4000-8000-000000000000 Prompt { text: [Text("go")], steered: false }
-     6 mr ModelSwitch { from: "claude-opus-5-5", to: "claude-sonnet-5", reason: "The request was declined by the safety system" }
+     6 mr ModelSwitch { to: "claude-sonnet-5", reason: "The request was declined by the safety system" }
      7 mn Error { error_kind: "refusal", message: "Declined", attempts: 0, gave_up: true } attention
      8 ar Error { error_kind: "server_error", message: "server_error (529)", attempts: 2, gave_up: false }
      9 m1:0 Prose { text: [Text("On it.")], streaming: false, working_note: false }

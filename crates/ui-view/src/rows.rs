@@ -177,7 +177,6 @@ pub enum RowKind {
         gave_up: bool,
     },
     ModelSwitch {
-        from: String,
         to: String,
         reason: String,
     },
@@ -1079,7 +1078,6 @@ fn slash(held: &Held, s: &wire::SlashOutput) -> RowKind {
 
 fn model_switch(m: &wire::ModelSwitch) -> RowKind {
     RowKind::ModelSwitch {
-        from: m.from.clone(),
         to: m.to.clone(),
         reason: m.reason.clone(),
     }

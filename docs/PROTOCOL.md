@@ -724,12 +724,11 @@ door (`crates/node/src/front_door.rs`) converts.
 
 `ProfileAdminService`, on each profile's own socket, is that profile's
 administration, so none of its calls names a profile: it signs the profile
-out, pauses and resumes its relay link (`SignOut`, `PauseProfile`,
-`ResumeProfile`); opens, reports and cancels pairing
+out (`SignOut`); opens, reports and cancels pairing
 windows (`StartPairing`, `GetPairingStatus`, `CancelPairing`); runs the
 initiator's side of pairing (`BeginPair`, `ConfirmPair`, `AbandonPair`);
 reports this device's identity; records a peer an SSH exchange
-authenticated (`TrustSshPeer`); lists, describes and unpairs peers; and
+authenticated (`TrustSshPeer`); lists and unpairs peers; and
 writes the profile's debug report and sends a person's report (`Dump`,
 `SubmitReport`, [chapter 8](#chapter-8-diagnostics)). The
 implementation is `crates/node/src/profile_admin.rs`.

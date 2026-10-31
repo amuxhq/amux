@@ -2028,10 +2028,10 @@ impl Net {
     /// it learn that at once, as the host where a purchase or a
     /// cancellation happened does: an in-process host asks for its
     /// entitlement over its relay link. A process host's daemon offers no
-    /// socket that asks it to, so its profile is paused, the relay token it
-    /// keeps between launches forgotten, and the profile resumed, which
-    /// dials the relay afresh for a credential of the new tier; its relay
-    /// link drops for that moment.
+    /// socket that asks it to, so its profile is signed out and in again,
+    /// which forgets the relay token it keeps between launches and dials
+    /// the relay afresh for a credential of the new tier; its relay link
+    /// drops for that moment.
     pub async fn set_tier(&mut self, account: &str, tier: TierDecl) -> Result<Ack, NetError> {
         self.relay()?.set_tier(account, tier.into());
         if let Some(declared) = self.topology.relay.as_mut() {
@@ -2082,23 +2082,12 @@ impl Net {
                         error,
                     })?;
             } else {
-                let mut admin = self.admin(&host).await?;
-                admin
-                    .pause_profile(wire::PauseProfileRequest {})
+                self.admin(&host)
+                    .await?
+                    .sign_out(wire::SignOutRequest {})
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
-                let kept = node::profile_dir(&self.host(&host)?.data_dir, profile)
-                    .join(node::RELAY_TOKEN_FILE);
-                match std::fs::remove_file(&kept) {
-                    Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                        return Err(NetError::Io(error));
-                    }
-                    _ => {}
-                }
-                admin
-                    .resume_profile(wire::ResumeProfileRequest {})
-                    .await
-                    .map_err(|status| NetError::Refused(Box::new(status)))?;
+                self.sign_in(&host, account).await?;
             }
             let what = format!("{host}'s relay link on {tier:?}");
             observe::until(&what, || async {

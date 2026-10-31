@@ -197,7 +197,7 @@ the inputs another thread posted. `just test-crate app-runtime` covers the
 wake-once coalescing and the chat
 views; `just test-crate app-embedded` covers pairing on the local network,
 sign-in with pairing through the relay, and one profile per account: binding
-by id with adoption, a second account's own profile, pause and resume,
+by id with adoption, a second account's own profile,
 sign-out and signing back in, delete, and the trusting-profile lookup.
 
 `just ios rust` builds the simulator slice with `debug-tools` and packages it

@@ -46,9 +46,7 @@ message CloudStanding {
     Empty unbound = 1;
     // Signed out, still tied to its account.
     Empty signed_out = 2;
-    // Signed in, with the relay link held down.
-    Empty paused = 3;
-    RelayLink signed_in = 4;
+    RelayLink signed_in = 3;
   }
 }
 

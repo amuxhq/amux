@@ -604,8 +604,6 @@ pub enum AccountBinding {
     Unbound,
     SignedIn,
     SignedOut,
-    /// Signed in, with the relay link turned off.
-    Paused,
 }
 
 /// The relay link, as far as a person needs to know it.

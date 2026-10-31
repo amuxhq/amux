@@ -793,37 +793,7 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
         "clock +910s: relay-ada-1 expired, the link lived on relay-ada-3 and then relay-ada-4"
     );
 
-    // Pausing drops the link and keeps the credential; resuming brings it
-    // back; signing out forgets the credential and keeps the binding.
-    let paused = admin(&net, "desk")
-        .await
-        .pause_profile(wire::PauseProfileRequest {})
-        .await
-        .unwrap()
-        .into_inner();
-    assert!(matches!(paused.standing(), Some(Standing::Paused(_))));
-    until("the relay link to go with the pause", || async {
-        let links = relay.links("ada").await;
-        links
-            .is_empty()
-            .then_some(())
-            .ok_or_else(|| format!("ada's links: {links:?}"))
-    })
-    .await
-    .unwrap();
-    admin(&net, "desk")
-        .await
-        .resume_profile(wire::ResumeProfileRequest {})
-        .await
-        .unwrap();
-    until("the relay link to come back", || async {
-        let links = relay.links("ada").await;
-        (!links.is_empty())
-            .then_some(())
-            .ok_or_else(|| format!("ada's links: {links:?}"))
-    })
-    .await
-    .unwrap();
+    // Signing out forgets the credential and keeps the binding.
     let signed_out = admin(&net, "desk")
         .await
         .sign_out(wire::SignOutRequest {})

@@ -16,8 +16,6 @@ import "amux/v1/records.proto";
 // Not retried, as the front door.
 service ProfileAdminService {
   rpc SignOut(SignOutRequest) returns (Profile);
-  rpc PauseProfile(PauseProfileRequest) returns (Profile);
-  rpc ResumeProfile(ResumeProfileRequest) returns (Profile);
   rpc StartPairing(StartPairingRequest) returns (PairingWindow);
   rpc GetPairingStatus(GetPairingStatusRequest) returns (PairingStatus);
   rpc CancelPairing(CancelPairingRequest) returns (CancelPairingResponse);
@@ -37,10 +35,6 @@ service ProfileAdminService {
 }
 
 message SignOutRequest {}
-
-message PauseProfileRequest {}
-
-message ResumeProfileRequest {}
 
 message StartPairingRequest {
   oneof method {

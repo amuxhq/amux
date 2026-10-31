@@ -10303,7 +10303,7 @@ impl ::prost::Name for Profile {
 /// and, while signed in, what its relay link is doing.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CloudStanding {
-    #[prost(oneof = "cloud_standing::Standing", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "cloud_standing::Standing", tags = "1, 2, 3")]
     pub standing: ::core::option::Option<cloud_standing::Standing>,
 }
 /// Nested message and enum types in `CloudStanding`.
@@ -10316,10 +10316,7 @@ pub mod cloud_standing {
         /// Signed out, still tied to its account.
         #[prost(message, tag = "2")]
         SignedOut(super::Empty),
-        /// Signed in, with the relay link held down.
         #[prost(message, tag = "3")]
-        Paused(super::Empty),
-        #[prost(message, tag = "4")]
         SignedIn(super::RelayLink),
     }
 }
@@ -11730,30 +11727,6 @@ impl ::prost::Name for SignOutRequest {
         "type.googleapis.com/amux.v1.SignOutRequest".into()
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PauseProfileRequest {}
-impl ::prost::Name for PauseProfileRequest {
-    const NAME: &'static str = "PauseProfileRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PauseProfileRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.PauseProfileRequest".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ResumeProfileRequest {}
-impl ::prost::Name for ResumeProfileRequest {
-    const NAME: &'static str = "ResumeProfileRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ResumeProfileRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ResumeProfileRequest".into()
-    }
-}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StartPairingRequest {
     /// How long the window stays open; absent is the daemon's default for
@@ -12216,48 +12189,6 @@ pub mod profile_admin_service_client {
                 .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "SignOut"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn pause_profile(
-            &mut self,
-            request: impl tonic::IntoRequest<super::PauseProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileAdminService/PauseProfile",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "PauseProfile"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn resume_profile(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ResumeProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileAdminService/ResumeProfile",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "ResumeProfile"));
-            self.inner.unary(req, path, codec).await
-        }
         pub async fn start_pairing(
             &mut self,
             request: impl tonic::IntoRequest<super::StartPairingRequest>,
@@ -12553,14 +12484,6 @@ pub mod profile_admin_service_server {
             &self,
             request: tonic::Request<super::SignOutRequest>,
         ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status>;
-        async fn pause_profile(
-            &self,
-            request: tonic::Request<super::PauseProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status>;
-        async fn resume_profile(
-            &self,
-            request: tonic::Request<super::ResumeProfileRequest>,
-        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status>;
         async fn start_pairing(
             &self,
             request: tonic::Request<super::StartPairingRequest>,
@@ -12738,98 +12661,6 @@ pub mod profile_admin_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SignOutSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ProfileAdminService/PauseProfile" => {
-                    #[allow(non_camel_case_types)]
-                    struct PauseProfileSvc<T: ProfileAdminService>(pub Arc<T>);
-                    impl<
-                        T: ProfileAdminService,
-                    > tonic::server::UnaryService<super::PauseProfileRequest>
-                    for PauseProfileSvc<T> {
-                        type Response = super::Profile;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::PauseProfileRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ProfileAdminService>::pause_profile(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = PauseProfileSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ProfileAdminService/ResumeProfile" => {
-                    #[allow(non_camel_case_types)]
-                    struct ResumeProfileSvc<T: ProfileAdminService>(pub Arc<T>);
-                    impl<
-                        T: ProfileAdminService,
-                    > tonic::server::UnaryService<super::ResumeProfileRequest>
-                    for ResumeProfileSvc<T> {
-                        type Response = super::Profile;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ResumeProfileRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ProfileAdminService>::resume_profile(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ResumeProfileSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

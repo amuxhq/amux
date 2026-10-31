@@ -95,11 +95,11 @@ async fn hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tc
     net.advance(node::UDP_BLOCKED_MEMORY - Duration::from_millis(1))
         .unwrap();
     assert!(edge(&net, "phone").remembers_udp_blocked(RELAY_HOST).await);
-    reconnect(&net, "phone").await;
+    reconnect(&net, "phone", "ada").await;
     assert_eq!(carrier(&net, "phone"), Some(RelayCarrier::Tcp));
     net.advance(Duration::from_millis(1)).unwrap();
     assert!(!edge(&net, "phone").remembers_udp_blocked(RELAY_HOST).await);
-    reconnect(&net, "phone").await;
+    reconnect(&net, "phone", "ada").await;
     assert_eq!(carrier(&net, "phone"), Some(RelayCarrier::Quic));
     until_via(&net, "desk", "phone", LiveRoute::Relay).await;
     println!("memory held TCP-only until it expired; the next link rides QUIC");
@@ -144,14 +144,14 @@ async fn a_relay_link_whose_credential_lapses_at_the_relay_first_comes_back_on_a
     net.shutdown().await.unwrap();
 }
 
-/// Pauses and resumes the host's profile, which closes its relay link and
-/// dials a new one, and waits for the new one.
-async fn reconnect(net: &Net, host: &str) {
-    let mut admin = admin(net, host).await;
-    admin
-        .pause_profile(wire::PauseProfileRequest {})
+/// Signs the host's profile out of `account` and in again, which closes
+/// its relay link and dials a new one, and waits for the new one.
+async fn reconnect(net: &Net, host: &str, account: &str) {
+    admin(net, host)
         .await
-        .expect("the profile pauses");
+        .sign_out(wire::SignOutRequest {})
+        .await
+        .expect("the profile signs out");
     until(&format!("{host}'s relay link to close"), || async {
         match carrier(net, host) {
             None => Ok(()),
@@ -160,10 +160,7 @@ async fn reconnect(net: &Net, host: &str) {
     })
     .await
     .unwrap();
-    admin
-        .resume_profile(wire::ResumeProfileRequest {})
-        .await
-        .expect("the profile resumes");
+    net.sign_in(host, account).await.unwrap();
     until(&format!("{host}'s relay link to come back"), || async {
         carrier(net, host).map(|_| ()).ok_or("no carrier")
     })
@@ -2168,48 +2165,6 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
             .is_some()
     );
     assert_eq!(net.relay().unwrap().links("ada").await, vec![(desk, 1)]);
-
-    // Pausing closes the cloud link only: the laptop's direct link stays.
-    // Resuming, twice over, brings back one link.
-    admin(&net, "desk")
-        .await
-        .pause_profile(wire::PauseProfileRequest {})
-        .await
-        .unwrap();
-    until("Ada's relay link to close", || async {
-        let links = net.relay().unwrap().links("ada").await;
-        links
-            .is_empty()
-            .then_some(())
-            .ok_or_else(|| format!("ada's links: {links:?}"))
-    })
-    .await
-    .unwrap();
-    assert_eq!(edge(&net, "desk").via(laptop).await, LiveRoute::Direct);
-    for _ in 0..2 {
-        admin(&net, "desk")
-            .await
-            .resume_profile(wire::ResumeProfileRequest {})
-            .await
-            .unwrap();
-    }
-    until("Ada's relay link to come back", || async {
-        let links = net.relay().unwrap().links("ada").await;
-        (links == vec![(desk, 1)])
-            .then_some(())
-            .ok_or_else(|| format!("ada's links: {links:?}"))
-    })
-    .await
-    .unwrap();
-    // Two resumes, one link; a window, since no outcome marks the second
-    // link that must not open.
-    holds_for(
-        "Ada's one relay link",
-        Duration::from_millis(500),
-        || async { net.relay().unwrap().links("ada").await == vec![(desk, 1)] },
-    )
-    .await
-    .unwrap();
 
     // Signing out forgets the cloud and keeps everything local: the agent,
     // the identity and the paired laptop. Signing in again finds the same

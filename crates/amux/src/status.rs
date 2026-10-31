@@ -130,7 +130,6 @@ fn account(profile: &wire::Profile) -> String {
             "not signed in; `amux login` reaches your hosts through the relay".to_owned()
         }
         Some(Standing::SignedOut(_)) => format!("signed out of {who}"),
-        Some(Standing::Paused(_)) => format!("signed in as {who}, relay paused"),
         Some(Standing::SignedIn(link)) => {
             let relay = match link.state.as_ref() {
                 Some(State::Connected(_)) => "relay connected",

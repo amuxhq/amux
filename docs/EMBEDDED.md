@@ -202,7 +202,7 @@ that ticket; nothing in the library calls into the client.
 
 | Family | Handle | What it covers |
 | --- | --- | --- |
-| `amux_runtime_*` | `AmuxRuntime` | The installation: start and stop, the wake descriptor and the step, lifecycle inputs (foreground, background, suspending, network changed), the profile list, the registry (create, delete, bind, sign out, pause, resume), source policy, discovered machines, bearers, entitlement refresh, which profiles trust a host, product analytics (the setting and the app's own events) |
+| `amux_runtime_*` | `AmuxRuntime` | The installation: start and stop, the wake descriptor and the step, lifecycle inputs (foreground, background, suspending, network changed), the profile list, the registry (create, delete, bind, sign out), source policy, discovered machines, bearers, entitlement refresh, which profiles trust a host, product analytics (the setting and the app's own events) |
 | `amux_profile_*` | `AmuxProfile` | One profile open on screen: pairing, the roster, account state, creating agents and listing directories, renaming, stopping and deleting agents, the dump |
 | `amux_fleet_*` | `AmuxProfile` | That profile's fleet: rows, cards, family headers, hosts, and taking its changes |
 | `amux_session_*` | `AmuxChat` | One open chat: keys and rows by key, the ask card, overview, settings and frame, taking changes; sending, answering, withdrawing, interrupting, resuming, paging, blobs and the review |

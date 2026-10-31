@@ -9,8 +9,6 @@ public enum AccountBinding: String, Codable, Hashable, Sendable, CaseIterable {
     case signedOut = "SignedOut"
     /// Never signed in: this device works on its own network.
     case unbound = "Unbound"
-    /// Signed in, with the relay link turned off.
-    case paused = "Paused"
 }
 
 /// The account this device's profile is bound to, as the account screens

@@ -24,7 +24,6 @@ pub(crate) fn info(state: ProfileState) -> wire::Profile {
     let standing = match &state.cloud {
         Cloud::Unbound => Standing::Unbound(Empty {}),
         Cloud::SignedOut => Standing::SignedOut(Empty {}),
-        Cloud::Paused => Standing::Paused(Empty {}),
         Cloud::SignedIn(relay) => Standing::SignedIn(wire::RelayLink {
             state: Some(match relay {
                 Relay::Connecting => State::Connecting(Empty {}),

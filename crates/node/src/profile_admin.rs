@@ -58,24 +58,6 @@ impl ProfileAdminService for ProfileAdmin {
         )))
     }
 
-    async fn pause_profile(
-        &self,
-        _request: Request<wire::PauseProfileRequest>,
-    ) -> Result<Response<wire::Profile>, Status> {
-        Ok(Response::new(info(
-            self.registry.set_paused(self.profile, true).await?,
-        )))
-    }
-
-    async fn resume_profile(
-        &self,
-        _request: Request<wire::ResumeProfileRequest>,
-    ) -> Result<Response<wire::Profile>, Status> {
-        Ok(Response::new(info(
-            self.registry.set_paused(self.profile, false).await?,
-        )))
-    }
-
     async fn start_pairing(
         &self,
         request: Request<StartPairingRequest>,

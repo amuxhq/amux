@@ -841,7 +841,6 @@ impl Edge {
         match self.account.binding() {
             Binding::Unbound => Cloud::Unbound,
             Binding::SignedOut => Cloud::SignedOut,
-            Binding::Paused => Cloud::Paused,
             // Signed in with no link running yet: one is about to start.
             Binding::SignedIn => {
                 Cloud::SignedIn(self.status.current().unwrap_or(Relay::Connecting))

@@ -106,8 +106,6 @@ pub enum ProfileRefusal {
     LastProfile,
     #[error("the profile has running agents; stop them first")]
     AgentsRunning,
-    #[error("the profile is not bound to an account")]
-    NotBound,
     #[error("{0}")]
     BadService(String),
     #[error("the login carries no refresh token")]
@@ -135,11 +133,9 @@ impl ProfileRefusal {
             Self::NoProfile(_) => ErrorCode::NotFound,
             Self::NoName | Self::BadService(_) | Self::NoRefreshToken => ErrorCode::InvalidArgument,
             Self::NameTaken(_) | Self::AccountElsewhere => ErrorCode::AlreadyExists,
-            Self::LastProfile
-            | Self::AgentsRunning
-            | Self::NotBound
-            | Self::OtherAccount
-            | Self::HoldsData => ErrorCode::FailedPrecondition,
+            Self::LastProfile | Self::AgentsRunning | Self::OtherAccount | Self::HoldsData => {
+                ErrorCode::FailedPrecondition
+            }
             Self::Rejected(_) => ErrorCode::Unauthenticated,
             Self::Failed(_) => ErrorCode::Internal,
         };
@@ -411,24 +407,6 @@ impl Registry {
         let edge = Self::edge_of(&installation, id)?;
         edge.sign_out().await.map_err(ProfileRefusal::failed)?;
         edge.analytics().record(analytics::Event::SignedOut);
-        installation.republish(id);
-        Self::one(&installation, id)
-    }
-
-    /// Holds a bound profile's relay link down, or lets it up again.
-    pub async fn set_paused(
-        &self,
-        id: ProfileId,
-        paused: bool,
-    ) -> Result<ProfileState, ProfileRefusal> {
-        let installation = self.installation()?;
-        let edge = Self::edge_of(&installation, id)?;
-        if edge.account().record().is_none() {
-            return Err(ProfileRefusal::NotBound);
-        }
-        edge.set_paused(paused)
-            .await
-            .map_err(ProfileRefusal::failed)?;
         installation.republish(id);
         Self::one(&installation, id)
     }

@@ -5,7 +5,7 @@
 //! account, exactly as a desktop is: each profile has its own identity and
 //! trust, its own store of replica rows, direct links on the local network
 //! and a relay link once an account is bound. The daemon's profile registry
-//! creates, binds, signs out, pauses and deletes them; every call here names
+//! creates, binds, signs out and deletes them; every call here names
 //! the profile it is for. Chats read a profile's store through the same
 //! client service the terminal dials over a socket, called in process here;
 //! no client opens the store.
@@ -754,14 +754,13 @@ fn profile_view(state: &ProfileState) -> ProfileView {
                 Cloud::Unbound => AccountBinding::Unbound,
                 Cloud::SignedIn(_) => AccountBinding::SignedIn,
                 Cloud::SignedOut => AccountBinding::SignedOut,
-                Cloud::Paused => AccountBinding::Paused,
             },
             email: account.email.unwrap_or_default(),
             name: account.name.unwrap_or_default(),
             picture: account.picture.unwrap_or_default(),
             pro: state.cloud.connected().map(|(tier, _)| tier == Tier::Pro),
             relay: match &state.cloud {
-                Cloud::Unbound | Cloud::SignedOut | Cloud::Paused => RelayLink::Off,
+                Cloud::Unbound | Cloud::SignedOut => RelayLink::Off,
                 Cloud::SignedIn(Relay::Connecting) => RelayLink::Connecting,
                 Cloud::SignedIn(Relay::Connected { .. }) => RelayLink::Connected,
                 Cloud::SignedIn(Relay::Retrying) => RelayLink::Retrying,

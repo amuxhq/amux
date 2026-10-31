@@ -577,7 +577,7 @@ impl Edge {
     }
 
     /// Binds the profile to an account, or signs a bound profile back in,
-    /// and starts its cloud link unless the connection is paused.
+    /// and starts its cloud link.
     pub(crate) async fn bind_account(
         &self,
         record: AccountRecord,
@@ -592,16 +592,6 @@ impl Edge {
     pub(crate) async fn sign_out(&self) -> std::io::Result<()> {
         self.account.sign_out().await?;
         self.stop_cloud().await;
-        Ok(())
-    }
-
-    pub(crate) async fn set_paused(&self, paused: bool) -> std::io::Result<()> {
-        self.account.set_paused(paused).await?;
-        if paused {
-            self.stop_cloud().await;
-        } else {
-            self.start_cloud().await;
-        }
         Ok(())
     }
 

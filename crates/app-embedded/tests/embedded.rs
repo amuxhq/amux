@@ -2,7 +2,7 @@
 //! PIN the desk shows, holds the desk's agents as replica rows a chat reads
 //! in process, switches its source policy, and signs in to an account whose
 //! relay links it to the account's hosts. Every account is a profile of the
-//! one installation, which the daemon's registry creates, binds, pauses and
+//! one installation, which the daemon's registry creates, binds and
 //! deletes.
 
 #![cfg(unix)]

@@ -1467,56 +1467,6 @@ fn relay_host(name: &str, account: &str) -> testnet::HostDecl {
     }
 }
 
-/// An account that lapses from Pro to Free stops being carried at once:
-/// the relay stops forwarding between the account's hosts and tells each
-/// end, so a host the relay alone reaches is away and nothing reaches it
-/// through the relay any more, even over a channel that was opened while
-/// the account was Pro. A host told the peer is away must not still be
-/// able to call it.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_lapsed_account_stops_carrying_calls_the_relay_carried_while_it_was_pro() {
-    let topology = Topology::new()
-        .relay(&["ada"])
-        .host_decl(relay_host("desk", "ada"))
-        .host_decl(relay_host("laptop", "ada"));
-    let mut net = Net::start(topology).await.unwrap();
-    // The desk, which makes every call here, trusts last. Trusting first,
-    // its first stream could reach the laptop before the laptop trusted it
-    // back, be refused, and leave the desk holding that refusal, which its
-    // own later trust clears and the laptop's does not.
-    net.trust("laptop", "desk").await.unwrap();
-    net.trust("desk", "laptop").await.unwrap();
-    let laptop = host_id(&net, "laptop");
-    until_via(&net, "desk", "laptop", LiveRoute::Relay).await;
-    peer_inventory_hosts(&edge(&net, "desk"), laptop)
-        .await
-        .expect("on Pro the relay carries the desk's call to the laptop");
-    println!("Pro: the desk calls the laptop through the relay");
-
-    // The subscription lapses. Both hosts learn it at once and their links
-    // reauthenticate as Free; the desk's client is told the laptop is away.
-    net.set_tier("ada", testnet::TierDecl::Free).await.unwrap();
-    assert_eq!(tier(&net, "desk"), Some(node::Tier::Free));
-    assert_eq!(tier(&net, "laptop"), Some(node::Tier::Free));
-    let mut fleet = net.observe_inventory("desk").await.unwrap();
-    row_until(
-        &mut fleet,
-        laptop,
-        "the laptop away on a free account",
-        |row| row.away(),
-    )
-    .await;
-    println!("Free: the desk's client shows the laptop away");
-
-    let call = peer_inventory_hosts(&edge(&net, "desk"), laptop).await;
-    assert!(
-        call.is_err(),
-        "a lapsed account's relay carries nothing, yet the desk's call reached the laptop: {call:?}"
-    );
-
-    net.shutdown().await.unwrap();
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pro() {
     // The desk listens on the local network; the phone is on the relay

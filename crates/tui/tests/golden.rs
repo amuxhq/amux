@@ -1,6 +1,8 @@
 //! Component goldens: each piece of the chat vocabulary drawn from authored
 //! view values into the test backend, as text and as a map of semantic
-//! style classes (see `Theme::classify`), in the light and dark themes.
+//! style classes (see `Theme::classify`), in the dark theme. The classes
+//! are theme-independent by construction; `classify`'s own tests hold both
+//! palettes to that.
 //!
 //! Rewrite with `UPDATE_GOLDENS=1 just test-tui` and review the diff like
 //! code; CI refuses to rewrite.
@@ -9,36 +11,30 @@
 
 use std::collections::BTreeSet;
 
-use common::{assert_golden, capture, golden_dir, themes};
+use common::{assert_golden, capture, golden_dir};
 use tui::Theme;
 use tui::vocabulary::components;
 
 use crate::common;
 
 #[test]
-fn every_vocabulary_component_matches_its_golden_in_both_themes() {
-    for (variant, theme) in themes() {
-        for component in components(theme) {
-            assert_golden(
-                &format!("{}.{variant}", component.name),
-                &capture(&component.buffer, theme),
-            );
-        }
+fn every_vocabulary_component_matches_its_golden() {
+    let theme = Theme::default();
+    for component in components(theme) {
+        assert_golden(component.name, &capture(&component.buffer, theme));
     }
 }
 
 #[test]
 fn every_golden_file_belongs_to_a_component() {
-    let mut expected = BTreeSet::new();
-    for (variant, theme) in themes() {
-        for component in components(theme) {
-            expected.insert(format!("{}.{variant}.txt", component.name));
-        }
-    }
+    let expected: BTreeSet<String> = components(Theme::default())
+        .into_iter()
+        .map(|component| format!("{}.txt", component.name))
+        .collect();
     let on_disk: BTreeSet<String> = std::fs::read_dir(golden_dir())
         .expect("golden directory")
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .filter(|name| name.ends_with(".txt") && !name.starts_with("frame_"))
+        .filter(|name| name.ends_with(".txt"))
         .collect();
     let stale: Vec<_> = on_disk.difference(&expected).collect();
     assert!(stale.is_empty(), "goldens no component draws: {stale:?}");

@@ -1,7 +1,0 @@
-  ╭─ Enter resumes ──────────────────────────────────────────────────────────────────────────────╮
-  │ › Message fixer                                                                              │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
---- styles
-..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..
-..mmmmmmmmmmmmmmmmm..............................................................................m..
-..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..

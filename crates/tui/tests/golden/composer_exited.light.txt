@@ -1,7 +1,0 @@
-  ╭─ Enter resumes ──────────────────────────────────────────────────────────────────────────────╮
-  │ › Carry on from the failing test.                                                            │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
---- styles
-..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..
-..mmmm...........................................................................................m..
-..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..

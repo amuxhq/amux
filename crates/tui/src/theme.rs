@@ -1069,9 +1069,21 @@ mod tests {
             .bg(theme.color(theme.tokens.user_surface))
     }
 
+    /// The component goldens are drawn in the dark palette alone: classes
+    /// are found by comparing against the drawing theme's own tokens, so a
+    /// second palette only differs where two of its tokens share a colour,
+    /// which this test catches for both.
     #[test]
-    fn classify_recognizes_semantic_styles() {
-        let theme = Theme::default();
+    fn classify_recognizes_semantic_styles_in_both_palettes() {
+        for theme in [
+            Theme::dark(ColorMode::TrueColor),
+            Theme::light(ColorMode::TrueColor),
+        ] {
+            assert_semantic_classes(theme);
+        }
+    }
+
+    fn assert_semantic_classes(theme: Theme) {
         assert_eq!(theme.classify(Style::default()), '.');
         assert_eq!(theme.classify(theme.text()), '.');
         assert_eq!(theme.classify(theme.muted()), 'm');
@@ -1091,6 +1103,10 @@ mod tests {
         assert_eq!(theme.classify(theme.diff_removed()), '-');
         assert_eq!(theme.classify(theme.diff_context()), '.');
         assert_eq!(theme.classify(theme.attention()), 'a');
+        let panel = Style::default().bg(theme.color(theme.tokens.panel));
+        assert_eq!(theme.classify(panel), 'P');
+        let hunk = Style::default().fg(theme.color(theme.tokens.diff_meta));
+        assert_eq!(theme.classify(hunk), 'M');
     }
 
     #[test]

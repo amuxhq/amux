@@ -7,15 +7,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{IoEvent, parse_script};
-
-/// A verified recording directory and its parsed I/O events.
-#[derive(Clone, Debug)]
-pub struct Recording {
-    pub dir: PathBuf,
-    pub manifest: Manifest,
-    pub io: Vec<IoEvent>,
-}
+use crate::parse_script;
 
 /// Provenance and the inventory of a recording's immutable content.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -48,16 +40,11 @@ pub enum RecordingError {
     ContentMismatch { path: PathBuf },
     #[error("recording contains an uninventoried file: {path}")]
     Uninventoried { path: PathBuf },
-    #[error("recording {spec} was made at {recorded}, below minimum {minimum}")]
-    BelowMinimum {
-        spec: String,
-        recorded: Version,
-        minimum: Version,
-    },
 }
 
-/// Load a recording only after every replay-relevant byte is accounted for.
-pub fn load_recording(dir: &Path) -> Result<Recording, RecordingError> {
+/// A recording's manifest, once every replay-relevant byte is accounted
+/// for and its I/O parses.
+pub fn load_recording(dir: &Path) -> Result<Manifest, RecordingError> {
     let manifest_path = dir.join("manifest.json");
     let manifest_bytes = read_required(&manifest_path)?;
     let manifest: Manifest =
@@ -67,12 +54,8 @@ pub fn load_recording(dir: &Path) -> Result<Recording, RecordingError> {
         })?;
 
     validate_inventory(dir, &manifest.content)?;
-    let io = parse_script(&dir.join("io.jsonl"))?;
-    Ok(Recording {
-        dir: dir.to_path_buf(),
-        manifest,
-        io,
-    })
+    parse_script(&dir.join("io.jsonl"))?;
+    Ok(manifest)
 }
 
 impl Manifest {
@@ -307,7 +290,7 @@ mod tests {
                 .values()
                 .all(|hash| hash.starts_with("sha256:") && hash.len() == 71)
         );
-        assert_eq!(load_recording(temp.path()).unwrap().manifest, manifest);
+        assert_eq!(load_recording(temp.path()).unwrap(), manifest);
     }
 
     #[test]

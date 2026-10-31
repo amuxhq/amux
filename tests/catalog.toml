@@ -346,22 +346,21 @@ cargo = [
 ]
 
 [[suite]]
-name = "strict-recording-replay"
-contract = "Recorded transports reject missing, reordered, mismatched, or trailing traffic and acknowledge EOF and completion."
-paths = ["crates/replay-support/tests/strict_replay.rs"]
-recipe = "just suite strict-recording-replay"
+name = "recording-manifests"
+contract = "A joined capture's manifest inventories every replay-relevant file by its digest, and a recording whose bytes differ from it or that holds a file it does not list is refused; sanitizing a capture redacts the recording machine's paths, secrets and identifiers wherever they nest and keeps package and version names."
+paths = ["crates/replay-support/src/manifest.rs", "crates/replay-support/src/sanitize.rs"]
+recipe = "just suite recording-manifests"
 boundary = "Provider adapter"
-oracle = "Typed replay results and exact read/write consumption."
-real = ["in-memory asynchronous IO"]
-substituted = ["provider process", "wall clock"]
-time = "driven"
+oracle = "Typed loading errors and the redacted values."
+real = ["files on disk"]
+substituted = ["provider process"]
+time = "none"
 capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = ""
 update = ""
 cargo = [
   { package = "replay-support", kind = "lib", targets = ["replay_support"], features = [] },
-  { package = "replay-support", modules = ["strict_replay"], features = [] },
 ]
 
 [[suite]]

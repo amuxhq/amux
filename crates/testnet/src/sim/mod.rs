@@ -36,7 +36,6 @@ use std::time::Duration;
 use daemon_core::payload::{ClientRequest, PeerReply, PeerRequest, Response};
 use daemon_core::{AgentId, CallId, Create, HostId, Input, Resume};
 use models::net::{Lane, Net};
-use node::link_log::{LinkEvent, PathKind};
 use rng::Rng;
 pub use shrink::{Reproduction, same_failure, shrink};
 use uuid::Uuid;
@@ -44,7 +43,6 @@ use wire::{InventoryEvent, Lifecycle, SessionEvent};
 
 use crate::net::{Ack, NetAgent, NetError, prompt, submission};
 use crate::observe::{Feed, InventoryObserver, Observer, ObserverOf, PATIENCE, Pumped, Stuck};
-use crate::router::RouterKind;
 use crate::topology::{AgentDecl, FakeKind, Provider, Topology, link_key};
 use crate::world::World;
 use crate::{invariant, probes};
@@ -592,28 +590,6 @@ impl World for SimNet {
         let l = self.link(a, b)?;
         self.sim().net.sever(l);
         Ok(self.ack(format!("link {a} - {b} severed")))
-    }
-
-    // The simulated net's links are messages between cores: no socket,
-    // path or link log stands under them.
-    fn set_router(&mut self, _: &str, _: RouterKind) -> Result<Ack, NetError> {
-        Err(NetError::Unsupported("a router in a simulated net"))
-    }
-
-    fn change_network(&mut self, _: &str) -> Result<Ack, NetError> {
-        Err(NetError::Unsupported(
-            "changing a host's network in a simulated net",
-        ))
-    }
-
-    fn carrying_path(&self, _: &str, _: &str) -> Result<Option<PathKind>, NetError> {
-        Err(NetError::Unsupported(
-            "the carrying path in a simulated net",
-        ))
-    }
-
-    fn link_log(&self, _: &str) -> Result<Vec<LinkEvent>, NetError> {
-        Err(NetError::Unsupported("the link log in a simulated net"))
     }
 
     async fn restore_link(&mut self, a: &str, b: &str) -> Result<Ack, NetError> {

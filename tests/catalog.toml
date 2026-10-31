@@ -284,7 +284,7 @@ substituted = ["live Codex process"]
 time = "none"
 capabilities = ["Rust toolchain"]
 lane = "fast"
-evidence = "crates/codex-specs/fixtures/runtime, journeys/recordings"
+evidence = "crates/codex-specs/fixtures/runtime, crates/codex-specs/fixtures/live"
 update = "A failing line is provider drift or a wrong type: fix the type in crates/codex-protocol/src, never a live recording."
 cargo = [
   { package = "codex-protocol", kind = "lib", targets = ["codex_protocol"], features = [] },

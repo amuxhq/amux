@@ -171,9 +171,9 @@ impl Baselines {
                 machine.model
             )));
         }
-        if value.profile != "release" || value.features != "bundled,perf" {
+        if value.profile != "release" || value.features != "perf" {
             return Err(PerfError::Baseline(format!(
-                "{} records profile={} features={}, expected profile=release features=bundled,perf",
+                "{} records profile={} features={}, expected profile=release features=perf",
                 path.display(),
                 value.profile,
                 value.features
@@ -333,7 +333,7 @@ impl Report {
         Ok(Self {
             machine,
             profile: "release",
-            features: "bundled,perf",
+            features: "perf",
             verdicts,
             runs,
         })
@@ -585,7 +585,7 @@ mod tests {
             schema_version: BASELINE_SCHEMA,
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
-            features: "bundled,perf".to_owned(),
+            features: "perf".to_owned(),
             reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([("fixture".to_owned(), Some(10.0))]),
         };
@@ -608,7 +608,7 @@ mod tests {
             schema_version: BASELINE_SCHEMA,
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
-            features: "bundled,perf".to_owned(),
+            features: "perf".to_owned(),
             reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([
                 ("fixture".to_owned(), Some(10.0)),
@@ -637,7 +637,7 @@ mod tests {
             schema_version: BASELINE_SCHEMA,
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
-            features: "bundled,perf".to_owned(),
+            features: "perf".to_owned(),
             reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([("fixture".to_owned(), Some(10.0))]),
         };
@@ -669,7 +669,7 @@ mod tests {
             schema_version: BASELINE_SCHEMA,
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
-            features: "bundled,perf".to_owned(),
+            features: "perf".to_owned(),
             reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([("fixture".to_owned(), Some(0.001))]),
         };
@@ -691,7 +691,7 @@ mod tests {
             schema_version: BASELINE_SCHEMA,
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
-            features: "bundled,perf".to_owned(),
+            features: "perf".to_owned(),
             reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([("fixture".to_owned(), Some(0.001))]),
         };
@@ -715,7 +715,7 @@ mod tests {
             schema_version: BASELINE_SCHEMA,
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
-            features: "bundled,perf".to_owned(),
+            features: "perf".to_owned(),
             reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([("fixture".to_owned(), Some(0.6))]),
         };
@@ -744,7 +744,7 @@ mod tests {
             schema_version: BASELINE_SCHEMA,
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
-            features: "bundled,perf".to_owned(),
+            features: "perf".to_owned(),
             reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([("fixture".to_owned(), Some(10.0))]),
         };
@@ -825,7 +825,7 @@ mod tests {
             schema_version: BASELINE_SCHEMA,
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
-            features: "bundled,perf".to_owned(),
+            features: "perf".to_owned(),
             reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::new(),
         };
@@ -845,7 +845,7 @@ mod tests {
             schema_version: BASELINE_SCHEMA,
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
-            features: "bundled,perf".to_owned(),
+            features: "perf".to_owned(),
             reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([("fixture".to_owned(), None)]),
         };
@@ -879,7 +879,7 @@ mod tests {
             schema_version: BASELINE_SCHEMA,
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
-            features: "bundled,perf".to_owned(),
+            features: "perf".to_owned(),
             reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::new(),
         };

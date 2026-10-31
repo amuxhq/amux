@@ -10,9 +10,6 @@ bounded := "scripts/bounded"
 # selects it; the Nix dev shell has no rustup and provides `cargo-nightly`
 # instead (nix/toolchain.nix), at the same date.
 nightly_cargo := `command -v cargo-nightly >/dev/null && echo cargo-nightly || echo cargo +nightly-2026-08-30`
-# Desktop roots keep naming the feature explicitly so an invocation that
-# disables defaults cannot silently switch the SQLite linkage policy.
-desktop_features := "--features bundled"
 
 # List the available repository tasks.
 default:
@@ -43,11 +40,11 @@ mod ios 'apps/apple/justfile'
 
 # Build the desktop product binaries.
 build:
-    {{bounded}} 900 cargo build --locked -p amux --bins {{desktop_features}}
+    {{bounded}} 900 cargo build --locked -p amux --bins
 
 # Check every workspace library and binary.
 check:
-    {{bounded}} 900 cargo check --locked --workspace --lib --bins {{desktop_features}}
+    {{bounded}} 900 cargo check --locked --workspace --lib --bins
 
 # Every test runs in a process of its own (.config/nextest.toml).
 # Run workspace tests under cargo-nextest, preserving explicit Cargo target selections.
@@ -56,7 +53,7 @@ test *ARGS: nextest
 
 # Run tests for one named workspace crate.
 test-crate CRATE *ARGS: nextest
-    crate=$1; shift; if [ "${1-}" = -- ]; then shift; fi; feature=; if grep -q '^bundled *=' "crates/$crate/Cargo.toml"; then feature='{{desktop_features}}'; fi; {{bounded}} 900 cargo nextest run --locked -p "$crate" $feature "$@"
+    crate=$1; shift; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 900 cargo nextest run --locked -p "$crate" "$@"
 
 # `just flaky [--load] TEST [COUNT]` runs every test whose name contains TEST
 # COUNT times (default 50), one run after another, and stops at the first
@@ -70,26 +67,18 @@ flaky *ARGS: nextest
 nextest:
     @cargo nextest --version >/dev/null 2>&1 || { echo "cargo-nextest is not installed: brew install cargo-nextest, or cargo install --locked cargo-nextest@0.9.150 (.config/nextest.toml requires it)" >&2; exit 1; }
 
-# Exercise the profile store: its reader and writer suite, retention and the SQLite file.
-test-store *ARGS: nextest
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo nextest run --locked -p store --features bundled "$@"
-
 # Cross-compile every store test target and run it on the leased, booted iOS
 # simulator, after proving the store's integration binary carries SQLite itself.
 test-store-ios:
-    scripts/with iphone -- {{bounded}} 2300 scripts/python -B apps/apple/Tools/ios-store-test.py
-
-# Exercise the pure store-backed reducer lifecycle and recorded UI specs.
-test-ui *ARGS: nextest
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo nextest run --locked -p ui-state "$@"
+    scripts/with iphone -- {{bounded}} 2300 scripts/py -B apps/apple/Tools/ios-store-test.py
 
 # Compile every ordinary workspace test target without running it.
 test-build:
-    {{bounded}} 1200 cargo test --locked --workspace --lib --tests --no-run {{desktop_features}}
+    {{bounded}} 1200 cargo test --locked --workspace --lib --tests --no-run
 
 # Run all workspace documentation tests.
 doctest:
-    {{bounded}} 600 cargo test --locked --workspace --doc {{desktop_features}}
+    {{bounded}} 600 cargo test --locked --workspace --doc
 
 # Exercise TUI behavior.
 test-tui *ARGS: nextest
@@ -100,7 +89,7 @@ test-tui *ARGS: nextest
 # tests and the perf binaries run by hand, never in CI, and this is what
 # keeps them compiling.
 lint:
-    {{bounded}} 1200 cargo clippy --locked --workspace --all-targets {{desktop_features}} --features qualification/live,qualification/perf -- -D warnings
+    {{bounded}} 1200 cargo clippy --locked --workspace --all-targets --features qualification/live,qualification/perf -- -D warnings
 
 # Format all Rust sources with the pinned nightly toolchain.
 fmt:
@@ -125,7 +114,7 @@ proto-compat *ARGS:
 
 # Build the shipping binary and enforce the release dependency policy.
 release-check *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p amux --bins --no-default-features {{desktop_features}} "$@"
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p amux --bins "$@"
     if [ "${1-}" = -- ]; then shift; fi; scripts/release-policy-check.sh "$@"
 
 # `just release 0.8.0` writes the version, checks the release build, commits,
@@ -153,18 +142,10 @@ release-key *ARGS:
 hooks:
     scripts/hooks/install
 
-# Check the provider-free graph used by embedded clients.
-embedded-check:
-    {{bounded}} 900 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded
-
-# Exercise the public embedded owner and client boundary.
-embedded-test: nextest
-    {{bounded}} 900 cargo nextest run --locked -p app-embedded -E 'binary_id(app-embedded::integration) & test(/^embedded::/)'
-
 # Check the provider-free graph for iOS devices and simulators.
 mobile-check:
-    {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime --target aarch64-apple-ios
-    {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime --target aarch64-apple-ios-sim
+    {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded --target aarch64-apple-ios
+    {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded --target aarch64-apple-ios-sim
 
 # Run workspace tests with isolated user configuration and no external network,
 # on Linux, through sudo. The workspace test script bounds its own compile and
@@ -175,7 +156,7 @@ offline-test: nextest
 
 # Build the product with the full-debug profile.
 full-debug:
-    {{bounded}} 900 cargo build --locked -p amux --bins --profile full-debug {{desktop_features}}
+    {{bounded}} 900 cargo build --locked -p amux --bins --profile full-debug
 
 # Render or inspect deterministic TUI evidence.
 shot *ARGS:
@@ -204,7 +185,7 @@ journey CLIENT NAME *ARGS:
     if [ "${3-}" = -- ]; then shift 3; else shift 2; fi
     case "{{CLIENT}}" in
     terminal)
-        {{bounded}} 900 cargo build --locked -p amux -p provider-fakes -p testnet --bins {{desktop_features}}
+        {{bounded}} 900 cargo build --locked -p amux -p provider-fakes -p testnet --bins
         if [ "{{NAME}}" = all ]; then
             {{bounded}} 3000 target/debug/testnet journey terminal all
         else
@@ -214,7 +195,7 @@ journey CLIENT NAME *ARGS:
     system)
         # --keep leaves the install running for other clients to open.
         if [ "${1-}" = --keep ]; then export AMUX_JOURNEY_KEEP=1; fi
-        {{bounded}} 1500 cargo nextest run --locked -p amux {{desktop_features}} --no-capture -- --exact "system_journeys::$(echo "{{NAME}}" | tr - _)"
+        {{bounded}} 1500 cargo nextest run --locked -p amux --no-capture -- --exact "system_journeys::$(echo "{{NAME}}" | tr - _)"
         ;;
     *)
         echo "no {{CLIENT}} journeys: terminal or system" >&2
@@ -285,15 +266,15 @@ warm: build test-build
 # protocol models' at their CI bounds, one after another on a four-core machine.
 # Run one catalogued suite's Cargo tests.
 suite NAME *ARGS: nextest
-    {{bounded}} 2400 scripts/python -B scripts/tests-catalog.py run "$@"
+    {{bounded}} 2400 scripts/py -B scripts/tests-catalog.py run "$@"
 
 # Print the suite catalogue with its boundaries, lanes and focused recipes.
 tests-list:
-    scripts/python -B scripts/tests-catalog.py list
+    scripts/py -B scripts/tests-catalog.py list
 
 # Validate every catalogued recipe, target, feature, manifest and baseline.
 tests-check:
-    {{bounded}} 120 scripts/python -B scripts/tests-catalog.py check
+    {{bounded}} 120 scripts/py -B scripts/tests-catalog.py check
 
 # The unit tests of the repository's own scripts. Pure Python; nothing is
 # built. The phone's scripts have theirs in `just ios script-tests`.
@@ -315,18 +296,12 @@ models-nightly *MODELS: nextest
 # story. `--seed N` reruns one seed (a failure prints its command), `--seeds N`
 # walks N, and names after them narrow the run to matching stories.
 sim *ARGS: nextest
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 scripts/py scripts/sim.py sim "$@"
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 scripts/py scripts/sim.py "$@"
 
-# The nightly run: walk `--seeds N` seeds per simulated story, then check the
-# protocol models at `--bounds nightly` (the default), `ci` or `none`, and
-# print a report of seeds walked, time and failing seeds.
-nightly *ARGS: nextest
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 14400 scripts/py scripts/sim.py nightly "$@"
-
-# Run every workspace test under cargo-llvm-cov with the desktop features and
-# write line coverage per crate, with the commit it measured, to
-# target/coverage/coverage.md. Needs `cargo install --locked
-# cargo-llvm-cov@0.9.0` and the llvm-tools-preview rustup component.
+# Run every workspace test under cargo-llvm-cov and write line coverage per
+# crate, with the commit it measured, to target/coverage/coverage.md. Needs
+# `cargo install --locked cargo-llvm-cov@0.9.0` and the llvm-tools-preview
+# rustup component.
 coverage: nextest
     {{bounded}} 3600 scripts/py scripts/coverage.py
 
@@ -346,7 +321,7 @@ no-update-flags:
     scripts/no-update-flags.sh
 
 # Run the same task sequence exercised across continuous-integration jobs.
-ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check embedded-check embedded-test mobile-check
+ci: no-update-flags lint fmt-check codegen-check proto-compat dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check mobile-check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,
@@ -357,19 +332,19 @@ ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-p
 # libtest's, so they run under cargo test, with the binaries they start built
 # first.
 live *ARGS:
-    set -e; if [ "${1-}" = -- ]; then shift; fi; if [ $# -eq 0 ]; then for kind in claude_pty claude_sdk codex; do echo "live $kind: not_run (no scenario selected)"; done; exit 0; fi; kind=$1; shift; case "$kind" in claude_pty|claude_sdk|codex) ;; *) echo "live: unknown kind $kind; known: claude_pty, claude_sdk, codex" >&2; exit 2 ;; esac; {{bounded}} 900 cargo build --locked --features bundled -p amux -p provider-fakes -p claude-specs -p codex-specs --bins; TESTNET_BINARIES="$PWD/target/debug" {{bounded}} 3600 cargo test --locked -p qualification --features bundled,live --test "${kind}_live" -- "$@"
+    set -e; if [ "${1-}" = -- ]; then shift; fi; if [ $# -eq 0 ]; then for kind in claude_pty claude_sdk codex; do echo "live $kind: not_run (no scenario selected)"; done; exit 0; fi; kind=$1; shift; case "$kind" in claude_pty|claude_sdk|codex) ;; *) echo "live: unknown kind $kind; known: claude_pty, claude_sdk, codex" >&2; exit 2 ;; esac; {{bounded}} 900 cargo build --locked -p amux -p provider-fakes -p claude-specs -p codex-specs --bins; TESTNET_BINARIES="$PWD/target/debug" {{bounded}} 3600 cargo test --locked -p qualification --features live --test "${kind}_live" -- "$@"
 
 # Waves of Sonnet testers, each on a test network of its own with real
 # Claude and Codex agents, keeping evidence of what they find (docs/QA.md).
 # By hand only, never in CI: `just qa --testers 2 --phone 1 --waves 1`.
 # Run adversarial QA by hand: waves of testers on real agents (docs/QA.md).
 qa *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 86400 scripts/python -B scripts/qa.py "$@"
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 86400 scripts/py -B scripts/qa.py "$@"
 
 # Qualify desktop performance on an enrolled machine. Pass --baseline to
 # record the current release medians after every absolute budget passes.
 perf *ARGS:
-    set -e; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p qualification --bin perf --features bundled,perf; {{bounded}} 2400 cargo build --locked --release -p amux -p provider-fakes --bins; {{bounded}} 1800 target/release/perf "$@"
+    set -e; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p qualification --bin perf --features perf; {{bounded}} 2400 cargo build --locked --release -p amux -p provider-fakes --bins; {{bounded}} 1800 target/release/perf "$@"
 
 # Records the release flood under an Instruments template on this Mac, for
 # reading what the daemon's core thread spends its time on and waits for
@@ -377,10 +352,10 @@ perf *ARGS:
 # 15 s in (the agents it leaves ignore SIGTERM and are killed), `just perf-profile 'Time
 # Profiler'` records it whole. Trace and report land in target/perf-profile/.
 perf-profile TEMPLATE LIMIT="300s":
-    set -e; {{bounded}} 2400 cargo build --locked --release -p qualification --bin perf --features bundled,perf; {{bounded}} 2400 cargo build --locked --release -p amux -p provider-fakes --bins; mkdir -p target/perf-profile; out="target/perf-profile/$(date +%Y%m%d-%H%M%S)"; window=; case "{{TEMPLATE}}" in "System Trace") window="--window 300s" ;; esac; {{bounded}} 1800 xcrun xctrace record --template "{{TEMPLATE}}" $window --no-prompt --time-limit "{{LIMIT}}" --env TESTNET_BINARIES="$PWD/target/release" --target-stdout "$out.log" --output "$out.trace" --launch -- "$PWD/target/release/perf" --only flood || echo "xctrace exited $? (a time limit ends the run this way)"; pkill -9 -f "$PWD/target/release/amux agent" || true; pkill -9 -f "$PWD/target/release/fake-" || true; pkill -9 -f "$PWD/target/release/perf --cluster-warmer" || true; test -d "$out.trace"; echo "$out.trace"
+    set -e; {{bounded}} 2400 cargo build --locked --release -p qualification --bin perf --features perf; {{bounded}} 2400 cargo build --locked --release -p amux -p provider-fakes --bins; mkdir -p target/perf-profile; out="target/perf-profile/$(date +%Y%m%d-%H%M%S)"; window=; case "{{TEMPLATE}}" in "System Trace") window="--window 300s" ;; esac; {{bounded}} 1800 xcrun xctrace record --template "{{TEMPLATE}}" $window --no-prompt --time-limit "{{LIMIT}}" --env TESTNET_BINARIES="$PWD/target/release" --target-stdout "$out.log" --output "$out.trace" --launch -- "$PWD/target/release/perf" --only flood || echo "xctrace exited $? (a time limit ends the run this way)"; pkill -9 -f "$PWD/target/release/amux agent" || true; pkill -9 -f "$PWD/target/release/fake-" || true; pkill -9 -f "$PWD/target/release/perf --cluster-warmer" || true; test -d "$out.trace"; echo "$out.trace"
 
 # Records the loopback scaling curve of the production relay at 10, 100 and
 # 1,000 connections (aggregate throughput, stream-open latency p50 and p99);
 # --baseline records, --compare judges within noise (docs/PERFORMANCE.md).
 relay-curve *ARGS:
-    set -e; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p qualification --bin relay-curve --features bundled,perf; {{bounded}} 1200 target/release/relay-curve "$@"
+    set -e; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p qualification --bin relay-curve --features perf; {{bounded}} 1200 target/release/relay-curve "$@"

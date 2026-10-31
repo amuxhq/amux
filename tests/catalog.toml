@@ -15,8 +15,8 @@ lane = "system"
 evidence = ""
 update = "AMUX_UPDATE_GOLDENS=1 just suite desktop-cli-system supervise_cli::, then review the login-unit diff."
 cargo = [
-  { package = "amux", kind = "bin", targets = ["amux"], features = ["bundled"] },
-  { package = "amux", modules = ["agent_process", "attach", "cli_words", "codex_attach", "overlap", "pairing", "process", "relay", "supervise_cli"], features = ["bundled"] },
+  { package = "amux", kind = "bin", targets = ["amux"] },
+  { package = "amux", modules = ["agent_process", "attach", "cli_words", "codex_attach", "overlap", "pairing", "process", "relay", "supervise_cli"] },
 ]
 
 [[suite]]
@@ -33,7 +33,7 @@ capabilities = ["desktop", "Unix"]
 lane = "journey"
 evidence = "the printed transcript; `-- --keep` leaves the install running for another client to open"
 update = ""
-cargo = [{ package = "amux", modules = ["system_journeys"], features = ["bundled"] }]
+cargo = [{ package = "amux", modules = ["system_journeys"] }]
 journey_manifest = "journeys/manifest.json"
 journeys = ["survive-daemon"]
 
@@ -445,7 +445,7 @@ cargo = [
 name = "sqlite-store-contract"
 contract = "The SQLite profile store answers one reader and writer suite, retention trims own and replica rows on a driven clock, and the file refuses a store of another schema version untouched and keeps its position tripwire, one transaction per commit and its rows across a reopen; a store in memory dumps every row canonically and restores to an equal store."
 paths = ["crates/store/tests"]
-recipe = "just test-store"
+recipe = "just suite sqlite-store-contract"
 boundary = "Single daemon"
 oracle = "Rows read back from a temp-file store, retention sweep outcomes, SQLite errors and the refused file's bytes."
 real = ["bundled SQLite", "files"]
@@ -456,8 +456,8 @@ lane = "fast"
 evidence = ""
 update = ""
 cargo = [
-  { package = "store", kind = "lib", targets = ["store"], features = ["bundled"] },
-  { package = "store", modules = ["conformance", "explore", "retention", "sqlite"], features = ["bundled"] },
+  { package = "store", kind = "lib", targets = ["store"] },
+  { package = "store", modules = ["conformance", "explore", "retention", "sqlite"] },
 ]
 
 [[suite]]
@@ -755,7 +755,7 @@ capabilities = ["Unix", "Claude credentials", "network", "may spend provider cre
 lane = "qualification"
 evidence = "the printed verdict table; AMUX_LIVE_KEEP=1 keeps the installation under /tmp"
 update = "Capture through claude-probe and graduate the recording deliberately."
-cargo = [{ package = "qualification", targets = ["claude_pty_live"], features = ["bundled", "live"] }]
+cargo = [{ package = "qualification", targets = ["claude_pty_live"], features = ["live"] }]
 
 [[suite]]
 name = "claude-sdk-live-compatibility"
@@ -771,7 +771,7 @@ capabilities = ["Unix", "Claude credentials", "network", "may spend provider cre
 lane = "qualification"
 evidence = "the printed verdict table; AMUX_LIVE_KEEP=1 keeps the installation under /tmp"
 update = "Join a passing run's capture into the headless corpus with claude-probe join, deliberately."
-cargo = [{ package = "qualification", targets = ["claude_sdk_live"], features = ["bundled", "live"] }]
+cargo = [{ package = "qualification", targets = ["claude_sdk_live"], features = ["live"] }]
 
 [[suite]]
 name = "codex-live-compatibility"
@@ -787,7 +787,7 @@ capabilities = ["Unix", "Codex credentials", "network", "may spend provider cred
 lane = "qualification"
 evidence = "the printed verdict table; attach writes a timed capture of both terminals, a frame per step and its verdict to target/live/codex-attach/; AMUX_LIVE_KEEP=1 keeps the installation under /tmp"
 update = "Capture through codex-probe and graduate the recording deliberately."
-cargo = [{ package = "qualification", targets = ["codex_live"], features = ["bundled", "live"] }]
+cargo = [{ package = "qualification", targets = ["codex_live"], features = ["live"] }]
 
 [[suite]]
 name = "flood-workload-smoke"
@@ -803,7 +803,7 @@ capabilities = ["desktop"]
 lane = "fast"
 evidence = ""
 update = "Change the workload in crates/qualification/src/perf/flood.rs and this test together."
-cargo = [{ package = "qualification", modules = ["flood"], features = ["bundled"] }]
+cargo = [{ package = "qualification", modules = ["flood"] }]
 
 [[suite]]
 name = "phone-performance-qualification"
@@ -885,7 +885,7 @@ cargo = [
 name = "client-model-spec"
 contract = "Ordered messages reduce to the documented client model and remain equivalent across replay and checkpoint cuts."
 paths = ["crates/ui-state/tests"]
-recipe = "just test-ui"
+recipe = "just suite client-model-spec"
 boundary = "Client model"
 oracle = "Explicit state assertions, the window, run-index and changed-key invariants after every message, and replay equality at every checkpoint cut."
 real = []

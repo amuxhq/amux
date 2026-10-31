@@ -23,7 +23,6 @@ on:
       - 'scripts/bounded'
       - 'scripts/no-update-flags.sh'
       - 'scripts/py'
-      - 'scripts/python'
       - 'scripts/sqlite_linkage.py'
       - 'scripts/with'
       - '.github/actions/setup-just/**'

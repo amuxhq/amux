@@ -131,7 +131,7 @@ whose stories run in both modes say so in the catalogue's `modes`.
 just sim                         # every simulated story, a few seeds each
 just sim --seeds 300 <name>      # 300 seeds of each story whose test name contains <name>
 just sim --seed 17 <name>        # exactly the failing seed, as a failure prints it
-just nightly --seeds 2000        # thousands of seeds per story, then the models at nightly bounds, as a report
+just sim --seeds 2000            # thousands of seeds per story, as the nightly workflow walks them
 ```
 
 Under `cargo nextest run` the same switch is the environment: `TESTNET_MODE=simulated`, with `TESTNET_SEEDS=N` or
@@ -174,8 +174,8 @@ just test                                  # every ordinary workspace target
 just suite many-daemon-protocol-spec       # one suite of tests/catalog.toml, on `just test`'s build
 just suite link-stories relaunch           # the same, then a test-name filter
 just test-crate interpret -- codex::       # one crate, then nextest arguments
-just test-store                            # the store's reader and writer suite, retention and SQLite file
-just test-ui                               # the client model spec
+just suite sqlite-store-contract           # the store's reader and writer suite, retention and SQLite file
+just suite client-model-spec               # the client model spec
 just test-tui                              # terminal presentation and goldens
 just offline-test                          # workspace tests with isolated config and no network (Linux, sudo)
 just journey terminal reach-host           # one terminal journey

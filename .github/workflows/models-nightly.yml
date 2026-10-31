@@ -50,7 +50,9 @@ jobs:
           save-if: false
       - uses: ./.github/actions/setup-just
       - uses: ./.github/actions/setup-nextest
-      # The models run in the matrix above, so this walks seeds only; the
-      # report names every failing seed and the command that reruns it.
+      # The models run in the matrix above, so this walks seeds only; each
+      # story prints its failing seeds and a failing seed the `just sim
+      # --seed` that reruns it. `just sim` is bounded for its few seeds a
+      # push; this walk takes about twenty minutes, so it carries its own.
       - name: Walk every simulated story under 2000 seeds
-        run: just nightly --seeds 2000 --bounds none
+        run: scripts/bounded 3000 scripts/py scripts/sim.py --seeds 2000

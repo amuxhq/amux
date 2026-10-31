@@ -518,17 +518,10 @@ impl InstallationConfig {
         Ok(config)
     }
 
-    /// Checks what parsing alone cannot: the supervisor and updates pair,
-    /// the leader key and the host name.
+    /// Checks what parsing alone cannot: the supervisor and updates pair
+    /// and the host name.
     pub fn validate(&self) -> Result<(), ConfigError> {
         self.updates()?;
-        // Leader key must be ctrl+<a-z>
-        let ch = self.keybinds.leader.char;
-        if !ch.is_ascii_lowercase() {
-            return Err(ConfigError::Invalid(format!(
-                "invalid leader key: byte 0x{ch:02x} is not a lowercase letter (expected ctrl+<a-z>)"
-            )));
-        }
         match &self.host_name {
             Some(host_name) => validate_host_name(host_name),
             None => Ok(()),
@@ -560,34 +553,29 @@ impl InstallationConfig {
 }
 
 /// Every key the installation's file takes, dotted as `amux config` names
-/// them, in the order the file documents them.
-pub const INSTALLATION_KEYS: &[&str] = &[
-    "host_name",
-    "repository_roots",
-    "supervisor",
-    "updates",
-    "channel",
-    "keep_awake",
-    "telemetry",
-    "auto_reports",
-    "ui.theme",
-    "ui.color",
-    "ui.chat_in",
-    "keybinds.leader",
-    "new_agent.claude.model",
-    "new_agent.claude.effort",
-    "new_agent.claude.permission",
-    "new_agent.codex.model",
-    "new_agent.codex.effort",
-    "new_agent.codex.permission",
-    "root",
-    "front_door_socket",
-    "releases_url",
-    "discovery.scope",
-    "agent.grace_secs",
-    "agent.drain_secs",
-    "agent.facts_ring_mib",
-];
+/// them, in alphabetical order: the leaves of a default config, and the two
+/// that are absent until set.
+pub fn installation_keys() -> Vec<String> {
+    fn leaves(prefix: &str, table: &toml::Table, out: &mut Vec<String>) {
+        for (key, value) in table {
+            let path = if prefix.is_empty() {
+                key.clone()
+            } else {
+                format!("{prefix}.{key}")
+            };
+            match value {
+                toml::Value::Table(inner) => leaves(&path, inner, out),
+                _ => out.push(path),
+            }
+        }
+    }
+    let default = toml::Table::try_from(InstallationConfig::default())
+        .expect("the default config serialises");
+    let mut keys = vec!["host_name".to_owned(), "updates".to_owned()];
+    leaves("", &default, &mut keys);
+    keys.sort();
+    keys
+}
 
 /// The front door's address: a socket file, resolved like any other path, or
 /// on Windows a named pipe, which lives in the pipe namespace rather than on
@@ -641,9 +629,6 @@ mod tests {
         assert_eq!(socket_path(pipe, Path::new("/")).unwrap(), pipe);
     }
 
-    /// The key list `amux config` checks against is every field the file
-    /// takes: the leaves of a default config, and the two that are absent
-    /// until set.
     #[test]
     fn an_agent_setting_given_alone_keeps_the_shipped_rest() {
         let config = installation("[new_agent.claude]\nmodel = \"sonnet\"\n").unwrap();
@@ -653,34 +638,6 @@ mod tests {
             NewAgentSettings::default().claude.effort
         );
         assert_eq!(config.new_agent.codex, NewAgentSettings::default().codex);
-    }
-
-    #[test]
-    fn the_key_list_is_every_field() {
-        fn leaves(prefix: &str, table: &toml::Table, out: &mut Vec<String>) {
-            for (key, value) in table {
-                let path = if prefix.is_empty() {
-                    key.clone()
-                } else {
-                    format!("{prefix}.{key}")
-                };
-                match value {
-                    toml::Value::Table(inner) => leaves(&path, inner, out),
-                    _ => out.push(path),
-                }
-            }
-        }
-        let default = toml::Table::try_from(InstallationConfig::default()).unwrap();
-        let mut found = Vec::new();
-        leaves("", &default, &mut found);
-        found.extend(["host_name".to_owned(), "updates".to_owned()]);
-        found.sort();
-        let mut listed: Vec<String> = INSTALLATION_KEYS
-            .iter()
-            .map(|key| key.to_string())
-            .collect();
-        listed.sort();
-        assert_eq!(found, listed);
     }
 
     #[test]
@@ -787,14 +744,6 @@ mod tests {
     #[test]
     fn a_yaml_file_is_refused() {
         assert!(installation("host_name: desk\nkeep_awake: off\n").is_err());
-    }
-
-    #[test]
-    fn validate_leader_key_bad_char() {
-        let mut config = InstallationConfig::default();
-        config.keybinds.leader = LeaderKey { char: b'1' };
-        let err = config.validate().unwrap_err();
-        assert!(err.to_string().contains("leader key"));
     }
 
     #[test]

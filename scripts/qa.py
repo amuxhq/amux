@@ -61,7 +61,7 @@ def build(phone: bool) -> None:
     subprocess.run(
         [str(ROOT / "scripts" / "bounded"), "1800", "cargo", "build", "--locked",
          "-p", "amux", "-p", "provider-fakes", "-p", "testnet", "-p", "claude-specs",
-         "-p", "codex-specs", "-p", "replay-support", "--bins", "--features", "amux/bundled"],
+         "-p", "codex-specs", "-p", "replay-support", "--bins"],
         cwd=ROOT, check=True,
     )
     if phone:

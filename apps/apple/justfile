@@ -30,7 +30,7 @@ default:
 # builds nothing itself.
 # Build the Rust tools the phone recipes drive.
 tools:
-    {{bounded}} 900 cargo build --locked -p ios-tools -p testnet -p qualification -p amux -p provider-fakes --bins --features store/bundled
+    {{bounded}} 900 cargo build --locked -p ios-tools -p testnet -p qualification -p amux -p provider-fakes --bins
 
 # The rules the screens package is written to: SwiftUI only outside a
 # registered leaf, no platform conditionals, no spinners. Pure text, so it runs

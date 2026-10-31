@@ -729,9 +729,9 @@ The App Store enforces three rules that a simulator build never shows:
   The compiler writes its own copy nested inside `CFBundleIcons`, which is not
   where Apple looks; without the declared one an upload fails with code 90713.
 
-`scripts/tests/icon_test.py` checks the sources, and `just ios scope-audit`
-refuses a built bundle with no top-level `CFBundleIconName` or no
-`AppIcon60x60@2x.png`.
+`scripts/tests/icon_test.py` checks the committed default icon has no alpha
+channel, and `just ios scope-audit` refuses a built bundle with no top-level
+`CFBundleIconName` or no `AppIcon60x60@2x.png`.
 
 ## Checks only a phone can make
 

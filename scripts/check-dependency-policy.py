@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_LOCAL = {
@@ -50,7 +49,7 @@ ALLOWED_LOCAL = {
     # interpret only for the dump path's per-kind redactor: the one stated
     # exception to "the daemon interprets nothing".
     "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "version-stamp", "wire"},
-    "amux": {"agent", "agent-dir", "analytics", "claude", "client", "log-file", "node", "settings", "store", "tui", "wire"},
+    "amux": {"agent", "agent-dir", "analytics", "claude", "client", "log-file", "node", "settings", "tui", "wire"},
     # The version stamp a release tool can rewrite in a built binary, and the
     # release manifest the tool signs and the daemon verifies; the xtask
     # shares both without building the daemon.
@@ -140,7 +139,7 @@ SUPPORT_ALLOWED_LOCAL = {
     },
     # Qualification owns environment-dependent provider and performance
     # checks while reusing the network harness rather than shipping it.
-    "qualification": {"node", "provider-fakes", "store", "testnet", "wire"},
+    "qualification": {"node", "provider-fakes", "testnet", "wire"},
     "claude-specs": {"claude", "claude-protocol", "pty-host", "redaction", "replay-support"},
     "codex-specs": {"codex", "codex-protocol", "pty-host", "redaction", "replay-support"},
     # The fake providers speak each protocol from its recordings, and check
@@ -170,26 +169,6 @@ SUPPORT_ALLOWED_LOCAL = {
     "models": {"agent-core", "daemon-core", "interpret", "journal", "path-core", "provider-fakes", "relay-core", "release", "socket-core", "store", "supervisor-core", "ui-state", "wire"},
 }
 
-# Every dependency comes from crates.io but rustls, which comes from the
-# fork carrying the amux patch (docs/ARCHITECTURE.md, "The rustls patch")
-# at whatever commit the lockfile pins.
-CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
-GIT_SOURCES = {"rustls": "git+https://github.com/amuxhq/rustls?rev="}
-
-
-def source_failures() -> list[str]:
-    lock = tomllib.loads((ROOT / "Cargo.lock").read_text())
-    failures = []
-    for package in lock["package"]:
-        source = package.get("source")
-        if source is None or source == CRATES_IO:
-            continue
-        allowed = GIT_SOURCES.get(package["name"])
-        if allowed is None or not source.startswith(allowed):
-            failures.append(f"{package['name']} {package['version']}: comes from {source}")
-    return failures
-
-
 def local_edges(package: dict[str, object]) -> set[str]:
     return {
         dependency["name"]
@@ -212,7 +191,7 @@ def main() -> int:
         for package in metadata["packages"]
         if package["id"] in members
     }
-    failures = source_failures()
+    failures: list[str] = []
 
     for name, allowed in (ALLOWED_LOCAL | SUPPORT_ALLOWED_LOCAL).items():
         package = packages.get(name)

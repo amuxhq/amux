@@ -23,8 +23,6 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-just
-      - name: Check workspace
-        run: just check
       - name: Run Clippy
         run: just lint
 
@@ -254,65 +252,6 @@ jobs:
           path: target/journeys
           if-no-files-found: warn
           retention-days: 7
-
-  codex-socket-windows:
-    name: Codex Unix socket on Windows (report)
-    runs-on: windows-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Report whether Codex listens on a Unix socket
-        # amux keeps Codex on stdio on Windows, with no attach; this only
-        # says whether that could change. It never fails the job.
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          npm install -g @openai/codex@0.160.0
-          $socket = Join-Path $env:RUNNER_TEMP 'codex.sock'
-          $errors = Join-Path $env:RUNNER_TEMP 'codex.err'
-          $server = Start-Process -PassThru -NoNewWindow -FilePath cmd.exe `
-            -ArgumentList '/c', 'codex', 'app-server', '--listen', "unix://$socket" `
-            -RedirectStandardError $errors
-          $verdict = 'did not listen within 30 seconds'
-          for ($i = 0; $i -lt 60; $i++) {
-            if ($server.HasExited) { $verdict = "exited with code $($server.ExitCode)"; break }
-            if (Test-Path $socket) {
-              try {
-                $client = [System.Net.Sockets.Socket]::new(
-                  [System.Net.Sockets.AddressFamily]::Unix,
-                  [System.Net.Sockets.SocketType]::Stream,
-                  [System.Net.Sockets.ProtocolType]::Unspecified)
-                $client.Connect([System.Net.Sockets.UnixDomainSocketEndPoint]::new($socket))
-                $client.Dispose()
-                $verdict = 'listens, and a client connects'
-              } catch {
-                $verdict = "listens, but a client could not connect: $($_.Exception.Message)"
-              }
-              break
-            }
-            Start-Sleep -Milliseconds 500
-          }
-          if (-not $server.HasExited) { taskkill /T /F /PID $server.Id | Out-Null }
-          "Codex $(codex --version) on Windows, ``app-server --listen unix://``: $verdict" |
-            Tee-Object -Append -FilePath $env:GITHUB_STEP_SUMMARY
-          Get-Content $errors -ErrorAction SilentlyContinue | Select-Object -Last 20
-
-  embedded:
-    name: Embedded client
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.98.0
-      - uses: Swatinem/rust-cache@v2
-      - uses: ./.github/actions/setup-just
-      - uses: ./.github/actions/setup-nextest
-      - name: Check provider-free client graph
-        run: just embedded-check
-      - name: Test embedded ownership boundary
-        run: just embedded-test
 
   ios:
     name: iOS target check

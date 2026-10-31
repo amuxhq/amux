@@ -9,31 +9,25 @@ use std::time::Duration;
 use claude_protocol::stream::RawFrame;
 use claude_protocol::transcript::Row;
 use tokio::io::{AsyncBufReadExt, AsyncSeekExt, BufReader};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 
-/// A tailer owns one row stream and can be relinked to a replacement transcript.
+/// A tailer owns one transcript's row stream; the driver follows a
+/// replacement transcript with a tailer of its own.
 pub struct TranscriptTailer {
-    path_tx: watch::Sender<PathBuf>,
     rows: Mutex<Option<mpsc::Receiver<Row>>>,
     task: tokio::task::JoinHandle<()>,
 }
 
 impl TranscriptTailer {
     pub fn follow(path: PathBuf) -> Self {
-        let (path_tx, path_rx) = watch::channel(path);
         let (row_tx, row_rx) = mpsc::channel(256);
         let task = tokio::spawn(async move {
-            tail_paths(path_rx, row_tx).await;
+            tail(&path, &row_tx).await;
         });
         Self {
-            path_tx,
             rows: Mutex::new(Some(row_rx)),
             task,
         }
-    }
-
-    pub fn relink(&mut self, path: PathBuf) {
-        self.path_tx.send_replace(path);
     }
 
     pub fn rows(&self) -> mpsc::Receiver<Row> {
@@ -51,36 +45,17 @@ impl Drop for TranscriptTailer {
     }
 }
 
-async fn tail_paths(mut paths: watch::Receiver<PathBuf>, rows: mpsc::Sender<Row>) {
-    loop {
-        let path = paths.borrow_and_update().clone();
-        match tail_one(&path, &mut paths, &rows).await {
-            TailOutcome::Relink => continue,
-            TailOutcome::Closed => break,
-        }
-    }
-}
+/// How long the tail waits for the file to appear or grow.
+const POLL: Duration = Duration::from_millis(100);
 
-enum TailOutcome {
-    Relink,
-    Closed,
-}
-
-async fn tail_one(
-    path: &PathBuf,
-    paths: &mut watch::Receiver<PathBuf>,
-    rows: &mpsc::Sender<Row>,
-) -> TailOutcome {
+async fn tail(path: &PathBuf, rows: &mpsc::Sender<Row>) {
     let file = loop {
         match tokio::fs::File::open(path).await {
             Ok(file) => break file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                tokio::select! {
-                    changed = paths.changed() => return if changed.is_ok() { TailOutcome::Relink } else { TailOutcome::Closed },
-                    _ = tokio::time::sleep(Duration::from_millis(100)) => {}
-                }
+                tokio::time::sleep(POLL).await;
             }
-            Err(_) => return TailOutcome::Closed,
+            Err(_) => return,
         }
     };
     let mut reader = BufReader::new(file);
@@ -89,16 +64,14 @@ async fn tail_one(
     loop {
         line.clear();
         let Ok(line_start) = reader.stream_position().await else {
-            return TailOutcome::Closed;
+            return;
         };
         match reader.read_line(&mut line).await {
             Ok(0) => {
                 if !eof_observed {
                     eof_observed = true;
-                    tokio::select! {
-                        changed = paths.changed() => return if changed.is_ok() { TailOutcome::Relink } else { TailOutcome::Closed },
-                        _ = tokio::time::sleep(Duration::from_millis(100)) => continue,
-                    }
+                    tokio::time::sleep(POLL).await;
+                    continue;
                 }
                 // Not Claude's: tells the reader the file has been read to
                 // its end once.
@@ -106,7 +79,7 @@ async fn tail_one(
                     serde_json::json!({"type":"amux.transcript_ready"}),
                 ));
                 if rows.send(ready).await.is_err() {
-                    return TailOutcome::Closed;
+                    return;
                 }
                 break;
             }
@@ -116,38 +89,37 @@ async fn tail_one(
                     .await
                     .is_err()
                 {
-                    return TailOutcome::Closed;
+                    return;
                 }
-                tokio::select! {
-                    changed = paths.changed() => return if changed.is_ok() { TailOutcome::Relink } else { TailOutcome::Closed },
-                    _ = tokio::time::sleep(Duration::from_millis(100)) => continue,
-                }
+                tokio::time::sleep(POLL).await;
             }
             Ok(_) => {
                 eof_observed = false;
                 if send_line(&line, rows).await.is_err() {
-                    return TailOutcome::Closed;
+                    return;
                 }
             }
-            Err(_) => return TailOutcome::Closed,
+            Err(_) => return,
         }
     }
     loop {
         line.clear();
         let Ok(line_start) = reader.stream_position().await else {
-            return TailOutcome::Closed;
+            return;
         };
         match reader.read_line(&mut line).await {
             Ok(0) => {
-                tokio::select! {
-                    changed = paths.changed() => return if changed.is_ok() { TailOutcome::Relink } else { TailOutcome::Closed },
-                    _ = tokio::time::sleep(Duration::from_millis(100)) => {
-                        let Ok(position) = reader.stream_position().await else { return TailOutcome::Closed; };
-                        let Ok(metadata) = tokio::fs::metadata(path).await else { continue; };
-                        if metadata.len() < position && reader.seek(std::io::SeekFrom::Start(0)).await.is_err() {
-                            return TailOutcome::Closed;
-                        }
-                    }
+                tokio::time::sleep(POLL).await;
+                let Ok(position) = reader.stream_position().await else {
+                    return;
+                };
+                let Ok(metadata) = tokio::fs::metadata(path).await else {
+                    continue;
+                };
+                if metadata.len() < position
+                    && reader.seek(std::io::SeekFrom::Start(0)).await.is_err()
+                {
+                    return;
                 }
             }
             Ok(_) if !line.ends_with('\n') => {
@@ -156,19 +128,16 @@ async fn tail_one(
                     .await
                     .is_err()
                 {
-                    return TailOutcome::Closed;
+                    return;
                 }
-                tokio::select! {
-                    changed = paths.changed() => return if changed.is_ok() { TailOutcome::Relink } else { TailOutcome::Closed },
-                    _ = tokio::time::sleep(Duration::from_millis(100)) => continue,
-                }
+                tokio::time::sleep(POLL).await;
             }
             Ok(_) => {
                 if send_line(&line, rows).await.is_err() {
-                    return TailOutcome::Closed;
+                    return;
                 }
             }
-            Err(_) => return TailOutcome::Closed,
+            Err(_) => return,
         }
     }
 }
@@ -191,25 +160,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tailer_reads_existing_rows_and_follows_relink() {
+    async fn tailer_reads_existing_rows_then_says_it_is_ready() {
         let dir = tempfile::tempdir().unwrap();
-        let first = dir.path().join("first.jsonl");
-        let second = dir.path().join("second.jsonl");
-        tokio::fs::write(&first, "{\"type\":\"user\",\"uuid\":\"one\"}\n")
+        let path = dir.path().join("transcript.jsonl");
+        tokio::fs::write(&path, "{\"type\":\"user\",\"uuid\":\"one\"}\n")
             .await
             .unwrap();
-        tokio::fs::write(&second, "{\"type\":\"assistant\",\"uuid\":\"two\"}\n")
-            .await
-            .unwrap();
-        let mut tailer = TranscriptTailer::follow(first);
+        let tailer = TranscriptTailer::follow(path);
         let mut rows = tailer.rows();
         assert_eq!(json(rows.recv().await.unwrap())["uuid"], "one");
         assert_eq!(
             json(rows.recv().await.unwrap())["type"],
             "amux.transcript_ready"
         );
-        tailer.relink(second);
-        assert_eq!(json(rows.recv().await.unwrap())["uuid"], "two");
     }
 
     #[tokio::test]

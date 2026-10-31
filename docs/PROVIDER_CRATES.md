@@ -49,11 +49,11 @@ provider sends shows up: as a failed test naming the line, not as a quiet
 A host crate knows how to start the provider and move bytes, and takes
 every message type from its protocol crate.
 
-- `claude` builds Claude Code's command line, hosts it in a terminal,
-  follows the transcript file it writes, carries hook payloads from the
-  hook command to the agent process over a socket, reaches Claude's
-  messaging socket, and probes its version. The agent process uses it for
-  terminal Claude.
+- `claude` builds Claude Code's launch settings and the environment it
+  scrubs, carries hook payloads from the hook command to the agent process
+  over a socket, reaches Claude's messaging socket, finds its session
+  files, and probes its version. The agent process uses it for terminal
+  Claude, and hosts the terminal and follows the transcript itself.
 - `codex` starts `codex app-server` listening on a socket in the agent's
   folder (stdio on Windows) and carries whole messages to and from it as
   bytes; the agent process and its interpreter build and read them with

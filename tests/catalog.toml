@@ -613,7 +613,7 @@ cargo = [
 
 [[suite]]
 name = "provider-io-library-units"
-contract = "PTY ownership, capture redaction, the connection to a hosted Codex app server and Claude's launch settings, hook receiver, transcript tailer and version probe preserve process, signal, byte, sanitization and protocol contracts."
+contract = "PTY ownership, capture redaction, the connection to a hosted Codex app server and Claude's launch settings, hook forwarding and version probe preserve process, signal, byte, sanitization and protocol contracts."
 paths = ["crates/claude/src", "crates/codex/src", "crates/pty-host/src", "crates/redaction/src"]
 recipe = "just suite provider-io-library-units"
 boundary = "Provider adapter"

@@ -829,7 +829,7 @@ The messages themselves are in the protocol crates, described with these in
 
 | Crate | What it holds | Who uses it |
 |---|---|---|
-| [`claude`](../crates/claude/src/lib.rs) | Hosting Claude Code: hook forwarding over the hook socket (`hooks`), launch settings and the environment scrub (`launch`), the messaging socket client (`messaging`), transcript tailing (`transcript`), session files (`history`) and version probing (`version`) | The agent process (hooks, launch, messaging, version, session files), `amux internal hook claude`, and `claude-specs` |
+| [`claude`](../crates/claude/src/lib.rs) | Hosting Claude Code: hook forwarding over the hook socket (`hooks`), launch settings and the environment scrub (`launch`), the messaging socket client (`messaging`), session files (`history`) and version probing (`version`) | The agent process (hooks, launch, messaging, version, session files), `amux internal hook claude`, and `claude-specs` |
 | [`codex`](../crates/codex/src/lib.rs) | Hosting the Codex app server: the listening socket (stdio on Windows), the process group, and whole messages in and out as bytes | The agent process, for its Codex server and the catalogue probe, and `codex-specs`, whose own client drives Codex to record scenarios |
 | [`pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal hosting: spawn in a process group, one output stream, input, resize, process-group signals, graceful termination | The agent process (terminal Claude and Codex views) and `claude-specs` |
 

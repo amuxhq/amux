@@ -103,7 +103,7 @@ async fn capture_pty(entry: SpecEntry) -> Result<PtyCapture, Box<dyn std::error:
         hook_command,
         ..Default::default()
     };
-    let launch = claude::launch::Launch {
+    let launch = claude_specs::terminal::Launch {
         binary: claude_binary(),
         cwd: work,
         args: Vec::new(),
@@ -115,7 +115,7 @@ async fn capture_pty(entry: SpecEntry) -> Result<PtyCapture, Box<dyn std::error:
     claude_specs::specs::pty::prepare_launch(&entry, &mut spawn_launch)?;
     let spawn = serde_json::to_vec(&serde_json::json!({
         "transport_id": "pty",
-        "argv": claude::launch::pty_spawn_args(&spawn_launch),
+        "argv": claude_specs::terminal::pty_spawn_args(&spawn_launch),
     }))?;
     let report = claude_specs::specs::pty::run(
         &entry,

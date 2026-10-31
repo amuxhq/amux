@@ -1,7 +1,6 @@
 //! Claude Code version probing.
 
 use std::path::Path;
-use std::str::FromStr;
 use std::time::Duration;
 
 use semver::Version;
@@ -14,28 +13,6 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 /// 2.1.251). An older Claude starts without complaint and never reports
 /// the events amux follows a session by, so it is refused at launch.
 pub const MIN_TERMINAL: Version = Version::new(2, 1, 251);
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ClaudeVersion(pub Version);
-
-impl FromStr for ClaudeVersion {
-    type Err = semver::Error;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        value
-            .split_whitespace()
-            .next()
-            .unwrap_or(value)
-            .parse()
-            .map(Self)
-    }
-}
-
-impl std::fmt::Display for ClaudeVersion {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(formatter)
-    }
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum VersionError {
@@ -56,13 +33,13 @@ pub enum VersionError {
     },
 }
 
-pub async fn probe_version(binary: &Path) -> Result<ClaudeVersion, VersionError> {
+pub async fn probe_version(binary: &Path) -> Result<Version, VersionError> {
     let mut command = Command::new(binary);
     command.arg("--version");
     probe_command(command).await
 }
 
-async fn probe_command(mut command: Command) -> Result<ClaudeVersion, VersionError> {
+async fn probe_command(mut command: Command) -> Result<Version, VersionError> {
     command.kill_on_drop(true);
     let output = tokio::time::timeout(PROBE_TIMEOUT, command.output())
         .await
@@ -74,8 +51,12 @@ async fn probe_command(mut command: Command) -> Result<ClaudeVersion, VersionErr
     if raw.is_empty() {
         return Err(VersionError::Empty);
     }
-    raw.parse()
-        .map_err(|source| VersionError::Invalid { value: raw, source })
+    parse(&raw).map_err(|source| VersionError::Invalid { value: raw, source })
+}
+
+/// The version at the head of Claude's `--version` banner.
+fn parse(banner: &str) -> Result<Version, semver::Error> {
+    banner.split_whitespace().next().unwrap_or(banner).parse()
 }
 
 #[cfg(test)]
@@ -85,13 +66,10 @@ mod tests {
     #[test]
     fn parses_semantic_version_from_cli_banner() {
         assert_eq!(
-            "2.1.251 (Claude Code)"
-                .parse::<ClaudeVersion>()
-                .unwrap()
-                .to_string(),
-            "2.1.251"
+            parse("2.1.251 (Claude Code)").unwrap(),
+            Version::new(2, 1, 251)
         );
-        assert!("not a version".parse::<ClaudeVersion>().is_err());
+        assert!(parse("not a version").is_err());
     }
 
     #[cfg(unix)]

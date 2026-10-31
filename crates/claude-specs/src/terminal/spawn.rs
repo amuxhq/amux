@@ -1,10 +1,32 @@
 //! Starting Claude Code under a PTY.
 
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use claude::hooks::HOOK_SOCKET_ENV;
-use claude::launch::{Launch, pty_spawn_args};
+use claude::launch::MergedSettings;
+use uuid::Uuid;
+
+/// What a recording starts Claude with.
+#[derive(Debug, Clone)]
+pub struct Launch {
+    pub binary: PathBuf,
+    pub cwd: PathBuf,
+    pub args: Vec<String>,
+    pub session_id: Uuid,
+    pub settings: MergedSettings,
+    pub env_scrub: &'static [&'static str],
+}
+
+/// The launch's arguments, then its one `--settings` value.
+pub fn pty_spawn_args(launch: &Launch) -> Vec<String> {
+    let mut args = launch.args.clone();
+    args.extend([
+        "--settings".to_string(),
+        launch.settings.as_value().to_string(),
+    ]);
+    args
+}
 
 /// Start Claude Code in a PTY of `size`, with the launch's arguments and
 /// environment scrub, `env` added to its environment, and its hooks

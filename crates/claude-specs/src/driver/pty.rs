@@ -9,10 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::Bytes;
-use claude::hooks::HookReceiver;
-use claude::launch::Launch;
-use claude::transcript::TranscriptTailer;
-use claude::version::{ClaudeVersion, VersionError, probe_version};
+use claude::version::{VersionError, probe_version};
 use claude_protocol::hooks::{self, Payload as HookPayload};
 use claude_protocol::stream::ContentBlock;
 use claude_protocol::transcript::{self, Row as TranscriptRow};
@@ -23,6 +20,8 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::oneshot;
 use tokio::sync::{mpsc, watch};
 
+use super::hooks::HookReceiver;
+use super::transcript::TranscriptTailer;
 pub use crate::terminal::*;
 
 const CHANNEL_CAPACITY: usize = 256;
@@ -36,7 +35,7 @@ pub struct Sources {
     pub pty: PtySource,
     pub hooks: HookSource,
     pub transcript: TranscriptSource,
-    pub version: ClaudeVersion,
+    pub version: semver::Version,
     pub delays: DelaySource,
 }
 
@@ -202,7 +201,7 @@ impl TranscriptSource {
 #[allow(clippy::large_enum_variant)]
 pub enum PtyEvent {
     Ready {
-        version: ClaudeVersion,
+        version: semver::Version,
     },
     Transcript {
         path: PathBuf,
@@ -449,7 +448,7 @@ pub async fn spawn(
 pub fn spawn_with_version(
     launch: &Launch,
     size: pty_host::PtySize,
-    version: ClaudeVersion,
+    version: semver::Version,
     env: &[(OsString, OsString)],
 ) -> Result<Session, SpawnError> {
     let session = launch.session_id.simple().to_string();
@@ -656,7 +655,7 @@ pub fn from_recording(
         },
         hooks: hook_source,
         transcript: TranscriptSource::recorded(rows),
-        version: ClaudeVersion(manifest.recorded.version.clone()),
+        version: manifest.recorded.version.clone(),
         delays: DelaySource::replay(replay.clock.clone()),
     }))
 }

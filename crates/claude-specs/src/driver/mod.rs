@@ -5,4 +5,6 @@
 //! a claim about provider traffic; the product hosts Claude in its agent
 //! process.
 
+mod hooks;
 pub mod pty;
+mod transcript;

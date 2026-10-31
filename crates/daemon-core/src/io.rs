@@ -791,15 +791,13 @@ mod tests {
             Input::PeerCall {
                 from: HostId([1; 16]),
                 call: CallId(7),
-                request: PeerRequest::SubscribeSession(wire::PeerSubscribeSessionRequest {
+                request: PeerRequest::SubscribeSession(wire::SubscribeSessionRequest {
                     agent_id: vec![1, 2],
-                    from: Some(wire::peer_subscribe_session_request::From::After(
-                        wire::After {
-                            revision: 3,
-                            cap: 4,
-                            generation: 5,
-                        },
-                    )),
+                    from: Some(wire::subscribe_session_request::From::After(wire::After {
+                        revision: 3,
+                        cap: 4,
+                        generation: 5,
+                    })),
                 }),
             },
             Input::ClientCall {

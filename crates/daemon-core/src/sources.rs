@@ -45,8 +45,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use store::{Absorb, AgentKey, AgentRow, Marker, Record, StoreError};
 use wire::{
-    Agent, AgentRemoved, Item, ListItemsResponse, PeerSubscribeSessionRequest, SessionEvent,
-    inventory_event, peer_subscribe_session_request, session_event,
+    Agent, AgentRemoved, Item, ListItemsResponse, SessionEvent, SubscribeSessionRequest,
+    inventory_event, session_event, subscribe_session_request,
 };
 
 use crate::ids::{AgentId, CallId, HostId, TimerId};
@@ -1034,7 +1034,7 @@ impl Daemon {
     ) -> Option<(CallId, bool)> {
         let row = self.store.agent(agent).ok().flatten()?;
         let from = self.source_from(&row);
-        let tail = matches!(from, peer_subscribe_session_request::From::Tail(_));
+        let tail = matches!(from, subscribe_session_request::From::Tail(_));
         let call = self.pending.peers.mint();
         self.pending.peers.waiting.insert(
             call,
@@ -1045,7 +1045,7 @@ impl Daemon {
         out.push(Output::Call {
             host,
             call,
-            request: PeerRequest::SubscribeSession(PeerSubscribeSessionRequest {
+            request: PeerRequest::SubscribeSession(SubscribeSessionRequest {
                 agent_id: agent.agent.clone(),
                 from: Some(from),
             }),
@@ -1056,16 +1056,16 @@ impl Daemon {
 
     /// Where a replica's Subscribe starts: a tail of K with no block,
     /// otherwise after its cursor.
-    fn source_from(&self, row: &AgentRow) -> peer_subscribe_session_request::From {
+    fn source_from(&self, row: &AgentRow) -> subscribe_session_request::From {
         let k = self.settings.tail_rows;
         if row.complete_from_order.is_some() {
-            peer_subscribe_session_request::From::After(wire::After {
+            subscribe_session_request::From::After(wire::After {
                 revision: row.source_cursor,
                 cap: k,
                 generation: row.source_generation,
             })
         } else {
-            peer_subscribe_session_request::From::Tail(k)
+            subscribe_session_request::From::Tail(k)
         }
     }
 
@@ -1090,7 +1090,7 @@ impl Daemon {
                         {
                             continue;
                         }
-                        calls.push(PeerRequest::SubscribeSession(PeerSubscribeSessionRequest {
+                        calls.push(PeerRequest::SubscribeSession(SubscribeSessionRequest {
                             agent_id: row.agent.agent.clone(),
                             from: Some(self.source_from(row)),
                         }));
@@ -1626,7 +1626,6 @@ fn fold_tail(events: Vec<Record>, row: &AgentRow) -> (Vec<Item>, wire::Snapshot,
         }
     }
     let snapshot = snapshot.unwrap_or_else(|| wire::Snapshot {
-        agent_id: row.agent.agent.clone(),
         kind: row.kind,
         phase: wire::Phase::Starting as i32,
         ..wire::Snapshot::default()
@@ -1882,7 +1881,7 @@ mod tests {
                 assert_eq!(request.agent_id, THEIRS.to_vec());
                 assert_eq!(
                     request.from,
-                    Some(peer_subscribe_session_request::From::Tail(200)),
+                    Some(subscribe_session_request::From::Tail(200)),
                     "with no block it asks for a tail of K"
                 );
                 *call

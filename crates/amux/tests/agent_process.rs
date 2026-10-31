@@ -23,9 +23,9 @@ use prost::Message as _;
 use provider_fakes::{SCRIPT_ENV, Script, Step};
 use tokio::io::{ReadHalf, WriteHalf};
 use wire::{
-    AgentHello, AgentSpec, ClaudeItem, ClaudePtyInput, ClaudeSdkInput, CodexInput, CodexItem,
-    CtlFrame, EffectiveConfig, Input, Kind, Phase, PromptInput, PtyMode, Stop, claude_item,
-    claude_pty_input, claude_sdk_input, codex_input, codex_item, ctl_frame, send_input_response,
+    AgentHello, AgentInput, AgentSpec, ClaudeItem, CodexItem, CtlFrame, EffectiveConfig, Input,
+    Kind, Phase, PromptInput, PtyMode, Stop, agent_input, claude_item, codex_item, ctl_frame,
+    send_input_response,
 };
 /// Long enough that no deadline fires during a test: the daemon's absence
 /// is survived, never drained.
@@ -137,7 +137,6 @@ impl Fixture {
             other => panic!("the first frame is a Hello, not {other:?}"),
         };
         Daemon {
-            kind: self.kind,
             reader,
             writer,
             hello,
@@ -240,7 +239,6 @@ async fn next_frame(reader: &mut ReadHalf<LocalStream>) -> CtlFrame {
 
 /// The test standing in for the daemon on ctl.sock.
 struct Daemon {
-    kind: Kind,
     reader: ReadHalf<LocalStream>,
     writer: WriteHalf<LocalStream>,
     hello: AgentHello,
@@ -259,16 +257,8 @@ impl Daemon {
             text: text.to_owned(),
             ..Default::default()
         };
-        let of = match self.kind {
-            Kind::Codex => wire::KindInput::Codex(CodexInput {
-                of: Some(codex_input::Of::Prompt(prompt)),
-            }),
-            Kind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
-                of: Some(claude_pty_input::Of::Prompt(prompt)),
-            }),
-            _ => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
-                of: Some(claude_sdk_input::Of::Prompt(prompt)),
-            }),
+        let of = AgentInput {
+            of: Some(agent_input::Of::Prompt(prompt)),
         };
         self.send(ctl_frame::Of::Input(Input::new(id.to_vec(), of)))
             .await;

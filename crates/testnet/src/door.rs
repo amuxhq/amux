@@ -665,10 +665,9 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
             json!({ "incarnation": resumed.incarnation })
         }
         Control::Send { agent, text } => {
-            let kind = net.agent(&agent)?.kind;
             let id = Uuid::new_v4();
             let verdict = net
-                .input(&agent, crate::net::prompt(kind, id.as_bytes(), &text))
+                .input(&agent, crate::net::prompt(id.as_bytes(), &text))
                 .await?;
             json!({ "verdict": format!("{:?}", verdict.of), "input_id": hex(id.as_bytes()) })
         }

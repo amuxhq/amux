@@ -18,7 +18,7 @@ use daemon_core::payload::{
 use store::{AgentRow, StoreError};
 use tonic::{Code, Response, Status};
 use uuid::Uuid;
-use wire::{AmbiguousHostName, ErrorCode, HostEntry};
+use wire::{ErrorCode, HostEntry};
 
 use crate::HostId;
 use crate::driver::Delivered;
@@ -109,7 +109,7 @@ impl ForwardError {
     }
 }
 
-/// A peer services request that can be forwarded, and the reply it gets.
+/// A request to the owning host's services that can be forwarded, and the reply it gets.
 pub(crate) trait PeerRpc {
     type Reply;
     fn request(self) -> PeerRequest;
@@ -161,17 +161,16 @@ peer_rpc! {
 pub enum HostNameError {
     #[error("no trusted host is named {name}; trusted hosts: {}", .known.join(", "))]
     NotFound { name: String, known: Vec<String> },
-    #[error("{} trusted hosts answer to {}", .0.candidates.len(), .0.name)]
-    Ambiguous(AmbiguousHostName),
+    #[error("{count} trusted hosts answer to {name}")]
+    Ambiguous { name: String, count: usize },
 }
 
 impl HostNameError {
     pub fn to_wire(&self) -> wire::Error {
         match self {
             Self::NotFound { .. } => wire_error(ErrorCode::NotFound, self.to_string()),
-            Self::Ambiguous(ambiguous) => {
+            Self::Ambiguous { .. } => {
                 wire::Error::new(ErrorCode::FailedPrecondition, self.to_string())
-                    .with_detail(ambiguous)
             }
         }
     }
@@ -363,15 +362,15 @@ impl ProfileRuntime {
                 name: name.to_owned(),
                 known: hosts.iter().map(|host| host.name().to_owned()).collect(),
             }),
-            several => Err(HostNameError::Ambiguous(AmbiguousHostName {
+            several => Err(HostNameError::Ambiguous {
                 name: name.to_owned(),
-                candidates: several.iter().map(|host| (*host).clone()).collect(),
-            })),
+                count: several.len(),
+            }),
         }
     }
 }
 
-/// Makes one peer services call and reads its whole reply.
+/// Makes one call on the owning host and reads its whole reply.
 async fn dispatch(
     mut client: crate::PeerClient,
     request: PeerRequest,
@@ -411,15 +410,10 @@ async fn dispatch(
                 PeerReply::Done
             })
         }
-        PeerRequest::SendMessage(envelope) => {
-            let request = wire::PeerSendMessageRequest {
-                envelope: Some(envelope),
-            };
-            unary(
-                client.agents.send_message(request).await,
-                PeerReply::SendMessage,
-            )
-        }
+        PeerRequest::SendMessage(envelope) => unary(
+            client.agents.send_message(envelope).await,
+            PeerReply::SendMessage,
+        ),
         PeerRequest::PutBlob(request) => {
             unary(client.agents.put_blob(request).await, PeerReply::Blob)
         }

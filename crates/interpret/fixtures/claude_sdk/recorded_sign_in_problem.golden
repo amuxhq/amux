@@ -1,31 +1,31 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 2 recorded 1: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
 effect catalogue 50a77333 models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},claude-fable-5-1[1m]{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max}] commands=49 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue 50a77333
-snapshot IDLE queue=[] working_on=- at=1793423942987 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
+snapshot IDLE queue=[] working_on=- at=1793423942987 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
 ## 4 recorded 3: fact Stream type=control_response
-snapshot IDLE queue=[] working_on=- at=1793423943023 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
+snapshot IDLE queue=[] working_on=- at=1793423943023 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
 ## 6 recorded 5: input 0x012a0341f2c34d34bd6a4d0c512e77fe
 effect reply 0x012a0341f2c34d34bd6a4d0c512e77fe accepted
 effect user 012a0341-f2c3-4d34-bd6a-4d0c512e77fe "Reply with the single word pong and nothing else."
 item boundary:1 boundary final at=1793423943031 text="" BOUNDARY_KIND_STARTED
 item 012a0341-f2c3-4d34-bd6a-4d0c512e77fe prompt final input=0x012a0341f2c34d34bd6a4d0c512e77fe at=1793423943031 text="Reply with the single word pong and nothing else."
-snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423943031 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
+snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423943031 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
 ## 12 recorded 11: fact Stream type=system subtype=init uuid=03a97b50-22aa-4fc0-bddb-1a0bd5cffd1b
 item boundary:1 boundary final at=1793423943364 text="" BOUNDARY_KIND_STARTED
-snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423943364 asks=[] session=9d6d3c5a-bb67-4ba9-8267-0f81a376941d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
+snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423943364 asks=[] session=9d6d3c5a-bb67-4ba9-8267-0f81a376941d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
 ## 14 recorded 13: fact Stream type=system subtype=status uuid=1219ed92-ee5f-4aad-88dc-433143f544bd
 item 1219ed92-ee5f-4aad-88dc-433143f544bd status final at=1793423943371 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 16 recorded 15: fact Stream type=system subtype=commands_changed uuid=89eaf134-5ef0-479f-965e-626508da6284
 effect catalogue 8bda28fa models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},claude-fable-5-1[1m]{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max}] commands=49 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue 8bda28fa
-snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423943593 asks=[] session=9d6d3c5a-bb67-4ba9-8267-0f81a376941d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
+snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423943593 asks=[] session=9d6d3c5a-bb67-4ba9-8267-0f81a376941d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
 ## 20 recorded 19: fact Stream type=assistant uuid=0a32f2aa-57e5-49e8-888e-ea0d7a312fb7
 item 0a32f2aa-57e5-49e8-888e-ea0d7a312fb7 api_error final at=1793423943602 text="" authentication_failed "Invalid API key · Fix external API key" retry=false 0/0
-snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423943602 asks=[] session=9d6d3c5a-bb67-4ba9-8267-0f81a376941d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_FAILED - background=?
+snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423943602 asks=[] session=9d6d3c5a-bb67-4ba9-8267-0f81a376941d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_FAILED - background=?
 ## 22 recorded 21: fact Stream type=result subtype=success uuid=ab971b97-03e0-4647-9179-33882319a95a
 item turn:1 turn final at=1793423943604 text="" #1 TURN_OUTCOME_FAILED started=1793423943346
-snapshot IDLE queue=[] working_on="Reply with the single word pong and nothing else." at=1793423943604 asks=[] session=9d6d3c5a-bb67-4ba9-8267-0f81a376941d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_FAILED - background=?
+snapshot IDLE queue=[] working_on="Reply with the single word pong and nothing else." at=1793423943604 asks=[] session=9d6d3c5a-bb67-4ba9-8267-0f81a376941d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_FAILED - background=?
 turn_end 1 last=-

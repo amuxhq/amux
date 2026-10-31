@@ -1,81 +1,81 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1793309161462 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on=- at=1793309161462 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793309161462 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
-snapshot IDLE queue=[] working_on=- at=1793309161486 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793309161486 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 13 recorded 11: fact Transcript type=user uuid=3506bc48-d904-4fef-8875-7699e4474b02
 item 3506bc48-d904-4fef-8875-7699e4474b02 prompt final at=1793309161710 text="Do these in order, one tool call each. 1: use Write to overwrite README.md with the single line REPLACED. 2: use Bash to run exactly: mv config.txt moved.txt. 3: use Bash to run exactly: rm moved.txt. 4: use Bash to run exactly: ls missing-file.txt. The last one fails; that is expected. Then stop."
-snapshot WORKING queue=[] working_on=- at=1793309161710 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793309161710 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 37 recorded 35: fact Transcript type=assistant uuid=a405f9cd-00e7-486b-b114-13f419bb01c4
 item a405f9cd-00e7-486b-b114-13f419bb01c4 thinking final at=1793309163474 text=""
-snapshot WORKING queue=[] working_on=- at=1793309163877 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=34800/? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793309163877 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=34800/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 38 recorded 36: fact Transcript type=assistant uuid=066debf0-424f-4a18-85b2-4bda8ab6a944
 item toolu_01Uq6fvLdxyzbqNSszQKhih7 tool final at=1793309163961 text="" Write TOOL_STATE_RUNNING input=write:"<MACHINE_PATH>"
 ## 39 recorded 37: fact Transcript type=user uuid=9fec5f1b-d331-4980-adee-15d1736be38b
 item toolu_01Uq6fvLdxyzbqNSszQKhih7 tool final at=1793309163961 text="" Write TOOL_STATE_FAILED ended=1793309163967 input=write:"<MACHINE_PATH>" out="<tool_use_error>File has not been read yet. Read it first be…"
 ## 51 recorded 49: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01Wg4GErVtsAVpswTbGmtngE
-snapshot WORKING queue=[] working_on=- at=1793309165113 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=34800/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01Wg4GErVtsAVpswTbGmtngE Read since=1793309165113
+snapshot WORKING queue=[] working_on=- at=1793309165113 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=34800/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01Wg4GErVtsAVpswTbGmtngE Read since=1793309165113
 ## 53 recorded 51: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01Wg4GErVtsAVpswTbGmtngE
-snapshot WORKING queue=[] working_on=- at=1793309165139 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=34800/? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793309165139 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=34800/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 57 recorded 55: fact Transcript type=assistant uuid=aacab426-162b-4a8e-9214-06053770fa82
 item aacab426-162b-4a8e-9214-06053770fa82 thinking final at=1793309165075 text=""
-snapshot WORKING queue=[] working_on=- at=1793309165319 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35092/? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793309165319 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35092/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 59 recorded 57: fact Transcript type=assistant uuid=406f5d65-9506-4989-9114-18eacd26cae6
 item toolu_01Wg4GErVtsAVpswTbGmtngE tool final at=1793309165330 text="" Read TOOL_STATE_RUNNING read started=1793309165330 input="{\"file_path\":\"<MACHINE_PATH>\"}"
 ## 60 recorded 58: fact Transcript type=user uuid=f260ee3a-77f0-4eb7-81f7-3e289c79646e
 item toolu_01Wg4GErVtsAVpswTbGmtngE tool final at=1793309165330 text="" Read TOOL_STATE_SUCCEEDED read started=1793309165330 ended=1793309165372 input="{\"file_path\":\"<MACHINE_PATH>\"}" out="1\tCURRENT\n2\t"
 ## 64 recorded 62: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_0152YEwybr7AABwEgpuz7QKN
-snapshot WORKING queue=[] working_on=- at=1793309166518 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35092/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_0152YEwybr7AABwEgpuz7QKN Write since=1793309166518
+snapshot WORKING queue=[] working_on=- at=1793309166518 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35092/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_0152YEwybr7AABwEgpuz7QKN Write since=1793309166518
 ## 66 recorded 64: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_0152YEwybr7AABwEgpuz7QKN
-snapshot WORKING queue=[] working_on=- at=1793309166541 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35092/? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793309166541 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35092/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 68 recorded 66: fact Transcript type=assistant uuid=c8427937-0198-4248-a53c-47a2f0a72f56
 item c8427937-0198-4248-a53c-47a2f0a72f56 thinking final at=1793309166481 text=""
-snapshot WORKING queue=[] working_on=- at=1793309166659 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35252/? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793309166659 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35252/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 70 recorded 68: fact Transcript type=assistant uuid=1b285cab-19db-484d-8caa-309b47c0d771
 item toolu_0152YEwybr7AABwEgpuz7QKN tool final at=1793309166725 text="" Write TOOL_STATE_RUNNING started=1793309166725 input=write:"<MACHINE_PATH>"
 ## 72 recorded 70: fact Transcript type=user uuid=d091ad54-908c-4204-be13-37044b9e9c2f
 item toolu_0152YEwybr7AABwEgpuz7QKN tool final at=1793309166725 text="" Write TOOL_STATE_SUCCEEDED started=1793309166725 ended=1793309166774 updated line=1 input=write:"<MACHINE_PATH>" patch=1/3 out="The file /private<MACHINE_PATH> has been updated successfull…"
 ## 76 recorded 74: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_012JAYLoYvH7AaHcz2XieYLp
-snapshot WORKING queue=[] working_on=- at=1793309168004 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35252/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_012JAYLoYvH7AaHcz2XieYLp Bash since=1793309168004
+snapshot WORKING queue=[] working_on=- at=1793309168004 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35252/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_012JAYLoYvH7AaHcz2XieYLp Bash since=1793309168004
 ## 78 recorded 76: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_012JAYLoYvH7AaHcz2XieYLp
-snapshot WORKING queue=[] working_on=- at=1793309168144 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35252/? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793309168144 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35252/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 82 recorded 80: fact Transcript type=assistant uuid=07762c50-3cde-4be7-bac4-cceb8964d2a4
 item 07762c50-3cde-4be7-bac4-cceb8964d2a4 thinking final at=1793309167887 text=""
-snapshot WORKING queue=[] working_on=- at=1793309168201 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35463/? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793309168201 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35463/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 83 recorded 81: fact Transcript type=assistant uuid=04ea7fbb-8cb8-48cf-ae59-e1a1ae9080f3
 item toolu_012JAYLoYvH7AaHcz2XieYLp tool final at=1793309168213 text="" Bash TOOL_STATE_RUNNING started=1793309168213 input=shell:"mv config.txt moved.txt"
 ## 85 recorded 83: fact Transcript type=user uuid=ac520b59-adb0-4613-93b0-9bf7281d6dc8
 item toolu_012JAYLoYvH7AaHcz2XieYLp tool final at=1793309168213 text="" Bash TOOL_STATE_SUCCEEDED started=1793309168213 ended=1793309168377 input=shell:"mv config.txt moved.txt" out="(Bash completed with no output)"
 ## 89 recorded 87: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01Wm5zgmMebqo6qHnJ6LhiJq
-snapshot WORKING queue=[] working_on=- at=1793309169335 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35463/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01Wm5zgmMebqo6qHnJ6LhiJq Bash since=1793309169335
+snapshot WORKING queue=[] working_on=- at=1793309169335 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35463/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01Wm5zgmMebqo6qHnJ6LhiJq Bash since=1793309169335
 ## 91 recorded 89: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01Wm5zgmMebqo6qHnJ6LhiJq
-snapshot WORKING queue=[] working_on=- at=1793309169374 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35463/? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793309169374 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35463/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 93 recorded 91: fact Transcript type=assistant uuid=62df9030-8116-42c5-96e0-5eb52750e976
 item 62df9030-8116-42c5-96e0-5eb52750e976 thinking final at=1793309169328 text=""
-snapshot WORKING queue=[] working_on=- at=1793309169536 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35628/? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793309169536 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35628/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 94 recorded 92: fact Transcript type=assistant uuid=e438944a-2381-4d02-b772-b67abad294d3
 item toolu_01Wm5zgmMebqo6qHnJ6LhiJq tool final at=1793309169545 text="" Bash TOOL_STATE_RUNNING started=1793309169545 input=shell:"rm moved.txt"
 ## 96 recorded 94: fact Transcript type=user uuid=0f1ab269-5aa2-42e2-9f04-0dc7f7f0a2f4
 item toolu_01Wm5zgmMebqo6qHnJ6LhiJq tool final at=1793309169545 text="" Bash TOOL_STATE_SUCCEEDED started=1793309169545 ended=1793309169607 input=shell:"rm moved.txt" out="(Bash completed with no output)"
 ## 100 recorded 98: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01UDfokExkpF5Kuht1sZcSPX
-snapshot WORKING queue=[] working_on=- at=1793309170817 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35628/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01UDfokExkpF5Kuht1sZcSPX Bash since=1793309170817
+snapshot WORKING queue=[] working_on=- at=1793309170817 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35628/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01UDfokExkpF5Kuht1sZcSPX Bash since=1793309170817
 ## 102 recorded 100: fact Hook hook_event_name=PostToolUseFailure tool_use_id=toolu_01UDfokExkpF5Kuht1sZcSPX
-snapshot WORKING queue=[] working_on=- at=1793309170846 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35628/? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793309170846 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35628/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 104 recorded 102: fact Transcript type=assistant uuid=54ca109a-f0d9-4729-9c1d-68eedf92d24d
 item 54ca109a-f0d9-4729-9c1d-68eedf92d24d thinking final at=1793309170784 text=""
-snapshot WORKING queue=[] working_on=- at=1793309170979 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35783/? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793309170979 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35783/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 106 recorded 104: fact Transcript type=assistant uuid=092248f7-a332-4472-89ab-18904c646ffc
 item toolu_01UDfokExkpF5Kuht1sZcSPX tool final at=1793309171029 text="" Bash TOOL_STATE_RUNNING input=shell:"ls missing-file.txt"
 ## 107 recorded 105: fact Transcript type=user uuid=8c0cb843-7388-488e-9864-813a9eb4b6ae
 item toolu_01UDfokExkpF5Kuht1sZcSPX tool final at=1793309171029 text="" Bash TOOL_STATE_FAILED ended=1793309171079 input=shell:"ls missing-file.txt" out="Exit code 1\nls: missing-file.txt: No such file or directory"
 ## 116 recorded 114: fact Hook hook_event_name=Stop
-snapshot WORKING queue=[] working_on=- at=1793309172647 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35783/? tasks=? active=[] usage=? servers=? sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1793309172647 asks=[] session=d5d77817-aeec-4c2b-b05f-8ecaba125d35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35783/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 118 recorded 116: fact Hook hook_event_name=MessageDisplay
 item stream:f9419aaa-7354-461b-9381-ec1b92eb9a27 message open at=1793309172649 text="Done. All four steps completed as expected, with the final ls command failing as intended."

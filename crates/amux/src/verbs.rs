@@ -8,11 +8,11 @@ use anyhow::{Result, anyhow, bail};
 use settings::{ChatInSetting, InstallationConfig};
 use uuid::Uuid;
 use wire::{
-    Agent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, DeleteAgentRequest, DumpRequest, HostEntry, Input, Kind, Lifecycle, Phase,
-    PromptInput, PromptSubmission, Refusal, RenameAgentRequest, ResolveAgentRequest,
-    ResumeAgentRequest, SendInputRequest, StopAgentRequest, claude_pty_input, claude_sdk_input,
-    codex_input, create_agent_request, inventory_event, send_input_response,
+    Agent, AgentInput, ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest,
+    DeleteAgentRequest, DumpRequest, HostEntry, Input, Kind, Lifecycle, Phase, PromptInput,
+    PromptSubmission, Refusal, RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest,
+    SendInputRequest, StopAgentRequest, agent_input, create_agent_request, inventory_event,
+    send_input_response,
 };
 
 type Client = wire::ClientStubs;
@@ -21,7 +21,7 @@ type Client = wire::ClientStubs;
 pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent>)> {
     let mut stream = client
         .agents
-        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .subscribe_inventory(wire::Empty {})
         .await
         .map_err(crate::plain)?
         .into_inner();
@@ -260,21 +260,12 @@ fn submission(text: &str) -> PromptSubmission {
     }
 }
 
-pub fn prompt(kind: i32, text: &str) -> Input {
-    let prompt = PromptInput {
-        text: text.to_owned(),
-        attachments: Vec::new(),
-    };
-    let of = match Kind::try_from(kind).unwrap_or(Kind::Unspecified) {
-        Kind::Codex => wire::KindInput::Codex(CodexInput {
-            of: Some(codex_input::Of::Prompt(prompt)),
-        }),
-        Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
-            of: Some(claude_sdk_input::Of::Prompt(prompt)),
-        }),
-        Kind::ClaudePty | Kind::Unspecified => wire::KindInput::ClaudePty(ClaudePtyInput {
-            of: Some(claude_pty_input::Of::Prompt(prompt)),
-        }),
+pub fn prompt(text: &str) -> Input {
+    let of = AgentInput {
+        of: Some(agent_input::Of::Prompt(PromptInput {
+            text: text.to_owned(),
+            attachments: Vec::new(),
+        })),
     };
     Input::new(Uuid::new_v4().as_bytes().to_vec(), of)
 }
@@ -365,7 +356,7 @@ pub async fn send(client: &mut Client, reference: &str, text: &str) -> Result<()
         .sessions
         .send_input(SendInputRequest {
             agent_id: agent.agent_id.clone(),
-            input: Some(prompt(agent.kind, text)),
+            input: Some(prompt(text)),
         })
         .await
         .map_err(crate::plain)?

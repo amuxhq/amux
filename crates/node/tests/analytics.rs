@@ -12,8 +12,8 @@ use tonic::Request;
 use wire::agent_service_server::AgentService as _;
 use wire::session_service_server::SessionService as _;
 use wire::{
-    ClaudeAnswer, ClaudeSdkInput, Input, Interrupt, Kind as WireKind, PromptInput, QuestionAnswer,
-    SendInputRequest, claude_answer, claude_sdk_input,
+    AgentInput, Answer, Input, Interrupt, PromptInput, QuestionAnswer, SendInputRequest,
+    agent_input, answer,
 };
 
 use crate::support;
@@ -34,10 +34,10 @@ async fn start(install: &Install, boot: &str, recording: &Arc<Recording>) -> Dae
         .expect("the daemon starts")
 }
 
-fn sdk(of: claude_sdk_input::Of) -> Input {
+fn sdk(of: agent_input::Of) -> Input {
     Input::new(
         uuid::Uuid::new_v4().as_bytes().to_vec(),
-        ClaudeSdkInput { of: Some(of) },
+        AgentInput { of: Some(of) },
     )
 }
 
@@ -146,13 +146,13 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
     for _ in 0..2 {
         drop(
             person
-                .subscribe_inventory(Request::new(wire::SubscribeInventoryRequest {}))
+                .subscribe_inventory(Request::new(wire::Empty {}))
                 .await
                 .unwrap(),
         );
     }
 
-    let prompt = sdk(claude_sdk_input::Of::Prompt(PromptInput {
+    let prompt = sdk(agent_input::Of::Prompt(PromptInput {
         text: "a prompt the analytics never carries".into(),
         attachments: Vec::new(),
     }));
@@ -160,12 +160,12 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
         .send_input(send(&worker, prompt.clone()))
         .await
         .unwrap();
-    let answer = sdk(claude_sdk_input::Of::Answer(ClaudeAnswer {
+    let answer = sdk(agent_input::Of::Answer(Answer {
         ask_key: "ask-1".into(),
-        of: Some(claude_answer::Of::Question(QuestionAnswer::default())),
+        of: Some(answer::Of::Question(QuestionAnswer::default())),
     }));
     person.send_input(send(&worker, answer)).await.unwrap();
-    let interrupt = sdk(claude_sdk_input::Of::Interrupt(Interrupt {}));
+    let interrupt = sdk(agent_input::Of::Interrupt(Interrupt {}));
     person.send_input(send(&worker, interrupt)).await.unwrap();
 
     // The same service without the terminal's mark, as the phone calls it
@@ -173,7 +173,7 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
     let plain = ClientApi::new(&runtime, None);
     drop(
         plain
-            .subscribe_inventory(Request::new(wire::SubscribeInventoryRequest {}))
+            .subscribe_inventory(Request::new(wire::Empty {}))
             .await
             .unwrap(),
     );
@@ -216,7 +216,7 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
 }
 
 /// The analytics read a copy of an input's body. A body this daemon cannot
-/// read, from a newer client or for a kind it does not know, counts as
+/// read, from a newer client or with an arm it does not know, counts as
 /// nothing and still reaches the agent as sent: only the agent decides it.
 #[tokio::test(flavor = "multi_thread")]
 async fn undecodable_input_is_still_delivered() {
@@ -233,14 +233,12 @@ async fn undecodable_input_is_still_delivered() {
         // Not a protobuf message: a field key with no value after it.
         Input {
             input_id: b"torn".to_vec(),
-            kind: WireKind::ClaudeSdk as i32,
             body: vec![0x0a],
         },
-        // A kind this daemon has no name for.
+        // An arm this daemon has no name for.
         Input {
-            input_id: b"newer-kind".to_vec(),
-            kind: 99,
-            body: vec![0x0a, 0x00],
+            input_id: b"newer-arm".to_vec(),
+            body: vec![0xf2, 0x01, 0x00],
         },
     ];
     for input in &unreadable {

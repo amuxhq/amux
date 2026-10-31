@@ -22,10 +22,11 @@ services). The protobuf source is in
 [`pairing_service.proto`](../proto/amux/v1/pairing_service.proto),
 the front door in
 [`installation_service.proto`](../proto/amux/v1/installation_service.proto),
-each profile's administration in
-[`profile_admin_service.proto`](../proto/amux/v1/profile_admin_service.proto),
-and the peer services in
-[`peer_service.proto`](../proto/amux/v1/peer_service.proto).
+and each profile's administration in
+[`profile_admin_service.proto`](../proto/amux/v1/profile_admin_service.proto).
+A paired host calls the client services of
+[`agent_service.proto`](../proto/amux/v1/agent_service.proto) and
+[`session_service.proto`](../proto/amux/v1/session_service.proto).
 
 ## The promises, as properties
 
@@ -124,7 +125,7 @@ streams immediately. Deleting a profile destroys its whole trust store.
 Profiles never inherit another profile's pairing window, pins, routes or
 account.
 
-Trusted peers call the agent operations of `PeerAgentService` and `PeerSessionService`
+Trusted peers call the agent operations of `AgentService` and `SessionService`, answered for a peer
 ([chapter 7](#chapter-7-the-front-door-and-the-amuxv1-services)).
 Installation and profile lifecycle live on the installation front door;
 a profile's trust and pairing-window administration live on that profile's
@@ -450,10 +451,10 @@ by `MESSAGE_SIZE_LIMIT` (16 MiB). The complete control vocabulary is:
   packets come from (`public_addr`, only a paid host has one), and an
   authentication token only for a cloud link. A host lists no addresses on its
   link to the relay.
-- `HelloAck`: either the accepted version plus the acceptor's host, neighbor
-  snapshot, runtime instance id and addresses, or an error. A relay accepting
-  a paid host also fills `observed_addr`, the address it saw that host's
-  packets come from.
+- `HelloAck`: either the acceptor's own `Hello` (no token), or an error. A
+  relay accepting a paid host also fills that `Hello`'s `observed_addr`, the
+  address it saw that host's packets come from. A dialler of another version
+  never gets one: the acceptor closes with `VERSION_MISMATCH` instead.
 - `NeighborUp` and `NeighborDown`: adjacency deltas after the handshake.
 - `Addresses`: the sender's whole new address list and public address,
   replacing the ones its `Hello` or an earlier `Addresses` carried; sent
@@ -571,7 +572,7 @@ route: one streaming zstd compressor each way, between HTTP/2 and the stream,
 inside the link's encryption, so a forwarder carries it without knowing it is
 there (`crates/node/src/transport/compress.rs`). The opener wraps its end in
 `ChannelPool::channel_over`; the acceptor wraps its
-end as `TunnelDispatcher` hands a paired host's stream to the peer services.
+end as `TunnelDispatcher` hands a paired host's stream to the agent and session services.
 Pairing channels, the link's control stream and local sockets are not
 compressed. Nothing on the wire announces it: both ends always compress.
 
@@ -685,7 +686,7 @@ never does, because its directory and journal are its whole interface (see
 | A profile's client socket, `<data_dir>/profiles/<id>/sock` | `AgentService`, `SessionService`, `ProfileAdminService` | the terminal client, the CLI and third-party clients, at the path the front door reports as `Profile.socket_path` |
 | An agent's `agents/<id>/tools.sock` | `AgentService` and `SessionService`, with that agent as the caller | the agent's MCP tool server, and nothing else |
 | A profile's `link.sock` | a link, not a service | `amux internal ssh-link`, carrying an SSH link |
-| A link stream whose handshake presented a pinned key | `PeerAgentService`, `PeerSessionService` | paired daemons, including a phone's embedded daemon |
+| A link stream whose handshake presented a pinned key | `AgentService` and `SessionService`, with that host as the caller | paired daemons, including a phone's embedded daemon |
 | A link stream admitted by an open pairing window | `PairingService` | a host pairing with this one |
 
 The front door's path is the installation setting `front_door_socket`. By
@@ -745,7 +746,7 @@ command again.
 | Call | What it does |
 | --- | --- |
 | `SubscribeInventory` | The host set and every agent row: current state, `CaughtUp`, then deltas. A listing is this stream read to `CaughtUp`. |
-| `ResolveAgent` | A fleet-wide reference to one row: an id with or without dashes, the eight-character short id (or any longer prefix), a name, or `name@host`. `NOT_FOUND`, or `AmbiguousAgentName` with the candidates when a bare name matches agents on several hosts; the message offers the `name@host` forms that pick each. Every other agent call takes an id. |
+| `ResolveAgent` | A fleet-wide reference to one row: an id with or without dashes, the eight-character short id (or any longer prefix), a name, or `name@host`. `NOT_FOUND`, or `FAILED_PRECONDITION` when a bare name matches agents on several hosts; the message offers the `name@host` forms that pick each. Every other agent call takes an id. |
 | `CreateAgent` | Creates an agent, on this host or on a trusted host named by id or by name. |
 | `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. A stop ends the agent now (its turn cancelled the provider's own way); a delete stops it if live and removes it. Both act on the named agent alone; its children follow on their own hosts by [the family rule](#the-family-rule), so the answer says nothing of them. |
 | `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
@@ -769,7 +770,7 @@ outlives its runtime is answered `UNAVAILABLE` and the client redials.
 
 Only the host that owns an agent can act on it. When a call names an agent
 whose row here is a replica, `ClientApi` makes the same call on the owner's
-daemon through the peer services, exactly as a phone would, and answers with what
+daemon through its agent and session services, exactly as a phone would, and answers with what
 the owner answered (`crates/node/src/forward.rs`). A forwarded call fails in
 one of two ways, and they are kept apart because only the second may have
 reached the owner:
@@ -793,8 +794,8 @@ reached the owner:
   the input as uncertain and settles it at its next catch-up, and nothing
   sends it again.
 
-Forwarding goes one hop. The peer services answer only for this host's own
-agents and never passes a call on, so no two hosts can bounce a call between
+Forwarding goes one hop. To a paired host the services answer only for this
+host's own agents and never pass a call on, so no two hosts can bounce a call between
 them, and no host reaches a third host's agent, or speaks for one, through
 another.
 
@@ -807,8 +808,8 @@ the next reader.
 same create on that host, its kind's settings passed on as the bytes they came
 as. A name is resolved against this host and the trusted
 hosts, an exact match first and then one ignoring case; no match is
-`NOT_FOUND` listing the known names, and several are `AmbiguousHostName`
-with the candidates.
+`NOT_FOUND` listing the known names, and several are `FAILED_PRECONDITION`
+saying how many answer.
 
 `CreateAgent` with `new_worktree` starts the agent in a new git worktree,
 made by the agent's host before the agent exists (`crates/node/src/worktree.rs`).
@@ -823,15 +824,17 @@ and a folder (lowercase letters, digits and hyphens, `wire::agent_name_problem`)
 either way no agent is made. Renaming the agent leaves its branch alone, and
 amux never removes a worktree or its branch.
 
-### PeerAgentService and PeerSessionService
+### The client services on a link
 
-`PeerAgentService` and `PeerSessionService` (`crates/node/src/edge/peer.rs`)
-are the daemon-to-daemon services; replication is a daemon being a client of its peer. The caller is the
-host whose pinned key the stream's handshake presented, and a call without one
-is refused as `UNAUTHENTICATED`. Only amux daemons call them, and each stamps
-what it says on behalf of its own callers, a message's sender and a create's
-parent, from those callers; the answering daemon takes them as given. They
-differ from the client services in these ways:
+A paired daemon calls the same `AgentService` and `SessionService` over a link
+stream (`crates/node/src/edge/peer.rs` serves them, `ClientApi::for_peer` in
+`crates/node/src/grpc.rs` answers); replication is a daemon being a client of
+its peer. The caller is the host whose pinned key the stream's handshake
+presented, and a call without one is refused as `UNAUTHENTICATED`. Only amux
+daemons call them, and each stamps what it says on behalf of its own callers,
+a message's sender and a create's parent, from those callers; the answering
+daemon takes them as given. A call from a peer differs from a client's in
+these ways:
 
 - It answers only for this host's own agents. Its inventory stream carries
   this host's entry and this host's agents, never what this host knows of
@@ -839,14 +842,14 @@ differ from the client services in these ways:
   `SendInput`, `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent`,
   `PutBlob`, `GetBlob` and `GetDiff`) is `NOT_FOUND` for an agent this host only
   replicates, even when this host holds that agent's rows or blobs.
-- `SubscribeSession` takes a `PeerSubscribeSessionRequest`, which may ask for what came
-  `after` a revision: that is how a replica catches up from its cursor
-  ([the wire](WIRE.md) describes it).
-- `SendMessage` takes the `Envelope` the calling host's daemon stamped, and
-  takes its sender as given.
+- `SubscribeSession` may ask for what came `after` a revision: that is how a
+  replica catches up from its cursor ([the wire](WIRE.md) describes it). A
+  client's `after` is refused.
+- `SendMessage`'s `Envelope` comes stamped by the calling host's daemon, and
+  its sender is taken as given; a client's sender is always the caller.
 - `ListRepositories` answers for this host only.
-- There is no `ResolveAgent`, and no drafts: a draft stays on the machine it
-  was typed on.
+- `ResolveAgent` and the drafts are refused: a peer resolves names itself, and
+  a draft stays on the machine it was typed on.
 
 ### The family rule
 
@@ -914,8 +917,8 @@ no request carries an agent id or a token claiming one. On that socket:
 
 ### Agent messaging across hosts
 
-`SendMessage` carries a `SendMessageRequest` whose `to` is a host and an
-agent. The daemon makes the `Envelope`, its sender stamped from the caller
+`SendMessage` carries an `Envelope` whose `to` is a host and an
+agent. The daemon stamps the envelope's sender from the caller
 (the person, or the calling agent with this host's id and its name). When the
 host is another one, it makes the call on the recipient's daemon with that
 envelope. That daemon takes the sender the calling daemon stamped and delivers
@@ -929,8 +932,8 @@ for any other incarnation.
 ### Errors
 
 A refusal is a `google.rpc.Status`, gRPC's richer error model (Rust:
-`wire::Error`): a gRPC code, a message, and details packed as `Any`, among
-them typed details (`AmbiguousAgentName`, `AmbiguousHostName`). It travels whole in the gRPC status details, its
+`wire::Error`): a gRPC code, a message, and details packed as `Any`. It
+travels whole in the gRPC status details, its
 code on the status itself (`crates/node/src/grpc.rs`, `status`), so generic
 gRPC tooling reads it. What the code alone does not say, a
 `google.rpc.ErrorInfo` detail names: domain `amux.sh`, reason an

@@ -103,7 +103,7 @@ fn profile_id(bytes: &[u8]) -> Result<Uuid, Status> {
 impl InstallationService for FrontDoor {
     async fn list_profiles(
         &self,
-        _request: Request<wire::ListProfilesRequest>,
+        _request: Request<wire::Empty>,
     ) -> Result<Response<ListProfilesResponse>, Status> {
         Ok(Response::new(ListProfilesResponse {
             profiles: self.registry.list()?.into_iter().map(info).collect(),
@@ -157,7 +157,7 @@ impl InstallationService for FrontDoor {
 
     async fn get_installation(
         &self,
-        _request: Request<wire::GetInstallationRequest>,
+        _request: Request<wire::Empty>,
     ) -> Result<Response<wire::Installation>, Status> {
         self.registry.installation()?;
         Ok(Response::new(wire::Installation {
@@ -167,9 +167,9 @@ impl InstallationService for FrontDoor {
 
     async fn shutdown(
         &self,
-        _request: Request<wire::ShutdownRequest>,
-    ) -> Result<Response<wire::ShutdownResponse>, Status> {
+        _request: Request<wire::Empty>,
+    ) -> Result<Response<wire::Empty>, Status> {
         self.registry.installation()?.request_shutdown();
-        Ok(Response::new(wire::ShutdownResponse {}))
+        Ok(Response::new(wire::Empty {}))
     }
 }

@@ -19,9 +19,9 @@ use tonic::{Request, Response, Status};
 use wire::agent_service_server::AgentService;
 use wire::session_service_server::SessionService;
 use wire::{
-    Agent as Row, AgentRef, AgentSpec, AmbiguousAgentName, CreateAgentRequest, HostEntry,
-    InventoryEvent, Kind, Lifecycle, Phase, SendInputRequest, SendInputResponse,
-    SendMessageRequest, SendMessageResponse, create_agent_request, inventory_event,
+    Agent as Row, AgentRef, AgentSpec, CreateAgentRequest, Envelope, HostEntry, InventoryEvent,
+    Kind, Lifecycle, Phase, SendInputRequest, SendInputResponse, SendMessageResponse,
+    create_agent_request, inventory_event,
 };
 
 use crate::support;
@@ -39,7 +39,7 @@ const STUDIO: [u8; 16] = [0x02; 16];
 enum Call {
     Inventory,
     Resolve(String),
-    Send(SendMessageRequest),
+    Send(Envelope),
     Create(Box<CreateAgentRequest>),
     Stop(wire::StopAgentRequest),
 }
@@ -95,7 +95,7 @@ impl AgentService for Fleet {
 
     async fn subscribe_inventory(
         &self,
-        _: Request<wire::SubscribeInventoryRequest>,
+        _: Request<wire::Empty>,
     ) -> Result<Response<Events>, Status> {
         self.record(Call::Inventory);
         let mut events = self
@@ -124,15 +124,10 @@ impl AgentService for Fleet {
         let name = request.into_inner().name;
         self.record(Call::Resolve(name.clone()));
         if self.ambiguous.contains(&name) {
-            let detail = AmbiguousAgentName {
-                name: name.clone(),
-                candidates: vec![row(&REVIEWER, &HERE, &name), row(&CHILD, &STUDIO, &name)],
-            };
             let message = format!(
                 "{name} names more than one agent; pick one with {name}@here or {name}@studio"
             );
-            let error = wire::Error::new(wire::ErrorCode::FailedPrecondition, message.clone())
-                .with_detail(&detail);
+            let error = wire::Error::new(wire::ErrorCode::FailedPrecondition, message.clone());
             return Err(Status::with_details(
                 tonic::Code::FailedPrecondition,
                 message,
@@ -149,7 +144,7 @@ impl AgentService for Fleet {
 
     async fn send_message(
         &self,
-        request: Request<SendMessageRequest>,
+        request: Request<Envelope>,
     ) -> Result<Response<SendMessageResponse>, Status> {
         let envelope = request.into_inner();
         self.record(Call::Send(envelope.clone()));
@@ -196,12 +191,12 @@ impl AgentService for Fleet {
     async fn stop_agent(
         &self,
         request: Request<wire::StopAgentRequest>,
-    ) -> Result<Response<wire::StopAgentResponse>, Status> {
+    ) -> Result<Response<wire::Empty>, Status> {
         self.record(Call::Stop(request.into_inner()));
         self.severed().await?;
         match &self.refuse_stop {
             Some(status) => Err(status.clone()),
-            None => Ok(Response::new(wire::StopAgentResponse {})),
+            None => Ok(Response::new(wire::Empty {})),
         }
     }
 
@@ -669,7 +664,10 @@ async fn send_resolves_the_recipient_and_answers_the_envelope_id() {
     assert_eq!(name, "reviewer");
     assert_eq!(sent, json!({ "id": interpret::to_hex(&request.id) }));
     assert_eq!(
-        request.body.as_ref().map(|body| body.text.as_str()),
+        request.body.as_ref().and_then(|body| match body {
+            wire::envelope::Body::Message(message) => Some(message.text.as_str()),
+            _ => None,
+        }),
         Some("Please review.")
     );
     assert_eq!(request.context.as_deref(), Some(b"parser".as_slice()));
@@ -1094,7 +1092,10 @@ async fn the_harness_runs_the_tool_server_from_the_install_path(kind: Kind) {
         })
         .expect("the daemon took a message");
     assert_eq!(
-        sent.body.as_ref().map(|body| body.text.as_str()),
+        sent.body.as_ref().and_then(|body| match body {
+            wire::envelope::Body::Message(message) => Some(message.text.as_str()),
+            _ => None,
+        }),
         Some("Ready for review.")
     );
     let messages = log

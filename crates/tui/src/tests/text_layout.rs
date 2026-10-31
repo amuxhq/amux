@@ -205,11 +205,9 @@ fn a_long_edit_path_keeps_the_files_name() {
 #[test]
 fn a_codex_rule_for_a_long_command_reads_whole() {
     let script = format!("echo {} > long.txt && touch END_MARK", "a".repeat(170));
-    let answer = |decision: wire::Decision| {
-        ui_view::Answer::Codex(wire::CodexAnswer {
-            of: Some(wire::codex_answer::Of::Approve(decision as i32)),
-            ..Default::default()
-        })
+    let answer = |decision: wire::Decision| wire::Answer {
+        of: Some(wire::answer::Of::Approve(decision as i32)),
+        ..Default::default()
     };
     let choice = |outcome, decision| Choice {
         outcome,

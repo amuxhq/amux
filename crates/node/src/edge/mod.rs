@@ -7,7 +7,7 @@
 //! application streams, each opened with a preface naming the host it is
 //! for. Inside each stream the two hosts run a TLS handshake pinned to the
 //! keys they exchanged when they paired; a trusted caller reaches the
-//! profile's peer services with its host id as the caller, and a caller that
+//! profile's agent and session services with its host id as the caller, and a caller that
 //! presents no trusted key reaches only PairingService, and only while the
 //! profile is in pairing mode.
 
@@ -637,7 +637,7 @@ impl Edge {
         self.connections.via_for(host).await
     }
 
-    /// Peer service clients for a trusted host, over whichever route
+    /// Clients of a trusted host's agent and session services, over whichever route
     /// reaches it: a direct link, or the relay.
     pub async fn peer(&self, host: HostId) -> Result<crate::PeerClient, crate::link::ChannelError> {
         Ok(crate::link::peer_client(self.channel(host).await?))
@@ -664,7 +664,7 @@ impl Edge {
         self.connections.channel_to(host).await
     }
 
-    /// Peer service clients for a host's sessions, on a channel of their
+    /// Clients of a trusted host's services for its sessions, on a channel of their
     /// own so that their subscriptions neither wait behind nor hold up the
     /// host's other calls.
     pub async fn session_peer(

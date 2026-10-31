@@ -347,8 +347,8 @@ fn reflections_are_matched_by_the_messages_uuid_not_arrival_order() {
     // item is keyed by it, the key Claude's own record uses.
     let prompt = Event::Input(wire::Input::new(
         b"prompt-1".to_vec(),
-        wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: "go".into(),
                 ..Default::default()
             })),
@@ -480,10 +480,10 @@ fn attached_chart() -> (String, wire::Attachment) {
     (attachments::element(&attachment, Some(&path)), attachment)
 }
 
-fn sdk_input(id: &[u8], of: wire::claude_sdk_input::Of) -> Event {
+fn sdk_input(id: &[u8], of: wire::agent_input::Of) -> Event {
     Event::Input(wire::Input::new(
         id.to_vec(),
-        wire::ClaudeSdkInput { of: Some(of) },
+        wire::AgentInput { of: Some(of) },
     ))
 }
 
@@ -499,7 +499,7 @@ fn an_interrupt_before_claude_starts_leaves_the_queued_prompt_to_run() {
         ..Default::default()
     };
     let (mut state, _) = ClaudeSdk::initial(&spec);
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "Run the test suite and report.".into(),
         ..Default::default()
     });
@@ -514,7 +514,7 @@ fn an_interrupt_before_claude_starts_leaves_the_queued_prompt_to_run() {
     assert_eq!(snapshot.phase(), wire::Phase::Starting);
     assert_eq!(snapshot.queue.len(), 1);
 
-    let interrupt = wire::claude_sdk_input::Of::Interrupt(wire::Interrupt {});
+    let interrupt = wire::agent_input::Of::Interrupt(wire::Interrupt {});
     let stopped = ClaudeSdk::step(&mut state, sdk_input(b"stop", interrupt));
     assert!(
         stopped.effects.iter().any(|effect| matches!(
@@ -786,7 +786,7 @@ fn a_permission_claude_does_not_offer_is_refused() {
         &mut state,
         sdk_input(
             b"p1",
-            wire::claude_sdk_input::Of::Permission(wire::SetPermission {
+            wire::agent_input::Of::Permission(wire::SetPermission {
                 value: "bypassPermissions".into(),
             }),
         ),
@@ -803,7 +803,7 @@ fn a_permission_claude_does_not_offer_is_refused() {
         &mut state,
         sdk_input(
             b"p2",
-            wire::claude_sdk_input::Of::Permission(wire::SetPermission {
+            wire::agent_input::Of::Permission(wire::SetPermission {
                 value: "acceptEdits".into(),
             }),
         ),
@@ -1456,7 +1456,7 @@ fn a_subagents_frames_leave_the_main_thread_alone() {
 #[test]
 fn a_subagents_interruption_does_not_mark_the_turn() {
     let mut state = idle_on_root();
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "go".into(),
         ..Default::default()
     });
@@ -1536,7 +1536,7 @@ fn a_prompt_goes_in_while_a_background_subagent_works() {
             json!([{"type": "tool_use", "id": "toolu_child", "name": "Bash", "input": {"command": "ls"}}]),
         ),
     );
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "meanwhile".into(),
         ..Default::default()
     });
@@ -1571,7 +1571,7 @@ fn tool_states(stepped: &interpret::Stepped) -> Vec<(String, wire::ToolState)> {
 #[test]
 fn a_background_subagents_calls_and_asks_outlive_the_turn() {
     let mut state = idle_on_root();
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "count in the background".into(),
         ..Default::default()
     });
@@ -1701,7 +1701,7 @@ fn a_result_that_answers_none_of_amuxs_messages_leaves_the_persons_turn() {
         ),
     ] {
         let mut state = idle_on_root();
-        let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
             text: "go".into(),
             ..Default::default()
         });
@@ -1736,7 +1736,7 @@ fn a_result_that_answers_none_of_amuxs_messages_leaves_the_persons_turn() {
 #[test]
 fn a_task_notifications_result_naming_amuxs_message_ends_the_turn() {
     let mut state = idle_on_root();
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "go".into(),
         ..Default::default()
     });
@@ -1757,7 +1757,7 @@ fn a_task_notifications_result_naming_amuxs_message_ends_the_turn() {
 #[test]
 fn a_flagged_ask_offers_no_scope_and_says_it_defaults_to_no() {
     let mut state = idle_on_root();
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "clean".into(),
         ..Default::default()
     });
@@ -1807,7 +1807,7 @@ fn claudes_text_reaches_the_wire_without_terminal_codes() {
         format!("\u{1b}[31m{text}\u{1b}[0m\u{1b}]8;;https://x\u{7}link\u{1b}]8;;\u{7}\u{9b}1m")
     };
     let mut state = idle_on_root();
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "/cost".into(),
         ..Default::default()
     });
@@ -1885,7 +1885,7 @@ fn a_plan_approval_switches_to_never_ask_where_claude_offers_it() {
             json!({"type": "system", "subtype": "init", "uuid": "i", "session_id": "s", "model": "claude-root"}),
         ),
     );
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "plan it".into(),
         ..Default::default()
     });
@@ -1975,7 +1975,7 @@ fn a_stopped_job_reads_stopping_until_claude_says_it_ended() {
             ],
         })),
     );
-    let stop = |key: &str| wire::claude_sdk_input::Of::StopJob(wire::StopJob { key: key.into() });
+    let stop = |key: &str| wire::agent_input::Of::StopJob(wire::StopJob { key: key.into() });
     let stop_requests = |stepped: &interpret::Stepped| -> Vec<Value> {
         stepped
             .effects
@@ -2060,8 +2060,6 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
         let snapshot = step.snapshot.as_ref().expect("a snapshot");
         let body = wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap();
         body.servers
-            .unwrap_or_default()
-            .servers
             .iter()
             .any(|server| server.status == wire::ToolServerStatus::Failed as i32)
     };

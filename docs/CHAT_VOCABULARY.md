@@ -280,9 +280,9 @@ injected into a turn, checkpoints, session-state changes and model verification 
 
 Some hidden facts are journal records: items kept, keyed and replicated like any other, that no client draws as a
 row. Headless Claude's `Status` items (Claude's "compacting" and "requesting", typed, with its own word kept;
-"compacting" is what the activity line reads until the compaction row lands), terminal Claude's `CompactSummary`
-(the summary a compaction wrote) and `Interruption`, and Codex's `McpStartup` (a tool server's startup outcome) and
-`TurnDiff` (the whole turn's patch) map to `RowKind::Hidden` in the view. A body this build cannot decode is an
+"compacting" is what the activity line reads until the compaction row lands) map to `RowKind::Hidden` in the view.
+Terminal Claude's compaction summary, an interruption marker (the turn's end says it was stopped), a failed tool
+server's startup (the snapshot's server list carries it) and Codex's whole-turn patch become no item at all. A body this build cannot decode is an
 `Unrecognized` row, never hidden.
 
 ## Claude versus Codex
@@ -297,10 +297,9 @@ permission once, for longer, or deny; structured questions with an "Other" answe
 (headless Claude and Codex).
 
 **Claude only:** question previews and multi-select, up to four questions; plan approval that switches
-permission as the work starts; scope choices tied to saved rules and directories; cost per turn (headless); the compaction summary text
-(terminal, recorded but not drawn).
+permission as the work starts; scope choices tied to saved rules and directories; cost per turn (headless).
 
-**Codex only:** exit codes and durations on commands; a whole-turn diff item (recorded but not drawn); "allow similar commands" and
+**Codex only:** exit codes and durations on commands; "allow similar commands" and
 per-host network rules; decline and stop as a separate choice (headless Claude has it too); access grants for
 files and network; secret answers to questions; image generation; automatic reviewer verdicts and model
 reroutes; working notes marked apart from the final answer.

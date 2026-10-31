@@ -24,9 +24,8 @@
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 u1 Prompt { text: [Text("test it")], steered: false }
      3 t1 [Replied: Color = (skipped); Tools = (skipped) skipped=2 reply="Use the old palette."] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "", recommended: false }], allow_other: true, s…
-     4 i1 Hidden collapsed
-     5 turn:1 TurnEnd { duration_ms: None, failed: false }
-     6 u2 Prompt { text: [Text("Use the old palette.")], steered: false }
+     4 turn:1 TurnEnd { duration_ms: None, failed: false }
+     5 u2 Prompt { text: [Text("Use the old palette.")], steered: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

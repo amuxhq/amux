@@ -11,7 +11,7 @@ type Profiles = InstallationServiceClient<Channel>;
 
 pub async fn list(profiles: &mut Profiles) -> Result<()> {
     let listed = profiles
-        .list_profiles(wire::ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .map_err(crate::plain)?
         .into_inner()

@@ -32,9 +32,9 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, Ask, AskClosed, ClaudeAnswer, ClaudeSnapshot, ClaudeUsage, DecisionOutcome,
-    Envelope, Input, KindInput, OfferedCommand, OfferedModel, Refusal, SignIn, Step,
-    ToolServerHealth, claude_answer, claude_item, claude_sdk_input,
+    AgentSpec, Ask, AskClosed, ClaudeSnapshot, ClaudeUsage, DecisionOutcome, Envelope, Input,
+    OfferedCommand, OfferedModel, Refusal, SignIn, Step, ToolServer, agent_input, answer,
+    claude_item,
 };
 
 use crate::claude_answers::{self, Answer, AnswerShape, Decided};
@@ -201,8 +201,8 @@ pub struct State {
     context_window: Option<u64>,
     #[serde(with = "serde_pb::opt_msg")]
     usage: Option<ClaudeUsage>,
-    #[serde(with = "serde_pb::opt_msg")]
-    servers: Option<ToolServerHealth>,
+    #[serde(with = "serde_pb::msgs")]
+    servers: Vec<ToolServer>,
     /// Launched without amux's tool server, by organization policy.
     tools_withheld: bool,
     #[serde(with = "serde_pb::opt_msg")]
@@ -281,7 +281,7 @@ impl State {
             context_tokens: None,
             context_window: None,
             usage: None,
-            servers: None,
+            servers: Vec::new(),
             tools_withheld: false,
             sign_in: None,
             jobs: Jobs::default(),
@@ -337,17 +337,11 @@ impl State {
                 .map(|(id, task)| task.to_wire(id))
                 .collect(),
             usage: Some(self.usage.clone().unwrap_or_else(unknown::claude_usage)),
-            servers: Some({
-                let servers = self
-                    .servers
-                    .clone()
-                    .unwrap_or_else(unknown::tool_server_health);
-                if self.tools_withheld {
-                    crate::claude_common::amux_tools_withheld(servers)
-                } else {
-                    servers
-                }
-            }),
+            servers: if self.tools_withheld {
+                crate::claude_common::amux_tools_withheld(self.servers.clone())
+            } else {
+                self.servers.clone()
+            },
             sign_in: Some(self.sign_in.clone().unwrap_or_else(unknown::sign_in)),
             background_jobs: Some(self.shared.jobs()),
             provider_session: self.session.clone(),
@@ -402,25 +396,24 @@ impl State {
 
     fn input(&mut self, emit: &mut Emit, input: Input) {
         let id = input.input_id.clone();
-        // Another kind's input, or an arm a newer client sends that this
-        // version cannot read.
+        // An arm a newer client sends that this version cannot read.
         let arm = match input.decode_body() {
-            Some(KindInput::ClaudeSdk(wire::ClaudeSdkInput { of: Some(arm) })) => arm,
+            Some(wire::AgentInput { of: Some(arm) }) => arm,
             _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
-            claude_sdk_input::Of::Prompt(prompt) => {
+            agent_input::Of::Prompt(prompt) => {
                 self.dismiss_plan(emit);
                 if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, human()) {
                     self.submit(emit, entry);
                 }
             }
-            claude_sdk_input::Of::Withdraw(withdraw) => {
+            agent_input::Of::Withdraw(withdraw) => {
                 self.shared.withdraw(emit, &id, &withdraw.queued_input_id)
             }
             // The job reads stopping until Claude says it ended, as a task
             // notification or a list without it.
-            claude_sdk_input::Of::StopJob(stop) => {
+            agent_input::Of::StopJob(stop) => {
                 let Some(jobs) = self.jobs.stop_sent(&stop.key) else {
                     return self.shared.reject(emit, &id, Refusal::Unsupported);
                 };
@@ -435,7 +428,7 @@ impl State {
                 );
                 self.shared.accept(emit, &id, false);
             }
-            claude_sdk_input::Of::SendNow(send) => {
+            agent_input::Of::SendNow(send) => {
                 let running = self.shared.is_busy();
                 if let Some(entry) = self
                     .shared
@@ -458,11 +451,11 @@ impl State {
                     });
                 }
             }
-            claude_sdk_input::Of::Interrupt(_) => {
+            agent_input::Of::Interrupt(_) => {
                 self.interrupt(emit);
                 self.shared.accept(emit, &id, false);
             }
-            claude_sdk_input::Of::Clear(_) => {
+            agent_input::Of::Clear(_) => {
                 let entry = wire::QueuedInput {
                     input_id: id.clone(),
                     text: "/clear".into(),
@@ -476,7 +469,7 @@ impl State {
                     self.submit(emit, entry);
                 }
             }
-            claude_sdk_input::Of::Permission(permission) => {
+            agent_input::Of::Permission(permission) => {
                 let offered = self
                     .permissions()
                     .iter()
@@ -497,7 +490,7 @@ impl State {
                 );
                 self.shared.accept(emit, &id, false);
             }
-            claude_sdk_input::Of::Model(model) => {
+            agent_input::Of::Model(model) => {
                 let body = ControlRequestBody::SetModel(SetModelRequest {
                     model: model.model.clone(),
                     extensions: Default::default(),
@@ -505,7 +498,7 @@ impl State {
                 self.control_request(emit, Request::Model(model.model), body);
                 self.shared.accept(emit, &id, false);
             }
-            claude_sdk_input::Of::Effort(effort) => {
+            agent_input::Of::Effort(effort) => {
                 self.control_request(
                     emit,
                     Request::Effort(effort.effort.clone()),
@@ -519,7 +512,11 @@ impl State {
                 );
                 self.shared.accept(emit, &id, false);
             }
-            claude_sdk_input::Of::Answer(answer) => self.answer(emit, &id, answer),
+            agent_input::Of::Answer(answer) => self.answer(emit, &id, answer),
+            // Codex's collaboration mode, and terminal Claude's keystrokes.
+            agent_input::Of::Mode(_)
+            | agent_input::Of::CyclePermissionMode(_)
+            | agent_input::Of::SwitchBack(_) => self.shared.reject(emit, &id, Refusal::Unsupported),
         }
     }
 
@@ -641,7 +638,7 @@ impl State {
 
     /// An answer through amux: checked against the ask, then sent as the
     /// control response. The ask closes with the outcome it carries.
-    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: ClaudeAnswer) {
+    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: wire::Answer) {
         let key = answer.ask_key;
         if self.shared.asks().get(&key).is_none() {
             self.shared.answer(emit, id, &key);
@@ -649,7 +646,7 @@ impl State {
         }
         let parsed = answer.of;
         let closed = match &parsed {
-            Some(claude_answer::Of::Form(form)) => {
+            Some(answer::Of::Form(form)) => {
                 let schema = match self
                     .shared
                     .asks()
@@ -661,7 +658,7 @@ impl State {
                 };
                 Some(ask_item::form_sent(form, schema))
             }
-            Some(claude_answer::Of::Link(link)) => Some(ask_item::link_answered(link.action)),
+            Some(answer::Of::Link(link)) => Some(ask_item::link_answered(link.action)),
             _ => None,
         };
         let asked = match self
@@ -1012,12 +1009,7 @@ impl Interpreter for ClaudeSdk {
     }
 
     fn redact(target: RedactTarget) -> RedactTarget {
-        crate::redact::redact_kind::<
-            wire::ClaudeItem,
-            wire::ClaudeSnapshot,
-            wire::ClaudeSdkInput,
-            State,
-        >(target)
+        crate::redact::redact_kind::<wire::ClaudeItem, wire::ClaudeSnapshot, State>(target)
     }
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {

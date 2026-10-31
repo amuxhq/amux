@@ -39,10 +39,9 @@
      4 msg_0a336f7f3f82abca016ae5d7a8b994819191d9c4eb605a7eae Prose { text: [Text("I’ll run the three steps in order, requesting write approval where needed.")], streaming: false, working_note: true }
      5 exec-1e412a46-6257-4604-ae53-369b6288e75d Command { command: "touch first.txt", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-1e412a46-6257-4604-ae53-369b6288e75d..exec-db5cc9c3-fca1-426c-8b68-76876fb92789 x3 recent=2] decision=Decision { outcome: Allowed, granted: Some(CommandPrefix { words: ["tou…
      6 exec-edaf930d-4144-4c2f-a080-7fe7c85664ae FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[exec-1e412a46-6257-4604-ae53-369b6288e75d..exec-db5cc9c3-fca1-426c-8b68-76876fb92789 x3 recent=1] decision=Decision { outcome: Allowed, granted: Some(Session), note: None, elsewhere: false } collapsed
-     7 diff:01a191d2-5c20-7491-98ee-f47023966eb1 Hidden run[exec-1e412a46-6257-4604-ae53-369b6288e75d..exec-db5cc9c3-fca1-426c-8b68-76876fb92789 x3] collapsed
-     8 exec-db5cc9c3-fca1-426c-8b68-76876fb92789 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[exec-1e412a46-6257-4604-ae53-369b6288e75d..exec-db5cc9c3-fca1-426c-8b68-76876fb92789 x3 recent=0 RunCounts { commands: 1, edits: 2, reads: 0, searches: 0, subagents: 0, other: 0 }]
-     9 msg_0a336f7f3f82abca016ae5d7b161bc81919809ce560e765e8f Prose { text: [Text("DONE")], streaming: false, working_note: false }
-    10 turn:1 TurnEnd { duration_ms: Some(12598), failed: false }
+     7 exec-db5cc9c3-fca1-426c-8b68-76876fb92789 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[exec-1e412a46-6257-4604-ae53-369b6288e75d..exec-db5cc9c3-fca1-426c-8b68-76876fb92789 x3 recent=0 RunCounts { commands: 1, edits: 2, reads: 0, searches: 0, subagents: 0, other: 0 }]
+     8 msg_0a336f7f3f82abca016ae5d7b161bc81919809ce560e765e8f Prose { text: [Text("DONE")], streaming: false, working_note: false }
+     9 turn:1 TurnEnd { duration_ms: Some(12598), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 15653, window_tokens: Some(475000), percent: Some(3), near_full: false }) sign-in None
 == settings

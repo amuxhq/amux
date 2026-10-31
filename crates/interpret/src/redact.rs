@@ -91,16 +91,14 @@ pub fn redact_message(name: &str, bytes: &[u8]) -> Vec<u8> {
     Scrubber::default().twice(|s| s.message(&name, bytes))
 }
 
-/// The per-kind redactor: `Item` and `Snapshot` bodies of this kind, the
-/// input body a person's input carries for it, and the state its checkpoint
-/// holds.
-pub(crate) fn redact_kind<ItemBody: Name, SnapshotBody: Name, InputBody: Name, S: Checkpoint>(
+/// The per-kind redactor: `Item` and `Snapshot` bodies of this kind, and the
+/// state its checkpoint holds.
+pub(crate) fn redact_kind<ItemBody: Name, SnapshotBody: Name, S: Checkpoint>(
     target: RedactTarget,
 ) -> RedactTarget {
     let mut scrubber = Scrubber {
         item_body: type_name::<ItemBody>(),
         snapshot_body: type_name::<SnapshotBody>(),
-        input_body: type_name::<InputBody>(),
         ..Scrubber::default()
     };
     match target {
@@ -178,7 +176,6 @@ fn empty_hex(value: &mut Value) {
 pub(crate) struct Scrubber {
     item_body: String,
     snapshot_body: String,
-    input_body: String,
     sessions: BTreeSet<String>,
     learning: bool,
 }
@@ -277,8 +274,7 @@ impl Scrubber {
                     self.message(&name, payload)
                 }
                 (".amux.v1.Input", "body") => {
-                    let name = self.input_body.clone();
-                    self.message(&name, payload)
+                    self.message(&type_name::<wire::AgentInput>(), payload)
                 }
                 (_, name) if name.ends_with("_json") => self.json_bytes(payload),
                 (_, name) if is_id_field(name) => payload.to_vec(),

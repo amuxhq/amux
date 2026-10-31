@@ -32,9 +32,8 @@ use wire::agent_service_server::AgentService as _;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
-    AgentRef, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, DeleteAgentRequest, Input, PromptInput, WithdrawQueued, claude_pty_input,
-    claude_sdk_input, codex_input, create_agent_request,
+    AgentInput, AgentRef, ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest,
+    DeleteAgentRequest, Input, PromptInput, WithdrawQueued, agent_input, create_agent_request,
 };
 
 use crate::binaries::Binaries;
@@ -1228,8 +1227,7 @@ impl Net {
 
     /// Sends the agent a prompt through its own host.
     pub async fn send(&self, name: &str, text: &str) -> Result<wire::SendInputResponse, NetError> {
-        let kind = self.agent(name)?.kind;
-        self.input(name, prompt(kind, Uuid::new_v4().as_bytes(), text))
+        self.input(name, prompt(Uuid::new_v4().as_bytes(), text))
             .await
     }
 
@@ -1996,7 +1994,7 @@ impl Net {
                     .front_door(host)
                     .await
                     .map_err(|error| error.to_string())?
-                    .list_profiles(wire::ListProfilesRequest {})
+                    .list_profiles(wire::Empty {})
                     .await
                     .map_err(|status| status.message().to_owned())?
                     .into_inner()
@@ -2059,7 +2057,7 @@ impl Net {
             let info = self
                 .front_door(&host)
                 .await?
-                .list_profiles(wire::ListProfilesRequest {})
+                .list_profiles(wire::Empty {})
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
                 .into_inner()
@@ -2084,7 +2082,7 @@ impl Net {
             } else {
                 self.admin(&host)
                     .await?
-                    .sign_out(wire::SignOutRequest {})
+                    .sign_out(wire::Empty {})
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
                 self.sign_in(&host, account).await?;
@@ -2095,7 +2093,7 @@ impl Net {
                     .front_door(&host)
                     .await
                     .map_err(|error| error.to_string())?
-                    .list_profiles(wire::ListProfilesRequest {})
+                    .list_profiles(wire::Empty {})
                     .await
                     .map_err(|status| status.message().to_owned())?
                     .into_inner()
@@ -2825,7 +2823,7 @@ impl Net {
                 .sessions
                 .subscribe_session(wire::SubscribeSessionRequest {
                     agent_id: id.as_bytes().to_vec(),
-                    tail,
+                    from: Some(wire::subscribe_session_request::From::Tail(tail)),
                 })
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
@@ -2874,7 +2872,7 @@ impl Net {
                     why,
                 })?
                 .agents
-                .subscribe_inventory(wire::SubscribeInventoryRequest {})
+                .subscribe_inventory(wire::Empty {})
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
                 .into_inner();
@@ -3128,7 +3126,7 @@ impl Net {
                     .sessions
                     .subscribe_session(wire::SubscribeSessionRequest {
                         agent_id: agent.id.as_bytes().to_vec(),
-                        tail: 200,
+                        from: Some(wire::subscribe_session_request::From::Tail(200)),
                     }),
             )
             .await
@@ -3501,44 +3499,26 @@ pub fn submission(id: &[u8], text: &str) -> wire::PromptSubmission {
     }
 }
 
-pub fn prompt(kind: FakeKind, id: &[u8], text: &str) -> Input {
-    let prompt = PromptInput {
-        text: text.to_owned(),
-        attachments: Vec::new(),
-    };
+pub fn prompt(id: &[u8], text: &str) -> Input {
     Input::new(
         id.to_vec(),
-        match kind {
-            FakeKind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
-                of: Some(claude_pty_input::Of::Prompt(prompt)),
-            }),
-            FakeKind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
-                of: Some(claude_sdk_input::Of::Prompt(prompt)),
-            }),
-            FakeKind::Codex => wire::KindInput::Codex(CodexInput {
-                of: Some(codex_input::Of::Prompt(prompt)),
-            }),
+        AgentInput {
+            of: Some(agent_input::Of::Prompt(PromptInput {
+                text: text.to_owned(),
+                attachments: Vec::new(),
+            })),
         },
     )
 }
 
-/// Withdraws a queued prompt, in the kind's own input arm.
-pub fn withdraw(kind: FakeKind, id: &[u8], queued: &[u8]) -> Input {
-    let withdraw = WithdrawQueued {
-        queued_input_id: queued.to_vec(),
-    };
+/// Withdraws a queued prompt.
+pub fn withdraw(id: &[u8], queued: &[u8]) -> Input {
     Input::new(
         id.to_vec(),
-        match kind {
-            FakeKind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
-                of: Some(claude_pty_input::Of::Withdraw(withdraw)),
-            }),
-            FakeKind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
-                of: Some(claude_sdk_input::Of::Withdraw(withdraw)),
-            }),
-            FakeKind::Codex => wire::KindInput::Codex(CodexInput {
-                of: Some(codex_input::Of::Withdraw(withdraw)),
-            }),
+        AgentInput {
+            of: Some(agent_input::Of::Withdraw(WithdrawQueued {
+                queued_input_id: queued.to_vec(),
+            })),
         },
     )
 }

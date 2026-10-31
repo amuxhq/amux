@@ -97,7 +97,7 @@ impl ChannelError {
 
 /// Where a session subscription starts: the origin's tail, or after a
 /// revision this host already holds.
-pub type Cursor = wire::peer_subscribe_session_request::From;
+pub type Cursor = wire::subscribe_session_request::From;
 
 /// The only calls the channel pool writes before a link's handshake
 /// finishes, as early data the far end may see more than once: each reads
@@ -136,14 +136,14 @@ impl EarlyCall {
             EarlyCall::SubscribeInventory => EarlyAnswer::Inventory(
                 client
                     .agents
-                    .subscribe_inventory(wire::SubscribeInventoryRequest {})
+                    .subscribe_inventory(wire::Empty {})
                     .await?
                     .into_inner(),
             ),
             EarlyCall::SubscribeSession { session, from } => EarlyAnswer::Session(
                 client
                     .sessions
-                    .subscribe_session(wire::PeerSubscribeSessionRequest {
+                    .subscribe_session(wire::SubscribeSessionRequest {
                         agent_id: session,
                         from: Some(from),
                     })
@@ -884,20 +884,21 @@ impl tower::Service<http::Request<tonic::body::Body>> for PeerChannel {
     }
 }
 
-/// The peer services' clients on one [`PeerChannel`].
+/// The client services' clients on one [`PeerChannel`], as a paired host
+/// is called.
 #[derive(Clone)]
 pub struct PeerClient {
-    pub agents: wire::peer_agent_service_client::PeerAgentServiceClient<PeerChannel>,
-    pub sessions: wire::peer_session_service_client::PeerSessionServiceClient<PeerChannel>,
+    pub agents: wire::agent_service_client::AgentServiceClient<PeerChannel>,
+    pub sessions: wire::session_service_client::SessionServiceClient<PeerChannel>,
 }
 
 pub(crate) fn peer_client(channel: Channel) -> PeerClient {
     let channel = PeerChannel::new(channel);
     PeerClient {
-        agents: wire::peer_agent_service_client::PeerAgentServiceClient::new(channel.clone())
+        agents: wire::agent_service_client::AgentServiceClient::new(channel.clone())
             .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
             .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT),
-        sessions: wire::peer_session_service_client::PeerSessionServiceClient::new(channel)
+        sessions: wire::session_service_client::SessionServiceClient::new(channel)
             .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
             .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT),
     }
@@ -1024,8 +1025,8 @@ mod tests {
         use std::time::Duration;
 
         use tonic::{Request, Response, Status};
-        use wire::peer_agent_service_server::PeerAgentService;
-        use wire::peer_session_service_server::PeerSessionService;
+        use wire::agent_service_server::AgentService;
+        use wire::session_service_server::SessionService;
 
         use super::*;
         use crate::identity::DeviceIdentity;
@@ -1052,18 +1053,25 @@ mod tests {
         }
 
         #[tonic::async_trait]
-        impl PeerAgentService for Answering {
+        impl AgentService for Answering {
             type SubscribeInventoryStream = Events<wire::InventoryEvent>;
 
             async fn subscribe_inventory(
                 &self,
-                _: Request<wire::SubscribeInventoryRequest>,
+                _: Request<wire::Empty>,
             ) -> Answer<Self::SubscribeInventoryStream> {
                 self.inventory.fetch_add(1, Ordering::SeqCst);
                 let event = wire::InventoryEvent::default();
                 Ok(Response::new(Box::pin(futures_util::stream::iter([Ok(
                     event,
                 )]))))
+            }
+
+            async fn resolve_agent(
+                &self,
+                _: Request<wire::ResolveAgentRequest>,
+            ) -> Answer<wire::Agent> {
+                unanswered()
             }
 
             async fn create_agent(
@@ -1080,10 +1088,7 @@ mod tests {
                 unanswered()
             }
 
-            async fn stop_agent(
-                &self,
-                _: Request<wire::StopAgentRequest>,
-            ) -> Answer<wire::StopAgentResponse> {
+            async fn stop_agent(&self, _: Request<wire::StopAgentRequest>) -> Answer<wire::Empty> {
                 unanswered()
             }
 
@@ -1103,7 +1108,7 @@ mod tests {
 
             async fn send_message(
                 &self,
-                _: Request<wire::PeerSendMessageRequest>,
+                _: Request<wire::Envelope>,
             ) -> Answer<wire::SendMessageResponse> {
                 unanswered()
             }
@@ -1139,12 +1144,12 @@ mod tests {
         }
 
         #[tonic::async_trait]
-        impl PeerSessionService for Answering {
+        impl SessionService for Answering {
             type SubscribeSessionStream = Events<wire::SessionEvent>;
 
             async fn subscribe_session(
                 &self,
-                _: Request<wire::PeerSubscribeSessionRequest>,
+                _: Request<wire::SubscribeSessionRequest>,
             ) -> Answer<Self::SubscribeSessionStream> {
                 self.sessions.fetch_add(1, Ordering::SeqCst);
                 let event = wire::SessionEvent::default();
@@ -1168,6 +1173,17 @@ mod tests {
                 &self,
                 _: Request<wire::SendInputRequest>,
             ) -> Answer<wire::SendInputResponse> {
+                unanswered()
+            }
+
+            async fn update_draft(
+                &self,
+                _: Request<wire::UpdateDraftRequest>,
+            ) -> Answer<wire::Draft> {
+                unanswered()
+            }
+
+            async fn get_draft(&self, _: Request<wire::GetDraftRequest>) -> Answer<wire::Draft> {
                 unanswered()
             }
         }
@@ -1196,7 +1212,7 @@ mod tests {
             Arc::new(std::sync::RwLock::new(trust))
         }
 
-        /// A host answering links on loopback with the peer service, issuing
+        /// A host answering links on loopback with the agent and session services, issuing
         /// tickets from `tickets`. What it answered, and for each stream a
         /// dialler opened on a link, whether it arrived as early data.
         struct LoopbackHost {
@@ -1225,8 +1241,8 @@ mod tests {
                 });
                 tokio::spawn(
                     tonic::transport::Server::builder()
-                        .add_service(wire::peer_agent_service_server(answering.clone()))
-                        .add_service(wire::peer_session_service_server(answering.clone()))
+                        .add_service(wire::agent_service_server(answering.clone()))
+                        .add_service(wire::session_service_server(answering.clone()))
                         .serve_with_incoming(incoming),
                 );
                 let early = arrived_early.clone();

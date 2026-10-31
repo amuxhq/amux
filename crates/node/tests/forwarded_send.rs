@@ -214,8 +214,8 @@ async fn unknown_input_arm_survives_forwarding() {
     // A prompt with a field 99 no version of the message has, then an arm
     // 99 alone: varint key 99 << 3, value 1.
     let unknown = [0x98, 0x06, 0x01];
-    let prompt = wire::ClaudeSdkInput {
-        of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::AgentInput {
+        of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
             text: "with something new".into(),
             attachments: Vec::new(),
         })),
@@ -224,12 +224,10 @@ async fn unknown_input_arm_survives_forwarding() {
     let inputs = [
         wire::Input {
             input_id: b"on-the-desk".to_vec(),
-            kind: wire::Kind::ClaudeSdk as i32,
             body: [prompt.as_slice(), &unknown].concat(),
         },
         wire::Input {
             input_id: b"from-the-laptop".to_vec(),
-            kind: wire::Kind::ClaudeSdk as i32,
             body: unknown.to_vec(),
         },
     ];

@@ -693,21 +693,18 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
         }],
         credits: None,
     };
-    let servers = wire::ToolServerHealth {
-        state: wire::HealthState::Degraded as i32,
-        servers: vec![
-            wire::ToolServer {
-                name: "ok".into(),
-                status: wire::ToolServerStatus::Ready as i32,
-                error: String::new(),
-            },
-            wire::ToolServer {
-                name: "github".into(),
-                status: wire::ToolServerStatus::Failed as i32,
-                error: "401".into(),
-            },
-        ],
-    };
+    let servers = vec![
+        wire::ToolServer {
+            name: "ok".into(),
+            status: wire::ToolServerStatus::Ready as i32,
+            error: String::new(),
+        },
+        wire::ToolServer {
+            name: "github".into(),
+            status: wire::ToolServerStatus::Failed as i32,
+            error: "401".into(),
+        },
+    ];
     let sign_in = wire::SignIn {
         state: wire::SignInState::Expired as i32,
         account: "me@example.com".into(),
@@ -766,7 +763,7 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
             model: Some("opus".into()),
             permission: Some("default".into()),
             usage: Some(claude_usage.clone()),
-            servers: Some(servers),
+            servers,
             sign_in: Some(sign_in),
             background_jobs: Some(background.clone()),
             ..Default::default()
@@ -780,7 +777,7 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
             effort: Some("high".into()),
             permission: Some("default".into()),
             usage: Some(claude_usage),
-            servers: Some(servers),
+            servers,
             sign_in: Some(sign_in),
             background_jobs: Some(background.clone()),
             ..Default::default()
@@ -794,7 +791,7 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
             effort: Some("high".into()),
             approval_policy: Some("on-request".into()),
             usage: Some(codex_usage),
-            servers: Some(servers),
+            servers,
             sign_in: Some(sign_in),
             background_jobs: Some(background.clone()),
             ..Default::default()
@@ -803,24 +800,16 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
     }
 }
 
-fn prompt_input(kind: Kind, id: &[u8], text: &str) -> wire::Input {
-    use wire::KindInput as Of;
-    let prompt = wire::PromptInput {
-        text: text.into(),
-        attachments: vec![],
-    };
-    let of = match kind {
-        Kind::ClaudePty => Of::ClaudePty(wire::ClaudePtyInput {
-            of: Some(wire::claude_pty_input::Of::Prompt(prompt)),
-        }),
-        Kind::ClaudeSdk => Of::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(prompt)),
-        }),
-        _ => Of::Codex(wire::CodexInput {
-            of: Some(wire::codex_input::Of::Prompt(prompt)),
-        }),
-    };
-    wire::Input::new(id.to_vec(), of)
+fn prompt_input(id: &[u8], text: &str) -> wire::Input {
+    wire::Input::new(
+        id.to_vec(),
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
+                text: text.into(),
+                attachments: vec![],
+            })),
+        },
+    )
 }
 
 fn queued(id: &[u8], steer: bool, from_agent: Option<&str>) -> wire::QueuedInput {
@@ -930,7 +919,7 @@ fn authored(kind: Kind) -> String {
         &state,
     );
 
-    state.update(Msg::Send(prompt_input(kind, b"q2", "mine")));
+    state.update(Msg::Send(prompt_input(b"q2", "mine")));
     state.update(Msg::Sent(
         b"q2".to_vec(),
         ui_state::InputOutcome::Reply(wire::SendInputResponse {
@@ -950,9 +939,9 @@ fn authored(kind: Kind) -> String {
         &state,
     );
 
-    state.update(Msg::Send(prompt_input(kind, b"lost", "did this land?")));
+    state.update(Msg::Send(prompt_input(b"lost", "did this land?")));
     state.update(Msg::Sent(b"lost".to_vec(), InputOutcome::Lost));
-    state.update(Msg::Send(prompt_input(kind, b"nope", "rejected one")));
+    state.update(Msg::Send(prompt_input(b"nope", "rejected one")));
     state.update(Msg::Sent(
         b"nope".to_vec(),
         ui_state::InputOutcome::Reply(wire::SendInputResponse {
@@ -962,7 +951,7 @@ fn authored(kind: Kind) -> String {
             })),
         }),
     ));
-    state.update(Msg::Send(prompt_input(kind, b"flying", "in flight")));
+    state.update(Msg::Send(prompt_input(b"flying", "in flight")));
     show(
         "not confirmed (resend or discard), rejected with its reason, and one in flight",
         &state,
@@ -1031,7 +1020,7 @@ fn a_sent_prompt_the_queue_lists_is_drawn_once() {
         let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
         state.update(snapshot(kind, Phase::Starting, vec![], vec![]));
         state.update(caught_up());
-        state.update(Msg::Send(prompt_input(kind, b"r1", "resumed")));
+        state.update(Msg::Send(prompt_input(b"r1", "resumed")));
         assert_eq!(prompts_underway(&state).len(), 1, "sending until it lands");
         state.update(snapshot(
             kind,
@@ -1060,8 +1049,8 @@ fn a_refused_send_now_leaves_the_prompt_queued() {
     state.update(caught_up());
     state.update(Msg::Send(wire::Input::new(
         b"now".to_vec(),
-        wire::ClaudePtyInput {
-            of: Some(wire::claude_pty_input::Of::SendNow(wire::SendQueuedNow {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::SendNow(wire::SendQueuedNow {
                 queued_input_id: b"q1".to_vec(),
             })),
         },
@@ -2609,14 +2598,14 @@ fn prompts_on_their_way_follow_the_sending_rules() {
     let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
     state.update(snapshot(kind, Phase::Idle, vec![], vec![]));
     state.update(caught_up());
-    state.update(Msg::Send(prompt_input(kind, b"p1", "first")));
+    state.update(Msg::Send(prompt_input(b"p1", "first")));
     let underway = prompts_underway(&state);
     assert_eq!(underway.len(), 1);
     assert_eq!(underway[0].lands, Lands::Feed);
     assert_eq!(underway[0].underway, Underway::Sending { waiting: false });
 
     state.update(snapshot(kind, Phase::Working, vec![], vec![]));
-    state.update(Msg::Send(prompt_input(kind, b"p2", "second")));
+    state.update(Msg::Send(prompt_input(b"p2", "second")));
     state.update(Msg::Sent(b"p1".to_vec(), InputOutcome::Lost));
     state.update(Msg::Connection(ui_state::Connection::Reconnecting));
     let underway = prompts_underway(&state);
@@ -2636,7 +2625,7 @@ fn prompts_on_their_way_follow_the_sending_rules() {
         "both wait for the host where they were first drawn"
     );
 
-    state.update(Msg::Send(prompt_input(kind, b"p3", "third")));
+    state.update(Msg::Send(prompt_input(b"p3", "third")));
     state.update(Msg::Sent(
         b"p3".to_vec(),
         InputOutcome::Reply(wire::SendInputResponse {
@@ -2903,14 +2892,14 @@ fn a_forms_answer_carries_the_checked_values() {
                 primary: true,
                 takes_note: false,
                 answer: match kind {
-                    wire::Kind::Codex => ui_view::Answer::Codex(wire::CodexAnswer {
-                        of: Some(wire::codex_answer::Of::Form(accept)),
+                    wire::Kind::Codex => wire::Answer {
+                        of: Some(wire::answer::Of::Form(accept)),
                         ..Default::default()
-                    }),
-                    _ => ui_view::Answer::Claude(wire::ClaudeAnswer {
-                        of: Some(wire::claude_answer::Of::Form(accept)),
+                    },
+                    _ => wire::Answer {
+                        of: Some(wire::answer::Of::Form(accept)),
                         ..Default::default()
-                    }),
+                    },
                 },
             }],
             question_note: false,
@@ -2931,14 +2920,10 @@ fn a_forms_answer_carries_the_checked_values() {
     ];
     let content = |answer: ui_view::Answer| {
         let form = match answer {
-            ui_view::Answer::Claude(wire::ClaudeAnswer {
-                of: Some(wire::claude_answer::Of::Form(form)),
+            wire::Answer {
+                of: Some(wire::answer::Of::Form(form)),
                 ..
-            })
-            | ui_view::Answer::Codex(wire::CodexAnswer {
-                of: Some(wire::codex_answer::Of::Form(form)),
-                ..
-            }) => form,
+            } => form,
             other => panic!("not a form answer: {other:?}"),
         };
         assert_eq!(form.action(), wire::FormAction::Accept);
@@ -2958,7 +2943,7 @@ fn a_forms_answer_carries_the_checked_values() {
             }),
             "{kind:?}: trimmed, whole numbers whole, picks in the options' order, the untouched toggle off, the empty note left out"
         );
-        let input = ui_view::answer_input(&card(kind), &answer, "").unwrap();
+        let input = ui_view::answer_input(&card(kind), &answer, "");
         assert!(!input.encode_to_vec().is_empty());
     }
     assert_eq!(

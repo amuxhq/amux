@@ -264,7 +264,7 @@ pub enum MessageRefusal {
 pub enum PeerRequest {
     /// A stream of one of this host's agents' session events: from what
     /// came after the revision the peer's replica holds, or a tail.
-    SubscribeSession(#[serde(with = "codec::message")] wire::PeerSubscribeSessionRequest),
+    SubscribeSession(#[serde(with = "codec::message")] wire::SubscribeSessionRequest),
     /// A stream of this host's entry and its own agents.
     SubscribeInventory,
     ListItems(#[serde(with = "codec::message")] wire::ListItemsRequest),

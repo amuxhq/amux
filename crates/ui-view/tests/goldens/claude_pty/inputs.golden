@@ -25,14 +25,13 @@
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 u1 Prompt { text: [Text("first")], steered: false }
-     3 u2 Hidden collapsed
-     4 turn:1 Stopped
-     5 u3 SlashOutput { command: "/compact", args: "", output: "Compacted" }
-     6 boundary:2 Boundary { kind: Compacted, cause: "" }
-     7 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: [Text("please look at the diff")], to: "", sent: Unspecified, rejection: "" }
-     8 a5 Prose { text: [Text("Looking.")], streaming: false, working_note: false }
-     9 agent-message:6532 AgentMessage { from: "reviewer", kind: Message, text: [Text("and the tests")], to: "", sent: Unspecified, rejection: "" }
-    10 turn:3 TurnEnd { duration_ms: Some(20), failed: false }
+     3 turn:1 Stopped
+     4 u3 SlashOutput { command: "/compact", args: "", output: "Compacted" }
+     5 boundary:2 Boundary { kind: Compacted, cause: "" }
+     6 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: [Text("please look at the diff")], to: "", sent: Unspecified, rejection: "" }
+     7 a5 Prose { text: [Text("Looking.")], streaming: false, working_note: false }
+     8 agent-message:6532 AgentMessage { from: "reviewer", kind: Message, text: [Text("and the tests")], to: "", sent: Unspecified, rejection: "" }
+     9 turn:3 TurnEnd { duration_ms: Some(20), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

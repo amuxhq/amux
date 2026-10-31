@@ -2670,7 +2670,7 @@ fn addressed_to_process(delivery: &Delivery) -> Option<usize> {
     }
 }
 
-/// A served call's unary reply, as the peer service carries it.
+/// A served call's unary reply, as a paired host's call carries it.
 fn reply_of(response: Response) -> Option<PeerReply> {
     match response {
         Response::Fetched(fetched) => Some(PeerReply::Fetched(fetched)),
@@ -2681,7 +2681,7 @@ fn reply_of(response: Response) -> Option<PeerReply> {
     }
 }
 
-/// A refusal as the peer service sends it.
+/// A refusal as a paired host's call receives it.
 /// The wire error a call ending in `error` reaches a caller as, by
 /// node's mapping.
 pub fn wire_error(error: &CallError) -> wire::Error {

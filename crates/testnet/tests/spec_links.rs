@@ -188,7 +188,7 @@ async fn pair_over_ssh_from_the_cli_trusts_both_ends_and_links() {
         async move {
             admin(net, near)
                 .await
-                .list_peers(wire::ListPeersRequest {})
+                .list_peers(wire::Empty {})
                 .await
                 .unwrap()
                 .into_inner()
@@ -287,7 +287,7 @@ async fn route_relay_signing_out_closes_the_links_the_relay_carried_until_signin
 
     admin(&net, "laptop")
         .await
-        .sign_out(wire::SignOutRequest {})
+        .sign_out(wire::Empty {})
         .await
         .unwrap();
     row_until(
@@ -353,7 +353,7 @@ async fn route_lan_signing_out_keeps_the_direct_link_and_the_session() {
 
     admin(&net, "laptop")
         .await
-        .sign_out(wire::SignOutRequest {})
+        .sign_out(wire::Empty {})
         .await
         .unwrap();
     row_until(
@@ -392,11 +392,7 @@ async fn route_lan_signing_out_keeps_the_direct_link_and_the_session() {
         .unwrap()
         .send_input(tonic::Request::new(wire::SendInputRequest {
             agent_id: net.agent("worker").unwrap().id.as_bytes().to_vec(),
-            input: Some(testnet::prompt(
-                testnet::FakeKind::ClaudeSdk,
-                uuid::Uuid::new_v4().as_bytes(),
-                "go",
-            )),
+            input: Some(testnet::prompt(uuid::Uuid::new_v4().as_bytes(), "go")),
         }))
         .await
         .unwrap();
@@ -2075,7 +2071,7 @@ async fn punch_lapse_drops_the_punched_path() {
             let id = profile(&net, host);
             let seen = door(&net, host)
                 .await
-                .list_profiles(wire::ListProfilesRequest {})
+                .list_profiles(wire::Empty {})
                 .await
                 .map_err(|status| status.message().to_owned())?
                 .into_inner()

@@ -10,8 +10,7 @@ use ui_runtime::{
 };
 use ui_state::{Composer, Connection, InputOutcome, InputState, Refusal, Waiting};
 use wire::{
-    ErrorCode, GetBlobResponse, Input, Kind, ListItemsResponse, SendInputRequest, claude_pty_input,
-    claude_sdk_input, codex_input,
+    ErrorCode, GetBlobResponse, Input, Kind, ListItemsResponse, SendInputRequest, agent_input,
 };
 
 use crate::support;
@@ -73,7 +72,11 @@ async fn open_paints_the_snapshot_and_held_rows_before_it_returns() {
         ManualClock::new(0),
     ));
     let (request, feed) = calls.subscribe_session().await;
-    assert_eq!(request.tail, 40, "a client asks for a tail");
+    assert_eq!(
+        request.from,
+        Some(wire::subscribe_session_request::From::Tail(40)),
+        "a client asks for a tail"
+    );
     feed.send(snapshot(KIND, 7, &[]));
     feed.send(ev(text_item(KIND, 6, 6, "older")));
     feed.send(ev(text_item(KIND, 7, 7, "newest")));
@@ -121,7 +124,10 @@ async fn lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap() {
     let (session, mut calls, feed) = open_caught_up(&clock, 3).await;
     feed.send(lagged());
     let (request, feed) = calls.subscribe_session().await;
-    assert_eq!(request.tail, 40);
+    assert_eq!(
+        request.from,
+        Some(wire::subscribe_session_request::From::Tail(40))
+    );
     assert!(clock.sleeping().is_empty(), "no backoff after Lagged");
     assert!(!session.state().caught_up());
     assert_eq!(session.state().connection(), Connection::Live);
@@ -329,59 +335,41 @@ async fn an_append_whose_base_is_not_held_is_answered_with_get() {
 /// An ask's answer as a card makes it, under the ask's key: for Codex an
 /// approval.
 fn answering(kind: Kind) -> Input {
-    let answer = wire::ClaudeAnswer {
+    let answer = wire::Answer {
         ask_key: "ask-1".into(),
         of: None,
     };
     let of = match kind {
-        Kind::ClaudePty => wire::KindInput::ClaudePty(wire::ClaudePtyInput {
-            of: Some(claude_pty_input::Of::Answer(answer)),
-        }),
-        Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(claude_sdk_input::Of::Answer(answer)),
-        }),
-        _ => wire::KindInput::Codex(wire::CodexInput {
-            of: Some(codex_input::Of::Answer(wire::CodexAnswer {
+        Kind::ClaudePty => wire::AgentInput {
+            of: Some(agent_input::Of::Answer(answer)),
+        },
+        Kind::ClaudeSdk => wire::AgentInput {
+            of: Some(agent_input::Of::Answer(answer)),
+        },
+        _ => wire::AgentInput {
+            of: Some(agent_input::Of::Answer(wire::Answer {
                 ask_key: "ask-1".into(),
-                of: Some(wire::codex_answer::Of::Approve(
-                    wire::Decision::Approve as i32,
-                )),
+                of: Some(wire::answer::Of::Approve(wire::Decision::Approve as i32)),
             })),
-        }),
+        },
     };
     Input::new(Vec::new(), of)
 }
 
 fn act_arm(request: &SendInputRequest) -> String {
     let of = request.input.as_ref().unwrap().decode_body();
-    match of.as_ref().unwrap() {
-        wire::KindInput::ClaudePty(pty) => match pty.of.as_ref().unwrap() {
-            claude_pty_input::Of::Withdraw(_) => "withdraw",
-            claude_pty_input::Of::SendNow(_) => "send_now",
-            claude_pty_input::Of::Interrupt(_) => "interrupt",
-            claude_pty_input::Of::Answer(_) => "answer",
-            _ => "other",
-        },
-        wire::KindInput::ClaudeSdk(sdk) => match sdk.of.as_ref().unwrap() {
-            claude_sdk_input::Of::Withdraw(_) => "withdraw",
-            claude_sdk_input::Of::SendNow(_) => "send_now",
-            claude_sdk_input::Of::Interrupt(_) => "interrupt",
-            claude_sdk_input::Of::Answer(_) => "answer",
-            _ => "other",
-        },
-        wire::KindInput::Codex(codex) => match codex.of.as_ref().unwrap() {
-            codex_input::Of::Withdraw(_) => "withdraw",
-            codex_input::Of::SendNow(_) => "send_now",
-            codex_input::Of::Interrupt(_) => "interrupt",
-            codex_input::Of::Answer(_) => "answer",
-            _ => "other",
-        },
+    match of.as_ref().unwrap().of.as_ref().unwrap() {
+        agent_input::Of::Withdraw(_) => "withdraw",
+        agent_input::Of::SendNow(_) => "send_now",
+        agent_input::Of::Interrupt(_) => "interrupt",
+        agent_input::Of::Answer(_) => "answer",
+        _ => "other",
     }
     .into()
 }
 
 #[tokio::test]
-async fn acts_on_the_chat_go_in_the_kinds_own_arm_and_return_the_verdict() {
+async fn acts_on_the_chat_go_in_their_arm_and_return_the_verdict() {
     for kind in [Kind::ClaudePty, Kind::ClaudeSdk, Kind::Codex] {
         let (client, mut calls) = runtime();
         let open = tokio::spawn(Session::open(
@@ -736,7 +724,10 @@ async fn a_following_window_trims_to_its_cap_and_a_return_past_the_held_rows_rel
     // window on screen until the fresh one is caught up.
     session.follow(true);
     let (request, fresh) = calls.subscribe_session().await;
-    assert_eq!(request.tail, 3);
+    assert_eq!(
+        request.from,
+        Some(wire::subscribe_session_request::From::Tail(3))
+    );
     assert!(feed.is_closed(), "the old stream is dropped");
     fresh.send(snapshot(KIND, 9, &[]));
     for order in 7..=9 {

@@ -27,14 +27,13 @@
      4 a2 Prose { text: [Text("Listing them now.")], streaming: false, working_note: false }
      5 t1 Command { command: "ls", state: Succeeded, exit_code: None, output_head: ["a.txt"], more_lines: 0, output_trimmed: false, output_tail: ["a.txt"], duration_ms: Some(1000) } run[t1..t1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
      6 stream:d-c Prose { text: [Text("There is one file:\n")], streaming: false, working_note: false }
-     7 u2 Hidden collapsed
-     8 turn:1 Stopped
-     9 u3 Prompt { text: [Text("carry on")], steered: false }
-    10 stream:d-d Prose { text: [Text("Second reply.")], streaming: false, working_note: false }
-    11 turn:2 TurnEnd { duration_ms: Some(1100), failed: false }
-    12 u4 Prompt { text: [Text("and again")], steered: false }
-    13 stream:d-e Prose { text: [Text("Third reply.")], streaming: false, working_note: false }
-    14 turn:3 TurnEnd { duration_ms: Some(1000), failed: false }
+     7 turn:1 Stopped
+     8 u3 Prompt { text: [Text("carry on")], steered: false }
+     9 stream:d-d Prose { text: [Text("Second reply.")], streaming: false, working_note: false }
+    10 turn:2 TurnEnd { duration_ms: Some(1100), failed: false }
+    11 u4 Prompt { text: [Text("and again")], steered: false }
+    12 stream:d-e Prose { text: [Text("Third reply.")], streaming: false, working_note: false }
+    13 turn:3 TurnEnd { duration_ms: Some(1000), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

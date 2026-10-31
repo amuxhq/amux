@@ -117,7 +117,7 @@ pub async fn wait(mut admin: Admin, qr: bool, link: bool) -> Result<()> {
             () = &mut ended => return cancel(admin).await,
             () = tokio::time::sleep(PAIRING_POLL) => {
                 let status = admin
-                    .get_pairing_status(wire::GetPairingStatusRequest {})
+                    .get_pairing_status(wire::Empty {})
                     .await
                     .map_err(plain)?
                     .into_inner();
@@ -332,10 +332,7 @@ fn terminal_qr(payload: &str) -> Result<String> {
 
 /// Closes this host's pairing mode.
 pub async fn cancel(mut admin: Admin) -> Result<()> {
-    admin
-        .cancel_pairing(wire::CancelPairingRequest {})
-        .await
-        .map_err(plain)?;
+    admin.cancel_pairing(wire::Empty {}).await.map_err(plain)?;
     // The terminal may be gone (SIGHUP): saying so must not fail the close.
     let _ = writeln!(std::io::stdout(), "Pairing mode closed.");
     Ok(())
@@ -498,7 +495,7 @@ fn profile_dir(profile: &wire::Profile) -> Result<PathBuf> {
 async fn own_identity(admin: &Admin) -> Result<PairingIdentity> {
     let own = admin
         .clone()
-        .get_device_identity(wire::GetDeviceIdentityRequest {})
+        .get_device_identity(wire::Empty {})
         .await
         .map_err(plain)?
         .into_inner();
@@ -571,7 +568,7 @@ pub async fn relay(profile: &wire::Profile) -> Result<()> {
 /// announced by the relay or a paired host.
 pub async fn hosts(mut admin: Admin, client: &mut wire::ClientStubs, free: bool) -> Result<()> {
     let trusted = admin
-        .list_peers(wire::ListPeersRequest {})
+        .list_peers(wire::Empty {})
         .await
         .map_err(plain)?
         .into_inner()
@@ -697,7 +694,7 @@ fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry], free: bool) -> String
 pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
     let id = Uuid::parse_str(peer).ok();
     let peers = admin
-        .list_peers(wire::ListPeersRequest {})
+        .list_peers(wire::Empty {})
         .await
         .map_err(plain)?
         .into_inner()
@@ -782,10 +779,7 @@ pub async fn login(mut door: Door, profile: Option<&wire::Profile>, cloud_url: &
 
 /// Signs a profile out; its agents and paired hosts stay.
 pub async fn logout(mut admin: Admin, profile: &wire::Profile) -> Result<()> {
-    admin
-        .sign_out(wire::SignOutRequest {})
-        .await
-        .map_err(plain)?;
+    admin.sign_out(wire::Empty {}).await.map_err(plain)?;
     println!(
         "Signed {} out; its agents and paired hosts stay.",
         profile.label

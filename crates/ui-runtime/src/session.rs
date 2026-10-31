@@ -277,7 +277,9 @@ impl Inner {
     fn subscribe_request(&self) -> SubscribeSessionRequest {
         SubscribeSessionRequest {
             agent_id: self.agent_id.clone(),
-            tail: self.tail.load(Ordering::Acquire),
+            from: Some(wire::subscribe_session_request::From::Tail(
+                self.tail.load(Ordering::Acquire),
+            )),
         }
     }
 
@@ -865,18 +867,8 @@ impl Session {
         self.inner.send(input).await
     }
 
-    /// A prompt in this agent's kind.
     pub async fn send_prompt(&self, text: &str, attachments: Vec<wire::Attachment>) -> Sent {
-        match inputs::prompt(self.kind(), text, attachments) {
-            Some(input) => self.send(input).await,
-            None => Sent {
-                id: Vec::new(),
-                outcome: InputOutcome::Reply(rejected(wire::Rejected {
-                    refusal: wire::Refusal::Unsupported as i32,
-                    detail: None,
-                })),
-            },
-        }
+        self.send(inputs::prompt(text, attachments)).await
     }
 
     /// Resumes an exited agent with no first message.
@@ -899,9 +891,7 @@ impl Session {
         }
         let id = draft.input_id.clone();
         // The draft shows as a prompt on its way until the resume answers.
-        if let Some(sending) = inputs::submitted(self.kind(), &draft) {
-            self.inner.apply(Msg::Send(sending));
-        }
+        self.inner.apply(Msg::Send(inputs::submitted(&draft)));
         let request = ResumeAgentRequest {
             agent_id: self.inner.agent_id.clone(),
             initial_prompt: Some(draft),
@@ -939,34 +929,34 @@ impl Session {
 
     /// Takes a queued prompt back out of the queue.
     pub async fn withdraw(&self, queued: &[u8]) -> Result<(), InputError> {
-        self.act(inputs::withdraw(self.kind(), queued)).await
+        self.act(inputs::withdraw(queued)).await
     }
 
     /// Steers a queued prompt into the running turn; the entry reads
     /// steered until its reflection lands.
     pub async fn send_now(&self, queued: &[u8]) -> Result<(), InputError> {
-        self.act(inputs::send_now(self.kind(), queued)).await
+        self.act(inputs::send_now(queued)).await
     }
 
     /// Answers an open ask with the input `ui_view::answer_input` made
     /// from its card and the person's choice; any open ask can be answered.
     pub async fn answer(&self, input: Input) -> Result<(), InputError> {
-        self.act(Some(input)).await
+        self.act(input).await
     }
 
     pub async fn interrupt(&self) -> Result<(), InputError> {
-        self.act(inputs::interrupt(self.kind())).await
+        self.act(inputs::interrupt()).await
     }
 
     /// Stops one background job by its key; the agent keeps running.
     pub async fn stop_job(&self, key: &str) -> Result<(), InputError> {
-        self.act(inputs::stop_job(self.kind(), key)).await
+        self.act(inputs::stop_job(key)).await
     }
 
     /// Takes the agent's own view back to its conversation after it
     /// switched to another (terminal Claude).
     pub async fn switch_back(&self) -> Result<(), InputError> {
-        self.act(inputs::switch_back(self.kind())).await
+        self.act(inputs::switch_back()).await
     }
 
     /// Forgets an input that was not confirmed.
@@ -983,12 +973,7 @@ impl Session {
         Some(self.send(input).await)
     }
 
-    async fn act(&self, input: Option<Input>) -> Result<(), InputError> {
-        let Some(input) = input else {
-            return Err(InputError::Rejected(Refusal::of(
-                wire::Refusal::Unsupported,
-            )));
-        };
+    async fn act(&self, input: Input) -> Result<(), InputError> {
         let sent = self.send(input).await;
         if self.inner.model().state.input_state(&sent.id) == Some(InputState::Held) {
             return Err(InputError::Held);
@@ -1005,10 +990,6 @@ impl Session {
             }
             InputOutcome::Held => Err(InputError::Held),
         }
-    }
-
-    fn kind(&self) -> wire::Kind {
-        self.inner.model().state.kind()
     }
 
     /// An attachment's bytes, if fetched. A missing one starts its fetch,

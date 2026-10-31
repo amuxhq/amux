@@ -321,7 +321,7 @@ impl client::Client for SlowClearing {
     }
     async fn send_message(
         &self,
-        request: wire::SendMessageRequest,
+        request: wire::Envelope,
     ) -> Result<wire::SendMessageResponse, client::RpcError> {
         self.inner.send_message(request).await
     }

@@ -891,7 +891,7 @@ mod tests {
         assert_eq!(daemon.peer_addresses().get(&PEER), Some(&now));
 
         let accepted = Body::HelloAck(HelloAck {
-            outcome: Some(hello_ack::Outcome::Accepted(wire::HelloAccepted {
+            outcome: Some(hello_ack::Outcome::Accepted(wire::Hello {
                 addrs: Vec::new(),
                 ..Default::default()
             })),
@@ -1050,7 +1050,7 @@ mod tests {
             )
         };
         let accepted = Body::HelloAck(HelloAck {
-            outcome: Some(hello_ack::Outcome::Accepted(wire::HelloAccepted {
+            outcome: Some(hello_ack::Outcome::Accepted(wire::Hello {
                 observed_addr: Some("203.0.113.7:4433".to_string()),
                 ..Default::default()
             })),

@@ -15,12 +15,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
     Ask, AskClosed, Attachment, BackgroundJob, BlobRef, Boundary, BoundaryKind, ClaudeGrant,
-    ClaudeItem, ClaudeUsage, ContextMeter, DecisionOutcome, EditInput, Envelope, HealthState,
-    IncarnationEnd, Limit, NotebookCell, NotebookEditMode, OfferedCommand, OfferedModel,
-    OfferedPermission, PatchHunk, Question, QuestionAsk, QuestionOption, Replacement,
-    ScopeDestination, ShellInput, SubagentProgress, TaskList, TaskListEntry, TaskListStatus,
-    ToolCall, ToolClass, ToolDecision, ToolInput, ToolServer, ToolServerHealth, ToolServerStatus,
-    ToolState, UsageState, attachment, claude_item, codex_grant, tool_decision, tool_input,
+    ClaudeItem, ClaudeUsage, ContextMeter, DecisionOutcome, EditInput, Envelope, IncarnationEnd,
+    Limit, NotebookCell, NotebookEditMode, OfferedCommand, OfferedModel, OfferedPermission,
+    PatchHunk, Question, QuestionAsk, QuestionOption, Replacement, ScopeDestination, ShellInput,
+    SubagentProgress, TaskList, TaskListEntry, TaskListStatus, ToolCall, ToolClass, ToolDecision,
+    ToolInput, ToolServer, ToolServerStatus, ToolState, UsageState, attachment, claude_item,
+    codex_grant, tool_decision, tool_input,
 };
 
 use crate::{
@@ -1642,16 +1642,15 @@ pub(crate) fn describe_model_name(name: Option<&str>) -> String {
 /// organization manages Claude's MCP servers, Claude takes none added on
 /// its command line, so the agent launched it without amux's, and the
 /// person reads why amux's tools are missing.
-pub(crate) fn amux_tools_withheld(mut health: ToolServerHealth) -> ToolServerHealth {
-    health.servers.push(ToolServer {
+pub(crate) fn amux_tools_withheld(mut servers: Vec<ToolServer>) -> Vec<ToolServer> {
+    servers.push(ToolServer {
         name: crate::AMUX_TOOL_SERVER.to_owned(),
         status: ToolServerStatus::Failed as i32,
         error:
             "Your organization's MCP policy allows no other tool servers, so amux's tools are off."
                 .to_owned(),
     });
-    health.state = HealthState::Degraded as i32;
-    health
+    servers
 }
 
 /// A Claude item's body.
@@ -1957,8 +1956,6 @@ pub(crate) fn describe_item(body: &[u8]) -> ItemView {
                 describe_cause(&boundary)
             ),
         ),
-        Some(Kind::CompactSummary(_)) => ("compact_summary", true, String::new()),
-        Some(Kind::Interruption(_)) => ("interruption", true, String::new()),
         Some(Kind::AgentMessage(message)) => (
             "agent_message",
             true,
@@ -2030,7 +2027,7 @@ pub(crate) fn describe_snapshot(body: &[u8]) -> SnapshotView {
     let snapshot = wire::ClaudeSnapshot::decode(body).unwrap_or_default();
     let context = snapshot.context.unwrap_or_default();
     let usage = snapshot.usage.unwrap_or_default();
-    let servers = snapshot.servers.unwrap_or_default();
+    let servers = snapshot.servers;
     let sign_in = snapshot.sign_in.unwrap_or_default();
     SnapshotView {
         asks: snapshot
@@ -2065,24 +2062,7 @@ pub(crate) fn describe_snapshot(body: &[u8]) -> SnapshotView {
                 .collect::<Vec<_>>()
                 .join(","),
             describe_claude_usage(&usage),
-            match wire::HealthState::try_from(servers.state).unwrap_or_default() {
-                wire::HealthState::Unknown => "?".to_owned(),
-                state => format!(
-                    "{}[{}]",
-                    state.as_str_name(),
-                    servers
-                        .servers
-                        .iter()
-                        .map(|server| format!(
-                            "{}:{}",
-                            server.name,
-                            wire::ToolServerStatus::try_from(server.status)
-                                .map_or("?", |status| status.as_str_name())
-                        ))
-                        .collect::<Vec<_>>()
-                        .join(",")
-                ),
-            },
+            crate::shared::describe_servers(&servers),
             match wire::SignInState::try_from(sign_in.state).unwrap_or_default() {
                 wire::SignInState::Unknown => "?".to_owned(),
                 state => format!("{} {}", state.as_str_name(), or_dash(&sign_in.account)),

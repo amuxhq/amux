@@ -15,8 +15,8 @@ use node::{Daemon, Launch, ProfileRuntime, ServeError};
 use support::synthetic::*;
 use support::*;
 use wire::{
-    AmbiguousAgentName, ErrorCode, GetItemRequest, InventoryEvent, Lifecycle, ListItemsRequest,
-    Phase, SessionEvent, Step, inventory_event, session_event,
+    ErrorCode, GetItemRequest, InventoryEvent, Lifecycle, ListItemsRequest, Phase, SessionEvent,
+    Step, inventory_event, session_event,
 };
 
 use crate::support;
@@ -1167,22 +1167,19 @@ async fn resolve_agent_finds_one_name_or_says_why_not() {
     let ambiguous = runtime.resolve_agent("beta").await.unwrap_err();
     let error = ambiguous.to_wire();
     assert_eq!(error.code, ErrorCode::FailedPrecondition as i32);
-    assert_eq!(error.details.len(), 1);
-    let detail = error
-        .detail::<AmbiguousAgentName>()
-        .expect("the candidates");
-    let mut candidates: Vec<_> = detail
-        .candidates
-        .iter()
-        .map(|a| a.agent_id.clone())
-        .collect();
-    candidates.sort();
-    let mut expected = vec![
-        agents[1].id.as_bytes().to_vec(),
-        agents[2].id.as_bytes().to_vec(),
-    ];
-    expected.sort();
-    assert_eq!((detail.name.as_str(), candidates), ("beta", expected));
+    assert!(
+        error
+            .message
+            .starts_with("beta names more than one agent; pick one with "),
+        "{}",
+        error.message
+    );
+    assert_eq!(
+        error.message.matches(" or ").count(),
+        1,
+        "{}",
+        error.message
+    );
     crash(daemon, runtime).await;
 }
 
@@ -1454,17 +1451,18 @@ async fn retention_sweep() {
     let child = children[0];
     runtime
         .send_message(
-            wire::SendMessageRequest {
+            wire::Envelope {
+                from: None,
                 id: b"after-retention".to_vec(),
                 to: Some(AgentRef {
                     host_id: runtime.host().as_bytes().to_vec(),
                     agent_id: child.as_bytes().to_vec(),
                 }),
                 context: None,
-                body: Some(wire::MessageBody {
+                body: Some(wire::envelope::Body::Message(wire::MessageBody {
                     text: "one more thing".into(),
                     attachments: Vec::new(),
-                }),
+                })),
             },
             Some(parent),
         )

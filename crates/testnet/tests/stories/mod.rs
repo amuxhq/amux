@@ -130,12 +130,9 @@ pub async fn a_fence_holds_a_host_to_what_its_own_cursors_report(net: impl World
     // A sent input settles as the row that reflects it, and the second
     // turn's end comes after it.
     let input = b"second-go".to_vec();
-    net.input(
-        "worker",
-        testnet::prompt(net.agent("worker").unwrap().kind, &input, "again"),
-    )
-    .await
-    .unwrap();
+    net.input("worker", testnet::prompt(&input, "again"))
+        .await
+        .unwrap();
     let settled = net.input_settled("worker", &input).await.unwrap();
     assert!(settled > first);
     net.open_gate("second").unwrap();

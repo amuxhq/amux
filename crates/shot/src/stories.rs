@@ -348,12 +348,12 @@ fn held_while_away() -> Scene {
     }));
     scene.state.update(Msg::Send(wire::Input::new(
         b"held".to_vec(),
-        wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: "Now say the word back to me.".into(),
                 attachments: vec![],
             })),
-        }),
+        },
     )));
     Scene::Chat(Box::new(scene))
 }

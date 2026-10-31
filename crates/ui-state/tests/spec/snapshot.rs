@@ -9,7 +9,7 @@ use crate::spec::harness::*;
 fn strip_facts() -> (
     wire::ClaudeUsage,
     wire::CodexUsage,
-    wire::ToolServerHealth,
+    Vec<wire::ToolServer>,
     wire::SignIn,
     wire::BackgroundJobs,
 ) {
@@ -42,14 +42,11 @@ fn strip_facts() -> (
             }],
             credits: Some("12".into()),
         },
-        wire::ToolServerHealth {
-            state: wire::HealthState::Degraded as i32,
-            servers: vec![wire::ToolServer {
-                name: "github".into(),
-                status: wire::ToolServerStatus::Failed as i32,
-                error: "401".into(),
-            }],
-        },
+        vec![wire::ToolServer {
+            name: "github".into(),
+            status: wire::ToolServerStatus::Failed as i32,
+            error: "401".into(),
+        }],
         wire::SignIn {
             state: wire::SignInState::Expired as i32,
             account: "me".into(),
@@ -101,7 +98,7 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
                 model: Some("opus".into()),
                 permission: Some("plan".into()),
                 usage: Some(claude_usage.clone()),
-                servers: Some(servers.clone()),
+                servers: servers.clone(),
                 sign_in: Some(sign_in.clone()),
                 background_jobs: Some(background.clone()),
                 ..Default::default()
@@ -117,7 +114,7 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
                 effort: Some("high".into()),
                 permission: Some("plan".into()),
                 usage: Some(claude_usage.clone()),
-                servers: Some(servers.clone()),
+                servers: servers.clone(),
                 sign_in: Some(sign_in.clone()),
                 background_jobs: Some(background.clone()),
                 ..Default::default()
@@ -134,7 +131,7 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
                 permission: Some("plan".into()),
                 approval_policy: Some("on-request".into()),
                 usage: Some(codex_usage.clone()),
-                servers: Some(servers.clone()),
+                servers: servers.clone(),
                 sign_in: Some(sign_in.clone()),
                 background_jobs: Some(background.clone()),
                 ..Default::default()

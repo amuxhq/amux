@@ -81,7 +81,7 @@ impl ProfileRuntime {
     pub async fn peer_subscribe_session(
         &self,
         from: crate::HostId,
-        request: wire::PeerSubscribeSessionRequest,
+        request: wire::SubscribeSessionRequest,
     ) -> Result<Subscription, ServeError> {
         let room = self.launch().fanout_capacity;
         let request = PeerRequest::SubscribeSession(request);

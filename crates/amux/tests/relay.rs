@@ -292,7 +292,7 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
     );
     let mut profiles = InstallationServiceClient::new(grpc_channel(&desk.socket).await.unwrap());
     let profile = profiles
-        .list_profiles(wire::ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -314,7 +314,7 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
         let profile = &profile;
         async move {
             let listed = profiles
-                .list_profiles(wire::ListProfilesRequest {})
+                .list_profiles(wire::Empty {})
                 .await
                 .unwrap()
                 .into_inner()
@@ -329,7 +329,7 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
     .await
     .unwrap();
     let linked = profiles
-        .list_profiles(wire::ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .unwrap()
         .into_inner()

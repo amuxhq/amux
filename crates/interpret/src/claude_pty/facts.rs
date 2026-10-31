@@ -1168,21 +1168,8 @@ impl State {
         if !peer_message_bodies(&whole).is_empty() {
             return self.reflected_messages(&whole);
         }
-        if row.is_compact_summary == Some(true) {
-            self.shared.item(
-                emit,
-                ItemDraft {
-                    key: uuid,
-                    text: whole,
-                    body: item_body(Kind::CompactSummary(wire::CompactSummary {})),
-                    at_ms,
-                    complete: true,
-                    ..Default::default()
-                },
-            );
-            return;
-        }
-        if row.is_meta == Some(true) {
+        // A compaction's summary is the model's, drawn as the compaction row.
+        if row.is_compact_summary == Some(true) || row.is_meta == Some(true) {
             return;
         }
         // Claude's own message to the model, never a person's prompt.
@@ -1586,16 +1573,6 @@ impl State {
             }
             self.emit_tool(emit, &id);
         }
-        self.shared.item(
-            emit,
-            ItemDraft {
-                key: key.clone(),
-                body: item_body(Kind::Interruption(wire::Interruption {})),
-                at_ms,
-                complete: true,
-                ..Default::default()
-            },
-        );
         self.end_turn(emit, TurnOutcome::Interrupted, at_ms, None);
         self.interruption = Some(key);
     }

@@ -239,7 +239,7 @@ pub async fn update(config: &InstallationConfig, retry: bool) -> Result<()> {
     while Instant::now() < deadline {
         let running = match connect::front_door_now(config).await {
             Some(door) => connect::installation(door)
-                .get_installation(wire::GetInstallationRequest {})
+                .get_installation(wire::Empty {})
                 .await
                 .ok()
                 .map(|info| info.into_inner().version),

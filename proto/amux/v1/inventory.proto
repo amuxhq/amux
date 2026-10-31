@@ -94,12 +94,6 @@ message ProviderOnHost {
   bool signed_in = 3;
 }
 
-// A spawn named a host that more than one trusted host answers to.
-message AmbiguousHostName {
-  string name = 1;
-  repeated HostEntry candidates = 2;
-}
-
 // How this machine reaches a host, or how a pairing peer was reached. No
 // value for "no route": the host reads offline.
 enum RouteKind {
@@ -145,12 +139,6 @@ message Agent {
   uint32 background_jobs = 17;
 }
 
-// ResolveAgent found more than one agent by that name.
-message AmbiguousAgentName {
-  string name = 1;
-  repeated Agent candidates = 2;
-}
-
 enum Lifecycle {
   LIFECYCLE_UNSPECIFIED = 0;
   LIFECYCLE_LIVE = 1;
@@ -166,7 +154,7 @@ message AgentRemoved {
 }
 
 // A host by id, or as a person names it, resolved against this host and
-// the trusted ones: exact first, then ignoring case. AmbiguousHostName
+// the trusted ones: exact first, then ignoring case. FAILED_PRECONDITION
 // when more than one answers.
 message HostRef {
   oneof of {

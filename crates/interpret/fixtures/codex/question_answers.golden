@@ -1,40 +1,39 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"t1\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 2 input {"id":"p1","prompt":{"text":"Deploy it."}}
 effect reply p1 accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"7031\",\"input\":[{\"text\":\"Deploy it.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
 item prompt:7031 prompt final input=p1 at=1800000000000 text="Deploy it."
-snapshot WORKING queue=[] working_on="Deploy it." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="Deploy it." at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 3 fact {"channel":"rpc","json":{"id":"amux-1","result":{"turn":{"id":"turn-1"}}}}
-snapshot WORKING queue=[] working_on="Deploy it." at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
 ## 4 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-1","status":"inProgress"}}}}
 ## 5 fact {"channel":"rpc","json":{"id":9,"method":"item/tool/requestUserInput","params":{"itemId":"call-1","questions":[{"header":"Env","id":"env","isOther":false,"isSecret":false,"options":[{"description":"Safe first.","label":"staging (Recommended)"},{"description":"Live.","label":"production"}],"question":"Which environment?"},{"header":"Window","id":"window","isOther":false,"isSecret":false,"options":[{"description":"","label":"now"},{"description":"","label":"tonight"}],"question":"When should it go out?"},{"header":"Tag","id":"tag","isOther":true,"isSecret":false,"options":null,"question":"Which tag?"}],"threadId":"t1","turnId":"turn-1"}}}
 item ask:9 ask final at=1800000000000 text="" question×3 open
-snapshot NEEDS_YOU queue=[] working_on="Deploy it." at=1800000000000 asks=[9→ask:9 question ["Which environment?" (staging (Recommended)*|production); "When should it go out?" (now|tonight); "Which tag?" other ()] decisions=[]] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot NEEDS_YOU queue=[] working_on="Deploy it." at=1800000000000 asks=[9→ask:9 question ["Which environment?" (staging (Recommended)*|production); "When should it go out?" (now|tonight); "Which tag?" other ()] decisions=[]] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 6 input {"answer":{"answer":{"notes":["after the freeze",null,"cut it from main"],"selected":[1,null,"v2.3"]},"ask":"9"},"id":"a1"}
 effect write "{\"id\":9,\"result\":{\"answers\":{\"env\":{\"answers\":[\"production\",\"user_note: after the freeze\"]},\"tag\":{\"answers\":[\"v2.3\",\"user_note: cut it from main\"]},\"window\":{\"answers\":[]}}}}"
 effect reply a1 accepted
 item ask:9 ask final at=1800000000000 text="" question×3 ASK_OUTCOME_ANSWERED answered 2 of 3 [production note="after the freeze"; (skipped); "v2.3" note="cut it from main"]
-snapshot WORKING queue=[] working_on="Deploy it." at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="Deploy it." at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 7 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":9,"threadId":"t1"}}}
 ## 8 fact {"channel":"rpc","json":{"id":10,"method":"item/tool/requestUserInput","params":{"itemId":"call-2","questions":[{"header":"Env","id":"env","isOther":false,"isSecret":false,"options":[{"description":"Safe first.","label":"staging (Recommended)"},{"description":"Live.","label":"production"}],"question":"Which environment?"},{"header":"Window","id":"window","isOther":false,"isSecret":false,"options":[{"description":"","label":"now"},{"description":"","label":"tonight"}],"question":"When should it go out?"},{"header":"Tag","id":"tag","isOther":true,"isSecret":false,"options":null,"question":"Which tag?"}],"threadId":"t1","turnId":"turn-1"}}}
 item ask:10 ask final at=1800000000000 text="" question×3 open
-snapshot NEEDS_YOU queue=[] working_on="Deploy it." at=1800000000000 asks=[10→ask:10 question ["Which environment?" (staging (Recommended)*|production); "When should it go out?" (now|tonight); "Which tag?" other ()] decisions=[]] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot NEEDS_YOU queue=[] working_on="Deploy it." at=1800000000000 asks=[10→ask:10 question ["Which environment?" (staging (Recommended)*|production); "When should it go out?" (now|tonight); "Which tag?" other ()] decisions=[]] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 9 input {"answer":{"answer":{"reply":{"selected":[0,null,null],"text":"Hold the deploy until Monday."}},"ask":"10"},"id":"a2"}
 effect write "{\"id\":\"amux-2\",\"method\":\"turn/interrupt\",\"params\":{\"threadId\":\"t1\",\"turnId\":\"turn-1\"}}"
 effect reply a2 queued
 item ask:10 ask final at=1800000000000 text="" question×3 ASK_OUTCOME_REPLIED answered 1 of 3 [staging (Recommended); (skipped); (skipped)] reply="Hold the deploy until Monday."
-snapshot WORKING queue=[a2] working_on="Deploy it." at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[a2] working_on="Deploy it." at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 10 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":10,"threadId":"t1"}}}
 ## 11 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"interrupted"}}}}
 effect write "{\"id\":\"amux-3\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"6132\",\"input\":[{\"text\":\"Hold the deploy until Monday.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_INTERRUPTED started=1800000000000
 item prompt:6132 prompt final input=a2 at=1800000000000 text="Hold the deploy until Monday."
-snapshot WORKING queue=[] working_on="Hold the deploy until Monday." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=[]
+snapshot WORKING queue=[] working_on="Hold the deploy until Monday." at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=[]
 turn_end 1 last=-

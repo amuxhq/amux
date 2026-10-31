@@ -8,7 +8,7 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 22 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"command":"/bin/zsh -lc 'cargo watch'","commandActions":[{"command":"cargo watch","type":"unknown"}],"cwd":"/work","exitCode":null,"id":"cmd-1","status":"inProgress","type":"commandExecution"},"startedAtMs":1800000001000,"threadId":"t1","turnId":"turn-1"}}}
   composer Send activity=Some(Running { key: "cmd-1" }) queue=[] underway=[] refused=[]
-## 24 fact {"channel":"rpc","json":{"method":"turn/diff/updated","params":{"diff":"diff --git a/lexer.rs b/lexer.rs\n","threadId":"t1","turnId":"turn-1"}}}
+## 27 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"rv-1","review":"current changes","type":"enteredReviewMode"},"threadId":"t1","turnId":"turn-1"}}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 34 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"durationMs":4000,"id":"turn-1","status":"completed"}}}}
   composer Send activity=None queue=[] underway=[] refused=[]
@@ -22,20 +22,18 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 mcp:docs Hidden collapsed
-     3 prompt:7031 Prompt { text: [Text("Refactor the parser.")], steered: false }
-     4 warning:2 Error { error_kind: "warning", message: "This request was routed to gpt-5.6-mini. To use gpt-5.6-luna for this work, apply for trusted access.", attempts: 0, gave_up: true } attention
-     5 rs-1 Thinking { text: "The parser has two entry points.", open: false, duration_ms: None }
-     6 note-1 Prose { text: [Text("Splitting the lexer out first.")], streaming: false, working_note: true }
-     7 cmd-1 Background { command: "cargo watch", running: false, duration_ms: Some(9000) } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-     8 diff:turn-1 Hidden collapsed
-     9 rv-1 SlashOutput { command: "review", args: "", output: "Code review started: current changes" }
-    10 unrecognized:3 Unrecognized { what: "item/somethingNew", summary: "a notification amux does not read" }
-    11 msg-1 Prose { text: [Text("The lexer is split.")], streaming: false, working_note: false }
-    12 turn:1 TurnEnd { duration_ms: Some(4000), failed: false }
-    13 prompt:7032 Prompt { text: [Text("Run the tests.")], steered: false }
-    14 error:turn-2 Error { error_kind: "other", message: "stream closed", attempts: 0, gave_up: true } attention
-    15 turn:2 TurnEnd { duration_ms: Some(0), failed: true }
+     2 prompt:7031 Prompt { text: [Text("Refactor the parser.")], steered: false }
+     3 warning:2 Error { error_kind: "warning", message: "This request was routed to gpt-5.6-mini. To use gpt-5.6-luna for this work, apply for trusted access.", attempts: 0, gave_up: true } attention
+     4 rs-1 Thinking { text: "The parser has two entry points.", open: false, duration_ms: None }
+     5 note-1 Prose { text: [Text("Splitting the lexer out first.")], streaming: false, working_note: true }
+     6 cmd-1 Background { command: "cargo watch", running: false, duration_ms: Some(9000) } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+     7 rv-1 SlashOutput { command: "review", args: "", output: "Code review started: current changes" }
+     8 unrecognized:3 Unrecognized { what: "item/somethingNew", summary: "a notification amux does not read" }
+     9 msg-1 Prose { text: [Text("The lexer is split.")], streaming: false, working_note: false }
+    10 turn:1 TurnEnd { duration_ms: Some(4000), failed: false }
+    11 prompt:7032 Prompt { text: [Text("Run the tests.")], steered: false }
+    12 error:turn-2 Error { error_kind: "other", message: "stream closed", attempts: 0, gave_up: true } attention
+    13 turn:2 TurnEnd { duration_ms: Some(0), failed: true }
 == overview Overview { tasks: Some(TasksView { done: 1, total: 3, current: "Split the lexer", entries: [TaskLine { subject: "Read the parser", mark: Done }, TaskLine { subject: "Split the lexer", mark: Current }, TaskLine { subject: "Run the tests", mark: Todo }] }), jobs: [], failed_servers: [ServerView { name: "docs", error: "connection refused", needs_auth: false }], usage_near_limit: Some(UsageView { blocked: true, windows: [UsageWindowView { label: FiveHour, used_percent: Some(100.0), resets_at_ms: Some(1800003600000), state: Blocked }, UsageWindowView { label: Weekly { model: None }, used_percent: Some(40.0), resets_at_ms: Some(1800600000000), state: Ok }], credits: Some("0") }), changes: None }
 == context Some(ContextView { used_tokens: 48000, window_tokens: Some(258400), percent: Some(18), near_full: false }) sign-in Some(SignInView { state: SignedOut, account: "", message: "" })
 == settings

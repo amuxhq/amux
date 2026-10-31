@@ -54,9 +54,7 @@ impl InputWhat {
     }
 
     pub fn of(input: &Input) -> InputWhat {
-        use wire::{
-            KindInput, claude_pty_input as pty, claude_sdk_input as sdk, codex_input as codex,
-        };
+        use wire::agent_input::Of;
         let prompt = |prompt: &wire::PromptInput| InputWhat::Prompt {
             text: prompt.text.clone(),
             attachments: prompt.attachments.clone(),
@@ -70,49 +68,23 @@ impl InputWhat {
         let send_now = |now: &wire::SendQueuedNow| InputWhat::SendNow {
             target: now.queued_input_id.clone(),
         };
-        match &input.decode_body() {
-            Some(KindInput::ClaudePty(input)) => match &input.of {
-                Some(pty::Of::Prompt(p)) => prompt(p),
-                Some(pty::Of::Answer(a)) => answer(&a.ask_key),
-                Some(pty::Of::Withdraw(w)) => withdraw(w),
-                Some(pty::Of::SendNow(n)) => send_now(n),
-                Some(pty::Of::Interrupt(_)) => InputWhat::Interrupt,
-                Some(
-                    pty::Of::CyclePermissionMode(_) | pty::Of::Clear(_) | pty::Of::SwitchBack(_),
-                )
-                | None => InputWhat::Other,
-            },
-            Some(KindInput::ClaudeSdk(input)) => match &input.of {
-                Some(sdk::Of::Prompt(p)) => prompt(p),
-                Some(sdk::Of::Answer(a)) => answer(&a.ask_key),
-                Some(sdk::Of::Withdraw(w)) => withdraw(w),
-                Some(sdk::Of::SendNow(n)) => send_now(n),
-                Some(sdk::Of::Interrupt(_)) => InputWhat::Interrupt,
-                Some(
-                    sdk::Of::Permission(_)
-                    | sdk::Of::Model(_)
-                    | sdk::Of::Clear(_)
-                    | sdk::Of::Effort(_)
-                    | sdk::Of::StopJob(_),
-                )
-                | None => InputWhat::Other,
-            },
-            Some(KindInput::Codex(input)) => match &input.of {
-                Some(codex::Of::Prompt(p)) => prompt(p),
-                Some(codex::Of::Answer(a)) => answer(&a.ask_key),
-                Some(codex::Of::Withdraw(w)) => withdraw(w),
-                Some(codex::Of::SendNow(n)) => send_now(n),
-                Some(codex::Of::Interrupt(_)) => InputWhat::Interrupt,
-                Some(
-                    codex::Of::Permission(_)
-                    | codex::Of::Mode(_)
-                    | codex::Of::Model(_)
-                    | codex::Of::Effort(_)
-                    | codex::Of::StopJob(_),
-                )
-                | None => InputWhat::Other,
-            },
-            None => InputWhat::Other,
+        let Some(wire::AgentInput { of: Some(of) }) = input.decode_body() else {
+            return InputWhat::Other;
+        };
+        match &of {
+            Of::Prompt(p) => prompt(p),
+            Of::Answer(a) => answer(&a.ask_key),
+            Of::Withdraw(w) => withdraw(w),
+            Of::SendNow(n) => send_now(n),
+            Of::Interrupt(_) => InputWhat::Interrupt,
+            Of::CyclePermissionMode(_)
+            | Of::Clear(_)
+            | Of::SwitchBack(_)
+            | Of::Permission(_)
+            | Of::Mode(_)
+            | Of::Model(_)
+            | Of::Effort(_)
+            | Of::StopJob(_) => InputWhat::Other,
         }
     }
 }

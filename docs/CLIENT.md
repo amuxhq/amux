@@ -359,7 +359,7 @@ directly (a name, a path, a count the state holds), but never works out a judgem
 | `chat_rows(state, range, opts)` | One `Row` per held item whose order is in `range`, widened to include any run that crosses either edge. The terminal's call, for what is on screen. |
 | `chat_rows_for(state, keys, opts)` | Rows for these keys, in order. The phone's call, for the cells an update changed. |
 | `ask_card(state)` | The head ask as an `AskCard`, with its count, or `None`. |
-| `answer_input(card, answer, note)`, `question_answer(card, responses)` | The input that answers the card in its kind's arm; a question's response carries its picks and its typed "Something else" words together. |
+| `answer_input(card, answer, note)`, `question_answer(responses)` | The input that answers the card under its ask key; a question's response carries its picks and its typed "Something else" words together. |
 | `form_problems(fields, values)`, `form_answer(card, values)` | A tool server's form, checked and encoded once for every client: given one `FormValue` per field (typed text, a toggle, a choice or picks by position), each field's `FieldProblem` (required and empty, not a number or not a whole one, out of the schema's range, too short or long, too few or many picked), or the Submit carrying the JSON object the schema describes. |
 | `composer(state, now_ms)`, `waiting(state)`, `switched_away(state)` | The composer mode, the activity line inside it, and whether terminal Claude's own view is on another conversation (prompts are refused until `Session::switch_back` takes it back); the waiting reason. |
 | `composer_tokens(draft, attachments)`, `segments(text, attachments)` | Text runs and attachment chips at their placeholder positions. |
@@ -438,7 +438,7 @@ if the runtime's source for that agent is current, or after the delta if it is c
 
 ### Sending
 
-`send_prompt` puts the text and attachments in the kind's prompt input (`ui_runtime::inputs`), gives it a fresh
+`send_prompt` puts the text and attachments in a prompt input (`ui_runtime::inputs`), gives it a fresh
 input id, applies `Msg::Send` so the optimistic row exists at once, and calls `SendInput`. The reply is the
 interpreter's verdict: accepted (possibly `queued`), or rejected with a reason. A prompt sent while a turn runs
 waits in the agent's queue, which every snapshot lists, so other clients see it too; `queue_rows` offers

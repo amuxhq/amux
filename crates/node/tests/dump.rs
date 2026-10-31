@@ -795,7 +795,7 @@ async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
         .await
         .unwrap();
     admin
-        .cancel_pairing(Request::new(wire::CancelPairingRequest {}))
+        .cancel_pairing(Request::new(wire::Empty {}))
         .await
         .unwrap();
     let second = open().await;

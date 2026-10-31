@@ -17,9 +17,8 @@
 //!
 //! Names are otherwise free. A field or method whose type is renamed, or
 //! swapped for another message, is compared structurally: the new type must
-//! read every number the old one wrote. The exception is a detail message,
-//! whose full name travels as an error detail's type and so stays. Deleting
-//! a message nothing names any more is free.
+//! read every number the old one wrote. Deleting a message nothing names any
+//! more is free.
 //!
 //! The baseline is the newest release tag behind HEAD, read from the
 //! descriptor set committed with it, so the check needs no build of the old
@@ -127,10 +126,6 @@ pub fn breaks(old: &FileDescriptorSet, new: &FileDescriptorSet) -> Vec<String> {
     for (name, was) in check.old.messages.clone() {
         if let Some(&now) = check.new.messages.get(&name) {
             check.message(&name, was, now);
-        } else if DETAILS.contains(&name.as_str()) {
-            check.found.push(format!(
-                "detail message {name} is gone; its name travels as an error detail's type"
-            ));
         }
     }
     for (name, was) in check.old.enums.clone() {
@@ -146,10 +141,6 @@ pub fn breaks(old: &FileDescriptorSet, new: &FileDescriptorSet) -> Vec<String> {
     }
     check.found
 }
-
-/// The messages whose full name is on the wire, as the type of an error
-/// detail, so they keep it.
-const DETAILS: &[&str] = &[".amux.v1.AmbiguousAgentName", ".amux.v1.AmbiguousHostName"];
 
 /// The package's messages, enums and services by full name, nested ones
 /// included.
@@ -210,12 +201,6 @@ impl Check<'_> {
     /// different one is compared structurally, by numbers and types.
     fn types(&mut self, at: &str, was: &str, now: &str) {
         if was == now || !self.compared.insert((was.to_owned(), now.to_owned())) {
-            return;
-        }
-        if DETAILS.contains(&was) {
-            self.found.push(format!(
-                "{at}: the detail message {was} became {now}; its name travels as an error detail's type"
-            ));
             return;
         }
         let (old, new) = (&self.old, &self.new);
@@ -563,20 +548,6 @@ mod tests {
             [
                 ".amux.v1.S.Go request: .amux.v1.Inner read as .amux.v1.Outer field 1 (text) changed from string to a message"
             ]
-        );
-    }
-
-    #[test]
-    fn a_detail_message_keeps_its_name() {
-        let detail = "message AmbiguousAgentName { string name = 1; } \
-                      message Error { AmbiguousAgentName detail = 1; }";
-        let renamed = detail.replace("AmbiguousAgentName", "AgentNameAmbiguous");
-        let found = check(detail, &renamed);
-        assert_eq!(found.len(), 2, "{found:?}");
-        assert!(
-            found
-                .iter()
-                .all(|line| line.contains("travels as an error detail's type"))
         );
     }
 

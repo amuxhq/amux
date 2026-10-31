@@ -283,7 +283,7 @@ fn held_arrivals_keep_the_activity_line_and_inputs_current() {
         let activity = state.activity(10_000).unwrap();
         assert_eq!(activity.kind, ui_state::ActivityKind::Thinking);
 
-        apply_block(&mut state, Msg::Send(prompt_input(kind, b"p1", "hi")));
+        apply_block(&mut state, Msg::Send(prompt_input(b"p1", "hi")));
         apply_block(&mut state, ev_item(prompt(kind, 5, 105, "hi", b"p1")));
         assert_eq!(
             state.input_state(b"p1"),

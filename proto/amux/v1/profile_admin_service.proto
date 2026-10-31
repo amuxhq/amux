@@ -15,16 +15,16 @@ import "amux/v1/records.proto";
 // never on an agent's tools socket or a link. The socket names the profile.
 // Not retried, as the front door.
 service ProfileAdminService {
-  rpc SignOut(SignOutRequest) returns (Profile);
+  rpc SignOut(Empty) returns (Profile);
   rpc StartPairing(StartPairingRequest) returns (PairingWindow);
-  rpc GetPairingStatus(GetPairingStatusRequest) returns (PairingStatus);
-  rpc CancelPairing(CancelPairingRequest) returns (CancelPairingResponse);
+  rpc GetPairingStatus(Empty) returns (PairingStatus);
+  rpc CancelPairing(Empty) returns (Empty);
   rpc BeginPair(BeginPairRequest) returns (PendingPair);
   rpc ConfirmPair(ConfirmPairRequest) returns (Peer);
-  rpc AbandonPair(AbandonPairRequest) returns (AbandonPairResponse);
-  rpc GetDeviceIdentity(GetDeviceIdentityRequest) returns (DeviceIdentity);
-  rpc TrustSshPeer(TrustSshPeerRequest) returns (TrustSshPeerResponse);
-  rpc ListPeers(ListPeersRequest) returns (ListPeersResponse);
+  rpc AbandonPair(AbandonPairRequest) returns (Empty);
+  rpc GetDeviceIdentity(Empty) returns (DeviceIdentity);
+  rpc TrustSshPeer(TrustSshPeerRequest) returns (Empty);
+  rpc ListPeers(Empty) returns (ListPeersResponse);
   rpc Unpair(UnpairRequest) returns (Peer);
   // The one bundle format: this host's own state, scoped to what the
   // request is for.
@@ -33,8 +33,6 @@ service ProfileAdminService {
   // account service when the profile is signed in to one.
   rpc SubmitReport(SubmitReportRequest) returns (SubmitReportResponse);
 }
-
-message SignOutRequest {}
 
 message StartPairingRequest {
   oneof method {
@@ -62,8 +60,6 @@ message PairingWindow {
   }
 }
 
-message GetPairingStatusRequest {}
-
 message PairingStatus {
   bool active = 1;
   // Too many wrong secrets closed the last window; a new one is needed.
@@ -85,10 +81,6 @@ message PendingPair {
   RouteKind via = 3;
 }
 
-message CancelPairingRequest {}
-
-message CancelPairingResponse {}
-
 message ConfirmPairRequest {
   // PendingPair.token.
   bytes token = 1;
@@ -99,16 +91,12 @@ message AbandonPairRequest {
   bytes token = 1;
 }
 
-message AbandonPairResponse {}
-
 // SSH has already authenticated its peer outside the secret-based pairing
 // protocol, so its identity commit is a separate, SSH-only operation.
 message TrustSshPeerRequest {
   PairingIdentity peer = 1;
   SshTarget ssh_target = 2;
 }
-
-message TrustSshPeerResponse {}
 
 message UnpairRequest {
   HostRef peer = 1;
@@ -128,15 +116,11 @@ message Peer {
   optional SshTarget ssh_target = 4;
 }
 
-message GetDeviceIdentityRequest {}
-
 message DeviceIdentity {
   bytes host_id = 1;
   string name = 2;
   bytes pubkey = 3;
 }
-
-message ListPeersRequest {}
 
 message ListPeersResponse {
   repeated Peer peers = 1;

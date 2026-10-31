@@ -160,7 +160,6 @@ mod tests {
 
     fn item(order: u64) -> Msg {
         event(session_event::Of::Item(wire::Item {
-            agent_id: b"agent".to_vec(),
             key: format!("k{order}"),
             order,
             revision: order,

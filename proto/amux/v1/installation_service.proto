@@ -11,9 +11,9 @@ import "amux/v1/records.proto";
 // Local Unix socket and in-process only. Calls are not retried by any
 // client; a mutation that loses its reply is re-run by the person.
 service InstallationService {
-  rpc GetInstallation(GetInstallationRequest) returns (Installation);
-  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
-  rpc ListProfiles(ListProfilesRequest) returns (ListProfilesResponse);
+  rpc GetInstallation(Empty) returns (Installation);
+  rpc Shutdown(Empty) returns (Empty);
+  rpc ListProfiles(Empty) returns (ListProfilesResponse);
   rpc CreateProfile(CreateProfileRequest) returns (Profile);
   // Names a profile, or lets the installation pick or create one.
   rpc BindProfile(BindProfileRequest) returns (Profile);
@@ -21,13 +21,7 @@ service InstallationService {
   rpc DeleteProfile(DeleteProfileRequest) returns (Empty);
 }
 
-message GetInstallationRequest {}
-
 message Installation { string version = 1; }
-
-message ShutdownRequest {}
-
-message ShutdownResponse {}
 
 message Profile {
   bytes id = 1;
@@ -79,8 +73,6 @@ enum RelayCarrier {
   RELAY_CARRIER_QUIC = 1;
   RELAY_CARRIER_TCP = 2;
 }
-
-message ListProfilesRequest {}
 
 message ListProfilesResponse { repeated Profile profiles = 1; }
 

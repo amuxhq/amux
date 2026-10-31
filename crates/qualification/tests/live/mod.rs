@@ -46,10 +46,9 @@ use tonic::transport::{Channel, Endpoint};
 use ui_state::{AgentState, ItemBody, OpenAsk};
 use wire::installation_service_client::InstallationServiceClient;
 use wire::{
-    ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, Input, Item, Kind, Phase, SendInputRequest, Snapshot,
-    SubscribeSessionRequest, claude_answer, claude_pty_input, claude_sdk_input, codex_input,
-    permission_answer, send_input_response, session_event,
+    AgentInput, Answer, CodexCreateConfig, CreateAgentRequest, Input, Item, Kind, Phase,
+    SendInputRequest, Snapshot, SubscribeSessionRequest, agent_input, answer, permission_answer,
+    send_input_response, session_event,
 };
 
 /// Claude runs on its cheapest model; the lane judges structure, not wit.
@@ -702,7 +701,7 @@ impl Install {
         .await
         .ok_or("its front door never answered")?;
         let profile = InstallationServiceClient::new(door)
-            .list_profiles(wire::ListProfilesRequest {})
+            .list_profiles(wire::Empty {})
             .await
             .map_err(|status| status.to_string())?
             .into_inner()
@@ -942,7 +941,7 @@ impl Install {
                     let stream = client
                         .subscribe_session(SubscribeSessionRequest {
                             agent_id: agent.clone(),
-                            tail: 1000,
+                            from: Some(wire::subscribe_session_request::From::Tail(1000)),
                         })
                         .await;
                     if let Ok(stream) = stream {
@@ -1011,7 +1010,7 @@ impl Install {
     }
 
     /// Sends an input the CLI has no verb for, as the apps send it.
-    async fn input(&self, agent: &[u8], of: wire::KindInput) -> Result<(), String> {
+    async fn input(&self, agent: &[u8], of: wire::AgentInput) -> Result<(), String> {
         let response = self
             .client
             .sessions
@@ -1034,22 +1033,22 @@ impl Install {
         }
     }
 
-    fn interrupt(&self) -> wire::KindInput {
+    fn interrupt(&self) -> wire::AgentInput {
         match self.kind {
-            Kind::Codex => wire::KindInput::Codex(CodexInput {
-                of: Some(codex_input::Of::Interrupt(wire::Interrupt {})),
-            }),
-            Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
-                of: Some(claude_sdk_input::Of::Interrupt(wire::Interrupt {})),
-            }),
-            _ => wire::KindInput::ClaudePty(ClaudePtyInput {
-                of: Some(claude_pty_input::Of::Interrupt(wire::Interrupt {})),
-            }),
+            Kind::Codex => AgentInput {
+                of: Some(agent_input::Of::Interrupt(wire::Interrupt {})),
+            },
+            Kind::ClaudeSdk => AgentInput {
+                of: Some(agent_input::Of::Interrupt(wire::Interrupt {})),
+            },
+            _ => AgentInput {
+                of: Some(agent_input::Of::Interrupt(wire::Interrupt {})),
+            },
         }
     }
 
     /// Allows an open ask once, the way the apps' primary choice does.
-    fn allow(&self, ask: &OpenAsk) -> Result<wire::KindInput, String> {
+    fn allow(&self, ask: &OpenAsk) -> Result<wire::AgentInput, String> {
         match ask {
             OpenAsk::Claude(ask) => {
                 if !matches!(ask.body, Some(wire::ask::Body::Permission(_))) {
@@ -1058,21 +1057,21 @@ impl Install {
                         ask_token(&OpenAsk::Claude(ask.clone()))
                     ));
                 }
-                let answer = ClaudeAnswer {
+                let answer = Answer {
                     ask_key: ask.key.clone(),
-                    of: Some(claude_answer::Of::Permission(wire::PermissionAnswer {
+                    of: Some(answer::Of::Permission(wire::PermissionAnswer {
                         of: Some(permission_answer::Of::Allow(wire::PermissionAllow {
                             scope: None,
                         })),
                     })),
                 };
                 Ok(match self.kind {
-                    Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
-                        of: Some(claude_sdk_input::Of::Answer(answer)),
-                    }),
-                    _ => wire::KindInput::ClaudePty(ClaudePtyInput {
-                        of: Some(claude_pty_input::Of::Answer(answer)),
-                    }),
+                    Kind::ClaudeSdk => AgentInput {
+                        of: Some(agent_input::Of::Answer(answer)),
+                    },
+                    _ => AgentInput {
+                        of: Some(agent_input::Of::Answer(answer)),
+                    },
                 })
             }
             OpenAsk::Codex(ask) => {
@@ -1085,14 +1084,12 @@ impl Install {
                         ask_token(&OpenAsk::Codex(ask.clone()))
                     ));
                 }
-                Ok(wire::KindInput::Codex(CodexInput {
-                    of: Some(codex_input::Of::Answer(wire::CodexAnswer {
+                Ok(AgentInput {
+                    of: Some(agent_input::Of::Answer(wire::Answer {
                         ask_key: ask.key.clone(),
-                        of: Some(wire::codex_answer::Of::Approve(
-                            wire::Decision::Approve as i32,
-                        )),
+                        of: Some(wire::answer::Of::Approve(wire::Decision::Approve as i32)),
                     })),
-                }))
+                })
             }
         }
     }
@@ -1137,9 +1134,7 @@ impl Install {
             Scenario::Image if self.kind == Kind::Codex => self.codex_image().await,
             Scenario::Image => self.image().await,
             Scenario::SignInProblem => self.sign_in_problem().await,
-            Scenario::SteerFolded if self.kind == Kind::Codex => {
-                self.codex_steer_folded().await
-            }
+            Scenario::SteerFolded if self.kind == Kind::Codex => self.codex_steer_folded().await,
             Scenario::SteerFolded => self.steer_folded().await,
             Scenario::ApprovalDeny => self.approval_deny().await,
             Scenario::InjectIdle => self.inject_idle().await,
@@ -1796,7 +1791,7 @@ fn known(state: &AgentState) -> BTreeSet<&'static str> {
         ("session", state.provider_session.is_some()),
         ("context", state.context.known),
         ("usage", state.usage.state() != wire::UsageState::Unknown),
-        ("servers", state.servers.state != 0),
+        ("servers", !state.servers.is_empty()),
         ("sign_in", state.sign_in.state != 0),
     ]
     .into_iter()

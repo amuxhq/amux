@@ -160,7 +160,6 @@ syntect = { version = "5.3", default-features = false, features = ["default-synt
 shell-words = "1"
 bytes = "1"
 qrcode = { version = "0.14", default-features = false }
-nix = { version = "0.31", features = ["process", "signal"] }
 rusqlite = { version = "0.40.2", default-features = false, features = ["hooks", "cache"] }
 if-addrs = "0.15"
 # A screen model of an attached agent's terminal, so leaving it for the

@@ -80,7 +80,7 @@ pub use forward::{ForwardError, HostNameError, Owner};
 pub use front_door::FrontDoor;
 pub use generation::{Generation, boot_id};
 pub use grpc::{ClientApi, status};
-pub use identity::{LinkLiveness, quic_endpoint, quic_endpoint_config};
+pub use identity::LinkLiveness;
 pub use install::{
     AGENTS, CORE_RING, GENERATION, INSTALLATION_LOCK, InstallationLock, LockError, PROFILES,
     REPLICAS, REPORTS, STORE, write_durably,

@@ -1483,6 +1483,22 @@ mod tests {
     use crate::link::resumption::{HOST_TICKETS, SessionTickets};
     use crate::trust::TrustStore;
 
+    /// A QUIC endpoint on a UDP socket of its own at `bind`.
+    fn bare_endpoint(
+        server: Option<quinn::ServerConfig>,
+        bind: std::net::SocketAddr,
+    ) -> std::io::Result<quinn::Endpoint> {
+        let socket = std::net::UdpSocket::bind(bind)?;
+        let runtime = quinn::default_runtime()
+            .ok_or_else(|| std::io::Error::other("no async runtime for a QUIC endpoint"))?;
+        quinn::Endpoint::new(
+            crate::identity::quic_endpoint_config(),
+            server,
+            socket,
+            runtime,
+        )
+    }
+
     struct LoopbackPair {
         _client_endpoint: LinkEndpoint,
         _server_endpoint: quinn::Endpoint,
@@ -1502,8 +1518,7 @@ mod tests {
             )
             .unwrap();
         let server_endpoint =
-            crate::identity::quic_endpoint(Some(server_config), "127.0.0.1:0".parse().unwrap())
-                .unwrap();
+            bare_endpoint(Some(server_config), "127.0.0.1:0".parse().unwrap()).unwrap();
         let client_endpoint = LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap();
         let server_addr = server_endpoint.local_addr().unwrap();
 
@@ -1653,8 +1668,7 @@ mod tests {
     async fn relay_dial_reaches_a_relay_listening_on_ipv6_only_from_the_dual_stack_socket() {
         let (server_config, client_config) = relay_test_configs();
         let server_endpoint =
-            crate::identity::quic_endpoint(Some(server_config), "[::1]:0".parse().unwrap())
-                .unwrap();
+            bare_endpoint(Some(server_config), "[::1]:0".parse().unwrap()).unwrap();
         let server_addr = server_endpoint.local_addr().unwrap();
         let client_endpoint = LinkEndpoint::bind("[::]:0".parse().unwrap(), None).unwrap();
         // Nothing answers on IPv4 at the relay's port.
@@ -1693,8 +1707,7 @@ mod tests {
     async fn relay_dial_starts_the_next_candidate_while_an_unresponsive_one_waits() {
         let (server_config, client_config) = relay_test_configs();
         let server_endpoint =
-            crate::identity::quic_endpoint(Some(server_config), "127.0.0.1:0".parse().unwrap())
-                .unwrap();
+            bare_endpoint(Some(server_config), "127.0.0.1:0".parse().unwrap()).unwrap();
         let server_addr = server_endpoint.local_addr().unwrap();
         let client_endpoint = LinkEndpoint::bind("[::]:0".parse().unwrap(), None).unwrap();
         let blackhole = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();

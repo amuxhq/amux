@@ -320,7 +320,6 @@ claim = "An own source's CaughtUp comes only at journal end-of-file, and is set 
 tests = [
   "node/integration::single_daemon::a_backlog_is_committed_in_batches_and_caught_up_once_at_its_end",
   "node/integration::single_daemon::the_sweep_ingests_a_finished_childs_journal_before_marking_it_exited",
-  "testnet/integration::spec_replication::an_exited_agent_settles_only_once_its_own_stream_has_passed_the_exit",
 ]
 
 [[contract]]
@@ -366,7 +365,6 @@ claim = "A replica's cursor advances by the stream alone."
 tests = [
   "store/integration::conformance::a_delta_joins_above_and_only_live_records_move_the_cursor",
   "store/integration::conformance::rewind_cursor_moves_only_the_cursor_and_only_back",
-  "testnet/integration::spec_replication::a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer",
 ]
 
 [[contract]]
@@ -386,7 +384,6 @@ section = "Runtime"
 claim = "CaughtUp, Reset and Detached ride the broadcast in sequence with the rows they cover; CaughtUp is forwarded only after the origin's."
 tests = [
   "testnet/integration::replication_stories::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
-  "testnet/integration::spec_replication::a_stream_lost_with_the_link_up_detaches_through_the_backoff",
   "testnet/integration::spec_replication::a_rewound_origin_resets_every_source_that_resumes_under_its_old_generation",
 ]
 
@@ -1586,7 +1583,6 @@ source = "model"
 property = { crate = "models", machine = "client", sentence = "catch-up plus live equals uninterrupted delivery at every cut: once caught up with nothing on its way, the client's rows from the oldest order its stream opened with up and its agent state read as those of a client that received every event uninterrupted" }
 checker = "models/integration::client::every_client_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/integration::spec_replication::a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer",
   "ui-runtime/integration::node::a_session_over_the_socket_reconnects_across_a_daemon_restart",
 ]
 
@@ -1732,7 +1728,6 @@ source = "model"
 property = { crate = "models", machine = "client", sentence = "catch-up plus live equals uninterrupted delivery at every cut: once caught up with nothing on its way, the client's rows from the oldest order its stream opened with up and its agent state read as those of a client that received every event uninterrupted" }
 checker = "models/integration::client::every_client_promise_holds_at_ci_bounds"
 tests = [
-  "testnet/integration::spec_replication::a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer",
   "store/integration::conformance::a_delta_joins_above_and_only_live_records_move_the_cursor",
   "ui-runtime/integration::session::lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap",
 ]

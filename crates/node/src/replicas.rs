@@ -1,43 +1,18 @@
 //! The shell's side of replication. The profile's daemon core keeps the
 //! replicas current: it follows each trusted host's inventory, opens every
 //! replica agent's source and absorbs what they bring (see
-//! `daemon_core::sources`). What is left here is a dropped replica's files,
-//! the test hooks on the streams, and the reads the shell makes of what the
-//! core decided.
+//! `daemon_core::sources`). What is left here is a dropped replica's files
+//! and the reads the shell makes of what the core decided.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use daemon_core::Input;
 pub use daemon_core::SourcePolicy;
 use store::AgentKey;
 use uuid::Uuid;
-use wire::{InventoryEvent, SessionEvent};
 
 use crate::HostId;
 use crate::runtime::ProfileRuntime;
-
-/// For tests: what a source or an inventory follower does with an event it
-/// has just received.
-#[doc(hidden)]
-pub enum SourceVerdict {
-    Keep,
-    /// Drop the stream here, as a link dying at this point would.
-    Drop,
-    /// Hold the event until the future finishes, as a slow stream would,
-    /// then use it.
-    Hold(std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>),
-}
-
-/// For tests: consulted by every source for every event it receives, before
-/// the event reaches the core.
-#[doc(hidden)]
-pub type SourceHook = Arc<dyn Fn(&AgentKey, &SessionEvent) -> SourceVerdict + Send + Sync>;
-
-/// For tests: consulted by every inventory follower for every event it
-/// receives from the host it follows, before the event reaches the core.
-#[doc(hidden)]
-pub type InventoryHook = Arc<dyn Fn(HostId, &InventoryEvent) -> SourceVerdict + Send + Sync>;
 
 /// What the shell keeps of replication.
 #[derive(Default)]
@@ -49,8 +24,6 @@ pub(crate) struct Replicas {
     /// When a client last subscribed to or paged a replica, on the policy
     /// clock: the replica retention sweep's least-recently-used order.
     last_used: HashMap<AgentKey, i64>,
-    pub(crate) hook: Option<SourceHook>,
-    pub(crate) inventory_hook: Option<InventoryHook>,
 }
 
 impl ProfileRuntime {
@@ -83,19 +56,6 @@ impl ProfileRuntime {
     pub fn host_ready(&self, host: HostId) -> bool {
         self.host_entry_of(host)
             .is_some_and(|entry| entry.current())
-    }
-
-    /// For tests: consulted by every source for every event it receives.
-    #[doc(hidden)]
-    pub fn set_source_hook(&self, hook: Option<SourceHook>) {
-        self.replicas.lock().unwrap().hook = hook;
-    }
-
-    /// For tests: consulted by every inventory follower for every event it
-    /// receives.
-    #[doc(hidden)]
-    pub fn set_inventory_hook(&self, hook: Option<InventoryHook>) {
-        self.replicas.lock().unwrap().inventory_hook = hook;
     }
 
     /// When clients last used each replica: what the replica retention

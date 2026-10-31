@@ -109,7 +109,7 @@ pub use registry::{
     Registry, SignIn,
 };
 pub use relay::RelayError;
-pub use replicas::{InventoryHook, SourceHook, SourcePolicy, SourceVerdict};
+pub use replicas::SourcePolicy;
 pub use reports::{
     AutoReports, CLIENT_FILES, DUMP_ARCHIVE, NotSent, REPORT_DUMP, REPORT_JSON, REPORT_SCHEMA,
     ReportError, archive,

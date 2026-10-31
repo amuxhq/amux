@@ -405,24 +405,6 @@ fn codex_moves_mode_with_shift_tab_and_permission_from_the_settings_key() {
     assert!(screen.contains("· full access · plan"), "{screen}");
 }
 
-/// Codex settings that match no named permission read custom, and Shift+Tab
-/// still moves the mode.
-#[test]
-fn codex_settings_outside_every_permission_read_custom() {
-    let state = codex_settings(
-        offering(Kind::Codex, "offered", |_| true),
-        wire::CodexSnapshot {
-            approval_policy: Some("untrusted".into()),
-            sandbox: Some("workspace-write".into()),
-            ..Default::default()
-        },
-    );
-    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
-    let (screen, _) = feed(&mut view, &state);
-    assert!(screen.contains("· custom"), "{screen}");
-    assert!(screen.contains("shift+tab mode"), "{screen}");
-}
-
 /// Terminal Claude's permissions are reached only by its own cycle key:
 /// Shift+Tab presses it, and Ctrl+S then p says so.
 #[test]

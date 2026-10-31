@@ -1121,7 +1121,7 @@ tests = [
   "interpret/integration::codex::a_mode_chosen_at_creation_is_set_by_the_first_turn",
   "tui/lib::tests::shift_tab_moves_claude_to_the_next_permission_that_still_asks",
   "tui/lib::tests::codex_moves_mode_with_shift_tab_and_permission_from_the_settings_key",
-  "tui/lib::tests::codex_settings_outside_every_permission_read_custom",
+  "ui-view/integration::views::codex_offers_permissions_and_modes_and_settings_outside_them_read_custom",
 ]
 
 [[contract]]

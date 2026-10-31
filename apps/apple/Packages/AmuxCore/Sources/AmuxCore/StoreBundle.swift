@@ -207,7 +207,6 @@ public final class StoreBundle {
             chat = try profile.openChat(agent)
         }
         chats[chat.id] = (chat, moved)
-        fleet.opened(agent, at: now())
         return chat
     }
 

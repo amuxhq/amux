@@ -16,7 +16,7 @@ final class NewAgentTests: XCTestCase {
     func testTheMostRecentDirectoryIsPrefilledAndNamedNewOnItsHost() {
         let store = NewAgentStore()
         store.open(on: Cards.desk)
-        store.remember([AgentRow(row: Cards.row(1, "amux"), unread: false)])
+        store.remember([Cards.row(1, "amux")])
         store.listed(.success(listed), asked: store.asking())
         XCTAssertEqual(store.listing, .ready)
         XCTAssertEqual(store.directory, "/src/amux")
@@ -31,7 +31,7 @@ final class NewAgentTests: XCTestCase {
     func testAHostThatCannotListOffersWhereItsAgentsWork() {
         let store = NewAgentStore()
         store.open(on: Cards.desk)
-        store.remember([AgentRow(row: Cards.row(1, "web"), unread: false)])
+        store.remember([Cards.row(1, "web")])
         store.listed(.failure(RuntimeFailure("not available")), asked: store.asking())
         XCTAssertEqual(store.listing, .unavailable)
         XCTAssertEqual(store.recent.map(\.path), ["/Users/pat/source/web"])
@@ -71,12 +71,12 @@ final class NewAgentTests: XCTestCase {
         let store = NewAgentStore()
         store.open(on: Cards.desk)
         store.remember([
-            AgentRow(row: Cards.row(1, "old", minutesAgo: 30, kind: .claudeSdk), unread: false),
-            AgentRow(row: Cards.row(2, "new", minutesAgo: 2, kind: .codex), unread: false),
+            Cards.row(1, "old", minutesAgo: 30, kind: .claudeSdk),
+            Cards.row(2, "new", minutesAgo: 2, kind: .codex),
         ])
         XCTAssertEqual(store.provider, .codex)
         store.choose(provider: .claude)
-        store.remember([AgentRow(row: Cards.row(3, "newer", minutesAgo: 1, kind: .codex), unread: false)])
+        store.remember([Cards.row(3, "newer", minutesAgo: 1, kind: .codex)])
         XCTAssertEqual(store.provider, .claude, "the fleet arriving does not undo a pick")
         store.open(on: Cards.desk)
         store.remember([])

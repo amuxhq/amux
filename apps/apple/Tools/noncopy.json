@@ -420,7 +420,7 @@
       {"literal": "\"home.row.\\(row.id).age.volatile\"", "context": ".reported(\"home.row.\\(row.id).age.volatile\")", "reason": "Stable driving identifier for a surface a compared screenshot masks, not a displayed label.", "count": 1},
       {"literal": "\", \"", "context": "return parts.joined(separator: \", \")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"chevron.right\"", "context": "Image(systemName: \"chevron.right\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 2},
-      {"literal": "\"home.fold.\\(section.id)\"", "context": ".identified(\"home.fold.\\(section.id)\", label: \"\\(title), \\(names)\", value: names)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
+      {"literal": "\"home.fold.\\(section.kind.rawValue)\"", "context": ".identified(\"home.fold.\\(section.kind.rawValue)\", label: \"\\(title), \\(names)\", value: names)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"home.empty.explain\"", "context": ".identified(\"home.empty.explain\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"ready\"", "context": "case .ready: \"ready\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"signed-out\"", "context": "case .signedOut: \"signed-out\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},

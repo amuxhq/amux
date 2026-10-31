@@ -2073,8 +2073,7 @@ impl Transition<'_> {
                 // Channels are the links' own here: a call is carried
                 // whenever its link is up. Pairing, relays and the shell's
                 // bookkeeping have no part in a net of cores.
-                Output::OpenChannel { .. }
-                | Output::ChannelRefused { .. }
+                Output::Channel(_)
                 | Output::DropRoute { .. }
                 | Output::DialRelay { .. }
                 | Output::Rediscover

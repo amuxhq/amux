@@ -5,7 +5,7 @@ use wire::{Hello, Message, NeighborUp};
 use super::*;
 use crate::ids::{CallId, JobId};
 use crate::io::{Input, Job};
-use crate::payload::{CarrierKind, ChannelClass, ClientRequest, JobResult};
+use crate::payload::{CarrierKind, ClientRequest, JobResult};
 use crate::trust::{Reachability, TrustStore};
 use crate::{StartOptions, StepBudget};
 
@@ -107,25 +107,21 @@ fn entry(daemon: &Daemon, id: HostId) -> wire::HostEntry {
         .expect("the host is in the host set")
 }
 
-/// Opens a calls channel to `peer` over `link`; returns its id.
+/// Opens a channel to `peer` over `link`; returns its id.
 fn channel(daemon: &mut Daemon, link: u64, peer: HostId) -> ChannelId {
     let out = step(
         daemon,
         Input::WantChannel {
             link: LinkId(link),
             peer,
-            class: ChannelClass::Calls,
         },
     );
-    let channel = out
-        .iter()
+    out.iter()
         .find_map(|output| match output {
-            Output::OpenChannel { channel, .. } => Some(*channel),
+            Output::Channel(Ok(channel)) => Some(*channel),
             _ => None,
         })
-        .expect("the core opens the channel");
-    step(daemon, Input::ChannelOpened { channel });
-    channel
+        .expect("the core opens the channel")
 }
 
 fn teardown(out: &[Output]) -> JobId {

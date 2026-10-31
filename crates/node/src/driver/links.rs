@@ -4,9 +4,7 @@ use std::sync::Weak;
 
 use daemon_core::{ChannelId, Input, payload};
 
-use super::Opened;
 use crate::HostId;
-use crate::link::ChannelClass;
 use crate::routing::{LinkId, core_host};
 use crate::runtime::ProfileRuntime;
 
@@ -51,14 +49,13 @@ impl CoreLinks {
         &self,
         link: LinkId,
         peer: HostId,
-        class: ChannelClass,
-    ) -> Result<Opened, payload::ChannelError> {
+    ) -> Result<ChannelId, payload::ChannelError> {
         let Some(runtime) = self.0.upgrade() else {
-            return Err(payload::ChannelError::LinkClosed);
+            return Err(payload::ChannelError::NoLink);
         };
         runtime
             .driver()
-            .want_channel(link.core(), core_host(peer), core_class(class))
+            .want_channel(link.core(), core_host(peer))
             .await
     }
 
@@ -87,21 +84,9 @@ impl CoreLinks {
         runtime.driver().look(look).await
     }
 
-    /// The channel's handshake verified the key the core gave.
-    pub(crate) fn opened(&self, channel: ChannelId) {
-        self.report(Input::ChannelOpened { channel });
-    }
-
     /// The channel closed, or never opened.
     pub(crate) fn closed(&self, channel: ChannelId) {
         self.report(Input::ChannelClosed { channel });
-    }
-}
-
-pub(crate) fn core_class(class: ChannelClass) -> payload::ChannelClass {
-    match class {
-        ChannelClass::Calls => payload::ChannelClass::Calls,
-        ChannelClass::Session => payload::ChannelClass::Session,
     }
 }
 

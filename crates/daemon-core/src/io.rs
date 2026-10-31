@@ -14,9 +14,8 @@ use crate::ids::{
     AgentId, AttemptId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId,
 };
 use crate::payload::{
-    AgentSpec, Answer, CarrierKind, ChannelClass, ChannelError, ClientRequest, ControlFrame,
-    JobResult, LinkCloseReason, LinkFrame, PairMessage, PeerRequest, PublicKey, Push, Response,
-    Status,
+    AgentSpec, Answer, CarrierKind, ChannelError, ClientRequest, ControlFrame, JobResult,
+    LinkCloseReason, LinkFrame, PairMessage, PeerRequest, PublicKey, Push, Response, Status,
 };
 use crate::presence::Route;
 use crate::reach::{AttemptOutcome, Plan};
@@ -71,17 +70,10 @@ pub enum Input {
         free_every_ms: Option<u64>,
     },
     /// The profile's shell wants a channel to `peer` over `link`. The
-    /// core answers with [`Output::OpenChannel`], under the key it pins
-    /// for the peer, or [`Output::ChannelRefused`].
+    /// core answers with [`Output::Channel`].
     WantChannel {
         link: LinkId,
         peer: HostId,
-        class: ChannelClass,
-    },
-    /// A channel the core asked for is open, after the driver's handshake
-    /// verified the pin the core gave it.
-    ChannelOpened {
-        channel: ChannelId,
     },
     /// A channel closed, or never opened.
     ChannelClosed {
@@ -279,7 +271,7 @@ impl Input {
             Input::LinkControl { .. } => "LinkControl",
             Input::Credential { .. } => "Credential",
             Input::WantChannel { .. } => "WantChannel",
-            Input::ChannelOpened { .. } => "ChannelOpened",
+
             Input::ChannelClosed { .. } => "ChannelClosed",
             Input::PlanChanged => "PlanChanged",
             Input::TryAgain { .. } => "TryAgain",
@@ -440,23 +432,10 @@ pub enum Output {
     Checkpoint {
         state: Vec<u8>,
     },
-    /// Open a channel to `peer` over `link`, handshaking against `pin`,
-    /// and report it as [`Input::ChannelOpened`] or
-    /// [`Input::ChannelClosed`] under `channel`.
-    OpenChannel {
-        channel: ChannelId,
-        link: LinkId,
-        peer: HostId,
-        class: ChannelClass,
-        pin: PublicKey,
-    },
-    /// The channel the shell wanted is not opened, and why.
-    ChannelRefused {
-        link: LinkId,
-        peer: HostId,
-        class: ChannelClass,
-        reason: ChannelError,
-    },
+    /// The core's word on the channel the shell wanted: the id to open it
+    /// under, reported as [`Input::ChannelClosed`] when it closes or never
+    /// opens, or why it is not opened.
+    Channel(Result<ChannelId, ChannelError>),
     /// `route` no longer carries `host`'s traffic: forget the channels
     /// opened on it, so the next call opens a fresh one.
     DropRoute {
@@ -812,10 +791,6 @@ mod tests {
             Input::WantChannel {
                 link: LinkId(1),
                 peer: HostId([1; 16]),
-                class: ChannelClass::Session,
-            },
-            Input::ChannelOpened {
-                channel: ChannelId(4),
             },
             Input::ChannelClosed {
                 channel: ChannelId(4),

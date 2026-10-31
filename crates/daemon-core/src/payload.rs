@@ -59,16 +59,6 @@ pub enum CarrierKind {
     Forwarded,
 }
 
-/// What a channel carries.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum ChannelClass {
-    /// Calls to the peer.
-    Calls,
-    /// Session subscriptions, apart from the calls so that neither waits
-    /// behind the other.
-    Session,
-}
-
 /// Where a candidate address for a peer came from, which decides whether a
 /// free account may probe it: a candidate learned only through the relay's
 /// observation is paid.
@@ -103,14 +93,9 @@ pub enum ChannelError {
     /// No key is pinned for the peer: it is not paired, or its pairing is
     /// being replaced.
     Unpinned,
-    /// The link went before the channel opened, or the profile with it.
-    LinkClosed,
-    /// The forwarder between the two hosts would not carry the link.
-    Refused(#[serde(with = "codec::numbered")] ForwardRefusal),
 }
 
-/// The key a channel's handshake must find at the other end: the peer's
-/// identity key as it was pinned at pairing.
+/// A peer's identity key, as a resumed link's ticket names it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PublicKey(pub Vec<u8>);
 

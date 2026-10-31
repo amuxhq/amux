@@ -61,7 +61,7 @@ async fn remote_entry_carries_version_and_capabilities() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_link_and_its_channels_reach_the_core_as_inputs() {
     use daemon_core::Input;
-    use daemon_core::payload::{CarrierKind, ChannelClass};
+    use daemon_core::payload::CarrierKind;
 
     let desk = Install::new();
     let desk_daemon = desk.start("boot-1", quiet_launch()).await;
@@ -91,14 +91,18 @@ async fn a_link_and_its_channels_reach_the_core_as_inputs() {
             .collect::<Vec<_>>()
     };
     until(
-        "the laptop's core to hear a channel to the desk opened",
+        "the laptop's core to hear the desk's hello and be asked for a channel",
         || {
             let inputs = inputs();
             async move {
-                match inputs
+                let hello = inputs.iter().any(|input| {
+                    matches!(input, Input::LinkControl { frame, .. }
+                        if matches!(frame.body, Some(wire::message::Body::HelloAck(_))))
+                });
+                let wanted = inputs
                     .iter()
-                    .any(|input| matches!(input, Input::ChannelOpened { .. }))
-                {
+                    .any(|input| matches!(input, Input::WantChannel { .. }));
+                match hello && wanted {
                     true => Ok(()),
                     false => Err(format!("{} inputs", inputs.len())),
                 }
@@ -129,13 +133,9 @@ async fn a_link_and_its_channels_reach_the_core_as_inputs() {
     assert!(
         seen.iter().any(|input| matches!(
             input,
-            Input::WantChannel {
-                link,
-                peer,
-                class: ChannelClass::Calls,
-            } if *link == up.0 && *peer == desk_host
+            Input::WantChannel { link, peer } if *link == up.0 && *peer == desk_host
         )),
-        "a calls channel was asked of the core: {seen:?}"
+        "a channel was asked of the core: {seen:?}"
     );
 
     link.sever();

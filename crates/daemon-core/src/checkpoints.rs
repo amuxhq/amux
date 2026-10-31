@@ -157,7 +157,6 @@ fn writes(input: &Input, copying: JobId) -> bool {
         | Input::LinkControl { .. }
         | Input::Credential { .. }
         | Input::WantChannel { .. }
-        | Input::ChannelOpened { .. }
         | Input::ChannelClosed { .. }
         | Input::ChannelAnswered { .. }
         | Input::PlanChanged

@@ -39,8 +39,8 @@ pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
 use core_ring::{DumpLimit, Ring};
 use daemon_core::payload::{
-    Answer, BlobRefusal, CallError, ChannelClass, ChannelError, ClientRequest, JobResult,
-    PeerFailure, PeerReply, PeerRequest, Response, Status,
+    Answer, BlobRefusal, CallError, ChannelError, ClientRequest, JobResult, PeerFailure, PeerReply,
+    PeerRequest, Response, Status,
 };
 use daemon_core::{
     CallId, ChannelId, Daemon, DrainReport, HostId, IngestEnd, Ingested, Input, Job, JobId, LinkId,
@@ -129,7 +129,7 @@ pub(crate) enum Fed {
     /// The shell wants a channel, and waits for the core's word on it.
     Channel {
         want: Input,
-        reply: oneshot::Sender<Result<Opened, ChannelError>>,
+        reply: oneshot::Sender<Result<ChannelId, ChannelError>>,
     },
     /// A link resuming with a ticket came up, and holds what its peer sent
     /// early until the core says whether it takes the identity the ticket
@@ -170,12 +170,6 @@ pub(crate) enum Ask {
     SubscribeInventory,
     /// A request the shell already completed.
     Ready(ClientRequest),
-}
-
-/// A channel the core said to open, under the id it gave. The link it
-/// rides already pinned the peer's key.
-pub(crate) struct Opened {
-    pub(crate) channel: ChannelId,
 }
 
 /// A profile's core thread, from the shell's side.
@@ -320,19 +314,18 @@ impl Driver {
         &self,
         link: LinkId,
         peer: HostId,
-        class: ChannelClass,
-    ) -> Result<Opened, ChannelError> {
+    ) -> Result<ChannelId, ChannelError> {
         let (reply, word) = oneshot::channel();
-        let want = Input::WantChannel { link, peer, class };
+        let want = Input::WantChannel { link, peer };
         if self
             .inputs
             .send(Fed::Channel { want, reply })
             .await
             .is_err()
         {
-            return Err(ChannelError::LinkClosed);
+            return Err(ChannelError::NoLink);
         }
-        word.await.unwrap_or(Err(ChannelError::LinkClosed))
+        word.await.unwrap_or(Err(ChannelError::NoLink))
     }
 
     /// Hands a client's call to the core and returns its answers. `room` is
@@ -565,7 +558,7 @@ pub(crate) struct CoreThread {
     reports: Arc<Mutex<VecDeque<Report>>>,
     /// Whoever waits for the core's word on the channel the step under way
     /// was asked for.
-    channel_reply: Option<oneshot::Sender<Result<Opened, ChannelError>>>,
+    channel_reply: Option<oneshot::Sender<Result<ChannelId, ChannelError>>>,
     /// Whoever holds a resumed link's early streams until the core decides
     /// the step under way: told false if it refuses the link.
     resumed_reply: Option<oneshot::Sender<bool>>,
@@ -1157,23 +1150,17 @@ impl CoreThread {
                     "the daemon core",
                 );
             }
-            Output::OpenChannel { channel, .. } => match self.channel_reply.take() {
+            Output::Channel(word) => match self.channel_reply.take() {
                 Some(reply) => {
-                    if reply.send(Ok(Opened { channel })).is_err() {
+                    if let Err(Ok(channel)) = reply.send(word) {
                         // Nobody waits to open it: it never opened.
                         self.again.push_back(Input::ChannelClosed { channel });
                     }
                 }
-                None => tracing::error!(
-                    ?channel,
-                    "the daemon core opened a channel nobody asked for"
-                ),
-            },
-            Output::ChannelRefused { reason, .. } => {
-                if let Some(reply) = self.channel_reply.take() {
-                    let _ = reply.send(Err(reason));
+                None => {
+                    tracing::error!(?word, "the daemon core answered a channel nobody asked for")
                 }
-            }
+            },
             Output::Abandon { host, attempt } => {
                 if let Some(edge) = runtime.edge() {
                     edge.reachability().abandon(host_from_core(host), attempt);

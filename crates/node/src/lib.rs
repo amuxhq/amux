@@ -104,10 +104,7 @@ pub use profile_admin::ProfileAdmin;
 pub use profiles::{
     PROFILE_SOCKET, ProfileEntry, ProfileId, create_profile, create_profile_as, profile_dir,
 };
-pub use registry::{
-    AccountState, FellBehind, ProfileEvent, ProfileRefusal, ProfileState, ProfileSubscription,
-    Registry, SignIn,
-};
+pub use registry::{AccountState, ProfileRefusal, ProfileState, Registry, SignIn};
 pub use relay::RelayError;
 pub use replicas::SourcePolicy;
 pub use reports::{

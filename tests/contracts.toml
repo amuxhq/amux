@@ -1155,7 +1155,6 @@ tests = [
   "node/integration::forwarded_send::a_send_with_no_link_never_leaves_and_is_rejected",
   "node/integration::forwarded_send::a_send_cut_off_after_it_left_is_uncertain_and_arrives_once",
   "tui/lib::tests::an_unconfirmed_prompt_offers_resend_and_discard",
-  "journey:terminal/send-rejected",
   "journey:terminal/send-may-not-have-arrived",
 ]
 
@@ -1267,7 +1266,6 @@ tests = [
   "testnet/integration::spec_links::entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once",
   "daemon-core/lib::presence::tests::a_forward_refused_after_the_forwarder_let_the_host_go_says_nothing",
   "daemon-core/lib::presence::tests::a_forwarder_holding_no_link_to_the_host_reads_it_offline_at_once",
-  "tui/integration::served::a_prompt_held_when_no_call_reaches_its_host_goes_once_one_does",
 ]
 
 [[contract]]

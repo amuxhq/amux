@@ -2386,45 +2386,6 @@ impl Net {
 
     // --- faults ------------------------------------------------------------
 
-    /// Makes `a` fail every channel to `b` before it opens, as when the
-    /// far end refuses each one, while the link between them and the
-    /// streams it already carries stay up until a call fails on it. `b`
-    /// then reads offline to `a`, as in production: `a` closes its own link
-    /// to `b`, or drops the relay's channel and keeps trying a fresh one.
-    /// `refuse: false` lifts it and has `a` try a channel at once; a link
-    /// between them in this process that a failed call closed is linked
-    /// again, as redialling would bring a real one back.
-    pub async fn refuse_calls(&mut self, a: &str, b: &str, refuse: bool) -> Result<Ack, NetError> {
-        self.in_process(a, "refusing calls")?;
-        let peer = self.host(b)?.host_id;
-        self.edge(a)?.refuse_calls(peer, refuse).await;
-        if !refuse {
-            self.redial(a, b).await?;
-        }
-        Ok(self.ack(format!(
-            "{a} {} calls to {b}",
-            if refuse { "refuses" } else { "makes" }
-        )))
-    }
-
-    /// Links `a` and `b` again in this process if a failed call closed
-    /// their link, as redialling brings a real one back, and returns once
-    /// it is up. Nothing happens to a link that is up or was severed.
-    pub async fn redial(&mut self, a: &str, b: &str) -> Result<Ack, NetError> {
-        if self
-            .links
-            .get(&link_key(a, b))
-            .is_some_and(|link| !link.severed && link.live.is_some())
-            && !self.link_up(a, b).await
-        {
-            self.links.get_mut(&link_key(a, b)).expect("the link").live = None;
-            self.wait_direct_gone(a, b).await?;
-            self.link_all()?;
-            self.wait_link(a, b, true).await?;
-        }
-        Ok(self.ack(format!("link {a} - {b} redialled")))
-    }
-
     /// Cuts the link between two hosts the way a dead connection goes: no
     /// LinkClose, the carrier just stops.
     pub fn sever_link(&mut self, a: &str, b: &str) -> Result<Ack, NetError> {

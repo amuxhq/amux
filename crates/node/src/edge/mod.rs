@@ -724,14 +724,6 @@ impl Edge {
         self.connections.calls_timed_out(host, since);
     }
 
-    /// From now on no channel to `host` opens, or opens again, while the
-    /// streams its link already carries stay up: a call to it fails before
-    /// it goes out, and closes the link it tried. For a test network.
-    #[doc(hidden)]
-    pub async fn refuse_calls(&self, host: HostId, refuse: bool) {
-        self.connections.refuse_calls(host, refuse);
-    }
-
     /// The channel calls to a trusted host ride, for a caller that speaks
     /// some other service on it.
     pub async fn channel(

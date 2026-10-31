@@ -42,7 +42,6 @@
 //! | `Link` | `Net::link_up` |
 //! | `Trust` | `Net::trust` |
 //! | `Untrust` | `Net::untrust` |
-//! | `RefuseCalls` | `Net::refuse_calls` |
 //! | `SetTier` | `Net::set_tier` |
 //! | `SignIn` | `Net::sign_in` |
 //! | `KillDaemon` | `Net::kill_daemon` |

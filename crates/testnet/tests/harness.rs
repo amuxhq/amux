@@ -665,11 +665,6 @@ fn every_door_verb_maps_to_one_capability_and_the_crate_docs_list_the_same_map()
             a: "a".into(),
             b: "b".into(),
         },
-        Control::RefuseCalls {
-            a: "a".into(),
-            b: "b".into(),
-            refuse: true,
-        },
         Control::SetTier {
             account: "a".into(),
             tier: testnet::TierDecl::Free,

@@ -117,18 +117,6 @@ impl ConnectionManager {
             .drop_route(peer, Route::from_core(peer, route));
     }
 
-    /// From now on no channel to `peer` opens while `refuse` holds,
-    /// whatever route reaches it, and the link each refused channel was on
-    /// closes. Lifting it tells the core to try the host now.
-    pub(crate) fn refuse_calls(&self, peer: HostId, refuse: bool) {
-        self.channels.refuse(peer, refuse);
-        if !refuse {
-            self.report(Input::TryAgain {
-                host: core_host(peer),
-            });
-        }
-    }
-
     pub(crate) fn replacing(&self) -> Replacing {
         self.replacing.clone()
     }

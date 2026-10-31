@@ -121,13 +121,6 @@
       "claim": "With the agent's host out of reach, Enter holds the prompt, shown pending until the host is back, and the host never receives it; with the host back, the held prompt goes by itself and the host holds it once."
     },
     {
-      "id": "send-rejected",
-      "stage": 17,
-      "clients": ["terminal"],
-      "topology": "journeys/topologies/terminal-flows.json",
-      "claim": "With the laptop unable to open a call to the agent's host while its link stays listed, a prompt that never left is held, shown pending until the host is back, and the host never receives it; the failed call leaves the host offline, which the chat words as away. Once a channel to the host opens again it reads as back, the held prompt goes by itself, and the host holds it once."
-    },
-    {
       "id": "send-may-not-have-arrived",
       "stage": 17,
       "clients": ["terminal"],

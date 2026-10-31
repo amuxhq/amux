@@ -1,6 +1,6 @@
 //! Tonic channels carried by independent native link streams.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
@@ -357,9 +357,6 @@ pub struct ChannelPool {
     forwarded: OnceLock<Arc<dyn ForwardedDial>>,
     /// How a link resuming with a ticket is dialled, once the edge is up.
     resumed: OnceLock<Arc<dyn ResumedDial>>,
-    /// Hosts no channel opens to while the link stays up: a fault a test
-    /// network injects.
-    refused: std::sync::Mutex<HashSet<HostId>>,
 }
 
 /// A channel the core said to open, whose outcome the core is told exactly
@@ -405,7 +402,6 @@ impl ChannelPool {
             trust_store,
             forwarded: OnceLock::new(),
             resumed: OnceLock::new(),
-            refused: std::sync::Mutex::default(),
         }
     }
 
@@ -560,30 +556,6 @@ impl ChannelPool {
             );
     }
 
-    /// From now on every channel to `peer` is refused while `refuse`
-    /// holds, as a link whose far end takes no stream would refuse it,
-    /// those already opening included, and no cached one is handed out.
-    /// The link each refusal was on closes, as any link a stream would not
-    /// open on does.
-    pub(crate) fn refuse(&self, peer: HostId, refuse: bool) {
-        let mut refused = self
-            .refused
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if refuse {
-            refused.insert(peer);
-        } else {
-            refused.remove(&peer);
-        }
-    }
-
-    fn refuses(&self, peer: HostId) -> bool {
-        self.refused
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .contains(&peer)
-    }
-
     /// A stream would not open on `link` while it stayed up: it closes as
     /// a dead connection would, so the host reads as the links that remain
     /// say, and redialling brings it back.
@@ -614,16 +586,12 @@ impl ChannelPool {
     }
 
     async fn open_channel(&self, key: ChannelKey) -> Result<Channel, ChannelError> {
-        let refused = self.refuses(key.peer);
-        let cached = if !refused {
-            self.by_key
-                .read()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .get(&key)
-                .cloned()
-        } else {
-            None
-        };
+        let cached = self
+            .by_key
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&key)
+            .cloned();
         if let Some(cached) = cached {
             if !self.route_is_live(key.route).await {
                 return Err(ChannelError::LinkUnavailable {
@@ -668,12 +636,6 @@ impl ChannelPool {
             Err(daemon_core::payload::ChannelError::Unpinned) => return Err(unpinned(key.peer)),
             Err(_) => return Err(unavailable()),
         };
-        if refused {
-            let refusal = streams_refused();
-            telling.failed(core_error(&refusal));
-            self.close_failed(link);
-            return Err(refusal);
-        }
         let ended = Arc::new(Ending::default());
         let secured = async {
             let stream = carrier
@@ -683,12 +645,6 @@ impl ChannelPool {
             Ok(self.channel_over(key, Watched::new(stream, ended.clone()), &ended))
         }
         .await;
-        // A refusal set while the channel was opening holds for it too, so
-        // no channel opens once it is set.
-        let secured = match secured {
-            Ok(_) if self.refuses(key.peer) => Err(streams_refused()),
-            secured => secured,
-        };
         if let Err(ChannelError::Handshake(_)) = &secured {
             self.close_failed(link);
         }
@@ -1076,12 +1032,6 @@ pub(crate) fn serve_inbound_streams(
 /// being replaced.
 fn unpinned(peer: HostId) -> ChannelError {
     ChannelError::Tls(format!("no key is pinned for host {peer}"))
-}
-
-/// What a channel the refusal hook turned away fails with: a stream that
-/// would not open, as on a link whose far end takes none.
-fn streams_refused() -> ChannelError {
-    ChannelError::Handshake("the link refused the stream".to_owned())
 }
 
 fn map_open_error(error: OpenError, route: Route) -> ChannelError {

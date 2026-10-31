@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use client::{Client, SystemClock};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use futures_util::future::{BoxFuture, Shared};
 use prost::Message as _;
 use ratatui::Frame as Paint;
 use ratatui::text::{Line, Span};
@@ -301,12 +302,11 @@ pub struct App {
     host_offers: HashMap<Vec<u8>, wire::Catalogue>,
     /// Each host's provider asked once per hash the host named.
     offers_asked: HashSet<OfferAsked>,
-    /// Drafts left in chats that are not open, by agent: a half-written
-    /// prompt is the person's work, and it waits in the composer for the
-    /// chat's return, as on the phone. An emptied draft stays as an empty
-    /// one: it outranks the daemon's copy, which the save may not have
-    /// emptied yet, and the save as the client quits sends it again.
-    drafts: HashMap<AgentKey, crate::editor::Editor>,
+    /// Every draft save sent as a chat closed, in order: a chat opening
+    /// reads its draft back from this machine's daemon only after them, so
+    /// it finds what was left in it, an emptied one empty; and the client
+    /// quits only after them.
+    draft_saves: Shared<BoxFuture<'static, ()>>,
     /// A chat closed under the person: home takes no key until
     /// [`crate::chat::ASK_ARMS_MS`] pass with none, as an ask arms, so the
     /// rest of what they were typing never acts on another agent. The last
@@ -409,7 +409,9 @@ impl App {
             report_asked: false,
             report: None,
             host_offers: HashMap::new(),
-            drafts: HashMap::new(),
+            draft_saves: futures_util::FutureExt::shared(
+                Box::pin(std::future::ready(())) as BoxFuture<'static, ()>
+            ),
             home_held: None,
             offers_asked: HashSet::new(),
             events,
@@ -528,12 +530,8 @@ impl App {
                                 terminal_elsewhere(entry, &self.config).is_none()
                             });
                         let mut view = ChatView::new(agent.agent.clone(), now_ms(), terminal);
-                        match (self.drafts.remove(&agent), kept) {
-                            (Some(draft), _) => view.editor = draft,
-                            // A draft this machine kept from an earlier
-                            // client comes back from its daemon.
-                            (None, Some(kept)) => view.editor.set(&kept.text, kept.attachments),
-                            (None, None) => {}
+                        if let Some(kept) = kept {
+                            view.editor.set(&kept.text, kept.attachments);
                         }
                         view.leader = self.config.leader;
                         view.local = agent.host == self.config.local_host;
@@ -686,6 +684,7 @@ impl App {
         self.opening = Some(agent.clone());
         let fleet = self.fleet.clone();
         let client = self.client.clone();
+        let saved = self.draft_saves.clone();
         self.spawn(async move {
             let window = Window {
                 tail: PAGE,
@@ -695,6 +694,7 @@ impl App {
                 .open(&agent, window)
                 .await
                 .map_err(|error| error.to_string());
+            saved.await;
             let request = wire::GetDraftRequest {
                 agent_id: agent.agent.clone(),
             };
@@ -721,18 +721,16 @@ impl App {
     }
 
     /// Back to the fleet from a chat whose agent was deleted: its draft
-    /// goes with it, kept neither here nor with the daemon.
+    /// goes with it, never saved.
     fn close_deleted_chat(&mut self) {
         if let Some(chat) = self.chat.take() {
             self.fleet.close(&chat.agent);
-            self.drafts.remove(&chat.agent);
         }
     }
 
-    /// Keeps a closing chat's draft for when it opens again, here and with
-    /// this machine's daemon, so it outlives this client. An empty one is
-    /// kept too, so the chat reopens empty and the quit's save, which is
-    /// waited for, empties the daemon's copy even if this save has not.
+    /// Keeps a closing chat's draft with this machine's daemon, for when it
+    /// opens again and so it outlives this client. An empty one is saved
+    /// too, so the chat reopens empty.
     fn keep_draft(&mut self, chat: OpenChat) {
         // Refused prompts its composer took back are in the editor now:
         // forgotten, so they neither come back again nor count as words
@@ -745,43 +743,28 @@ impl App {
         for id in taken {
             chat.session.discard(&id);
         }
-        let draft = composer_draft(&chat.view.editor);
-        let client = self.client.clone();
-        let agent_id = chat.agent.agent.clone();
-        self.spawn(async move {
-            save_drafts(client, vec![(agent_id, draft)]).await;
-            None
-        });
-        self.drafts.insert(chat.agent, chat.view.editor);
+        let draft = vec![(chat.agent.agent.clone(), composer_draft(&chat.view.editor))];
+        let (client, before) = (self.client.clone(), self.draft_saves.clone());
+        let save = futures_util::FutureExt::shared(Box::pin(async move {
+            before.await;
+            save_drafts(client, draft).await;
+        }) as BoxFuture<'static, ()>);
+        tokio::spawn(save.clone());
+        self.draft_saves = save;
     }
 
-    /// Every draft this client holds, for its daemon to keep as the client
-    /// closes: the open chat's and those of chats left.
-    fn drafts_to_keep(&mut self) -> Vec<(Vec<u8>, wire::Draft)> {
-        let mut editors: HashMap<AgentKey, crate::editor::Editor> =
-            std::mem::take(&mut self.drafts);
-        if let Some(chat) = &self.chat {
-            editors.insert(chat.agent.clone(), chat.view.editor.clone());
-        }
-        // A chat left before its agent was deleted keeps no draft: a fleet
-        // that is current and no longer lists the agent says it is gone.
-        {
-            let fleet = self.fleet.state();
-            if fleet.caught_up() && fleet.connection() == ui_state::Connection::Live {
-                editors.retain(|agent, _| fleet.agent(agent).is_some());
-            }
-        }
-        editors
-            .into_iter()
-            .map(|(agent, editor)| (agent.agent, composer_draft(&editor)))
-            .collect()
-    }
-
-    /// Hands every draft to this machine's daemon; awaited as the client
-    /// quits.
+    /// Hands the open chat's draft to this machine's daemon after every
+    /// save sent before; awaited as the client quits.
     pub fn keep_drafts(&mut self) -> impl std::future::Future<Output = ()> + Send + 'static {
-        let drafts = self.drafts_to_keep();
-        save_drafts(self.client.clone(), drafts)
+        let open = self
+            .chat
+            .as_ref()
+            .map(|chat| (chat.agent.agent.clone(), composer_draft(&chat.view.editor)));
+        let (client, before) = (self.client.clone(), self.draft_saves.clone());
+        async move {
+            before.await;
+            save_drafts(client, open.into_iter().collect()).await;
+        }
     }
 
     fn field_text(&self) -> bool {

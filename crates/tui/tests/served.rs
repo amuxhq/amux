@@ -226,12 +226,12 @@ async fn a_draft_outlives_the_terminal_client_closing() {
         .unwrap();
 }
 
-/// A client of the daemon whose saves of an emptied draft never land while
+/// A client of the daemon whose saves of an emptied draft wait while
 /// `hold` is set: the clearing a person did is still on its way. It notes
 /// the agent of every draft saved.
 struct SlowClearing {
     inner: std::sync::Arc<dyn client::Client>,
-    hold: std::sync::atomic::AtomicBool,
+    hold: tokio::sync::watch::Sender<bool>,
     saved: std::sync::Mutex<Vec<Vec<u8>>>,
 }
 
@@ -246,8 +246,8 @@ impl client::Client for SlowClearing {
             .draft
             .as_ref()
             .is_none_or(|draft| draft.text.is_empty() && draft.attachments.is_empty());
-        if empty && self.hold.load(std::sync::atomic::Ordering::SeqCst) {
-            std::future::pending::<()>().await;
+        if empty {
+            let _ = self.hold.subscribe().wait_for(|held| !*held).await;
         }
         self.inner.update_draft(request).await
     }
@@ -370,10 +370,8 @@ impl client::Client for SlowClearing {
 }
 
 /// A draft the person cleared stays cleared while the daemon's copy is
-/// still being emptied: reopening the chat at once finds the composer
-/// empty, not the words this machine kept before, and quitting from home
-/// waits for the emptying. The empty save went from a task nobody waited
-/// on, and nothing here remembered the clearing.
+/// still being emptied: reopening the chat at once waits for the emptying
+/// and finds the composer empty, not the words this machine kept before.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_cleared_draft_stays_cleared_before_the_daemon_hears_of_it() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -394,7 +392,7 @@ async fn a_cleared_draft_stays_cleared_before_the_daemon_hears_of_it() {
         .unwrap();
     let slow = std::sync::Arc::new(SlowClearing {
         inner: daemon.clone(),
-        hold: std::sync::atomic::AtomicBool::new(true),
+        hold: tokio::sync::watch::Sender::new(true),
         saved: Default::default(),
     });
     let client: std::sync::Arc<dyn client::Client> = slow.clone();
@@ -413,6 +411,12 @@ async fn a_cleared_draft_stays_cleared_before_the_daemon_hears_of_it() {
     assert!(app.chat.as_ref().unwrap().view.editor.is_empty(), "cleared");
     home(&mut app);
 
+    // The emptying lands only once the chat is opening again.
+    let release = slow.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        release.hold.send_replace(false);
+    });
     open_chat(&mut app, worker.as_bytes()).await;
     assert_eq!(
         app.chat.as_ref().unwrap().view.editor.text(),
@@ -420,10 +424,6 @@ async fn a_cleared_draft_stays_cleared_before_the_daemon_hears_of_it() {
         "the cleared draft came back from the daemon's old copy"
     );
     home(&mut app);
-
-    // Quitting from home waits for the emptying, whatever became of the
-    // saves sent as the chat closed.
-    slow.hold.store(false, std::sync::atomic::Ordering::SeqCst);
     tokio::time::timeout(PATIENCE, app.keep_drafts())
         .await
         .expect("the quit's save lands");
@@ -451,7 +451,7 @@ async fn a_deleted_agents_chat_keeps_no_draft() {
     let doomed = net.agent("doomed").unwrap().id;
     let recording = std::sync::Arc::new(SlowClearing {
         inner: daemon.clone(),
-        hold: std::sync::atomic::AtomicBool::new(false),
+        hold: tokio::sync::watch::Sender::new(false),
         saved: Default::default(),
     });
     let client: std::sync::Arc<dyn client::Client> = recording.clone();

@@ -220,7 +220,7 @@ cargo = [
 [[suite]]
 name = "codex-recorded-adapter"
 contract = "Every registered Codex provider recording replays strictly with complete corpus provenance."
-paths = ["crates/codex-specs/src/client", "crates/codex-specs/tests/spec_replay.rs", "crates/codex-specs/tests/capture_proxy.rs", "crates/codex-specs/fixtures"]
+paths = ["crates/codex-specs/src/client", "crates/codex-specs/tests/spec_replay.rs", "crates/codex-specs/fixtures"]
 recipe = "just suite codex-recorded-adapter"
 boundary = "Provider adapter"
 oracle = "Strict replay consumption, expected writes, and recording manifest validation."
@@ -234,7 +234,7 @@ update = "Run `codex-probe record` for the spec and review its manifest."
 cargo = [
   { package = "codex-specs", kind = "lib", targets = ["codex_specs"], features = [] },
   { package = "codex-specs", kind = "bin", targets = ["codex-probe"], features = [] },
-  { package = "codex-specs", modules = ["capture_proxy", "spec_replay"], features = [] },
+  { package = "codex-specs", modules = ["spec_replay"], features = [] },
 ]
 
 [[suite]]

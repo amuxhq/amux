@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
-use std::io::{self, BufRead, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
 use claude_specs::specs::pty::registry as pty_registry;
 use redaction::Redaction;
+use replay_support::live::{self, Captured, owner_home, write_events, write_manifest};
 use replay_support::{Manifest, Recorded, SpecEntry, load_recording, registry_rows, sanitize};
 use semver::Version;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -26,7 +27,7 @@ pub(super) async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The tool server the live lane's form scenarios hand Claude; it runs
     // under the capture proxy's environment, so it is told apart first.
     if std::env::args().nth(1).as_deref() == Some("__tool-server") {
-        run_tool_server();
+        live::serve_ask_tool("spec-external");
         return Ok(());
     }
     if std::env::var_os("CLAUDE_CAPTURE_PROXY").is_some() {
@@ -82,7 +83,7 @@ fn find_pty_entry(name: &str) -> Result<SpecEntry, Box<dyn std::error::Error>> {
 
 struct PtyCapture {
     report: claude_specs::specs::pty::RunReport,
-    spawn: Vec<u8>,
+    spawn: serde_json::Value,
     scratch: PathBuf,
 }
 
@@ -113,10 +114,10 @@ async fn capture_pty(entry: SpecEntry) -> Result<PtyCapture, Box<dyn std::error:
     };
     let mut spawn_launch = launch.clone();
     claude_specs::specs::pty::prepare_launch(&entry, &mut spawn_launch)?;
-    let spawn = serde_json::to_vec(&serde_json::json!({
+    let spawn = serde_json::json!({
         "transport_id": "pty",
         "argv": claude_specs::terminal::pty_spawn_args(&spawn_launch),
-    }))?;
+    });
     let report = claude_specs::specs::pty::run(
         &entry,
         claude_specs::specs::pty::Source::Live {
@@ -139,27 +140,24 @@ async fn record_pty_one(entry: SpecEntry) -> Result<(), Box<dyn std::error::Erro
     let mut capture = capture_pty(entry).await?;
     stabilize_pty_transcript_paths(&mut capture.report.io)?;
     claude_specs::scrub::transcript(&mut capture.report.io)?;
-    let redaction = sanitize(
-        &mut capture.report.io,
-        &Redaction {
-            home: owner_home(),
-            extra_paths: vec![capture.scratch.clone()],
-            secret_env: secret_values(),
-            hostname: None,
-            user: None,
-            extra_personal_identifiers: Vec::new(),
-            personal_identifier_keys: Vec::new(),
-        },
-    );
+    let rules = Redaction {
+        home: owner_home(),
+        extra_paths: vec![capture.scratch.clone()],
+        secret_env: live::secret_values(SECRETS),
+        hostname: None,
+        user: None,
+        extra_personal_identifiers: Vec::new(),
+        personal_identifier_keys: Vec::new(),
+    };
+    let mut redaction = sanitize(&mut capture.report.io, &rules);
     let root = claude_specs::specs::pty::fixtures_root();
     std::fs::create_dir_all(&root)?;
     let stage = root.join(format!(".{}.{}", entry.recording, Uuid::new_v4()));
     std::fs::create_dir_all(&stage)?;
     write_events(&stage.join("io.jsonl"), &capture.report.io)?;
     let mut spawn = capture.spawn;
-    spawn.push(b'\n');
-    let spawn = sanitize_json_lines(&spawn, &capture.scratch)?;
-    std::fs::write(stage.join("spawn.jsonl"), spawn)?;
+    redaction::redact_value(&mut spawn, &rules, &mut redaction);
+    std::fs::write(stage.join("spawn.jsonl"), format!("{spawn}\n"))?;
     let mut manifest = Manifest::inventory(
         &stage,
         entry.name,
@@ -269,12 +267,7 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
             return Err(format!("{}: not a Claude capture ({other:?})", capture.display()).into());
         }
     };
-    let mut spawns = std::fs::read_to_string(capture.join("spawn.jsonl"))?
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(serde_json::from_str::<serde_json::Value>)
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut events = replay_support::load_script(capture.join("io.jsonl"));
+    let (mut spawns, mut events) = live::read_capture(capture)?;
     if pty {
         // A terminal capture is the terminal session. The headless Claude
         // the agent asks for the host's catalogue runs beside it under its
@@ -303,98 +296,41 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
     let rules = Redaction {
         home: owner_home(),
-        extra_paths: live_scratch(&spawns),
-        secret_env: secret_values(),
+        extra_paths: live::live_scratch(&spawns),
+        secret_env: live::secret_values(SECRETS),
         hostname: None,
         user: None,
         extra_personal_identifiers: Vec::new(),
         personal_identifier_keys: Vec::new(),
     };
-    let mut redaction = sanitize(&mut events, &rules);
-    let facts = captured_facts(&events, pty)?;
-
+    // A terminal process's channels are all `pty`; a stdio process is
+    // named by its transport.
+    let spawns = spawns
+        .into_iter()
+        .map(|mut row| {
+            serde_json::json!({
+                "transport_id": if pty { "pty".into() } else { row["transport_id"].take() },
+                "argv": row["argv"].take(),
+                "cwd": row["cwd"].take(),
+            })
+        })
+        .collect();
     let root = claude_specs::specs::live_fixtures_root().join(if pty { "pty" } else { "sdk" });
-    std::fs::create_dir_all(&root)?;
-    let stage = root.join(format!(".{name}.{}", Uuid::new_v4()));
-    std::fs::create_dir_all(&stage)?;
-    write_events(&stage.join("io.jsonl"), &events)?;
-    let mut spawn = String::new();
-    for mut row in spawns {
-        let mut kept = serde_json::Map::new();
-        // A terminal process's channels are all `pty`; a stdio process is
-        // named by its transport.
-        kept.insert(
-            "transport_id".into(),
-            if pty {
-                "pty".into()
-            } else {
-                row["transport_id"].take()
-            },
-        );
-        kept.insert("argv".into(), row["argv"].take());
-        kept.insert("cwd".into(), row["cwd"].take());
-        let mut row = serde_json::Value::Object(kept);
-        redaction::redact_value(&mut row, &rules, &mut redaction);
-        spawn.push_str(&serde_json::to_string(&row)?);
-        spawn.push('\n');
-    }
-    std::fs::write(stage.join("spawn.jsonl"), spawn)?;
-    let mut manifest = Manifest::inventory(
-        &stage,
-        name,
-        Recorded {
-            provider: "claude".to_owned(),
-            version: facts.version.clone(),
-            model: facts.model.clone(),
-            at: Utc::now(),
-        },
-    )?;
-    manifest.session_ids = facts.session_ids.clone();
-    manifest.redaction = redaction;
-    manifest.provider_extra.insert(
-        "driven_by".to_owned(),
-        "amux's interpreter, in the live qualification lane".into(),
-    );
-    if facts.models.len() > 1 {
-        manifest
-            .provider_extra
-            .insert("models".to_owned(), facts.models.clone().into());
-    }
-    write_manifest(&stage.join("manifest.json"), &manifest)?;
-    load_recording(&stage)?;
-
-    let destination = root.join(name);
-    if destination.exists() {
-        std::fs::remove_dir_all(&destination)?;
-    }
-    std::fs::rename(&stage, &destination)?;
+    let destination = live::join(&root, name, "claude", events, spawns, &rules, |events| {
+        let facts = captured_facts(events, pty)?;
+        let mut extra = serde_json::Map::new();
+        if facts.models.len() > 1 {
+            extra.insert("models".to_owned(), facts.models.into());
+        }
+        Ok(Captured {
+            version: facts.version,
+            model: facts.model,
+            session_ids: facts.session_ids,
+            extra,
+        })
+    })?;
     println!("joined {} as {}", capture.display(), destination.display());
     Ok(())
-}
-
-/// The scratch installation a live capture ran in: the folder under the
-/// temporary directory that holds each process's working directory, in both
-/// of the spellings macOS gives it, and this machine's temporary directory,
-/// where the lane keeps its sockets.
-fn live_scratch(spawns: &[serde_json::Value]) -> Vec<PathBuf> {
-    let mut paths = vec![std::env::temp_dir()];
-    for spawn in spawns {
-        let Some(cwd) = spawn["cwd"].as_str() else {
-            continue;
-        };
-        let cwd = Path::new(cwd);
-        let Some(root) = cwd.ancestors().find(|dir| {
-            dir.parent().is_some_and(|parent| {
-                parent == Path::new("/tmp") || parent == Path::new("/private/tmp")
-            })
-        }) else {
-            continue;
-        };
-        let tail = root.strip_prefix("/private").unwrap_or(root);
-        paths.push(tail.to_path_buf());
-        paths.push(Path::new("/private").join(tail.strip_prefix("/").unwrap_or(tail)));
-    }
-    paths
 }
 
 struct CapturedFacts {
@@ -465,77 +401,6 @@ fn captured_facts(
         models: models.into_keys().collect(),
         session_ids,
     })
-}
-
-fn write_events(path: &Path, events: &[replay_support::IoEvent]) -> io::Result<()> {
-    let mut output = String::new();
-    for event in events {
-        let mut row = serde_json::json!({
-            "us": event.us,
-            "dir": match event.direction {
-                replay_support::IoDirection::Write => "stdin",
-                replay_support::IoDirection::Read => "stdout",
-            },
-            "line": event.line,
-        });
-        if let Some(transport_id) = &event.transport_id {
-            row["transport_id"] = serde_json::Value::String(transport_id.clone());
-        }
-        if let Some(session_id) = &event.session_id {
-            row["session_id"] = serde_json::Value::String(session_id.clone());
-        }
-        output.push_str(&serde_json::to_string(&row).map_err(io::Error::other)?);
-        output.push('\n');
-    }
-    std::fs::write(path, output)
-}
-
-fn write_manifest(path: &Path, manifest: &Manifest) -> io::Result<()> {
-    let mut bytes = serde_json::to_vec_pretty(manifest).map_err(io::Error::other)?;
-    bytes.push(b'\n');
-    std::fs::write(path, bytes)
-}
-
-fn sanitize_json_lines(bytes: &[u8], scratch: &Path) -> io::Result<Vec<u8>> {
-    let text = std::str::from_utf8(bytes).map_err(io::Error::other)?;
-    let home = owner_home().to_string_lossy().into_owned();
-    let scratch = scratch.to_string_lossy().into_owned();
-    let secrets = secret_values();
-    let mut output = String::new();
-    for line in text.lines() {
-        let mut value: serde_json::Value = serde_json::from_str(line).map_err(io::Error::other)?;
-        redact_value(&mut value, &home, &scratch, &secrets);
-        output.push_str(&serde_json::to_string(&value).map_err(io::Error::other)?);
-        output.push('\n');
-    }
-    Ok(output.into_bytes())
-}
-
-fn redact_value(value: &mut serde_json::Value, home: &str, scratch: &str, secrets: &[String]) {
-    match value {
-        serde_json::Value::String(text) => {
-            *text = text.replace(scratch, "<MACHINE_PATH>");
-            if !home.is_empty() {
-                *text = text.replace(home, "<HOME>");
-            }
-            for secret in secrets {
-                if !secret.is_empty() {
-                    *text = text.replace(secret, "<REDACTED>");
-                }
-            }
-        }
-        serde_json::Value::Array(values) => {
-            for value in values {
-                redact_value(value, home, scratch, secrets);
-            }
-        }
-        serde_json::Value::Object(values) => {
-            for value in values.values_mut() {
-                redact_value(value, home, scratch, secrets);
-            }
-        }
-        _ => {}
-    }
 }
 
 async fn run_capture_proxy() -> Result<(), Box<dyn std::error::Error>> {
@@ -692,143 +557,11 @@ fn append_json(path: &Path, value: &serde_json::Value) -> io::Result<()> {
     writeln!(file, "{value}")
 }
 
-/// The tool server the live lane's form scenarios hand Claude: one tool
-/// that asks the person to confirm a word with a form, or, for the word
-/// `LINK`, with a link.
-fn run_tool_server() {
-    const PROTOCOL_VERSION: &str = "2025-11-25";
-    const TOOL: &str = "ask_the_operator";
-    let stdin = std::io::stdin();
-    let mut lines = stdin.lock().lines();
-    let mut stdout = std::io::stdout();
-    let mut outgoing_id = 1000i64;
-    while let Some(Ok(line)) = lines.next() {
-        let Ok(message) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
-            continue;
-        };
-        let method = message.get("method").and_then(serde_json::Value::as_str);
-        let id = message.get("id").cloned();
-        let result = match (method, &id) {
-            (Some(_), None) => continue,
-            (Some("initialize"), Some(_)) => serde_json::json!({
-                "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": "spec-external", "version": "1.0.0"},
-            }),
-            (Some("tools/list"), Some(_)) => serde_json::json!({
-                "tools": [{
-                    "name": TOOL,
-                    "description": "Ask the operator to confirm a word, then return it.",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {"word": {"type": "string"}},
-                        "required": ["word"],
-                    },
-                }],
-            }),
-            (Some("tools/call"), Some(_)) => {
-                let word = message
-                    .pointer("/params/arguments/word")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("nothing")
-                    .to_owned();
-                outgoing_id += 1;
-                let answer = elicit(&mut stdout, &mut lines, outgoing_id, &word);
-                serde_json::json!({"content": [{"type": "text", "text": answer}]})
-            }
-            _ => {
-                respond(
-                    &mut stdout,
-                    serde_json::json!({
-                        "jsonrpc": "2.0", "id": id,
-                        "error": {"code": -32601, "message": "method not found"},
-                    }),
-                );
-                continue;
-            }
-        };
-        respond(
-            &mut stdout,
-            serde_json::json!({"jsonrpc": "2.0", "id": id, "result": result}),
-        );
-    }
-}
-
-fn elicit(
-    stdout: &mut std::io::Stdout,
-    lines: &mut std::io::Lines<std::io::StdinLock<'_>>,
-    id: i64,
-    word: &str,
-) -> String {
-    // The word LINK asks for the link form of elicitation: the person is
-    // sent to a page instead of filling in fields.
-    let params = if word == "LINK" {
-        serde_json::json!({
-            "mode": "url",
-            "message": "Open the page to confirm.",
-            "url": "https://example.com/confirm",
-            "elicitationId": "spec-link",
-        })
-    } else {
-        serde_json::json!({
-            "message": format!("Confirm the word {word}."),
-            "requestedSchema": {
-                "type": "object",
-                "properties": {"confirmed": {"type": "string"}},
-                "required": ["confirmed"],
-            },
-        })
-    };
-    respond(
-        stdout,
-        serde_json::json!({
-            "jsonrpc": "2.0", "id": id, "method": "elicitation/create",
-            "params": params,
-        }),
-    );
-    while let Some(Ok(line)) = lines.next() {
-        let Ok(message) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
-            continue;
-        };
-        if message.get("id").and_then(serde_json::Value::as_i64) != Some(id) {
-            continue;
-        }
-        return match message
-            .pointer("/result/action")
-            .and_then(serde_json::Value::as_str)
-        {
-            Some("accept") => message
-                .pointer("/result/content/confirmed")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or(word)
-                .to_owned(),
-            Some(other) => format!("elicitation {other}"),
-            None => format!("elicitation failed: {}", message["error"]),
-        };
-    }
-    "elicitation abandoned".to_owned()
-}
-
-fn respond(stdout: &mut std::io::Stdout, message: serde_json::Value) {
-    let _ = writeln!(stdout, "{message}");
-    let _ = stdout.flush();
-}
-
 fn claude_binary() -> PathBuf {
     std::env::var_os("CLAUDE_REAL_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("claude"))
 }
 
-fn owner_home() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_default()
-}
-
-fn secret_values() -> Vec<String> {
-    ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]
-        .into_iter()
-        .filter_map(|name| std::env::var(name).ok())
-        .collect()
-}
+/// The variables holding the credentials a recording redacts.
+const SECRETS: &[&str] = &["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"];

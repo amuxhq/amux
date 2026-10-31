@@ -30,7 +30,7 @@ mod rows;
 #[path = "two_clients.rs"]
 mod two_clients;
 
-pub use decisions::{SPEC_TOOL, SPEC_TOOL_SERVER};
+pub use decisions::SPEC_TOOL_SERVER;
 pub use two_clients::TWO_CLIENTS;
 
 /// Specifications that run with no signed-in account; capture gives them a

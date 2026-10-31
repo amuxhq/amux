@@ -229,7 +229,7 @@ substituted = ["live Claude process"]
 time = "none"
 capabilities = ["Rust toolchain"]
 lane = "fast"
-evidence = "crates/claude-specs/fixtures/live/sdk and crates/claude-specs/fixtures/pty"
+evidence = "crates/claude-specs/fixtures/live/sdk and crates/claude-specs/fixtures/live/pty"
 update = "A failing line is provider drift or a wrong type: fix the type in crates/claude-protocol/src, never a live recording."
 cargo = [
   { package = "claude-protocol", kind = "lib", targets = ["claude_protocol"], features = [] },
@@ -723,7 +723,7 @@ cargo = [{ package = "testnet", modules = ["spec_analytics", "spec_edge", "spec_
 
 [[suite]]
 name = "claude-pty-live-compatibility"
-contract = "A real Claude PTY session still initializes, responds, takes a native decision, interrupts and resumes with the structure its recorded interpreter fixtures show."
+contract = "A real Claude PTY session still initializes, responds, takes a native decision, interrupts and resumes, and plays every scenario of the terminal corpus, asks answered in Claude's own attached terminal among them, with the structure its recorded interpreter fixtures show."
 paths = ["crates/qualification/tests/claude_pty_live.rs", "crates/qualification/tests/live"]
 recipe = "just live claude_pty all"
 boundary = "Provider adapter"
@@ -733,8 +733,8 @@ substituted = ["amux cloud"]
 time = "real"
 capabilities = ["Unix", "Claude credentials", "network", "may spend provider credits"]
 lane = "qualification"
-evidence = "the printed verdict table; AMUX_LIVE_KEEP=1 keeps the installation under /tmp"
-update = "Capture through claude-probe and graduate the recording deliberately."
+evidence = "the printed verdict table; the scenarios answered in Claude's own terminal write a timed capture of it to target/live/claude-terminal/<scenario>/; AMUX_LIVE_KEEP=1 keeps the installation under /tmp"
+update = "Join a passing run's capture into the terminal corpus with claude-probe join, deliberately."
 cargo = [{ package = "qualification", targets = ["claude_pty_live"], features = ["live"] }]
 
 [[suite]]

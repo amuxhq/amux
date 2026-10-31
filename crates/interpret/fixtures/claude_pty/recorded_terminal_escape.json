@@ -1,0 +1,20 @@
+{
+  "about": "A command asked about and refused with Escape in Claude's own terminal: the call and the turn end refused.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "../../../claude-specs/fixtures/live/pty/terminal_escape/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

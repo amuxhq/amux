@@ -11,8 +11,8 @@ use crate::fixtures;
 /// to its end; amux's, not Claude's.
 const TAILER_MARKER: &str = "amux.transcript_ready";
 
-/// The registered corpus and the live captures beside it.
-const ROOTS: [&str; 2] = ["pty", "live/pty"];
+/// The terminal corpus: amux's live captures.
+const ROOTS: [&str; 1] = ["live/pty"];
 
 enum Line {
     Row(String),
@@ -32,7 +32,7 @@ fn lines() -> Vec<(String, Line)> {
         recordings.extend(found);
     }
     assert!(
-        recordings.len() >= 31,
+        recordings.len() >= 29,
         "found only {} recordings",
         recordings.len()
     );

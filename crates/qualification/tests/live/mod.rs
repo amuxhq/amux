@@ -9,7 +9,10 @@
 //! instead (asks.rs); usage windows read, and what the agent and the host
 //! offer (offers.rs). Codex adds a permission change, a mode change and
 //! attach: its own app co-driving the agent beside amux's client, captured
-//! terminal by terminal (attach.rs). A scenario asserts protocol structure
+//! terminal by terminal (attach.rs). Each kind's corpus scenarios follow
+//! (corpus.rs for both Claude kinds, codex_corpus.rs), and terminal Claude
+//! adds its own (pty.rs) and asks answered in its own attached terminal
+//! (terminal.rs). A scenario asserts protocol structure
 //! and real effects, never generated prose: the item classes, asks,
 //! decisions, phase changes and turn ends the interpreter records have the
 //! shape it records for the matching probe recording, replayed from the
@@ -31,6 +34,8 @@ mod capture;
 mod codex_corpus;
 mod corpus;
 mod offers;
+mod pty;
+mod terminal;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
@@ -127,10 +132,18 @@ pub enum Scenario {
     AccessGrant,
     AutomaticReview,
     ApprovalScopes,
+    ModeCycle,
+    LongPrompt,
+    ApiError,
+    PermissionScoped,
+    PermissionDenied,
+    TerminalAllow,
+    TerminalEscape,
+    TerminalQuestion,
 }
 
 /// Every scenario, in the order a run takes them.
-pub const SCENARIOS: [Scenario; 54] = [
+pub const SCENARIOS: [Scenario; 62] = [
     Scenario::Initialize,
     Scenario::Respond,
     Scenario::Decide,
@@ -185,6 +198,14 @@ pub const SCENARIOS: [Scenario; 54] = [
     Scenario::AccessGrant,
     Scenario::AutomaticReview,
     Scenario::ApprovalScopes,
+    Scenario::ModeCycle,
+    Scenario::LongPrompt,
+    Scenario::ApiError,
+    Scenario::PermissionScoped,
+    Scenario::PermissionDenied,
+    Scenario::TerminalAllow,
+    Scenario::TerminalEscape,
+    Scenario::TerminalQuestion,
 ];
 
 impl Scenario {
@@ -244,6 +265,14 @@ impl Scenario {
             Scenario::AccessGrant => "access_grant",
             Scenario::AutomaticReview => "automatic_review",
             Scenario::ApprovalScopes => "approval_scopes",
+            Scenario::ModeCycle => "mode_cycle",
+            Scenario::LongPrompt => "long_prompt",
+            Scenario::ApiError => "api_error",
+            Scenario::PermissionScoped => "permission_scoped",
+            Scenario::PermissionDenied => "permission_denied",
+            Scenario::TerminalAllow => "terminal_allow",
+            Scenario::TerminalEscape => "terminal_escape",
+            Scenario::TerminalQuestion => "terminal_question",
         }
     }
 
@@ -254,10 +283,14 @@ impl Scenario {
     }
 
     /// Whether `kind` has what the scenario exercises: terminal Claude
-    /// reports no usage; only Codex has amux-set permissions and modes and
-    /// an app of its own to attach; the rest record headless Claude's
-    /// corpus (corpus.rs) or Codex's (codex_corpus.rs), a failing command,
-    /// an image and a message sent into the running turn both.
+    /// reports no usage or tool-server health and takes no permission,
+    /// model or effort from amux, and its capture cannot show how amux
+    /// answered a tool server's form on its hook (authored fixtures cover
+    /// that); only Codex has amux-set permissions and modes and an app of
+    /// its own to attach; the rest record each kind's corpus (corpus.rs for
+    /// both Claude kinds, pty.rs and terminal.rs for terminal Claude alone,
+    /// codex_corpus.rs for Codex), a failing command, an image and a
+    /// message sent into the running turn on every kind.
     fn applies(self, kind: Kind) -> bool {
         match self {
             Scenario::Initialize
@@ -268,11 +301,38 @@ impl Scenario {
             | Scenario::Plan
             | Scenario::Questions
             | Scenario::Catalogue
-            | Scenario::HostCatalogue => true,
-            Scenario::Usage
+            | Scenario::HostCatalogue
             | Scenario::FailingCommand
             | Scenario::Image
-            | Scenario::SteerFolded => kind != Kind::ClaudePty,
+            | Scenario::SteerFolded => true,
+            Scenario::Usage => kind != Kind::ClaudePty,
+            Scenario::Controls
+            | Scenario::Effort
+            | Scenario::ElicitationAccepted
+            | Scenario::ElicitationDeclined
+            | Scenario::ElicitationCancelled
+            | Scenario::ElicitationLinkAccepted
+            | Scenario::FailedToolServer => kind == Kind::ClaudeSdk,
+            Scenario::MultiTurn
+            | Scenario::Compacted
+            | Scenario::Cleared
+            | Scenario::ConfiguredTurn
+            | Scenario::QuestionAsked
+            | Scenario::QuestionEveryShape
+            | Scenario::QuestionDismissed
+            | Scenario::PlanReviewed
+            | Scenario::TaskList
+            | Scenario::BackgroundShell
+            | Scenario::SubagentTask
+            | Scenario::SignInProblem => kind != Kind::Codex,
+            Scenario::ModeCycle
+            | Scenario::LongPrompt
+            | Scenario::ApiError
+            | Scenario::PermissionScoped
+            | Scenario::PermissionDenied
+            | Scenario::TerminalAllow
+            | Scenario::TerminalEscape
+            | Scenario::TerminalQuestion => kind == Kind::ClaudePty,
             Scenario::Permission
             | Scenario::Mode
             | Scenario::Attach
@@ -295,7 +355,6 @@ impl Scenario {
             | Scenario::AccessGrant
             | Scenario::AutomaticReview
             | Scenario::ApprovalScopes => kind == Kind::Codex,
-            _ => kind == Kind::ClaudeSdk,
         }
     }
 }
@@ -840,9 +899,10 @@ impl Install {
             args.extend(["--allowedTools", "Bash"]);
         }
         // Terminal Claude takes the operator's default permission mode even
-        // with only project settings, and an `auto` default runs the decide
-        // recording's command without asking.
-        if self.kind == Kind::ClaudePty && scenario == Scenario::Decide {
+        // with only project settings, and an `auto` default runs commands
+        // without asking: a scenario starts in the default one unless it
+        // names its own.
+        if self.kind == Kind::ClaudePty && !extra.contains(&"--permission-mode") {
             args.extend(["--permission-mode", "default"]);
         }
         args.extend(extra);
@@ -1155,6 +1215,14 @@ impl Install {
             Scenario::AccessGrant => self.access_grant().await,
             Scenario::AutomaticReview => self.automatic_review().await,
             Scenario::ApprovalScopes => self.approval_scopes().await,
+            Scenario::ModeCycle => self.mode_cycle().await,
+            Scenario::LongPrompt => self.long_prompt().await,
+            Scenario::ApiError => self.api_error().await,
+            Scenario::PermissionScoped => self.permission_scoped().await,
+            Scenario::PermissionDenied => self.permission_denied().await,
+            Scenario::TerminalAllow => self.terminal_allow().await,
+            Scenario::TerminalEscape => self.terminal_escape().await,
+            Scenario::TerminalQuestion => self.terminal_question().await,
         }
     }
 
@@ -1600,9 +1668,11 @@ struct Shape {
 
 impl Shape {
     /// Terminal Claude's capture carries none of amux's keys, so its replay
-    /// reads idle from the interruption that cancels the last question until
-    /// the row of the reply amux typed in its place; the session, which typed
-    /// the reply the moment the interruption landed, reads working throughout.
+    /// cannot tell a question amux replied to instead from one dismissed:
+    /// it reads the last question dismissed, and idle from the interruption
+    /// that cancels it until the row of the reply amux typed in its place;
+    /// the session, which typed the reply the moment the interruption
+    /// landed, reads it replied and working throughout.
     fn reply_typed_at_once(&mut self) {
         if let Some(at) = self
             .phases
@@ -1611,6 +1681,27 @@ impl Shape {
             && self.phases[at + 1..].starts_with(&[Phase::Working, Phase::Idle, Phase::Working])
         {
             self.phases.drain(at + 2..at + 4);
+        }
+        if let Some(last) = self
+            .items
+            .iter_mut()
+            .rev()
+            .find(|item| item.starts_with("ask "))
+            && last == "ask dismissed"
+        {
+            *last = "ask replied".into();
+        }
+    }
+
+    /// A command amux typed into terminal Claude that Claude runs on its
+    /// own, as `/compact` is, writes no prompt row: its replay stays idle
+    /// where the session, which sent it, reads working until it is done.
+    fn command_typed_unseen(&mut self) {
+        if self
+            .phases
+            .ends_with(&[Phase::Idle, Phase::Working, Phase::Idle])
+        {
+            self.phases.truncate(self.phases.len() - 2);
         }
     }
 

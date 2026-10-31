@@ -1,5 +1,6 @@
-//! The Claude PTY interpreter against the recorded terminal sessions in
-//! claude-specs and authored facts for what no recording shows.
+//! The Claude PTY interpreter against the terminal sessions amux recorded
+//! live, two transcript captures and authored facts for what no recording
+//! shows.
 
 use std::path::{Path, PathBuf};
 
@@ -33,37 +34,37 @@ goldens! {
     plans_are_items_with_their_verdict => "plans",
     a_question_takes_a_reply_instead => "question_reply",
     a_question_of_several_can_be_skipped => "question_skip",
-    recorded_prompt => "recorded_prompt",
-    recorded_prompt_multiline => "recorded_prompt_multiline",
-    recorded_tools => "recorded_tools",
-    recorded_interrupt => "recorded_interrupt",
-    recorded_mode_cycle => "recorded_mode_cycle",
-    recorded_permission_allow_once => "recorded_permission_allow_once",
-    recorded_permission_allow_scoped => "recorded_permission_allow_scoped",
-    recorded_permission_deny_feedback => "recorded_permission_deny_feedback",
-    recorded_plan_approve => "recorded_plan_approve",
-    recorded_plan_auto => "recorded_plan_auto",
-    recorded_plan_request_changes => "recorded_plan_request_changes",
-    recorded_question_single => "recorded_question_single",
-    recorded_question_multi_other => "recorded_question_multi_other",
-    recorded_question_mixed => "recorded_question_mixed",
-    recorded_question_tabs => "recorded_question_tabs",
-    recorded_question_other_single => "recorded_question_other_single",
-    recorded_compact_relink => "recorded_compact_relink",
-    recorded_clear_relink => "recorded_clear_relink",
     recorded_task_tools => "recorded_task_tools",
-    recorded_socket_delivery => "recorded_socket_delivery",
-    recorded_background_shell => "recorded_background_shell",
-    recorded_file_changes_and_failure => "recorded_file_changes_and_failure",
-    recorded_image => "recorded_image",
-    recorded_question_cancelled => "recorded_question_cancelled",
+    recorded_text_turn => "recorded_text_turn",
+    recorded_permission_callback => "recorded_permission_callback",
+    recorded_interrupted => "recorded_interrupted",
+    recorded_resumed => "recorded_resumed",
+    recorded_live_plan => "recorded_live_plan",
+    recorded_live_questions => "recorded_live_questions",
+    recorded_multi_turn => "recorded_multi_turn",
+    recorded_compacted => "recorded_compacted",
+    recorded_cleared => "recorded_cleared",
+    recorded_configured_turn => "recorded_configured_turn",
+    recorded_question_asked => "recorded_question_asked",
     recorded_question_every_shape => "recorded_question_every_shape",
-    recorded_subagent => "recorded_subagent",
+    recorded_question_dismissed => "recorded_question_dismissed",
+    recorded_plan_reviewed => "recorded_plan_reviewed",
+    recorded_failing_command => "recorded_failing_command",
     recorded_task_list => "recorded_task_list",
-    recorded_thinking => "recorded_thinking",
-    recorded_steer_queued => "recorded_steer_queued",
-    recorded_api_error => "recorded_api_error",
+    recorded_background_shell => "recorded_background_shell",
+    recorded_subagent_task => "recorded_subagent_task",
+    recorded_image => "recorded_image",
     recorded_sign_in_problem => "recorded_sign_in_problem",
+    recorded_steer_folded => "recorded_steer_folded",
+    recorded_mode_cycle => "recorded_mode_cycle",
+    recorded_long_prompt => "recorded_long_prompt",
+    recorded_api_error => "recorded_api_error",
+    recorded_permission_scoped => "recorded_permission_scoped",
+    recorded_permission_denied => "recorded_permission_denied",
+    recorded_terminal_allow => "recorded_terminal_allow",
+    recorded_terminal_escape => "recorded_terminal_escape",
+    recorded_terminal_question => "recorded_terminal_question",
+    recorded_socket_delivery => "recorded_socket_delivery",
     calls_open_on_their_rows_and_hooks_make_none => "calls_open_on_their_rows",
     asks_open_on_the_hook_and_close_only_on_facts => "ask_rules",
     a_late_row_for_amuxs_own_prompt_leaves_the_ask_open => "late_prompt_row",
@@ -76,7 +77,6 @@ goldens! {
     background_subagent_answers_on_its_agent_row => "subagent_notification",
     boundaries_carry_the_provider_session_and_version => "boundaries",
     rows_no_recording_shows => "rows",
-    recorded_steer_send_now => "recorded_steer_send_now",
     a_tool_servers_form_or_link_is_answered_through_its_hook => "elicitation",
     replies_stream_as_claude_draws_them => "streaming",
     another_conversations_hooks_are_let_go => "switched_away_hooks",
@@ -84,9 +84,6 @@ goldens! {
     a_form_is_left_to_claudes_dialog_while_someone_watches_its_terminal => "form_left_to_terminal",
     a_refusal_claude_made_on_its_own_lands_on_the_call => "permission_denied",
     a_pasted_prompt_reads_as_what_was_sent => "pasted_prompt",
-    recorded_question_skip_reply => "recorded_question_skip_reply",
-    recorded_live_plan => "recorded_live_plan",
-    recorded_live_questions => "recorded_live_questions",
 }
 
 #[test]
@@ -449,7 +446,7 @@ fn plan_ask_on(version: &str, offered: Option<wire::Catalogue>) -> wire::PlanAsk
 fn plan_ask_launched(version: &str, launched: impl FnOnce(&mut wire::AgentSpec)) -> wire::PlanAsk {
     use prost::Message as _;
     let mut script =
-        interpret::fixture_script::<ClaudePty>(&fixtures().join("recorded_plan_auto.json"))
+        interpret::fixture_script::<ClaudePty>(&fixtures().join("recorded_plan_reviewed.json"))
             .unwrap();
     launched(&mut script.spec);
     let (mut state, _) = ClaudePty::initial(&script.spec);

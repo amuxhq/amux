@@ -1,0 +1,24 @@
+{
+  "spec": "long_prompt",
+  "recorded": {
+    "provider": "claude",
+    "version": "2.1.316",
+    "model": "claude-haiku-5-5",
+    "at": "2026-10-31T13:29:42.934452Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:b12ec0bca1e65053777d8c47d45e52ac1f485179da8edc691c16affe629bbbaf",
+    "spawn.jsonl": "sha256:8c36e809d284c699df099bcb29389aa038a58a71172812f6d32145efd65deff6"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 45,
+    "personal_identifiers": 0
+  },
+  "session_ids": [
+    "46af795f-1b20-400a-944d-df1533af2d54"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

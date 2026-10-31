@@ -1,7 +1,8 @@
-//! The headless Claude corpus: sessions amux drives so that what headless
-//! Claude says in them is recorded, joined to claude-specs's live captures
-//! (`claude-probe join`), and replayed by the interpreter's goldens, the
-//! views' goldens, the fakes' conformance run and the strict decode tests.
+//! The Claude corpus: sessions amux drives so that what Claude says in them,
+//! headless or in a terminal, is recorded, joined to claude-specs's live
+//! captures (`claude-probe join`), and replayed by the interpreter's
+//! goldens, the views' goldens, the fakes' conformance run and the strict
+//! decode tests. What only terminal Claude does is in pty.rs.
 //!
 //! Each is a thing a person does through amux (a conversation compacted or
 //! cleared, a model, permission or effort changed, a question or a tool
@@ -39,7 +40,8 @@ fn arm(of: agent_input::Of) -> wire::AgentInput {
     AgentInput { of: Some(of) }
 }
 
-fn sdk_items(log: &Log) -> Vec<Claude> {
+/// The session's items: both Claude kinds write the same ones.
+pub(super) fn claude_items(log: &Log) -> Vec<Claude> {
     log.ordered()
         .into_iter()
         .filter_map(|item| match ItemBody::decode(Kind::ClaudeSdk, &item.body) {
@@ -50,14 +52,14 @@ fn sdk_items(log: &Log) -> Vec<Claude> {
 }
 
 fn boundaries(log: &Log, kind: wire::BoundaryKind) -> usize {
-    sdk_items(log)
+    claude_items(log)
         .iter()
         .filter(|item| matches!(item, Claude::Boundary(boundary) if boundary.kind() == kind))
         .count()
 }
 
-fn tools(log: &Log) -> Vec<wire::ToolCall> {
-    sdk_items(log)
+pub(super) fn tools(log: &Log) -> Vec<wire::ToolCall> {
+    claude_items(log)
         .into_iter()
         .filter_map(|item| match item {
             Claude::Tool(call) => Some(call),
@@ -68,7 +70,7 @@ fn tools(log: &Log) -> Vec<wire::ToolCall> {
 
 /// How each tool-server form and link was closed, in order.
 fn forms(log: &Log) -> Vec<wire::AskOutcome> {
-    sdk_items(log)
+    claude_items(log)
         .into_iter()
         .filter_map(|item| match item {
             Claude::Ask(ask) => ask.closed.map(|closed| closed.outcome()),
@@ -101,10 +103,10 @@ fn question_answer(answers: Vec<wire::QuestionResponse>) -> Answer {
 }
 
 impl Install {
-    /// A headless agent on `model`, with more of amux's options and of
-    /// Claude's own arguments, taking input; the verdict when it cannot run
-    /// turns here.
-    async fn headless(
+    /// A Claude agent of the run's kind on `model`, with more of amux's
+    /// options and of Claude's own arguments, taking input; the verdict when
+    /// it cannot run turns here.
+    pub(super) async fn claude_agent(
         &self,
         scenario: Scenario,
         model: &str,
@@ -188,7 +190,7 @@ impl Install {
     pub(super) async fn multi_turn(&self) -> Result<Verdict, String> {
         let scenario = Scenario::MultiTurn;
         let (_, follow) = match self
-            .headless(scenario, super::CLAUDE_MODEL, &[], &[])
+            .claude_agent(scenario, super::CLAUDE_MODEL, &[], &[])
             .await?
         {
             Ok(ready) => ready,
@@ -215,7 +217,7 @@ impl Install {
     pub(super) async fn compacted(&self) -> Result<Verdict, String> {
         let scenario = Scenario::Compacted;
         let (_, follow) = match self
-            .headless(scenario, super::CLAUDE_MODEL, &[], &[])
+            .claude_agent(scenario, super::CLAUDE_MODEL, &[], &[])
             .await?
         {
             Ok(ready) => ready,
@@ -235,18 +237,35 @@ impl Install {
             2,
         )
         .await?;
-        self.turn(scenario, &follow, "/compact", 3).await?;
-        if boundaries(&follow.snapshot(), wire::BoundaryKind::Compacted) == 0 {
-            return Err("compacting left no compacted boundary".into());
+        // Headless Claude ends a turn for the command; in a terminal it is
+        // Claude's own and ends none, and its rows land after the hook that
+        // reports the new conversation.
+        self.send(scenario, "/compact").await?;
+        follow
+            .until(TURN, "the compaction", |log| {
+                boundaries(log, wire::BoundaryKind::Compacted) > 0
+                    && claude_items(log)
+                        .iter()
+                        .any(|item| matches!(item, Claude::Compaction(_)))
+                    && log.phase() == wire::Phase::Idle
+            })
+            .await?;
+        if self.kind == Kind::ClaudeSdk {
+            expect_outcome(follow.turn_end(3).await?, wire::TurnOutcome::Completed)?;
+            return self.judged(scenario, &follow);
         }
-        self.judged(scenario, &follow)
+        self.note_model(&follow);
+        let mut live = follow.snapshot().shape(self.kind);
+        live.command_typed_unseen();
+        judge(&self.captured(scenario)?.shape(self.kind), &live)?;
+        Ok(Verdict::Pass)
     }
 
     /// A turn, then the conversation cleared: the session reads cleared.
     pub(super) async fn cleared(&self) -> Result<Verdict, String> {
         let scenario = Scenario::Cleared;
         let (agent, follow) = match self
-            .headless(scenario, super::CLAUDE_MODEL, &[], &[])
+            .claude_agent(scenario, super::CLAUDE_MODEL, &[], &[])
             .await?
         {
             Ok(ready) => ready,
@@ -274,7 +293,7 @@ impl Install {
     pub(super) async fn controls(&self) -> Result<Verdict, String> {
         let scenario = Scenario::Controls;
         let (agent, follow) = match self
-            .headless(scenario, super::CLAUDE_MODEL, &[], &[])
+            .claude_agent(scenario, super::CLAUDE_MODEL, &[], &[])
             .await?
         {
             Ok(ready) => ready,
@@ -324,7 +343,7 @@ impl Install {
     pub(super) async fn effort(&self) -> Result<Verdict, String> {
         let scenario = Scenario::Effort;
         let (agent, follow) = match self
-            .headless(scenario, "sonnet", &["--effort", "low"], &[])
+            .claude_agent(scenario, "sonnet", &["--effort", "low"], &[])
             .await?
         {
             Ok(ready) => ready,
@@ -372,7 +391,7 @@ impl Install {
             "summarized",
         ];
         let (_, follow) = match self
-            .headless(scenario, "claude-haiku-4-5-20251001", &[], &extra)
+            .claude_agent(scenario, "claude-haiku-4-5-20251001", &[], &extra)
             .await?
         {
             Ok(ready) => ready,
@@ -387,7 +406,7 @@ impl Install {
         .await?;
         let thought = follow.snapshot().ordered().into_iter().any(|item| {
             matches!(
-                ItemBody::decode(Kind::ClaudeSdk, &item.body),
+                ItemBody::decode(self.kind, &item.body),
                 ItemBody::Claude(Claude::Thinking(_))
             ) && !item.text.is_empty()
         });
@@ -401,7 +420,7 @@ impl Install {
     pub(super) async fn question_asked(&self) -> Result<Verdict, String> {
         let scenario = Scenario::QuestionAsked;
         let (agent, follow) = match self
-            .headless(scenario, super::CLAUDE_MODEL, &[], &[])
+            .claude_agent(scenario, super::CLAUDE_MODEL, &[], &[])
             .await?
         {
             Ok(ready) => ready,
@@ -440,7 +459,7 @@ impl Install {
     pub(super) async fn question_every_shape(&self) -> Result<Verdict, String> {
         let scenario = Scenario::QuestionEveryShape;
         let (agent, follow) = match self
-            .headless(scenario, super::CLAUDE_MODEL, &[], &[])
+            .claude_agent(scenario, super::CLAUDE_MODEL, &[], &[])
             .await?
         {
             Ok(ready) => ready,
@@ -501,7 +520,7 @@ impl Install {
     pub(super) async fn question_dismissed(&self) -> Result<Verdict, String> {
         let scenario = Scenario::QuestionDismissed;
         let (agent, follow) = match self
-            .headless(scenario, super::CLAUDE_MODEL, &[], &[])
+            .claude_agent(scenario, super::CLAUDE_MODEL, &[], &[])
             .await?
         {
             Ok(ready) => ready,
@@ -537,7 +556,7 @@ impl Install {
         let readme = self.project(scenario)?.join("README.md");
         std::fs::write(&readme, "CURRENT\n").map_err(|error| error.to_string())?;
         let (agent, follow) = match self
-            .headless(
+            .claude_agent(
                 scenario,
                 super::CLAUDE_MODEL,
                 &[],
@@ -594,7 +613,7 @@ impl Install {
             },
         )
         .await?;
-        let verdicts: Vec<wire::PlanVerdict> = sdk_items(&follow.snapshot())
+        let verdicts: Vec<wire::PlanVerdict> = claude_items(&follow.snapshot())
             .into_iter()
             .filter_map(|item| match item {
                 Claude::Plan(plan) => Some(plan.verdict()),
@@ -631,7 +650,7 @@ impl Install {
             extra.extend(["--allowedTools", TOOL]);
         }
         let (agent, follow) = match self
-            .headless(scenario, super::CLAUDE_MODEL, &[], &extra)
+            .claude_agent(scenario, super::CLAUDE_MODEL, &[], &extra)
             .await?
         {
             Ok(ready) => ready,
@@ -744,7 +763,7 @@ impl Install {
         })
         .to_string();
         let (_, follow) = match self
-            .headless(
+            .claude_agent(
                 scenario,
                 super::CLAUDE_MODEL,
                 &[],
@@ -782,7 +801,7 @@ impl Install {
         state: wire::ToolState,
     ) -> Result<Verdict, String> {
         let (agent, follow) = match self
-            .headless(scenario, super::CLAUDE_MODEL, &[], extra)
+            .claude_agent(scenario, super::CLAUDE_MODEL, &[], extra)
             .await?
         {
             Ok(ready) => ready,
@@ -828,7 +847,7 @@ impl Install {
     pub(super) async fn task_list(&self) -> Result<Verdict, String> {
         let scenario = Scenario::TaskList;
         let (agent, follow) = match self
-            .headless(
+            .claude_agent(
                 scenario,
                 super::CLAUDE_MODEL,
                 &[],
@@ -850,7 +869,7 @@ impl Install {
             self.by_the_way(ask)
         })
         .await?;
-        let tasks = follow.snapshot().state(Kind::ClaudeSdk).tasks;
+        let tasks = follow.snapshot().state(self.kind).tasks;
         let read: Vec<_> = tasks
             .entries
             .iter()
@@ -910,7 +929,7 @@ impl Install {
         std::fs::write(self.project(scenario)?.join("square.png"), SQUARE_PNG)
             .map_err(|error| error.to_string())?;
         let (agent, follow) = match self
-            .headless(scenario, super::CLAUDE_MODEL, &[], &[])
+            .claude_agent(scenario, super::CLAUDE_MODEL, &[], &[])
             .await?
         {
             Ok(ready) => ready,
@@ -935,11 +954,12 @@ impl Install {
                 text: "Name the color of the attached image in one word. Then read square.png \
                        in the working directory with the Read tool and say whether it is the \
                        same image."
-                    .into(),
-                attachments: vec![wire::Attachment {
-                    of: Some(wire::attachment::Of::Image(blob)),
-                }],
-            })),
+                        .into(),
+                    attachments: vec![wire::Attachment {
+                        of: Some(wire::attachment::Of::Image(blob)),
+                    }],
+                }),
+            ),
         )
         .await?;
         self.settle(&agent, &follow, "the image to be read", |ask| {
@@ -956,14 +976,21 @@ impl Install {
     }
 
     /// A rejected credential: the turn fails and the sign-in reads failed.
+    /// Terminal Claude asks in its own terminal whether to use an API key
+    /// it finds in its environment, and remembers the answer in the
+    /// owner's own settings; one its key helper prints it takes unasked.
     pub(super) async fn sign_in_problem(&self) -> Result<Verdict, String> {
         let scenario = Scenario::SignInProblem;
-        let settings = serde_json::json!({
-            "env": {
-                "ANTHROPIC_API_KEY": "sk-ant-api03-amux-live-invalid",
-                "CLAUDE_CODE_MAX_RETRIES": "2",
-            },
-        })
+        const KEY: &str = "sk-ant-api03-amux-live-invalid";
+        let settings = match self.kind {
+            Kind::ClaudePty => serde_json::json!({
+                "apiKeyHelper": format!("echo {KEY}"),
+                "env": {"CLAUDE_CODE_MAX_RETRIES": "2"},
+            }),
+            _ => serde_json::json!({
+                "env": {"ANTHROPIC_API_KEY": KEY, "CLAUDE_CODE_MAX_RETRIES": "2"},
+            }),
+        }
         .to_string();
         let agent = self
             .create_as(
@@ -982,13 +1009,20 @@ impl Install {
         .await?;
         follow.turn_end(1).await?;
         let kind = self.kind;
+        // Terminal Claude reports no sign-in: its problem is the error row
+        // written in place of an answer.
         follow
             .until(TURN, "the sign-in to read the problem", |log| {
                 log.phase() == wire::Phase::Idle
-                    && !matches!(
-                        log.state(kind).sign_in.state(),
-                        wire::SignInState::SignedIn | wire::SignInState::Unknown
-                    )
+                    && match kind {
+                        Kind::ClaudePty => claude_items(log)
+                            .iter()
+                            .any(|item| matches!(item, Claude::ApiError(_))),
+                        _ => !matches!(
+                            log.state(kind).sign_in.state(),
+                            wire::SignInState::SignedIn | wire::SignInState::Unknown
+                        ),
+                    }
             })
             .await?;
         self.judged(scenario, &follow)
@@ -1000,7 +1034,7 @@ impl Install {
     pub(super) async fn steer_folded(&self) -> Result<Verdict, String> {
         let scenario = Scenario::SteerFolded;
         let (agent, follow) = match self
-            .headless(
+            .claude_agent(
                 scenario,
                 super::CLAUDE_MODEL,
                 &[],
@@ -1042,7 +1076,7 @@ impl Install {
         follow
             .until(TURN, "the session to settle", |log| settled(kind, log))
             .await?;
-        if !sdk_items(&follow.snapshot())
+        if !claude_items(&follow.snapshot())
             .iter()
             .any(|item| matches!(item, Claude::Steer(_)))
         {

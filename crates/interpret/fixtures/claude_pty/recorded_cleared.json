@@ -1,0 +1,20 @@
+{
+  "about": "A turn, then the conversation cleared from amux: the session reads cleared.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "../../../claude-specs/fixtures/live/pty/cleared/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

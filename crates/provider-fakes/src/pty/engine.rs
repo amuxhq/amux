@@ -355,8 +355,8 @@ struct Engine {
     prompts: u64,
     turns: u64,
     last_text: String,
-    /// The session has started: the first prompt arrived.
-    started: bool,
+    /// The session's first rows are written: the first prompt arrived.
+    begun: bool,
     offers_auto_mode: bool,
     untrusted_folder: bool,
     /// File tools change the files they name.
@@ -416,7 +416,7 @@ impl Engine {
             prompts: 0,
             turns: 0,
             last_text: String::new(),
-            started: false,
+            begun: false,
         }
     }
 
@@ -454,14 +454,10 @@ impl Engine {
             let _ = stdout.write_all(BRACKETED_PASTE_ON);
             let _ = stdout.flush();
         }
-        if self.untrusted_folder {
-            if !self.trust_folder().await {
-                return 1;
-            }
-            // Trusted, Claude starts its session at once, as 2.1.283 does,
-            // rather than at the first prompt.
-            self.session_start();
+        if self.untrusted_folder && !self.trust_folder().await {
+            return 1;
         }
+        self.session_start();
         self.screen("Claude Code (scripted)");
         for input in kept {
             self.handle(input);
@@ -470,7 +466,7 @@ impl Engine {
             if !self.busy
                 && let Some(next) = self.queue.pop_front()
             {
-                self.session_start();
+                self.begin();
                 if next.text.trim() == "/clear" {
                     self.clear();
                     continue;
@@ -488,12 +484,10 @@ impl Engine {
         }
     }
 
-    /// Claude starts its session, runs the SessionStart hooks and writes
-    /// its first rows only when the first prompt arrives.
+    /// Claude runs the SessionStart hooks at launch (Claude 2.1.316), but
+    /// writes the session's first rows only when the first prompt arrives:
+    /// a session stopped before then has no transcript to resume.
     fn session_start(&mut self) {
-        if std::mem::replace(&mut self.started, true) {
-            return;
-        }
         let source = if self.args.resume.is_some() {
             "resume"
         } else {
@@ -504,6 +498,12 @@ impl Engine {
             "model": self.model,
             "source": source,
         }));
+    }
+
+    fn begin(&mut self) {
+        if std::mem::replace(&mut self.begun, true) {
+            return;
+        }
         self.row(json!({
             "type": "permission-mode",
             "permissionMode": self.mode,
@@ -749,6 +749,19 @@ impl Engine {
         if matches!(event, "SessionEnd") {
             payload["prompt_id"] = json!(self.prompt_id);
         }
+        // The effort the running model works at, on the hooks of a turn's
+        // work (Claude 2.1.316).
+        if matches!(
+            event,
+            "PreToolUse"
+                | "PermissionRequest"
+                | "PostToolUse"
+                | "PostToolUseFailure"
+                | "Stop"
+                | "SubagentStop"
+        ) {
+            payload["effort"] = json!({"level": "medium"});
+        }
         if matches!(
             event,
             "SessionStart"
@@ -978,7 +991,9 @@ impl Engine {
                 "type": "message",
                 "usage": usage,
             },
-            "perTurnEffort": null,
+            "advisorModel": "claude-opus-5-5",
+            "effort": "medium",
+            "perTurnEffort": "medium",
             "requestId": request,
             "requestRef": format!("{request}-ref"),
             "requestedModel": self.model,
@@ -1322,6 +1337,8 @@ impl Engine {
                     "tool_input": input,
                     "tool_name": name,
                 }));
+                // Claude 2.1.316 writes the call's row while its menu shows.
+                self.call_row(request, message, &id, &name, &input);
                 let (menu, no) = if self.offers_auto_mode {
                     (
                         "Do you want to proceed?\n1. Yes\n2. Yes, and don't ask again\n3. Yes, and switch to auto mode\n4. No\nEsc to cancel",
@@ -1339,10 +1356,7 @@ impl Engine {
                     match self.menu_key().await {
                         None => match self.decided.take() {
                             Some(decided) => break Decision::of(&decided["decision"]),
-                            None => {
-                                self.call_row(request, message, &id, &name, &input);
-                                return self.abandon(&id, &name, &input, &tool);
-                            }
+                            None => return self.abandon(&id, &name, &input, &tool),
                         },
                         Some(Key::Escape) => break Decision::no(),
                         Some(Key::Char(c)) if c == no => break Decision::no(),
@@ -1351,7 +1365,6 @@ impl Engine {
                         Some(_) => {}
                     }
                 };
-                self.call_row(request, message, &id, &name, &input);
                 match decision {
                     Decision::Allow { mode } => {
                         if let Some(mode) = mode {

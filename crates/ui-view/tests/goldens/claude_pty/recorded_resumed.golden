@@ -1,0 +1,37 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 14 recorded 12: fact Transcript type=user uuid=03ec20dc-2545-421c-9348-34286b607a15
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 46 recorded 44: fact Transcript type=system subtype=turn_duration uuid=248eba56-4d3e-4a65-b6b7-29110a71ffbe
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 61 recorded 59: fact Transcript type=user uuid=03ec20dc-2545-421c-9348-34286b607a15
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 81 recorded 79: fact Transcript type=system subtype=turn_duration uuid=248eba56-4d3e-4a65-b6b7-29110a71ffbe
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 90 recorded 88: fact Transcript type=user uuid=7d0e91fd-4d69-4af8-b7e7-34ddc08c2e81
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 96 recorded 94: fact Transcript type=system subtype=turn_duration uuid=025b0bf1-37db-42ae-9b12-549cb65d4424
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 03ec20dc-2545-421c-9348-34286b607a15 Prompt { text: [Text("Reply with the single word one and nothing else.")], steered: false }
+     3 stream:d0242bf7-80b0-4140-8fdc-937a68139159 Prose { text: [Text("one")], streaming: false, working_note: false }
+     4 turn:1 TurnEnd { duration_ms: Some(833), failed: false }
+     5 boundary:2 Boundary { kind: Resumed, cause: "" }
+     6 38a0048e-af32-4d25-b86f-f07d0dc215e7 Prose { text: [Text("one")], streaming: false, working_note: false }
+     7 turn:2 TurnEnd { duration_ms: Some(833), failed: false }
+     8 7d0e91fd-4d69-4af8-b7e7-34ddc08c2e81 Prompt { text: [Text("Reply with the single word two and nothing else.")], steered: false }
+     9 stream:257b60ed-3de6-45be-842a-821295df892d Prose { text: [Text("two")], streaming: false, working_note: false }
+    10 turn:3 TurnEnd { duration_ms: Some(848), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 35619, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

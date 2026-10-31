@@ -1,0 +1,20 @@
+{
+  "about": "A command that exits non-zero, asked about and allowed.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "../../../claude-specs/fixtures/live/pty/failing_command/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

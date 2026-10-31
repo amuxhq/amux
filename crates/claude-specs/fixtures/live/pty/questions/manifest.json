@@ -2,21 +2,21 @@
   "spec": "questions",
   "recorded": {
     "provider": "claude",
-    "version": "2.1.312",
+    "version": "2.1.316",
     "model": "claude-haiku-5-5",
-    "at": "2026-10-29T22:33:46.221113Z"
+    "at": "2026-10-31T13:36:41.720443Z"
   },
   "content": {
-    "io.jsonl": "sha256:218e3c1b019624346472370855fed46de06cf524bf8a968d3c4113ee63d0f71d",
-    "spawn.jsonl": "sha256:f10b9b209606022f79e2ead44cb11d664fec88b109ceb04bdc45fa0e648f03cb"
+    "io.jsonl": "sha256:f4c2e54daed40421ad83d5b32260625ce31e587f9711be52fcac1f2dcb589c40",
+    "spawn.jsonl": "sha256:68e16ac92af4b867896bd6cc548f1a4070960af503337b1e8bad244ec5c3ac8d"
   },
   "redaction": {
     "secrets": 0,
-    "machine_paths": 64,
+    "machine_paths": 65,
     "personal_identifiers": 0
   },
   "session_ids": [
-    "745f7ffa-26b5-4bc0-a2cf-fa1295643393"
+    "bc16698b-f82b-4449-9025-51e504820b2f"
   ],
   "provider_extra": {
     "driven_by": "amux's interpreter, in the live qualification lane"

@@ -37,6 +37,7 @@ tagged_enum! {
         "file-history-snapshot" => FileHistorySnapshot(FileHistorySnapshotRow),
         "file-history-delta" => FileHistoryDelta(FileHistoryDeltaRow),
         "tools-used" => ToolsUsed(ToolsUsedRow),
+        "cost-state" => CostState(CostStateRow),
     }
 }
 
@@ -75,6 +76,7 @@ impl Row {
             Self::AgentName(row) => Some(&row.session_id),
             Self::LastPrompt(row) => Some(&row.session_id),
             Self::QueueOperation(row) => Some(&row.session_id),
+            Self::CostState(row) => Some(&row.session_id),
             Self::System(SystemRow::Unknown(raw)) | Self::Unknown(raw) => {
                 raw.field("sessionId")?.as_str()
             }
@@ -138,7 +140,9 @@ pub struct UserRow {
     #[serde(flatten)]
     pub envelope: Envelope,
     pub message: MessageParam,
-    #[serde(default = "crate::absent::prompt_id")]
+    /// Absent on the rows of a command Claude runs itself, such as
+    /// `/clear` (Claude 2.1.316).
+    #[serde(default)]
     pub prompt_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<PermissionMode>,
@@ -200,6 +204,7 @@ tagged_enum! {
         "stop_hook_summary" => StopHookSummary(StopHookSummary),
         "compact_boundary" => CompactBoundary(CompactBoundary),
         "local_command" => LocalCommand(LocalCommand),
+        "informational" => Informational(Informational),
     }
 }
 
@@ -210,6 +215,7 @@ impl SystemRow {
             Self::StopHookSummary(row) => Some(&row.envelope),
             Self::CompactBoundary(row) => Some(&row.envelope),
             Self::LocalCommand(row) => Some(&row.envelope),
+            Self::Informational(row) => Some(&row.envelope),
             Self::Unknown(_) => None,
         }
     }
@@ -285,6 +291,21 @@ pub struct LocalCommand {
     pub level: String,
     #[serde(default = "crate::absent::is_meta")]
     pub is_meta: bool,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
+/// A notice Claude shows the person, such as what the permission mode
+/// it offers does (Claude 2.1.316).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Informational {
+    #[serde(flatten)]
+    pub envelope: Envelope,
+    #[serde(default = "crate::absent::content")]
+    pub content: String,
+    #[serde(default = "crate::absent::level")]
+    pub level: String,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -397,6 +418,16 @@ pub struct AgentNameRow {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolsUsedRow {
+    pub session_id: String,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
+/// What the session has cost so far, for Claude's own interface (Claude
+/// 2.1.316).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CostStateRow {
     pub session_id: String,
     #[serde(flatten)]
     pub extensions: Extensions,

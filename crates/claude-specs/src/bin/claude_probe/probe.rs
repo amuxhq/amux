@@ -268,6 +268,13 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     let (mut spawns, mut events) = live::read_capture(capture)?;
+    // A session whose every request failed writes no row naming its model:
+    // the one it was launched on stands in.
+    let launched = spawns.iter().find_map(|row| {
+        let argv = row["argv"].as_array()?;
+        let at = argv.iter().position(|arg| arg == "--model")?;
+        argv.get(at + 1)?.as_str().map(str::to_owned)
+    });
     if pty {
         // A terminal capture is the terminal session. The headless Claude
         // the agent asks for the host's catalogue runs beside it under its
@@ -317,7 +324,7 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     let root = claude_specs::specs::live_fixtures_root().join(if pty { "pty" } else { "sdk" });
     let destination = live::join(&root, name, "claude", events, spawns, &rules, |events| {
-        let facts = captured_facts(events, pty)?;
+        let facts = captured_facts(events, pty, launched)?;
         let mut extra = serde_json::Map::new();
         if facts.models.len() > 1 {
             extra.insert("models".to_owned(), facts.models.into());
@@ -346,6 +353,7 @@ struct CapturedFacts {
 fn captured_facts(
     events: &[replay_support::IoEvent],
     pty: bool,
+    launched: Option<String>,
 ) -> Result<CapturedFacts, Box<dyn std::error::Error>> {
     let mut version = None;
     let mut models = BTreeMap::<String, usize>::new();
@@ -394,6 +402,7 @@ fn captured_facts(
         .iter()
         .max_by_key(|(_, rows)| **rows)
         .map(|(model, _)| model.clone())
+        .or(launched)
         .ok_or("the capture shows no model")?;
     Ok(CapturedFacts {
         version: Version::parse(&version.ok_or("the capture shows no Claude version")?)?,

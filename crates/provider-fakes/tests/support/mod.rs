@@ -24,7 +24,7 @@ pub fn corpus(kind: Kind) -> &'static Corpus {
     let (cell, root) = match kind {
         Kind::ClaudeSdk => (&SDK, "../claude-specs/fixtures/live/sdk"),
         Kind::Codex => (&CODEX, "../codex-specs/fixtures/live"),
-        Kind::ClaudePty => (&PTY, "../claude-specs/fixtures/pty"),
+        Kind::ClaudePty => (&PTY, "../claude-specs/fixtures/live/pty"),
     };
     cell.get_or_init(|| {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(root);

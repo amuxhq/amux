@@ -1,0 +1,20 @@
+{
+  "about": "A question left open and the turn interrupted from amux: the question closes with the turn.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "../../../claude-specs/fixtures/live/pty/question_dismissed/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

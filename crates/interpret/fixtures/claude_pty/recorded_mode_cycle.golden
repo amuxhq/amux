@@ -6,14 +6,21 @@ snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
-item boundary:1 boundary final at=1793309033276 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on=- at=1793309033276 asks=[] session=3346d5ac-ef28-4353-a020-b371b1eb2926 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+item boundary:1 boundary final at=1793453271447 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1793453271447 asks=[] session=3c0b0145-d26d-47a6-a255-01e469a7e013 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
-snapshot IDLE queue=[] working_on=- at=1793309033317 asks=[] session=3346d5ac-ef28-4353-a020-b371b1eb2926 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=acceptEdits context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
-## 14 recorded 12: fact Transcript type=user uuid=80b6d75e-103f-426c-a13e-e64b06dadefe
-item 80b6d75e-103f-426c-a13e-e64b06dadefe prompt final at=1793309033495 text="Reply exactly MODE_CYCLED and nothing else."
-snapshot WORKING queue=[] working_on=- at=1793309033495 asks=[] session=3346d5ac-ef28-4353-a020-b371b1eb2926 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=acceptEdits context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
-## 36 recorded 34: fact Hook hook_event_name=MessageDisplay
-item stream:70403e6c-d1db-4bd8-be28-82d2ca0feed3 message open at=1793309034844 text="MODE_CYCLED"
+snapshot IDLE queue=[] working_on=- at=1793453272032 asks=[] session=3c0b0145-d26d-47a6-a255-01e469a7e013 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=acceptEdits context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 13 recorded 11: fact Transcript type=user uuid=30f539f9-4484-4628-b077-edcb0c8ba864
+item 30f539f9-4484-4628-b077-edcb0c8ba864 prompt final at=1793453272206 text="Reply with the single word pong and nothing else."
+snapshot WORKING queue=[] working_on=- at=1793453272206 asks=[] session=3c0b0145-d26d-47a6-a255-01e469a7e013 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=acceptEdits context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 37 recorded 35: fact Hook hook_event_name=MessageDisplay
+item stream:140a7f9c-32dd-4fff-908e-bcac12337f58 message open at=1793453272874 text="pong"
 ## 38 recorded 36: fact Hook hook_event_name=Stop
-snapshot WORKING queue=[] working_on=- at=1793309034845 asks=[] session=3346d5ac-ef28-4353-a020-b371b1eb2926 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=acceptEdits context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1793453272874 asks=[] session=3c0b0145-d26d-47a6-a255-01e469a7e013 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=acceptEdits context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 42 recorded 40: fact Transcript type=assistant uuid=f7f6dc52-8cd7-471d-ac3a-d5a02017d2c1
+item stream:140a7f9c-32dd-4fff-908e-bcac12337f58 message final at=1793453273041 text="pong"
+snapshot WORKING queue=[] working_on=- at=1793453273005 asks=[] session=3c0b0145-d26d-47a6-a255-01e469a7e013 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=acceptEdits context=35590/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 47 recorded 45: fact Transcript type=system subtype=turn_duration uuid=906a33ea-efe2-4a73-8fde-08f4a81a4321
+item turn:1 turn final at=1793453273096 text="" #1 TURN_OUTCOME_COMPLETED started=1793453272197
+snapshot IDLE queue=[] working_on=- at=1793453273018 asks=[] session=3c0b0145-d26d-47a6-a255-01e469a7e013 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=acceptEdits context=35590/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+turn_end 1 last=stream:140a7f9c-32dd-4fff-908e-bcac12337f58

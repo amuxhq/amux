@@ -359,7 +359,7 @@ fn plans(kind: Kind, log: &Log) -> Vec<wire::PlanVerdict> {
 }
 
 /// How each closed question was closed, in order.
-fn question_records(kind: Kind, log: &Log) -> Vec<wire::AskClosed> {
+pub(super) fn question_records(kind: Kind, log: &Log) -> Vec<wire::AskClosed> {
     use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     log.ordered()

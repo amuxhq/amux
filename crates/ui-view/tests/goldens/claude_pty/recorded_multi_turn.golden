@@ -1,0 +1,30 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 13 recorded 11: fact Transcript type=user uuid=1ba72233-920f-48d8-a942-81c90234a074
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 48 recorded 46: fact Transcript type=system subtype=turn_duration uuid=de1a1270-3e7c-44db-a162-6b199c65d3d8
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 59 recorded 57: fact Transcript type=user uuid=ee13c025-bd8b-402f-b617-24c16bb6df34
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 68 recorded 66: fact Transcript type=system subtype=turn_duration uuid=cb07aa50-2091-4a98-8fa4-2105623320cd
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 1ba72233-920f-48d8-a942-81c90234a074 Prompt { text: [Text("Remember the word ALBATROSS. Reply with exactly REMEMBERED.")], steered: false }
+     3 stream:204f7943-eacb-42f4-9fc4-71e1521bc46d Prose { text: [Text("REMEMBERED")], streaming: false, working_note: false }
+     4 turn:1 TurnEnd { duration_ms: Some(855), failed: false }
+     5 ee13c025-bd8b-402f-b617-24c16bb6df34 Prompt { text: [Text("What word did I ask you to remember? Reply with just that word.")], steered: false }
+     6 stream:47c2a344-773f-41e3-a0e6-a835d88fcf85 Prose { text: [Text("ALBATROSS")], streaming: false, working_note: false }
+     7 turn:2 TurnEnd { duration_ms: Some(760), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 35658, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

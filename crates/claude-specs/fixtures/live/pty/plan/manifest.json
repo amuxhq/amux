@@ -2,21 +2,21 @@
   "spec": "plan",
   "recorded": {
     "provider": "claude",
-    "version": "2.1.312",
+    "version": "2.1.316",
     "model": "claude-sonnet-5-5",
-    "at": "2026-10-29T22:33:45.950197Z"
+    "at": "2026-10-31T13:29:42.210185Z"
   },
   "content": {
-    "io.jsonl": "sha256:3df0d13f312af7588918bec306ca6dae4548468a5e7405976f6736aa0f276798",
-    "spawn.jsonl": "sha256:8852d54b6965246f760ca71c8c92807b35bb13343797f4fa2ed2d3f176ae2740"
+    "io.jsonl": "sha256:1379068d01877ba82a22691a42fc86cd2270f8aaa46a4e5c1c8ded18b1e63a23",
+    "spawn.jsonl": "sha256:6e9db8a7811069115f56605729e4accef37f710ed354ec924cab36a2ee3475bc"
   },
   "redaction": {
     "secrets": 0,
-    "machine_paths": 155,
+    "machine_paths": 152,
     "personal_identifiers": 0
   },
   "session_ids": [
-    "ac5be2ef-d2f2-4a9f-bfdf-282aece08141"
+    "e83fefc5-bfdd-4af6-9496-2ca10a6d66e7"
   ],
   "provider_extra": {
     "driven_by": "amux's interpreter, in the live qualification lane",

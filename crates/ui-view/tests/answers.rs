@@ -451,7 +451,7 @@ fn settings_picks_reach_the_interpreter() {
 /// "Something else": neither drops the other on the way to the agent.
 #[test]
 fn a_multi_select_answer_keeps_its_picks_beside_something_else() {
-    let path = fixtures("claude_pty").join("recorded_question_multi_other.json");
+    let path = fixtures("claude_pty").join("recorded_question_every_shape.json");
     let script = interpret::fixture_script::<ClaudePty>(&path).unwrap();
     let mut driven = Driven::start::<ClaudePty>(Kind::ClaudePty, &script.spec);
     let mut card = None;

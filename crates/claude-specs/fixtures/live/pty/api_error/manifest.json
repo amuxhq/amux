@@ -1,0 +1,24 @@
+{
+  "spec": "api_error",
+  "recorded": {
+    "provider": "claude",
+    "version": "2.1.316",
+    "model": "haiku",
+    "at": "2026-10-31T13:36:41.805486Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:791967d3b09a610b7e97e2b1caad7639e083733568132dbc044659605717fbda",
+    "spawn.jsonl": "sha256:aa6399b7cf1d53a8f1ea1e3f4d8a728a670be05ac21fb3f71e52ce5741b2c6d9"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 36,
+    "personal_identifiers": 0
+  },
+  "session_ids": [
+    "cd11970a-8385-430f-a202-5f0ff2e166d8"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

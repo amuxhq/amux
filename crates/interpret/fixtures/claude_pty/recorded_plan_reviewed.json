@@ -1,0 +1,20 @@
+{
+  "about": "A plan sent back with a note, the revised plan approved switching the permission, and the change made.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "../../../claude-specs/fixtures/live/pty/plan_reviewed/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

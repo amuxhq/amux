@@ -1,0 +1,33 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 13 recorded 11: fact Transcript type=user uuid=3d00e6a7-a5ff-40ec-8878-d3205387bcb6
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 57 recorded 55: fact Transcript type=system subtype=turn_duration uuid=538026ba-8987-4298-96d7-07a9944f85da
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 72 recorded 70: fact Transcript type=user uuid=3bd614e4-f5dd-4afd-8dab-8d23dbe0c7a7
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 85 recorded 83: fact Transcript type=system subtype=turn_duration uuid=d046e7bd-d11e-46aa-a3e3-70470f68bc82
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 3d00e6a7-a5ff-40ec-8878-d3205387bcb6 Prompt { text: [Text("Write three short paragraphs about the history of rope-making.")], steered: false }
+     3 stream:7c35f49e-797d-4a04-8177-c686eb905aa4 Prose { text: [Text("Rope-making is one of the oldest crafts in human history, with evidence stretching back tens of thousands of years. Archaeologists have found twisted plant fibers at sites such as Lubang Jeriji Saléh in Borneo, and fragments of cordage impressed into Paleolithic pottery and clay, suggesting that early people were spinning and pl…
+     4 turn:1 TurnEnd { duration_ms: Some(4195), failed: false }
+     5 3bd614e4-f5dd-4afd-8dab-8d23dbe0c7a7 Prompt { text: [Text("Now two short paragraphs about knots.")], steered: false }
+     6 stream:0966ee93-522b-4deb-83ae-2c62a8df6583 Prose { text: [Text("Knots are almost as old as rope itself. Early humans tied fibers together to make nets, snares, baskets, and clothing, and the oldest knotted objects that survive are a few thousand years old, found in Egyptian and Peruvian contexts. Knot tying developed into a practical skill across cultures, with sailors, climbers, fishers, an…
+     7 turn:2 TurnEnd { duration_ms: Some(2719), failed: false }
+     8 b194d047-a5c3-40d8-a78b-a0d2f7264652 SlashOutput { command: "/compact", args: "", output: "Compacted (ctrl+o to see full summary)" }
+     9 boundary:2 Boundary { kind: Compacted, cause: "" }
+    10 f8d9c898-eaac-400c-aff4-b1234fde314e Compaction { tokens_before: Some(36530), tokens_after: Some(5189), automatic: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 5189, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

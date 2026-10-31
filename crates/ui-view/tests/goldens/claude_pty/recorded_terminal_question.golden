@@ -1,0 +1,39 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 12 recorded 10: fact Transcript type=user uuid=783a3894-ebef-482c-92f4-3d2ae92787fc
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 40 recorded 38: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01PGR6sKYR3e4MDPrZuNUHzM
+  composer Send activity=Some(Running { key: "toolu_01PGR6sKYR3e4MDPrZuNUHzM" }) queue=[] underway=[] refused=[]
+## 42 recorded 40: fact Hook hook_event_name=PermissionRequest
+  ask ask:1 -> "" 1/1 Open
+    choices 
+    body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Choose red.", preview: "", recommended: false }, OptionView { label: "Blue", description: "Choose blue.", preview: "", recommended: false }], allow_other: true, secret: false }])
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 46 recorded 44: fact Transcript type=assistant uuid=daece713-5141-4cf2-bd98-cc631f6c2500
+  ask ask:1 -> "toolu_01PGR6sKYR3e4MDPrZuNUHzM" 1/1 Open
+    choices 
+    body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Choose red.", preview: "", recommended: false }, OptionView { label: "Blue", description: "Choose blue.", preview: "", recommended: false }], allow_other: true, secret: false }])
+## 50 recorded 48: fact Transcript type=user uuid=d94a2b67-1b79-47e5-9e48-045462baa58e
+  ask none
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 69 recorded 67: fact Transcript type=system subtype=turn_duration uuid=e4cb2721-b1e3-41a3-9d12-6e5058a6fcc5
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 783a3894-ebef-482c-92f4-3d2ae92787fc Prompt { text: [Text("Use AskUserQuestion to ask exactly one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue. Then repeat my answer.")], steered: false }
+     3 453bd2f8-4190-4543-8856-4b6558f6d246 Thinking { text: "", open: false, duration_ms: Some(1014) }
+     4 toolu_01PGR6sKYR3e4MDPrZuNUHzM [Answered: Color = Blue skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Choose red.", preview: "", recommended: false }, OptionView { label: "Blue", description: "Choose blue.", preview: "", recommended: false }], allow_other: tr…
+     5 stream:beb4f478-6af2-4ff8-b8bc-fbed4900a9c8 Prose { text: [Text("You answered: Blue.")], streaming: false, working_note: false }
+     6 turn:1 TurnEnd { duration_ms: Some(2155), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 35905, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

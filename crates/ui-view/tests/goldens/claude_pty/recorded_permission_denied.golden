@@ -1,0 +1,44 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 13 recorded 11: fact Transcript type=user uuid=844c4a52-4583-45a3-ac0d-e20f60f4f598
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 38 recorded 36: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_0194mxpNygZJxCovWPkqucvj
+  composer Send activity=Some(Running { key: "toolu_0194mxpNygZJxCovWPkqucvj" }) queue=[] underway=[] refused=[]
+## 40 recorded 38: fact Hook hook_event_name=PermissionRequest
+  ask ask:1 -> "" 1/1 Open
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
+    body Command { command: "printf denied > denied.txt", cwd: "", reason: "", description: "Write \"denied\" to denied.txt in the working directory" }
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 44 recorded 42: fact Transcript type=assistant uuid=138a7a7c-8329-4f55-82fb-05f113418310
+  ask ask:1 -> "toolu_0194mxpNygZJxCovWPkqucvj" 1/1 Open
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
+    body Command { command: "printf denied > denied.txt", cwd: "", reason: "", description: "Write \"denied\" to denied.txt in the working directory" }
+## 48 recorded 46: fact Transcript type=user uuid=85ee69cb-5779-40f4-951e-4c8c28434360
+  ask none
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 60 recorded 58: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_013G77wfLGrC8pVcEgYow1jp
+  composer Send activity=Some(Running { key: "toolu_013G77wfLGrC8pVcEgYow1jp" }) queue=[] underway=[] refused=[]
+## 68 recorded 66: fact Transcript type=user uuid=2c5a7fdf-852f-4bf1-a106-11b8c6ce2cbe
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 78 recorded 76: fact Transcript type=system subtype=turn_duration uuid=95597432-18ba-41bd-bff9-d62a381f6d35
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 844c4a52-4583-45a3-ac0d-e20f60f4f598 Prompt { text: [Text("Use the Bash tool to run exactly: printf denied > denied.txt. Then stop.")], steered: false }
+     3 toolu_0194mxpNygZJxCovWPkqucvj Command { command: "printf denied > denied.txt", state: Denied, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:", "Use a read-only command instead"], more_lines: 0, output_trimmed: fals…
+     4 b6e5dcc7-2217-4237-b002-5e05f03afbd0 Thinking { text: "", open: false, duration_ms: Some(1587) } run[toolu_0194mxpNygZJxCovWPkqucvj..toolu_013G77wfLGrC8pVcEgYow1jp x2] collapsed
+     5 toolu_013G77wfLGrC8pVcEgYow1jp Command { command: "pwd", state: Succeeded, exit_code: None, output_head: ["<MACHINE_PATH>"], more_lines: 0, output_trimmed: false, output_tail: ["<MACHINE_PATH>"], duration_ms: Some(257) } run[toolu_0194mxpNygZJxCovWPkqucvj..toolu_013G77wfLGrC8pVcEgYow1jp x2 recent=0 RunCounts { commands: 2, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+     6 stream:055eb7be-2af1-4eae-ae0c-ac9ba21f6af3 Prose { text: [Text("I didn't create `denied.txt`. The write command was rejected, and you asked for a read-only command instead. I ran `pwd`, which printed `<MACHINE_PATH>, and I've stopped there.")], streaming: false, working_note: false }
+     7 turn:1 TurnEnd { duration_ms: Some(3968), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 36059, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

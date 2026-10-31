@@ -271,8 +271,8 @@ mod tests {
     /// for Claude's screen, typed its first key.
     #[test]
     fn recorded_sessions_are_live_at_their_first_screen() {
-        let fixtures =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../claude-specs/fixtures/pty");
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../claude-specs/fixtures/live/pty");
         let mut checked = 0;
         for entry in std::fs::read_dir(&fixtures).expect("pty fixtures") {
             let path = entry.expect("fixture").path().join("io.jsonl");

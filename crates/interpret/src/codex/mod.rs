@@ -106,10 +106,21 @@ pub const CLEAR_REQUEST: &str = "amux-clear-";
 /// Notifications amux never draws: the agent asks Codex not to send them at
 /// `initialize`, and the interpreter drops them should an older Codex send
 /// them anyway. A hook's effect on the turn reaches the conversation itself
-/// (a blocked call's output names the hook), as it does for Claude.
+/// (a blocked call's output names the hook), as it does for Claude. A model
+/// reroute covers one request and Codex keeps the chosen model for the
+/// next; Codex also sends a warning saying so, with a link, which is what
+/// the person sees.
 pub const DROPPED_NOTIFICATIONS: &[&str] = &[
     "hook/started",
     "hook/completed",
+    "model/rerouted",
+    "thread/archived",
+    "thread/unarchived",
+    "thread/goal/updated",
+    "thread/readState/changed",
+    "thread/compacted",
+    "turn/moderationMetadata",
+    "item/fileChange/outputDelta",
     "item/mcpToolCall/progress",
     "item/fileChange/patchUpdated",
     "app/list/updated",

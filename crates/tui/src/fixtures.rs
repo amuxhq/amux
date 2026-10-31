@@ -16,7 +16,7 @@ use ui_state::{InputOutcome, Msg, SessionState};
 use wire::Kind;
 
 use crate::chat::ChatView;
-pub use crate::sessions::{agent, caught_up};
+pub use crate::sessions::{agent, caught_up, text};
 use crate::theme::Theme;
 
 /// The session after each frame of one fixture, with its label and the
@@ -106,21 +106,6 @@ pub fn draw(
         })
         .expect("draw");
     (terminal.backend().buffer().clone(), page)
-}
-
-/// The buffer's text, one line per row, trailing blanks trimmed.
-pub fn text(buffer: &Buffer) -> String {
-    let area = buffer.area;
-    let mut out = String::new();
-    for y in 0..area.height {
-        let mut line = String::new();
-        for x in 0..area.width {
-            line.push_str(buffer[(x, y)].symbol());
-        }
-        out.push_str(line.trim_end());
-        out.push('\n');
-    }
-    out
 }
 
 /// The three frames every theme is held to: a turn at work, a permission

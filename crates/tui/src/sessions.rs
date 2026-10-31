@@ -1,7 +1,8 @@
-//! The agent and the catch-up a session built from an interpreter's
-//! fixtures starts from: for the TUI's tests, and for the storybook, which
-//! replays recorded fixtures through an interpreter of its own.
+//! What the TUI's tests and the storybook share: the agent and the catch-up
+//! a session built from an interpreter's fixtures starts from, and a drawn
+//! buffer read back as text.
 
+use ratatui::buffer::Buffer;
 use ui_state::Msg;
 use wire::{Kind, SessionEvent, session_event};
 
@@ -22,4 +23,19 @@ pub fn caught_up(revision: u64) -> Msg {
     Msg::Event(SessionEvent {
         of: Some(session_event::Of::CaughtUp(wire::CaughtUp { revision })),
     })
+}
+
+/// The buffer's text, one line per row, trailing blanks trimmed.
+pub fn text(buffer: &Buffer) -> String {
+    let area = buffer.area;
+    let mut out = String::new();
+    for y in 0..area.height {
+        let mut line = String::new();
+        for x in 0..area.width {
+            line.push_str(buffer[(x, y)].symbol());
+        }
+        out.push_str(line.trim_end());
+        out.push('\n');
+    }
+    out
 }

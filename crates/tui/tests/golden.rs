@@ -10,12 +10,11 @@
 #![cfg(feature = "fixtures")]
 
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
-use common::{assert_golden, capture, golden_dir};
+use ratatui::buffer::Buffer;
 use tui::Theme;
 use tui::vocabulary::components;
-
-use crate::common;
 
 #[test]
 fn every_vocabulary_component_matches_its_golden() {
@@ -82,4 +81,43 @@ fn every_row_kind_has_a_component() {
     ] {
         assert!(names.contains(format!("row_{kind}").as_str()), "row_{kind}");
     }
+}
+
+fn golden_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
+}
+
+/// The buffer's text, then its style classes, one character per cell.
+fn capture(buffer: &Buffer, theme: Theme) -> String {
+    let area = buffer.area;
+    let mut styles = String::new();
+    for y in 0..area.height {
+        for x in 0..area.width {
+            styles.push(theme.classify(buffer[(x, y)].style()));
+        }
+        styles.push('\n');
+    }
+    format!("{}--- styles\n{styles}", tui::sessions::text(buffer))
+}
+
+/// Compares `rendered` with the golden `name`, or rewrites it under
+/// UPDATE_GOLDENS outside CI.
+fn assert_golden(name: &str, rendered: &str) {
+    let path = golden_dir().join(format!("{name}.txt"));
+    if std::env::var_os("UPDATE_GOLDENS").is_some() {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "UPDATE_GOLDENS is refused in CI: rewrite goldens locally and review them"
+        );
+        std::fs::create_dir_all(golden_dir()).expect("golden directory");
+        std::fs::write(&path, rendered).expect("write golden");
+        return;
+    }
+    let expected = std::fs::read_to_string(&path)
+        .unwrap_or_else(|_| panic!("missing golden {name}; run with UPDATE_GOLDENS=1 and review"));
+    assert!(
+        rendered == expected,
+        "{name} differs from its golden; if intended, rerun with UPDATE_GOLDENS=1 and review.\n\
+         rendered:\n{rendered}"
+    );
 }

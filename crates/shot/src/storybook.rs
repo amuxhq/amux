@@ -90,7 +90,10 @@ fn capture(out: &Path, only: Option<&str>) -> anyhow_free::Result {
                 terminal.draw(|frame| scene.draw(frame, frame.area(), theme))?;
                 let buffer = terminal.backend().buffer().clone();
                 let stem = format!("{}.{width}x{height}.{palette}", story.id);
-                std::fs::write(out.join(format!("{stem}.txt")), text(&buffer))?;
+                std::fs::write(
+                    out.join(format!("{stem}.txt")),
+                    tui::sessions::text(&buffer),
+                )?;
                 let raster = shot::rasterize(&buffer, theme)?;
                 shot::write_png(&raster, &out.join(format!("{stem}.png")))?;
                 index.push_str(&format!("- [{stem}]({stem}.png) ([text]({stem}.txt))\n"));
@@ -102,20 +105,6 @@ fn capture(out: &Path, only: Option<&str>) -> anyhow_free::Result {
     std::fs::write(out.join("index.md"), index)?;
     println!("{count} captures in {}", out.display());
     Ok(())
-}
-
-fn text(buffer: &ratatui::buffer::Buffer) -> String {
-    let area = buffer.area;
-    let mut out = String::new();
-    for y in 0..area.height {
-        let mut line = String::new();
-        for x in 0..area.width {
-            line.push_str(buffer[(x, y)].symbol());
-        }
-        out.push_str(line.trim_end());
-        out.push('\n');
-    }
-    out
 }
 
 // --- browsing ----------------------------------------------------------------

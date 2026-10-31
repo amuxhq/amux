@@ -7,10 +7,9 @@
 //! runs is queued, and at default priority folded into that turn at its next
 //! tool result, so one `result` closes the turn for all of them; `later`
 //! waits for its own turn; `now` cuts the running turn short and runs next.
-//! `cancel_async_message` withdraws a message still queued. Asks are control
-//! requests (`can_use_tool` for permissions, questions and plans,
-//! `elicitation` for a tool server's form) that block the turn until the
-//! host's control response.
+//! Asks are control requests (`can_use_tool` for permissions, questions and
+//! plans, `elicitation` for a tool server's form) that block the turn until
+//! the host's control response.
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -148,8 +147,6 @@ struct Engine {
     blocks: u32,
     /// The tool servers each turn's init reports.
     server_states: Vec<crate::script::ServerState>,
-    /// The context in use each message reports, when scripted.
-    context_tokens: Option<u64>,
     edit_files: bool,
     chunk_ms: u64,
     turn_ms: u64,
@@ -240,7 +237,6 @@ impl Engine {
             streaming: Value::Null,
             blocks: 0,
             server_states: script.servers,
-            context_tokens: script.context_tokens,
             edit_files: script.edit_files,
             chunk_ms: script.chunk_ms,
             turn_ms: script.turn_ms.unwrap_or(1),
@@ -444,14 +440,6 @@ impl Engine {
                 .await;
                 return;
             }
-            "cancel_async_message" => {
-                let target = request["message_uuid"].as_str().unwrap_or_default();
-                let cancelled = self.withdraw(target);
-                if cancelled {
-                    self.lifecycle(target, "cancelled").await;
-                }
-                Some(json!({ "cancelled": cancelled }))
-            }
             other => {
                 let error = format!("Unsupported control request: {other}");
                 self.send(json!({
@@ -490,15 +478,6 @@ impl Engine {
             .chain(&self.folding)
             .filter_map(|queued| queued.uuid.clone())
             .collect()
-    }
-
-    fn withdraw(&mut self, target: &str) -> bool {
-        let before = self.queue.len() + self.folding.len();
-        self.queue
-            .retain(|queued| queued.uuid.as_deref() != Some(target));
-        self.folding
-            .retain(|queued| queued.uuid.as_deref() != Some(target));
-        before != self.queue.len() + self.folding.len()
     }
 
     async fn user(&mut self, frame: Value) {
@@ -1015,7 +994,7 @@ impl Engine {
                 "stop_reason": null,
                 "stop_sequence": null,
                 "type": "message",
-                "usage": usage(self.context_tokens),
+                "usage": usage(),
             },
             "parent_tool_use_id": null,
             "request_id": request,
@@ -1044,7 +1023,7 @@ impl Engine {
                     "stop_reason": null,
                     "stop_sequence": null,
                     "type": "message",
-                    "usage": usage(self.context_tokens),
+                    "usage": usage(),
                 },
             }))
             .await;
@@ -1578,8 +1557,8 @@ impl Engine {
             "ttft_ms": 1,
             "ttft_stream_ms": 1,
             "is_error": false,
-            "modelUsage": self.model_usage(),
-            "model_usage_since_last_result": self.model_usage(),
+            "modelUsage": {},
+            "model_usage_since_last_result": {},
             "result_index": 0,
             "safety_stops": 0,
             "subagent_stats": subagent_stats(),
@@ -1596,26 +1575,6 @@ impl Engine {
         });
         answered(&mut frame, prompts);
         self.send(frame).await;
-    }
-
-    /// Per-model tallies, with the context window, when the script names a
-    /// context in use.
-    fn model_usage(&self) -> Value {
-        match self.context_tokens {
-            Some(tokens) => json!({
-                self.model.clone(): {
-                    "inputTokens": tokens,
-                    "outputTokens": 1,
-                    "cacheReadInputTokens": 0,
-                    "cacheCreationInputTokens": 0,
-                    "webSearchRequests": 0,
-                    "costUSD": 0.0,
-                    "contextWindow": 200000,
-                    "maxOutputTokens": 32000,
-                },
-            }),
-            None => json!({}),
-        }
     }
 
     /// Drop the rest of a cut turn's steps.
@@ -1715,13 +1674,13 @@ impl Engine {
 
 /// A message's token tally: `context` tokens in, when the script names a
 /// context in use.
-fn usage(context: Option<u64>) -> Value {
+fn usage() -> Value {
     json!({
         "cache_creation": { "ephemeral_1h_input_tokens": 0, "ephemeral_5m_input_tokens": 0 },
         "cache_creation_input_tokens": 0,
         "cache_read_input_tokens": 0,
         "inference_geo": "not_available",
-        "input_tokens": context.unwrap_or(1),
+        "input_tokens": 1,
         "output_tokens": 1,
         "service_tier": "standard",
         "speed": "standard",
@@ -1730,7 +1689,7 @@ fn usage(context: Option<u64>) -> Value {
 
 /// A turn's token tally, as its result carries it.
 pub(crate) fn turn_usage() -> Value {
-    let mut usage = usage(None);
+    let mut usage = usage();
     usage["iterations"] = json!([]);
     usage["output_tokens_details"] = json!({ "thinking_tokens": 0 });
     usage["server_tool_use"] = json!({ "web_fetch_requests": 0, "web_search_requests": 0 });

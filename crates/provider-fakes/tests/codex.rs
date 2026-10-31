@@ -420,7 +420,6 @@ async fn account_and_session_facts_play_in_recorded_shapes() {
     let dir = tempfile::tempdir().unwrap();
     let added = dir.path().join("docs/new.md");
     let mut host = Host::start(json!({
-        "context_tokens": 182000,
         "edit_files": true,
         "chunk_ms": 30,
         "steps": [
@@ -457,11 +456,9 @@ async fn account_and_session_facts_play_in_recorded_shapes() {
     host.line
         .send(json!({"id": ask["id"], "result": {"answers": {"q0": {"answers": ["s3cret"]}}}}))
         .await;
-    let usage = host
-        .line
+    host.line
         .until(|frame| frame["method"] == "thread/tokenUsage/updated")
         .await;
-    assert_eq!(usage["params"]["tokenUsage"]["last"]["inputTokens"], 182000);
     host.completed().await;
     host.turn("Again").await;
     let failed = host.completed().await;

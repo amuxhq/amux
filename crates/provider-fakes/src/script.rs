@@ -103,10 +103,6 @@ pub struct Script {
     /// with their state (`connected`, `failed`, `needs-auth`).
     #[serde(default)]
     pub servers: Vec<ServerState>,
-    /// The context the session reports in use, in tokens, on each message
-    /// (headless Claude) or at each turn's end (Codex).
-    #[serde(default)]
-    pub context_tokens: Option<u64>,
     /// How long the provider takes between a message's chunks, where it
     /// streams them, as a model writing does.
     #[serde(default)]

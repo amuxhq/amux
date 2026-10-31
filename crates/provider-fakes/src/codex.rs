@@ -232,7 +232,6 @@ struct Engine {
     last_message: Option<Value>,
     /// The tool servers the launch configured.
     servers: crate::mcp::ToolServers,
-    context_tokens: Option<u64>,
     edit_files: bool,
     chunk_ms: u64,
     /// A form schema the next frame carries, as the script wrote it.
@@ -283,7 +282,6 @@ impl Engine {
             servers: crate::mcp::ToolServers::from_codex(
                 &std::env::args().skip(1).collect::<Vec<_>>(),
             ),
-            context_tokens: script.context_tokens,
             edit_files: script.edit_files,
             chunk_ms: script.chunk_ms,
             schema: None,
@@ -987,7 +985,7 @@ impl Engine {
             }
             "interrupted"
         } else {
-            let usage = token_usage(self.context_tokens);
+            let usage = token_usage();
             self.notify(
                 "thread/tokenUsage/updated",
                 json!({ "threadId": thread, "turnId": turn, "tokenUsage": usage }),
@@ -1641,15 +1639,14 @@ fn question(index: usize, question: &Question) -> Value {
     })
 }
 
-/// The thread's token tally; `context` tokens in use when scripted.
-fn token_usage(context: Option<u64>) -> Value {
-    let input = context.unwrap_or(1);
+/// The thread's token tally.
+fn token_usage() -> Value {
     let tally = json!({
         "cachedInputTokens": 0,
-        "inputTokens": input,
+        "inputTokens": 1,
         "outputTokens": 1,
         "reasoningOutputTokens": 0,
-        "totalTokens": input + 1,
+        "totalTokens": 2,
     });
     json!({ "last": tally, "total": tally, "modelContextWindow": 258400 })
 }

@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use serde::{Deserialize, Serialize};
 
 use crate::Drift;
-use crate::stream::init::{AgentInfo, AppliedSettings, SlashCommand};
+use crate::stream::init::{AppliedSettings, SlashCommand};
 use crate::stream::options::{AgentDefinition, McpServerConfig};
 use crate::stream::types::{Extensions, PermissionMode, PermissionUpdate, present_nullable};
 use crate::strictness::{self, tagged_enum};
@@ -235,8 +235,6 @@ pub struct CanUseToolRequest {
     pub input: serde_json::Value,
     pub tool_use_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -246,10 +244,6 @@ pub struct CanUseToolRequest {
     pub blocked_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decision_reason: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decision_reason_type: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub requires_user_interaction: Option<bool>,
     /// The subagent whose call this is; absent for the main thread's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<String>,
@@ -416,8 +410,6 @@ pub enum ControlOutcome {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InterruptResult {
     pub still_queued: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cancelled: Option<Vec<String>>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -444,15 +436,7 @@ pub struct McpServerStatus {
     pub name: String,
     pub status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub server_info: Option<serde_json::Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub config: Option<serde_json::Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scope: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<serde_json::Value>>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -487,16 +471,6 @@ pub struct McpSetServersResult {
 #[serde(rename_all = "camelCase")]
 pub struct RewindFilesResult {
     pub can_rewind: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub files_changed: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub insertions: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deletions: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub skipped_links: Option<u64>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -504,23 +478,8 @@ pub struct RewindFilesResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReloadPluginsResult {
     pub commands: Vec<SlashCommand>,
-    pub agents: Vec<AgentInfo>,
-    pub plugins: Vec<PluginInfo>,
     #[serde(rename = "mcpServers")]
     pub mcp_servers: Vec<McpServerStatus>,
-    pub error_count: u64,
-    #[serde(flatten)]
-    pub extensions: Extensions,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PluginInfo {
-    pub name: String,
-    pub path: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -528,26 +487,6 @@ pub struct PluginInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReloadSkillsResult {
     pub skills: Vec<SlashCommand>,
-    #[serde(flatten)]
-    pub extensions: Extensions,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackgroundTaskSummary {
-    pub id: String,
-    pub r#type: String,
-    pub status: String,
-    pub description: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub command: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_type: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub server: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

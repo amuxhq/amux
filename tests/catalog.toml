@@ -236,7 +236,7 @@ cargo = [
 [[suite]]
 name = "codex-recorded-adapter"
 contract = "Every registered Codex provider recording replays strictly with complete corpus provenance."
-paths = ["crates/codex-specs/tests/spec_replay.rs", "crates/codex-specs/tests/capture_proxy.rs", "crates/codex-specs/fixtures"]
+paths = ["crates/codex-specs/src/client", "crates/codex-specs/tests/spec_replay.rs", "crates/codex-specs/tests/capture_proxy.rs", "crates/codex-specs/fixtures"]
 recipe = "just suite codex-recorded-adapter"
 boundary = "Provider adapter"
 oracle = "Strict replay consumption, expected writes, and recording manifest validation."
@@ -613,7 +613,7 @@ cargo = [
 
 [[suite]]
 name = "provider-io-library-units"
-contract = "PTY ownership, capture redaction, the Codex app-server client and Claude's launch settings, hook receiver, transcript tailer and version probe preserve process, signal, byte, sanitization and protocol contracts."
+contract = "PTY ownership, capture redaction, the connection to a hosted Codex app server and Claude's launch settings, hook receiver, transcript tailer and version probe preserve process, signal, byte, sanitization and protocol contracts."
 paths = ["crates/claude/src", "crates/codex/src", "crates/pty-host/src", "crates/redaction/src"]
 recipe = "just suite provider-io-library-units"
 boundary = "Provider adapter"

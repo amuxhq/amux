@@ -10,7 +10,6 @@
 
 use std::path::Path;
 
-use codex::{Codex, Event, ThreadEvent, ThreadEventStream, text_input};
 use codex_protocol::client::{AccountReadParams, TurnStartParams, UserInputResponse};
 use codex_protocol::items::{CommandAction, ImageInput, PatchChangeKind, ThreadItem, UserInput};
 use codex_protocol::server::{ServerNotification, ServerRequest};
@@ -25,6 +24,7 @@ use super::{
     ScenarioReport, completed, error_of, next_event, report, started, stringify, thread_config,
     turn_completed,
 };
+use crate::client::{Codex, Event, ThreadEvent, ThreadEventStream, text_input};
 
 /// The seed image, attached to a prompt as a data URL.
 pub(crate) const SQUARE_PNG: &[u8] = include_bytes!("../assets/square.png");
@@ -74,7 +74,7 @@ async fn full_auto(
     codex: &Codex,
     model: &str,
     project: &Path,
-) -> Result<(codex::Thread, ThreadEventStream), String> {
+) -> Result<(crate::client::Thread, ThreadEventStream), String> {
     let config = full_auto_config(model, project);
     let thread = codex
         .start_thread(config)

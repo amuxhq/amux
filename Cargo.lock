@@ -15,6 +15,7 @@ dependencies = [
  "agent-core",
  "agent-dir",
  "attachments",
+ "base64 0.22.1",
  "claude",
  "claude-protocol",
  "codex",
@@ -31,6 +32,7 @@ dependencies = [
  "prost",
  "provider-fakes",
  "pty-host",
+ "serde",
  "serde_json",
  "sha2",
  "tempfile",
@@ -760,18 +762,11 @@ dependencies = [
 name = "codex"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "codex-protocol",
  "futures-util",
- "nix 0.31.3",
- "serde",
- "serde_json",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tokio-tungstenite",
- "tokio-util",
- "tracing",
 ]
 
 [[package]]
@@ -786,19 +781,24 @@ dependencies = [
 name = "codex-specs"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "chrono",
  "codex",
  "codex-protocol",
  "futures-util",
+ "nix 0.31.3",
  "pty-host",
  "redaction",
  "replay-support",
  "semver",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tokio-tungstenite",
+ "tokio-util",
+ "tracing",
  "uuid",
 ]
 

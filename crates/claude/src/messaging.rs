@@ -4,10 +4,6 @@ use std::path::Path;
 
 #[cfg(unix)]
 use claude_protocol::messaging::{Auth, UserMessage};
-use uuid::Uuid;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct MessageId(pub Uuid);
 
 #[derive(Debug, thiserror::Error)]
 pub enum MessagingError {
@@ -40,19 +36,18 @@ impl MessagingSocket {
     }
 
     #[cfg(unix)]
-    pub async fn send(&mut self, text: &str) -> Result<MessageId, MessagingError> {
+    pub async fn send(&mut self, text: &str) -> Result<(), MessagingError> {
         use tokio::io::AsyncWriteExt;
 
-        let id = MessageId(Uuid::new_v4());
         let message = serde_json::to_vec(&UserMessage::new(text)).map_err(std::io::Error::other)?;
         self.stream.write_all(&message).await?;
         self.stream.write_all(b"\n").await?;
         self.stream.shutdown().await?;
-        Ok(id)
+        Ok(())
     }
 
     #[cfg(not(unix))]
-    pub async fn send(&mut self, _text: &str) -> Result<MessageId, MessagingError> {
+    pub async fn send(&mut self, _text: &str) -> Result<(), MessagingError> {
         Err(MessagingError::Unsupported)
     }
 }

@@ -187,7 +187,7 @@ async fn capture_pty(entry: SpecEntry) -> Result<PtyCapture, Box<dyn std::error:
         "__pty-hook".to_owned(),
     ];
     let managed = claude::launch::ManagedSettings {
-        hook_command: hook_command.clone(),
+        hook_command,
         ..Default::default()
     };
     let launch = claude::launch::Launch {
@@ -195,10 +195,7 @@ async fn capture_pty(entry: SpecEntry) -> Result<PtyCapture, Box<dyn std::error:
         cwd: work,
         args: Vec::new(),
         session_id: Uuid::new_v4(),
-        resume: false,
         settings: claude::launch::merged_settings(None, &managed),
-        hook_command,
-        mcp_servers: Vec::new(),
         env_scrub: claude::launch::CHILD_SESSION_ENV_SCRUB,
     };
     let mut spawn_launch = launch.clone();

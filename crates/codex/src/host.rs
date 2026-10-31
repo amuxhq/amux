@@ -121,15 +121,6 @@ impl Connection {
         }
     }
 
-    pub async fn send(&mut self, message: &[u8]) -> io::Result<()> {
-        self.sender.send(message).await
-    }
-
-    /// The next message the server sent; None once the connection ends.
-    pub async fn next(&mut self) -> Option<io::Result<Vec<u8>>> {
-        self.receiver.next().await
-    }
-
     /// The writing and reading halves, to drive from separate tasks.
     pub fn into_split(self) -> (Sender, Receiver) {
         (self.sender, self.receiver)
@@ -450,12 +441,13 @@ mod tests {
             r#"read line; printf '%s\r\n' "$line"; printf 'two\n'"#,
         ]);
         let mut child = spawn_server(command, &Listen::Stdio).unwrap();
-        let mut connection = Connection::connect(&Listen::Stdio, &mut child, WAIT)
+        let (mut sender, mut receiver) = Connection::connect(&Listen::Stdio, &mut child, WAIT)
             .await
-            .unwrap();
-        connection.send(b"one").await.unwrap();
-        assert_eq!(connection.next().await.unwrap().unwrap(), b"one");
-        assert_eq!(connection.next().await.unwrap().unwrap(), b"two");
-        assert!(connection.next().await.is_none());
+            .unwrap()
+            .into_split();
+        sender.send(b"one").await.unwrap();
+        assert_eq!(receiver.next().await.unwrap().unwrap(), b"one");
+        assert_eq!(receiver.next().await.unwrap().unwrap(), b"two");
+        assert!(receiver.next().await.is_none());
     }
 }

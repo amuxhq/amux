@@ -582,9 +582,8 @@ nicer in several places, and Windows pays for each:
 ![The wire crate is the only thing every side shares. interpret reads provider events on the agent side, one module per kind; the UI lib never links a store.](figures/crate-layers.svg)
 
 Every workspace member, grouped by layer. The figure draws `codex` beside
-`claude` under the agent; in the code the agent process speaks Codex's app
-server itself, and the `codex` crate is used only by the Codex protocol
-checks.
+`claude` under the agent: it starts Codex's app server and carries its
+bytes, and the agent process speaks the protocol itself.
 
 **Shared values** — no dependencies on other layers.
 
@@ -612,7 +611,7 @@ checks.
 | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | Claude Code's headless stream, transcript rows and hook payloads as types, with a tolerant decoder. See [provider crates](PROVIDER_CRATES.md). |
 | [`codex-protocol`](../crates/codex-protocol/src/lib.rs) | Codex's app-server messages as types, with a tolerant decoder. |
 | [`claude`](../crates/claude/src/lib.rs) | Claude Code integration: launch, hooks, transcript reading, messaging and version probing. |
-| [`codex`](../crates/codex/src/lib.rs) | Starting Codex's app server and a client of it, used by the Codex protocol checks. |
+| [`codex`](../crates/codex/src/lib.rs) | Starting Codex's app server on a socket other clients can join, and carrying its messages as bytes. |
 | [`pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal process hosting. |
 
 **The daemon.**

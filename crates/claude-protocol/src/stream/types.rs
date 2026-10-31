@@ -345,21 +345,7 @@ pub struct Usage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelUsage {
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cache_read_input_tokens: u64,
-    pub cache_creation_input_tokens: u64,
-    pub web_search_requests: u64,
-    #[serde(rename = "costUSD")]
-    pub cost_usd: f64,
     pub context_window: u64,
-    pub max_output_tokens: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub canonical_model: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cost_basis: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -427,17 +413,6 @@ impl Default for MessageContent {
     fn default() -> Self {
         Self::Text(String::new())
     }
-}
-
-// ── PermissionDenial ────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PermissionDenial {
-    pub tool_name: String,
-    pub tool_use_id: String,
-    pub tool_input: serde_json::Value,
-    #[serde(flatten)]
-    pub extensions: Extensions,
 }
 
 // ── ApiKeySource ────────────────────────────────────────────────────
@@ -949,39 +924,6 @@ pub enum PermissionResult {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tool_use_id: Option<String>,
     },
-}
-
-// ── CanUseToolOptions ───────────────────────────────────────────────
-
-#[derive(Debug, Clone)]
-pub struct CanUseToolOptions {
-    pub suggestions: Vec<PermissionUpdate>,
-    pub blocked_path: Option<String>,
-    pub decision_reason: Option<String>,
-    pub decision_reason_type: Option<String>,
-    pub classifier_approvable: Option<bool>,
-    pub suppress_always_allow_rule: Option<bool>,
-    pub default_to_no: Option<bool>,
-    pub title: Option<String>,
-    pub display_name: Option<String>,
-    pub description: Option<String>,
-    pub tool_use_id: String,
-    pub agent_id: Option<String>,
-    pub request_id: String,
-    pub matched_ask_rule: Option<MatchedAskRule>,
-    pub requires_user_interaction: Option<bool>,
-    pub extensions: Extensions,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MatchedAskRule {
-    pub source: String,
-    pub tool_name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rule_content: Option<String>,
-    #[serde(flatten)]
-    pub extensions: Extensions,
 }
 
 // ── Hook enums used in multiple modules ─────────────────────────────

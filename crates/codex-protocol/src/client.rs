@@ -97,8 +97,6 @@ pub struct ThreadStartParams {
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<SandboxMode>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub developer_instructions: Option<String>,
     /// Tools amux defines for the thread.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic_tools: Option<Vec<DynamicTool>>,
@@ -269,8 +267,6 @@ pub struct BackgroundTerminalsListParams {
     pub thread_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub limit: Option<i64>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -338,8 +334,6 @@ pub struct ModelListParams {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SkillsListParams {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cwds: Option<Vec<String>>,
     #[serde(flatten)]
     pub extra: Extra,
 }

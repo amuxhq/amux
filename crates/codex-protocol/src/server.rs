@@ -8,8 +8,8 @@ use crate::items::{CommandAction, ThreadItem};
 use crate::macros::{method_enum, string_enum, tagged_enum};
 use crate::thread::{
     ApprovalsReviewer, AskForApproval, AuthMode, CollaborationMode, PlanType, RateLimitSnapshot,
-    ReasoningEffort, SandboxPolicy, Thread, ThreadSettings, ThreadStatus, ThreadTokenUsage, Turn,
-    TurnError, TurnPlanStep,
+    ReasoningEffort, SandboxPolicy, Thread, ThreadSettings, ThreadTokenUsage, Turn, TurnError,
+    TurnPlanStep,
 };
 use crate::{Extra, RequestId};
 
@@ -23,18 +23,12 @@ method_enum! {
         "thread/name/updated" => ThreadNameUpdated(ThreadNameUpdated),
         "thread/settings/updated" => ThreadSettingsUpdated(ThreadSettingsUpdated),
         "thread/tokenUsage/updated" => ThreadTokenUsageUpdated(ThreadTokenUsageUpdated),
-        "thread/archived" => ThreadArchived(ThreadOnly),
-        "thread/unarchived" => ThreadUnarchived(ThreadOnly),
         "thread/closed" => ThreadClosed(ThreadOnly),
-        "thread/goal/updated" => ThreadGoalUpdated(ThreadOnly),
         "thread/goal/cleared" => ThreadGoalCleared(ThreadOnly),
-        "thread/readState/changed" => ThreadReadStateChanged(ThreadOnly),
-        "thread/compacted" => ThreadCompacted(TurnScoped),
         "turn/started" => TurnStarted(TurnNotification),
         "turn/completed" => TurnCompleted(TurnNotification),
         "turn/diff/updated" => TurnDiffUpdated(TurnDiffUpdated),
         "turn/plan/updated" => TurnPlanUpdated(TurnPlanUpdated),
-        "turn/moderationMetadata" => TurnModerationMetadata(TurnScoped),
         "item/started" => ItemStarted(ItemNotification),
         "item/completed" => ItemCompleted(ItemNotification),
         "item/agentMessage/delta" => AgentMessageDelta(Delta),
@@ -44,21 +38,17 @@ method_enum! {
         "item/reasoning/summaryPartAdded" => ReasoningSummaryPartAdded(SummaryPartAdded),
         "item/commandExecution/outputDelta" => CommandOutputDelta(Delta),
         "item/commandExecution/terminalInteraction" => TerminalInteraction(TerminalInteraction),
-        "item/fileChange/outputDelta" => FileChangeOutputDelta(Delta),
         "item/autoApprovalReview/started" => AutoApprovalReviewStarted(AutoApprovalReview),
         "item/autoApprovalReview/completed" => AutoApprovalReviewCompleted(AutoApprovalReview),
         "serverRequest/resolved" => ServerRequestResolved(ServerRequestResolved),
-        "model/rerouted" => ModelRerouted(ModelRerouted),
         "model/verification" => ModelVerification(ModelVerification),
         "model/safetyBuffering/updated" => SafetyBufferingUpdated(SafetyBufferingUpdated),
         "autoApprovalReview/strictReviewRequired" => StrictReviewRequired(ThreadOnly),
-        "hook/started" => HookStarted(ThreadOnly),
-        "hook/completed" => HookCompleted(ThreadOnly),
         "account/updated" => AccountUpdated(AccountUpdated),
         "account/rateLimits/updated" => AccountRateLimitsUpdated(AccountRateLimitsUpdated),
         "account/login/completed" => AccountLoginCompleted(AccountLoginCompleted),
         "mcpServer/startupStatus/updated" => McpServerStatusUpdated(McpServerStatusUpdated),
-        "remoteControl/status/changed" => RemoteControlStatusChanged(RemoteControlStatusChanged),
+        "remoteControl/status/changed" => RemoteControlStatusChanged(Extra),
         "skills/changed" => SkillsChanged(Extra),
         "deprecationNotice" => DeprecationNotice(DeprecationNotice),
         "configWarning" => ConfigWarning(DeprecationNotice),
@@ -77,13 +67,7 @@ impl ServerNotification {
             Self::ThreadNameUpdated(n) => Some(&n.thread_id),
             Self::ThreadSettingsUpdated(n) => Some(&n.thread_id),
             Self::ThreadTokenUsageUpdated(n) => Some(&n.thread_id),
-            Self::ThreadArchived(n)
-            | Self::ThreadUnarchived(n)
-            | Self::ThreadClosed(n)
-            | Self::ThreadGoalUpdated(n)
-            | Self::ThreadGoalCleared(n)
-            | Self::ThreadReadStateChanged(n) => Some(&n.thread_id),
-            Self::ThreadCompacted(n) | Self::TurnModerationMetadata(n) => Some(&n.thread_id),
+            Self::ThreadClosed(n) | Self::ThreadGoalCleared(n) => Some(&n.thread_id),
             Self::TurnStarted(n) | Self::TurnCompleted(n) => Some(&n.thread_id),
             Self::TurnDiffUpdated(n) => Some(&n.thread_id),
             Self::TurnPlanUpdated(n) => Some(&n.thread_id),
@@ -91,8 +75,7 @@ impl ServerNotification {
             Self::AgentMessageDelta(n)
             | Self::PlanDelta(n)
             | Self::ReasoningTextDelta(n)
-            | Self::CommandOutputDelta(n)
-            | Self::FileChangeOutputDelta(n) => Some(&n.thread_id),
+            | Self::CommandOutputDelta(n) => Some(&n.thread_id),
             Self::ReasoningSummaryTextDelta(n) => Some(&n.thread_id),
             Self::ReasoningSummaryPartAdded(n) => Some(&n.thread_id),
             Self::TerminalInteraction(n) => Some(&n.thread_id),
@@ -100,12 +83,9 @@ impl ServerNotification {
                 Some(&n.thread_id)
             }
             Self::ServerRequestResolved(n) => Some(&n.thread_id),
-            Self::ModelRerouted(n) => Some(&n.thread_id),
             Self::ModelVerification(n) => Some(&n.thread_id),
             Self::SafetyBufferingUpdated(n) => Some(&n.thread_id),
-            Self::StrictReviewRequired(n) | Self::HookStarted(n) | Self::HookCompleted(n) => {
-                Some(&n.thread_id)
-            }
+            Self::StrictReviewRequired(n) => Some(&n.thread_id),
             Self::McpServerStatusUpdated(n) => n.thread_id.as_deref(),
             Self::AccountUpdated(_)
             | Self::AccountRateLimitsUpdated(_)
@@ -183,7 +163,6 @@ pub struct ThreadStarted {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadStatusChanged {
     pub thread_id: String,
-    pub status: ThreadStatus,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -192,8 +171,6 @@ pub struct ThreadStatusChanged {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadNameUpdated {
     pub thread_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thread_name: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -211,7 +188,6 @@ pub struct ThreadSettingsUpdated {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadTokenUsageUpdated {
     pub thread_id: String,
-    pub turn_id: String,
     pub token_usage: ThreadTokenUsage,
     #[serde(flatten)]
     pub extra: Extra,
@@ -232,15 +208,6 @@ pub struct DeprecationNotice {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadOnly {
     pub thread_id: String,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TurnScoped {
-    pub thread_id: String,
-    pub turn_id: String,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -268,9 +235,6 @@ pub struct TurnDiffUpdated {
 #[serde(rename_all = "camelCase")]
 pub struct TurnPlanUpdated {
     pub thread_id: String,
-    pub turn_id: String,
-    #[serde(default)]
-    pub explanation: Option<String>,
     pub plan: Vec<TurnPlanStep>,
     #[serde(flatten)]
     pub extra: Extra,
@@ -298,7 +262,6 @@ pub struct ItemNotification {
 #[serde(rename_all = "camelCase")]
 pub struct Delta {
     pub thread_id: String,
-    pub turn_id: String,
     pub item_id: String,
     pub delta: String,
     #[serde(flatten)]
@@ -309,7 +272,6 @@ pub struct Delta {
 #[serde(rename_all = "camelCase")]
 pub struct SummaryDelta {
     pub thread_id: String,
-    pub turn_id: String,
     pub item_id: String,
     pub delta: String,
     pub summary_index: i64,
@@ -321,7 +283,6 @@ pub struct SummaryDelta {
 #[serde(rename_all = "camelCase")]
 pub struct SummaryPartAdded {
     pub thread_id: String,
-    pub turn_id: String,
     pub item_id: String,
     pub summary_index: i64,
     #[serde(flatten)]
@@ -332,10 +293,6 @@ pub struct SummaryPartAdded {
 #[serde(rename_all = "camelCase")]
 pub struct TerminalInteraction {
     pub thread_id: String,
-    pub turn_id: String,
-    pub item_id: String,
-    pub process_id: String,
-    pub stdin: String,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -345,16 +302,12 @@ pub struct TerminalInteraction {
 #[serde(rename_all = "camelCase")]
 pub struct AutoApprovalReview {
     pub thread_id: String,
-    pub turn_id: String,
     pub review_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_item_id: Option<String>,
     pub review: Review,
-    pub action: ReviewAction,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_at_ms: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub completed_at_ms: Option<i64>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -381,36 +334,11 @@ string_enum! {
     }
 }
 
-tagged_enum! {
-    /// What Codex's reviewer was asked to approve.
-    pub enum ReviewAction {
-        "command" => Command(Extra),
-        "execve" => Execve(Extra),
-        "writeStdin" => WriteStdin(Extra),
-        "applyPatch" => ApplyPatch(Extra),
-        "networkAccess" => NetworkAccess(Extra),
-        "mcpToolCall" => McpToolCall(Extra),
-        "requestPermissions" => RequestPermissions(Extra),
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerRequestResolved {
     pub thread_id: String,
     pub request_id: RequestId,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelRerouted {
-    pub thread_id: String,
-    pub turn_id: String,
-    pub from_model: String,
-    pub to_model: String,
-    pub reason: String,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -466,23 +394,6 @@ string_enum! {
         Ready = "ready",
         Failed = "failed",
         Cancelled = "cancelled",
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteControlStatusChanged {
-    pub status: RemoteControlStatus,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-string_enum! {
-    pub enum RemoteControlStatus {
-        Disabled = "disabled",
-        Connecting = "connecting",
-        Connected = "connected",
-        Errored = "errored",
     }
 }
 
@@ -542,7 +453,6 @@ pub struct CommandApprovalParams {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NetworkApprovalContext {
     pub host: String,
-    pub protocol: String,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -603,7 +513,6 @@ string_enum! {
 #[serde(rename_all = "camelCase")]
 pub struct FileChangeApprovalParams {
     pub thread_id: String,
-    pub turn_id: String,
     pub item_id: String,
     #[serde(default)]
     pub reason: Option<String>,
@@ -617,10 +526,6 @@ pub struct FileChangeApprovalParams {
 #[serde(rename_all = "camelCase")]
 pub struct PermissionsApprovalParams {
     pub thread_id: String,
-    pub turn_id: String,
-    pub item_id: String,
-    #[serde(default)]
-    pub cwd: String,
     #[serde(default)]
     pub reason: Option<String>,
     pub permissions: PermissionProfile,
@@ -672,8 +577,6 @@ pub struct NetworkPermissions {
 #[serde(rename_all = "camelCase")]
 pub struct RequestUserInputParams {
     pub thread_id: String,
-    pub turn_id: String,
-    pub item_id: String,
     pub questions: Vec<Question>,
     #[serde(flatten)]
     pub extra: Extra,
@@ -708,11 +611,7 @@ pub struct QuestionOption {
 #[serde(rename_all = "camelCase")]
 pub struct ToolCallParams {
     pub thread_id: String,
-    pub turn_id: String,
-    pub call_id: String,
     pub tool: String,
-    #[serde(default)]
-    pub namespace: Option<String>,
     /// The tool's arguments, as the model wrote them.
     pub arguments: Value,
     #[serde(flatten)]
@@ -724,8 +623,6 @@ pub struct ToolCallParams {
 #[serde(rename_all = "camelCase")]
 pub struct ElicitationParams {
     pub thread_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub turn_id: Option<String>,
     pub server_name: String,
     pub mode: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -751,8 +648,6 @@ pub struct ElicitationMeta {
     /// The tool whose call is being approved, from codex-cli 0.163.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_description: Option<String>,
     /// The arguments of the tool call being approved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_params: Option<Value>,
@@ -801,8 +696,6 @@ pub struct ThreadResponse {
     pub thread: Thread,
     #[serde(default)]
     pub model: String,
-    #[serde(default)]
-    pub cwd: String,
     #[serde(default)]
     pub approval_policy: Option<AskForApproval>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -861,7 +754,6 @@ pub struct Model {
 #[serde(rename_all = "camelCase")]
 pub struct ReasoningEffortOption {
     pub reasoning_effort: ReasoningEffort,
-    pub description: String,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -875,7 +767,6 @@ pub struct SkillsListResponse {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SkillsListEntry {
-    pub cwd: String,
     pub skills: Vec<Skill>,
     #[serde(flatten)]
     pub extra: Extra,
@@ -934,7 +825,6 @@ tagged_enum! {
 pub struct ChatgptAccount {
     #[serde(default)]
     pub email: Option<String>,
-    pub plan_type: PlanType,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -965,7 +855,6 @@ pub struct BackgroundTerminal {
     pub item_id: String,
     pub process_id: String,
     pub command: String,
-    pub cwd: String,
     #[serde(flatten)]
     pub extra: Extra,
 }

@@ -115,20 +115,6 @@ pub enum PreviewFormat {
     Html,
 }
 
-// ── OutputFormat ────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OutputFormat {
-    pub r#type: OutputFormatType,
-    pub schema: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OutputFormatType {
-    JsonSchema,
-}
-
 // ── McpServerConfig ─────────────────────────────────────────────────
 
 /// One MCP server as Claude Code reads it. `Sdk` names a server the program
@@ -172,8 +158,6 @@ pub struct McpStdioServerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpSseServerConfig {
     pub url: String,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub headers: HashMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<u64>,
     #[serde(
@@ -187,8 +171,6 @@ pub struct McpSseServerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpHttpServerConfig {
     pub url: String,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub headers: HashMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<u64>,
     #[serde(
@@ -263,26 +245,6 @@ pub enum SkillsConfig {
 pub enum SettingSource {
     User,
     Project,
-    Local,
-}
-
-// ── SdkPluginConfig ─────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SdkPluginConfig {
-    pub r#type: PluginType,
-    pub path: PathBuf,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        rename = "skipMcpDiscovery"
-    )]
-    pub skip_mcp_discovery: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PluginType {
     Local,
 }
 

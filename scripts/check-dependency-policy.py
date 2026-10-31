@@ -37,7 +37,7 @@ ALLOWED_LOCAL = {
         "wire",
     },
     "claude": {"claude-protocol"},
-    "codex": {"codex-protocol"},
+    "codex": set(),
     # Each provider's messages as types: pure, so the interpreter the phone
     # links can read them. PURE_EXTERNAL below bounds what they may pull in.
     "claude-protocol": set(),

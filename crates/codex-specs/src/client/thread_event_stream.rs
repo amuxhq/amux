@@ -1,10 +1,10 @@
 use std::fmt;
 use std::sync::Arc;
 
-use crate::dispatch::{ThreadChannelState, ThreadEventReceiver};
-use crate::error::Error;
-use crate::event::ThreadEvent;
-use crate::thread::{ThreadInner, restore_event_receiver};
+use crate::client::dispatch::{ThreadChannelState, ThreadEventReceiver};
+use crate::client::error::Error;
+use crate::client::event::ThreadEvent;
+use crate::client::thread::{ThreadInner, restore_event_receiver};
 
 /// Continuous receiver for every event routed to one Codex thread.
 #[must_use = "thread events must be consumed to avoid bounded-queue overflow"]

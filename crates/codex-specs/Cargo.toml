@@ -7,6 +7,7 @@ publish = false
 autotests = false
 
 [dependencies]
+anyhow = { workspace = true }
 chrono = { workspace = true }
 codex = { path = "../codex" }
 codex-protocol.workspace = true
@@ -14,14 +15,18 @@ pty-host.workspace = true
 redaction = { workspace = true }
 replay-support = { path = "../replay-support" }
 semver = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
 uuid = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 futures-util = { workspace = true }
+nix = { workspace = true }
 tokio-tungstenite = { workspace = true }
 
 [[bin]]

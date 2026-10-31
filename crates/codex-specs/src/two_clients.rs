@@ -14,7 +14,6 @@
 
 use std::path::Path;
 
-use codex::{Codex, Event, ThreadEventStream, text_input};
 use codex_protocol::Extra;
 use codex_protocol::client::{ThreadResumeParams, TurnStartParams, TurnSteerParams};
 use codex_protocol::items::ThreadItem;
@@ -25,6 +24,7 @@ use super::{
     ScenarioReport, decision, next_event, report, started, stringify, thread_config,
     turn_completed, turn_started, wait_for_completion,
 };
+use crate::client::{Codex, Event, ThreadEventStream, text_input};
 
 /// The specifications in this module.
 pub const TWO_CLIENTS: &[&str] = &[
@@ -70,7 +70,7 @@ async fn start_and_join(
     model: &str,
     project: &Path,
     sandbox: SandboxMode,
-) -> Result<(codex::Thread, codex::Thread), String> {
+) -> Result<(crate::client::Thread, crate::client::Thread), String> {
     let mut config = thread_config(model, project);
     config.sandbox = Some(sandbox.clone());
     let thread = amux
@@ -348,12 +348,12 @@ pub(super) mod live {
     use std::time::{Duration, Instant};
 
     use codex::host::{Connection, Listen};
-    use codex::{Codex, CodexConfig};
     use pty_host::Tether;
     use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
     use tokio::task::JoinHandle;
 
     use super::{AMUX, OTHER};
+    use crate::client::{Codex, CodexConfig};
 
     const LISTEN_WAIT: Duration = Duration::from_secs(60);
 

@@ -13,8 +13,8 @@ use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use crate::error::Error;
-use crate::event::{Event, ThreadEvent};
+use crate::client::error::Error;
+use crate::client::event::{Event, ThreadEvent};
 
 // ── ServerInner ──────────────────────────────────────────────────
 
@@ -375,7 +375,6 @@ impl ServerInner {
         let error = RpcError {
             code,
             message: format!("client did not handle server request `{method}`"),
-            data: None,
             extra: Extra::new(),
         };
         let line = codex_protocol::encode(&ClientMessage::Response {
@@ -549,7 +548,7 @@ mod tests {
             Some(Event::Request {
                 id: RequestId::Integer(52),
                 request: ServerRequest::RequestUserInput(ref params),
-            }) if params.turn_id == "turn-1"
+            }) if params.thread_id == "thread-1"
         ));
         assert!(matches!(
             stdin_rx.try_recv(),

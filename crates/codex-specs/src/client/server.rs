@@ -12,17 +12,17 @@ use tokio::io::{AsyncBufRead, AsyncWrite};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::config::CodexConfig;
-use crate::dispatch::ServerInner;
-use crate::error::Error;
-use crate::thread::Thread;
-use crate::transport;
+use crate::client::config::CodexConfig;
+use crate::client::dispatch::ServerInner;
+use crate::client::error::Error;
+use crate::client::thread::Thread;
+use crate::client::transport;
 
 // ── Codex ────────────────────────────────────────────────────────
 
 /// A client of one codex app-server.
 ///
-/// Created via [`connect()`](crate::connect) or [`Codex::from_io`]. All
+/// Created via [`connect()`](crate::client::connect) or [`Codex::from_io`]. All
 /// methods take `&self`; the handle is cheap to clone.
 #[derive(Clone)]
 pub struct Codex {
@@ -187,24 +187,11 @@ impl Codex {
         self.inner.request(ClientRequest::AccountRead(params)).await
     }
 
-    /// Send any request and read its answer as `R`.
-    pub async fn request<R: serde::de::DeserializeOwned>(
-        &self,
-        request: ClientRequest,
-    ) -> Result<R, Error> {
-        self.inner.request(request).await
-    }
-
     // ── Shutdown ─────────────────────────────────────────────────
 
     /// Shut down the codex app-server subprocess.
     pub async fn close(self) {
         self.inner.shutdown().await;
-    }
-
-    /// Whether the underlying transport reader has terminated.
-    pub fn is_closed(&self) -> bool {
-        self.inner.cancel.is_cancelled()
     }
 }
 
@@ -270,7 +257,7 @@ mod remediation_tests {
         })
     }
 
-    fn warning_message(event: &crate::ThreadEvent) -> &str {
+    fn warning_message(event: &crate::client::ThreadEvent) -> &str {
         match event.notification() {
             Some(codex_protocol::ServerNotification::Warning(warning)) => &warning.message,
             other => panic!("expected a warning, got {other:?}"),
@@ -392,7 +379,7 @@ mod remediation_tests {
         }
         assert_eq!(
             thread.inner.registration.state(),
-            crate::dispatch::ThreadChannelState::Open,
+            crate::client::dispatch::ThreadChannelState::Open,
             "the single resume must not poison its registration and trigger another resume"
         );
         assert!(

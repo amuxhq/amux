@@ -35,9 +35,9 @@ use wire::{
 };
 
 use super::{
-    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, InjectConsumption, ListedSkill, Proposed,
-    RESUME_REQUEST, Request, State, Streamed, WorkState, ask_key, client_message_id,
-    elicitation_response, item_body, work_ask, work_complete,
+    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, ListedSkill, Proposed, RESUME_REQUEST,
+    Request, State, Streamed, WorkState, ask_key, client_message_id, elicitation_response,
+    item_body, work_ask, work_complete,
 };
 use crate::claude_common::compact_json;
 use crate::shared::{Output, json_as_written, patch_first_change};
@@ -326,7 +326,6 @@ impl State {
                 let refusal = RpcError {
                     code: -32601,
                     message: format!("amux does not handle {method}"),
-                    data: None,
                     extra: Default::default(),
                 };
                 self.respond(emit, &ask_key(id), Err(refusal));
@@ -353,7 +352,6 @@ impl State {
                 let refused = RpcError {
                     code: 0,
                     message: String::new(),
-                    data: None,
                     extra: Default::default(),
                 };
                 self.response(emit, id, Err(refused));
@@ -654,7 +652,11 @@ impl State {
                 during_turn,
                 turn_over,
             } => {
-                if during_turn && self.consumption == InjectConsumption::DrainedMidTurn {
+                // A running turn samples again with injected items in
+                // context before it ends (codex-cli 0.157.0 onwards), so a
+                // message injected mid-turn is consumed at the inject's
+                // acknowledgement and needs no turn of its own.
+                if during_turn {
                     if turn_over && !self.shared.is_busy() {
                         // The turn it was sent into ended first: nothing
                         // answers it until a turn starts.
@@ -855,7 +857,6 @@ impl State {
             ClientRequest::BackgroundTerminalsList(BackgroundTerminalsListParams {
                 thread_id: self.thread(),
                 cursor,
-                limit: None,
                 extra: Default::default(),
             }),
             Request::Jobs { page, listed },
@@ -1643,10 +1644,6 @@ impl State {
             ServerNotification::McpServerStatusUpdated(updated) => {
                 self.server_status(emit, updated)
             }
-            // A reroute covers one request and Codex keeps the chosen model
-            // for the next; it also sends a warning saying so, with a link,
-            // which is what the person sees.
-            ServerNotification::ModelRerouted(_) => {}
             ServerNotification::Error(error) => self.api_error(emit, error),
             ServerNotification::AutoApprovalReviewStarted(review) => {
                 self.review(emit, review, false)
@@ -1676,15 +1673,8 @@ impl State {
             // Nothing a client draws, or what another fact already covers.
             ServerNotification::ThreadStatusChanged(_)
             | ServerNotification::ThreadNameUpdated(_)
-            | ServerNotification::ThreadCompacted(_)
-            | ServerNotification::ThreadArchived(_)
-            | ServerNotification::ThreadUnarchived(_)
-            | ServerNotification::ThreadGoalUpdated(_)
             | ServerNotification::ThreadGoalCleared(_)
-            | ServerNotification::ThreadReadStateChanged(_)
-            | ServerNotification::TurnModerationMetadata(_)
             | ServerNotification::RemoteControlStatusChanged(_)
-            | ServerNotification::FileChangeOutputDelta(_)
             | ServerNotification::TerminalInteraction(_) => {}
             ServerNotification::SkillsChanged(_) => self.skills_changed(emit),
             // Configuration Codex found and did not apply: the person
@@ -1725,7 +1715,6 @@ impl State {
             ServerNotification::SafetyBufferingUpdated(update) => {
                 self.safety_check(emit, &update.turn_id, update.show_buffering_ui)
             }
-            ServerNotification::HookStarted(_) | ServerNotification::HookCompleted(_) => {}
             // Codex closes a thread only once no client is subscribed, so
             // the agent's own thread closing means it is gone; the next
             // incarnation resumes it.
@@ -2621,9 +2610,6 @@ impl State {
         self.interrupt_pending = false;
         if outcome == TurnOutcome::Completed {
             self.open_plan_ask(&turn_id);
-        }
-        if self.consumption == InjectConsumption::ParkedUntilNextTurn {
-            self.turn_over_parked(emit);
         }
     }
 

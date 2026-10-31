@@ -56,8 +56,8 @@ pub enum ForwardedError {
 }
 
 /// The variables Claude sets on a hook command for its messaging socket.
-pub const MESSAGING_SOCKET_ENV: &str = "CLAUDE_CODE_MESSAGING_SOCKET";
-pub const MESSAGING_TOKEN_ENV: &str = "CLAUDE_CODE_MESSAGING_TOKEN";
+const MESSAGING_SOCKET_ENV: &str = "CLAUDE_CODE_MESSAGING_SOCKET";
+const MESSAGING_TOKEN_ENV: &str = "CLAUDE_CODE_MESSAGING_TOKEN";
 
 /// Splits a forwarded connection's bytes into the hook payload Claude wrote
 /// and the messaging credentials the forwarder added, if any. A payload
@@ -133,19 +133,6 @@ impl HookReceiver {
 
     #[cfg(not(unix))]
     pub fn bind_sync(_dir: &Path) -> Result<Self, std::io::Error> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "Claude hook sockets require Unix",
-        ))
-    }
-
-    #[cfg(unix)]
-    pub async fn bind(dir: &Path) -> Result<Self, std::io::Error> {
-        Self::bind_sync(dir)
-    }
-
-    #[cfg(not(unix))]
-    pub async fn bind(_dir: &Path) -> Result<Self, std::io::Error> {
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "Claude hook sockets require Unix",
@@ -265,7 +252,7 @@ mod tests {
             .prefix("ch")
             .tempdir_in("/tmp")
             .unwrap();
-        let receiver = HookReceiver::bind(dir.path()).await.unwrap();
+        let receiver = HookReceiver::bind_sync(dir.path()).unwrap();
         let mut payloads = receiver.payloads();
         let messaging = MessagingCredentials {
             socket_path: PathBuf::from("/runtime/claude.sock"),

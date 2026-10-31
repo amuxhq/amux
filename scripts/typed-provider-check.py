@@ -145,12 +145,6 @@ EXEMPTIONS = [
         "a recorded line becomes the fact's payload as written; it is decoded through the types beside it",
     ),
     Exemption(
-        "crates/interpret/src/claude_pty/mod.rs",
-        "bind_asks_for",
-        r"from_str::<Value>\(&meta\.input\)",
-        "a tool's input, kept as text on its ask, compared with the call's to bind them",
-    ),
-    Exemption(
         "crates/interpret/src/claude_pty/recording.rs",
         "read",
         r"from_str::<Value>\(line\)",

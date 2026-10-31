@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
-use interpret::codex::{Codex, CodexWith, Drained, Parked};
+use interpret::codex::Codex;
 use interpret::{Interpreter, Replayed, replay};
 use support::Committer;
 use ui_state::{InputOutcome, Msg, SessionState};
@@ -463,11 +463,5 @@ fn claude_sdk_view_goldens() {
 
 #[test]
 fn codex_view_goldens() {
-    // Two fixtures pin a message-consumption arm of the Codex interpreter.
-    let arms = |name: &str, path: &Path| match name {
-        "inject_parked" => Some(replay::<CodexWith<Parked>>(path)),
-        "inject_drained" | "inject_drained_turn_end" => Some(replay::<CodexWith<Drained>>(path)),
-        _ => None,
-    };
-    run_all::<Codex>(Kind::Codex, "codex", &arms);
+    run_all::<Codex>(Kind::Codex, "codex", &none);
 }

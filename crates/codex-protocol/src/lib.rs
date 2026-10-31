@@ -59,8 +59,6 @@ impl fmt::Display for RequestId {
 pub struct RpcError {
     pub code: i64,
     pub message: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data: Option<Value>,
     #[serde(flatten)]
     pub extra: Extra,
 }

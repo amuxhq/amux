@@ -440,9 +440,7 @@ Besides the session boundary `SessionStart` marks, a tool server's dialog,
 a streamed reply and a plan are the only items hooks make. When the call a
 dialog was raised under has only been announced by `PreToolUse` and its row
 has not landed, the dialog's item waits for that row, so it sits below the
-call. Recordings made before amux registered `PreToolUse` carry none, so an
-ask with no announced call is the oldest one for the same tool and input
-when that call's row lands.
+call.
 
 A subagent's calls reach the hooks socket carrying its agent id and never
 reach the followed transcript. They are counted as steps on the Agent row
@@ -814,7 +812,7 @@ answer.
 - **Agent messages** go to Codex with `thread/inject_items`. Codex reports
   nothing about an injected item, so the interpreter writes the agent-message
   item itself, at acceptance. A probe of codex-cli 0.157.0 settled when the
-  message counts as consumed (`CODEX_INJECT_CONSUMPTION`): a running turn
+  message counts as consumed: a running turn
   answers items injected into it before it ends, so a message injected
   mid-turn is consumed at the inject's acknowledgement; an inject into an idle
   thread is answered by an empty turn the interpreter starts for it, and is
@@ -822,7 +820,7 @@ answer.
   thread is running is held until it is; if a prompt is waiting for the
   thread as well (a spawn's task), the held messages are injected and ride
   that prompt's turn instead of an empty one, so the model reads its task
-  with them. Both arms have goldens of their own.
+  with them.
 
 ## Provider transport crates
 
@@ -832,7 +830,7 @@ The messages themselves are in the protocol crates, described with these in
 | Crate | What it holds | Who uses it |
 |---|---|---|
 | [`claude`](../crates/claude/src/lib.rs) | Hosting Claude Code: hook forwarding over the hook socket (`hooks`), launch settings and the environment scrub (`launch`), the messaging socket client (`messaging`), transcript tailing (`transcript`), session files (`history`) and version probing (`version`) | The agent process (hooks, launch, messaging, version, session files), `amux internal hook claude`, and `claude-specs` |
-| [`codex`](../crates/codex/src/lib.rs) | Hosting the Codex app server and a client for it: spawn, initialize, threads, turns, approvals, notifications, all on `codex-protocol` types | `codex-specs`, which drives Codex to record scenarios. The agent process and the interpreter write `codex-protocol` messages themselves |
+| [`codex`](../crates/codex/src/lib.rs) | Hosting the Codex app server: the listening socket (stdio on Windows), the process group, and whole messages in and out as bytes | The agent process, for its Codex server and the catalogue probe, and `codex-specs`, whose own client drives Codex to record scenarios |
 | [`pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal hosting: spawn in a process group, one output stream, input, resize, process-group signals, graceful termination | The agent process (terminal Claude and Codex views) and `claude-specs` |
 
 ## Recordings and re-recording

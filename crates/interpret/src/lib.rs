@@ -183,8 +183,6 @@ pub enum Channel {
     Stream,
     /// A JSON-RPC message from the Codex app server.
     Rpc,
-    /// A call on the agent's own tool server (tools.sock).
-    Tools,
     /// What the agent process itself observed about the provider it
     /// launched: for Claude in a terminal, the version it found.
     Agent,

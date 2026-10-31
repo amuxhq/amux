@@ -7,7 +7,6 @@
 
 use std::path::Path;
 
-use codex::{Codex, Event, Thread, ThreadEvent, ThreadEventStream};
 use codex_protocol::client::{
     ElicitationAction, ElicitationResponse, GrantScope, PermissionsApprovalResponse,
     ThreadStartParams,
@@ -23,6 +22,7 @@ use super::{
     ScenarioReport, completed, decision, next_event, report, stringify, thread_config,
     turn_completed,
 };
+use crate::client::{Codex, Event, Thread, ThreadEvent, ThreadEventStream};
 
 /// The tool server capture registers in the Codex home for the tool-server
 /// specification, and the one tool it offers.

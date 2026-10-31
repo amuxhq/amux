@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use codex::{Codex, CodexConfig, Event, Thread, ThreadEvent, ThreadEventStream};
 use codex_protocol::client::{
     CommandApprovalResponse, DynamicTool, InjectedContent, InjectedItem, InjectedMessage,
     ThreadListParams, ThreadResumeParams, ThreadStartParams, ToolCallResponse, TurnStartParams,
@@ -15,6 +14,8 @@ use codex_protocol::thread::{ApprovalPolicy, AskForApproval, SandboxMode, TurnSt
 use codex_protocol::{ClientResponse, Extra, Turn};
 use replay_support::{ReplayAdvance, SpecEntry, StrictReplay};
 use semver::Version;
+
+use crate::client::{Codex, CodexConfig, Event, Thread, ThreadEvent, ThreadEventStream};
 
 pub const MINIMUM_SUPPORTED: &str = "0.150.1";
 pub const CAPTURE_MODEL: &str = "gpt-5.6-luna";
@@ -223,7 +224,7 @@ async fn open_runtime(spec: &SpecEntry, source: SpecSource) -> Result<Runtime, S
                 "CODEX_HOME".to_string(),
                 codex_home.to_string_lossy().into_owned(),
             );
-            let codex = codex::connect(CodexConfig {
+            let codex = crate::client::connect(CodexConfig {
                 model: Some(model.clone()),
                 cwd: Some(project.clone()),
                 env: Some(env),

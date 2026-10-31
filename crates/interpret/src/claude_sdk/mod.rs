@@ -6,9 +6,9 @@
 //! Every user message the interpreter hands to Claude carries a uuid made
 //! from its input or envelope id. Claude echoes it on the message's replay,
 //! on its `command_lifecycle` frames and as its transcript row's uuid, so a
-//! reflection is matched to what was sent by id ([`CORRELATION`]); several
-//! messages written while a turn runs fold into that turn, so arrival order
-//! would mismatch them.
+//! reflection is matched to what was sent by id; several messages written
+//! while a turn runs fold into that turn, so arrival order would mismatch
+//! them (Claude 2.1.282, probed).
 //!
 //! What the agent offers comes from Claude, never from a client catalogue:
 //! the answer to the agent process's `initialize` request lists the models
@@ -52,20 +52,6 @@ use crate::{
 
 /// The interpreter for kind `claude_sdk`.
 pub struct ClaudeSdk;
-
-/// How a reflection is matched to the input it reflects.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Correlation {
-    /// By the uuid the interpreter put on the message.
-    ClientId,
-    /// By arrival order, one message per turn.
-    Fifo,
-}
-
-/// Decided by probing Claude 2.1.282: the uuid on a stdin user message is
-/// echoed exactly, and messages written during a turn fold into it, so
-/// arrival order cannot be trusted.
-pub const CORRELATION: Correlation = Correlation::ClientId;
 
 /// The uuid a user message for this input or envelope id carries. Claude
 /// wants a well-formed uuid, so the id's first sixteen bytes (zero padded)
@@ -113,7 +99,6 @@ struct Tool {
     ended_at_ms: Option<i64>,
     /// When the call began running: the moment it was allowed, when it
     /// waited for the person's approval.
-    #[serde(default)]
     started_at_ms: Option<i64>,
     parent_key: String,
     hidden: bool,
@@ -125,7 +110,7 @@ struct Tool {
     #[serde(with = "serde_pb::msgs")]
     images: Vec<Attachment>,
     /// What amux's attach tool attached, from the element it answered.
-    #[serde(default, with = "serde_pb::msgs")]
+    #[serde(with = "serde_pb::msgs")]
     attached: Vec<Attachment>,
     /// An ExitPlanMode call is drawn as its plan, with this verdict.
     plan: Option<Verdict>,
@@ -147,7 +132,6 @@ struct AskMeta {
     suggestions: Vec<String>,
     shape: AnswerShape,
     /// The subagent that asked; None for the main thread.
-    #[serde(default)]
     agent: Option<String>,
 }
 
@@ -210,7 +194,6 @@ pub struct State {
     never_ask: bool,
     /// The folder Claude was launched in, which it may work in without
     /// being granted it.
-    #[serde(default)]
     cwd: String,
     /// The models the initialize response offers and the commands Claude
     /// last listed: the catalogue.
@@ -223,7 +206,6 @@ pub struct State {
     clients: BTreeMap<String, Client>,
     /// The uuids of the messages amux handed Claude that no result has
     /// answered yet.
-    #[serde(default)]
     unanswered: BTreeSet<String>,
     /// The message being streamed, and its open blocks by index.
     stream: Option<String>,
@@ -254,21 +236,18 @@ pub struct State {
     #[serde(with = "serde_pb::opt_msg")]
     servers: Option<ToolServerHealth>,
     /// Launched without amux's tool server, by organization policy.
-    #[serde(default)]
     tools_withheld: bool,
     #[serde(with = "serde_pb::opt_msg")]
     sign_in: Option<SignIn>,
     /// Claude's background jobs; the shared part publishes them.
     jobs: Jobs,
     /// Tasks Claude marks ambient, its own work rather than the person's.
-    #[serde(default)]
     ambient: std::collections::BTreeSet<String>,
     /// The newest slash command sent, which a local command's output
     /// belongs to; taken by that output.
     slash: Option<String>,
     /// A built-in command's answer drawn before Claude named its command:
     /// its key and text, for the command's replay to name it.
-    #[serde(default)]
     synthetic: Option<(String, String)>,
     /// An interrupt was sent in the running turn.
     interrupted: bool,

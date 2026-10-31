@@ -11,8 +11,8 @@ use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::config::CodexConfig;
-use crate::dispatch::ServerInner;
+use crate::client::config::CodexConfig;
+use crate::client::dispatch::ServerInner;
 
 #[derive(Clone)]
 pub(crate) struct WireRecorder {

@@ -8,16 +8,16 @@ use codex_protocol::items::{TextInput, UserInput};
 use codex_protocol::server::{ThreadResponse, TurnStartResponse, TurnSteerResponse};
 use codex_protocol::{ClientRequest, ClientResponse, Extra, RequestId, Turn};
 
-use crate::dispatch::{ServerInner, ThreadEventReceiver, ThreadRegistration};
-use crate::error::Error;
-use crate::thread_event_stream::ThreadEventStream;
+use crate::client::dispatch::{ServerInner, ThreadEventReceiver, ThreadRegistration};
+use crate::client::error::Error;
+use crate::client::thread_event_stream::ThreadEventStream;
 
 // ── Thread ───────────────────────────────────────────────────────
 
 /// Handle to a single conversation thread on the codex app-server.
 ///
-/// Created via [`crate::Codex::start_thread()`] or
-/// [`crate::Codex::resume_thread()`]. Cheap to clone (internally
+/// Created via [`crate::client::Codex::start_thread()`] or
+/// [`crate::client::Codex::resume_thread()`]. Cheap to clone (internally
 /// `Arc`-wrapped). Clones share the event channel.
 #[derive(Clone)]
 pub struct Thread {
@@ -180,7 +180,7 @@ mod tests {
     use tokio_util::sync::CancellationToken;
 
     use super::*;
-    use crate::event::ThreadEvent;
+    use crate::client::event::ThreadEvent;
 
     fn test_server() -> Arc<ServerInner> {
         let (stdin_tx, stdin_rx) = mpsc::channel(1);
@@ -207,7 +207,7 @@ mod tests {
             panic!("{line} is a notification")
         };
         ThreadEvent {
-            event: crate::Event::Notification(notification),
+            event: crate::client::Event::Notification(notification),
             replayed: false,
         }
     }

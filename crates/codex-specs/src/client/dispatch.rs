@@ -13,8 +13,8 @@ use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use crate::error::Error;
-use crate::event::{Event, ThreadEvent};
+use crate::client::error::Error;
+use crate::client::event::{Event, ThreadEvent};
 
 // ── ServerInner ──────────────────────────────────────────────────
 

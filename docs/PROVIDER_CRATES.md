@@ -10,7 +10,7 @@ own:
 |---|---|---|---|
 | Protocol | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | [`codex-protocol`](../crates/codex-protocol/src/lib.rs) | Every message in both directions, as types, with a decoder and an encoder. Nothing else. |
 | Host | [`claude`](../crates/claude/src/lib.rs) | [`codex`](../crates/codex/src/lib.rs) | Starting the provider and carrying its bytes: launch arguments, the process, the terminal, sockets, the transcript file, the hook command. |
-| Client | the agent process and the [interpreters](INTERPRETERS.md); the spec driver in [`claude-specs`](../crates/claude-specs/src/driver/mod.rs) | the agent process and the [interpreters](INTERPRETERS.md); the client in [`codex`](../crates/codex/src/thread.rs) | Deciding what to send and what what was received means. |
+| Client | the agent process and the [interpreters](INTERPRETERS.md); the spec driver in [`claude-specs`](../crates/claude-specs/src/driver/mod.rs) | the agent process and the [interpreters](INTERPRETERS.md); the client in [`codex-specs`](../crates/codex-specs/src/client/mod.rs) | Deciding what to send and what what was received means. |
 
 ## Protocol
 
@@ -54,12 +54,11 @@ every message type from its protocol crate.
   hook command to the agent process over a socket, reaches Claude's
   messaging socket, and probes its version. The agent process uses it for
   terminal Claude.
-- `codex` starts `codex app-server` and holds one connection to it: it
-  writes requests built from `codex-protocol`, reads every line with
-  `codex_protocol::decode`, answers each request with the line that answers
-  it, and routes notifications and Codex's own requests to the thread they
-  name. A request from Codex that the protocol crate cannot read is refused
-  at once with "method not found", since nothing could answer it.
+- `codex` starts `codex app-server` listening on a socket in the agent's
+  folder (stdio on Windows) and carries whole messages to and from it as
+  bytes; the agent process and its interpreter build and read them with
+  `codex-protocol`. The agent process uses it for every Codex agent and for
+  the catalogue probe.
 
 ## Client
 
@@ -70,9 +69,12 @@ writes. The [interpreters page](INTERPRETERS.md) describes them.
 
 The recording tools are clients too:
 
-- `codex`'s `Codex` and `Thread` drive a live Codex for the Codex
-  specifications in [`codex-specs`](../crates/codex-specs/src/specs.rs) and
-  its `codex-probe` recorder.
+- The client in `codex-specs` (`Codex` and `Thread`) starts `codex
+  app-server` on stdio, pairs each request with the line that answers it,
+  and routes notifications and Codex's own requests to the thread they
+  name. It drives a live Codex for the Codex
+  [specifications](../crates/codex-specs/src/specs.rs) and the
+  `codex-probe` recorder.
 - The spec driver in `claude-specs`, shaped after Claude's published SDK,
   drives headless Claude for the Claude specifications and `claude-probe`.
 

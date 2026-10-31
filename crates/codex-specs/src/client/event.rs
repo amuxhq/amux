@@ -1,16 +1,14 @@
-use codex_protocol::{RequestId, ServerNotification, ServerRequest, Unknown};
+use codex_protocol::{RequestId, ServerNotification, ServerRequest};
 
 /// One message Codex's server sent that is not an answer to a request.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     Notification(ServerNotification),
-    /// A request the caller must answer with [`crate::Thread::respond`].
+    /// A request the caller must answer with [`crate::client::Thread::respond`].
     Request {
         id: RequestId,
         request: ServerRequest,
     },
-    /// A notification this client's protocol types do not know.
-    Unknown(Unknown),
 }
 
 impl Event {
@@ -19,7 +17,6 @@ impl Event {
         match self {
             Self::Notification(notification) => notification.method(),
             Self::Request { request, .. } => request.method(),
-            Self::Unknown(unknown) => unknown.method.as_deref().unwrap_or(""),
         }
     }
 }

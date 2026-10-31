@@ -17,7 +17,6 @@
 mod log;
 mod phone;
 
-use std::collections::VecDeque;
 use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -146,32 +145,15 @@ pub struct EmbeddedRuntime {
     analytics: Option<analytics::Flusher>,
 }
 
-/// A change to the profile list, as the registry announces it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ProfileEvent {
-    Upserted(ProfileView),
-    Removed(String),
-    /// Everything that was already there has been announced.
-    CaughtUp,
-}
+/// The registry's bell: it rings whenever the profile list moves, and the
+/// list is read afresh with [`EmbeddedRuntime::profiles`].
+pub struct ProfileWatch(ProfileSubscription);
 
-/// The registry's changes, from a snapshot of every profile on.
-pub struct ProfileEvents {
-    opening: VecDeque<ProfileEvent>,
-    watch: ProfileSubscription,
-}
-
-impl ProfileEvents {
-    /// The next change, or none once the daemon stops or the watch falls
-    /// too far behind, when the list has to be read again.
-    pub async fn next(&mut self) -> Option<ProfileEvent> {
-        if let Some(event) = self.opening.pop_front() {
-            return Some(event);
-        }
-        Some(match self.watch.next().await?.ok()? {
-            node::ProfileEvent::Upserted(state) => ProfileEvent::Upserted(profile_view(&state)),
-            node::ProfileEvent::Removed(id) => ProfileEvent::Removed(id.to_string()),
-        })
+impl ProfileWatch {
+    /// Waits for the list to move; none once the daemon stops or the watch
+    /// falls too far behind, when the list has to be watched again.
+    pub async fn moved(&mut self) -> Option<()> {
+        self.0.next().await?.ok().map(drop)
     }
 }
 
@@ -366,15 +348,9 @@ impl EmbeddedRuntime {
         Ok(profile_view(&self.registry.profile(profile)?))
     }
 
-    /// Every profile as it is now, then each change as it happens.
-    pub fn subscribe_profiles(&self) -> Result<ProfileEvents, EmbeddedError> {
-        let mut watch = self.registry.subscribe()?;
-        let opening = std::mem::take(&mut watch.listed)
-            .iter()
-            .map(|state| ProfileEvent::Upserted(profile_view(state)))
-            .chain([ProfileEvent::CaughtUp])
-            .collect();
-        Ok(ProfileEvents { opening, watch })
+    /// Rings for every move of the profile list from now on.
+    pub fn watch_profiles(&self) -> Result<ProfileWatch, EmbeddedError> {
+        Ok(ProfileWatch(self.registry.subscribe()?))
     }
 
     /// A new profile nobody has signed in on.

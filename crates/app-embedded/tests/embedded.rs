@@ -465,7 +465,7 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
     )
     .await
     .unwrap();
-    let mut events = embedded.subscribe_profiles().unwrap();
+    let mut watch = embedded.watch_profiles().unwrap();
     let ada = only_profile(&embedded).await;
     embedded
         .bind(Some(ada), relay.url(), "mobile", &Relay::login("ada"))
@@ -484,10 +484,14 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
     assert_ne!(bob, ada);
     tokio::time::timeout(PATIENCE, async {
         loop {
-            match events.next().await {
-                Some(app_embedded::ProfileEvent::Upserted(view)) if view.subject == "bob" => break,
-                Some(_) => {}
-                None => panic!("the watch ended"),
+            watch.moved().await.expect("the watch ended");
+            if embedded
+                .profiles()
+                .unwrap()
+                .iter()
+                .any(|view| view.subject == "bob")
+            {
+                break;
             }
         }
     })

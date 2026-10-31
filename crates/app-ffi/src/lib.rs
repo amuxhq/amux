@@ -39,8 +39,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 use app_embedded::{
-    EdgeOverrides, EmbeddedRuntime, PairRequest, Phone, ProfileEvent, ProfileId, ProfileView,
-    StartConfig, UsageEvent,
+    EdgeOverrides, EmbeddedRuntime, PairRequest, Phone, ProfileId, ProfileView, StartConfig,
+    UsageEvent,
 };
 use app_runtime::values::{
     ActOutcome, AgentAct, ChatDelta, CommandOutcome, Draft, FleetDelta, Found, FrozenReview,
@@ -391,15 +391,12 @@ pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxR
     let watching = phone.embedded().clone();
     let posting = outbox.clone();
     let watch = phone.handle().spawn(async move {
-        // A watch that falls behind ends; the list is read again from a
-        // fresh one, and handed to the app once it has caught up.
-        while let Ok(mut events) = watching.subscribe_profiles() {
-            let mut caught_up = false;
-            while let Some(event) = events.next().await {
-                caught_up |= event == ProfileEvent::CaughtUp;
-                if caught_up {
-                    posting.post_profiles(&watching);
-                }
+        // A watch that falls behind ends; the list is read again under a
+        // fresh one, which may have missed a move the last one did not ring.
+        while let Ok(mut watch) = watching.watch_profiles() {
+            posting.post_profiles(&watching);
+            while watch.moved().await.is_some() {
+                posting.post_profiles(&watching);
             }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }

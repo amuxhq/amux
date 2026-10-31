@@ -13,7 +13,7 @@ use claude_protocol::stream::{
 use prost::Message as _;
 use serde::Deserialize;
 use serde_json::Value;
-use wire::claude_sdk_item::Kind;
+use wire::claude_item::Kind;
 use wire::{
     BoundaryKind, ClaudeUsage, ClaudeUsageWindow, DecisionOutcome, FormAsk, HealthState, Limit,
     LinkAsk, PermissionAsk, SignIn, SignInState, TaskState as WireTaskState, ToolServer,
@@ -696,7 +696,7 @@ impl State {
                 let key = format!("{message}:{index}");
                 if let Some(open) = self.shared.open_item(&key).cloned() {
                     let thinking = matches!(
-                        wire::ClaudeSdkItem::decode(open.body.as_slice()).map(|item| item.kind),
+                        wire::ClaudeItem::decode(open.body.as_slice()).map(|item| item.kind),
                         Ok(Some(Kind::Thinking(_)))
                     );
                     self.close_block(emit, key, open.text, thinking);

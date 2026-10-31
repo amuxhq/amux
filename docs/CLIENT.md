@@ -88,7 +88,7 @@ parts:
 - **The entry and host.** The agent's inventory row (lifecycle, phase, incarnation, exit cause and its detail)
   and its host's entry, both fed from the fleet.
 - **`AgentState`**, the newest snapshot decoded. [`body.rs`](../crates/ui-state/src/body.rs) is the thin
-  per-kind layer: `decode_snapshot` reads a `ClaudePtySnapshot`, `ClaudeSdkSnapshot` or `CodexSnapshot` into one
+  per-kind layer: `decode_snapshot` reads a `ClaudeSnapshot` (either Claude kind) or a `CodexSnapshot` into one
   shape (phase, queue, working-on, open asks, model and its display name, effort, mode, sandbox, the
   catalogue's hash, tasks, context, usage, tool servers, sign-in, background jobs, running calls). The offered
   models and commands come from the catalogue the snapshot names. The driver reads it as a blob, `GetBlob` with the

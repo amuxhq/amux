@@ -2398,8 +2398,8 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
                 .encode_to_vec()
             }
             _ => {
-                use wire::claude_sdk_item::Kind as K;
-                wire::ClaudeSdkItem {
+                use wire::claude_item::Kind as K;
+                wire::ClaudeItem {
                     kind: Some(if prompt {
                         K::Prompt(wire::Prompt {})
                     } else {
@@ -2483,7 +2483,7 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
         }
     };
 
-    let claude_working = wire::ClaudeSdkSnapshot {
+    let claude_working = wire::ClaudeSnapshot {
         model: Some("opus".into()),
         model_name: Some("Opus".into()),
         permission: Some("default".into()),
@@ -2494,7 +2494,7 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
     let changes = session(Kind::ClaudeSdk, claude_working);
     let claude = session(
         Kind::ClaudeSdk,
-        wire::ClaudeSdkSnapshot {
+        wire::ClaudeSnapshot {
             model: Some("opus".into()),
             model_name: Some("Opus".into()),
             permission: Some("default".into()),
@@ -2505,7 +2505,7 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
     );
     let everything = session(
         Kind::ClaudeSdk,
-        wire::ClaudeSdkSnapshot {
+        wire::ClaudeSnapshot {
             model: Some("opus".into()),
             model_name: Some("Opus".into()),
             permission: Some("default".into()),
@@ -2681,8 +2681,8 @@ fn control_chats() -> Vec<(
                 .encode_to_vec()
             }
             Kind::ClaudePty => {
-                use wire::claude_pty_item::Kind as K;
-                wire::ClaudePtyItem {
+                use wire::claude_item::Kind as K;
+                wire::ClaudeItem {
                     kind: Some(if prompt {
                         K::Prompt(wire::Prompt {})
                     } else {
@@ -2692,8 +2692,8 @@ fn control_chats() -> Vec<(
                 .encode_to_vec()
             }
             _ => {
-                use wire::claude_sdk_item::Kind as K;
-                wire::ClaudeSdkItem {
+                use wire::claude_item::Kind as K;
+                wire::ClaudeItem {
                     kind: Some(if prompt {
                         K::Prompt(wire::Prompt {})
                     } else {
@@ -2768,7 +2768,7 @@ fn control_chats() -> Vec<(
 
     let claude_sdk = session(
         Kind::ClaudeSdk,
-        wire::ClaudeSdkSnapshot {
+        wire::ClaudeSnapshot {
             model: Some("claude-opus-5-5".into()),
             model_name: Some("Opus 5.5".into()),
             effort: Some("high".into()),
@@ -2819,7 +2819,7 @@ fn control_chats() -> Vec<(
     });
     let claude_pty = session(
         Kind::ClaudePty,
-        wire::ClaudePtySnapshot {
+        wire::ClaudeSnapshot {
             model: Some("claude-opus-5-5".into()),
             model_name: Some("Opus 5.5".into()),
             permission: Some("plan".into()),

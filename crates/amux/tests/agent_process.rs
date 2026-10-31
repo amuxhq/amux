@@ -23,10 +23,9 @@ use prost::Message as _;
 use provider_fakes::{SCRIPT_ENV, Script, Step};
 use tokio::io::{ReadHalf, WriteHalf};
 use wire::{
-    AgentHello, AgentSpec, ClaudePtyInput, ClaudePtyItem, ClaudeSdkInput, ClaudeSdkItem,
-    CodexInput, CodexItem, CtlFrame, EffectiveConfig, Input, Kind, Phase, PromptInput, PtyMode,
-    Stop, claude_pty_input, claude_pty_item, claude_sdk_input, claude_sdk_item, codex_input,
-    codex_item, ctl_frame, send_input_response,
+    AgentHello, AgentSpec, ClaudeItem, ClaudePtyInput, ClaudeSdkInput, CodexInput, CodexItem,
+    CtlFrame, EffectiveConfig, Input, Kind, Phase, PromptInput, PtyMode, Stop, claude_item,
+    claude_pty_input, claude_sdk_input, codex_input, codex_item, ctl_frame, send_input_response,
 };
 /// Long enough that no deadline fires during a test: the daemon's absence
 /// is survived, never drained.
@@ -333,12 +332,12 @@ impl Log {
 
 fn boundary(item: &wire::Item) -> Option<String> {
     let boundary = match item.kind() {
-        Kind::ClaudeSdk => match ClaudeSdkItem::decode(item.body.as_slice()).ok()?.kind? {
-            claude_sdk_item::Kind::Boundary(boundary) => boundary,
+        Kind::ClaudeSdk => match ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+            claude_item::Kind::Boundary(boundary) => boundary,
             _ => return None,
         },
-        Kind::ClaudePty => match ClaudePtyItem::decode(item.body.as_slice()).ok()?.kind? {
-            claude_pty_item::Kind::Boundary(boundary) => boundary,
+        Kind::ClaudePty => match ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+            claude_item::Kind::Boundary(boundary) => boundary,
             _ => return None,
         },
         Kind::Codex => match CodexItem::decode(item.body.as_slice()).ok()?.kind? {

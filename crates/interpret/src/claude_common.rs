@@ -9,6 +9,7 @@ use claude_protocol::stream::{
     ContentBlock, ImageSourceType, MessageContent, PermissionUpdate, PermissionUpdateDestination,
     ToolResultBody, ToolResultContent,
 };
+use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
@@ -20,7 +21,7 @@ use wire::{
     codex_grant, tool_decision, tool_input,
 };
 
-use crate::Effect;
+use crate::{Effect, ItemView};
 
 /// Built-in tools that only look, each by what it looks at: views fold runs
 /// of them together and name each by this verb.
@@ -1646,6 +1647,129 @@ pub(crate) fn amux_tools_withheld(mut health: ToolServerHealth) -> ToolServerHea
     });
     health.state = HealthState::Degraded as i32;
     health
+}
+
+/// A Claude item as the emission goldens print it.
+pub(crate) fn describe_item(body: &[u8]) -> ItemView {
+    use wire::claude_item::Kind;
+    let item = wire::ClaudeItem::decode(body).unwrap_or_default();
+    let (arm, complete, text) = match item.kind {
+        None => ("none", true, String::new()),
+        Some(Kind::Prompt(_)) => ("prompt", true, String::new()),
+        Some(Kind::Steer(_)) => ("steer", true, String::new()),
+        Some(Kind::Message(text)) => ("message", text.complete, String::new()),
+        Some(Kind::Thinking(thinking)) => ("thinking", thinking.complete, String::new()),
+        Some(Kind::Tool(tool)) => ("tool", true, describe_tool(&tool)),
+        Some(Kind::Ask(item)) => ("ask", true, crate::ask_item::describe(&item)),
+        Some(Kind::Plan(plan)) => ("plan", plan.complete, crate::shared::describe_plan(&plan)),
+        Some(Kind::Task(task)) => (
+            "task",
+            true,
+            format!(
+                "{} {} {} tools={} last={} tokens={}",
+                task.task_id,
+                wire::TaskState::try_from(task.state).map_or("?", |state| state.as_str_name()),
+                Value::String(task.description),
+                task.tool_count,
+                or_dash(&task.last_tool),
+                task.tokens,
+            ),
+        ),
+        Some(Kind::Turn(turn)) => (
+            "turn",
+            true,
+            format!(
+                "#{} {} started={}",
+                turn.turn_id,
+                wire::TurnOutcome::try_from(turn.outcome)
+                    .map_or("?", |outcome| outcome.as_str_name()),
+                turn.started_at_ms,
+            ),
+        ),
+        Some(Kind::Status(status)) => (
+            "status",
+            true,
+            format!(
+                "{} {}",
+                wire::SdkStatus::try_from(status.status).map_or("?", |status| status.as_str_name()),
+                status.word
+            ),
+        ),
+        Some(Kind::Boundary(boundary)) => (
+            "boundary",
+            true,
+            format!(
+                "{}{}",
+                wire::BoundaryKind::try_from(boundary.kind).map_or("?", |kind| kind.as_str_name()),
+                describe_cause(&boundary)
+            ),
+        ),
+        Some(Kind::CompactSummary(_)) => ("compact_summary", true, String::new()),
+        Some(Kind::Interruption(_)) => ("interruption", true, String::new()),
+        Some(Kind::AgentMessage(message)) => (
+            "agent_message",
+            true,
+            crate::shared::describe_agent_message(&message),
+        ),
+        Some(Kind::ApiError(error)) => (
+            "api_error",
+            true,
+            format!(
+                "{} {} retry={} {}/{}{}",
+                error.error_kind,
+                Value::String(error.message),
+                error.will_retry,
+                error.attempt,
+                error.max_attempts,
+                error
+                    .retry_at_ms
+                    .map_or(String::new(), |at| format!(" at={at}"))
+            ),
+        ),
+        Some(Kind::Slash(slash)) => (
+            "slash",
+            true,
+            format!("{} args={}", slash.command, Value::String(slash.args)),
+        ),
+        Some(Kind::Unrecognized(unrecognized)) => (
+            "unrecognized",
+            true,
+            format!(
+                "{} {}",
+                unrecognized.fact_type,
+                Value::String(unrecognized.summary)
+            ),
+        ),
+        Some(Kind::ModelSwitch(switch)) => (
+            "model_switch",
+            true,
+            format!(
+                "{} -> {} {}",
+                switch.from,
+                switch.to,
+                Value::String(switch.reason)
+            ),
+        ),
+        Some(Kind::Compaction(compaction)) => (
+            "compaction",
+            true,
+            format!(
+                "{}→{}{}",
+                compaction
+                    .tokens_before
+                    .map_or("?".to_owned(), |tokens| tokens.to_string()),
+                compaction
+                    .tokens_after
+                    .map_or("?".to_owned(), |tokens| tokens.to_string()),
+                if compaction.automatic { " auto" } else { "" }
+            ),
+        ),
+    };
+    ItemView {
+        arm: arm.into(),
+        complete,
+        text,
+    }
 }
 
 #[cfg(test)]

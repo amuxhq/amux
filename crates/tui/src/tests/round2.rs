@@ -20,14 +20,14 @@ fn screen_of(
 
 /// A finished agent reply of exactly `words`.
 fn said(order: u64, words: &str) -> Item {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
     Item {
         key: format!("r{order}"),
         order,
         revision: order,
         text: words.into(),
         kind: Kind::ClaudeSdk as i32,
-        body: wire::ClaudeSdkItem {
+        body: wire::ClaudeItem {
             kind: Some(K::Message(wire::Text { complete: true })),
         }
         .encode_to_vec(),
@@ -38,14 +38,14 @@ fn said(order: u64, words: &str) -> Item {
 
 /// A prompt the person sent, of exactly `words`.
 fn asked(order: u64, words: &str) -> Item {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
     Item {
         key: format!("p{order}"),
         order,
         revision: order,
         text: words.into(),
         kind: Kind::ClaudeSdk as i32,
-        body: wire::ClaudeSdkItem {
+        body: wire::ClaudeItem {
             kind: Some(K::Prompt(wire::Prompt {})),
         }
         .encode_to_vec(),
@@ -64,7 +64,7 @@ fn long_question() -> SessionState {
             .into(),
         ..Default::default()
     };
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         asks: vec![wire::Ask {
             key: "q-1".into(),
             item_key: "call-q".into(),
@@ -784,7 +784,7 @@ fn a_slash_command_codex_does_not_offer_is_refused_in_the_composer() {
 /// pick, as Claude's own Submit does; it did nothing and said nothing.
 #[test]
 fn enter_on_a_multi_select_with_nothing_ticked_submits_an_empty_pick() {
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         asks: vec![wire::Ask {
             key: "q-1".into(),
             item_key: "call-q".into(),
@@ -825,7 +825,7 @@ fn enter_on_a_multi_select_with_nothing_ticked_submits_an_empty_pick() {
 /// go to the agent together: the typed words used to replace the ticks.
 #[test]
 fn a_multi_select_sends_its_ticks_with_the_words_typed_as_something_else() {
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         asks: vec![wire::Ask {
             key: "q-1".into(),
             item_key: "call-q".into(),
@@ -894,7 +894,7 @@ fn a_conversation_switched_away_in_claudes_view_offers_switch_back() {
     state.update(Msg::Connection(ui_state::Connection::Live));
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: Kind::ClaudePty as i32,
-        body: wire::ClaudePtySnapshot {
+        body: wire::ClaudeSnapshot {
             switched_away: Some(true),
             ..Default::default()
         }

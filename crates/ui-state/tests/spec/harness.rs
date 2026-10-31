@@ -66,7 +66,7 @@ pub enum Body {
 }
 
 pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
-    use wire::{claude_pty_item as pty, claude_sdk_item as sdk, codex_item as codex};
+    use wire::{claude_item as pty, claude_item as sdk, codex_item as codex};
     let class = |name: &str, explore: bool| {
         (match (explore, name) {
             (false, _) => ToolClass::Consequential,
@@ -108,7 +108,7 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
                 Body::Retry { attempt, max } => pty::Kind::ApiError(retry(attempt, max)),
                 Body::Compacting => pty::Kind::Compaction(wire::Compaction::default()),
             };
-            wire::ClaudePtyItem { kind: Some(kind) }.encode_to_vec()
+            wire::ClaudeItem { kind: Some(kind) }.encode_to_vec()
         }
         Kind::ClaudeSdk => {
             let kind = match body.clone() {
@@ -128,7 +128,7 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
                     word: "compacting".into(),
                 }),
             };
-            wire::ClaudeSdkItem { kind: Some(kind) }.encode_to_vec()
+            wire::ClaudeItem { kind: Some(kind) }.encode_to_vec()
         }
         Kind::Codex => {
             let kind = match body.clone() {
@@ -279,7 +279,7 @@ pub fn ask(kind: Kind, key: &str) -> Vec<u8> {
 /// explicit unknown.
 pub fn snapshot_body(kind: Kind, asks: &[&str]) -> Vec<u8> {
     match kind {
-        Kind::ClaudePty => wire::ClaudePtySnapshot {
+        Kind::ClaudePty => wire::ClaudeSnapshot {
             asks: asks
                 .iter()
                 .map(|key| Ask::decode(&ask(kind, key)[..]).unwrap())
@@ -287,7 +287,7 @@ pub fn snapshot_body(kind: Kind, asks: &[&str]) -> Vec<u8> {
             ..Default::default()
         }
         .encode_to_vec(),
-        Kind::ClaudeSdk => wire::ClaudeSdkSnapshot {
+        Kind::ClaudeSdk => wire::ClaudeSnapshot {
             asks: asks
                 .iter()
                 .map(|key| Ask::decode(&ask(kind, key)[..]).unwrap())

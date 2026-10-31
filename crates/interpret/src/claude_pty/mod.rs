@@ -115,15 +115,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
     AgentSpec, Ask, AskClosed, Attachment, Boundary, BoundaryKind, ClaudeAnswer, ClaudeGrant,
-    ClaudePtyItem, ClaudePtySnapshot, ContextMeter, DecisionOutcome, Envelope, Input, KindInput,
-    Refusal, RunningCall, Step, SubagentProgress, ToolCall, ToolDecision, ToolState, claude_answer,
-    claude_pty_input, claude_pty_item, tool_decision,
+    ClaudeItem, ClaudeSnapshot, ContextMeter, DecisionOutcome, Envelope, Input, KindInput, Refusal,
+    RunningCall, Step, SubagentProgress, ToolCall, ToolDecision, ToolState, claude_answer,
+    claude_item, claude_pty_input, tool_decision,
 };
 
 use crate::claude_answers::{self, AnswerShape, Decided};
 use crate::claude_common::{
-    FileStep, Jobs, Task, Verdict, describe_asks, describe_tasks, describe_tool, file_step,
-    plan_item, question_item, same_json, task_list, tool_input,
+    FileStep, Jobs, Task, Verdict, describe_asks, describe_tasks, file_step, plan_item,
+    question_item, same_json, task_list, tool_input,
 };
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
@@ -618,8 +618,8 @@ pub(super) struct Stream {
     pub(super) landed: bool,
 }
 
-fn item_body(kind: claude_pty_item::Kind) -> Vec<u8> {
-    ClaudePtyItem { kind: Some(kind) }.encode_to_vec()
+fn item_body(kind: claude_item::Kind) -> Vec<u8> {
+    ClaudeItem { kind: Some(kind) }.encode_to_vec()
 }
 
 impl State {
@@ -691,7 +691,7 @@ impl State {
                 window_tokens: None,
             },
         };
-        ClaudePtySnapshot {
+        ClaudeSnapshot {
             asks: self.shared.asks().open_asks().to_vec(),
             tasks: Some(tasks),
             context: Some(context),
@@ -721,7 +721,7 @@ impl State {
                     since_ms: running.since_ms,
                 })
                 .collect(),
-            ..unknown::claude_pty()
+            ..unknown::claude()
         }
         .encode_to_vec()
     }
@@ -741,7 +741,7 @@ impl State {
             let Some(item) = question_item(&tool.input, tool.asked.clone()) else {
                 return;
             };
-            let body = item_body(claude_pty_item::Kind::Ask(item));
+            let body = item_body(claude_item::Kind::Ask(item));
             if body == tool.emitted {
                 return;
             }
@@ -762,7 +762,7 @@ impl State {
             let Some((text, plan)) = plan_item(&tool.input, verdict) else {
                 return;
             };
-            let body = item_body(claude_pty_item::Kind::Plan(plan));
+            let body = item_body(claude_item::Kind::Plan(plan));
             if body == tool.emitted {
                 return;
             }
@@ -788,7 +788,7 @@ impl State {
                     &tool.outcome_text,
                 ),
             );
-            let body = item_body(claude_pty_item::Kind::AgentMessage(message));
+            let body = item_body(claude_item::Kind::AgentMessage(message));
             if body == tool.emitted {
                 return;
             }
@@ -815,7 +815,7 @@ impl State {
             FileStep::default()
         };
         let input = serde_json::from_str(&tool.input).unwrap_or(Value::Null);
-        let body = item_body(claude_pty_item::Kind::Tool(ToolCall {
+        let body = item_body(claude_item::Kind::Tool(ToolCall {
             name: tool.name.clone(),
             input: Some(tool_input(&tool.name, &tool.server, &input, "")),
             state: tool.state,
@@ -1123,7 +1123,7 @@ impl State {
             emit,
             ItemDraft {
                 key: ask.item_key.clone(),
-                body: item_body(claude_pty_item::Kind::Ask(item)),
+                body: item_body(claude_item::Kind::Ask(item)),
                 at_ms: Some(ask.opened_at_ms),
                 complete: true,
                 ..Default::default()
@@ -1338,7 +1338,7 @@ impl State {
             emit,
             ItemDraft {
                 key,
-                body: item_body(claude_pty_item::Kind::Boundary(Boundary {
+                body: item_body(claude_item::Kind::Boundary(Boundary {
                     kind: kind as i32,
                     cause: exit.cause,
                     cause_detail: exit.detail,
@@ -1357,7 +1357,7 @@ impl State {
             key: slash.key.clone(),
             text: slash.output.clone().unwrap_or_default(),
             input_id: slash.input_id.clone(),
-            body: item_body(claude_pty_item::Kind::Slash(wire::SlashOutput {
+            body: item_body(claude_item::Kind::Slash(wire::SlashOutput {
                 command: slash.command.clone(),
                 args: slash.args.clone(),
             })),
@@ -1423,7 +1423,7 @@ impl State {
                 text: words,
                 attachments,
                 input_id: envelope.id.clone(),
-                body: item_body(claude_pty_item::Kind::AgentMessage(agent_message_body(
+                body: item_body(claude_item::Kind::AgentMessage(agent_message_body(
                     &envelope,
                 ))),
                 complete: true,
@@ -1736,8 +1736,8 @@ impl Interpreter for ClaudePty {
 
     fn redact(target: RedactTarget) -> RedactTarget {
         crate::redact::redact_kind::<
-            wire::ClaudePtyItem,
-            wire::ClaudePtySnapshot,
+            wire::ClaudeItem,
+            wire::ClaudeSnapshot,
             wire::ClaudePtyInput,
             State,
         >(target)
@@ -1752,11 +1752,11 @@ impl Interpreter for ClaudePty {
     }
 
     fn unknown_snapshot() -> Vec<u8> {
-        unknown::claude_pty().encode_to_vec()
+        unknown::claude().encode_to_vec()
     }
 
     fn describe_item(body: &[u8]) -> ItemView {
-        describe_item(body)
+        crate::claude_common::describe_item(body)
     }
 
     fn describe_snapshot(body: &[u8]) -> SnapshotView {
@@ -1772,95 +1772,8 @@ impl Interpreter for ClaudePty {
     }
 }
 
-fn describe_item(body: &[u8]) -> ItemView {
-    use claude_pty_item::Kind;
-    let item = ClaudePtyItem::decode(body).unwrap_or_default();
-    let (arm, complete, text) = match item.kind {
-        None => ("none", true, String::new()),
-        Some(Kind::Prompt(_)) => ("prompt", true, String::new()),
-        Some(Kind::Steer(_)) => ("steer", true, String::new()),
-        Some(Kind::Message(text)) => ("message", text.complete, String::new()),
-        Some(Kind::Thinking(thinking)) => ("thinking", thinking.complete, String::new()),
-        Some(Kind::Tool(tool)) => ("tool", true, describe_tool(&tool)),
-        Some(Kind::Turn(turn)) => (
-            "turn",
-            true,
-            format!(
-                "#{} {} started={}",
-                turn.turn_id,
-                wire::TurnOutcome::try_from(turn.outcome)
-                    .map_or("?", |outcome| outcome.as_str_name()),
-                turn.started_at_ms
-            ),
-        ),
-        Some(Kind::Compaction(compaction)) => (
-            "compaction",
-            true,
-            format!(
-                "{}→{}{}",
-                compaction
-                    .tokens_before
-                    .map_or("?".to_owned(), |tokens| tokens.to_string()),
-                compaction
-                    .tokens_after
-                    .map_or("?".to_owned(), |tokens| tokens.to_string()),
-                if compaction.automatic { " auto" } else { "" }
-            ),
-        ),
-        Some(Kind::CompactSummary(_)) => ("compact_summary", true, String::new()),
-        Some(Kind::Interruption(_)) => ("interruption", true, String::new()),
-        Some(Kind::AgentMessage(message)) => (
-            "agent_message",
-            true,
-            crate::shared::describe_agent_message(&message),
-        ),
-        Some(Kind::ApiError(error)) => (
-            "api_error",
-            true,
-            format!(
-                "{} {} retry={} {}/{}",
-                error.error_kind,
-                Value::String(error.message),
-                error.will_retry,
-                error.attempt,
-                error.max_attempts
-            ),
-        ),
-        Some(Kind::Boundary(boundary)) => (
-            "boundary",
-            true,
-            format!(
-                "{}{}",
-                BoundaryKind::try_from(boundary.kind).map_or("?", |kind| kind.as_str_name()),
-                crate::claude_common::describe_cause(&boundary)
-            ),
-        ),
-        Some(Kind::Slash(slash)) => (
-            "slash",
-            true,
-            format!("{} args={}", slash.command, Value::String(slash.args)),
-        ),
-        Some(Kind::Ask(item)) => ("ask", true, ask_item::describe(&item)),
-        Some(Kind::Plan(plan)) => ("plan", plan.complete, crate::shared::describe_plan(&plan)),
-        Some(Kind::Unrecognized(unrecognized)) => (
-            "unrecognized",
-            true,
-            format!(
-                "{} {}",
-                unrecognized.fact_type,
-                Value::String(unrecognized.summary)
-            ),
-        ),
-    };
-    ItemView {
-        arm: arm.into(),
-        complete,
-        text,
-    }
-}
-
 fn describe_snapshot(body: &[u8]) -> SnapshotView {
-    let snapshot = ClaudePtySnapshot::decode(body).unwrap_or_default();
+    let snapshot = ClaudeSnapshot::decode(body).unwrap_or_default();
     let context = snapshot.context.unwrap_or_default();
     SnapshotView {
         asks: snapshot

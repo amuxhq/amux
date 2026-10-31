@@ -286,9 +286,9 @@ fn a_queued_prompt_with_an_image_is_still_the_steer() {
     };
     assert_eq!(item.input_id, b"p1");
     assert_eq!(item.text, "[Image #1]\n\nUse the staging config.");
-    let body = wire::ClaudePtyItem::decode(item.body.as_slice()).unwrap();
+    let body = wire::ClaudeItem::decode(item.body.as_slice()).unwrap();
     assert!(
-        matches!(body.kind, Some(wire::claude_pty_item::Kind::Steer(_))),
+        matches!(body.kind, Some(wire::claude_item::Kind::Steer(_))),
         "{body:?}"
     );
     assert!(!steered(&state), "p1 left the queue");
@@ -302,7 +302,7 @@ fn the_job_list_empties_when_terminal_claude_exits() {
     use prost::Message as _;
     let jobs = |step: &wire::Step| {
         step.snapshot.as_ref().map(|snapshot| {
-            let body = wire::ClaudePtySnapshot::decode(&snapshot.body[..]).unwrap();
+            let body = wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap();
             let background = body.background_jobs.unwrap_or_default();
             (background.known, background.jobs.len())
         })
@@ -463,7 +463,7 @@ fn plan_ask_launched(version: &str, launched: impl FnOnce(&mut wire::AgentSpec))
         }
         let stepped = ClaudePty::step(&mut state, event);
         let plan = stepped.step.snapshot.and_then(|snapshot| {
-            wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+            wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
                 .unwrap()
                 .asks
                 .into_iter()
@@ -783,7 +783,7 @@ fn a_model_switch_shows_before_the_next_turn() {
         })),
     ] {
         if let Some(snapshot) = ClaudePty::step(&mut state, event).step.snapshot {
-            let body = wire::ClaudePtySnapshot::decode(snapshot.body.as_slice()).unwrap();
+            let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
             named = body.model_name.or(body.model).or(named);
         }
     }
@@ -860,7 +860,7 @@ fn a_background_subagents_ask_stays_open_past_the_main_turns_stop() {
         ),
     ] {
         if let Some(snapshot) = ClaudePty::step(&mut state, event).step.snapshot {
-            let body = wire::ClaudePtySnapshot::decode(snapshot.body.as_slice()).unwrap();
+            let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
             last = Some((snapshot.phase(), body.asks.len()));
             seen.push(last.unwrap());
         }
@@ -898,12 +898,12 @@ fn prompt_input(id: &str, text: &str) -> Event {
     Event::Input(input)
 }
 
-fn decoded(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudePtySnapshot)> {
+fn decoded(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudeSnapshot)> {
     use prost::Message as _;
     stepped.step.snapshot.as_ref().map(|snapshot| {
         (
             snapshot.phase(),
-            wire::ClaudePtySnapshot::decode(snapshot.body.as_slice()).unwrap(),
+            wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap(),
         )
     })
 }
@@ -912,7 +912,7 @@ fn decoded(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudePty
 /// session s1 started: the state and the last snapshot it gave.
 fn started_claude() -> (
     interpret::claude_pty::State,
-    (wire::Phase, wire::ClaudePtySnapshot),
+    (wire::Phase, wire::ClaudeSnapshot),
 ) {
     let spec = wire::AgentSpec {
         agent_id: b"agent".to_vec(),
@@ -924,7 +924,7 @@ fn started_claude() -> (
         use prost::Message as _;
         (
             snapshot.phase(),
-            wire::ClaudePtySnapshot::decode(snapshot.body.as_slice()).unwrap(),
+            wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap(),
         )
     });
     let launch = serde_json::json!({"type": "launch"});
@@ -1203,8 +1203,8 @@ fn a_commands_time_starts_after_the_approval_it_waited_for() {
         .rev()
         .filter(|item| item.key == "toolu_curl")
         .find_map(
-            |item| match wire::ClaudePtyItem::decode(item.body.as_slice()).ok()?.kind {
-                Some(wire::claude_pty_item::Kind::Tool(tool)) => Some(tool),
+            |item| match wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind {
+                Some(wire::claude_item::Kind::Tool(tool)) => Some(tool),
                 _ => None,
             },
         )
@@ -1599,7 +1599,7 @@ fn a_background_subagents_ask_survives_every_end_of_the_main_threads_work() {
     use prost::Message as _;
     let open_asks = |stepped: &interpret::Stepped| {
         stepped.step.snapshot.as_ref().map(|snapshot| {
-            wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+            wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
                 .unwrap()
                 .asks
                 .len()
@@ -1653,7 +1653,7 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
     use prost::Message as _;
     let failed = |step: &wire::Step| {
         let snapshot = step.snapshot.as_ref().expect("a snapshot");
-        let body = wire::ClaudePtySnapshot::decode(&snapshot.body[..]).unwrap();
+        let body = wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap();
         body.servers
             .unwrap_or_default()
             .servers

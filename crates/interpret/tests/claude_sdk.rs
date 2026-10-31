@@ -558,7 +558,7 @@ fn the_job_list_empties_when_headless_claude_exits() {
     use prost::Message as _;
     let jobs = |step: &wire::Step| {
         step.snapshot.as_ref().map(|snapshot| {
-            let body = wire::ClaudeSdkSnapshot::decode(&snapshot.body[..]).unwrap();
+            let body = wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap();
             let background = body.background_jobs.unwrap_or_default();
             (background.known, background.jobs.len())
         })
@@ -615,7 +615,7 @@ fn only_a_blocked_path_beyond_the_agents_folder_is_outside_the_allowed_directori
             ),
         );
         let snapshot = stepped.step.snapshot.expect("the ask changes the snapshot");
-        let body = wire::ClaudeSdkSnapshot::decode(&snapshot.body[..]).unwrap();
+        let body = wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap();
         let ask = body
             .asks
             .iter()
@@ -831,7 +831,7 @@ fn a_permission_claude_does_not_offer_is_refused() {
 #[test]
 fn compacting_status_is_an_item() {
     use prost::Message as _;
-    use wire::claude_sdk_item::Kind;
+    use wire::claude_item::Kind;
 
     let replayed =
         interpret::replay::<ClaudeSdk>(&fixtures().join("recorded_compacted.json")).unwrap();
@@ -839,9 +839,7 @@ fn compacting_status_is_an_item() {
         .iter()
         .flat_map(|frame| &frame.step.items)
         .filter_map(|item| {
-            let kind = wire::ClaudeSdkItem::decode(item.body.as_slice())
-                .ok()?
-                .kind?;
+            let kind = wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind?;
             // Claude's other statuses ("requesting") are items too.
             let kept = match &kind {
                 Kind::Status(status) => status.status == wire::SdkStatus::Compacting as i32,
@@ -986,11 +984,9 @@ fn a_model_set_from_settings_is_not_a_slash_command_with_no_name() {
     let items = ClaudeSdk::step(&mut state, replay).step.items;
     let nameless: Vec<_> = items
         .iter()
-        .filter_map(|item| wire::ClaudeSdkItem::decode(item.body.as_slice()).ok())
+        .filter_map(|item| wire::ClaudeItem::decode(item.body.as_slice()).ok())
         .filter_map(|body| match body.kind {
-            Some(wire::claude_sdk_item::Kind::Slash(slash)) if slash.command.is_empty() => {
-                Some(slash)
-            }
+            Some(wire::claude_item::Kind::Slash(slash)) if slash.command.is_empty() => Some(slash),
             _ => None,
         })
         .collect();
@@ -1004,7 +1000,7 @@ fn a_model_set_from_settings_is_not_a_slash_command_with_no_name() {
 fn listed_jobs(stepped: &interpret::Stepped) -> Option<Vec<String>> {
     use prost::Message as _;
     stepped.step.snapshot.as_ref().map(|snapshot| {
-        wire::ClaudeSdkSnapshot::decode(&snapshot.body[..])
+        wire::ClaudeSnapshot::decode(&snapshot.body[..])
             .unwrap()
             .background_jobs
             .unwrap_or_default()
@@ -1104,11 +1100,11 @@ fn a_built_in_commands_synthetic_answer_is_its_output_not_a_reply() {
     let replies: Vec<String> = items
         .iter()
         .filter_map(|item| {
-            wire::ClaudeSdkItem::decode(item.body.as_slice())
+            wire::ClaudeItem::decode(item.body.as_slice())
                 .ok()
                 .map(|body| (item, body))
         })
-        .filter(|(_, body)| matches!(body.kind, Some(wire::claude_sdk_item::Kind::Message(_))))
+        .filter(|(_, body)| matches!(body.kind, Some(wire::claude_item::Kind::Message(_))))
         .map(|(item, _)| item.text.clone())
         .collect();
     assert!(
@@ -1150,7 +1146,7 @@ fn the_attach_tools_answer_is_an_attachment_not_its_element() {
         .iter()
         .filter_map(|item| {
             use prost::Message as _;
-            wire::ClaudeSdkItem::decode(item.body.as_slice())
+            wire::ClaudeItem::decode(item.body.as_slice())
                 .ok()
                 .map(|body| format!("{body:?}"))
         })
@@ -1214,8 +1210,8 @@ fn a_commands_time_starts_after_the_approval_it_waited_for() {
         .rev()
         .filter(|item| item.key == "t1")
         .find_map(
-            |item| match wire::ClaudeSdkItem::decode(item.body.as_slice()).ok()?.kind {
-                Some(wire::claude_sdk_item::Kind::Tool(tool)) => Some(tool),
+            |item| match wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind {
+                Some(wire::claude_item::Kind::Tool(tool)) => Some(tool),
                 _ => None,
             },
         )
@@ -1260,8 +1256,8 @@ fn boundaries(stepped: &interpret::Stepped) -> Vec<wire::BoundaryKind> {
         .items
         .iter()
         .filter_map(
-            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
-                wire::claude_sdk_item::Kind::Boundary(boundary) => Some(boundary.kind()),
+            |item| match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_item::Kind::Boundary(boundary) => Some(boundary.kind()),
                 _ => None,
             },
         )
@@ -1271,7 +1267,7 @@ fn boundaries(stepped: &interpret::Stepped) -> Vec<wire::BoundaryKind> {
 fn snapshot_session(stepped: &interpret::Stepped) -> Option<String> {
     use prost::Message as _;
     stepped.step.snapshot.as_ref().and_then(|snapshot| {
-        wire::ClaudeSdkSnapshot::decode(&snapshot.body[..])
+        wire::ClaudeSnapshot::decode(&snapshot.body[..])
             .unwrap()
             .provider_session
     })
@@ -1358,12 +1354,12 @@ fn subagent_assistant(uuid: &str, content: Value) -> Event {
     }))
 }
 
-fn sdk_snapshot(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudeSdkSnapshot)> {
+fn sdk_snapshot(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudeSnapshot)> {
     use prost::Message as _;
     stepped.step.snapshot.as_ref().map(|snapshot| {
         (
             snapshot.phase(),
-            wire::ClaudeSdkSnapshot::decode(&snapshot.body[..]).unwrap(),
+            wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap(),
         )
     })
 }
@@ -1375,11 +1371,11 @@ fn item_kinds(stepped: &interpret::Stepped) -> Vec<(String, String, String)> {
         .items
         .iter()
         .map(|item| {
-            let kind = wire::ClaudeSdkItem::decode(&item.body[..])
+            let kind = wire::ClaudeItem::decode(&item.body[..])
                 .ok()
                 .and_then(|body| body.kind);
             let parent = match &kind {
-                Some(wire::claude_sdk_item::Kind::Tool(tool)) => tool.parent_key.clone(),
+                Some(wire::claude_item::Kind::Tool(tool)) => tool.parent_key.clone(),
                 _ => String::new(),
             };
             let name = kind
@@ -1485,8 +1481,8 @@ fn a_subagents_interruption_does_not_mark_the_turn() {
         .items
         .iter()
         .filter_map(
-            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
-                wire::claude_sdk_item::Kind::Turn(turn) => Some(turn.outcome()),
+            |item| match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_item::Kind::Turn(turn) => Some(turn.outcome()),
                 _ => None,
             },
         )
@@ -1561,8 +1557,8 @@ fn tool_states(stepped: &interpret::Stepped) -> Vec<(String, wire::ToolState)> {
         .items
         .iter()
         .filter_map(
-            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
-                wire::claude_sdk_item::Kind::Tool(tool) => Some((item.key.clone(), tool.state())),
+            |item| match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_item::Kind::Tool(tool) => Some((item.key.clone(), tool.state())),
                 _ => None,
             },
         )
@@ -1680,8 +1676,8 @@ fn turn_outcomes(stepped: &interpret::Stepped) -> Vec<wire::TurnOutcome> {
         .items
         .iter()
         .filter_map(
-            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
-                wire::claude_sdk_item::Kind::Turn(turn) => Some(turn.outcome()),
+            |item| match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_item::Kind::Turn(turn) => Some(turn.outcome()),
                 _ => None,
             },
         )
@@ -2062,7 +2058,7 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
     use prost::Message as _;
     let failed = |step: &wire::Step| {
         let snapshot = step.snapshot.as_ref().expect("a snapshot");
-        let body = wire::ClaudeSdkSnapshot::decode(&snapshot.body[..]).unwrap();
+        let body = wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap();
         body.servers
             .unwrap_or_default()
             .servers

@@ -686,8 +686,8 @@ fn plan_card(
         .map(|held| {
             let writing = matches!(
                 &held.body,
-                ui_state::ItemBody::ClaudePty(wire::claude_pty_item::Kind::Plan(plan))
-                | ui_state::ItemBody::ClaudeSdk(wire::claude_sdk_item::Kind::Plan(plan))
+                ui_state::ItemBody::ClaudePty(wire::claude_item::Kind::Plan(plan))
+                | ui_state::ItemBody::ClaudeSdk(wire::claude_item::Kind::Plan(plan))
                 | ui_state::ItemBody::Codex(wire::codex_item::Kind::Plan(plan))
                     if !plan.complete
             );

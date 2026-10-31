@@ -11,7 +11,7 @@
 //! what the daemon committed.
 
 use ui_state::{ItemBody, OpenAsk};
-use wire::claude_sdk_item::Kind as Sdk;
+use wire::claude_item::Kind as Sdk;
 use wire::{
     ClaudeSdkInput, Input, Kind, PromptInput, PutBlobRequest, SendInputRequest, claude_answer,
     claude_sdk_input, send_input_response,

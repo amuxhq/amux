@@ -213,7 +213,7 @@ async fn open_ask(net: &Net, agent: &str) -> String {
         .await
         .unwrap();
     let snapshot = cut.snapshot.expect("a snapshot");
-    let body = wire::ClaudeSdkSnapshot::decode(snapshot.body.as_slice()).unwrap();
+    let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
     body.asks.first().expect("an open ask").key.clone()
 }
 
@@ -1113,7 +1113,7 @@ async fn the_agent_row_counts_live_descendants_and_background_jobs() {
             let jobs = cut
                 .snapshot
                 .map(|snapshot| {
-                    wire::ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
+                    wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
                         .unwrap()
                         .background_jobs
                         .map(|jobs| jobs.jobs.len())

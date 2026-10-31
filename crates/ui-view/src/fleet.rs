@@ -327,8 +327,7 @@ fn step_subject(state: &SessionState, activity: &Activity) -> Option<String> {
 /// The first line of the newest message the agent wrote to the person, as
 /// the words the chat draws it with: its markdown read, not shown.
 fn last_said(state: &SessionState) -> Option<String> {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::claude_item::{Kind as Pty, Kind as Sdk};
     use wire::codex_item::Kind as Codex;
     state
         .transcript()

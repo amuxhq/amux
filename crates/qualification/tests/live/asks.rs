@@ -370,8 +370,7 @@ pub(super) fn settled(kind: Kind, log: &Log) -> bool {
 
 /// Every plan's verdict, in order.
 fn plans(kind: Kind, log: &Log) -> Vec<wire::PlanVerdict> {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::claude_item::{Kind as Pty, Kind as Sdk};
     use wire::codex_item::Kind as Codex;
     log.ordered()
         .into_iter()
@@ -386,8 +385,7 @@ fn plans(kind: Kind, log: &Log) -> Vec<wire::PlanVerdict> {
 
 /// How each closed question was closed, in order.
 fn question_records(kind: Kind, log: &Log) -> Vec<wire::AskClosed> {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::claude_item::{Kind as Pty, Kind as Sdk};
     use wire::codex_item::Kind as Codex;
     log.ordered()
         .into_iter()

@@ -12,7 +12,7 @@ use claude_protocol::stream::{
 use claude_protocol::transcript::{self, AssistantRow, Attachment, Row, SystemRow, UserRow};
 use serde::Deserialize;
 use serde_json::Value;
-use wire::claude_pty_item::Kind;
+use wire::claude_item::Kind;
 use wire::{Ask, BoundaryKind, DecisionOutcome, PermissionAsk, ToolState, Turn, TurnOutcome};
 
 use super::{

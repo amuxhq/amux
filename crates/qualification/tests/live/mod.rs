@@ -1396,7 +1396,7 @@ impl Log {
                 items[at + 1..].iter().any(|item| {
                     !matches!(
                         ItemBody::decode(kind, &item.body),
-                        ItemBody::ClaudeSdk(wire::claude_sdk_item::Kind::Status(_))
+                        ItemBody::ClaudeSdk(wire::claude_item::Kind::Status(_))
                     )
                 })
             })
@@ -1551,8 +1551,7 @@ fn expect_outcome(outcome: wire::TurnOutcome, want: wire::TurnOutcome) -> Result
 }
 
 fn item_token(kind: Kind, item: &Item) -> Option<String> {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::claude_item::{Kind as Pty, Kind as Sdk};
     use wire::codex_item::Kind as Codex;
     if let Some(boundary) = boundary(kind, item) {
         return Some(format!(
@@ -1626,8 +1625,7 @@ fn plan_token(plan: &wire::Plan) -> String {
 }
 
 fn boundary(kind: Kind, item: &Item) -> Option<wire::Boundary> {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::claude_item::{Kind as Pty, Kind as Sdk};
     use wire::codex_item::Kind as Codex;
     match ItemBody::decode(kind, &item.body) {
         ItemBody::ClaudePty(Pty::Boundary(boundary))
@@ -1638,8 +1636,7 @@ fn boundary(kind: Kind, item: &Item) -> Option<wire::Boundary> {
 }
 
 fn turn(kind: Kind, item: &Item) -> Option<wire::Turn> {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::claude_item::{Kind as Pty, Kind as Sdk};
     use wire::codex_item::Kind as Codex;
     match ItemBody::decode(kind, &item.body) {
         ItemBody::ClaudePty(Pty::Turn(turn))

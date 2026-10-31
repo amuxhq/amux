@@ -796,11 +796,8 @@ fn terminal_claude_switches_to_auto_mode_from_the_permission_menu() {
             .items()
             .into_iter()
             .filter_map(|(_, item)| {
-                match wire::ClaudePtyItem::decode(item.body.as_slice())
-                    .ok()?
-                    .kind?
-                {
-                    wire::claude_pty_item::Kind::Tool(tool) => Some((item.key, tool)),
+                match wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+                    wire::claude_item::Kind::Tool(tool) => Some((item.key, tool)),
                     _ => None,
                 }
             })
@@ -876,11 +873,8 @@ fn terminal_claude_denies_on_the_menu_that_offers_auto_mode() {
             .items()
             .into_iter()
             .filter_map(|(_, item)| {
-                match wire::ClaudePtyItem::decode(item.body.as_slice())
-                    .ok()?
-                    .kind?
-                {
-                    wire::claude_pty_item::Kind::Tool(tool) => Some((item.key, tool)),
+                match wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+                    wire::claude_item::Kind::Tool(tool) => Some((item.key, tool)),
                     _ => None,
                 }
             })

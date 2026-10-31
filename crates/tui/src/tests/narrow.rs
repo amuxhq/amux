@@ -9,14 +9,14 @@ const NARROW: u16 = 80;
 const SHORT: u16 = 24;
 
 fn agent_reply(order: u64, words: &str) -> Item {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
     Item {
         key: format!("r{order}"),
         order,
         revision: order,
         text: words.into(),
         kind: Kind::ClaudeSdk as i32,
-        body: wire::ClaudeSdkItem {
+        body: wire::ClaudeItem {
             kind: Some(K::Message(wire::Text { complete: true })),
         }
         .encode_to_vec(),

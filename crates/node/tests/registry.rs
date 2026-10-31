@@ -1283,15 +1283,12 @@ fn lost_its_daemon(dir: &std::path::Path) -> Result<(), String> {
     frames
         .into_iter()
         .flat_map(|(_, step)| step.items)
-        .filter_map(|item| {
-            match wire::ClaudeSdkItem::decode(item.body.as_slice())
-                .ok()?
-                .kind?
-            {
-                wire::claude_sdk_item::Kind::Boundary(boundary) => Some(boundary.kind()),
+        .filter_map(
+            |item| match wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+                wire::claude_item::Kind::Boundary(boundary) => Some(boundary.kind()),
                 _ => None,
-            }
-        })
+            },
+        )
         .any(|kind| kind == wire::BoundaryKind::DaemonLost)
         .then_some(())
         .ok_or_else(|| "no daemon-lost boundary yet".to_owned())
@@ -2069,7 +2066,7 @@ async fn a_resume_keeps_the_permission_and_effort_the_agent_last_ran_with() {
             .unwrap();
         let body = cut
             .snapshot
-            .map(|snapshot| wire::ClaudeSdkSnapshot::decode(snapshot.body.as_slice()).unwrap())
+            .map(|snapshot| wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap())
             .unwrap_or_default();
         (body.permission.as_deref() == Some("acceptEdits")
             && body.effort.as_deref() == Some("high"))

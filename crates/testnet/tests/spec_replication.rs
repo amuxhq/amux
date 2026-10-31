@@ -746,7 +746,7 @@ async fn held_ask(net: &Net, host: &str, agent: &str) -> (Option<String>, Option
     let Some(snapshot) = snapshot else {
         return (None, None);
     };
-    let body = wire::ClaudeSdkSnapshot::decode(snapshot.body.as_slice()).unwrap();
+    let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
     (
         body.asks.first().map(|ask| ask.key.clone()),
         wire::Phase::try_from(snapshot.phase).ok(),

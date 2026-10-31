@@ -325,8 +325,8 @@ The daemon and the store read only the envelope. A `body` is bytes to them,
 stored and forwarded without decoding, so a body written by a later agent
 binary passes through an earlier daemon intact. Bodies are decoded only at the
 two ends: the interpreter that wrote them and the client's per-kind layer. The
-`kind` tag says which message a body holds (`ClaudePtyItem`, `ClaudeSdkItem`,
-`CodexItem`, and the matching snapshots), as a `Kind`. A kind the reader has
+`kind` tag says which message a body holds (`ClaudeItem` for both Claude
+kinds, `CodexItem`, and the matching snapshots), as a `Kind`. A kind the reader has
 no name for is still a number it keeps: a replica of an agent of a newer kind
 is listed with that kind, and its items carry it. The item vocabulary itself is
 described in [the chat vocabulary](CHAT_VOCABULARY.md) and

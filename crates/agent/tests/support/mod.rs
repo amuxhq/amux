@@ -15,10 +15,9 @@ use provider_fakes::{SCRIPT_ENV, Script, Step};
 use tokio::io::{ReadHalf, WriteHalf};
 use tokio::task::JoinHandle;
 use wire::{
-    AgentRef, AgentSpec, ClaudePtyInput, ClaudePtyItem, ClaudeSdkInput, ClaudeSdkItem,
-    ClaudeSdkSnapshot, CodexInput, CodexItem, CtlFrame, EffectiveConfig, Input, Kind, Phase,
-    PromptInput, Stop, claude_pty_input, claude_pty_item, claude_sdk_input, claude_sdk_item,
-    codex_input, codex_item, ctl_frame, send_input_response,
+    AgentRef, AgentSpec, ClaudeItem, ClaudePtyInput, ClaudeSdkInput, ClaudeSnapshot, CodexInput,
+    CodexItem, CtlFrame, EffectiveConfig, Input, Kind, Phase, PromptInput, Stop, claude_item,
+    claude_pty_input, claude_sdk_input, codex_input, codex_item, ctl_frame, send_input_response,
 };
 
 /// When every agent in these tests starts.
@@ -821,7 +820,7 @@ impl Log {
     /// The permission the newest terminal Claude snapshot reports.
     pub fn permission(&self) -> Option<String> {
         let snapshot = self.snapshot()?;
-        wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+        wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
             .ok()?
             .permission
     }
@@ -838,12 +837,12 @@ impl Log {
         let keys = |asks: Vec<wire::Ask>| asks.into_iter().map(|ask| ask.key).collect();
         match snapshot.kind() {
             Kind::ClaudeSdk => keys(
-                ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
+                ClaudeSnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .asks,
             ),
             Kind::ClaudePty => keys(
-                wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+                wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .asks,
             ),
@@ -864,12 +863,12 @@ impl Log {
         };
         let jobs = match snapshot.kind() {
             Kind::ClaudeSdk => {
-                ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
+                ClaudeSnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .background_jobs
             }
             Kind::ClaudePty => {
-                wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+                wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .background_jobs
             }
@@ -890,12 +889,12 @@ impl Log {
         };
         let servers = match snapshot.kind() {
             Kind::ClaudeSdk => {
-                ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
+                ClaudeSnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .servers
             }
             Kind::ClaudePty => {
-                wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+                wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .servers
             }
@@ -907,7 +906,7 @@ impl Log {
     pub fn open_asks(&self) -> usize {
         let snapshot = self.snapshot().expect("a snapshot");
         match snapshot.kind() {
-            Kind::ClaudeSdk => ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
+            Kind::ClaudeSdk => ClaudeSnapshot::decode(snapshot.body.as_slice())
                 .unwrap()
                 .asks
                 .len(),
@@ -919,12 +918,12 @@ impl Log {
 /// A boundary item's kind and cause as the log prints it.
 pub fn boundary(item: &wire::Item) -> Option<String> {
     let boundary = match item.kind() {
-        Kind::ClaudeSdk => match ClaudeSdkItem::decode(item.body.as_slice()).ok()?.kind? {
-            claude_sdk_item::Kind::Boundary(boundary) => boundary,
+        Kind::ClaudeSdk => match ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+            claude_item::Kind::Boundary(boundary) => boundary,
             _ => return None,
         },
-        Kind::ClaudePty => match ClaudePtyItem::decode(item.body.as_slice()).ok()?.kind? {
-            claude_pty_item::Kind::Boundary(boundary) => boundary,
+        Kind::ClaudePty => match ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+            claude_item::Kind::Boundary(boundary) => boundary,
             _ => return None,
         },
         Kind::Codex => match CodexItem::decode(item.body.as_slice()).ok()?.kind? {

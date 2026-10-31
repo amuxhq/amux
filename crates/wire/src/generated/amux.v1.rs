@@ -4394,15 +4394,15 @@ impl ::prost::Name for ClaudeCreateConfig {
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClaudePtyItem {
+pub struct ClaudeItem {
     #[prost(
-        oneof = "claude_pty_item::Kind",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16"
+        oneof = "claude_item::Kind",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19"
     )]
-    pub kind: ::core::option::Option<claude_pty_item::Kind>,
+    pub kind: ::core::option::Option<claude_item::Kind>,
 }
-/// Nested message and enum types in `ClaudePtyItem`.
-pub mod claude_pty_item {
+/// Nested message and enum types in `ClaudeItem`.
+pub mod claude_item {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Kind {
         #[prost(message, tag = "1")]
@@ -4434,27 +4434,33 @@ pub mod claude_pty_item {
         /// A prompt delivered into the running turn; the text is the envelope's.
         #[prost(message, tag = "14")]
         Steer(super::Steer),
-        /// A dialog Claude shows in its own terminal that no hook can answer: an
-        /// unanswerable ask that is its own row.
+        /// An ask that is its own row: a tool server's form or link, or a
+        /// dialog terminal Claude shows that no hook can answer.
         #[prost(message, tag = "15")]
         Ask(super::AskItem),
         /// The plan Claude declared, keyed by the call that declared it.
         #[prost(message, tag = "16")]
         Plan(super::Plan),
+        #[prost(message, tag = "17")]
+        Task(super::Task),
+        #[prost(message, tag = "18")]
+        Status(super::Status),
+        #[prost(message, tag = "19")]
+        ModelSwitch(super::ModelSwitch),
     }
 }
-impl ::prost::Name for ClaudePtyItem {
-    const NAME: &'static str = "ClaudePtyItem";
+impl ::prost::Name for ClaudeItem {
+    const NAME: &'static str = "ClaudeItem";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ClaudePtyItem".into()
+        "amux.v1.ClaudeItem".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ClaudePtyItem".into()
+        "type.googleapis.com/amux.v1.ClaudeItem".into()
     }
 }
-/// The summary a compaction wrote into the transcript; the summary is the
-/// envelope text.
+/// The summary a compaction wrote into terminal Claude's transcript; the
+/// summary is the envelope text.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CompactSummary {}
 impl ::prost::Name for CompactSummary {
@@ -4480,9 +4486,56 @@ impl ::prost::Name for Interruption {
         "type.googleapis.com/amux.v1.Interruption".into()
     }
 }
+/// A task headless Claude reports whose starting call it never showed; a
+/// task of a known call is progress on that call instead.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Task {
+    #[prost(string, tag = "1")]
+    pub task_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub description: ::prost::alloc::string::String,
+    #[prost(enumeration = "TaskState", tag = "3")]
+    pub state: i32,
+    #[prost(uint32, tag = "4")]
+    pub tool_count: u32,
+    #[prost(string, tag = "5")]
+    pub last_tool: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "6")]
+    pub tokens: u64,
+}
+impl ::prost::Name for Task {
+    const NAME: &'static str = "Task";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Task".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Task".into()
+    }
+}
+/// A status headless Claude reports as an event worth a row; drawn hidden,
+/// read by the activity line until the compaction row lands.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Status {
+    #[prost(enumeration = "SdkStatus", tag = "1")]
+    pub status: i32,
+    /// Claude's own word, always carried.
+    #[prost(string, tag = "2")]
+    pub word: ::prost::alloc::string::String,
+}
+impl ::prost::Name for Status {
+    const NAME: &'static str = "Status";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Status".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Status".into()
+    }
+}
 /// Phase lives in the Snapshot envelope, once.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClaudePtySnapshot {
+pub struct ClaudeSnapshot {
     #[prost(message, repeated, tag = "1")]
     pub asks: ::prost::alloc::vec::Vec<Ask>,
     #[prost(message, optional, tag = "2")]
@@ -4491,12 +4544,14 @@ pub struct ClaudePtySnapshot {
     pub context: ::core::option::Option<ContextMeter>,
     #[prost(string, optional, tag = "4")]
     pub model: ::core::option::Option<::prost::alloc::string::String>,
-    /// The running model as a person reads it; absent while the model is.
+    /// The running model as a person reads it: the catalogue entry it was set
+    /// from, else the entry whose value is its id, else its id tidied.
+    /// Absent while the model is.
     #[prost(string, optional, tag = "5")]
     pub model_name: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(string, optional, tag = "6")]
     pub permission: ::core::option::Option<::prost::alloc::string::String>,
-    /// Absent until SessionStart or the first system event names it.
+    /// Absent until the session's start names it.
     #[prost(string, optional, tag = "7")]
     pub provider_session: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(message, optional, tag = "8")]
@@ -4507,30 +4562,35 @@ pub struct ClaudePtySnapshot {
     pub sign_in: ::core::option::Option<SignIn>,
     #[prost(message, optional, tag = "11")]
     pub background_jobs: ::core::option::Option<BackgroundJobs>,
-    /// The calls PreToolUse hooks announced that no result has ended yet,
-    /// oldest first. A call's transcript row can lag its hook by seconds while
-    /// a background task runs, so the activity line reads the call from here
-    /// until then.
+    /// Terminal Claude's calls PreToolUse hooks announced that no result has
+    /// ended yet, oldest first. A call's transcript row can lag its hook by
+    /// seconds while a background task runs, so the activity line reads the
+    /// call from here until then.
     #[prost(message, repeated, tag = "12")]
     pub running_calls: ::prost::alloc::vec::Vec<RunningCall>,
-    /// The reasoning effort Claude last recorded running with; absent until it
-    /// has. A provider string, validated against the catalogue's model levels.
+    /// The reasoning effort Claude runs with; absent until it says. A
+    /// provider string, validated against the catalogue's model levels.
     #[prost(string, optional, tag = "13")]
     pub effort: ::core::option::Option<::prost::alloc::string::String>,
-    /// Claude's own view resumed another conversation, so it shows one that is
-    /// not this agent's; prompts are refused until it is back. The phase is
-    /// left as it is.
+    /// Terminal Claude's own view resumed another conversation, so it shows
+    /// one that is not this agent's; prompts are refused until it is back.
+    /// The phase is left as it is.
     #[prost(bool, optional, tag = "14")]
     pub switched_away: ::core::option::Option<bool>,
+    /// The subagents and tasks headless Claude reports running.
+    ///
+    /// What it offers is in the catalogue the Snapshot names.
+    #[prost(message, repeated, tag = "15")]
+    pub active_tasks: ::prost::alloc::vec::Vec<Task>,
 }
-impl ::prost::Name for ClaudePtySnapshot {
-    const NAME: &'static str = "ClaudePtySnapshot";
+impl ::prost::Name for ClaudeSnapshot {
+    const NAME: &'static str = "ClaudeSnapshot";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ClaudePtySnapshot".into()
+        "amux.v1.ClaudeSnapshot".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ClaudePtySnapshot".into()
+        "type.googleapis.com/amux.v1.ClaudeSnapshot".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -4617,159 +4677,6 @@ impl ::prost::Name for SwitchBack {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.SwitchBack".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClaudeSdkItem {
-    #[prost(
-        oneof = "claude_sdk_item::Kind",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17"
-    )]
-    pub kind: ::core::option::Option<claude_sdk_item::Kind>,
-}
-/// Nested message and enum types in `ClaudeSdkItem`.
-pub mod claude_sdk_item {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Kind {
-        #[prost(message, tag = "1")]
-        Prompt(super::Prompt),
-        #[prost(message, tag = "2")]
-        Message(super::Text),
-        #[prost(message, tag = "3")]
-        Thinking(super::Thinking),
-        #[prost(message, tag = "4")]
-        Tool(super::ToolCall),
-        #[prost(message, tag = "5")]
-        Task(super::Task),
-        #[prost(message, tag = "6")]
-        Turn(super::Turn),
-        #[prost(message, tag = "7")]
-        Status(super::Status),
-        #[prost(message, tag = "8")]
-        Boundary(super::Boundary),
-        #[prost(message, tag = "9")]
-        AgentMessage(super::AgentMessage),
-        #[prost(message, tag = "10")]
-        ApiError(super::ApiError),
-        #[prost(message, tag = "11")]
-        Slash(super::SlashOutput),
-        #[prost(message, tag = "12")]
-        Unrecognized(super::Unrecognized),
-        #[prost(message, tag = "13")]
-        ModelSwitch(super::ModelSwitch),
-        #[prost(message, tag = "14")]
-        Compaction(super::Compaction),
-        /// A prompt delivered into the running turn; the text is the envelope's.
-        #[prost(message, tag = "15")]
-        Steer(super::Steer),
-        /// A tool-server form or link: an ask that is the work.
-        #[prost(message, tag = "16")]
-        Ask(super::AskItem),
-        /// The plan Claude declared, keyed by the call that declared it.
-        #[prost(message, tag = "17")]
-        Plan(super::Plan),
-    }
-}
-impl ::prost::Name for ClaudeSdkItem {
-    const NAME: &'static str = "ClaudeSdkItem";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ClaudeSdkItem".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ClaudeSdkItem".into()
-    }
-}
-/// A task the SDK reports whose starting call it never showed; a task of a
-/// known call is progress on that call instead.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Task {
-    #[prost(string, tag = "1")]
-    pub task_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub description: ::prost::alloc::string::String,
-    #[prost(enumeration = "TaskState", tag = "3")]
-    pub state: i32,
-    #[prost(uint32, tag = "4")]
-    pub tool_count: u32,
-    #[prost(string, tag = "5")]
-    pub last_tool: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "6")]
-    pub tokens: u64,
-}
-impl ::prost::Name for Task {
-    const NAME: &'static str = "Task";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Task".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Task".into()
-    }
-}
-/// A status headless Claude reports as an event worth a row; drawn hidden,
-/// read by the activity line until the compaction row lands.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Status {
-    #[prost(enumeration = "SdkStatus", tag = "1")]
-    pub status: i32,
-    /// Claude's own word, always carried.
-    #[prost(string, tag = "2")]
-    pub word: ::prost::alloc::string::String,
-}
-impl ::prost::Name for Status {
-    const NAME: &'static str = "Status";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Status".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Status".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClaudeSdkSnapshot {
-    #[prost(message, repeated, tag = "1")]
-    pub asks: ::prost::alloc::vec::Vec<Ask>,
-    #[prost(message, optional, tag = "2")]
-    pub tasks: ::core::option::Option<TaskList>,
-    #[prost(message, optional, tag = "3")]
-    pub context: ::core::option::Option<ContextMeter>,
-    #[prost(string, optional, tag = "4")]
-    pub model: ::core::option::Option<::prost::alloc::string::String>,
-    /// The running model as a person reads it: the catalogue entry it was set
-    /// from, else the entry whose value is its id, else its id tidied.
-    /// Absent while the model is.
-    #[prost(string, optional, tag = "5")]
-    pub model_name: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "6")]
-    pub effort: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "7")]
-    pub permission: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(message, repeated, tag = "8")]
-    pub active_tasks: ::prost::alloc::vec::Vec<Task>,
-    #[prost(message, optional, tag = "9")]
-    pub usage: ::core::option::Option<ClaudeUsage>,
-    #[prost(message, optional, tag = "10")]
-    pub servers: ::core::option::Option<ToolServerHealth>,
-    #[prost(message, optional, tag = "11")]
-    pub sign_in: ::core::option::Option<SignIn>,
-    #[prost(message, optional, tag = "12")]
-    pub background_jobs: ::core::option::Option<BackgroundJobs>,
-    /// Absent until the init event names it.
-    ///
-    /// What it offers is in the catalogue the Snapshot names.
-    #[prost(string, optional, tag = "13")]
-    pub provider_session: ::core::option::Option<::prost::alloc::string::String>,
-}
-impl ::prost::Name for ClaudeSdkSnapshot {
-    const NAME: &'static str = "ClaudeSdkSnapshot";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ClaudeSdkSnapshot".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ClaudeSdkSnapshot".into()
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

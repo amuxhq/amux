@@ -22,7 +22,7 @@ use testnet::{
     AgentDecl, FakeKind, Faults, HostDecl, JournalCut, Net, NetError, PATIENCE, Stuck, Topology,
     TopologyError, UdpGate, holds_for, until, until_within,
 };
-use wire::{ClaudeSdkItem, SessionEvent, claude_sdk_item, session_event};
+use wire::{ClaudeItem, SessionEvent, claude_item, session_event};
 
 use crate::stories;
 
@@ -32,8 +32,8 @@ fn turn_ended(events: &[SessionEvent]) -> bool {
     events.iter().any(|event| match &event.of {
         Some(session_event::Of::Item(item)) if item.kind == wire::Kind::ClaudeSdk as i32 => {
             matches!(
-                ClaudeSdkItem::decode(item.body.as_slice()).map(|item| item.kind),
-                Ok(Some(claude_sdk_item::Kind::Turn(_)))
+                ClaudeItem::decode(item.body.as_slice()).map(|item| item.kind),
+                Ok(Some(claude_item::Kind::Turn(_)))
             )
         }
         _ => false,

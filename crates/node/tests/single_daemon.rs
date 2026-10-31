@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use node::{Daemon, JoinHook, Launch, ProfileRuntime, ServeError};
+use node::{Daemon, Launch, ProfileRuntime, ServeError};
 use support::synthetic::*;
 use support::*;
 use wire::{
@@ -135,7 +135,7 @@ async fn write_and_ingest(
 async fn reference() -> Held {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "reference", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     write_and_ingest(&runtime, &mut agent, &steps()).await;
     let held = held(&runtime, &agent, &install).await;
@@ -171,7 +171,7 @@ async fn order_is_assigned_once_per_key_and_kept_across_a_re_derivation() {
     // emits known keys again with new content, and a new one.
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "rederived", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     write_and_ingest(&runtime, &mut agent, &steps()[..5]).await;
     crash(daemon, runtime).await;
@@ -218,16 +218,20 @@ enum Cut {
     CrashAfterCommit,
 }
 
+// Written through a connection of the test's own, so a trigger of the
+// schema's rather than a temporary one, which only its own connection
+// would see.
 const ITEM_CUT: &str =
-    "CREATE TEMP TRIGGER cut BEFORE INSERT ON items BEGIN SELECT RAISE(ABORT, 'cut'); END;";
+    "CREATE TRIGGER cut BEFORE INSERT ON items BEGIN SELECT RAISE(ABORT, 'cut'); END;";
 const CURSOR_CUT: &str =
-    "CREATE TEMP TRIGGER cut BEFORE INSERT ON agents BEGIN SELECT RAISE(ABORT, 'cut'); END;";
+    "CREATE TRIGGER cut BEFORE INSERT ON agents BEGIN SELECT RAISE(ABORT, 'cut'); END;";
+const UNCUT: &str = "DROP TRIGGER cut;";
 
 async fn cut_run(cut: Cut, at: usize) -> Held {
     let steps = steps();
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "cut", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let (mut daemon, mut runtime) = start(&install, "boot-1", quiet_launch()).await;
     write_and_ingest(&runtime, &mut agent, &steps[..at]).await;
 
@@ -273,11 +277,7 @@ async fn cut_run(cut: Cut, at: usize) -> Held {
                 Cut::CommitFailsAtItemWrite => ITEM_CUT,
                 _ => CURSOR_CUT,
             };
-            runtime
-                .write_store_beneath(move |store| store.connection().execute_batch(trigger))
-                .await
-                .unwrap()
-                .unwrap();
+            install.store().connection().execute_batch(trigger).unwrap();
             assert!(
                 runtime.ingest(agent.id).await.is_err(),
                 "{cut:?} at step {at} fails the commit"
@@ -294,13 +294,7 @@ async fn cut_run(cut: Cut, at: usize) -> Held {
                 "nothing is broadcast for a commit that failed: {:?}",
                 log(&live)
             );
-            runtime
-                .write_store_beneath(|store| {
-                    store.connection().execute_batch("DROP TRIGGER temp.cut;")
-                })
-                .await
-                .unwrap()
-                .unwrap();
+            install.store().connection().execute_batch(UNCUT).unwrap();
             runtime.ingest(agent.id).await.unwrap();
             at + 1
         }
@@ -353,7 +347,7 @@ async fn torn_tails_are_never_read_whether_the_writer_lives_or_dies() {
     // agent. CaughtUp waits for it.
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "alive", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     agent.append(&item("a", "one"));
     let frame = journal::encode_frame(&item("b", "two")).len();
     agent
@@ -397,7 +391,7 @@ async fn torn_tails_are_never_read_whether_the_writer_lives_or_dies() {
     // agent's next process reopens the journal, which drops the torn bytes.
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "dead", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     agent.append(&item("a", "one"));
     let frame = journal::encode_frame(&item("b", "two")).len();
     agent
@@ -442,7 +436,7 @@ async fn torn_tails_are_never_read_whether_the_writer_lives_or_dies() {
     // journal continues in the next segment.
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "zeros", 1);
-    agent.register_offline(&install);
+    agent.register(&install);
     agent.append(&item("a", "one"));
     agent.append(&item("b", "two"));
     let segments = journal::segments(&agent.dir.join(agent_dir::JOURNAL)).unwrap();
@@ -463,7 +457,7 @@ async fn torn_tails_are_never_read_whether_the_writer_lives_or_dies() {
 async fn a_lagging_subscriber_is_closed_with_lagged_and_ingest_never_waits() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "flood", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let launch = Launch {
         fanout_capacity: 4,
         ..quiet_launch()
@@ -542,28 +536,6 @@ async fn a_lagging_subscriber_is_closed_with_lagged_and_ingest_never_waits() {
     crash(daemon, runtime).await;
 }
 
-/// Installs a join hook that starts an ingest of `agent` and gives it time
-/// to reach the store before the subscribe reads its cut. A forced delay:
-/// the subscribe holds the store lock through its opening, so the ingest
-/// cannot commit until the hook returns and nothing it writes can be
-/// waited on; the sleep only makes the contention real rather than
-/// absent, and the test's outcome is the same either way.
-fn ingest_between_join_and_cut(runtime: &Arc<ProfileRuntime>, agent: uuid::Uuid) {
-    let target = Arc::downgrade(runtime);
-    let hook: JoinHook = Arc::new(move || {
-        let target = target.clone();
-        Box::pin(async move {
-            tokio::spawn(async move {
-                if let Some(runtime) = target.upgrade() {
-                    runtime.ingest(agent).await.unwrap();
-                }
-            });
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        })
-    });
-    runtime.set_join_hook(Some(hook));
-}
-
 /// The newest snapshot a stream has delivered at each CaughtUp must be
 /// the newest the store had committed through that marker's revision.
 fn assert_markers_describe_their_snapshot(
@@ -602,7 +574,7 @@ async fn a_withdrawn_prompt_is_never_read_as_queued() {
     // Withdrawn before the subscribe: the opening never shows it queued.
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "withdraw", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     write_and_ingest(&runtime, &mut agent, &[queued.clone(), withdrawn.clone()]).await;
     let mut subscription = runtime
@@ -621,21 +593,20 @@ async fn a_withdrawn_prompt_is_never_read_as_queued() {
     assert_markers_describe_their_snapshot(&seen, &committed);
     crash(daemon, runtime).await;
 
-    // Withdrawn while the subscribe is between its join and its cut: the
-    // marker read with the cut never claims the withdrawal while the
-    // stream still holds the queued snapshot.
+    // Withdrawn just after the subscribe: the marker read with the
+    // opening never claims the withdrawal while the stream still holds the
+    // queued snapshot.
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "withdraw", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     write_and_ingest(&runtime, &mut agent, &[queued]).await;
     agent.append(&withdrawn);
-    ingest_between_join_and_cut(&runtime, agent.id);
     let mut subscription = runtime
         .subscribe_session(agent.id.as_bytes(), 10)
         .await
         .unwrap();
-    runtime.set_join_hook(None);
+    runtime.ingest(agent.id).await.unwrap();
     let mut seen = Vec::new();
     read_until(&mut subscription, &mut seen, "the withdrawal", |seen| {
         seen.len() == 4
@@ -659,7 +630,7 @@ async fn a_withdrawn_prompt_is_never_read_as_queued() {
 async fn segments_are_deleted_only_below_a_cursor_on_the_drive() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "segments", 120);
-    agent.register_offline(&install);
+    agent.register(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     let journal_dir = agent.dir.join(agent_dir::JOURNAL);
 
@@ -702,23 +673,21 @@ async fn segments_are_deleted_only_below_a_cursor_on_the_drive() {
     for step in &more {
         agent.append(step);
     }
-    runtime
-        .write_store_beneath(|store| store.connection().execute_batch(CURSOR_CUT))
-        .await
-        .unwrap()
+    install
+        .store()
+        .connection()
+        .execute_batch(CURSOR_CUT)
         .unwrap();
     assert!(runtime.ingest(agent.id).await.is_err());
+    // The trigger is the schema's: gone before the checkpoint, so the
+    // store a power loss goes back to does not hold it.
+    install.store().connection().execute_batch(UNCUT).unwrap();
     runtime.checkpoint().await.unwrap();
     let after_failure = journal::segments(&journal_dir).unwrap();
     assert!(
         before.iter().all(|start| after_failure.contains(start)),
         "no segment goes below a cursor that was never committed"
     );
-    runtime
-        .write_store_beneath(|store| store.connection().execute_batch("DROP TRIGGER temp.cut;"))
-        .await
-        .unwrap()
-        .unwrap();
     runtime.ingest(agent.id).await.unwrap();
 
     // Power loss now: the store goes back to its last checkpoint. Every
@@ -793,7 +762,7 @@ async fn run_to_the_cut(
 async fn power_loss_bumps_the_generation_and_re_ingests_from_the_durable_cursor() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "power", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let (daemon, runtime, offsets, before) = run_to_the_cut(&install, &mut agent).await;
     assert_eq!(host_generation(&runtime).await.0, 1);
 
@@ -874,7 +843,7 @@ async fn power_loss_bumps_the_generation_and_re_ingests_from_the_durable_cursor(
 async fn a_journal_cut_below_a_durable_cursor_rewinds_it_and_re_derived_steps_commit_anew() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "rewind", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     let offsets = write_and_ingest(&runtime, &mut agent, &steps()).await;
     // The store reaches the drive after the last step, through the core's
@@ -952,7 +921,7 @@ async fn a_journal_cut_below_a_durable_cursor_rewinds_it_and_re_derived_steps_co
 async fn a_journal_zero_filled_up_to_a_durable_cursor_rewinds_it() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "zeroed", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     let offsets = write_and_ingest(&runtime, &mut agent, &steps()).await;
     runtime.checkpoint().await.unwrap();
@@ -983,7 +952,7 @@ async fn a_journal_zero_filled_up_to_a_durable_cursor_rewinds_it() {
 async fn a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "batch", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     let steps = steps();
     write_and_ingest(&runtime, &mut agent, &steps[..1]).await;
@@ -999,15 +968,13 @@ async fn a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it()
     for step in &steps[1..5] {
         agent.append(step);
     }
-    runtime
-        .write_store_beneath(|store| {
-            store.connection().execute_batch(
-                "CREATE TEMP TRIGGER cut BEFORE INSERT ON items WHEN NEW.key = 'c' \
-                 BEGIN SELECT RAISE(ABORT, 'cut'); END;",
-            )
-        })
-        .await
-        .unwrap()
+    install
+        .store()
+        .connection()
+        .execute_batch(
+            "CREATE TRIGGER cut BEFORE INSERT ON items WHEN NEW.key = 'c' \
+             BEGIN SELECT RAISE(ABORT, 'cut'); END;",
+        )
         .unwrap();
     assert!(runtime.ingest(agent.id).await.is_err());
     assert_eq!(
@@ -1023,11 +990,7 @@ async fn a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it()
         log(&live)
     );
 
-    runtime
-        .write_store_beneath(|store| store.connection().execute_batch("DROP TRIGGER temp.cut;"))
-        .await
-        .unwrap()
-        .unwrap();
+    install.store().connection().execute_batch(UNCUT).unwrap();
     runtime.ingest(agent.id).await.unwrap();
     read_until(&mut subscription, &mut live, "the batch", |seen| {
         seen.len() == 4
@@ -1050,10 +1013,10 @@ async fn a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it()
 async fn the_sweep_ingests_a_finished_childs_journal_before_marking_it_exited() {
     let install = Install::new();
     let parent = SyntheticAgent::new(&install, "parent", BIG_SEGMENTS);
-    parent.register_offline(&install);
+    parent.register(&install);
     let mut child = SyntheticAgent::new(&install, "child", BIG_SEGMENTS);
     child.parent = Some(parent.key(&install));
-    child.register_offline(&install);
+    child.register(&install);
     // The child finished its turn and exited while no daemon ran.
     child.append(&snapshot(Phase::Working, &[], 2_000));
     child.append(&item("last", "the tests pass"));
@@ -1110,7 +1073,7 @@ async fn the_sweep_ingests_a_finished_childs_journal_before_marking_it_exited() 
 async fn a_clean_reboot_bumps_nothing() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "clean", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let (daemon, runtime, _, before) = run_to_the_cut(&install, &mut agent).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();
@@ -1130,7 +1093,7 @@ async fn a_clean_reboot_bumps_nothing() {
 async fn fetch_and_get_are_store_reads() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "pages", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     write_and_ingest(&runtime, &mut agent, &steps()).await;
     let id = agent.id.as_bytes().to_vec();
@@ -1217,7 +1180,7 @@ fn describe_inventory(event: &InventoryEvent) -> String {
 async fn the_inventory_streams_hosts_and_rows_then_caught_up_then_deltas() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "alpha", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     let mut inventory = runtime.subscribe_inventory().await.unwrap();
     let mut seen = Vec::new();
@@ -1280,7 +1243,7 @@ async fn the_inventory_streams_hosts_and_rows_then_caught_up_then_deltas() {
 async fn a_lagging_inventory_subscriber_is_told_it_lagged() {
     let install = Install::new();
     let agent = SyntheticAgent::new(&install, "alpha", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let launch = Launch {
         inventory_capacity: 2,
         ..quiet_launch()
@@ -1319,7 +1282,7 @@ async fn resolve_agent_finds_one_name_or_says_why_not() {
         .map(|name| SyntheticAgent::new(&install, name, BIG_SEGMENTS))
         .collect();
     for agent in &agents {
-        agent.register_offline(&install);
+        agent.register(&install);
     }
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
 
@@ -1431,7 +1394,7 @@ async fn retention_sweep() {
     let mut old = Vec::new();
     for (name, at) in [("old-1", 1_000), ("old-2", 2_000)] {
         let mut agent = SyntheticAgent::new(&install, name, BIG_SEGMENTS);
-        agent.register_offline(&install);
+        agent.register(&install);
         for n in 0..30 {
             agent.append(&item(&format!("{name}-{n}"), &kilobyte(n)));
         }
@@ -1439,7 +1402,7 @@ async fn retention_sweep() {
         old.push(agent);
     }
     let mut big = SyntheticAgent::new(&install, "big", BIG_SEGMENTS);
-    big.register_offline(&install);
+    big.register(&install);
     for n in 0..100 {
         big.append(&item(&format!("big-{n}"), &kilobyte(n)));
     }
@@ -1675,7 +1638,7 @@ async fn retention_sweep() {
 async fn a_backlog_is_committed_in_batches_and_caught_up_once_at_its_end() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "backlog", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     agent.append(&item("first", "row"));
     agent.go_live();
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
@@ -1728,7 +1691,7 @@ async fn a_backlog_is_committed_in_batches_and_caught_up_once_at_its_end() {
 async fn every_input_is_recorded_and_the_ring_starts_again_at_each_checkpoint() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "ring", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     let ring = install.profile_dir().join(node::CORE_RING);
     let nudge = daemon_core::Input::Nudge {
@@ -1820,7 +1783,7 @@ async fn a_subscribes_opening_reaches_its_reader_whole() {
     const ROWS: u32 = 150;
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "many", BIG_SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     for row in 0..ROWS {
         agent.append(&item(&format!("k{row}"), "a row"));
     }

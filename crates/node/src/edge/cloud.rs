@@ -577,10 +577,6 @@ async fn run_cloud_connection_with_details(
     )
     .await;
     let quic = async move {
-        #[cfg(debug_assertions)]
-        if std::env::var_os("AMUX_TEST_RELAY_UDP_BLOCKED").is_some() {
-            return Err("relay UDP blocked by test fixture".to_string());
-        }
         match quic_override {
             Some(relay) => {
                 QuicCarrier::connect_relay_candidates_with_config(

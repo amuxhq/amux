@@ -1543,10 +1543,7 @@ mod tests {
         fn live(&mut self, agent: AgentId, name: &str, parent: Option<AgentId>) {
             let (call, out) = self.call(create(agent, name, parent));
             assert!(out.contains(&Output::DialAgent { agent }), "{out:?}");
-            let out = self.step(Input::AgentHello {
-                agent,
-                hello: Default::default(),
-            });
+            let out = self.step(Input::AgentHello { agent });
             assert!(answer_of(&out, call).is_some(), "{out:?}");
         }
     }
@@ -1715,10 +1712,7 @@ mod tests {
             "{built:?}"
         );
         assert_eq!(rig.row(PARENT).unwrap().incarnation, 2);
-        let hello = rig.step(Input::AgentHello {
-            agent: PARENT,
-            hello: Default::default(),
-        });
+        let hello = rig.step(Input::AgentHello { agent: PARENT });
         assert!(answer_of(&hello, resume).is_some(), "{hello:?}");
     }
 
@@ -1868,10 +1862,7 @@ mod tests {
         rig.step(Input::Nudge { agent: PARENT });
         // A daemon that started again adopts the process, whose Hello makes
         // the next read to the journal's end announce its CaughtUp.
-        rig.step(Input::AgentHello {
-            agent: PARENT,
-            hello: Default::default(),
-        });
+        rig.step(Input::AgentHello { agent: PARENT });
         rig.call(ClientRequest::StopAgent { agent: PARENT });
         rig.call(ClientRequest::DeleteAgent { agent: PARENT });
 

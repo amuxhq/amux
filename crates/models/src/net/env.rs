@@ -2489,14 +2489,8 @@ impl Transition<'_> {
             // As the daemon's driver does, a Hello is followed by a read of
             // the journal: what the process wrote before it dialled was
             // nudged to nobody.
-            Some(ctl_frame::Of::Hello(hello)) => {
-                self.feed(
-                    h,
-                    Input::AgentHello {
-                        agent: agent_id,
-                        hello,
-                    },
-                );
+            Some(ctl_frame::Of::Hello(_)) => {
+                self.feed(h, Input::AgentHello { agent: agent_id });
                 self.feed(h, Input::Nudge { agent: agent_id });
             }
             Some(ctl_frame::Of::Nudge(_)) => self.feed(h, Input::Nudge { agent: agent_id }),

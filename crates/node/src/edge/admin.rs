@@ -323,7 +323,7 @@ impl Edge {
             .ok_or_else(|| Status::unavailable("the profile is stopping"))?;
         let local =
             LocalPairingIdentity::from_device_identity(&self.identity).named(&self.host_name);
-        let initiate = |found: bool, reachability: Reachability| Initiate {
+        let initiate = |found: bool, reachability: Option<Reachability>| Initiate {
             local: local.clone(),
             secret: secret.clone(),
             expect: requested_host.map(|host| daemon_core::HostId(*host.as_bytes())),
@@ -356,7 +356,7 @@ impl Edge {
                     &mut wire::pairing_service_client::PairingServiceClient::new(
                         dial.channel.clone(),
                     ),
-                    initiate(found, Reachability::Direct { addrs: vec![addr] }),
+                    initiate(found, Some(Reachability::Direct { addrs: vec![addr] })),
                 )
                 .await
                 .map_err(refused);
@@ -412,14 +412,7 @@ impl Edge {
                     .driver()
                     .initiate(
                         &mut wire::pairing_service_client::PairingServiceClient::new(channel),
-                        initiate(
-                            false,
-                            if relay {
-                                Reachability::Cloud
-                            } else {
-                                Reachability::Forwarded
-                            },
-                        ),
+                        initiate(false, relay.then_some(Reachability::Cloud)),
                     )
                     .await
                     .map_err(refused)

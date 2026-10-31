@@ -40,18 +40,17 @@ use calls::{CallTable, Carried};
 use core_ring::{DumpLimit, Ring};
 use daemon_core::payload::{
     Answer, BlobRefusal, CallError, ChannelClass, ChannelError, ClientRequest, JobResult,
-    PeerFailure, PeerReply, PeerRequest, PublicKey, Response, Status,
+    PeerFailure, PeerReply, PeerRequest, Response, Status,
 };
 use daemon_core::{
     CallId, ChannelId, Daemon, DrainReport, HostId, IngestEnd, Ingested, Input, Job, JobId, LinkId,
     Output, Recorded, Retain, Retained, Settings, ShellWork, StartOptions, TimerId,
 };
 pub(crate) use feed::{Feed, WeakFeed};
-pub(crate) use links::{CoreLinks, Wanted, core_error};
+pub(crate) use links::{CoreLinks, Wanted};
 pub use stepped::Cores;
 use store::Sqlite;
 pub use streams::{InventorySubscription, Subscription};
-use tokio::runtime::Handle;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 use wire::{GetItemRequest, ListItemsRequest};
@@ -127,8 +126,6 @@ pub(crate) enum Fed {
     },
     /// A read of the store, between steps.
     Read(Box<dyn FnOnce(&Sqlite) + Send>),
-    /// For tests: a write beneath the core's own, between steps.
-    Beneath(Box<dyn FnOnce(&mut Sqlite) + Send>),
     /// The shell wants a channel, and waits for the core's word on it.
     Channel {
         want: Input,
@@ -328,22 +325,16 @@ impl Driver {
         let _ = self.inputs.try_send(Fed::Wake);
     }
 
-    /// Asks the core for a channel to `peer` over `link`, with the key the
-    /// shell pinned for the peer, and waits for its word.
+    /// Asks the core for a channel to `peer` over `link`, and waits for
+    /// its word.
     pub(crate) async fn want_channel(
         &self,
         link: LinkId,
         peer: HostId,
         class: ChannelClass,
-        pin: Option<PublicKey>,
     ) -> Result<Opened, ChannelError> {
         let (reply, word) = oneshot::channel();
-        let want = Input::WantChannel {
-            link,
-            peer,
-            class,
-            pin,
-        };
+        let want = Input::WantChannel { link, peer, class };
         if self
             .inputs
             .send(Fed::Channel { want, reply })
@@ -493,19 +484,6 @@ impl Driver {
             return false;
         }
         word.await.unwrap_or(false)
-    }
-
-    /// For tests: writes the store beneath the core, between steps.
-    pub(crate) async fn beneath<T: Send + 'static>(
-        &self,
-        write: impl FnOnce(&mut Sqlite) -> T + Send + 'static,
-    ) -> Option<T> {
-        let (done, value) = oneshot::channel();
-        let write = Box::new(move |store: &mut Sqlite| {
-            let _ = done.send(write(store));
-        });
-        self.inputs.send(Fed::Beneath(write)).await.ok()?;
-        value.await.ok()
     }
 
     /// Feeds the core an input.
@@ -722,10 +700,6 @@ impl CoreThread {
                 look(&self.daemon);
                 return true;
             }
-            Fed::Beneath(write) => {
-                write(self.daemon.store_beneath());
-                return true;
-            }
             Fed::Capture { store, done } => {
                 let _ = done.send(self.capture(&store));
                 return true;
@@ -832,7 +806,6 @@ impl CoreThread {
             | Fed::Forward { .. }
             | Fed::Look(_)
             | Fed::Read(_)
-            | Fed::Beneath(_)
             | Fed::Capture { .. } => None,
         };
         let launch = runtime.launch();
@@ -858,7 +831,7 @@ impl CoreThread {
                 request: runtime.client_request(self.daemon.store(), ask),
             }),
             Some(Arriving::Peer(from, call, request)) => {
-                let request = runtime.peer_request(*request);
+                let request = *request;
                 let stream = match &request {
                     PeerRequest::SubscribeInventory => Some("inventory"),
                     PeerRequest::SubscribeSession(_) => Some("session"),
@@ -1200,10 +1173,7 @@ impl CoreThread {
                 Some(reply) => {
                     if reply.send(Ok(Opened { channel })).is_err() {
                         // Nobody waits to open it: it never opened.
-                        self.again.push_back(Input::ChannelClosed {
-                            channel,
-                            reason: ChannelError::LinkClosed,
-                        });
+                        self.again.push_back(Input::ChannelClosed { channel });
                     }
                 }
                 None => tracing::error!(
@@ -1663,7 +1633,6 @@ impl ProfileRuntime {
         match ask {
             Ask::SubscribeSession { agent_id, tail } => {
                 self.used(store, &agent_id);
-                self.run_join_hook();
                 ClientRequest::SubscribeSession { agent_id, tail }
             }
             Ask::ListItems(request) => {
@@ -1673,25 +1642,6 @@ impl ProfileRuntime {
             Ask::GetItem(request) => ClientRequest::GetItem(request),
             Ask::SubscribeInventory => ClientRequest::SubscribeInventory,
             Ask::Ready(request) => request,
-        }
-    }
-
-    /// Completes a paired host's call from what the shell owns, as
-    /// [`ProfileRuntime::client_request`] does a client's.
-    fn peer_request(&self, request: PeerRequest) -> PeerRequest {
-        match request {
-            PeerRequest::SubscribeSession(request) => {
-                self.run_join_hook();
-                PeerRequest::SubscribeSession(request)
-            }
-            request => request,
-        }
-    }
-
-    fn run_join_hook(&self) {
-        let hook = self.join_hook.lock().unwrap().clone();
-        if let Some(hook) = hook {
-            Handle::current().block_on(hook());
         }
     }
 }

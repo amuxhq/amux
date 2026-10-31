@@ -360,7 +360,7 @@ impl Edge {
                 .relaying()
                 .report_to(runtime.reports.clone(), runtime.analytics().clone());
         }
-        let channels = Arc::new(ChannelPool::new(links, trust.clone()));
+        let channels = Arc::new(ChannelPool::new(links));
         let connections = ConnectionManager::new(channels.clone(), analytics.clone());
         if let Some(runtime) = runtime.upgrade() {
             runtime
@@ -655,20 +655,6 @@ impl Edge {
         self.connections.via_for(host).await
     }
 
-    /// Waits until calls to `host` have a route, or the timeout passes.
-    pub async fn wait_for_route(&self, host: HostId, timeout: Duration) -> bool {
-        tokio::time::timeout(timeout, async {
-            loop {
-                if self.via(host).await != LiveRoute::Offline {
-                    return;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .is_ok()
-    }
-
     /// Peer service clients for a trusted host, over whichever route
     /// reaches it: a direct link, or the relay.
     pub async fn peer(&self, host: HostId) -> Result<crate::PeerClient, crate::link::ChannelError> {
@@ -722,14 +708,6 @@ impl Edge {
     /// no channel within its patience: the links it had close.
     pub(crate) fn calls_timed_out(&self, host: HostId, since: u64) {
         self.connections.calls_timed_out(host, since);
-    }
-
-    /// From now on no channel to `host` opens, or opens again, while the
-    /// streams its link already carries stay up: a call to it fails before
-    /// it goes out, and closes the link it tried. For a test network.
-    #[doc(hidden)]
-    pub async fn refuse_calls(&self, host: HostId, refuse: bool) {
-        self.connections.refuse_calls(host, refuse);
     }
 
     /// The channel calls to a trusted host ride, for a caller that speaks

@@ -377,24 +377,26 @@ async fn the_block_invariant_holds_at_the_origin_and_catches_a_replica_with_a_ho
     let mut holed = origin.clone();
     holed.remove(1);
     {
+        // Written through a connection of the test's own, beside the
+        // daemon's.
         let runtime = net.runtime("attic").unwrap();
-        runtime
-            .write_store_beneath(move |store| {
-                store
-                    .put_agent(&AgentRow::new(key.clone(), wire::Kind::ClaudeSdk, "/"))
-                    .unwrap();
-                store
-                    .absorb(
-                        &key,
-                        Absorb::Reset {
-                            tail: holed,
-                            snapshot,
-                            generation: 1,
-                        },
-                    )
-                    .unwrap();
-            })
-            .await
+        let mut store = store::Sqlite::open(
+            &runtime.dir().join(node::STORE),
+            runtime.host().as_bytes().to_vec(),
+        )
+        .unwrap();
+        store
+            .put_agent(&AgentRow::new(key.clone(), wire::Kind::ClaudeSdk, "/"))
+            .unwrap();
+        store
+            .absorb(
+                &key,
+                Absorb::Reset {
+                    tail: holed,
+                    snapshot,
+                    generation: 1,
+                },
+            )
             .unwrap();
     }
     let broken = net
@@ -664,11 +666,6 @@ fn every_door_verb_maps_to_one_capability_and_the_crate_docs_list_the_same_map()
         Control::Untrust {
             a: "a".into(),
             b: "b".into(),
-        },
-        Control::RefuseCalls {
-            a: "a".into(),
-            b: "b".into(),
-            refuse: true,
         },
         Control::SetTier {
             account: "a".into(),

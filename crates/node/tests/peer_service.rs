@@ -41,13 +41,13 @@ impl Pair {
     async fn new() -> Self {
         let desk = Install::new();
         let mut coder = SyntheticAgent::new(&desk, "coder", SEGMENTS);
-        coder.register_offline(&desk);
+        coder.register(&desk);
         coder.append(&item("c1", "the coder's first item"));
         coder.append(&snapshot(Phase::Idle, &[], 1_000));
         coder.go_live();
         let laptop = Install::new();
         let mut notes = SyntheticAgent::new(&laptop, "notes", SEGMENTS);
-        notes.register_offline(&laptop);
+        notes.register(&laptop);
         notes.append(&item("n1", "the notes' first item"));
         notes.append(&snapshot(Phase::Idle, &[], 1_000));
         notes.go_live();
@@ -61,16 +61,8 @@ impl Pair {
         desk_edge.trust(&laptop_edge).await.unwrap();
         laptop_edge.trust(&desk_edge).await.unwrap();
         let link = laptop_edge.link_in_process(&desk_edge).unwrap();
-        assert!(
-            laptop_edge
-                .wait_for_route(desk_runtime.host(), PATIENCE)
-                .await
-        );
-        assert!(
-            desk_edge
-                .wait_for_route(laptop_runtime.host(), PATIENCE)
-                .await
-        );
+        assert!(wait_for_route(&laptop_edge, desk_runtime.host(), PATIENCE).await);
+        assert!(wait_for_route(&desk_edge, laptop_runtime.host(), PATIENCE).await);
         until("the laptop to learn the desk's agent", || async {
             match laptop_runtime.owner(coder.id.as_bytes()).await {
                 Ok(Owner::Peer(_)) => Ok(()),

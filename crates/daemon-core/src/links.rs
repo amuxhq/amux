@@ -524,7 +524,6 @@ impl Daemon {
         link: LinkId,
         peer: HostId,
         class: ChannelClass,
-        pin: Option<PublicKey>,
         out: &mut Vec<Output>,
     ) {
         let refused = |reason| Output::ChannelRefused {
@@ -537,7 +536,11 @@ impl Daemon {
             out.push(refused(ChannelError::NoLink));
             return;
         }
-        let Some(pin) = pin else {
+        let Some(pin) = self
+            .trust()
+            .pubkey_for_host(Uuid::from_bytes(peer.0))
+            .map(|key| PublicKey(key.to_vec()))
+        else {
             out.push(refused(ChannelError::Unpinned));
             return;
         };
@@ -647,14 +650,13 @@ mod tests {
     }
 
     /// What the core said about the channel asked for.
-    fn want(daemon: &mut Daemon, pin: Option<PublicKey>) -> Vec<Output> {
+    fn want(daemon: &mut Daemon) -> Vec<Output> {
         step(
             daemon,
             Input::WantChannel {
                 link: LINK,
                 peer: PEER,
                 class: ChannelClass::Calls,
-                pin,
             },
         )
         .into_iter()
@@ -704,24 +706,25 @@ mod tests {
 
     #[test]
     fn a_channel_opens_only_over_a_link_that_is_up_to_a_pinned_peer() {
-        let mut daemon = daemon();
-        let pin = PublicKey(vec![9; 32]);
+        let mut untrusting = daemon();
+        up(&mut untrusting);
         assert!(matches!(
-            want(&mut daemon, Some(pin.clone())).as_slice(),
+            want(&mut untrusting).as_slice(),
+            [Output::ChannelRefused {
+                reason: ChannelError::Unpinned,
+                ..
+            }]
+        ));
+        let (mut daemon, pin) = trusting();
+        assert!(matches!(
+            want(&mut daemon).as_slice(),
             [Output::ChannelRefused {
                 reason: ChannelError::NoLink,
                 ..
             }]
         ));
         up(&mut daemon);
-        assert!(matches!(
-            want(&mut daemon, None).as_slice(),
-            [Output::ChannelRefused {
-                reason: ChannelError::Unpinned,
-                ..
-            }]
-        ));
-        let out = want(&mut daemon, Some(pin.clone()));
+        let out = want(&mut daemon);
         let [
             Output::OpenChannel {
                 channel,
@@ -739,19 +742,11 @@ mod tests {
             "the handshake checks the key pinned for the peer"
         );
         let channel = *channel;
-        step(
-            &mut daemon,
-            Input::ChannelOpened {
-                channel,
-                link: LINK,
-                peer: PEER,
-                class: ChannelClass::Calls,
-            },
-        );
+        step(&mut daemon, Input::ChannelOpened { channel });
         assert!(daemon.links().channel(channel).is_some_and(|c| c.open));
 
         // A second channel gets an id of its own; closing one forgets it.
-        let out = want(&mut daemon, Some(pin));
+        let out = want(&mut daemon);
         let [
             Output::OpenChannel {
                 channel: second, ..
@@ -761,13 +756,7 @@ mod tests {
             panic!("the second channel is opened: {out:?}");
         };
         assert_ne!(*second, channel);
-        step(
-            &mut daemon,
-            Input::ChannelClosed {
-                channel,
-                reason: ChannelError::Ended,
-            },
-        );
+        step(&mut daemon, Input::ChannelClosed { channel });
         assert!(daemon.links().channel(channel).is_none());
 
         // The link going takes its channels with it.

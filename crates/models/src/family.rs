@@ -835,15 +835,7 @@ impl<'a> Transition<'a> {
                     let process = self.process(&agent.0);
                     if process.running && !process.connected {
                         process.connected = true;
-                        self.feed(
-                            host,
-                            Input::AgentHello {
-                                agent,
-                                hello: wire::AgentHello {
-                                    agent_id: agent.0.to_vec(),
-                                },
-                            },
-                        );
+                        self.feed(host, Input::AgentHello { agent });
                     }
                 }
                 Output::WriteControl { agent, frame } => {

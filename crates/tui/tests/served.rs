@@ -722,69 +722,6 @@ async fn unlinking_the_agents_host_never_says_there_is_no_such_agent() {
         .unwrap();
 }
 
-/// A send that no channel to its host could carry is held, and the host
-/// reads offline (the chat words it "away"): the call closed the link it
-/// could not open a stream on. When a link comes up again the host reads
-/// online, and that alone releases the held prompt, which goes by itself.
-/// Before, the link stayed listed, the host never stopped reading online,
-/// and the prompt waited for good.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_prompt_held_when_no_call_reaches_its_host_goes_once_one_does() {
-    use crossterm::event::KeyCode;
-    let (mut net, mut app) = far_chat("far").await;
-    net.refuse_calls("desk", "laptop", true).await.unwrap();
-    for c in "race A".chars() {
-        press(&mut app, KeyCode::Char(c));
-    }
-    press(&mut app, KeyCode::Enter);
-    let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
-    let away = tokio::time::timeout(PATIENCE, async {
-        loop {
-            app.housekeep();
-            while let Ok(event) = app.receiver.try_recv() {
-                app.event(event);
-            }
-            terminal.draw(|frame| app.draw(frame)).unwrap();
-            let screen = screen_text(terminal.backend().buffer());
-            let held = app.chat.as_ref().unwrap().session.state().held().count();
-            if held == 1 && screen.contains("laptop away") {
-                return screen;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .expect("the prompt is held and the laptop reads away");
-    println!("{away}");
-
-    net.refuse_calls("desk", "laptop", false).await.unwrap();
-    tokio::time::timeout(PATIENCE, async {
-        loop {
-            app.housekeep();
-            while let Ok(event) = app.receiver.try_recv() {
-                app.event(event);
-            }
-            if app.chat.as_ref().unwrap().session.state().held().count() == 0 {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .expect("the held prompt goes once calls reach the laptop");
-    let screens = screens_for(&mut app, Duration::from_secs(2)).await;
-    let last = screens.last().cloned().unwrap_or_default();
-    assert!(
-        last.contains("race A") && !last.contains("sends when"),
-        "the prompt shows as sent:\n{last}"
-    );
-    drop(app);
-    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
-        .await
-        .expect("the net shuts down")
-        .unwrap();
-}
-
 /// A chat open on an agent deleted from its own host says it was deleted
 /// (or closes): it said "exited · aborted" and "Enter resumes", and Enter
 /// answered "could not resume: no agent <uuid>".

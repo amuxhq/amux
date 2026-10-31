@@ -1,6 +1,6 @@
 //! Tonic channels carried by independent native link streams.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
@@ -20,11 +20,10 @@ use tonic::transport::{Channel, Endpoint};
 use super::{ByteStream, OpenError, QuicCarrier};
 use crate::HostId;
 use crate::dispatcher::TunnelDispatcher;
-use crate::driver::{CoreLinks, core_error};
+use crate::driver::CoreLinks;
 use crate::identity::IdentityError;
 use crate::routing::{LinkId, LinkRegistry, Route};
 use crate::transport::{Compressed, channel_from_single_io};
-use crate::trust::SharedTrustStore;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -330,7 +329,7 @@ impl Ending {
 
     fn tell_ended(&self) {
         if let Some((core, channel)) = self.tell.get() {
-            core.closed(*channel, daemon_core::payload::ChannelError::Ended);
+            core.closed(*channel);
         }
     }
 
@@ -351,20 +350,15 @@ pub struct ChannelPool {
     opening: std::sync::Mutex<HashMap<ChannelKey, Arc<tokio::sync::Mutex<()>>>>,
     lifetimes: RwLock<HashMap<ChannelKey, Vec<Weak<CancellationToken>>>>,
     links: Arc<LinkRegistry>,
-    /// Where the key the core opens a channel under is pinned.
-    trust_store: SharedTrustStore,
     /// How a link through a forwarder is dialled, once the edge is up.
     forwarded: OnceLock<Arc<dyn ForwardedDial>>,
     /// How a link resuming with a ticket is dialled, once the edge is up.
     resumed: OnceLock<Arc<dyn ResumedDial>>,
-    /// Hosts no channel opens to while the link stays up: a fault a test
-    /// network injects.
-    refused: std::sync::Mutex<HashSet<HostId>>,
 }
 
 /// A channel the core said to open, whose outcome the core is told exactly
-/// once. One dropped before it was told, as a caller that gives up waiting
-/// drops its open, is told it was abandoned.
+/// once: opened, or closed when it is dropped untold, as when the open
+/// failed or a caller that gave up waiting dropped it.
 struct Telling {
     core: CoreLinks,
     channel: daemon_core::ChannelId,
@@ -372,50 +366,31 @@ struct Telling {
 }
 
 impl Telling {
-    fn opened(mut self, link: LinkId, key: ChannelKey) -> (CoreLinks, daemon_core::ChannelId) {
+    fn opened(mut self) -> (CoreLinks, daemon_core::ChannelId) {
         self.told = true;
-        self.core.opened(self.channel, link, key.peer, key.class);
+        self.core.opened(self.channel);
         (self.core.clone(), self.channel)
-    }
-
-    fn failed(mut self, reason: daemon_core::payload::ChannelError) {
-        self.told = true;
-        self.core.closed(self.channel, reason);
     }
 }
 
 impl Drop for Telling {
     fn drop(&mut self) {
         if !self.told {
-            self.core.closed(
-                self.channel,
-                daemon_core::payload::ChannelError::Handshake("the open was abandoned".to_owned()),
-            );
+            self.core.closed(self.channel);
         }
     }
 }
 
 impl ChannelPool {
-    pub(crate) fn new(links: Arc<LinkRegistry>, trust_store: SharedTrustStore) -> Self {
+    pub(crate) fn new(links: Arc<LinkRegistry>) -> Self {
         Self {
             by_key: RwLock::new(HashMap::new()),
             opening: std::sync::Mutex::new(HashMap::new()),
             lifetimes: RwLock::new(HashMap::new()),
             links,
-            trust_store,
             forwarded: OnceLock::new(),
             resumed: OnceLock::new(),
-            refused: std::sync::Mutex::default(),
         }
-    }
-
-    /// The key pinned for `peer`, which the core opens its channels under.
-    fn pinned(&self, peer: HostId) -> Option<Vec<u8>> {
-        self.trust_store
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .pubkey_for_host(peer)
-            .map(<[u8]>::to_vec)
     }
 
     /// Dials links through forwarders with `dial` from now on.
@@ -529,16 +504,10 @@ impl ChannelPool {
         lifetime: Arc<CancellationToken>,
     ) {
         if let Some(core) = self.links.core() {
-            let pinned = self.pinned(key.peer);
-            match core.want_channel(link, key.peer, key.class, pinned).await {
+            match core.want_channel(link, key.peer, key.class).await {
                 Ok(opening) => {
-                    let telling = Telling {
-                        core: core.clone(),
-                        channel: opening.channel,
-                        told: false,
-                    };
-                    let (core, channel) = telling.opened(link, key);
-                    ended.arm(core, channel);
+                    core.opened(opening.channel);
+                    ended.arm(core.clone(), opening.channel);
                 }
                 Err(_) => {
                     lifetime.cancel();
@@ -558,30 +527,6 @@ impl ChannelPool {
                     link,
                 },
             );
-    }
-
-    /// From now on every channel to `peer` is refused while `refuse`
-    /// holds, as a link whose far end takes no stream would refuse it,
-    /// those already opening included, and no cached one is handed out.
-    /// The link each refusal was on closes, as any link a stream would not
-    /// open on does.
-    pub(crate) fn refuse(&self, peer: HostId, refuse: bool) {
-        let mut refused = self
-            .refused
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if refuse {
-            refused.insert(peer);
-        } else {
-            refused.remove(&peer);
-        }
-    }
-
-    fn refuses(&self, peer: HostId) -> bool {
-        self.refused
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .contains(&peer)
     }
 
     /// A stream would not open on `link` while it stayed up: it closes as
@@ -614,16 +559,12 @@ impl ChannelPool {
     }
 
     async fn open_channel(&self, key: ChannelKey) -> Result<Channel, ChannelError> {
-        let refused = self.refuses(key.peer);
-        let cached = if !refused {
-            self.by_key
-                .read()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .get(&key)
-                .cloned()
-        } else {
-            None
-        };
+        let cached = self
+            .by_key
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&key)
+            .cloned();
         if let Some(cached) = cached {
             if !self.route_is_live(key.route).await {
                 return Err(ChannelError::LinkUnavailable {
@@ -656,10 +597,7 @@ impl ChannelPool {
         // A channel opens at the profile core's word, which refuses a host
         // no key is pinned for.
         let core = self.links.core().ok_or_else(unavailable)?;
-        let telling = match core
-            .want_channel(link, key.peer, key.class, self.pinned(key.peer))
-            .await
-        {
+        let telling = match core.want_channel(link, key.peer, key.class).await {
             Ok(opening) => Telling {
                 core: core.clone(),
                 channel: opening.channel,
@@ -668,12 +606,6 @@ impl ChannelPool {
             Err(daemon_core::payload::ChannelError::Unpinned) => return Err(unpinned(key.peer)),
             Err(_) => return Err(unavailable()),
         };
-        if refused {
-            let refusal = streams_refused();
-            telling.failed(core_error(&refusal));
-            self.close_failed(link);
-            return Err(refusal);
-        }
         let ended = Arc::new(Ending::default());
         let secured = async {
             let stream = carrier
@@ -683,21 +615,12 @@ impl ChannelPool {
             Ok(self.channel_over(key, Watched::new(stream, ended.clone()), &ended))
         }
         .await;
-        // A refusal set while the channel was opening holds for it too, so
-        // no channel opens once it is set.
-        let secured = match secured {
-            Ok(_) if self.refuses(key.peer) => Err(streams_refused()),
-            secured => secured,
-        };
         if let Err(ChannelError::Handshake(_)) = &secured {
             self.close_failed(link);
         }
-        match &secured {
-            Ok(_) => {
-                let (core, channel) = telling.opened(link, key);
-                ended.arm(core, channel);
-            }
-            Err(error) => telling.failed(core_error(error)),
+        if secured.is_ok() {
+            let (core, channel) = telling.opened();
+            ended.arm(core, channel);
         }
         let channel = secured?;
         tracing::debug!(
@@ -1078,12 +1001,6 @@ fn unpinned(peer: HostId) -> ChannelError {
     ChannelError::Tls(format!("no key is pinned for host {peer}"))
 }
 
-/// What a channel the refusal hook turned away fails with: a stream that
-/// would not open, as on a link whose far end takes none.
-fn streams_refused() -> ChannelError {
-    ChannelError::Handshake("the link refused the stream".to_owned())
-}
-
 fn map_open_error(error: OpenError, route: Route) -> ChannelError {
     match error {
         OpenError::LinkClosed => ChannelError::LinkUnavailable {
@@ -1116,10 +1033,7 @@ mod tests {
 
     #[test]
     fn dropping_a_link_a_route_or_a_host_forgets_their_opener_locks() {
-        let pool = ChannelPool::new(
-            Arc::new(LinkRegistry::new(crate::HostId::nil())),
-            SharedTrustStore::default(),
-        );
+        let pool = ChannelPool::new(Arc::new(LinkRegistry::new(crate::HostId::nil())));
         let host = Uuid::new_v4();
         let relay = Uuid::new_v4();
         let other = Uuid::new_v4();
@@ -1223,6 +1137,7 @@ mod tests {
         use crate::link::{LinkEndpoint, QuicCarrier};
         use crate::routing::{Capabilities, Host, LiveLocalHost};
         use crate::transport::BoxedGrpcIo;
+        use crate::trust::SharedTrustStore;
 
         /// Counts the calls a host answered, by method.
         #[derive(Clone, Default)]
@@ -1535,7 +1450,7 @@ mod tests {
         fn dialler(identity: DeviceIdentity, host: &DeviceIdentity, at: &LoopbackHost) -> Dialler {
             let links = Arc::new(LinkRegistry::new(identity.host_id));
             let trust = trust_for(host);
-            let pool = ChannelPool::new(links.clone(), trust.clone());
+            let pool = ChannelPool::new(links.clone());
             let dial = Arc::new(LoopbackDial {
                 // Handshakes take a fifth of a second, so the early calls
                 // are written before they finish.

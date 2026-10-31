@@ -265,10 +265,6 @@ pub enum Carrier {
 /// What [`Interpreter::redact`] works on.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RedactTarget {
-    /// An `Item.body` of the kind.
-    ItemBody(Vec<u8>),
-    /// A `Snapshot.body` of the kind.
-    SnapshotBody(Vec<u8>),
     /// A facts-ring entry that is a provider fact.
     Fact(Fact),
     /// A facts-ring entry that is an input: an encoded `wire::Input`.

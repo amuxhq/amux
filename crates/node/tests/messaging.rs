@@ -175,10 +175,10 @@ async fn items_with_input(runtime: &ProfileRuntime, key: &AgentKey) -> Vec<wire:
 async fn send_input_returns_the_interpreters_verdict_or_answers_for_an_exited_agent() {
     let install = Install::new();
     let mut live = SyntheticAgent::new(&install, "live", SEGMENTS);
-    live.register_offline(&install);
+    live.register(&install);
     live.go_live();
     let gone = SyntheticAgent::new(&install, "gone", SEGMENTS);
-    gone.register_offline(&install);
+    gone.register(&install);
     let (daemon, runtime) = start(&install, "boot-1").await;
     let send = |agent: &SyntheticAgent, id: &[u8]| SendInputRequest {
         agent_id: agent.id.as_bytes().to_vec(),
@@ -224,15 +224,15 @@ async fn send_input_returns_the_interpreters_verdict_or_answers_for_an_exited_ag
 async fn an_agent_sends_input_only_to_its_own_children() {
     let install = Install::new();
     let mut caller = SyntheticAgent::new(&install, "caller", SEGMENTS);
-    caller.register_offline(&install);
+    caller.register(&install);
     // Live: an exited parent's child is stopped by the family rule.
     caller.go_live();
     let mut child = SyntheticAgent::new(&install, "child", SEGMENTS);
     child.parent = Some(caller.key(&install));
-    child.register_offline(&install);
+    child.register(&install);
     child.go_live();
     let mut stranger = SyntheticAgent::new(&install, "stranger", SEGMENTS);
-    stranger.register_offline(&install);
+    stranger.register(&install);
     stranger.go_live();
     let (daemon, runtime) = start(&install, "boot-1").await;
     let tools = ClientApi::new(&runtime, Some(caller.id));
@@ -263,9 +263,9 @@ async fn an_agent_sends_input_only_to_its_own_children() {
 async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     let install = Install::new();
     let sender = SyntheticAgent::new(&install, "sender", SEGMENTS);
-    sender.register_offline(&install);
+    sender.register(&install);
     let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
-    recipient.register_offline(&install);
+    recipient.register(&install);
     recipient.go_live();
     let (daemon, runtime) = start(&install, "boot-1").await;
 
@@ -357,9 +357,9 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
 async fn send_message_sender_is_the_caller() {
     let install = Install::new();
     let sender = SyntheticAgent::new(&install, "sender", SEGMENTS);
-    sender.register_offline(&install);
+    sender.register(&install);
     let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
-    recipient.register_offline(&install);
+    recipient.register(&install);
     recipient.go_live();
     let (daemon, runtime) = start(&install, "boot-1").await;
 
@@ -435,7 +435,7 @@ async fn send_message_sender_is_the_caller() {
 async fn resend_with_same_id_is_one_item() {
     let install = Install::new();
     let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
-    recipient.register_offline(&install);
+    recipient.register(&install);
     recipient.go_live();
     let (daemon, runtime) = start(&install, "boot-1").await;
     let api = ClientApi::new(&runtime, None);
@@ -474,7 +474,7 @@ async fn resend_with_same_id_is_one_item() {
 async fn a_message_waits_for_its_item_to_commit_and_one_envelope_is_handed_over_once() {
     let install = Install::new();
     let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
-    recipient.register_offline(&install);
+    recipient.register(&install);
     recipient.go_live();
     recipient.answer_with(Answer::AcceptWithoutNudge);
     let (daemon, runtime) = start(&install, "boot-1").await;
@@ -539,7 +539,7 @@ async fn a_retry_after_reply_patience_is_concluded_by_the_verdict_that_comes() {
     const REPLY_MS: i64 = 400;
     let install = Install::new();
     let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
-    recipient.register_offline(&install);
+    recipient.register(&install);
     recipient.go_live();
     recipient.freeze();
     let clock = agent_dir::ManualClock::new(T0);
@@ -635,7 +635,7 @@ async fn a_retry_after_reply_patience_is_concluded_by_the_verdict_that_comes() {
 async fn connect_patience_running_out_behind_the_hello_does_not_lose_the_message() {
     let install = Install::new();
     let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
-    recipient.register_offline(&install);
+    recipient.register(&install);
     // Running but not answering yet: the daemon keeps dialing it.
     recipient.hold_lock();
     let (daemon, runtime) = start(&install, "boot-1").await;
@@ -708,10 +708,10 @@ async fn start_resuming(install: &Install) -> (Daemon, Arc<ProfileRuntime>) {
 async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
     let install = Install::new();
     let parent = SyntheticAgent::new(&install, "parent", SEGMENTS);
-    parent.register_offline(&install);
+    parent.register(&install);
     let mut child = SyntheticAgent::new(&install, "child", SEGMENTS);
     child.parent = Some(parent.key(&install));
-    child.register_offline(&install);
+    child.register(&install);
     child.write_spec();
     child.go_live();
     child.answer_with(Answer::Reject(wire::Refusal::Exiting));
@@ -770,7 +770,7 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
 async fn an_input_answered_exiting_lets_a_resume_wait_for_the_lock() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "leaving", SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     agent.write_spec();
     agent.go_live();
     agent.answer_with(Answer::Reject(wire::Refusal::Exiting));
@@ -810,11 +810,11 @@ async fn an_input_answered_exiting_lets_a_resume_wait_for_the_lock() {
 async fn a_delivery_waiting_on_its_parents_lane_is_dropped_when_the_parent_resumes() {
     let install = Install::new();
     let mut parent = SyntheticAgent::new(&install, "parent", SEGMENTS);
-    parent.register_offline(&install);
+    parent.register(&install);
     parent.go_live();
     let mut child = SyntheticAgent::new(&install, "child", SEGMENTS);
     child.parent = Some(parent.key(&install));
-    child.register_offline(&install);
+    child.register(&install);
     child.go_live();
     let (daemon, runtime) = start(&install, "boot-1").await;
 
@@ -860,14 +860,12 @@ async fn a_delivery_waiting_on_its_parents_lane_is_dropped_when_the_parent_resum
 
     // While it waits, the parent becomes its second incarnation.
     let key = parent.key(&install);
-    runtime
-        .write_store_beneath(move |store| {
-            let mut row = store.agent(&key).unwrap().unwrap();
-            row.incarnation = 2;
-            store.put_agent(&row).unwrap();
-        })
-        .await
-        .unwrap();
+    {
+        let mut store = install.store();
+        let mut row = store.agent(&key).unwrap().unwrap();
+        row.incarnation = 2;
+        store.put_agent(&row).unwrap();
+    }
     parent.nudge().await;
     held.await.unwrap().unwrap();
     let report = drained.await.unwrap();
@@ -890,7 +888,7 @@ async fn a_delivery_waiting_on_its_parents_lane_is_dropped_when_the_parent_resum
 fn finished_child(install: &Install, parent: &SyntheticAgent) -> SyntheticAgent {
     let mut child = SyntheticAgent::new(install, "child", SEGMENTS);
     child.parent = Some(parent.key(install));
-    child.register_offline(install);
+    child.register(install);
     child.append(&snapshot(wire::Phase::Working, &[], 2_000));
     child.append(&item("last", "the tests pass"));
     child.append(&turn_end(1, "last"));
@@ -901,7 +899,7 @@ fn finished_child(install: &Install, parent: &SyntheticAgent) -> SyntheticAgent 
 async fn a_child_finishing_while_the_daemon_is_down_reaches_its_parent_once() {
     let install = Install::new();
     let mut parent = SyntheticAgent::new(&install, "parent", SEGMENTS);
-    parent.register_offline(&install);
+    parent.register(&install);
     parent.go_live();
     let child = finished_child(&install, &parent);
     // The child finished and exited while no daemon ran.
@@ -925,7 +923,7 @@ async fn a_child_finishing_while_the_daemon_is_down_reaches_its_parent_once() {
 async fn a_crash_between_hand_off_and_delete_yields_one_item() {
     let install = Install::new();
     let mut parent = SyntheticAgent::new(&install, "parent", SEGMENTS);
-    parent.register_offline(&install);
+    parent.register(&install);
     // The parent accepts, but its answer never reaches the daemon.
     parent.answer_with(Answer::AcceptSilently);
     parent.go_live();
@@ -965,7 +963,7 @@ async fn a_crash_between_hand_off_and_delete_yields_one_item() {
 async fn a_resumed_parent_receives_nothing() {
     let install = Install::new();
     let mut parent = SyntheticAgent::new(&install, "parent", SEGMENTS);
-    parent.register_offline(&install);
+    parent.register(&install);
     finished_child(&install, &parent);
     // The parent is exited when its child finishes: the row waits.
     let (daemon, runtime) = start(&install, "boot-1").await;
@@ -981,7 +979,7 @@ async fn a_resumed_parent_receives_nothing() {
 
     // The parent is resumed: a new incarnation, waiting for nothing.
     parent.incarnation = 2;
-    parent.register_offline(&install);
+    parent.register(&install);
     parent.go_live();
     let (daemon, runtime) = start(&install, "boot-1").await;
     until("the stale row to go", || rows(&runtime, 0))
@@ -1021,7 +1019,7 @@ async fn a_child_whose_parent_row_is_missing_keeps_its_row_until_the_parent_is_k
     // The first daemon removed the parent's directory, which no row
     // listed; now the parent exists here.
     parent.reopen_journal();
-    parent.register_offline(&install);
+    parent.register(&install);
     parent.go_live();
     let (daemon, runtime) = start(&install, "boot-1").await;
     until("the delivery", || rows(&runtime, 0)).await.unwrap();
@@ -1037,16 +1035,16 @@ async fn a_child_whose_parent_row_is_missing_keeps_its_row_until_the_parent_is_k
 async fn a_child_gone_without_a_turn_end_tells_its_parent_it_failed() {
     let install = Install::new();
     let mut parent = SyntheticAgent::new(&install, "parent", SEGMENTS);
-    parent.register_offline(&install);
+    parent.register(&install);
     parent.go_live();
     let mut crashed = SyntheticAgent::new(&install, "crashed", SEGMENTS);
     crashed.parent = Some(parent.key(&install));
-    crashed.register_offline(&install);
+    crashed.register(&install);
     crashed.append(&snapshot(wire::Phase::Working, &[], 2_000));
     crashed.go_live();
     let mut finished = SyntheticAgent::new(&install, "finished", SEGMENTS);
     finished.parent = Some(parent.key(&install));
-    finished.register_offline(&install);
+    finished.register(&install);
     finished.append(&item("last", "done"));
     finished.append(&turn_end(1, "last"));
     finished.go_live();
@@ -1144,11 +1142,11 @@ async fn an_agent_that_stops_reading_holds_up_neither_other_parents_nor_a_kill()
     const STOP_MS: i64 = 1_000;
     let install = Install::new();
     let mut wedged = SyntheticAgent::new(&install, "wedged", SEGMENTS);
-    wedged.register_offline(&install);
+    wedged.register(&install);
     wedged.go_live();
     wedged.stop_reading();
     let mut other = SyntheticAgent::new(&install, "other", SEGMENTS);
-    other.register_offline(&install);
+    other.register(&install);
     other.go_live();
     // Four children that finished while no daemon ran. The outbox is read
     // in child id order: the wedged parent's three rows come first.
@@ -1159,7 +1157,7 @@ async fn an_agent_that_stops_reading_holds_up_neither_other_parents_nor_a_kill()
     for (n, child) in children.iter_mut().enumerate() {
         let parent = if n < 3 { &wedged } else { &other };
         child.parent = Some(parent.key(&install));
-        child.register_offline(&install);
+        child.register(&install);
         child.append(&snapshot(wire::Phase::Working, &[], 2_000));
         child.append(&item("last", "the tests pass"));
         child.append(&turn_end(1, "last"));

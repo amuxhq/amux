@@ -14,17 +14,16 @@
 #![cfg(unix)]
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use node::{Launch, SourceVerdict};
+use node::Launch;
 use prost::Message as _;
 use provider_fakes::script::{Ask, Question, Step};
-use store::{AgentKey, CommitClock, Marker, PageEnd};
+use store::{Marker, PageEnd};
 use testnet::observe::{self, Mark, marks};
-use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, holds_for, until};
+use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, until};
 use wire::session_service_server::SessionService as _;
-use wire::{InventoryEvent, Item, ListItemsRequest, SessionEvent, inventory_event, session_event};
+use wire::{Item, ListItemsRequest, SessionEvent, session_event};
 
 fn text(text: &str) -> Step {
     Step::Text {
@@ -41,13 +40,6 @@ fn turns(turns: usize, per_turn: usize) -> Vec<Step> {
         }
         steps.push(Step::TurnEnd);
     }
-    steps
-}
-
-/// One turn of `n` messages, "<label>-<n>".
-fn turn(label: &str, n: usize) -> Vec<Step> {
-    let mut steps: Vec<Step> = (0..n).map(|at| text(&format!("{label}-{at}"))).collect();
-    steps.push(Step::TurnEnd);
     steps
 }
 
@@ -83,18 +75,6 @@ async fn origin_rows(net: &Net, agent: &str) -> Vec<Item> {
     rows
 }
 
-/// The origin's newest revision for `agent`: what a CaughtUp carries.
-async fn origin_revision(net: &Net, agent: &str) -> u64 {
-    let agent = net.agent(agent).unwrap().clone();
-    let runtime = net.runtime(&agent.host).unwrap();
-    let key = agent.key();
-    let row = runtime
-        .read_store(move |store| store.agent(&key).unwrap().unwrap())
-        .await
-        .unwrap();
-    row.next_revision - 1
-}
-
 /// The replica's source cursor and marker at `host`.
 async fn replica_state(net: &Net, host: &str, agent: &str) -> Option<(u64, Option<Marker>)> {
     let key = net.agent(agent).unwrap().key();
@@ -106,15 +86,6 @@ async fn replica_state(net: &Net, host: &str, agent: &str) -> Option<(u64, Optio
         })
         .await
         .unwrap()
-}
-
-/// `work`, failing with `what` if it has not finished within twice the
-/// patience of a wait: a stage that hangs fails here, named, rather than
-/// at the run's own bound.
-async fn stage<T>(what: &str, work: impl Future<Output = T>) -> T {
-    tokio::time::timeout(PATIENCE * 2, work)
-        .await
-        .unwrap_or_else(|_| panic!("{what}: no answer within {:?}", PATIENCE * 2))
 }
 
 /// Waits until the origin's journal for `agent` holds a message saying
@@ -147,13 +118,6 @@ fn since_last_detached(events: &[SessionEvent]) -> Vec<Mark> {
     all[from..].to_vec()
 }
 
-fn count_caught_up(events: &[SessionEvent]) -> usize {
-    marks(events)
-        .iter()
-        .filter(|mark| matches!(mark, Mark::CaughtUp(_)))
-        .count()
-}
-
 async fn fetch(
     net: &Net,
     host: &str,
@@ -180,25 +144,6 @@ async fn sever(net: &mut Net) {
 async fn restore(net: &mut Net) {
     net.restore_link("desk", "laptop").await.unwrap();
     net.wait_link("desk", "laptop", true).await.unwrap();
-}
-
-/// Waits until a source's first retry is armed on the policy clock, one
-/// backoff from now. Policy time stands still, so the deadline is exact;
-/// with it armed and unfired, nothing has reconnected early. A host's
-/// driver sleeps only until its soonest timer, so a retry due after
-/// another is not seen here: this is for a loss that shows nothing else
-/// of the step arming the retry, which counts its backoff from then, so
-/// the clock must not move first.
-async fn backoff_armed(net: &Net) {
-    let at = net.now_ms() + Launch::default().source_backoff_ms;
-    tokio::time::timeout(PATIENCE, net.clock().unwrap().armed(at))
-        .await
-        .unwrap_or_else(|_| {
-            panic!(
-                "no source retry armed at {at}; sleeping: {:?}",
-                net.clock().unwrap().sleeping()
-            )
-        });
 }
 
 /// What crosses from one host to another is compressed: a transcript of
@@ -244,379 +189,6 @@ async fn a_replica_is_carried_compressed() {
         carried * 2 < rows as u64,
         "the link carried {carried} bytes for {rows} bytes of rows"
     );
-}
-
-/// A source's stream dies right after the origin's Snapshot, whose revision
-/// is ahead of the rows behind it, while a page from the origin lands a
-/// newer revision of an old row and a newer row is still missing. The
-/// cursor did not move, so the reconnect asks after the old cursor and
-/// nothing is lost; the source reconnects on the policy clock with
-/// Detached between.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer() {
-    const K: u32 = 6;
-    let topology = desk_and_laptop().agent(
-        AgentDecl::new("worker", "desk")
-            .steps([turn("first", 10), turn("second", 1), turn("third", 1)].concat()),
-    );
-    let mut net = Net::start_with(topology, options(K, |_, _| {}))
-        .await
-        .unwrap();
-    let worker = net.agent("worker").unwrap().clone();
-    let key = worker.key();
-    net.current("laptop", "worker").await.unwrap();
-    // The first turn happens while the laptop is away, so it comes back to
-    // a Reset: its block is the newest K rows and the oldest lie below it.
-    sever(&mut net).await;
-    net.send("worker", "go").await.unwrap();
-    wait_origin_says(&net, "worker", "first-9").await;
-    restore(&mut net).await;
-    net.current("laptop", "worker").await.unwrap();
-    let (cursor, _) = replica_state(&net, "laptop", "worker").await.unwrap();
-    let mut chat = net.observe("laptop", "worker", 50).await.unwrap();
-    chat.observe_until(observe::caught_up, PATIENCE)
-        .await
-        .unwrap();
-
-    // The next stream to reach the laptop's source drops right after its
-    // Snapshot, once: the Snapshot is taken, the event after it is not.
-    let dropped = Arc::new(AtomicBool::new(false));
-    {
-        let dropped = dropped.clone();
-        let snapshot_seen = AtomicBool::new(false);
-        let watched = key.clone();
-        net.runtime("laptop")
-            .unwrap()
-            .set_source_hook(Some(Arc::new(
-                move |agent: &AgentKey, event: &SessionEvent| {
-                    if *agent != watched || dropped.load(Ordering::SeqCst) {
-                        SourceVerdict::Keep
-                    } else if matches!(event.of, Some(session_event::Of::Snapshot(_))) {
-                        snapshot_seen.store(true, Ordering::SeqCst);
-                        SourceVerdict::Keep
-                    } else if snapshot_seen.load(Ordering::SeqCst) {
-                        dropped.store(true, Ordering::SeqCst);
-                        SourceVerdict::Drop
-                    } else {
-                        SourceVerdict::Keep
-                    }
-                },
-            )));
-    }
-
-    // While the laptop is cut off the origin writes a new turn, then
-    // revises its oldest row: the revision a page will bring is newer than
-    // the rows the laptop is still missing.
-    sever(&mut net).await;
-    net.send("worker", "two").await.unwrap();
-    wait_origin_says(&net, "worker", "second-0").await;
-    let oldest = origin_rows(&net, "worker").await[0].clone();
-    {
-        let runtime = net.runtime("desk").unwrap();
-        let revised = Item {
-            text: format!("{} (revised)", oldest.text),
-            ..oldest.clone()
-        };
-        let clock = CommitClock {
-            now_ms: net.now_ms(),
-            notify_delay_ms: 0,
-        };
-        let key = key.clone();
-        runtime
-            .write_store_beneath(move |store| {
-                let at = store.cursor(&key).unwrap();
-                store
-                    .commit(
-                        &key,
-                        &[(
-                            at,
-                            wire::Step {
-                                items: vec![revised],
-                                ..wire::Step::default()
-                            },
-                        )],
-                        clock,
-                    )
-                    .unwrap();
-            })
-            .await
-            .unwrap();
-    }
-    let revised = origin_rows(&net, "worker").await[0].clone();
-    assert!(revised.revision > cursor);
-
-    restore(&mut net).await;
-    until("the stream to drop after its Snapshot", || {
-        let dropped = dropped.load(Ordering::SeqCst);
-        async move { dropped.then_some(()).ok_or("not dropped") }
-    })
-    .await
-    .unwrap();
-    // The source is waiting out its backoff on the policy clock; the
-    // Snapshot it dropped after did not move its cursor.
-    assert_eq!(
-        replica_state(&net, "laptop", "worker").await,
-        Some((cursor, Some(Marker::Detached)))
-    );
-
-    // A page down from the laptop reaches below the block to the origin,
-    // which answers with the revised row; it joins the block and is kept.
-    let floor = {
-        let runtime = net.runtime("laptop").unwrap();
-        let key = key.clone();
-        let row = runtime
-            .read_store(move |store| store.agent(&key).unwrap().unwrap())
-            .await
-            .unwrap();
-        row.complete_from_order.unwrap()
-    };
-    let page = fetch(&net, "laptop", "worker", Some(floor), 100)
-        .await
-        .unwrap();
-    assert!(page.exhausted, "the origin holds every row");
-    assert!(
-        page.items
-            .iter()
-            .any(|item| item.key == revised.key && item.revision == revised.revision),
-        "{:#?}",
-        page.items
-    );
-    {
-        let runtime = net.runtime("laptop").unwrap();
-        let (key, item) = (key.clone(), revised.key.clone());
-        let (held, at, rows) = runtime
-            .read_store(move |store| {
-                (
-                    store.get(&key, &item).unwrap().unwrap(),
-                    store.cursor(&key).unwrap(),
-                    store.cut(&key, u32::MAX).unwrap().held,
-                )
-            })
-            .await
-            .unwrap();
-        assert_eq!(
-            held.revision, revised.revision,
-            "the page's revision is kept"
-        );
-        assert_eq!(at, cursor, "a page never moves the cursor");
-        assert!(
-            !rows.iter().any(|item| item.text.contains("second-0")),
-            "the new turn is still missing"
-        );
-    }
-
-    // Nothing reconnects before the backoff is up: the retry is armed on
-    // the policy clock and has not fired. Then the source asks after its
-    // old cursor and the delta carries the missing rows.
-    backoff_armed(&net).await;
-    assert_eq!(count_caught_up(chat.events()), 1);
-    net.advance(Duration::from_secs(1)).unwrap();
-    let events = chat
-        .observe_until(
-            |events| {
-                since_last_detached(events)
-                    .iter()
-                    .any(|m| matches!(m, Mark::CaughtUp(_)))
-            },
-            PATIENCE,
-        )
-        .await
-        .unwrap();
-    let replay = since_last_detached(events);
-    assert!(!replay.contains(&Mark::Reset), "{replay:?}");
-    net.current("laptop", "worker").await.unwrap();
-    println!(
-        "the laptop's chat through a stream dropped after its Snapshot:\n{}",
-        chat.transcript()
-    );
-    let laptop_rows = {
-        let runtime = net.runtime("laptop").unwrap();
-        let key = key.clone();
-        runtime
-            .read_store(move |store| store.cut(&key, u32::MAX).unwrap().held)
-            .await
-            .unwrap()
-    };
-    assert_eq!(
-        laptop_rows.len(),
-        origin_rows(&net, "worker").await.len(),
-        "the page and the delta together hold the origin's whole history"
-    );
-    net.shutdown().await.unwrap();
-}
-
-/// A source whose stream is lost while the link stays up detaches its
-/// chat itself: the host was never lost, yet the chat sees Detached and
-/// the replica's marker reads Detached for as long as the source waits out
-/// its backoff; then it catches up again.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_stream_lost_with_the_link_up_detaches_through_the_backoff() {
-    // Once seen to hang past the workspace run's bound and never again, so
-    // every wait here is bounded and names the stage that stalled.
-    const K: u32 = 6;
-    let mut net = stage(
-        "start the desk and the laptop",
-        Net::start_with(desk_and_laptop(), options(K, |_, _| {})),
-    )
-    .await
-    .unwrap();
-
-    // Once armed, the laptop's source drops the next record it is sent. A
-    // source reads the hook when its stream opens, so it is set before the
-    // agent exists.
-    let armed = Arc::new(AtomicBool::new(false));
-    let dropped = Arc::new(AtomicBool::new(false));
-    let laptop = net.runtime("laptop").unwrap();
-    {
-        let armed = armed.clone();
-        let dropped = dropped.clone();
-        laptop.set_source_hook(Some(Arc::new(move |_: &AgentKey, _: &SessionEvent| {
-            if armed.swap(false, Ordering::SeqCst) {
-                dropped.store(true, Ordering::SeqCst);
-                SourceVerdict::Drop
-            } else {
-                SourceVerdict::Keep
-            }
-        })));
-    }
-    stage(
-        "spawn the worker",
-        net.spawn(
-            AgentDecl::new("worker", "desk")
-                .steps(turns(2, 3))
-                .prompt("go"),
-        ),
-    )
-    .await
-    .unwrap();
-    stage(
-        "the worker's first turn at the desk",
-        wait_origin_says(&net, "worker", "t0-2"),
-    )
-    .await;
-    stage("the first replica", net.current("laptop", "worker"))
-        .await
-        .unwrap();
-    let mut chat = stage(
-        "open the laptop's chat",
-        net.observe("laptop", "worker", 10),
-    )
-    .await
-    .unwrap();
-    chat.observe_until(observe::caught_up, PATIENCE)
-        .await
-        .unwrap();
-    let seen = chat.events().len();
-
-    armed.store(true, Ordering::SeqCst);
-    stage("send the second turn", net.send("worker", "two"))
-        .await
-        .unwrap();
-    chat.observe_until(
-        |events| marks(&events[seen..]).contains(&Mark::Detached),
-        PATIENCE,
-    )
-    .await
-    .unwrap();
-    assert!(dropped.load(Ordering::SeqCst));
-    let desk = net.host("desk").unwrap().host_id;
-    assert!(laptop.host_ready(desk), "the host was never lost");
-    // The step that published the Detached the chat saw armed the
-    // source's retry one backoff from then. Short of it the marker reads
-    // Detached; at it the source opens again.
-    let backoff = Duration::from_millis(Launch::default().source_backoff_ms as u64);
-    net.advance(backoff - Duration::from_millis(1)).unwrap();
-    stage(
-        "the marker through the backoff",
-        holds_for(
-            "the marker to read Detached through the backoff",
-            Duration::from_millis(500),
-            || async {
-                replica_state(&net, "laptop", "worker")
-                    .await
-                    .is_some_and(|(_, marker)| marker == Some(Marker::Detached))
-            },
-        ),
-    )
-    .await
-    .unwrap();
-
-    net.advance(Duration::from_millis(1)).unwrap();
-    chat.observe_until(
-        |events| {
-            since_last_detached(&events[seen..])
-                .iter()
-                .any(|m| matches!(m, Mark::CaughtUp(_)))
-        },
-        PATIENCE,
-    )
-    .await
-    .unwrap();
-    stage(
-        "the replica after the backoff",
-        net.current("laptop", "worker"),
-    )
-    .await
-    .unwrap();
-    println!(
-        "the laptop's chat through a stream lost with the link up:\n{}",
-        chat.transcript()
-    );
-    drop(laptop);
-    stage("shut the net down", net.shutdown()).await.unwrap();
-}
-
-/// A host that goes away and comes back between two of the follower's
-/// looks at its route is followed again at once, and so is one whose new
-/// link is up before the follower notices that its stream on the old one
-/// ended: the backoff runs on the policy clock, which nothing here
-/// advances, so a follower that missed either would wait on it forever.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_link_back_before_the_follower_looks_is_followed_without_its_backoff() {
-    let topology = desk_and_laptop().agent(
-        AgentDecl::new("worker", "desk")
-            .steps(turns(3, 2))
-            .prompt("go"),
-    );
-    let mut net = Net::start_with(topology, options(6, |_, _| {}))
-        .await
-        .unwrap();
-    wait_origin_says(&net, "worker", "t0-1").await;
-    net.current("laptop", "worker").await.unwrap();
-    for _ in 0..3 {
-        sever(&mut net).await;
-        restore(&mut net).await;
-        net.current("laptop", "worker").await.unwrap();
-    }
-
-    // The follower is busy with a change to the worker while the link is
-    // cut and a new one comes up, and reads its stream's end only after.
-    let (release, released) = tokio::sync::watch::channel(false);
-    let (heard, mut hearing) = tokio::sync::mpsc::unbounded_channel();
-    let held = Arc::new(AtomicBool::new(false));
-    net.runtime("laptop")
-        .unwrap()
-        .set_inventory_hook(Some(Arc::new(move |_, event: &InventoryEvent| {
-            let about_an_agent = matches!(&event.of, Some(inventory_event::Of::Agent(_)));
-            if !about_an_agent || held.swap(true, Ordering::SeqCst) {
-                return SourceVerdict::Keep;
-            }
-            let _ = heard.send(());
-            let mut released = released.clone();
-            SourceVerdict::Hold(Box::pin(async move {
-                let _ = released.wait_for(|released| *released).await;
-            }))
-        })));
-    net.send("worker", "two").await.unwrap();
-    hearing
-        .recv()
-        .await
-        .expect("the follower hears the worker change");
-    sever(&mut net).await;
-    restore(&mut net).await;
-    release.send(true).unwrap();
-    net.current("laptop", "worker").await.unwrap();
-    net.shutdown().await.unwrap();
 }
 
 /// After a Reset the old block's rows lie below the new one; the replica
@@ -959,114 +531,6 @@ async fn a_rewound_origin_resets_a_settled_replica_too() {
     );
     assert_eq!(row.source_generation, generation + 1);
     assert_eq!(row.lifecycle, wire::Lifecycle::Exited as i32);
-    drop(laptop);
-    net.shutdown().await.unwrap();
-}
-
-/// An exited agent's replica settles only once its own stream has passed
-/// the exit. The origin publishes the final records and then the Exited
-/// row, on streams that travel independently; here the session stream is
-/// held back until the Exited row has been applied, and the replica still
-/// ends with the origin's newest row.
-#[tokio::test(flavor = "multi_thread")]
-async fn an_exited_agent_settles_only_once_its_own_stream_has_passed_the_exit() {
-    let mut net = Net::start_with(desk_and_laptop(), options(6, |_, _| {}))
-        .await
-        .unwrap();
-
-    // Once armed, every laptop source holds the first record it is sent
-    // until the gate opens; markers pass. Every source, not only the first:
-    // the Exited row replaces the live source with a settling one, and
-    // whichever of them meets the exit's first record, neither may land it.
-    // A source reads the hook when its stream opens, so it is set before the
-    // agent exists.
-    let armed = Arc::new(AtomicBool::new(false));
-    let holding = Arc::new(AtomicBool::new(false));
-    let gate = Arc::new(tokio::sync::watch::Sender::new(false));
-    let laptop = net.runtime("laptop").unwrap();
-    {
-        let armed = armed.clone();
-        let holding = holding.clone();
-        let gate = gate.clone();
-        laptop.set_source_hook(Some(Arc::new(move |_: &AgentKey, event: &SessionEvent| {
-            let record = matches!(
-                event.of,
-                Some(
-                    session_event::Of::Snapshot(_)
-                        | session_event::Of::Item(_)
-                        | session_event::Of::Append(_)
-                )
-            );
-            if record && armed.load(Ordering::SeqCst) && !*gate.borrow() {
-                holding.store(true, Ordering::SeqCst);
-                let mut open = gate.subscribe();
-                SourceVerdict::Hold(Box::pin(async move {
-                    let _ = open.wait_for(|open| *open).await;
-                }))
-            } else {
-                SourceVerdict::Keep
-            }
-        })));
-    }
-    net.spawn(
-        AgentDecl::new("brief", "desk")
-            .steps(turns(1, 2))
-            .prompt("go"),
-    )
-    .await
-    .unwrap();
-    let brief = net.agent("brief").unwrap().clone();
-    let key = brief.key();
-    wait_origin_says(&net, "brief", "t0-1").await;
-    net.current("laptop", "brief").await.unwrap();
-    armed.store(true, Ordering::SeqCst);
-    net.runtime("desk").unwrap().stop(brief.id).await.unwrap();
-    until(
-        "the laptop to list brief exited while holding an exit record",
-        || async {
-            let holding = holding.load(Ordering::SeqCst);
-            let key = key.clone();
-            let lifecycle = laptop
-                .read_store(move |store| store.agent(&key).unwrap().map(|row| row.lifecycle))
-                .await
-                .unwrap();
-            (holding && lifecycle == Some(wire::Lifecycle::Exited as i32))
-                .then_some(())
-                .ok_or_else(|| format!("holding {holding}, lifecycle {lifecycle:?}"))
-        },
-    )
-    .await
-    .unwrap();
-    let (cursor, _) = replica_state(&net, "laptop", "brief").await.unwrap();
-    assert!(
-        cursor < origin_revision(&net, "brief").await,
-        "the exit's records have not landed when the Exited row has"
-    );
-    gate.send_replace(true);
-
-    net.current("laptop", "brief").await.unwrap();
-    let origin = origin_rows(&net, "brief").await;
-    let mut replica = {
-        let key = key.clone();
-        laptop
-            .read_store(move |store| store.cut(&key, u32::MAX).unwrap().held)
-            .await
-            .unwrap()
-    };
-    replica.sort_by_key(|item| item.order);
-    assert_eq!(
-        replica.last().map(|item| (&item.key, item.revision)),
-        origin.last().map(|item| (&item.key, item.revision)),
-        "the replica ends with the origin's newest row"
-    );
-    until("brief's source to close", || async {
-        let open = laptop.open_sources();
-        (!open.contains(&key))
-            .then_some(())
-            .ok_or_else(|| format!("open sources: {open:?}"))
-    })
-    .await
-    .unwrap();
     drop(laptop);
     net.shutdown().await.unwrap();
 }

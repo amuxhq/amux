@@ -39,13 +39,8 @@ pub const PUBKEY_LEN: usize = 32;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Reachability {
     Cloud,
-    /// Through a paired host forwarding for both: nothing to keep, since
-    /// that host announcing it is the route.
-    Forwarded,
     Ssh(String),
-    Direct {
-        addrs: Vec<SocketAddr>,
-    },
+    Direct { addrs: Vec<SocketAddr> },
 }
 
 /// What the profile knows of one paired host.
@@ -440,7 +435,6 @@ impl TrustEntry {
     fn reached(&mut self, reachability: Reachability) {
         match reachability {
             Reachability::Cloud => self.on_account = true,
-            Reachability::Forwarded => {}
             Reachability::Ssh(target) => self.ssh = Some(target),
             Reachability::Direct { addrs } => {
                 for addr in addrs {

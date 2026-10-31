@@ -214,7 +214,7 @@ impl Daemon {
                 }
             }
             Input::Nudge { agent } => self.ingest(agent, out),
-            Input::AgentHello { agent, .. } => {
+            Input::AgentHello { agent } => {
                 self.hello(agent);
                 self.process_hello(agent, out);
             }
@@ -278,14 +278,9 @@ impl Daemon {
             Input::Timer {
                 id: TimerId::Refresh(link),
             } => self.refresh_due(link, out),
-            Input::WantChannel {
-                link,
-                peer,
-                class,
-                pin,
-            } => self.want_channel(link, peer, class, pin, out),
-            Input::ChannelOpened { channel, .. } => self.channel_opened(channel),
-            Input::ChannelClosed { channel, .. } => self.channel_closed(channel),
+            Input::WantChannel { link, peer, class } => self.want_channel(link, peer, class, out),
+            Input::ChannelOpened { channel } => self.channel_opened(channel),
+            Input::ChannelClosed { channel } => self.channel_closed(channel),
             Input::PlanChanged => self.plan_changed(out),
             Input::TryAgain { host } => {
                 self.reconsider(host, out);
@@ -563,13 +558,6 @@ impl Daemon {
     /// checkpoints the place it was last pointed at.
     pub fn move_agents(&mut self, agents: PathBuf) {
         self.options.agents = agents;
-    }
-
-    /// The store, for a write beneath the core's own: only a test setting
-    /// up what no input produces writes through it.
-    #[doc(hidden)]
-    pub fn store_beneath(&mut self) -> &mut Sqlite {
-        &mut self.store
     }
 
     /// Sets how long one step may take before it is reported: a replay of

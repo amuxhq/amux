@@ -134,7 +134,7 @@ async fn a_start_reports_a_first_start_a_crash_an_update_and_a_rollback() {
 async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
     let install = Install::new();
     let mut worker = SyntheticAgent::new(&install, "worker", SEGMENTS);
-    worker.register_offline(&install);
+    worker.register(&install);
     worker.go_live();
     let recording = Recording::new();
     let daemon = start(&install, "boot-1", &recording).await;
@@ -222,7 +222,7 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
 async fn undecodable_input_is_still_delivered() {
     let install = Install::new();
     let mut worker = SyntheticAgent::new(&install, "worker", SEGMENTS);
-    worker.register_offline(&install);
+    worker.register(&install);
     worker.go_live();
     let recording = Recording::new();
     let daemon = start(&install, "boot-1", &recording).await;
@@ -272,7 +272,7 @@ async fn undecodable_input_is_still_delivered() {
 async fn a_profile_checks_in_a_minute_after_start_and_daily_after_that() {
     let install = Install::new();
     let mut worker = SyntheticAgent::new(&install, "worker", SEGMENTS);
-    worker.register_offline(&install);
+    worker.register(&install);
     worker.go_live();
     let clock = agent_dir::ManualClock::new(T0);
     let recording = Recording::new();

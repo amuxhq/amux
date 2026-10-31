@@ -660,18 +660,6 @@ impl LinkRegistry {
         }
     }
 
-    /// A writer for any live link to `peer` — the forwarding rule's "do I
-    /// have a direct link to dst" lookup.
-    pub async fn link_to_peer(&self, peer: HostId) -> Option<(LinkId, LinkOutputTx)> {
-        self.state
-            .read()
-            .await
-            .writers
-            .iter()
-            .find(|(_, writer)| writer.host.id == peer)
-            .map(|(link, writer)| (*link, writer.tx.clone()))
-    }
-
     pub(crate) async fn send_link_close_to_all(&self, reason: wire::LinkCloseReason) {
         let outgoing = {
             let state = self.state.read().await;

@@ -69,10 +69,7 @@ impl Linked {
             .laptop_edge
             .dial(desk_edge.host_id(), desk_edge.lan_addr().unwrap());
         assert!(
-            linked
-                .laptop_edge
-                .wait_for_route(desk_edge.host_id(), PATIENCE)
-                .await,
+            wait_for_route(&linked.laptop_edge, desk_edge.host_id(), PATIENCE).await,
             "the laptop links to the desk"
         );
         // A resumed dial goes where the last link worked, which the
@@ -364,7 +361,7 @@ async fn first_flight_on_every_path_reaches_the_host_once() {
     captured();
     let desk = Install::new();
     let mut agent = SyntheticAgent::new(&desk, "coder", 1 << 20);
-    agent.register_offline(&desk);
+    agent.register(&desk);
     agent.append(&snapshot(wire::Phase::Idle, &[], 1_000));
     agent.go_live();
     let mut options = desk.options("boot-1", quiet_launch());
@@ -382,7 +379,7 @@ async fn first_flight_on_every_path_reaches_the_host_once() {
     desk_edge.trust(&laptop_edge).await.unwrap();
     laptop_edge.trust(&desk_edge).await.unwrap();
     laptop_edge.dial(desk_id, format!("127.0.0.1:{port}").parse().unwrap());
-    assert!(laptop_edge.wait_for_route(desk_id, PATIENCE).await);
+    assert!(wait_for_route(&laptop_edge, desk_id, PATIENCE).await);
     until("the laptop to replicate the desk's agent", || async {
         match laptop_runtime.owner(agent.id.as_bytes()).await {
             Ok(node::Owner::Peer(_)) => Ok(()),
@@ -492,7 +489,7 @@ async fn an_attempt_at_an_address_that_never_answers_gives_way_to_one_that_does(
     let started = std::time::Instant::now();
     laptop_edge.dial(desk_id, desk_edge.lan_addr().unwrap());
     assert!(
-        laptop_edge.wait_for_route(desk_id, PATIENCE).await,
+        wait_for_route(&laptop_edge, desk_id, PATIENCE).await,
         "the laptop links to the desk at its real address"
     );
     assert!(

@@ -1075,7 +1075,7 @@ lane = "journey"
 evidence = "target/journeys; target/journeys/summary.txt after `all`"
 update = "UPDATE_JOURNEY_GOLDENS=1 just journey terminal conversation-decision-claude-pty"
 journey_manifest = "journeys/manifest.json"
-journeys = ["reach-host", "conversation-decision-claude-pty", "conversation-decision-claude-sdk", "conversation-decision-codex", "leave-and-recover", "manage-agent", "attachment-or-review", "keep-authority", "decide-plan-claude-sdk", "decide-plan-claude-pty", "decide-plan-codex", "answer-questions", "tool-server-asks", "queue-and-steer", "send-while-away", "send-rejected", "send-may-not-have-arrived", "composer-limits", "new-agent-terminal", "new-agent-worktree", "report-a-problem"]
+journeys = ["reach-host", "conversation-decision-claude-pty", "conversation-decision-claude-sdk", "conversation-decision-codex", "leave-and-recover", "manage-agent", "attachment-or-review", "keep-authority", "decide-plan-claude-sdk", "decide-plan-claude-pty", "decide-plan-codex", "answer-questions", "tool-server-asks", "queue-and-steer", "send-while-away", "send-may-not-have-arrived", "composer-limits", "new-agent-terminal", "new-agent-worktree", "report-a-problem"]
 
 [[suite]]
 name = "phone-accessibility-audit"

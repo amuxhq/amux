@@ -42,7 +42,6 @@ of the timing.
 - `ctl net HOST --loss 20 --delay 400ms --jitter 300ms --reorder 10`, or `--rate 8k`; `ctl net relay ...` for
   the relay; `ctl net HOST` with no options makes it clean again.
 - `ctl block-udp HOST on`: the host falls back to TCP to the relay.
-- `ctl refuse-calls A B on`: calls from A to B fail while the link stays up.
 - `ctl kill HOST` mid-turn (its agents keep running), then `ctl restart HOST`. `ctl stop HOST` for a clean stop.
 - `ctl freeze AGENT` while it streams or holds an ask; the agent answers nothing until `ctl thaw AGENT`.
 

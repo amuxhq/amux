@@ -250,9 +250,7 @@ fn json_shape(bytes: &[u8]) -> BTreeSet<String> {
 
 fn target_bytes(target: &RedactTarget) -> &[u8] {
     match target {
-        RedactTarget::ItemBody(bytes)
-        | RedactTarget::SnapshotBody(bytes)
-        | RedactTarget::Input(bytes)
+        RedactTarget::Input(bytes)
         | RedactTarget::AgentMessage(bytes)
         | RedactTarget::Checkpoint(bytes)
         | RedactTarget::Spec(bytes)
@@ -436,45 +434,6 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
             readable,
         );
     }
-    for step in &steps {
-        for item in &step.items {
-            transcript.check::<I>(
-                &format!("item {}", item.key),
-                RedactTarget::ItemBody(item.body.clone()),
-                |before, after| {
-                    let (before, after) = (I::describe_item(before), I::describe_item(after));
-                    if before.arm == after.arm && before.complete == after.complete {
-                        Ok(format!("decodes on the same arm ({})", after.arm))
-                    } else {
-                        Err(format!("{before:?} became {after:?}"))
-                    }
-                },
-                |bytes| {
-                    let view = I::describe_item(bytes);
-                    format!("{} {}", view.arm, view.text)
-                },
-            );
-        }
-        if let Some(snapshot) = &step.snapshot {
-            transcript.check::<I>(
-                "snapshot",
-                RedactTarget::SnapshotBody(snapshot.body.clone()),
-                |before, after| {
-                    let (before, after) =
-                        (I::describe_snapshot(before), I::describe_snapshot(after));
-                    if before.asks == after.asks {
-                        Ok(format!(
-                            "decodes with the same {} open asks",
-                            after.asks.len()
-                        ))
-                    } else {
-                        Err(format!("{before:?} became {after:?}"))
-                    }
-                },
-                |bytes| I::describe_snapshot(bytes).text,
-            );
-        }
-    }
     // The daemon's side of a dump: each journal frame, and the store's
     // rows for the agent as one step.
     let slice = wire::Step {
@@ -494,14 +453,24 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
             |before, after| {
                 let before = wire::Step::decode(before).unwrap();
                 let after = wire::Step::decode(after).map_err(|error| error.to_string())?;
+                // Each body decodes as it did: an item on the same arm and
+                // as complete, the snapshot with the same open asks.
                 let arms = |step: &wire::Step| {
                     step.items
                         .iter()
-                        .map(|item| I::describe_item(&item.body).arm)
+                        .map(|item| {
+                            let view = I::describe_item(&item.body);
+                            (view.arm, view.complete)
+                        })
                         .collect::<Vec<_>>()
                 };
+                let asks = |step: &wire::Step| {
+                    step.snapshot
+                        .as_ref()
+                        .map(|snapshot| I::describe_snapshot(&snapshot.body).asks)
+                };
                 if arms(&before) == arms(&after)
-                    && before.snapshot.is_some() == after.snapshot.is_some()
+                    && asks(&before) == asks(&after)
                     && before.turn_end.is_some() == after.turn_end.is_some()
                 {
                     Ok(format!(

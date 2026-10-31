@@ -209,7 +209,7 @@ A supervised host runs under `amux supervise`, from a copy of the build under te
 [release feed](#the-release-feed), and starts the daemon again by itself after a kill.
 
 What a process host refuses, because it reaches into a runtime the net does not hold: `checkpoint_host`,
-`rewind_host`, `assert_block_invariant` and `refuse_calls`. `set_tier` changes the account, but a process host's
+`rewind_host` and `assert_block_invariant`. `set_tier` changes the account, but a process host's
 daemon learns of it on its own schedule rather than at once.
 
 A process host keeps the machine's time, so a net with one runs on wall time (`ClockMode::Wall`); on a driven
@@ -505,7 +505,6 @@ verb without fields is a bare string (`"Shutdown"`).
 | `{"Sever": {"a", "b"}}`, `{"Restore": {"a", "b"}}` | Cut or restore a link: a declared or added one, or on a gated LAN any pairing between the two. |
 | `{"Link": {"a", "b"}}` | Whether both ends route to each other directly: `{"up": true}`. |
 | `{"Trust": {"a", "b"}}`, `{"Untrust": {"a", "b"}}` | Trust as pairing does; forget as unpairing does. |
-| `{"RefuseCalls": {"a", "b", "refuse"}}` | While `refuse` is true, `a` fails every channel to `b` before it opens, as when the far end refuses each one, with the link listed; `b` reads offline to `a` as soon as one fails, and stays offline over a link that comes back. The first call that fails acts as in production: an in-process link between them closes, or the relay's cached channel is dropped and a fresh one retried. Lifting it has `a` try a channel at once and links an in-process link again, as redialling would (`Net::redial` does that alone). |
 | `{"SetTier": {"account", "tier"}}` | Change what an account has bought (`pro` or `free`). |
 | `{"SignIn": {"host", "account"}}` | Sign a host's profile in to a declared account. |
 | `{"KillDaemon": {"host"}}`, `{"StopDaemon": {"host"}}` | Crash or cleanly stop a host's daemon. |
@@ -598,7 +597,7 @@ what holds the port.
 | --- | --- |
 | The net | `up [TOPOLOGY]`, `down`, `status` |
 | Topology | `host add NAME [--lan] [--discovery] [--bonjour] [--account A] [--process] [--supervised] [--provider real\|fake] [--script FILE]`, `host remove NAME`, `link A B`, `unlink A B`, `account add NAME [--tier pro\|free]` |
-| Faults | `sever A B`, `restore A B`, `flap A B --down D --up U`, `flap stop`, `net HOST\|relay [--loss P] [--delay D] [--jitter D] [--reorder P] [--rate R]`, `block-udp HOST on\|off`, `refuse-calls A B on\|off`, `kill HOST`, `stop HOST`, `restart HOST`, `freeze AGENT`, `thaw AGENT` |
+| Faults | `sever A B`, `restore A B`, `flap A B --down D --up U`, `flap stop`, `net HOST\|relay [--loss P] [--delay D] [--jitter D] [--reorder P] [--rate R]`, `block-udp HOST on\|off`, `kill HOST`, `stop HOST`, `restart HOST`, `freeze AGENT`, `thaw AGENT` |
 | Accounts and releases | `sign-in HOST ACCOUNT`, `tier ACCOUNT pro\|free`, `release publish VERSION [--channel C] [--rollout P] [--broken]` |
 | Agents | `spawn NAME --host H [--kind claude-sdk\|claude-pty\|codex] [--provider real\|fake] [--script FILE] [--prompt P] [--model M] [--permission P] [--mode M] [--parent A] [--cwd D] [--wait] [--timeout S]`, `send AGENT TEXT [--wait]`, `wait AGENT`, `stop-agent AGENT`, `resume AGENT [TEXT]`, `gate open NAME` |
 | A host's own record | `fleet HOST` (its own agents and its trusted peers', as its clients show them; rows a host it no longer trusts left behind are listed apart), `chat HOST AGENT` (each item with what its body decodes as, and the asks waiting on a person), `block HOST AGENT`, `provider-input AGENT` |

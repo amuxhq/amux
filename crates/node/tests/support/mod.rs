@@ -126,10 +126,14 @@ impl Install {
         self.profile_dir().join(node::AGENTS).join(id.to_string())
     }
 
-    /// The profile store, opened beside the daemon's own connection.
-    fn store(&self) -> store::Sqlite {
-        store::Sqlite::open(&self.profile_dir().join(node::STORE), [0; 16])
-            .expect("the profile store opens")
+    /// The profile store, opened beside the daemon's own connection: a
+    /// test sets up what no input produces by writing through it.
+    pub fn store(&self) -> store::Sqlite {
+        store::Sqlite::open(
+            &self.profile_dir().join(node::STORE),
+            self.profile.as_bytes().to_vec(),
+        )
+        .expect("the profile store opens")
     }
 
     /// The row this profile keeps for the paired `peer`, when it has one.
@@ -294,6 +298,22 @@ pub async fn local_channel(path: &Path) -> tonic::transport::Channel {
 }
 
 /// Kills every agent the runtime is running, so none outlives its test.
+/// Waits until calls from `edge` to `host` have a route, or `patience`
+/// passes.
+pub async fn wait_for_route(
+    edge: &node::Edge,
+    host: node::HostId,
+    patience: std::time::Duration,
+) -> bool {
+    tokio::time::timeout(patience, async {
+        while edge.via(host).await == node::harness::LiveRoute::Offline {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .is_ok()
+}
+
 pub async fn kill_all(runtime: &ProfileRuntime) {
     for id in runtime.live() {
         let _ = runtime.kill_agent(id).await;

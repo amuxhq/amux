@@ -716,10 +716,7 @@ async fn delete_aborts_first_and_its_children_here_follow() {
     {
         let mut row = AgentRow::new(remote.clone(), wire::Kind::Codex, "/");
         row.parent = Some(key(&runtime, parent));
-        runtime
-            .write_store_beneath(move |store| store.put_agent(&row).unwrap())
-            .await
-            .unwrap();
+        install.store().put_agent(&row).unwrap();
     }
     for id in [parent, child] {
         until("the turn to start", || working(&runtime, id))
@@ -1549,11 +1546,7 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
     desk_edge.trust(&laptop_edge).await.unwrap();
     laptop_edge.trust(&desk_edge).await.unwrap();
     let link = laptop_edge.link_in_process(&desk_edge).unwrap();
-    assert!(
-        laptop_edge
-            .wait_for_route(desk_runtime.host(), PATIENCE)
-            .await
-    );
+    assert!(wait_for_route(&laptop_edge, desk_runtime.host(), PATIENCE).await);
     let from_laptop = node::ClientApi::new(&laptop_runtime, None);
     let forwarded = from_laptop
         .list_repositories(listing(None, 50, Some(desk_runtime.host())))

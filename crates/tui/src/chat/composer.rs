@@ -233,19 +233,24 @@ pub enum QueueEntry {
 }
 
 impl QueueEntry {
-    pub fn hint(&self) -> &'static str {
+    pub fn hint(&self) -> &'static [(&'static str, &'static str)] {
+        const QUEUED: (&str, &str) = ("↑/↓", "queued");
+        const BACK: (&str, &str) = ("esc", "back");
         match self {
-            QueueEntry::Queued(row) if row.can_send_now && row.can_withdraw => {
-                "enter send now · backspace withdraw · ↑/↓ queued · esc back"
-            }
+            QueueEntry::Queued(row) if row.can_send_now && row.can_withdraw => &[
+                ("enter", "send now"),
+                ("backspace", "withdraw"),
+                QUEUED,
+                BACK,
+            ],
             QueueEntry::Queued(row) if row.can_withdraw => {
-                "backspace withdraw · ↑/↓ queued · esc back"
+                &[("backspace", "withdraw"), QUEUED, BACK]
             }
             QueueEntry::Unconfirmed { .. } => {
-                "enter resend · backspace discard · ↑/↓ queued · esc back"
+                &[("enter", "resend"), ("backspace", "discard"), QUEUED, BACK]
             }
-            QueueEntry::Held { .. } => "enter cancel · ↑/↓ queued · esc back",
-            QueueEntry::Queued(_) | QueueEntry::Sending { .. } => "↑/↓ queued · esc back",
+            QueueEntry::Held { .. } => &[("enter", "cancel"), QUEUED, BACK],
+            QueueEntry::Queued(_) | QueueEntry::Sending { .. } => &[QUEUED, BACK],
         }
     }
 

@@ -2340,19 +2340,28 @@ impl ChatView {
                     &self.pane_focus,
                     Some(pane::PaneItem::Job(job)) if pane::stop_key(job).is_some()
                 );
-                if stoppable {
-                    "j/k move · enter open · x stop · esc back · ctrl+o close".to_owned()
+                Hint::Keys(if stoppable {
+                    keys(&[
+                        ("j/k", "move"),
+                        ("enter", "open"),
+                        ("x", "stop"),
+                        ("esc", "back"),
+                        ("ctrl+o", "close"),
+                    ])
                 } else {
-                    "j/k move · enter open · esc back · ctrl+o close".to_owned()
-                }
+                    keys(&[
+                        ("j/k", "move"),
+                        ("enter", "open"),
+                        ("esc", "back"),
+                        ("ctrl+o", "close"),
+                    ])
+                })
             } else {
-                turn_hint_words(state, &self.editor, self.reach, self.leader)
+                turn_hint(state, &self.editor, self.reach, self.leader)
             }
         };
-        let mut hint: Result<Line<'static>, String> = match &footer {
-            Some(footer) => Ok(footer.clone()),
-            None => Ok(Line::default()),
-        };
+        // The app's footer, when it has one, takes the line over.
+        let mut hint;
         // Where the plain composer's box starts, to mark its top edge.
         let mut plain_box: Option<usize> = None;
         // A permission ask takes over the composer's box: its edge in the
@@ -2376,30 +2385,26 @@ impl ChatView {
                 }
                 ask_box = Some((at, drawn.spots));
                 bottom.extend(lines);
-                if footer.is_none()
-                    && let Some(words) = self.ask.question_hint(card, self.leader)
-                {
-                    hint = Err(words);
-                } else if footer.is_none() {
-                    let stop = if card.stops_turn {
-                        "ctrl+x interrupt · "
-                    } else {
-                        ""
-                    };
-                    hint = Err(if self.ask.in_box_note(card) {
-                        if card.stops_turn {
-                            "enter send · esc clear · ctrl+x interrupt".to_owned()
-                        } else {
-                            "enter send · esc clear".to_owned()
-                        }
-                    } else if !matches!(card.state, CardState::Open | CardState::Rejected(_)) {
-                        format!("{stop}ctrl+{} more", self.leader)
-                    } else if self.ask.on_noted_deny(card) {
-                        format!("enter choose · tab note · {stop}ctrl+{} more", self.leader)
-                    } else {
-                        format!("enter choose · {stop}ctrl+{} more", self.leader)
-                    });
-                }
+                let stop: &[(&str, &str)] = if card.stops_turn {
+                    &[("ctrl+x", "interrupt")]
+                } else {
+                    &[]
+                };
+                let more = format!("ctrl+{}", self.leader);
+                let more = &[(more.as_str(), "more")];
+                hint = Hint::Keys(match self.ask.question_hint(card, self.leader) {
+                    Some(question) => question,
+                    None if self.ask.in_box_note(card) => {
+                        keys(&[&[("enter", "send"), ("esc", "clear")], stop].concat())
+                    }
+                    None if !matches!(card.state, CardState::Open | CardState::Rejected(_)) => {
+                        keys(&[stop, more].concat())
+                    }
+                    None if self.ask.on_noted_deny(card) => {
+                        keys(&[&[("enter", "choose"), ("tab", "note")], stop, more].concat())
+                    }
+                    None => keys(&[&[("enter", "choose")], stop, more].concat()),
+                });
             }
             // The agent's account needs signing in: the box says how, as an
             // ask would, and keeps the draft for afterwards. An ask the
@@ -2411,9 +2416,7 @@ impl ChatView {
                     ask_mode = Some((bottom.len() + lines.len() - 1, cols));
                 }
                 bottom.extend(lines);
-                if footer.is_none() {
-                    hint = Err(format!("ctrl+{} more", self.leader));
-                }
+                hint = Hint::Keys(keys(&[(&format!("ctrl+{}", self.leader), "more")]));
             }
             _ => {
                 plain_box = Some(bottom.len());
@@ -2423,39 +2426,39 @@ impl ChatView {
                     &self.editor,
                     self.tray.is_none() && self.picker.is_none(),
                 );
-                if footer.is_none() {
-                    hint = Err(match self.tray.and_then(|i| entries.get(i)) {
-                        Some(entry) => entry.hint().to_owned(),
-                        None => legend(),
-                    });
-                }
+                hint = match self.tray.and_then(|i| entries.get(i)) {
+                    Some(entry) => Hint::Keys(keys(entry.hint())),
+                    None => legend(),
+                };
             }
         }
         // Ctrl+S: its legend, at once; a picker: its keys.
-        if footer.is_none() {
-            if let Some(picker) = &self.picker {
-                hint = Err(picker.hint());
+        if let Some(picker) = &self.picker {
+            hint = Hint::Keys(keys(&picker.hints()));
+            if footer.is_none() {
                 cursor = None;
-            } else if self.setting_prefix {
-                let view = ui_view::settings(state);
-                let mut pairs = Vec::new();
-                for (setting, pair) in [
-                    (&view.changeable.model, "m model"),
-                    (&view.changeable.effort, "e effort"),
-                    (&view.changeable.permission, "p permission"),
-                ] {
-                    if *setting == Changeable::Pick {
-                        pairs.push(pair);
-                    }
-                }
-                hint = Err(if pairs.is_empty() {
-                    crate::words::by_typing_words(&view.changeable.model, &view.changeable.effort)
-                        .unwrap_or_else(|| "Nothing here can change from amux".to_owned())
-                } else {
-                    pairs.push("esc back");
-                    pairs.join(" · ")
-                });
             }
+        } else if self.setting_prefix {
+            let view = ui_view::settings(state);
+            let mut pairs = Vec::new();
+            for (setting, pair) in [
+                (&view.changeable.model, ("m", "model")),
+                (&view.changeable.effort, ("e", "effort")),
+                (&view.changeable.permission, ("p", "permission")),
+            ] {
+                if *setting == Changeable::Pick {
+                    pairs.push(pair);
+                }
+            }
+            hint = if pairs.is_empty() {
+                Hint::Sentence(
+                    crate::words::by_typing_words(&view.changeable.model, &view.changeable.effort)
+                        .unwrap_or_else(|| "Nothing here can change from amux".to_owned()),
+                )
+            } else {
+                pairs.push(("esc", "back"));
+                Hint::Keys(keys(&pairs))
+            };
         }
         // The plain composer's top edge says what stands in the way of
         // sending, most pressing first: the last prompt refused (error
@@ -2480,9 +2483,9 @@ impl ChatView {
         }
         // A blank line lets the composer's box breathe above the keys.
         bottom.push(Line::default());
-        let (hint, hint_keys) = match hint {
-            Ok(line) => (line, Vec::new()),
-            Err(words) => keys_line(&words, width, theme),
+        let (hint, hint_keys) = match footer {
+            Some(footer) => (footer, Vec::new()),
+            None => hint_line(&hint, width, theme),
         };
         let hint_row = bottom.len();
         bottom.push(hint);
@@ -3587,86 +3590,90 @@ fn framed(
 /// The keys under the composer, by what is happening, few enough to read
 /// at a glance and always ending with the way to more (the leader's
 /// panel). What everyone knows (Enter sends, pasting attaches) is not
-/// said; Enter is named only when it does something else. Words that are
-/// not a legend start with a capital and read as a sentence.
-fn turn_hint_words(state: &SessionState, editor: &Editor, reach: Reach, leader: char) -> String {
+/// said; Enter is named only when it does something else.
+fn turn_hint(state: &SessionState, editor: &Editor, reach: Reach, leader: char) -> Hint {
     let working = state.phase() == PhaseView::Working;
     let shift_tab = next_control(&ui_view::settings(state)).map(|change| match change {
-        ui_view::SettingChange::Mode(_) => "shift+tab mode",
-        _ => "shift+tab permission",
+        ui_view::SettingChange::Mode(_) => ("shift+tab", "mode"),
+        _ => ("shift+tab", "permission"),
     });
-    let more = format!("ctrl+{leader} more");
-    let mut pairs: Vec<String> = Vec::new();
+    let more = format!("ctrl+{leader}");
+    let mut pairs = Vec::new();
+    // A send now is held, shown pending with Cancel, and goes by itself.
+    let holds = |when| Hint::Keys(keys(&[("enter", when)]));
     match state.composer() {
         Composer::Send => {
             if working {
-                pairs.push("enter queue".into());
-                pairs.push("ctrl+x interrupt".into());
+                pairs.push(("enter", "queue"));
+                pairs.push(("ctrl+x", "interrupt"));
             } else if !editor.is_empty() && !crate::terminal::shift_enter_reported() {
                 // Shift+Enter is the newline everyone expects; where the
                 // terminal cannot tell it from Enter, say the key that works.
-                pairs.push("ctrl+j newline".into());
+                pairs.push(("ctrl+j", "newline"));
             }
-            if let Some(words) = shift_tab {
-                pairs.push(words.into());
-            }
+            pairs.extend(shift_tab);
         }
-        Composer::Resume => pairs.push("enter resume".into()),
-        // A send now is held, shown pending with Cancel, and goes by itself.
+        Composer::Resume => pairs.push(("enter", "resume")),
         Composer::Holds(Waiting::Detached) if reach == Reach::Offline(Offline::SignedOut) => {
-            return "enter holds it · it sends once this machine signs in".to_owned();
+            return holds("holds it · it sends once this machine signs in");
         }
         Composer::Holds(Waiting::Detached) if reach == Reach::Offline(Offline::Revoked) => {
-            return "enter holds it · it sends once you pair again".to_owned();
+            return holds("holds it · it sends once you pair again");
         }
         Composer::Holds(Waiting::Detached) => {
-            return "enter holds it · it sends when the host is back".to_owned();
+            return holds("holds it · it sends when the host is back");
         }
         Composer::Holds(Waiting::Reconnecting) => {
-            return "enter holds it · it sends once amux is back".to_owned();
+            return holds("holds it · it sends once amux is back");
         }
         Composer::Holds(Waiting::CatchingUp) => {
-            return "enter holds it · it sends once caught up".to_owned();
+            return holds("holds it · it sends once caught up");
         }
     }
-    pairs.push(more);
-    pairs.join(" · ")
+    pairs.push((&more, "more"));
+    Hint::Keys(keys(&pairs))
+}
+
+/// A key legend as (key, action) pairs, most needed first.
+pub(crate) type Keys = Vec<(String, String)>;
+
+pub(crate) fn keys(pairs: &[(&str, &str)]) -> Keys {
+    pairs
+        .iter()
+        .map(|(key, action)| ((*key).to_owned(), (*action).to_owned()))
+        .collect()
+}
+
+/// What the line under the composer says: a key legend, or words that are
+/// not one.
+enum Hint {
+    Keys(Keys),
+    Sentence(String),
 }
 
 /// Where each drawn key pair sits on its line, and the key it presses.
 type KeySpots = Vec<((usize, usize), KeyEvent)>;
 
-/// A key legend in home's style: each key bright and bold, its action
-/// faint, three blanks apart, whole pairs or none. Words that are not a
-/// legend (they start with a capital) read as one faint sentence. Returns
-/// the line and, for each pair drawn, its columns and the key it stands
-/// for, so a click can press it.
-fn keys_line(words: &str, width: usize, theme: Theme) -> (Line<'static>, KeySpots) {
+/// The hint line in home's style (see [`text::push_hints`]); a sentence
+/// reads faint. Returns the line and, for each pair drawn that names a
+/// key, its columns and the key, so a click can press it.
+fn hint_line(hint: &Hint, width: usize, theme: Theme) -> (Line<'static>, KeySpots) {
     let mut line = Line::from(Span::raw("  "));
-    let mut spots = Vec::new();
-    if words.chars().next().is_some_and(char::is_uppercase) {
-        push(&mut line, words, theme.faint(), width);
-        return (line, spots);
-    }
-    let room = width.saturating_sub(2);
-    for (i, pair) in words.split(" · ").enumerate() {
-        let gap = if i > 0 { 3 } else { 0 };
-        if text::line_width(&line) + gap + text::str_width(pair) > room {
-            break;
+    let pairs = match hint {
+        Hint::Sentence(words) => {
+            push(&mut line, words, theme.faint(), width);
+            return (line, Vec::new());
         }
-        if i > 0 {
-            push(&mut line, "   ", theme.faint(), room);
-        }
-        let from = text::line_width(&line);
-        let (key, action) = split_key(pair);
-        push(&mut line, key.clone(), theme.emphasis(), room);
-        if !action.is_empty() {
-            push(&mut line, format!(" {action}"), theme.faint(), room);
-        }
-        if let Some(event) = key_event(&key) {
-            spots.push(((from, text::line_width(&line)), event));
-        }
-    }
+        Hint::Keys(pairs) => pairs,
+    };
+    let borrowed: Vec<(&str, &str)> = pairs
+        .iter()
+        .map(|(key, action)| (key.as_str(), action.as_str()))
+        .collect();
+    let spots = text::push_hints(&mut line, &borrowed, width.saturating_sub(2), theme)
+        .into_iter()
+        .filter_map(|(at, columns)| Some((columns, key_event(borrowed[at].0)?)))
+        .collect();
     (line, spots)
 }
 
@@ -3690,14 +3697,6 @@ fn key_event(key: &str) -> Option<KeyEvent> {
         _ => return None,
     };
     Some(KeyEvent::new(code, modifiers))
-}
-
-/// "enter send now" → ("enter", "send now"); "ctrl+x interrupt" → ("ctrl+x", "interrupt").
-fn split_key(pair: &str) -> (String, String) {
-    match pair.split_once(' ') {
-        Some((key, action)) => (key.to_owned(), action.to_owned()),
-        None => (pair.to_owned(), String::new()),
-    }
 }
 
 /// The prompt to pin under the header, and its key: the prompt of the turn

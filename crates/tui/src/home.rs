@@ -1818,9 +1818,13 @@ impl Home {
                 hints
             }
         };
-        let mut spots = Vec::new();
-        let start = text::line_width(&line);
-        append_hints(&mut line, &mut spots, start, &hints, width, theme);
+        // `? keys` is last and the first to go.
+        let pairs: Vec<(&str, &str)> = hints.iter().map(|(key, word, _)| (*key, *word)).collect();
+        let room = width.saturating_sub(MARGIN + text::line_width(&line));
+        let spots = text::push_hints(&mut line, &pairs, room, theme)
+            .into_iter()
+            .map(|(at, columns)| (Some(columns), hints[at].2.clone()))
+            .collect();
         (Laid { line, spots }, None)
     }
 }
@@ -1938,45 +1942,6 @@ impl Place {
             &self.local_host,
             &self.defaults,
         )
-    }
-}
-
-/// `key word` pairs, laid out by [`text::fit_hints`]; each is a click
-/// target for its key. `? keys` is last and the first to go.
-fn append_hints(
-    line: &mut Line<'static>,
-    spots: &mut Vec<(Option<(usize, usize)>, Hit)>,
-    start: usize,
-    hints: &[(&str, &str, Hit)],
-    width: usize,
-    theme: Theme,
-) {
-    let pairs: Vec<(&str, &str)> = hints.iter().map(|(key, word, _)| (*key, *word)).collect();
-    let fitted = text::fit_hints(&pairs, width.saturating_sub(MARGIN + start));
-    let mut at = start;
-    for (i, &index) in fitted.shown.iter().enumerate() {
-        let (key, word, hit) = &hints[index];
-        let size = text::str_width(key) + 1 + text::str_width(word);
-        if fitted.mark == Some(i) {
-            line.spans.push(Span::styled(" …", theme.faint()));
-            at += 2;
-        }
-        let gap = if i == 0 { 0 } else { fitted.gap };
-        if at + gap + size > width - MARGIN {
-            break;
-        }
-        line.spans.push(Span::raw(" ".repeat(gap)));
-        let from = at + gap;
-        // The key is what you press, so it reads first; its action recedes.
-        line.spans
-            .push(Span::styled(key.to_string(), theme.emphasis()));
-        line.spans
-            .push(Span::styled(format!(" {word}"), theme.faint()));
-        at = from + size;
-        spots.push((Some((from, at)), hit.clone()));
-    }
-    if fitted.mark == Some(fitted.shown.len()) {
-        line.spans.push(Span::styled(" …", theme.faint()));
     }
 }
 

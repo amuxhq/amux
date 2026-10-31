@@ -838,7 +838,7 @@ mod tests {
         );
 
         let mut removed = Vec::new();
-        daemon.removed_for_good(&agent, wire::RemovalReason::Retention, &mut removed);
+        daemon.removed_for_good(&agent, &mut removed);
         assert_eq!(
             removed,
             vec![

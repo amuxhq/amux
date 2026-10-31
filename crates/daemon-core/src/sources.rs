@@ -45,8 +45,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use store::{Absorb, AgentKey, AgentRow, Marker, Record, SourceEvent, StoreError};
 use wire::{
-    Agent, AgentRemoved, Item, ListItemsResponse, PeerSubscribeSessionRequest, RemovalReason,
-    SessionEvent, inventory_event, peer_subscribe_session_request, session_event,
+    Agent, AgentRemoved, Item, ListItemsResponse, PeerSubscribeSessionRequest, SessionEvent,
+    inventory_event, peer_subscribe_session_request, session_event,
 };
 
 use crate::ids::{AgentId, CallId, HostId, TimerId};
@@ -398,7 +398,7 @@ impl Daemon {
             })
             .collect();
         for key in &untrusted {
-            self.drop_replica(key, RemovalReason::HostUntrusted, out)?;
+            self.drop_replica(key, false, out)?;
         }
         // The outbox drops what is owed to agents there.
         self.deliveries_due();
@@ -808,7 +808,7 @@ impl Daemon {
             self.touched.host_set = true;
         }
         for key in &unlisted {
-            self.drop_replica(key, RemovalReason::NoLongerListed, out)?;
+            self.drop_replica(key, true, out)?;
             // A parent held here and listed no more is gone for good, so
             // every child here follows, however recently it was made.
             self.parent_changed(key, ParentSays::Deleted, out)?;
@@ -872,7 +872,7 @@ impl Daemon {
     /// follow, whether or not this host ever held its row.
     fn replica_removed(&mut self, key: &AgentKey, out: &mut Vec<Output>) -> Result<(), StoreError> {
         if self.store.agent(key)?.is_some() {
-            self.drop_replica(key, RemovalReason::NoLongerListed, out)?;
+            self.drop_replica(key, true, out)?;
         }
         self.parent_changed(key, ParentSays::Deleted, out)
     }
@@ -892,7 +892,7 @@ impl Daemon {
     fn drop_replica(
         &mut self,
         key: &AgentKey,
-        reason: RemovalReason,
+        gone_for_good: bool,
         out: &mut Vec<Output>,
     ) -> Result<(), StoreError> {
         let held = Key::from(key);
@@ -902,9 +902,9 @@ impl Daemon {
         let parent = self.store.agent(key)?.and_then(|row| row.parent);
         self.store.delete_agent(key)?;
         // An agent its host no longer lists is gone for good, deleted or
-        // removed by retention there; one whose host is untrusted is not.
-        // Its draft goes too.
-        if reason == RemovalReason::NoLongerListed {
+        // removed by retention there, and its draft goes too; one whose
+        // host is untrusted is not.
+        if gone_for_good {
             self.forget_draft(&key.agent);
         }
         out.push(Output::Shell(ShellWork::ReplicaDropped {
@@ -913,7 +913,6 @@ impl Daemon {
         let removed = AgentRemoved {
             host_id: key.host.clone(),
             agent_id: key.agent.clone(),
-            reason: reason as i32,
         };
         let removed = inventory(inventory_event::Of::AgentRemoved(removed));
         self.agent_removed(key, Arc::new(removed), out);

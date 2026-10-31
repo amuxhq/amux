@@ -1207,9 +1207,7 @@ fn describe_inventory(event: &InventoryEvent) -> String {
             Phase::try_from(agent.phase).unwrap(),
             agent.working_on.as_deref()
         ),
-        inventory_event::Of::AgentRemoved(removed) => {
-            format!("agent removed {:?}", removed.reason())
-        }
+        inventory_event::Of::AgentRemoved(_) => "agent removed".into(),
         inventory_event::Of::CaughtUp(_) => "caught_up".into(),
         inventory_event::Of::Lagged(_) => "lagged".into(),
     }
@@ -1264,7 +1262,7 @@ async fn the_inventory_streams_hosts_and_rows_then_caught_up_then_deltas() {
             "caught_up",
             "agent beta Exited Starting working_on=None",
             "agent beta Exited Working working_on=Some(\"the task\")",
-            "agent removed Deleted",
+            "agent removed",
         ]
     );
     if let Some(inventory_event::Of::Agent(row)) = &seen[4].of {

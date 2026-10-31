@@ -4101,14 +4101,15 @@ impl ::prost::Name for AmbiguousAgentName {
         "type.googleapis.com/amux.v1.AmbiguousAgentName".into()
     }
 }
+/// The row left this daemon's view, which is not always deletion at the
+/// origin: a host that stops listing an agent, or that this machine stops
+/// trusting, takes its rows with it.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AgentRemoved {
     #[prost(bytes = "vec", tag = "1")]
     pub host_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(enumeration = "RemovalReason", tag = "3")]
-    pub reason: i32,
 }
 impl ::prost::Name for AgentRemoved {
     const NAME: &'static str = "AgentRemoved";
@@ -4208,44 +4209,6 @@ impl Lifecycle {
             "LIFECYCLE_UNSPECIFIED" => Some(Self::Unspecified),
             "LIFECYCLE_LIVE" => Some(Self::Live),
             "LIFECYCLE_EXITED" => Some(Self::Exited),
-            _ => None,
-        }
-    }
-}
-/// Why the row left this daemon's view, which is not always deletion at
-/// the origin: a host that stops listing an agent, or that this machine
-/// stops trusting, takes its rows with it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum RemovalReason {
-    Unspecified = 0,
-    Deleted = 1,
-    Retention = 2,
-    NoLongerListed = 3,
-    HostUntrusted = 4,
-}
-impl RemovalReason {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "REMOVAL_REASON_UNSPECIFIED",
-            Self::Deleted => "REMOVAL_REASON_DELETED",
-            Self::Retention => "REMOVAL_REASON_RETENTION",
-            Self::NoLongerListed => "REMOVAL_REASON_NO_LONGER_LISTED",
-            Self::HostUntrusted => "REMOVAL_REASON_HOST_UNTRUSTED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "REMOVAL_REASON_UNSPECIFIED" => Some(Self::Unspecified),
-            "REMOVAL_REASON_DELETED" => Some(Self::Deleted),
-            "REMOVAL_REASON_RETENTION" => Some(Self::Retention),
-            "REMOVAL_REASON_NO_LONGER_LISTED" => Some(Self::NoLongerListed),
-            "REMOVAL_REASON_HOST_UNTRUSTED" => Some(Self::HostUntrusted),
             _ => None,
         }
     }

@@ -76,10 +76,10 @@ fn lists_agent(net: &Net, events: &[InventoryEvent], agent: &str) -> bool {
 }
 
 /// Whether the stream removed the agent with this id.
-fn removed(events: &[InventoryEvent], id: Uuid, reason: wire::RemovalReason) -> bool {
+fn removed(events: &[InventoryEvent], id: Uuid) -> bool {
     events.iter().any(|event| {
         matches!(&event.of, Some(inventory_event::Of::AgentRemoved(gone))
-            if gone.agent_id == id.as_bytes() && gone.reason == reason as i32)
+            if gone.agent_id == id.as_bytes())
     })
 }
 
@@ -273,10 +273,7 @@ async fn a_replica_its_origin_no_longer_lists_is_dropped_and_its_chats_close() {
     net.delete("live").await.unwrap();
     live_chat.until_closed(PATIENCE).await.unwrap();
     fleet
-        .observe_until(
-            |events| removed(events, live.id, wire::RemovalReason::NoLongerListed),
-            PATIENCE,
-        )
+        .observe_until(|events| removed(events, live.id), PATIENCE)
         .await
         .unwrap();
 
@@ -305,10 +302,7 @@ async fn a_replica_its_origin_no_longer_lists_is_dropped_and_its_chats_close() {
     net.restore_link("desk", "laptop").await.unwrap();
     quiet_chat.until_closed(PATIENCE).await.unwrap();
     fleet
-        .observe_until(
-            |events| removed(events, quiet.id, wire::RemovalReason::NoLongerListed),
-            PATIENCE,
-        )
+        .observe_until(|events| removed(events, quiet.id), PATIENCE)
         .await
         .unwrap();
     let dir = net.host("laptop").unwrap().data_dir.clone();
@@ -427,7 +421,7 @@ async fn a_generation_change_resets_one_hosts_replicas_and_nothing_else() {
     fleet
         .observe_until(
             |events| {
-                removed(events, late.id, wire::RemovalReason::NoLongerListed)
+                removed(events, late.id)
                     && host_named(&net, &inventory_hosts(events), "desk")
                         .is_some_and(|desk| desk.generation == generation + 1)
             },
@@ -495,7 +489,7 @@ async fn an_untrusted_host_leaves_the_set_with_its_replicas() {
     fleet
         .observe_until(
             |events| {
-                removed(events, worker.id, wire::RemovalReason::HostUntrusted)
+                removed(events, worker.id)
                     && events.iter().any(|event| {
                         matches!(&event.of, Some(inventory_event::Of::HostRemoved(gone))
                             if gone.host_id == desk.as_bytes())

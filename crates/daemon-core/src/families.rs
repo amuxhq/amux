@@ -21,8 +21,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use store::{AgentKey, AgentRow, Delivery, Marker, StoreError};
 use wire::{
-    Agent, AgentRemoved, AgentSpec, CtlFrame, ExitCause, Lifecycle, RemovalReason, ctl_frame,
-    inventory_event,
+    Agent, AgentRemoved, AgentSpec, CtlFrame, ExitCause, Lifecycle, ctl_frame, inventory_event,
 };
 
 use crate::ids::{AgentId, CallId, JobId, TimerId};
@@ -815,7 +814,6 @@ impl Daemon {
             let removed = AgentRemoved {
                 host_id: key.host.clone(),
                 agent_id: key.agent.clone(),
-                reason: RemovalReason::Deleted as i32,
             };
             let removed = inventory(inventory_event::Of::AgentRemoved(removed));
             self.agent_removed(&key, Arc::new(removed), out);
@@ -1846,8 +1844,7 @@ mod tests {
         // Removed for good before its host's listing caught up, as no input
         // removes another host's agent: the boundary's check names it.
         rig.daemon.touched = crate::Touched::default();
-        rig.daemon
-            .removed_for_good(&parent, wire::RemovalReason::Retention, &mut Vec::new());
+        rig.daemon.removed_for_good(&parent, &mut Vec::new());
         let violation = rig.daemon.check_step_invariants().unwrap_err();
         assert_eq!(violation.invariant, crate::DELETED_UNDER_A_STALE_LISTING);
     }

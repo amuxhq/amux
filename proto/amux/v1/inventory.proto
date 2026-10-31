@@ -157,21 +157,12 @@ enum Lifecycle {
   LIFECYCLE_EXITED = 2;
 }
 
-// Why the row left this daemon's view, which is not always deletion at
-// the origin: a host that stops listing an agent, or that this machine
-// stops trusting, takes its rows with it.
-enum RemovalReason {
-  REMOVAL_REASON_UNSPECIFIED = 0;
-  REMOVAL_REASON_DELETED = 1;
-  REMOVAL_REASON_RETENTION = 2;
-  REMOVAL_REASON_NO_LONGER_LISTED = 3;
-  REMOVAL_REASON_HOST_UNTRUSTED = 4;
-}
-
+// The row left this daemon's view, which is not always deletion at the
+// origin: a host that stops listing an agent, or that this machine stops
+// trusting, takes its rows with it.
 message AgentRemoved {
   bytes host_id = 1;
   bytes agent_id = 2;
-  RemovalReason reason = 3;
 }
 
 // A host by id, or as a person names it, resolved against this host and

@@ -731,13 +731,10 @@ machine's copy of the host's agents has caught up. A host whose route has just
 come up keeps its reach until the first channel on it opens or fails
 ([presence](PROTOCOL.md#chapter-3-presence)).
 
-`AgentRemoved` carries a `RemovalReason`: why the row left this daemon's
-view, which is not always deletion at the origin. `REMOVAL_REASON_DELETED`
-and `REMOVAL_REASON_RETENTION` are this host's own;
-`REMOVAL_REASON_NO_LONGER_LISTED` is a paired host that stopped listing the
-agent (whatever the reason there), and `REMOVAL_REASON_HOST_UNTRUSTED` is every
-row of a host this machine stopped trusting. A client subscribed to that agent sees its
-stream end. A delete stops a live agent first, and nothing of that stop is published:
+`AgentRemoved` says the row left this daemon's view, which is not always
+deletion at the origin: a delete or retention here, a paired host that stopped
+listing the agent, and every row of a host this machine stopped trusting all
+send it. A client subscribed to that agent sees its stream end. A delete stops a live agent first, and nothing of that stop is published:
 the agent's row and session say nothing more until `AgentRemoved`, so no client reads
 the stop as an exit it could resume.
 

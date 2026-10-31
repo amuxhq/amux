@@ -1157,7 +1157,6 @@ fn deleting_the_last_row_moves_the_highlight_to_the_new_last_row() {
         wire::inventory_event::Of::AgentRemoved(wire::AgentRemoved {
             host_id: deleted.host.clone(),
             agent_id: deleted.agent.clone(),
-            ..Default::default()
         }),
     );
     let screen = home_at(&mut home, &fleet, W, H);

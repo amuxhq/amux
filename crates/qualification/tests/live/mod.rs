@@ -941,7 +941,7 @@ impl Install {
                     let stream = client
                         .subscribe_session(SubscribeSessionRequest {
                             agent_id: agent.clone(),
-                            tail: 1000,
+                            from: Some(wire::subscribe_session_request::From::Tail(1000)),
                         })
                         .await;
                     if let Ok(stream) = stream {

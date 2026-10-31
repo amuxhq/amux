@@ -1707,9 +1707,9 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     answers.push((
         "Subscribe with a three-byte agent id",
         peer.sessions
-            .subscribe_session(wire::PeerSubscribeSessionRequest {
+            .subscribe_session(wire::SubscribeSessionRequest {
                 agent_id: short.clone(),
-                from: Some(wire::peer_subscribe_session_request::From::Tail(5)),
+                from: Some(wire::subscribe_session_request::From::Tail(5)),
             })
             .await
             .map(|_| ()),
@@ -1717,9 +1717,9 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     answers.push((
         "Subscribe to an agent the desk never had",
         peer.sessions
-            .subscribe_session(wire::PeerSubscribeSessionRequest {
+            .subscribe_session(wire::SubscribeSessionRequest {
                 agent_id: unknown.clone(),
-                from: Some(wire::peer_subscribe_session_request::From::Tail(5)),
+                from: Some(wire::subscribe_session_request::From::Tail(5)),
             })
             .await
             .map(|_| ()),
@@ -1765,9 +1765,7 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     answers.push((
         "SendMessage with no sender or recipient",
         peer.agents
-            .send_message(wire::PeerSendMessageRequest {
-                envelope: Some(wire::Envelope::default()),
-            })
+            .send_message(wire::Envelope::default())
             .await
             .map(|_| ()),
     ));

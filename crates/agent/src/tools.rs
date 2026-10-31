@@ -23,9 +23,9 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Status};
 use wire::{
-    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, ExitCause, HostEntry, HostRef, Kind,
-    Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, SendMessageRequest,
-    StopAgentRequest, attachment, create_agent_request, inventory_event,
+    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, Envelope, ExitCause, HostEntry,
+    HostRef, Kind, Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, StopAgentRequest,
+    attachment, create_agent_request, inventory_event,
 };
 
 use crate::dir;
@@ -305,17 +305,18 @@ impl Server {
         for attachment in &positioned.attachments {
             self.within_limit(attachment)?;
         }
-        let request = SendMessageRequest {
+        let request = Envelope {
             id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            from: None,
             to: Some(AgentRef {
                 host_id: recipient.host_id,
                 agent_id: recipient.agent_id,
             }),
             context,
-            body: Some(wire::MessageBody {
+            body: Some(wire::envelope::Body::Message(wire::MessageBody {
                 text: positioned.text,
                 attachments: positioned.attachments,
-            }),
+            })),
         };
         let sent = self
             .daemon_once(format!("the message to {to}"), |mut client| {

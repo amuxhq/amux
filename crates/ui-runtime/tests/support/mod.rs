@@ -157,10 +157,7 @@ impl Client for FakeRuntime {
         unimplemented!("delete_agent")
     }
 
-    async fn send_message(
-        &self,
-        _: wire::SendMessageRequest,
-    ) -> Result<SendMessageResponse, RpcError> {
+    async fn send_message(&self, _: wire::Envelope) -> Result<SendMessageResponse, RpcError> {
         unimplemented!("send_message")
     }
 

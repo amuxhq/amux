@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use wire::peer_subscribe_session_request;
+use wire::subscribe_session_request;
 
 use crate::ids::{CallId, HostId};
 use crate::io::Output;
@@ -147,12 +147,12 @@ impl Daemon {
         let answered = match request {
             PeerRequest::SubscribeSession(request) => {
                 let from = match request.from {
-                    Some(peer_subscribe_session_request::From::After(after)) => Opening::After {
+                    Some(subscribe_session_request::From::After(after)) => Opening::After {
                         revision: after.revision,
                         cap: after.cap,
                         generation: after.generation,
                     },
-                    Some(peer_subscribe_session_request::From::Tail(tail)) => Opening::Tail(tail),
+                    Some(subscribe_session_request::From::Tail(tail)) => Opening::Tail(tail),
                     None => Opening::Tail(0),
                 };
                 self.own(&request.agent_id)

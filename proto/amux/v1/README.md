@@ -10,9 +10,8 @@ application channels on separate native streams.
 
 | File | Holds |
 | --- | --- |
-| `agent_service.proto` | `AgentService`: the fleet, agents' lifecycle and messages, blobs, diffs, catalogues, repositories |
+| `agent_service.proto` | `AgentService`: the fleet, agents' lifecycle and messages, blobs, diffs, catalogues, repositories; served to clients and to paired daemons |
 | `session_service.proto` | `SessionService`: one agent's conversation, its input, the composer's draft |
-| `peer_service.proto` | `PeerAgentService` and `PeerSessionService`, daemon to daemon |
 | `installation_service.proto` | `InstallationService`: the installation and its profiles |
 | `profile_admin_service.proto` | `ProfileAdminService`: one profile's account, pairing, peers and dump |
 | `pairing_service.proto` | `PairingService`: two hosts coming to trust each other |

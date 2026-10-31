@@ -60,7 +60,6 @@ const PROTO_FILES: &[&str] = &[
     "amux/v1/dump.proto",
     "amux/v1/agent_service.proto",
     "amux/v1/session_service.proto",
-    "amux/v1/peer_service.proto",
     "amux/v1/installation_service.proto",
     "amux/v1/profile_admin_service.proto",
     "amux/v1/pairing_service.proto",

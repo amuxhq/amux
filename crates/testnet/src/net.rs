@@ -2823,7 +2823,7 @@ impl Net {
                 .sessions
                 .subscribe_session(wire::SubscribeSessionRequest {
                     agent_id: id.as_bytes().to_vec(),
-                    tail,
+                    from: Some(wire::subscribe_session_request::From::Tail(tail)),
                 })
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
@@ -3126,7 +3126,7 @@ impl Net {
                     .sessions
                     .subscribe_session(wire::SubscribeSessionRequest {
                         agent_id: agent.id.as_bytes().to_vec(),
-                        tail: 200,
+                        from: Some(wire::subscribe_session_request::From::Tail(200)),
                     }),
             )
             .await

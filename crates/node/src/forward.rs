@@ -109,7 +109,7 @@ impl ForwardError {
     }
 }
 
-/// A peer services request that can be forwarded, and the reply it gets.
+/// A request to the owning host's services that can be forwarded, and the reply it gets.
 pub(crate) trait PeerRpc {
     type Reply;
     fn request(self) -> PeerRequest;
@@ -370,7 +370,7 @@ impl ProfileRuntime {
     }
 }
 
-/// Makes one peer services call and reads its whole reply.
+/// Makes one call on the owning host and reads its whole reply.
 async fn dispatch(
     mut client: crate::PeerClient,
     request: PeerRequest,
@@ -410,15 +410,10 @@ async fn dispatch(
                 PeerReply::Done
             })
         }
-        PeerRequest::SendMessage(envelope) => {
-            let request = wire::PeerSendMessageRequest {
-                envelope: Some(envelope),
-            };
-            unary(
-                client.agents.send_message(request).await,
-                PeerReply::SendMessage,
-            )
-        }
+        PeerRequest::SendMessage(envelope) => unary(
+            client.agents.send_message(envelope).await,
+            PeerReply::SendMessage,
+        ),
         PeerRequest::PutBlob(request) => {
             unary(client.agents.put_blob(request).await, PeerReply::Blob)
         }

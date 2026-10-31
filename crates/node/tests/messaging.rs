@@ -18,8 +18,8 @@ use tonic::{Code, Request};
 use wire::agent_service_server::AgentService as _;
 use wire::session_service_server::SessionService as _;
 use wire::{
-    AgentInput, AgentRef, Input, Lifecycle, PromptInput, SendInputRequest, SendInputResponse,
-    SendMessageRequest, agent_input, send_input_response, sender,
+    AgentInput, AgentRef, Envelope, Input, Lifecycle, PromptInput, SendInputRequest,
+    SendInputResponse, agent_input, send_input_response, sender,
 };
 
 use crate::support;
@@ -269,14 +269,14 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     recipient.go_live();
     let (daemon, runtime) = start(&install, "boot-1").await;
 
-    let envelope = SendMessageRequest {
+    let envelope = Envelope {
         id: b"envelope-1".to_vec(),
         to: to(&recipient, &install),
-        body: Some(wire::MessageBody {
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
             text: "can you look at the build?".into(),
             ..Default::default()
-        }),
-        ..SendMessageRequest::default()
+        })),
+        ..Envelope::default()
     };
     let sent = runtime
         .send_message(envelope.clone(), Some(sender.id))
@@ -330,14 +330,14 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
         .unwrap();
     let refused = runtime
         .send_message(
-            SendMessageRequest {
+            Envelope {
                 id: b"envelope-2".to_vec(),
                 to: to(&recipient, &install),
-                body: Some(wire::MessageBody {
+                body: Some(wire::envelope::Body::Message(wire::MessageBody {
                     text: "still there?".into(),
                     ..Default::default()
-                }),
-                ..SendMessageRequest::default()
+                })),
+                ..Envelope::default()
             },
             Some(sender.id),
         )
@@ -370,13 +370,14 @@ async fn send_message_sender_is_the_caller() {
         (&on_profile, b"from-the-person".as_slice()),
     ] {
         let sent = api
-            .send_message(Request::new(SendMessageRequest {
+            .send_message(Request::new(Envelope {
+                from: None,
                 id: id.to_vec(),
                 to: to(&recipient, &install),
-                body: Some(wire::MessageBody {
+                body: Some(wire::envelope::Body::Message(wire::MessageBody {
                     text: "a word".into(),
                     ..Default::default()
-                }),
+                })),
                 context: None,
             }))
             .await
@@ -439,13 +440,14 @@ async fn resend_with_same_id_is_one_item() {
     recipient.go_live();
     let (daemon, runtime) = start(&install, "boot-1").await;
     let api = ClientApi::new(&runtime, None);
-    let request = SendMessageRequest {
+    let request = Envelope {
+        from: None,
         id: b"chosen-by-the-caller".to_vec(),
         to: to(&recipient, &install),
-        body: Some(wire::MessageBody {
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
             text: "can you look at the build?".into(),
             ..Default::default()
-        }),
+        })),
         context: Some(b"build".to_vec()),
     };
     for _ in 0..2 {
@@ -478,14 +480,14 @@ async fn a_message_waits_for_its_item_to_commit_and_one_envelope_is_handed_over_
     recipient.go_live();
     recipient.answer_with(Answer::AcceptWithoutNudge);
     let (daemon, runtime) = start(&install, "boot-1").await;
-    let envelope = SendMessageRequest {
+    let envelope = Envelope {
         id: b"envelope-1".to_vec(),
         to: to(&recipient, &install),
-        body: Some(wire::MessageBody {
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
             text: "can you look at the build?".into(),
             ..Default::default()
-        }),
-        ..SendMessageRequest::default()
+        })),
+        ..Envelope::default()
     };
     let send = || {
         let runtime = runtime.clone();
@@ -555,14 +557,14 @@ async fn a_retry_after_reply_patience_is_concluded_by_the_verdict_that_comes() {
     .await
     .unwrap();
     let runtime = runtime(&daemon, &install);
-    let envelope = SendMessageRequest {
+    let envelope = Envelope {
         id: b"envelope-1".to_vec(),
         to: to(&recipient, &install),
-        body: Some(wire::MessageBody {
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
             text: "can you look at the build?".into(),
             ..Default::default()
-        }),
-        ..SendMessageRequest::default()
+        })),
+        ..Envelope::default()
     };
 
     let first = tokio::spawn({
@@ -637,14 +639,14 @@ async fn connect_patience_running_out_behind_the_hello_does_not_lose_the_message
     // Running but not answering yet: the daemon keeps dialing it.
     recipient.hold_lock();
     let (daemon, runtime) = start(&install, "boot-1").await;
-    let envelope = SendMessageRequest {
+    let envelope = Envelope {
         id: b"envelope-1".to_vec(),
         to: to(&recipient, &install),
-        body: Some(wire::MessageBody {
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
             text: "can you look at the build?".into(),
             ..Default::default()
-        }),
-        ..SendMessageRequest::default()
+        })),
+        ..Envelope::default()
     };
     let sent = tokio::spawn({
         let runtime = runtime.clone();
@@ -715,14 +717,14 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
     child.answer_with(Answer::Reject(wire::Refusal::Exiting));
     let (daemon, runtime) = start_resuming(&install).await;
 
-    let envelope = SendMessageRequest {
+    let envelope = Envelope {
         id: b"wrap-up".to_vec(),
         to: to(&child, &install),
-        body: Some(wire::MessageBody {
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
             text: "wrap up and report".into(),
             ..Default::default()
-        }),
-        ..SendMessageRequest::default()
+        })),
+        ..Envelope::default()
     };
     let sent = tokio::spawn({
         let runtime = runtime.clone();
@@ -820,14 +822,14 @@ async fn a_delivery_waiting_on_its_parents_lane_is_dropped_when_the_parent_resum
     parent.answer_with(Answer::AcceptWithoutNudge);
     let held = tokio::spawn({
         let runtime = runtime.clone();
-        let envelope = SendMessageRequest {
+        let envelope = Envelope {
             id: b"hold".to_vec(),
             to: to(&parent, &install),
-            body: Some(wire::MessageBody {
+            body: Some(wire::envelope::Body::Message(wire::MessageBody {
                 text: "a word".into(),
                 ..Default::default()
-            }),
-            ..SendMessageRequest::default()
+            })),
+            ..Envelope::default()
         };
         async move { runtime.send_message(envelope, None).await }
     });
@@ -1261,17 +1263,17 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
         .await
         .unwrap();
 
-    let envelope = SendMessageRequest {
+    let envelope = Envelope {
         id: b"follow-up".to_vec(),
         to: Some(AgentRef {
             host_id: runtime.host().as_bytes().to_vec(),
             agent_id: child.as_bytes().to_vec(),
         }),
-        body: Some(wire::MessageBody {
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
             text: "one more thing".into(),
             ..Default::default()
-        }),
-        ..SendMessageRequest::default()
+        })),
+        ..Envelope::default()
     };
     runtime
         .send_message(envelope, Some(parent))
@@ -1308,17 +1310,17 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
     // Anyone but the parent is told the child has exited.
     let refused = runtime
         .send_message(
-            SendMessageRequest {
+            Envelope {
                 id: b"stranger".to_vec(),
                 to: Some(AgentRef {
                     host_id: runtime.host().as_bytes().to_vec(),
                     agent_id: child.as_bytes().to_vec(),
                 }),
-                body: Some(wire::MessageBody {
+                body: Some(wire::envelope::Body::Message(wire::MessageBody {
                     text: "hello?".into(),
                     ..Default::default()
-                }),
-                ..SendMessageRequest::default()
+                })),
+                ..Envelope::default()
             },
             None,
         )

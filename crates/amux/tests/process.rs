@@ -235,7 +235,7 @@ async fn chat(client: &mut wire::ClientStubs, agent: &[u8]) -> Vec<(String, Stri
         .sessions
         .subscribe_session(SubscribeSessionRequest {
             agent_id: agent.to_vec(),
-            tail: 1000,
+            from: Some(wire::subscribe_session_request::From::Tail(1000)),
         })
         .await
         .expect("the chat opens")

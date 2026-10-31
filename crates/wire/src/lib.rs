@@ -1,7 +1,7 @@
 //! Committed protobuf messages for every amux protocol boundary: the session
 //! records the journal frames and the store keeps, the agent process's spec
-//! and control frames, and the client, peer, pairing, profile and
-//! installation services.
+//! and control frames, and the client, pairing, profile and installation
+//! services.
 
 /// Protocol version for the native-stream link handshake. It moves only for
 /// a break both ends of a link must take; see `proto/amux/v1/README.md` at the repository root.
@@ -93,24 +93,6 @@ sized_service!(
     session_service_server,
     SessionServiceServer,
     SessionService
-);
-sized_service!(
-    peer_agent_service_client,
-    peer_agent_service_server,
-    peer_agent_service_client,
-    PeerAgentServiceClient,
-    peer_agent_service_server,
-    PeerAgentServiceServer,
-    PeerAgentService
-);
-sized_service!(
-    peer_session_service_client,
-    peer_session_service_server,
-    peer_session_service_client,
-    PeerSessionServiceClient,
-    peer_session_service_server,
-    PeerSessionServiceServer,
-    PeerSessionService
 );
 
 /// The client services' stubs on one profile or tools socket: what a

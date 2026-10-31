@@ -255,9 +255,7 @@ impl World for Net {
                 error: format!("no channel to {to}: {error}"),
             })?;
         peer.agents
-            .send_message(wire::PeerSendMessageRequest {
-                envelope: Some(envelope),
-            })
+            .send_message(envelope)
             .await
             .map(tonic::Response::into_inner)
             .map_err(|status| NetError::Refused(Box::new(status)))

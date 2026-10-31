@@ -1,6 +1,7 @@
-//! The client services, AgentService and SessionService, over a local socket: one profile's socket for
-//! clients, and each agent's tools socket for its MCP server, where the
-//! socket is the caller's identity.
+//! The client services, AgentService and SessionService: over a local
+//! socket, one profile's socket for clients and each agent's tools socket for
+//! its MCP server, where the socket is the caller's identity; and over a link
+//! stream for a paired daemon, whose pinned key is the caller's identity.
 //!
 //! Every call is a thin mapping onto the profile runtime. The service holds
 //! the runtime weakly: a connection that outlives its runtime (a restart in
@@ -25,15 +26,17 @@ use wire::{
     GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent, Item, ListItemsRequest,
     ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse, PutBlobRequest,
     RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
-    SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent, StopAgentRequest,
-    SubscribeSessionRequest,
+    SendInputResponse, SendMessageResponse, SessionEvent, StopAgentRequest,
+    SubscribeSessionRequest, subscribe_session_request,
 };
 
 use crate::blobs::BlobError;
 use crate::forward::{ForwardError, Owner};
 use crate::offers::CatalogueError;
 use crate::runtime::{AgentId, ProfileRuntime};
+use crate::serve::ServeError;
 use crate::telemetry::{self, InputShape};
+use crate::transport::{BoxedGrpcAuth, BoxedGrpcConnectInfo};
 
 /// A wire error as a gRPC status: the coarse code for generic clients, and
 /// the whole error, details included, in the status details for ours.
@@ -112,14 +115,46 @@ impl ClientApi {
         }
     }
 
-    /// The service as a paired host's calls reach it: as a person's, and
-    /// answered only for this host's own agents.
+    /// The service as a paired host's calls reach it over a link: as a
+    /// person's, answered only for this host's own agents and never passed
+    /// on.
     pub(crate) fn for_peer(runtime: Weak<ProfileRuntime>) -> Self {
         Self {
             runtime,
             caller: None,
             forwards: false,
             opened: None,
+        }
+    }
+
+    /// The paired host a call came from, or None on a local socket. Only a
+    /// link stream whose handshake presented a trusted key is served as a
+    /// peer, so a peer's call without one is a bug, and it is refused
+    /// rather than served as nobody.
+    fn peer<T>(&self, request: &Request<T>) -> Result<Option<crate::HostId>, Status> {
+        if self.forwards {
+            return Ok(None);
+        }
+        match request.extensions().get::<BoxedGrpcConnectInfo>() {
+            Some(BoxedGrpcConnectInfo {
+                auth: BoxedGrpcAuth::Trusted { peer },
+            }) => Ok(Some(*peer)),
+            _ => Err(Status::unauthenticated("the caller is not a trusted host")),
+        }
+    }
+
+    /// For a paired host's call on `agent_id`, refuses an agent this host
+    /// does not run. A replica's rows are this host's copy of another
+    /// host's, which that host serves itself, so they are not found here
+    /// rather than passed on.
+    async fn own_for_peer<T>(&self, request: &Request<T>, agent_id: &[u8]) -> Result<(), Status> {
+        if self.peer(request)?.is_none() {
+            return Ok(());
+        }
+        match self.runtime()?.is_own(agent_id).await {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(status(ServeError::NoAgent.to_wire())),
+            Err(error) => Err(status(error.to_wire())),
         }
     }
 
@@ -247,13 +282,14 @@ impl AgentService for ClientApi {
 
     async fn subscribe_inventory(
         &self,
-        _request: Request<wire::Empty>,
+        request: Request<wire::Empty>,
     ) -> Result<Response<Self::SubscribeInventoryStream>, Status> {
         let runtime = self.runtime()?;
-        let subscription = runtime
-            .subscribe_inventory()
-            .await
-            .map_err(|error| status(error.to_wire()))?;
+        let subscription = match self.peer(&request)? {
+            Some(from) => runtime.peer_subscribe_inventory(from).await,
+            None => runtime.subscribe_inventory().await,
+        }
+        .map_err(|error| status(error.to_wire()))?;
         if let Some(client) = self.opened.filter(|_| self.counts()) {
             runtime.analytics().record_at_most_every(
                 telemetry::CLIENT_OPENED_EVERY,
@@ -271,6 +307,12 @@ impl AgentService for ClientApi {
         &self,
         request: Request<ResolveAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
+        if self.peer(&request)?.is_some() {
+            return Err(status(wire_error(
+                ErrorCode::InvalidArgument,
+                "a paired host resolves names itself",
+            )));
+        }
         self.runtime()?
             .resolve_agent(&request.into_inner().name)
             .await
@@ -282,6 +324,9 @@ impl AgentService for ClientApi {
         &self,
         request: Request<CreateAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
+        // A paired host names the parent, one of its own agents or none for
+        // the person, from its own tools-socket caller.
+        self.peer(&request)?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         let host = runtime
@@ -323,6 +368,8 @@ impl AgentService for ClientApi {
         &self,
         request: Request<RenameAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
+        self.own_for_peer(&request, &request.get_ref().agent_id)
+            .await?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
@@ -339,6 +386,8 @@ impl AgentService for ClientApi {
         &self,
         request: Request<StopAgentRequest>,
     ) -> Result<Response<wire::Empty>, Status> {
+        self.own_for_peer(&request, &request.get_ref().agent_id)
+            .await?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(
@@ -372,6 +421,8 @@ impl AgentService for ClientApi {
         &self,
         request: Request<ResumeAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
+        self.own_for_peer(&request, &request.get_ref().agent_id)
+            .await?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         let first = match &request.initial_prompt {
@@ -403,6 +454,8 @@ impl AgentService for ClientApi {
         &self,
         request: Request<DeleteAgentRequest>,
     ) -> Result<Response<Empty>, Status> {
+        self.own_for_peer(&request, &request.get_ref().agent_id)
+            .await?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
@@ -417,12 +470,24 @@ impl AgentService for ClientApi {
 
     async fn send_message(
         &self,
-        request: Request<SendMessageRequest>,
+        request: Request<wire::Envelope>,
     ) -> Result<Response<SendMessageResponse>, Status> {
-        self.runtime()?
-            .send_message(request.into_inner(), self.caller)
-            .await
-            .map(Response::new)
+        let from = self.peer(&request)?;
+        let envelope = request.into_inner();
+        let runtime = self.runtime()?;
+        let sent = match from {
+            // The sending daemon stamped the sender from its own caller.
+            Some(_) => runtime.send_peer_message(envelope).await,
+            // A child's reports are its daemon's own.
+            None if matches!(envelope.body, Some(wire::envelope::Body::Report(_))) => {
+                return Err(status(wire_error(
+                    ErrorCode::InvalidArgument,
+                    "a child's reports come from its daemon, not a client",
+                )));
+            }
+            None => runtime.send_message(envelope, self.caller).await,
+        };
+        sent.map(Response::new)
             .map_err(|error| status(error.to_wire()))
     }
 
@@ -430,6 +495,8 @@ impl AgentService for ClientApi {
         &self,
         request: Request<PutBlobRequest>,
     ) -> Result<Response<BlobRef>, Status> {
+        self.own_for_peer(&request, &request.get_ref().agent_id)
+            .await?;
         let request = request.into_inner();
         crate::blobs::within_limit(&request).map_err(|error| status(error.to_wire()))?;
         let runtime = self.runtime()?;
@@ -447,6 +514,8 @@ impl AgentService for ClientApi {
         &self,
         request: Request<GetBlobRequest>,
     ) -> Result<Response<GetBlobResponse>, Status> {
+        self.own_for_peer(&request, &request.get_ref().agent_id)
+            .await?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         match runtime.get_blob(request.clone()).await {
@@ -477,6 +546,8 @@ impl AgentService for ClientApi {
         &self,
         request: Request<GetDiffRequest>,
     ) -> Result<Response<wire::Diff>, Status> {
+        self.own_for_peer(&request, &request.get_ref().agent_id)
+            .await?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         // The working tree is on the agent's own host, and so is the patch.
@@ -494,6 +565,7 @@ impl AgentService for ClientApi {
         &self,
         request: Request<wire::GetCatalogueRequest>,
     ) -> Result<Response<wire::GetCatalogueResponse>, Status> {
+        self.peer(&request)?;
         self.host_catalogue(request.into_inner()).await
     }
 
@@ -501,6 +573,7 @@ impl AgentService for ClientApi {
         &self,
         request: Request<ListRepositoriesRequest>,
     ) -> Result<Response<ListRepositoriesResponse>, Status> {
+        self.peer(&request)?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         let named = request.host_id.as_deref().map(host_id).transpose()?;
@@ -530,12 +603,25 @@ impl SessionService for ClientApi {
         &self,
         request: Request<SubscribeSessionRequest>,
     ) -> Result<Response<Self::SubscribeSessionStream>, Status> {
+        let from = self.peer(&request)?;
         let request = request.into_inner();
-        let subscription = self
-            .runtime()?
-            .subscribe_session(&request.agent_id, request.tail)
-            .await
-            .map_err(|error| status(error.to_wire()))?;
+        let runtime = self.runtime()?;
+        let subscription = match (from, &request.from) {
+            // A peer asks for a tail, like a client, or for what came after
+            // the revision its replica holds, capped.
+            (Some(from), _) => runtime.peer_subscribe_session(from, request).await,
+            (None, Some(subscribe_session_request::From::After(_))) => {
+                return Err(status(wire_error(
+                    ErrorCode::InvalidArgument,
+                    "a client tails; only a paired host resumes from a cursor",
+                )));
+            }
+            (None, Some(subscribe_session_request::From::Tail(tail))) => {
+                runtime.subscribe_session(&request.agent_id, *tail).await
+            }
+            (None, None) => runtime.subscribe_session(&request.agent_id, 0).await,
+        }
+        .map_err(|error| status(error.to_wire()))?;
         let stream = futures_util::stream::unfold(subscription, |mut subscription| async move {
             let event = subscription.next().await?;
             Some((Ok(SessionEvent::clone(&event)), subscription))
@@ -547,25 +633,35 @@ impl SessionService for ClientApi {
         &self,
         request: Request<ListItemsRequest>,
     ) -> Result<Response<ListItemsResponse>, Status> {
-        self.runtime()?
-            .list_items(&request.into_inner())
-            .await
-            .map(Response::new)
-            .map_err(|error| status(error.to_wire()))
+        let from = self.peer(&request)?;
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
+        match from {
+            Some(from) => runtime.peer_list_items(from, request).await,
+            None => runtime.list_items(&request).await,
+        }
+        .map(Response::new)
+        .map_err(|error| status(error.to_wire()))
     }
 
     async fn get_item(&self, request: Request<GetItemRequest>) -> Result<Response<Item>, Status> {
-        self.runtime()?
-            .get_item(&request.into_inner())
-            .await
-            .map(Response::new)
-            .map_err(|error| status(error.to_wire()))
+        let from = self.peer(&request)?;
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
+        match from {
+            Some(from) => runtime.peer_get_item(from, request).await,
+            None => runtime.get_item(&request).await,
+        }
+        .map(Response::new)
+        .map_err(|error| status(error.to_wire()))
     }
 
     async fn send_input(
         &self,
         request: Request<SendInputRequest>,
     ) -> Result<Response<SendInputResponse>, Status> {
+        self.own_for_peer(&request, &request.get_ref().agent_id)
+            .await?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(

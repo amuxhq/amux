@@ -646,7 +646,7 @@ impl Transition<'_> {
                     unreachable!("answered without an ask")
                 };
                 let call = *call;
-                let request = wire::PeerSubscribeSessionRequest::decode(request.as_slice())
+                let request = wire::SubscribeSessionRequest::decode(request.as_slice())
                     .expect("a request decodes");
                 self.next.link = Link::Open {
                     call,
@@ -895,8 +895,8 @@ impl Transition<'_> {
         let Link::Asked { request, .. } = &self.next.link else {
             unreachable!("only an opening in flight is replayed")
         };
-        let request = wire::PeerSubscribeSessionRequest::decode(request.as_slice())
-            .expect("a request decodes");
+        let request =
+            wire::SubscribeSessionRequest::decode(request.as_slice()).expect("a request decodes");
         self.next.replays += 1;
         let before = (
             self.next.origin.store.clone(),

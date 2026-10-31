@@ -322,11 +322,11 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     let from_desk = peer_inventory_hosts(&edge(&net, "desk"), laptop_id).await;
     assert!(from_laptop.contains(&desk_id.as_bytes().to_vec()));
     assert!(from_desk.contains(&laptop_id.as_bytes().to_vec()));
-    println!("the peer services answered laptop -> desk and desk -> laptop");
+    println!("the services answered laptop -> desk and desk -> laptop");
 
     // A stranger that trusts the desk but that the desk never paired with
     // is refused: its pinned dial never becomes a link, and on the desk's
-    // listener, without a trusted key, there are no peer services to reach.
+    // listener, without a trusted key, there are no agent services to reach.
     edge(&net, "stranger")
         .trust(&edge(&net, "desk"))
         .await
@@ -345,11 +345,11 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     println!("the stranger's dial was refused: {refused}");
     let desk_addr = edge(&net, "desk").lan_addr().unwrap();
     let outside_pairing = match edge(&net, "stranger").unpinned_channel(desk_addr).await {
-        Ok(channel) => wire::peer_agent_service_client(channel)
+        Ok(channel) => wire::agent_service_client(channel)
             .subscribe_inventory(wire::Empty {})
             .await
             .map(|_| ())
-            .expect_err("a stranger reaches no peer service")
+            .expect_err("a stranger reaches no agent service")
             .code(),
         Err(_) => tonic::Code::Unavailable,
     };
@@ -363,7 +363,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
         })
         .await
         .unwrap();
-    let in_pairing = wire::peer_agent_service_client(
+    let in_pairing = wire::agent_service_client(
         edge(&net, "stranger")
             .unpinned_channel(desk_addr)
             .await
@@ -381,7 +381,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
         .await
         .unwrap();
     println!(
-        "stranger refused: pinned dial never links; unpinned peer services call {outside_pairing:?}, \
+        "stranger refused: pinned dial never links; unpinned agent services call {outside_pairing:?}, \
          in pairing mode {in_pairing:?}"
     );
     assert!(!edge(&net, "desk").is_trusted(stranger_id));

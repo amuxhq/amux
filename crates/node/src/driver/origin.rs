@@ -46,7 +46,7 @@ pub(super) async fn stream(
 async fn session<F: Future<Output = ()>>(
     runtime: &Weak<ProfileRuntime>,
     host: HostId,
-    request: wire::PeerSubscribeSessionRequest,
+    request: wire::SubscribeSessionRequest,
     mut answer: impl FnMut(wire::SessionEvent) -> F,
 ) -> Answer {
     let Some(edge) = runtime.upgrade().and_then(|me| me.edge()) else {

@@ -18,7 +18,7 @@ use ui_state::{ItemBody, OpenAsk};
 use wire::codex_item::Kind as Codex;
 use wire::{
     AgentRef, CodexCreateConfig, Kind, MessageBody, PromptInput, PutBlobRequest,
-    ResolveAgentRequest, SendMessageRequest, codex_ask, work,
+    ResolveAgentRequest, codex_ask, work,
 };
 
 use super::asks::{Answer, settled};
@@ -172,17 +172,18 @@ impl Install {
         self.client
             .agents
             .clone()
-            .send_message(SendMessageRequest {
+            .send_message(wire::Envelope {
                 id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 to: Some(AgentRef {
                     host_id,
                     agent_id: agent.to_vec(),
                 }),
                 context: None,
-                body: Some(MessageBody {
+                from: None,
+                body: Some(wire::envelope::Body::Message(MessageBody {
                     text: text.into(),
                     attachments: Vec::new(),
-                }),
+                })),
             })
             .await
             .map_err(|status| status.to_string())?;

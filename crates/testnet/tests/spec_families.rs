@@ -69,15 +69,16 @@ fn question() -> Step {
 }
 
 /// A message as an agent's tool server submits it.
-fn message(id: &[u8], to: &AgentRef, text: &str) -> wire::SendMessageRequest {
-    wire::SendMessageRequest {
+fn message(id: &[u8], to: &AgentRef, text: &str) -> wire::Envelope {
+    wire::Envelope {
         id: id.to_vec(),
         to: Some(to.clone()),
         context: None,
-        body: Some(wire::MessageBody {
+        from: None,
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
             text: text.into(),
             attachments: Vec::new(),
-        }),
+        })),
     }
 }
 

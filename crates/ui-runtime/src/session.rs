@@ -277,7 +277,9 @@ impl Inner {
     fn subscribe_request(&self) -> SubscribeSessionRequest {
         SubscribeSessionRequest {
             agent_id: self.agent_id.clone(),
-            tail: self.tail.load(Ordering::Acquire),
+            from: Some(wire::subscribe_session_request::From::Tail(
+                self.tail.load(Ordering::Acquire),
+            )),
         }
     }
 

@@ -1451,17 +1451,18 @@ async fn retention_sweep() {
     let child = children[0];
     runtime
         .send_message(
-            wire::SendMessageRequest {
+            wire::Envelope {
+                from: None,
                 id: b"after-retention".to_vec(),
                 to: Some(AgentRef {
                     host_id: runtime.host().as_bytes().to_vec(),
                     agent_id: child.as_bytes().to_vec(),
                 }),
                 context: None,
-                body: Some(wire::MessageBody {
+                body: Some(wire::envelope::Body::Message(wire::MessageBody {
                     text: "one more thing".into(),
                     attachments: Vec::new(),
-                }),
+                })),
             },
             Some(parent),
         )

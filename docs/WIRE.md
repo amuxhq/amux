@@ -14,7 +14,6 @@ different versions talking. Host-to-host links, pairing and the relay are in
 | --- | --- |
 | [`agent_service.proto`](../proto/amux/v1/agent_service.proto) | `AgentService` and its requests: the fleet, agents' lifecycle and messages, blobs, diffs, catalogues, repositories |
 | [`session_service.proto`](../proto/amux/v1/session_service.proto) | `SessionService` and its requests: one agent's conversation, `Input` and `SendInputResponse`, the composer's draft |
-| [`peer_service.proto`](../proto/amux/v1/peer_service.proto) | `PeerAgentService` and `PeerSessionService`, and the requests only peers send |
 | [`inventory.proto`](../proto/amux/v1/inventory.proto) | Hosts and agent rows, as the inventory streams them |
 | [`records.proto`](../proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, `Kind`, `ExitCause`, agent messages, attachments, blobs, diffs, and the streams' `CaughtUp` and `Lagged` |
 | [`chat.proto`](../proto/amux/v1/chat.proto) | What the kinds share inside a body: item bodies, snapshot pieces, asks, input and answer pieces, the catalogue |
@@ -39,7 +38,7 @@ client never opens a store and never dials another host.
 | Terminal client, CLI, a third-party client | gRPC over the profile's local socket (`PROFILE_SOCKET` in [`crates/node/src/profiles.rs`](../crates/node/src/profiles.rs)) | `AgentService`, `SessionService`, `ProfileAdminService` |
 | Phone app | An in-process call into the embedded runtime | The same services, the same implementation |
 | An agent's tool server | gRPC over the agent's `tools.sock`; the socket is the caller's identity | `AgentService` and `SessionService`, restricted |
-| A paired host's daemon | An application stream on the link | `PeerAgentService`, `PeerSessionService` |
+| A paired host's daemon | An application stream on the link | `AgentService` and `SessionService`, answered for a peer |
 | Profile and installation management | gRPC over the installation's front-door socket | `InstallationService` |
 | A host pairing with this one | A link stream while a pairing window is open | `PairingService` |
 
@@ -52,15 +51,15 @@ On `tools.sock` the caller is an agent. It may message other agents and send
 input only to its own direct children; input to any other agent is refused
 there with `PERMISSION_DENIED`.
 
-`PeerAgentService` and `PeerSessionService` are the daemon-to-daemon services over a link. Replication is a
+Over a link, a paired daemon calls the same `AgentService` and `SessionService`. Replication is a
 daemon being a client of its peer. A call on another host's agent arrives at
-the local runtime, which forwards it one hop to the owning host. The peer
-services answer only for their host's own agents and never passes a call on:
-its inventory stream carries that host's entry and agents, and every call
+the local runtime, which forwards it one hop to the owning host. For a peer
+the services answer only for their host's own agents and never pass a call on:
+the inventory stream carries that host's entry and agents, and every call
 that names an agent it only replicates (reads, input, lifecycle, blobs and
-diffs) is `NOT_FOUND`. Two of their messages differ from the client's: `SubscribeSession` takes
-a `PeerSubscribeSessionRequest`, which may carry a cursor, and `SendMessage` takes the
-`Envelope` the sending daemon stamped.
+diffs) is `NOT_FOUND`. Only a peer's `SubscribeSession` may carry a cursor,
+and only a peer's `SendMessage` envelope names its sender; `ResolveAgent` and
+the drafts are refused to a peer.
 
 ### Errors
 
@@ -100,7 +99,7 @@ reason `VERSION_MISMATCH`; see [Versions](#versions).
 | `StopAgent(StopAgentRequest)` | `Empty` | Ends the agent now: its running turn is cancelled the provider's own way and it exits, resumable. There is no "stop when done". The terminal, the phone and an agent's stop tool all call it; the interrupt input is what ends only the turn. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule) |
 | `ResumeAgent(ResumeAgentRequest)` | `Agent` | Start the agent's directory again, optionally with a first prompt |
 | `DeleteAgent` | `Empty` | Stops the agent if live and removes it for good. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule) |
-| `SendMessage(SendMessageRequest)` | `SendMessageResponse` | Agent messaging: who it is from is the caller, never the request (see [Messages](#messages) and [agent tools](AGENT_TOOLS.md)) |
+| `SendMessage(Envelope)` | `SendMessageResponse` | Agent messaging: who it is from is the caller, never the request (see [Messages](#messages) and [agent tools](AGENT_TOOLS.md)) |
 | `PutBlob(PutBlobRequest)` | `BlobRef` | Bytes into an agent's directory |
 | `GetBlob(GetBlobRequest)` | `GetBlobResponse` | Bytes out |
 | `GetDiff(GetDiffRequest)` | `Diff` | The changed files on the owning host; the patch, stored as a blob, only when asked |
@@ -166,11 +165,6 @@ exited chat's composer sends its draft that way.
 ```proto
 message SubscribeSessionRequest {
   bytes agent_id = 1;
-  uint32 tail = 2;
-}
-
-message PeerSubscribeSessionRequest {
-  bytes agent_id = 1;
   oneof from { uint32 tail = 2; After after = 3; }
 }
 ```
@@ -179,7 +173,7 @@ A client sends one integer, `tail`: how many of the newest rows it wants. It
 never sends a revision. The runtime caps the tail at K, the rows a replica
 keeps (200, `Settings.tail_rows` in [`crates/daemon-core/src/io.rs`](../crates/daemon-core/src/io.rs)).
 The tail is a minimum: a client that cannot fill its screen pages older at once
-with `ListItems`. `after` exists only on the peer service's request: it is how a
+with `ListItems`. Only a paired daemon sends `after`: it is how a
 peer's source resumes toward an origin, with the revision it holds, a cap, and
 the origin generation that revision was taken under.
 
@@ -400,20 +394,11 @@ recovers when an append's base does not match the revision it holds.
 
 ## Messages
 
-```proto
-message SendMessageRequest {
-  bytes id = 1;                 // the caller's, for dedupe
-  AgentRef to = 2;
-  string text = 3;
-  optional bytes context = 4;
-  repeated Attachment attachments = 5;  // blobs in the sender's directory
-}
-```
-
-A message to an agent, on this host or another. The daemon stamps who it is
-from: the person on a client socket, the agent whose tools socket made the
-call. The request has nowhere to name a sender, so no caller can speak for
-anyone else.
+`SendMessage` takes an `Envelope`: a message to an agent, on this host or
+another, its `id` the caller's for dedupe. The daemon stamps who it is from:
+the person on a client socket, the agent whose tools socket made the call.
+The `from` a client fills is overwritten, so no caller can speak for anyone
+else; only a paired daemon's envelope keeps the sender it stamped.
 
 ```proto
 message Envelope {
@@ -443,8 +428,8 @@ agent's `agent_message` frame, a resumed agent's bootstrap), is deduped by
 `id` and routed by `to`, and only its body differs. A message's body is its
 text and its `attachments`, which reference blobs in the sender's directory on
 the sender's host as the request gave them. Reports are the daemon's own,
-sent when a child's turn or incarnation ends, and cannot be submitted:
-`SendMessageRequest` has no report. A report names the parent incarnation it
+sent when a child's turn or incarnation ends, and cannot be submitted: a
+client's envelope with a report is refused `INVALID_ARGUMENT`. A report names the parent incarnation it
 is for (`to_incarnation`; the recipient's daemon drops it for any other) and
 the child incarnation it is from (`from_incarnation`). Its end is one of two:
 
@@ -746,7 +731,7 @@ and close.
 `amux.v1` is the released protocol. From amux 0.9.0 on, paired machines,
 long-running agent processes and long-lived clients run different versions at
 once, and stores and journals outlive the build that wrote them. So every
-surface in `amux.v1` (the client and peer services, the link and pairing
+surface in `amux.v1` (the client services, the link and pairing
 messages, the `ctl.sock` frames and the journal's records) changes by field
 discipline alone:
 

@@ -80,7 +80,7 @@ async fn the_in_process_and_socket_clients_answer_alike() {
         let mut stream = client
             .subscribe_session(SubscribeSessionRequest {
                 agent_id: worker.clone(),
-                tail: 40,
+                from: Some(wire::subscribe_session_request::From::Tail(40)),
             })
             .await
             .unwrap();

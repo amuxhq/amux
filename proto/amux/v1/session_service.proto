@@ -12,7 +12,9 @@ import "amux/v1/records.proto";
 // unsent draft.
 //
 // Served on a profile's socket. On an agent's tools socket the caller is the
-// agent: it may send input only to its own direct children.
+// agent: it may send input only to its own direct children. On a link
+// stream from a paired daemon it is answered only for this host's own
+// agents, as AgentService is, and the drafts are refused.
 
 service SessionService {
   rpc SubscribeSession(SubscribeSessionRequest) returns (stream SessionEvent);
@@ -26,10 +28,15 @@ service SessionService {
   rpc GetDraft(GetDraftRequest) returns (Draft);
 }
 
-// Clients tail; the daemon never accepts a cursor from a client.
+// Clients tail. A paired daemon's replica sends `after` toward its origin
+// once it holds a cursor, else `tail`; the daemon never accepts a cursor
+// from a client.
 message SubscribeSessionRequest {
   bytes agent_id = 1;
-  uint32 tail = 2;
+  oneof from {
+    uint32 tail = 2;
+    After after = 3;
+  }
 }
 
 // The delta if it is at most cap rows and the origin still runs the

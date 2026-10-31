@@ -222,9 +222,9 @@ pub async fn open_session(
         .map_err(|error| error.status())?;
     let mut events = client
         .sessions
-        .subscribe_session(wire::PeerSubscribeSessionRequest {
+        .subscribe_session(wire::SubscribeSessionRequest {
             agent_id: agent.as_bytes().to_vec(),
-            from: Some(wire::peer_subscribe_session_request::From::Tail(10)),
+            from: Some(wire::subscribe_session_request::From::Tail(10)),
         })
         .await?
         .into_inner();

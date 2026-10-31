@@ -216,10 +216,10 @@ milliseconds. A person's
 A send goes from the model to the recipient's provider like this:
 
 1. The harness calls `send` on the tool server, which resolves `to` with
-   `ResolveAgent` and calls `SendMessage` on `tools.sock` with a
-   `SendMessageRequest`: a fresh id, the recipient as a host and an agent, the
-   text and the context. The request has no sender and no kind.
-2. The daemon makes the `Envelope`: an ordinary message whose `from` is the
+   `ResolveAgent` and calls `SendMessage` on `tools.sock` with an
+   `Envelope`: a fresh id, the recipient as a host and an agent, the text and
+   the context. It names no sender.
+2. The daemon stamps the `Envelope`: an ordinary message whose `from` is the
    agent the socket belongs to (its id, host and name). For a recipient
    on another host it forwards the envelope there
    ([across hosts](#across-hosts)); otherwise it runs the recipient's lane.
@@ -407,7 +407,7 @@ ordinary peer calls; nothing about them is specific to messaging.
 
 - **Send.** `ResolveAgent` finds a remote agent by its replica row. The local
   daemon stamps the envelope as from the calling agent, with this host's id,
-  and makes the peer service's `SendMessage` call, which carries that
+  and makes the `AgentService.SendMessage` call, which carries that
   envelope, on the recipient's daemon over the peer link. That daemon takes
   the sender as stamped and runs the recipient's lane as for a local sender.
   A message that arrived from a peer for a third host is not passed on. A

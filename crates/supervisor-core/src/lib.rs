@@ -491,19 +491,12 @@ impl Supervisor {
                 self.settle(out);
             }
         }
-        if let Err(violation) = self.check_step_invariants() {
-            out.push(Output::Dump {
-                reason: DumpReason::Violation(violation),
-            });
-        }
+        let checked = self.check_step_invariants();
         self.touched = Touched::default();
-        let budget = self.params.step_budget;
-        let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
-        if micros > budget.micros {
-            out.push(Output::Dump {
-                reason: DumpReason::OverBudget { micros, budget },
-            });
-        }
+        out.extend(
+            core_ring::finish_step(started, self.params.step_budget, 0, checked)
+                .map(|reason| Output::Dump { reason }),
+        );
     }
 
     /// The cheap predicates checked after every step:

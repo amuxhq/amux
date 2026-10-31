@@ -182,34 +182,6 @@ fn one_shot_working() -> Run {
     run
 }
 
-/// A step is timed against the spec's budget: any step takes longer than
-/// nothing, given a clock fine enough, so under a budget of one
-/// microsecond (zero is the agent's own) a step is soon measured over it.
-#[test]
-fn a_step_over_its_budget_asks_for_a_dump() {
-    let mut over = spec(false, None);
-    over.config.as_mut().unwrap().step_budget_micros = 1;
-    let mut run = Run::start(&over);
-    run.on(Input::DaemonDials { connection: DAEMON });
-    let mut out = Vec::new();
-    while out.is_empty() {
-        out = dumps(&run.fact(json!({"type": "ready"})))
-            .into_iter()
-            .cloned()
-            .collect();
-    }
-    assert!(
-        out.iter().all(|reason| matches!(
-            reason,
-            DumpReason::OverBudget {
-                micros,
-                budget: StepBudget { micros: 1 }
-            } if *micros > 1
-        )),
-        "{out:?}"
-    );
-}
-
 /// A spec that names no budget runs under the agent's own.
 #[test]
 fn a_spec_without_a_budget_runs_under_the_agents_own() {

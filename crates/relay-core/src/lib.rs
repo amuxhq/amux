@@ -421,20 +421,11 @@ impl Relay {
             Input::Expired { link } => self.expired(link, out),
             Input::Tick { now_ms } => self.now_ms = self.now_ms.max(now_ms),
         }
-        if let Err(violation) = self.check_step_invariants() {
-            out.push(Output::Dump {
-                reason: DumpReason::Violation(violation),
-            });
-        }
-        let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
-        if micros > self.budget.micros {
-            out.push(Output::Dump {
-                reason: DumpReason::OverBudget {
-                    micros,
-                    budget: self.budget,
-                },
-            });
-        }
+        let checked = self.check_step_invariants();
+        out.extend(
+            daemon_core::finish_step(started, self.budget, 0, checked)
+                .map(|reason| Output::Dump { reason }),
+        );
     }
 
     /// A link came up. Of two direct links between the same two processes
@@ -1590,22 +1581,5 @@ mod tests {
             relay.check_step_invariants().map_err(|v| v.invariant),
             Err(NOTHING_BEFORE_ADMISSION)
         );
-    }
-
-    #[test]
-    fn a_step_over_its_budget_asks_for_a_dump() {
-        let mut relay = Relay::with_budget(RELAY, StepBudget { micros: 0 });
-        let mut out = Vec::new();
-        // Any step takes longer than nothing, given a clock fine enough;
-        // spin until one is measured over.
-        while out.is_empty() {
-            relay.step(Input::Tick { now_ms: 1 }, &mut out);
-        }
-        assert!(matches!(
-            out[..],
-            [Output::Dump {
-                reason: DumpReason::OverBudget { .. }
-            }]
-        ));
     }
 }

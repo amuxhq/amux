@@ -498,18 +498,11 @@ impl<I: Interpreter> Agent<I> {
                 self.settle(out);
             }
         }
-        if let Err(violation) = self.check_step_invariants() {
-            out.push(Output::Dump {
-                reason: DumpReason::Violation(violation),
-            });
-        }
-        let budget = self.params.budget;
-        let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
-        if micros > budget.micros {
-            out.push(Output::Dump {
-                reason: DumpReason::OverBudget { micros, budget },
-            });
-        }
+        let checked = self.check_step_invariants();
+        out.extend(
+            core_ring::finish_step(started, self.params.budget, 0, checked)
+                .map(|reason| Output::Dump { reason }),
+        );
     }
 
     /// The incarnation this core runs.

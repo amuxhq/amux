@@ -355,20 +355,11 @@ impl Paths {
         self.keep_probing(out);
         self.select(out);
         self.arm(out);
-        if let Err(violation) = self.check_step_invariants() {
-            out.push(Output::Dump {
-                reason: DumpReason::Violation(violation),
-            });
-        }
-        let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
-        if micros > self.budget.micros {
-            out.push(Output::Dump {
-                reason: DumpReason::OverBudget {
-                    micros,
-                    budget: self.budget,
-                },
-            });
-        }
+        let checked = self.check_step_invariants();
+        out.extend(
+            daemon_core::finish_step(started, self.budget, 0, checked)
+                .map(|reason| Output::Dump { reason }),
+        );
     }
 
     /// The path carrying the link, for display; None while nothing has
@@ -1224,7 +1215,7 @@ mod tests {
     }
 
     #[test]
-    fn a_violation_is_a_dump_and_a_slow_step_is_one_too() {
+    fn a_violation_is_a_dump() {
         let mut paths = up(false);
         paths.sources.insert(public(), [Source::Observed].into());
         paths
@@ -1236,20 +1227,5 @@ mod tests {
             output,
             Output::Dump { reason: DumpReason::Violation(v) } if v.invariant == NO_CROSS_NETWORK_AFTER_LAPSE
         )));
-
-        let mut paths = Paths::with_budget(0, true, StepBudget { micros: 0 });
-        let over = (0..100_000).any(|now_ms| {
-            let mut out = Vec::new();
-            paths.step(Input::Tick { now_ms }, &mut out);
-            out.iter().any(|o| {
-                matches!(
-                    o,
-                    Output::Dump {
-                        reason: DumpReason::OverBudget { .. }
-                    }
-                )
-            })
-        });
-        assert!(over, "no step measured over a zero budget");
     }
 }

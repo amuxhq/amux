@@ -174,28 +174,11 @@ impl Daemon {
         self.publish_host_set(out);
         self.follow_touched(out);
         self.arm_on_commit(out);
-        if let Err(violation) = self.check_step_invariants() {
-            tracing::error!(%violation, input = kind, "a daemon core step broke an invariant");
-            out.push(Output::Dump {
-                reason: DumpReason::Violation(violation),
-            });
-        }
-        let micros = u64::try_from(started.elapsed().as_micros())
-            .unwrap_or(u64::MAX)
-            .saturating_sub(self.touched.synced_micros);
-        if micros > self.options.budget.micros {
-            tracing::warn!(
-                micros,
-                budget = self.options.budget.micros,
-                input = kind,
-                "a daemon core step ran over its budget"
-            );
-            out.push(Output::Dump {
-                reason: DumpReason::OverBudget {
-                    micros,
-                    budget: self.options.budget,
-                },
-            });
+        let checked = self.check_step_invariants();
+        let (budget, synced) = (self.options.budget, self.touched.synced_micros);
+        for reason in finish_step(started, budget, synced, checked) {
+            tracing::error!(%reason, input = kind, "a daemon core step asked for a dump");
+            out.push(Output::Dump { reason });
         }
     }
 
@@ -761,7 +744,7 @@ pub struct Pending {
     peers: peers::PeerCalls,
 }
 
-pub use core_ring::{Check, DumpReason, StepBudget, Violation};
+pub use core_ring::{Check, DumpReason, StepBudget, Violation, finish_step};
 
 /// The core's state as of one step, serialized. A checkpoint is read only
 /// by the build that wrote it: rings are reset with the stores they sit

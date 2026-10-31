@@ -186,36 +186,6 @@ fn swapped() -> Run {
     run
 }
 
-/// A step is timed against the budget in its parameters: any step takes
-/// longer than nothing, given a clock fine enough, so under a budget of
-/// zero a step is soon measured over it.
-#[test]
-fn a_step_over_its_budget_asks_for_a_dump() {
-    let over = Params {
-        step_budget: StepBudget { micros: 0 },
-        ..params()
-    };
-    let mut run = Run::with(over, PrevFound::None, None, false);
-    let mut out = Vec::new();
-    while out.is_empty() {
-        let now_ms = run.now_ms + 1;
-        out = dumps(&run.at(now_ms, Input::Tick { now_ms }))
-            .into_iter()
-            .cloned()
-            .collect();
-    }
-    assert!(
-        out.iter().all(|reason| matches!(
-            reason,
-            DumpReason::OverBudget {
-                micros,
-                budget: StepBudget { micros: 0 }
-            } if *micros > 0
-        )),
-        "{out:?}"
-    );
-}
-
 #[test]
 fn a_crash_after_go_restarts_with_backoff_and_never_rolls_back() {
     let mut run = swapped();

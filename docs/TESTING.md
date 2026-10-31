@@ -32,7 +32,7 @@ Each catalogued suite names one boundary.
 | Boundary | What it proves | Main homes |
 | --- | --- | --- |
 | Interpreter | Each provider event yields one step: keyed items, appends and a snapshot, with no hidden IO or clock; checkpoints resume from any prefix. | `crates/interpret/tests`, `crates/attachments` |
-| Provider adapter | Real provider bytes and hooks reach the interpreter, commands produce the right provider writes, and recordings replay strictly. Terminal Claude's cases run on Unix only: Windows does not host it (see [Windows, as a stated cost](ARCHITECTURE.md#windows-as-a-stated-cost)). | `crates/agent/tests`, `crates/claude-specs`, `crates/codex-specs`, `crates/provider-fakes`, `crates/replay-support` |
+| Provider adapter | Real provider bytes and hooks reach the interpreter, commands produce the right provider writes, and recordings replay strictly. Terminal Claude's cases run on Unix only: Windows does not host it (see [Windows, as a stated cost](ARCHITECTURE.md#windows-as-a-stated-cost)). | `crates/agent/tests`, `crates/claude-specs`, `crates/provider-fakes`, `crates/replay-support` |
 | Single daemon | Ingest commits a step's items, snapshot and cursor together, assigns revisions, pages and subscribes without loss, and reclaims only what was ingested. | `crates/journal`, `crates/store`, `crates/node/tests` |
 | Many daemons | Discovery, trust, routing, relay, replication, inventory, families and blobs hold across production runtimes under faults. | `crates/testnet/tests` |
 | Client model | `update(state, msg)` gives the same state under any arrival order; inputs reach a settled, rejected or uncertain state. | `crates/ui-state/tests/spec` |
@@ -261,8 +261,7 @@ production code, and small authored scenarios. Ordinary runs compare and never r
 | Fixture | Where | Updated by |
 | --- | --- | --- |
 | Terminal Claude recordings (played back on Unix only) | `crates/claude-specs/fixtures/pty` | `claude-probe record <spec>` |
-| Codex recordings | `crates/codex-specs/fixtures/runtime` | `codex-probe record <spec>` |
-| Live-run captures: sessions amux's own interpreter drove on the installed provider, which no spec produced or replays; `sdk` is the whole headless Claude corpus | `crates/claude-specs/fixtures/live/{sdk,pty}`, `crates/codex-specs/fixtures/live` | `just live <kind>`, then `claude-probe join` or `codex-probe join` from `target/live/recordings/<kind>/<scenario>`; see each README |
+| Live-run captures: sessions amux's own interpreter drove on the installed provider, which no spec produced or replays; `sdk` is the whole headless Claude corpus and `codex-specs/fixtures/live` the whole Codex corpus | `crates/claude-specs/fixtures/live/{sdk,pty}`, `crates/codex-specs/fixtures/live` | `just live <kind>`, then `claude-probe join` or `codex-probe join` from `target/live/recordings/<kind>/<scenario>`; see each README |
 | Terminal Claude transcripts no recording covers | `crates/claude-specs/fixtures/claude-pty` | a new capture; see its README |
 | Agent-process replays cut from those recordings | `crates/agent/tests/replay` | by hand; see its README |
 | Interpreter emission goldens (`*.json` input, `*.golden` output) per kind | `crates/interpret/fixtures` | `INTERPRET_UPDATE_GOLDENS=1` |

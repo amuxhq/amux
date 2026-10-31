@@ -265,7 +265,7 @@ mod tests {
 
     use super::*;
     use crate::payload::{CarrierKind, ClientRequest, PeerFailure, PeerReply};
-    use crate::{Checkpoint, Input, LinkId, StartOptions};
+    use crate::{Input, LinkId, StartOptions};
 
     const OWN: [u8; 16] = *b"own-host-0000000";
     const PEER: [u8; 16] = *b"far-host-0000000";
@@ -328,9 +328,8 @@ mod tests {
 
         // The pending set is the core's state: a core restored from its
         // checkpoint answers the call when the reply comes.
-        let checkpoint = Checkpoint::from_bytes(&daemon.checkpoint().to_bytes()).unwrap();
-        let mut restored =
-            Daemon::restore(checkpoint, store(), Default::default()).expect("it restores");
+        let mut restored = Daemon::restore(&daemon.checkpoint(), store(), Default::default())
+            .expect("it restores");
         assert_eq!(restored.pending.peer_calls(), 1);
         let answer = Input::PeerAnswer {
             call: *made,

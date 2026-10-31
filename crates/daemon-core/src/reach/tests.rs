@@ -1157,7 +1157,7 @@ fn relay_recovery_survives_a_checkpoint_with_its_remaining_allowance() {
     step(&mut daemon, Input::RecoverRelay);
     let checkpoint = daemon.checkpoint();
     let store = Sqlite::open_in_memory(OWN).unwrap();
-    let mut restored = Daemon::restore(checkpoint, store, Default::default()).unwrap();
+    let mut restored = Daemon::restore(&checkpoint, store, Default::default()).unwrap();
     let out = relay_ends(&mut restored, first, RelayOutcome::Closed);
     assert_eq!(out, relay_ends(&mut daemon, first, RelayOutcome::Closed));
     relay_dial(&out);

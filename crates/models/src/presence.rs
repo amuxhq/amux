@@ -36,8 +36,8 @@ use std::net::SocketAddr;
 use daemon_core::payload::{CarrierKind, ForwardRefusal};
 use daemon_core::trust::TrustStore;
 use daemon_core::{
-    AttemptOutcome, Checkpoint, Daemon, DialPath, Dialling, HostId, HostView, Input, LinkId,
-    Output, Plan, Presence, Route, StartOptions, StepBudget, TimerId,
+    AttemptOutcome, Daemon, DialPath, Dialling, HostId, HostView, Input, LinkId, Output, Plan,
+    Presence, Route, StartOptions, StepBudget, TimerId,
 };
 use store::Sqlite;
 use uuid::Uuid;
@@ -951,9 +951,8 @@ fn with_store<R>(f: impl FnOnce(Sqlite) -> R) -> R {
 
 /// The core restored from its checkpoint over this thread's store.
 fn restore(core: &[u8]) -> Daemon {
-    let checkpoint = Checkpoint::from_bytes(core).expect("a checkpoint reads");
     with_store(|store| {
-        Daemon::restore(checkpoint, store, Default::default()).expect("a checkpoint restores")
+        Daemon::restore(core, store, Default::default()).expect("a checkpoint restores")
     })
 }
 
@@ -967,7 +966,7 @@ fn restore_then<R>(core: &[u8], read: impl FnOnce(&Daemon) -> R) -> R {
 
 /// The core's checkpoint, its store sent home.
 fn put_back(daemon: Daemon) -> Vec<u8> {
-    let core = daemon.checkpoint().to_bytes();
+    let core = daemon.checkpoint();
     let store = daemon.into_store();
     STORE.with(|home| *home.borrow_mut() = Some(store));
     core

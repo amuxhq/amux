@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 
-use daemon_core::{AgentId, Checkpoint, Daemon, Input, Output, Recorded, StepBudget};
+use daemon_core::{AgentId, Daemon, Input, Output, Recorded, StepBudget};
 use models::single_daemon::{REPRODUCES, judge_step, stepped};
 use redaction::{EMAIL_PLACEHOLDER, IDENTIFIER_PLACEHOLDER, PATH_PLACEHOLDER, SECRET_PLACEHOLDER};
 use store::Sqlite;
@@ -180,12 +180,13 @@ impl Bundle {
             })?;
         let checkpoint_path = self.dir.join(crate::bundle::CORE).join("checkpoint");
         let agents = scratch.path().join("agents");
-        let mut daemon = Checkpoint::from_bytes(&core.checkpoint)
-            .and_then(|checkpoint| Daemon::restore(checkpoint, store, agents.clone()))
-            .map_err(|error| BundleError::Decode {
-                path: checkpoint_path,
-                what: "checkpoint",
-                error: error.to_string(),
+        let mut daemon =
+            Daemon::restore(&core.checkpoint, store, agents.clone()).map_err(|error| {
+                BundleError::Decode {
+                    path: checkpoint_path,
+                    what: "checkpoint",
+                    error: error.to_string(),
+                }
             })?;
         daemon.set_budget(StepBudget::UNLIMITED);
 

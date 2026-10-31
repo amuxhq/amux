@@ -279,14 +279,11 @@ fn core_section(
     if !entry.is_null() {
         let _ = writeln!(out, "manifest {entry}");
     }
-    let _ = match daemon_core::Checkpoint::from_bytes(&core.checkpoint) {
-        Ok(checkpoint) => writeln!(
-            out,
-            "-- checkpoint ({} bytes of state) --",
-            checkpoint.state.len()
-        ),
-        Err(error) => writeln!(out, "-- checkpoint ({error}) --"),
-    };
+    let _ = writeln!(
+        out,
+        "-- checkpoint ({} bytes of state) --",
+        core.checkpoint.len()
+    );
     shown.insert(at.join(CORE_CHECKPOINT));
 
     // The lines as written, as the facts are: what this build cannot read

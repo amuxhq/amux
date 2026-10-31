@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use daemon_core::payload::ClientRequest;
-use daemon_core::{CallId, Checkpoint, Daemon, Input, Recorded, StartOptions};
+use daemon_core::{CallId, Daemon, Input, Recorded, StartOptions};
 use prost::Message as _;
 use provider_fakes::script::Step;
 use replay_support::bundle::Bundle;
@@ -135,13 +135,13 @@ pub fn core_violation() -> Dumped {
     // serves generation 1.
     let mut daemon = Daemon::new(store, run(2));
     daemon.step(subscribe(1), &mut Vec::new());
-    let mut state = daemon.checkpoint().state;
+    let mut state = daemon.checkpoint();
     drop(daemon);
     let options = postcard::to_allocvec(&run(2)).unwrap();
     assert!(state.ends_with(&options), "the run's options end the state");
     state.truncate(state.len() - options.len());
     state.extend(postcard::to_allocvec(&run(1)).unwrap());
-    std::fs::write(core.join("checkpoint"), Checkpoint { state }.to_bytes()).unwrap();
+    std::fs::write(core.join("checkpoint"), state).unwrap();
     let inputs = [
         Input::Tick {
             now_ms: 1,

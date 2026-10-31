@@ -54,7 +54,12 @@ time). After a lost link or a failed attempt it pauses a second doubling to
 five minutes, jittered from the entropy it is given, starting afresh after a
 clean close or a link that lived thirty seconds; a refused kept token is
 replaced at once, and a refusal of the credentials or the version stops it
-until the profile signs in again.
+until the profile signs in again. Foreground or a network change
+(`Input::RecoverRelay`) lets a previously working relay retry immediately
+once. If its old link has not reported its loss yet, that allowance applies
+to a loss within the next two seconds while paths are revalidated. A failed
+recovery resumes normal backoff; repeated notifications earn no more attempts
+until a relay links successfully. Cold-start and in-flight dials are left alone.
 
 A host to pair with is dialled on the plan `Daemon::pairing_dial` gives:
 every address at once, those discovery found the host at before those the

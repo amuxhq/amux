@@ -313,6 +313,7 @@ impl Daemon {
             Input::Timer {
                 id: TimerId::Retry(host),
             } => self.retry_due(host, out),
+            Input::RecoverRelay => self.recover_relay(out),
             Input::RelayWanted(wanted) => self.relay_wanted(wanted, out),
             Input::RelayPrepared { attempt, host } => self.relay_prepared(attempt, &host),
             Input::RelayUdp { host, reached } => self.relay_udp(host, reached),

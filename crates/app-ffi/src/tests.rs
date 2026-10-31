@@ -1007,6 +1007,10 @@ fn network_changed_rebinds_the_link_socket_and_tells_every_path_machine() {
     };
     assert!(rebind.rebound, "{rebind:?}");
     assert!(rebind.machines_told >= 1, "{rebind:?}");
+    // Foreground reaches the same recovery entry point through the C ABI.
+    // SAFETY: the runtime and input remain live for this call.
+    assert!(unsafe { amux_runtime_feed(phone.runtime, c"\"Foreground\"".as_ptr(), &mut error) });
+    assert_eq!(testnet::link_log::rebinds(host).len(), 2);
 }
 
 #[test]

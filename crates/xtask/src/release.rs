@@ -82,12 +82,14 @@ fn generate() -> Result<(), Box<dyn std::error::Error>> {
 /// meant to leave this Mac, and the file to be deleted once it has.
 fn backup(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Write as _;
-    use std::os::unix::fs::OpenOptionsExt as _;
     let seed = release::new_seed();
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    // The release tooling runs on the Mac; the workspace still builds on
+    // every platform CI tests, where Unix permissions may not exist.
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let mut file = options
         .open(path)
         .map_err(|error| format!("cannot make {}: {error}", path.display()))?;
     writeln!(file, "{}", release::hex(&seed))?;
@@ -649,9 +651,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("backup.key");
         backup(&path).unwrap();
-        use std::os::unix::fs::PermissionsExt as _;
-        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
-        assert_eq!(mode & 0o777, 0o600, "only its owner may read it");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600, "only its owner may read it");
+        }
         assert!(file_seed(&path).is_ok());
         assert!(
             backup(&path).is_err(),

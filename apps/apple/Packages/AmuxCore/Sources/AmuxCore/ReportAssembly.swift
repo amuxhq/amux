@@ -8,9 +8,6 @@ import Foundation
 /// screen froze, adds what only it knows (the schema, the dump's part), and
 /// uploads it the same way the terminal's report and a check's dump go.
 public enum ReportAssembly {
-    public static let reportFile = "report.json"
-    public static let frameFile = "frame.png"
-
     /// Everything the phone contributes to a report, ready to hand over.
     public static func upload(
         from capture: ReportCapture,

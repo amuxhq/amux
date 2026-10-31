@@ -55,12 +55,6 @@ public struct MarkdownDocument: Equatable, Sendable {
         self.blocks = blocks
     }
 
-    /// Whether this is one short run of plain prose, which is most of what an
-    /// agent writes and is far cheaper to draw as a single text view.
-    public var isPlainParagraph: Bool {
-        blocks.count == 1 && { if case .paragraph = blocks[0] { return true } else { return false } }()
-    }
-
     public nonisolated static func parse(_ source: String) -> MarkdownDocument {
         var blocks: [MarkdownBlock] = []
         var lines = ArraySlice(source.components(separatedBy: "\n"))

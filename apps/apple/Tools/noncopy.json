@@ -281,8 +281,6 @@
       {"literal": "\"/\"", "context": "let name = path.split(separator: \"/\").last.map(String.init) ?? path", "reason": "Path separator, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/ReportAssembly.swift": [
-      {"literal": "\"report.json\"", "context": "public static let reportFile = \"report.json\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"frame.png\"", "context": "public static let frameFile = \"frame.png\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"trace\"", "context": "\"trace\": absent(\"the phone records no view trace\"),", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"the phone records no view trace\"", "context": "\"trace\": absent(\"the phone records no view trace\"),", "reason": "Report bundle absence reason, read by the daemon tooling and never shown on the phone.", "count": 1},
       {"literal": "\"build\"", "context": "\"build\": build,", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -471,7 +469,6 @@
       {"literal": "\"signing in\"", "context": ".identified(\"home.empty.signIn\", label: SigningIn.title, value: \"signing in\", enabled: false)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Components.swift": [
-      {"literal": "\"\\(fingerprint.prefix(4))…\\(fingerprint.suffix(4))\"", "context": "return \"\\(fingerprint.prefix(4))…\\(fingerprint.suffix(4))\"", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"chevron.right\"", "context": "Image(systemName: \"chevron.right\")", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/DeleteAccount.swift": [

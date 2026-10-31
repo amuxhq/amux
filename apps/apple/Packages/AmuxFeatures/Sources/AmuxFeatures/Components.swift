@@ -310,18 +310,6 @@ public enum Fingerprint {
             String(Array(fingerprint)[start..<min(start + 4, fingerprint.count)])
         }.joined(separator: " ")
     }
-
-    /// The first four characters and the last four, with the middle said to be
-    /// missing rather than merely absent.
-    ///
-    /// For a row that names a key rather than asks about one. Four and four is
-    /// what somebody can hold in their head while glancing between two
-    /// screens, and it is not a comparison — anywhere a key is actually being
-    /// decided about, the whole of it is shown.
-    public static func short(_ fingerprint: String) -> String {
-        guard fingerprint.count > 11 else { return fingerprint }
-        return "\(fingerprint.prefix(4))…\(fingerprint.suffix(4))"
-    }
 }
 
 /// One choice of several, chosen or not, in ink: choosing is not something

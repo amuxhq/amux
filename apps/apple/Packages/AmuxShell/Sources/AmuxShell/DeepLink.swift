@@ -88,7 +88,7 @@ extension PairingInvitation {
         // The base64 is the URL's, not the machine's: what the machine wrote
         // and what the runtime parses is the JSON inside it.
         self.init(
-            host: host, cloudURL: wire.cloudURL, addrs: wire.addrs ?? [],
+            host: host, cloudURL: wire.cloudURL, addrs: wire.addrs,
             secret: wire.secret, payload: offer)
     }
 
@@ -96,9 +96,8 @@ extension PairingInvitation {
         let hostID: String
         /// Absent where the machine has no account to name one with.
         let cloudURL: String?
-        /// Absent in an invitation written before machines put their addresses
-        /// in one, which is the same as naming none.
-        let addrs: [String]?
+        /// Empty where the machine has no address to name.
+        let addrs: [String]
         let secret: [UInt8]
 
         enum CodingKeys: String, CodingKey {

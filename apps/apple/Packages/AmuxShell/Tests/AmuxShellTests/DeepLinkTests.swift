@@ -10,9 +10,9 @@ final class DeepLinkTests: XCTestCase {
     /// to how the host writes an invitation breaks here rather than on a
     /// phone that cannot read a QR code any more.
     private let link = URL(string: """
-        amux://pair?payload=eyJob3N0X2lkIjoiM2ExZjlkMmMtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwiY2xvdWRfdXJsIjoiaHR0\
-        cHM6Ly9hbXV4LnNoIiwic2VjcmV0IjpbMSwyLDMsNCw1LDYsNyw4LDksMTAsMTEsMTIsMTMsMTQsMTUsMTYsMTcs\
-        MTgsMTksMjAsMjEsMjIsMjMsMjQsMjUsMjYsMjcsMjgsMjksMzAsMzEsMzJdfQ
+        amux://pair?payload=eyJob3N0X2lkIjoiM2ExZjlkMmMtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwic2VjcmV0IjpbMSwyLDMs\
+        NCw1LDYsNyw4LDksMTAsMTEsMTIsMTMsMTQsMTUsMTYsMTcsMTgsMTksMjAsMjEsMjIsMjMsMjQsMjUsMjYsMjcs\
+        MjgsMjksMzAsMzEsMzJdLCJhZGRycyI6W10sImNsb3VkX3VybCI6Imh0dHBzOi8vYW11eC5zaCJ9
         """)!
 
     func testAPairingLinkReadsAsTheOfferTheHostWrote() throws {

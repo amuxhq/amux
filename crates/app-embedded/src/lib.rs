@@ -19,7 +19,6 @@ mod phone;
 
 use std::io;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -125,7 +124,6 @@ pub struct EmbeddedRuntime {
     // Held for its shutdown and to find a profile's runtime.
     daemon: Mutex<Option<Daemon>>,
     registry: Registry,
-    data_dir: PathBuf,
     clock: Arc<dyn Clock>,
     /// The app's telemetry setting, read before every upload.
     telemetry: Arc<AtomicBool>,
@@ -222,7 +220,6 @@ impl EmbeddedRuntime {
         let daemon = node::start(options, None).await?;
         Ok(EmbeddedRuntime {
             registry: daemon.registry(),
-            data_dir: daemon.data_dir().to_owned(),
             analytics: daemon.analytics_flusher(),
             daemon: Mutex::new(Some(daemon)),
             clock,
@@ -330,11 +327,6 @@ impl EmbeddedRuntime {
     /// Every profile, oldest first.
     pub fn profiles(&self) -> Result<Vec<ProfileView>, EmbeddedError> {
         Ok(self.registry.list()?.iter().map(profile_view).collect())
-    }
-
-    /// One profile as the registry lists it.
-    pub fn profile(&self, profile: ProfileId) -> Result<ProfileView, EmbeddedError> {
-        Ok(profile_view(&self.registry.profile(profile)?))
     }
 
     /// Rings for every move of the profile list from now on.
@@ -656,11 +648,6 @@ impl EmbeddedRuntime {
             })
             .await?;
         Ok(())
-    }
-
-    /// Where reports are written.
-    pub fn reports(&self) -> PathBuf {
-        self.data_dir.join(node::REPORTS)
     }
 
     /// Stops serving and flushes the store; the installation is marked

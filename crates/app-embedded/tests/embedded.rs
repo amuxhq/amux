@@ -11,7 +11,7 @@ use std::sync::{Arc, Condvar, Mutex};
 
 use app_embedded::{Cores, EdgeOverrides, EmbeddedRuntime, PairRequest, ProfileId, StartConfig};
 use app_runtime::values::{
-    AccountBinding, BillingInterval, Draft, PaywallFrom, RelayLink, UsageEvent,
+    AccountBinding, BillingInterval, Draft, PaywallFrom, ProfileView, RelayLink, UsageEvent,
 };
 use app_runtime::{AppRuntime, Wake};
 use client::SystemClock;
@@ -437,10 +437,21 @@ async fn a_phone_links_to_its_desk_again_once_its_browser_finds_the_desk_back() 
     net.shutdown().await.unwrap();
 }
 
+/// One profile as the profile list shows it.
+fn listed(embedded: &EmbeddedRuntime, profile: ProfileId) -> ProfileView {
+    let id = profile.to_string();
+    embedded
+        .profiles()
+        .unwrap()
+        .into_iter()
+        .find(|view| view.id == id)
+        .expect("the profile is listed")
+}
+
 /// Waits until a profile's relay link says `wanted`.
 async fn relay_link(embedded: &EmbeddedRuntime, profile: ProfileId, wanted: RelayLink) {
     until(&format!("the relay link to say {wanted:?}"), || async {
-        let relay = embedded.profile(profile).unwrap().account.relay;
+        let relay = listed(embedded, profile).account.relay;
         (relay == wanted)
             .then_some(())
             .ok_or_else(|| format!("relay link {relay:?}"))
@@ -509,10 +520,7 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
     relay_link(&embedded, bob, RelayLink::Connected).await;
 
     // Both accounts' relay links stay up together.
-    assert_eq!(
-        embedded.profile(ada).unwrap().account.relay,
-        RelayLink::Connected
-    );
+    assert_eq!(listed(&embedded, ada).account.relay, RelayLink::Connected);
 
     // Signing out keeps the profile tied to its account, and signing back
     // in finds it again.
@@ -584,7 +592,7 @@ async fn a_phone_signed_in_to_the_account_reaches_its_hosts_over_the_relay() {
     );
     // The token refreshes as the client that obtained it.
     assert_eq!(relay.refreshed_as()[before..], ["mobile"]);
-    let account = embedded.profile(phone).unwrap().account;
+    let account = listed(&embedded, phone).account;
     assert_eq!(account.binding, AccountBinding::SignedIn);
     assert_eq!(account.email, "ada@example.com");
     assert_eq!(
@@ -592,15 +600,15 @@ async fn a_phone_signed_in_to_the_account_reaches_its_hosts_over_the_relay() {
         "access-ada"
     );
     relay_link(&embedded, phone, RelayLink::Connected).await;
-    assert_eq!(embedded.profile(phone).unwrap().account.pro, Some(true));
+    assert_eq!(listed(&embedded, phone).account.pro, Some(true));
     // What the account buys changes (a purchase, or here a lapse) and the
     // phone asks at once rather than waiting for the link's next refresh.
     relay.set_tier("ada", node::harness::Tier::Free);
     embedded.refresh_entitlement(phone).await.unwrap();
-    assert_eq!(embedded.profile(phone).unwrap().account.pro, Some(false));
+    assert_eq!(listed(&embedded, phone).account.pro, Some(false));
     relay.set_tier("ada", node::harness::Tier::Pro);
     embedded.refresh_entitlement(phone).await.unwrap();
-    assert_eq!(embedded.profile(phone).unwrap().account.pro, Some(true));
+    assert_eq!(listed(&embedded, phone).account.pro, Some(true));
     // The account lists its hosts; pairing is what makes one trusted. The
     // desk listens on no local network: the pairing goes over the relay.
     let (pin, _) = pairing_pin(&net).await;

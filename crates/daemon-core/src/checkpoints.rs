@@ -162,7 +162,7 @@ fn writes(input: &Input, copying: JobId) -> bool {
         | Input::PlanChanged
         | Input::Candidates { .. }
         | Input::Dialling(_)
-        | Input::RecoverRelay
+        | Input::NetworkChanged
         | Input::Listening(_)
         | Input::Wanted { .. }
         | Input::Entropy(_)

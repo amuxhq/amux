@@ -17,14 +17,14 @@ use std::time::Duration;
 use daemon_core::payload::PeerRequest;
 use daemon_core::{AttemptId, AttemptOutcome, DialPath, Input, Plan};
 use futures_util::future::BoxFuture;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{OwnedMutexGuard, broadcast, watch};
 use tokio::task::JoinHandle;
 use tracing::Instrument;
 
 use crate::HostId;
 use crate::connection::ConnectionManager;
 use crate::discovery::{Discovery, DiscoveryEvent, FoundHosts};
-use crate::edge::first_flight::FirstFlights;
+use crate::edge::first_flight::{FirstFlights, Landed};
 use crate::identity::DeviceIdentity;
 use crate::link::channels::{Flight, ResumedDial, Resuming, says_revoked};
 use crate::link::framed::{FramedKind, StreamEndpoint};
@@ -181,6 +181,7 @@ impl ReachabilityLinkConnector {
     /// hosts' own addresses, or stays off the local network, and
     /// `listening` whether hosts may dial this one.
     pub(crate) fn start_dialling(&self, direct: bool, listening: bool) {
+        self.inner.stopped.store(false, Ordering::SeqCst);
         self.inner.report(Input::Listening(listening));
         self.inner.report(Input::Dialling(if direct {
             daemon_core::reach::Dialling::All
@@ -203,8 +204,6 @@ impl ReachabilityLinkConnector {
             .candidates(self.inner.found_hosts.candidates());
     }
 
-    /// Stops dialling: the core is told, every attempt out is dropped, and
-    /// the links of this profile's own close.
     /// Dials nothing more, and drops the attempts under way: a stopping
     /// host that redialled the links its goodbye closes would cross the
     /// peers' own redials.
@@ -217,10 +216,18 @@ impl ReachabilityLinkConnector {
         }
     }
 
+    /// Stops dialling: the core is told, every attempt out is dropped, and
+    /// the links of this profile's own close.
     pub(crate) async fn close_direct_links(&self) {
-        let inner = &self.inner;
         self.stop_dialling();
-        inner.shutdown.send_replace(true);
+        self.inner.shutdown.send_replace(true);
+        self.release_links().await;
+    }
+
+    /// Closes the links of this profile's own, and waits for the
+    /// connectors of those its attempts brought up to end.
+    pub(crate) async fn release_links(&self) {
+        let inner = &self.inner;
         inner.channels.link_registry().close_peer_links().await;
         let links = std::mem::take(&mut *inner.links.lock().unwrap());
         for link in &links {
@@ -258,11 +265,21 @@ impl ReachabilityLinkConnector {
             peer = %host,
             attempt = attempt.0,
         );
+        // The flight is marked out as the core's dial is handed over, not
+        // in the attempt's task: the core's calls of the host follow in
+        // later steps, each in a task of its own, and one run before the
+        // attempt's would miss the flight and ask the host again.
+        let on_socket = plan.through_relay
+            || plan
+                .paths
+                .iter()
+                .any(|path| !matches!(path, DialPath::Ssh(_)));
+        let landed = on_socket.then(|| inner.first_flights.begin(host));
         let weak = Arc::downgrade(inner);
         let task = tokio::spawn(
             async move {
                 tracing::debug!(?plan, "dialling");
-                let outcome = attempt_on(&weak, host, plan, early).await;
+                let outcome = attempt_on(&weak, host, plan, early, landed).await;
                 tracing::debug!(?outcome, "the attempt ended");
                 let Some(inner) = weak.upgrade() else {
                     return;
@@ -318,6 +335,7 @@ async fn attempt_on(
     host: HostId,
     plan: Plan,
     early: Vec<PeerRequest>,
+    landed: Option<OwnedMutexGuard<Landed>>,
 ) -> AttemptOutcome {
     let mut paths = Vec::new();
     let mut ssh = None;
@@ -334,8 +352,8 @@ async fn attempt_on(
         through_relay: plan.through_relay,
     });
     let on_socket = async {
-        match flight {
-            Some(flight) => Some(fly(inner, host, flight, early).await),
+        match flight.zip(landed) {
+            Some((flight, landed)) => Some(fly(inner, host, flight, early, landed).await),
             None => None,
         }
     };
@@ -457,6 +475,7 @@ async fn fly(
     host: HostId,
     flight: Flight,
     early: Vec<PeerRequest>,
+    landed: OwnedMutexGuard<Landed>,
 ) -> Result<AttemptOutcome, DialFailure> {
     let Some(me) = inner.upgrade() else {
         return Err(DialFailure::Failed("the edge is stopping".to_owned()));
@@ -471,7 +490,6 @@ async fn fly(
     let endpoint = me.endpoint.clone();
     let own = me.identity.host_id;
     drop(me);
-    let landed = first_flights.begin(host);
     let sent = tokio::time::Instant::now();
     let tried = flight.to_string();
     let resumed = channels

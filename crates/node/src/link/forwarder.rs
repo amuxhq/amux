@@ -23,7 +23,7 @@
 //! that its packets are dropped as a congested router would drop them, and
 //! QUIC's congestion control on the sending host slows down.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -258,6 +258,15 @@ struct State {
     refused: HashMap<(LinkId, HostId), (ForwardRefusal, u64)>,
     allowances: HashMap<LinkId, Allowance>,
     hold: Hold,
+    /// What was forwarded to a link the core paired before the driver
+    /// could write to it, oldest first: the core pairs a link as it comes
+    /// up, a moment before the driver registers its connection, and the
+    /// first reply to a host's first flight lands in that moment.
+    waiting: HashMap<LinkId, VecDeque<(u64, Vec<u8>)>>,
+    /// The links the driver has registered, so a send that failed before
+    /// one was registered and found it registered since is tried again
+    /// rather than left waiting for an admission already past.
+    registered: HashSet<LinkId>,
 }
 
 /// One forwarding output with the hosts it needs, read from the core in
@@ -332,12 +341,27 @@ impl Forwarder {
     /// forwarding outputs. Every output is returned; the forwarding ones are
     /// already done. A driver steps its core only through here.
     pub fn step(&self, input: Input) -> Vec<Output> {
+        let gone = match input {
+            Input::LinkDown { link } => Some(link),
+            _ => None,
+        };
         let (out, tell) = self.ask([
             Input::Tick {
                 now_ms: self.now_ms(),
             },
             input,
         ]);
+        let displaced = out.iter().filter_map(|output| match output {
+            Output::Displace { link } => Some(*link),
+            _ => None,
+        });
+        {
+            let mut state = self.lock();
+            for link in gone.into_iter().chain(displaced) {
+                state.waiting.remove(&link);
+                state.registered.remove(&link);
+            }
+        }
         self.tell(tell);
         out
     }
@@ -439,13 +463,26 @@ impl Forwarder {
     /// The link from `sender` was admitted and is up in the core as `link`:
     /// its held packets go through the table as if they arrived on it now.
     pub fn on_admitted(&self, link: LinkId, sender: SocketAddr) {
-        let held = {
+        let now_ms = self.now_ms();
+        let (held, waiting) = {
             let mut state = self.lock();
-            state.hold.expire(self.now_ms(), self.hold_limits.for_ms);
+            state.hold.expire(now_ms, self.hold_limits.for_ms);
             let held = state.hold.take(sender);
-            state.hold.counts.released += held.len() as u64;
-            held
+            state.registered.insert(link);
+            let waiting: Vec<Vec<u8>> = state
+                .waiting
+                .remove(&link)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|(at_ms, _)| now_ms < at_ms.saturating_add(self.hold_limits.for_ms))
+                .map(|(_, datagram)| datagram)
+                .collect();
+            state.hold.counts.released += (held.len() + waiting.len()) as u64;
+            (held, waiting)
         };
+        for datagram in waiting {
+            let _ = self.links.send(link, &datagram);
+        }
         for packet in held {
             self.on_packet(link, packet.dst, &packet.payload);
         }
@@ -474,16 +511,58 @@ impl Forwarder {
     }
 
     fn send(&self, pair: Pair, payload: &[u8]) -> Forwarded {
-        match self
-            .links
-            .send(pair.to, &encode_delivered(pair.source, payload))
-        {
+        let datagram = encode_delivered(pair.source, payload);
+        match self.links.send(pair.to, &datagram) {
             Ok(()) => {
                 self.lock().hold.counts.forwarded += 1;
                 Forwarded::Sent
             }
+            // Paired, so up in the core: its connection is moments from
+            // being registered, or its going is about to be stepped.
+            Err(error) if error.kind() == io::ErrorKind::NotConnected => {
+                self.wait_for(pair.to, datagram)
+            }
             Err(_) => Forwarded::Dropped(ForwardRefusal::NoRoute),
         }
+    }
+
+    /// Keeps `datagram` for `link` until the driver registers it, within
+    /// the limits a sender's held packets keep to.
+    fn wait_for(&self, link: LinkId, datagram: Vec<u8>) -> Forwarded {
+        let now_ms = self.now_ms();
+        let limits = self.hold_limits;
+        let mut state = self.lock();
+        if state.registered.contains(&link) {
+            drop(state);
+            return match self.links.send(link, &datagram) {
+                Ok(()) => {
+                    self.lock().hold.counts.forwarded += 1;
+                    Forwarded::Sent
+                }
+                Err(_) => Forwarded::Dropped(ForwardRefusal::NoRoute),
+            };
+        }
+        let State { waiting, hold, .. } = &mut *state;
+        let queue = waiting.entry(link).or_default();
+        let before = queue.len();
+        queue.retain(|(at_ms, _)| now_ms < at_ms.saturating_add(limits.for_ms));
+        let mut dropped = before - queue.len();
+        let bytes =
+            |queue: &VecDeque<(u64, Vec<u8>)>| queue.iter().map(|(_, d)| d.len()).sum::<usize>();
+        while !queue.is_empty()
+            && (queue.len() >= limits.per_sender_packets
+                || bytes(queue) + datagram.len() > limits.per_sender_bytes)
+        {
+            queue.pop_front();
+            dropped += 1;
+        }
+        hold.counts.dropped += dropped as u64;
+        if datagram.len() > limits.per_sender_bytes {
+            return Forwarded::Dropped(ForwardRefusal::NoRoute);
+        }
+        queue.push_back((now_ms, datagram));
+        hold.counts.held += 1;
+        Forwarded::Held
     }
 
     /// Steps the core and changes the table as it says, under the core's
@@ -699,6 +778,9 @@ mod tests {
         wrote: Mutex<Vec<Wrote>>,
         dumps: Mutex<Vec<DumpReason>>,
         recorded: Mutex<Vec<Input>>,
+        /// Links up in the core whose connections the driver has yet to
+        /// register: a send to one fails as the relay's does.
+        unregistered: Mutex<Vec<LinkId>>,
     }
 
     impl Links {
@@ -709,6 +791,9 @@ mod tests {
 
     impl ForwardLinks for Links {
         fn send(&self, link: LinkId, datagram: &[u8]) -> io::Result<()> {
+            if self.unregistered.lock().unwrap().contains(&link) {
+                return Err(io::Error::new(io::ErrorKind::NotConnected, "unregistered"));
+            }
             self.wrote
                 .lock()
                 .unwrap()
@@ -1069,6 +1154,44 @@ mod tests {
                 released: 2,
                 dropped: 0
             }
+        );
+    }
+
+    /// The core pairs a link as it comes up, a moment before the driver
+    /// registers its connection: what is forwarded to it in that moment
+    /// waits for it rather than being lost, so a relaunched host's first
+    /// flight is answered at once instead of after its retransmit timer.
+    #[tokio::test(start_paused = true)]
+    async fn forwarder_keeps_what_arrives_for_a_link_until_it_is_registered() {
+        let rig = rig();
+        rig.up(1, ALICE, DESK, Some(Tier::Pro));
+        rig.links.unregistered.lock().unwrap().push(LinkId(2));
+        rig.up(2, ALICE, LAPTOP, Some(Tier::Pro));
+
+        assert_eq!(rig.packet(1, LAPTOP, b"reply"), Forwarded::Held);
+        assert_eq!(rig.links.take(), vec![]);
+
+        rig.links.unregistered.lock().unwrap().clear();
+        rig.forwarder.on_admitted(LinkId(2), addr(4000));
+        assert_eq!(rig.links.take(), vec![sent(2, DESK, b"reply")]);
+        // Registered, a send that failed before it was goes straight on.
+        rig.links.unregistered.lock().unwrap().push(LinkId(2));
+        assert_eq!(
+            rig.packet(1, LAPTOP, b"gone"),
+            Forwarded::Dropped(ForwardRefusal::NoRoute)
+        );
+
+        // What waits for a link that never registers goes with it.
+        rig.links.unregistered.lock().unwrap().push(LinkId(3));
+        rig.up(3, ALICE, PHONE, Some(Tier::Pro));
+        assert_eq!(rig.packet(1, PHONE, b"lost"), Forwarded::Held);
+        rig.forwarder.step(Input::LinkDown { link: LinkId(3) });
+        rig.links.unregistered.lock().unwrap().clear();
+        rig.forwarder.on_admitted(LinkId(3), addr(4001));
+        assert_eq!(
+            rig.links.take(),
+            vec![refused(1, PHONE, ForwardRefusal::NoRoute)],
+            "only the going told, nothing released"
         );
     }
 

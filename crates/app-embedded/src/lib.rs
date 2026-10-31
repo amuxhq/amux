@@ -251,12 +251,9 @@ impl EmbeddedRuntime {
     }
 
     /// The app came to the front: counted for every profile, at most once
-    /// an hour. Revalidate existing paths and recover a lost relay at once.
+    /// an hour.
     pub fn client_opened(&self) {
         for runtime in self.hosted() {
-            if let Some(edge) = runtime.edge() {
-                edge.foreground();
-            }
             runtime.analytics().record_at_most_every(
                 CLIENT_OPENED_EVERY,
                 analytics::Event::ClientOpened {
@@ -290,6 +287,26 @@ impl EmbeddedRuntime {
     pub async fn flush_analytics(&self) {
         if let Some(flusher) = &self.analytics {
             flusher.flush(BACKGROUND_FLUSH).await;
+        }
+    }
+
+    /// The app is about to be suspended: every profile closes its links
+    /// and dials nothing until [`EmbeddedRuntime::resume`].
+    pub async fn suspend(&self) {
+        for runtime in self.hosted() {
+            if let Some(edge) = runtime.edge() {
+                edge.suspend().await;
+            }
+        }
+    }
+
+    /// The app runs again, on screen or woken in the background: every
+    /// profile suspended dials its hosts and the relay at once.
+    pub async fn resume(&self) {
+        for runtime in self.hosted() {
+            if let Some(edge) = runtime.edge() {
+                edge.resume().await;
+            }
         }
     }
 

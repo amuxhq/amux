@@ -13,13 +13,19 @@ public struct RuntimeFailure: Error, Sendable, Equatable, CustomStringConvertibl
 
 /// A moment of the app's life the runtime is told of.
 public enum Lifecycle: String, Sendable {
-    /// Somebody brought the app to the front; counted at most once an hour.
+    /// Somebody brought the app to the front: counted at most once an hour,
+    /// and every profile suspended dials its hosts and the relay again.
     case foreground = "Foreground"
+    /// The system woke the app in the background, for a push: every profile
+    /// suspended dials its hosts and the relay again, until the next
+    /// `suspending`.
+    case woken = "Woken"
     /// The app is leaving the screen: the analytics waiting are sent.
     case background = "Background"
-    /// The app is about to be suspended: the analytics waiting are sent,
-    /// and every profile's store is made whole on the drive, should the
-    /// system end the app while it is suspended.
+    /// The app is about to be suspended: every profile closes its links and
+    /// dials nothing until the app runs again, the analytics waiting are
+    /// sent, and every profile's store is made whole on the drive, should
+    /// the system end the app while it is suspended.
     case suspending = "Suspending"
     /// The phone's network changed: every profile's link socket is bound
     /// afresh, so its links move to the new network with their

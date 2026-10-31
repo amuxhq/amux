@@ -258,9 +258,9 @@ pub enum Input {
         link: LinkId,
         kind: CarrierKind,
     },
-    /// The app returned to the foreground or its network changed. A
-    /// previously working relay gets one prompt recovery attempt.
-    RecoverRelay,
+    /// The device's network changed: a relay attempt waiting out its
+    /// pause goes at once.
+    NetworkChanged,
 }
 
 impl Input {
@@ -291,7 +291,7 @@ impl Input {
             Input::Listening(_) => "Listening",
             Input::Wanted { .. } => "Wanted",
             Input::AttemptEnded { .. } => "AttemptEnded",
-            Input::RecoverRelay => "RecoverRelay",
+            Input::NetworkChanged => "NetworkChanged",
             Input::RelayWanted(_) => "RelayWanted",
             Input::RelayPrepared { .. } => "RelayPrepared",
             Input::RelayUdp { .. } => "RelayUdp",
@@ -838,7 +838,7 @@ mod tests {
                 attempt: AttemptId(4),
                 outcome: AttemptOutcome::Failed("no answer".into()),
             },
-            Input::RecoverRelay,
+            Input::NetworkChanged,
             Input::RelayWanted(true),
             Input::RelayPrepared {
                 attempt: AttemptId(5),

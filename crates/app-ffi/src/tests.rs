@@ -955,6 +955,10 @@ fn a_suspending_input_checkpoints_every_profile_before_it_returns() {
     // SAFETY: as above.
     assert!(unsafe { amux_runtime_feed(phone.runtime, c"\"Foreground\"".as_ptr(), &mut error) });
     // SAFETY: as above.
+    assert!(unsafe { amux_runtime_feed(phone.runtime, c"\"Suspending\"".as_ptr(), &mut error) });
+    // SAFETY: as above.
+    assert!(unsafe { amux_runtime_feed(phone.runtime, c"\"Woken\"".as_ptr(), &mut error) });
+    // SAFETY: as above.
     assert!(!unsafe { amux_runtime_feed(phone.runtime, c"\"Asleep\"".as_ptr(), &mut error) });
     assert!(!error.is_null());
     // SAFETY: returned by the library, freed once.
@@ -1009,10 +1013,28 @@ fn network_changed_rebinds_the_link_socket_and_tells_every_path_machine() {
     };
     assert!(rebind.rebound, "{rebind:?}");
     assert!(rebind.machines_told >= 1, "{rebind:?}");
-    // Foreground reaches the same recovery entry point through the C ABI.
-    // SAFETY: the runtime and input remain live for this call.
+    // Put away, the phone lets go of its link; back at the front, it binds
+    // its socket afresh and dials the desk again.
+    let ups = || {
+        testnet::link_log::captured(host)
+            .iter()
+            .filter(|event| event.peer == desk && event.event == LinkTransition::Up)
+            .count()
+    };
+    let before = ups();
+    // SAFETY: the runtime and inputs remain live for these calls.
+    assert!(unsafe { amux_runtime_feed(phone.runtime, c"\"Suspending\"".as_ptr(), &mut error) });
+    // SAFETY: as above.
     assert!(unsafe { amux_runtime_feed(phone.runtime, c"\"Foreground\"".as_ptr(), &mut error) });
     assert_eq!(testnet::link_log::rebinds(host).len(), 2);
+    let deadline = Instant::now() + PATIENCE;
+    while ups() == before {
+        assert!(
+            Instant::now() < deadline,
+            "the phone never linked the desk again"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[test]

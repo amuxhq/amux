@@ -451,7 +451,14 @@ public final class RuntimeCoordinator {
     public func warm(
         _ agent: AgentKey, inBackground: Bool, within limit: Duration = .seconds(25)
     ) async -> Warmed {
-        if inBackground { setActive(false) }
+        if inBackground {
+            setActive(false)
+            // Suspended, the runtime holds no link; the push needs one.
+            if let runtime {
+                remember(.woken)
+                await runtime.feed(.woken)
+            }
+        }
         start()
         guard let host = agent.hostId else { return .unknownHost }
         if inBackground {

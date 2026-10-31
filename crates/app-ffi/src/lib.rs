@@ -800,12 +800,18 @@ pub unsafe extern "C" fn amux_runtime_step(runtime: *const AmuxRuntime) -> *mut 
 /// What the app's life feeds the runtime.
 #[derive(Debug, Deserialize)]
 pub enum Lifecycle {
-    /// The app came to the front; counted at most once an hour.
+    /// The app came to the front: counted at most once an hour, and every
+    /// profile suspended dials its hosts and the relay again.
     Foreground,
+    /// The system woke the app in the background, for a push: every profile
+    /// suspended dials its hosts and the relay again, until the next
+    /// `Suspending`.
+    Woken,
     /// The app is leaving the screen: the analytics waiting are sent.
     Background,
-    /// The app is about to be suspended: the analytics waiting are sent,
-    /// and every profile's core is checkpointed.
+    /// The app is about to be suspended: every profile closes its links
+    /// and dials nothing until the app runs again, the analytics waiting
+    /// are sent, and every profile's core is checkpointed.
     ///
     /// The checkpoint makes the store whole on the drive should the system
     /// end the app; a relaunch starts from that store, not the checkpoint,
@@ -850,9 +856,13 @@ pub unsafe extern "C" fn amux_runtime_feed(
 fn feed(runtime: &AmuxRuntime, input: Lifecycle) -> Result<(), String> {
     match input {
         Lifecycle::Foreground => {
-            let _entered = runtime.handle().enter();
-            runtime.embedded().client_opened();
+            {
+                let _entered = runtime.handle().enter();
+                runtime.embedded().client_opened();
+            }
+            resume(runtime)?;
         }
+        Lifecycle::Woken => resume(runtime)?,
         Lifecycle::Background => {
             let embedded = runtime.embedded().clone();
             runtime
@@ -867,6 +877,7 @@ fn feed(runtime: &AmuxRuntime, input: Lifecycle) -> Result<(), String> {
                 .shared
                 .phone
                 .wait(async move {
+                    embedded.suspend().await;
                     embedded.flush_analytics().await;
                     embedded.checkpoint().await
                 })
@@ -883,6 +894,16 @@ fn feed(runtime: &AmuxRuntime, input: Lifecycle) -> Result<(), String> {
                 .map_err(|error| error.to_string())?;
         }
     }
+    Ok(())
+}
+
+fn resume(runtime: &AmuxRuntime) -> Result<(), String> {
+    let embedded = runtime.embedded().clone();
+    runtime
+        .shared
+        .phone
+        .wait(async move { embedded.resume().await })
+        .ok_or("the runtime has stopped")?;
     Ok(())
 }
 

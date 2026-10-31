@@ -2206,8 +2206,7 @@ impl Net {
         // machine probes its paths again from the new network.
         let told = edge.network_changed()?;
         Ok(self.ack(format!(
-            "{host} moved to another network, now at {to}; {} path machines told",
-            told.machines_told
+            "{host} moved to another network, now at {to}; {told} path machines told"
         )))
     }
 

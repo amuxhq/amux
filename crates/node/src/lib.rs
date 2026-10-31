@@ -73,8 +73,8 @@ pub use edge::mdns_discovery;
 pub use edge::{
     ACCOUNT_FILE, Cloud, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge,
     EdgeError, EdgeOptions, FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE,
-    LINK_SOCKET, LanOptions, LoopbackLink, NetworkChange, RELAY_TOKEN_FILE, Relay, RelayCarrier,
-    RelayIdentity, RelayQuic, RelayServing, UDP_BLOCKED_MEMORY, interface_addrs, test_interfaces,
+    LINK_SOCKET, LanOptions, LoopbackLink, RELAY_TOKEN_FILE, Relay, RelayCarrier, RelayIdentity,
+    RelayQuic, RelayServing, UDP_BLOCKED_MEMORY, interface_addrs, test_interfaces,
 };
 pub use forward::{ForwardError, HostNameError, Owner};
 pub use front_door::FrontDoor;

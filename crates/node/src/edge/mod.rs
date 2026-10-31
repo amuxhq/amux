@@ -304,15 +304,6 @@ pub struct Edge {
     interfaces: Option<Vec<std::net::IpAddr>>,
 }
 
-/// What a network change did: whether the socket was bound afresh, how
-/// many path machines were told, and the interface addresses now.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NetworkChange {
-    pub rebound: bool,
-    pub machines_told: usize,
-    pub addrs: Vec<std::net::IpAddr>,
-}
-
 impl Edge {
     /// Loads the profile's identity, trust and account, and serves what the
     /// options ask for. `runtime` is what trusted peers reach.
@@ -728,9 +719,9 @@ impl Edge {
 
     /// The host's network changed: the profile's socket is bound afresh
     /// where it is the edge's own, its addresses are listed again to every
-    /// peer, and every path machine probes its paths again. The link log
-    /// says so in a rebind line.
-    pub fn network_changed(&self) -> std::io::Result<NetworkChange> {
+    /// peer, and every path machine probes its paths again; how many were
+    /// told. The link log says so in a rebind line.
+    pub fn network_changed(&self) -> std::io::Result<usize> {
         let rebound = self.quic_endpoint.rebind_in_place()?;
         let addrs: Vec<std::net::IpAddr> = match &self.interfaces {
             Some(addrs) => addrs.clone(),
@@ -751,11 +742,7 @@ impl Edge {
             machines_told,
         }
         .write(self.host_id());
-        Ok(NetworkChange {
-            rebound,
-            machines_told,
-            addrs,
-        })
+        Ok(machines_told)
     }
 
     /// Whether this profile remembers that UDP to `relay` was eaten, and so

@@ -220,6 +220,7 @@ impl Inner {
                     _ => {
                         if sessions.get(&key).is_some_and(|slot| slot.viewers == 0) {
                             sessions.remove(&key);
+                            self.drafts.session_gone(&key);
                         }
                     }
                 }
@@ -286,6 +287,13 @@ impl Inner {
             if let Some(fleet) = fleet.upgrade() {
                 fleet.model().changed.insert(woken.clone());
                 fleet.changed.send_replace(());
+            }
+        }));
+        let fleet = self.me.clone();
+        let holding = key.clone();
+        session.on_held(Box::new(move |held| {
+            if let Some(fleet) = fleet.upgrade() {
+                fleet.drafts.held(fleet.client.clone(), &holding, held);
             }
         }));
         // A chat opened out of the foreground (a notification bringing it
@@ -512,6 +520,18 @@ impl Fleet {
         Ok(session)
     }
 
+    /// From now on, keeps the words of each prompt a session holds for an
+    /// unreachable host in its agent's draft, ahead of the composer's, from
+    /// the moment it is held until it goes or is taken back: a held prompt
+    /// lives only as long as the client, and one killed before the host is
+    /// back finds the words in the draft. A chat reopened while the prompt
+    /// is still held reads only the composer's words, the prompt being
+    /// shown held. Off by default, for a client that keeps held prompts in
+    /// the draft it hands over itself, as the phone's chat model does.
+    pub fn keep_held_prompts(&self) {
+        self.inner.drafts.keep_held();
+    }
+
     /// Keeps the composer's draft for an agent with this machine's daemon,
     /// so it outlives the chat and the client; an empty one is kept too, so
     /// the chat reopens empty. Saves to one agent go in order, and one
@@ -524,7 +544,8 @@ impl Fleet {
 
     /// The draft this machine's daemon keeps for an agent, read after every
     /// save to it asked for before; None when there is none, it is empty or
-    /// it cannot be read.
+    /// it cannot be read. While the agent's session holds prompts kept in
+    /// it, the composer's own words alone.
     pub async fn kept_draft(&self, agent: &AgentKey) -> Option<wire::Draft> {
         self.inner.drafts.kept(&*self.inner.client, agent).await
     }
@@ -554,6 +575,7 @@ impl Fleet {
             }
             if !live {
                 sessions.remove(agent);
+                self.inner.drafts.session_gone(agent);
                 return;
             }
             slot.session.get().cloned()

@@ -363,6 +363,7 @@ fn plain(error: InputError) -> String {
 
 impl App {
     pub fn new(client: Arc<dyn Client>, fleet: Fleet, config: TuiConfig) -> App {
+        fleet.keep_held_prompts();
         let (events, receiver) = mpsc::unbounded_channel();
         let home = Home::new(Place {
             version: config.version.clone(),
@@ -1113,10 +1114,16 @@ impl App {
             // A refusal, a send that raced the exit among them, comes back
             // through the chat's own state: its words return to the
             // composer with why it was not sent.
-            ChatEffect::Prompt { text, attachments } => self.spawn(async move {
-                session.send_prompt(&text, attachments).await;
-                None
-            }),
+            ChatEffect::Prompt { text, attachments } => {
+                // The composer as the send left it: a prompt held for an
+                // unreachable host is kept in the draft ahead of it.
+                self.fleet
+                    .keep_draft(&chat.agent, composer_draft(&chat.view.editor));
+                self.spawn(async move {
+                    session.send_prompt(&text, attachments).await;
+                    None
+                })
+            }
             ChatEffect::Resume { text, attachments }
                 if text.trim().is_empty() && attachments.is_empty() =>
             {
@@ -1223,6 +1230,10 @@ impl App {
                 if let Some((text, attachments)) = words {
                     chat.view.editor.restore(&text, attachments);
                 }
+                // Its words left the held prompts kept in the draft for the
+                // composer's.
+                self.fleet
+                    .keep_draft(&chat.agent, composer_draft(&chat.view.editor));
             }
             // Refused by the host (the name taken, the host away), the
             // command goes back to the composer to fix, with why.

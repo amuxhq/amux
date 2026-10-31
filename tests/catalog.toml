@@ -864,7 +864,7 @@ cargo = [
 
 [[suite]]
 name = "client-runtime-drivers"
-contract = "The session and fleet drivers paint the snapshot and held rows before returning, page below the oldest held row, reconnect on their own clock, settle uncertain inputs, fetch attachment bytes lazily, fetch a catalogue once per hash and only for a chat on screen, keep a bounded replayable trace, and run alike in process and over the profile socket against a real node."
+contract = "The session and fleet drivers paint the snapshot and held rows before returning, page below the oldest held row, reconnect on their own clock, settle uncertain inputs, keep a prompt held for an unreachable host in the kept draft until it goes, fetch attachment bytes lazily, fetch a catalogue once per hash and only for a chat on screen, keep a bounded replayable trace, and run alike in process and over the profile socket against a real node."
 paths = ["crates/ui-runtime/tests", "crates/ui-runtime/src"]
 recipe = "just suite client-runtime-drivers"
 boundary = "Store, effects, bridge"

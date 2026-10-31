@@ -722,6 +722,78 @@ async fn unlinking_the_agents_host_never_says_there_is_no_such_agent() {
         .unwrap();
 }
 
+/// A prompt held while its host can't be reached goes back to the draft if
+/// the client closes first, even when it closes abruptly (its pane killed,
+/// no quit to save from): the draft this machine keeps takes the held
+/// prompt as soon as it is held, as the phone's does, in place of the
+/// older draft the daemon kept.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_held_prompt_is_in_the_kept_draft_before_the_client_quits() {
+    use crossterm::event::KeyCode;
+    let (mut net, mut app) = far_chat("far").await;
+    let id = net.agent("far").unwrap().id;
+    let daemon: std::sync::Arc<dyn client::Client> =
+        std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
+    daemon
+        .update_draft(wire::UpdateDraftRequest {
+            agent_id: id.as_bytes().to_vec(),
+            draft: Some(wire::Draft {
+                text: "an older draft".into(),
+                attachments: Vec::new(),
+            }),
+        })
+        .await
+        .unwrap();
+    net.sever_link("desk", "laptop").unwrap();
+    tokio::time::timeout(PATIENCE, async {
+        loop {
+            let away = app
+                .chat
+                .as_ref()
+                .unwrap()
+                .session
+                .state()
+                .host()
+                .is_some_and(|host| host.online().is_none());
+            if away {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the laptop reads away");
+    for c in "race A".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    press(&mut app, KeyCode::Enter);
+    let kept = tokio::time::timeout(PATIENCE, async {
+        loop {
+            app.housekeep();
+            let held = app.chat.as_ref().unwrap().session.state().held().count();
+            let draft = daemon
+                .get_draft(wire::GetDraftRequest {
+                    agent_id: id.as_bytes().to_vec(),
+                })
+                .await
+                .unwrap();
+            if held == 1 && draft.text == "race A" {
+                return draft;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the held prompt is kept as the draft while the client runs");
+    assert_eq!(kept.text, "race A");
+    // Closed abruptly: no quit, no drop.
+    std::mem::forget(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
 /// A chat open on an agent deleted from its own host says it was deleted
 /// (or closes): it said "exited · aborted" and "Enter resumes", and Enter
 /// answered "could not resume: no agent <uuid>".

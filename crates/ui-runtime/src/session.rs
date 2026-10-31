@@ -112,12 +112,18 @@ struct Model {
     /// What home last drew for this agent, as of the rows applied so far;
     /// home is woken when a row moves it.
     home_line: Option<SessionLine>,
+    /// The prompts held for an unreachable host as last told, by id.
+    held_told: Vec<InputId>,
 }
 
 /// Called when something outside the rows arrived on the stream, or rows
 /// that move the line home draws for the agent: what the fleet's home is
 /// woken by.
 pub(crate) type HomeWake = Box<dyn Fn() + Send + Sync>;
+
+/// Told the prompts a session holds for an unreachable host, oldest first,
+/// each as the draft it came from, whenever they change.
+pub(crate) type HeldTold = Box<dyn Fn(Vec<wire::Draft>) + Send + Sync>;
 
 /// The catalogues this client fetched, by hash: one fetch per version,
 /// shared by every chat whose agent offers the same.
@@ -147,6 +153,7 @@ pub(crate) struct Inner {
     model: Mutex<Model>,
     changed: watch::Sender<()>,
     home: OnceLock<HomeWake>,
+    held: OnceLock<HeldTold>,
     /// Whether anybody takes the changes: a session held off screen does
     /// not gather them, so they cannot grow while nobody reads them.
     gathering: AtomicBool,
@@ -193,6 +200,7 @@ impl Inner {
             changes,
             changed_keys,
             home_line,
+            held_told,
             ..
         } = &mut *model;
         trace.record(state, at_ms, TraceEvent::Msg(msg.clone()));
@@ -202,6 +210,29 @@ impl Inner {
             *cut = Some(trace.trace());
         }
         let read = read(state);
+        // Told under the same guard, so two messages applied at once are
+        // never told out of order; the listener never reads the session.
+        if let Some(told) = self.held.get() {
+            let held = || {
+                state.held().filter_map(|sent| match &sent.what {
+                    ui_state::InputWhat::Prompt { text, attachments } => {
+                        Some((sent, text, attachments))
+                    }
+                    _ => None,
+                })
+            };
+            if !held().map(|(sent, ..)| &sent.id).eq(held_told.iter()) {
+                *held_told = held().map(|(sent, ..)| sent.id.clone()).collect();
+                told(
+                    held()
+                        .map(|(_, text, attachments)| wire::Draft {
+                            text: text.clone(),
+                            attachments: attachments.clone(),
+                        })
+                        .collect(),
+                );
+            }
+        }
         if self.gathering.load(Ordering::Acquire) {
             changes.absorb(&outcome, changed_keys);
         }
@@ -574,9 +605,11 @@ impl Session {
                 blobs: HashMap::new(),
                 ended: None,
                 home_line: None,
+                held_told: Vec::new(),
             }),
             changed,
             home: OnceLock::new(),
+            held: OnceLock::new(),
             gathering: AtomicBool::new(on_screen),
             reload: Notify::new(),
             closed: AtomicBool::new(false),
@@ -656,6 +689,12 @@ impl Session {
             model.home_line = Some(ui_view::session_line(&model.state, 0));
         }
         let _ = self.inner.home.set(wake);
+    }
+
+    /// Tells `told` the prompts the session holds for an unreachable host
+    /// each time they change.
+    pub(crate) fn on_held(&self, told: HeldTold) {
+        let _ = self.inner.held.set(told);
     }
 
     /// Sets the window: the tail a reopened stream starts with and the most

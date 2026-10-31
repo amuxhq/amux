@@ -695,17 +695,22 @@ fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry], free: bool) -> String
 
 /// Stops trusting a paired host, asking first unless forced.
 pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
-    let reference = match Uuid::parse_str(peer) {
-        Ok(id) => HostRef::id(id.as_bytes().to_vec()),
-        Err(_) => HostRef::named(peer),
-    };
-    let entry = admin
-        .get_peer(wire::GetPeerRequest {
-            peer: Some(reference.clone()),
-        })
+    let id = Uuid::parse_str(peer).ok();
+    let peers = admin
+        .list_peers(wire::ListPeersRequest {})
         .await
         .map_err(plain)?
-        .into_inner();
+        .into_inner()
+        .peers;
+    let mut named = peers.into_iter().filter(|entry| match id {
+        Some(id) => entry.host_id == id.as_bytes(),
+        None => entry.name == peer,
+    });
+    let entry = match (named.next(), named.next()) {
+        (Some(entry), None) => entry,
+        (None, _) => bail!("{peer} is not a paired host"),
+        (Some(_), Some(_)) => bail!("more than one paired host is called {peer}; name it by id"),
+    };
     if !force {
         if !std::io::stdin().is_terminal() {
             bail!("unpairing asks first; pass --force to unpair without asking");
@@ -722,8 +727,7 @@ pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
     }
     let removed = admin
         .unpair(UnpairRequest {
-            peer: Some(reference),
-            reason: "user".to_owned(),
+            peer: Some(HostRef::id(entry.host_id.clone())),
         })
         .await
         .map_err(plain)?

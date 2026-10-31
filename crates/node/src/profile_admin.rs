@@ -156,26 +156,15 @@ impl ProfileAdminService for ProfileAdmin {
         }))
     }
 
-    async fn get_peer(
-        &self,
-        request: Request<wire::GetPeerRequest>,
-    ) -> Result<Response<wire::Peer>, Status> {
-        Ok(Response::new(self.edge()?.peer_entry(
-            request.into_inner().peer.unwrap_or_default(),
-        )?))
-    }
-
     async fn unpair(
         &self,
         request: Request<UnpairRequest>,
     ) -> Result<Response<wire::Peer>, Status> {
-        let request = request.into_inner();
         let peer = request
+            .into_inner()
             .peer
             .ok_or_else(|| failed(ErrorCode::InvalidArgument, "name the peer to unpair"))?;
-        Ok(Response::new(
-            self.edge()?.unpair(peer, request.reason).await?,
-        ))
+        Ok(Response::new(self.edge()?.unpair(peer).await?))
     }
 
     async fn dump(

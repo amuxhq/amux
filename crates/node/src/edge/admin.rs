@@ -557,9 +557,7 @@ impl Edge {
 
     /// Forgets a paired host: its key leaves the trust store, its links
     /// close with USER_REVOKED, and every connection it holds here ends.
-    pub async fn unpair(&self, peer: HostRef, _reason: String) -> Result<wire::Peer, Status> {
-        // The reason the client gave stays on the wire for a client that
-        // may show it; nothing here records it.
+    pub async fn unpair(&self, peer: HostRef) -> Result<wire::Peer, Status> {
         let host = {
             let store = self
                 .trust

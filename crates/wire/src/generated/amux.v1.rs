@@ -12141,26 +12141,9 @@ impl ::prost::Name for TrustSshPeerResponse {
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetPeerRequest {
-    #[prost(message, optional, tag = "1")]
-    pub peer: ::core::option::Option<HostRef>,
-}
-impl ::prost::Name for GetPeerRequest {
-    const NAME: &'static str = "GetPeerRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.GetPeerRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.GetPeerRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UnpairRequest {
     #[prost(message, optional, tag = "1")]
     pub peer: ::core::option::Option<HostRef>,
-    #[prost(string, tag = "2")]
-    pub reason: ::prost::alloc::string::String,
 }
 impl ::prost::Name for UnpairRequest {
     const NAME: &'static str = "UnpairRequest";
@@ -12621,27 +12604,6 @@ pub mod profile_admin_service_client {
                 .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "ListPeers"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn get_peer(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetPeerRequest>,
-        ) -> std::result::Result<tonic::Response<super::Peer>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ProfileAdminService/GetPeer",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ProfileAdminService", "GetPeer"));
-            self.inner.unary(req, path, codec).await
-        }
         pub async fn unpair(
             &mut self,
             request: impl tonic::IntoRequest<super::UnpairRequest>,
@@ -12788,10 +12750,6 @@ pub mod profile_admin_service_server {
             tonic::Response<super::ListPeersResponse>,
             tonic::Status,
         >;
-        async fn get_peer(
-            &self,
-            request: tonic::Request<super::GetPeerRequest>,
-        ) -> std::result::Result<tonic::Response<super::Peer>, tonic::Status>;
         async fn unpair(
             &self,
             request: tonic::Request<super::UnpairRequest>,
@@ -13433,51 +13391,6 @@ pub mod profile_admin_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ListPeersSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ProfileAdminService/GetPeer" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetPeerSvc<T: ProfileAdminService>(pub Arc<T>);
-                    impl<
-                        T: ProfileAdminService,
-                    > tonic::server::UnaryService<super::GetPeerRequest>
-                    for GetPeerSvc<T> {
-                        type Response = super::Peer;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetPeerRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ProfileAdminService>::get_peer(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = GetPeerSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -2318,19 +2318,15 @@ impl Net {
                     peer: Some(wire::HostRef {
                         of: Some(wire::host_ref::Of::HostId(peer.as_bytes().to_vec())),
                     }),
-                    reason: "testnet".to_owned(),
                 })
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?;
             return Ok(self.ack(format!("{a} no longer trusts {b}")));
         }
         self.edge(a)?
-            .unpair(
-                wire::HostRef {
-                    of: Some(wire::host_ref::Of::HostId(peer.as_bytes().to_vec())),
-                },
-                "testnet".to_owned(),
-            )
+            .unpair(wire::HostRef {
+                of: Some(wire::host_ref::Of::HostId(peer.as_bytes().to_vec())),
+            })
             .await
             .map_err(|error| NetError::Host {
                 host: a.to_owned(),

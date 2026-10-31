@@ -27,7 +27,6 @@ service ProfileAdminService {
   rpc GetDeviceIdentity(GetDeviceIdentityRequest) returns (DeviceIdentity);
   rpc TrustSshPeer(TrustSshPeerRequest) returns (TrustSshPeerResponse);
   rpc ListPeers(ListPeersRequest) returns (ListPeersResponse);
-  rpc GetPeer(GetPeerRequest) returns (Peer);
   rpc Unpair(UnpairRequest) returns (Peer);
   // The one bundle format: this host's own state, scoped to what the
   // request is for.
@@ -117,13 +116,8 @@ message TrustSshPeerRequest {
 
 message TrustSshPeerResponse {}
 
-message GetPeerRequest {
-  HostRef peer = 1;
-}
-
 message UnpairRequest {
   HostRef peer = 1;
-  string reason = 2;
 }
 
 // An SSH destination; `amux internal ssh-link` there joins the profile whose

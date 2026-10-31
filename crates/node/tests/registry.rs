@@ -1582,14 +1582,11 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
 
     // The desk stops trusting the laptop: its listing is refused.
     desk_edge
-        .unpair(
-            wire::HostRef {
-                of: Some(wire::host_ref::Of::HostId(
-                    laptop_runtime.host().as_bytes().to_vec(),
-                )),
-            },
-            "test".to_owned(),
-        )
+        .unpair(wire::HostRef {
+            of: Some(wire::host_ref::Of::HostId(
+                laptop_runtime.host().as_bytes().to_vec(),
+            )),
+        })
         .await
         .unwrap();
     // A call that crosses the link while the desk is closing it comes back

@@ -264,12 +264,9 @@ async fn unpairing_a_host_removes_the_tickets_and_tokens_it_gave() {
 
     linked
         .laptop_edge
-        .unpair(
-            wire::HostRef {
-                of: Some(wire::host_ref::Of::HostId(desk.as_bytes().to_vec())),
-            },
-            String::new(),
-        )
+        .unpair(wire::HostRef {
+            of: Some(wire::host_ref::Of::HostId(desk.as_bytes().to_vec())),
+        })
         .await
         .unwrap();
     assert!(!kept(node::CLIENT_TICKETS_DIR).exists());

@@ -709,12 +709,9 @@ impl EmbeddedRuntime {
     /// reached.
     pub async fn unpair(&self, profile: ProfileId, host_id: &[u8]) -> Result<(), EmbeddedError> {
         self.edge(profile)?
-            .unpair(
-                HostRef {
-                    of: Some(host_ref::Of::HostId(host_id.to_vec())),
-                },
-                String::new(),
-            )
+            .unpair(HostRef {
+                of: Some(host_ref::Of::HostId(host_id.to_vec())),
+            })
             .await?;
         Ok(())
     }

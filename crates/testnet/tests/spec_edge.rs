@@ -392,7 +392,6 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
         .await
         .unpair(UnpairRequest {
             peer: host_ref(laptop_id),
-            reason: "retired".to_owned(),
         })
         .await
         .unwrap()
@@ -409,14 +408,14 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     })
     .await
     .unwrap();
-    let gone = admin(&net, "desk")
+    let peers = admin(&net, "desk")
         .await
-        .get_peer(wire::GetPeerRequest {
-            peer: Some(host_ref(laptop_id).unwrap()),
-        })
+        .list_peers(wire::ListPeersRequest {})
         .await
-        .expect_err("an unpaired host is no peer");
-    assert_eq!(gone.code(), tonic::Code::NotFound);
+        .unwrap()
+        .into_inner()
+        .peers;
+    assert!(peers.is_empty(), "an unpaired host is no peer: {peers:?}");
     // The desk said why as it closed the link: the laptop still trusts it,
     // but reads it as no longer trusting the laptop, and does not dial it.
     until(

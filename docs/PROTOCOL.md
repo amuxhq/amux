@@ -745,7 +745,7 @@ command again.
 | Call | What it does |
 | --- | --- |
 | `SubscribeInventory` | The host set and every agent row: current state, `CaughtUp`, then deltas. A listing is this stream read to `CaughtUp`. |
-| `ResolveAgent` | A fleet-wide reference to one row: an id with or without dashes, the eight-character short id (or any longer prefix), a name, or `name@host`. `NOT_FOUND`, or `AmbiguousAgentName` with the candidates when a bare name matches agents on several hosts; the message offers the `name@host` forms that pick each. Every other agent call takes an id. |
+| `ResolveAgent` | A fleet-wide reference to one row: an id with or without dashes, the eight-character short id (or any longer prefix), a name, or `name@host`. `NOT_FOUND`, or `FAILED_PRECONDITION` when a bare name matches agents on several hosts; the message offers the `name@host` forms that pick each. Every other agent call takes an id. |
 | `CreateAgent` | Creates an agent, on this host or on a trusted host named by id or by name. |
 | `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. A stop ends the agent now (its turn cancelled the provider's own way); a delete stops it if live and removes it. Both act on the named agent alone; its children follow on their own hosts by [the family rule](#the-family-rule), so the answer says nothing of them. |
 | `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
@@ -807,8 +807,8 @@ the next reader.
 same create on that host, its kind's settings passed on as the bytes they came
 as. A name is resolved against this host and the trusted
 hosts, an exact match first and then one ignoring case; no match is
-`NOT_FOUND` listing the known names, and several are `AmbiguousHostName`
-with the candidates.
+`NOT_FOUND` listing the known names, and several are `FAILED_PRECONDITION`
+saying how many answer.
 
 `CreateAgent` with `new_worktree` starts the agent in a new git worktree,
 made by the agent's host before the agent exists (`crates/node/src/worktree.rs`).
@@ -929,8 +929,8 @@ for any other incarnation.
 ### Errors
 
 A refusal is a `google.rpc.Status`, gRPC's richer error model (Rust:
-`wire::Error`): a gRPC code, a message, and details packed as `Any`, among
-them typed details (`AmbiguousAgentName`, `AmbiguousHostName`). It travels whole in the gRPC status details, its
+`wire::Error`): a gRPC code, a message, and details packed as `Any`. It
+travels whole in the gRPC status details, its
 code on the status itself (`crates/node/src/grpc.rs`, `status`), so generic
 gRPC tooling reads it. What the code alone does not say, a
 `google.rpc.ErrorInfo` detail names: domain `amux.sh`, reason an

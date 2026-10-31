@@ -3,8 +3,7 @@
 /// details packed as Any. Where the code alone does not say what happened, a
 /// google.rpc.ErrorInfo detail names it, with domain "amux.sh" and as reason
 /// one of these values' names without its ERROR_REASON\_ prefix
-/// ("HOST_UNREACHABLE"). Typed details sit beside the types they name:
-/// AmbiguousAgentName, AmbiguousHostName.
+/// ("HOST_UNREACHABLE").
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ErrorReason {
@@ -3929,24 +3928,6 @@ impl ::prost::Name for ProviderOnHost {
         "type.googleapis.com/amux.v1.ProviderOnHost".into()
     }
 }
-/// A spawn named a host that more than one trusted host answers to.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AmbiguousHostName {
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub candidates: ::prost::alloc::vec::Vec<HostEntry>,
-}
-impl ::prost::Name for AmbiguousHostName {
-    const NAME: &'static str = "AmbiguousHostName";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.AmbiguousHostName".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.AmbiguousHostName".into()
-    }
-}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct HostRemoved {
     #[prost(bytes = "vec", tag = "1")]
@@ -4021,24 +4002,6 @@ impl ::prost::Name for Agent {
         "type.googleapis.com/amux.v1.Agent".into()
     }
 }
-/// ResolveAgent found more than one agent by that name.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AmbiguousAgentName {
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub candidates: ::prost::alloc::vec::Vec<Agent>,
-}
-impl ::prost::Name for AmbiguousAgentName {
-    const NAME: &'static str = "AmbiguousAgentName";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.AmbiguousAgentName".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.AmbiguousAgentName".into()
-    }
-}
 /// The row left this daemon's view, which is not always deletion at the
 /// origin: a host that stops listing an agent, or that this machine stops
 /// trusting, takes its rows with it.
@@ -4060,7 +4023,7 @@ impl ::prost::Name for AgentRemoved {
     }
 }
 /// A host by id, or as a person names it, resolved against this host and
-/// the trusted ones: exact first, then ignoring case. AmbiguousHostName
+/// the trusted ones: exact first, then ignoring case. FAILED_PRECONDITION
 /// when more than one answers.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct HostRef {
@@ -7275,8 +7238,8 @@ pub mod agent_service_client {
                 .insert(GrpcMethod::new("amux.v1.AgentService", "SubscribeInventory"));
             self.inner.server_streaming(req, path, codec).await
         }
-        /// Fleet-wide name to row: NOT_FOUND, or AmbiguousAgentName with the
-        /// candidates. Every other call takes an agent id.
+        /// Fleet-wide name to row: NOT_FOUND, or FAILED_PRECONDITION when the name
+        /// is ambiguous. Every other call takes an agent id.
         pub async fn resolve_agent(
             &mut self,
             request: impl tonic::IntoRequest<super::ResolveAgentRequest>,
@@ -7579,8 +7542,8 @@ pub mod agent_service_server {
             tonic::Response<Self::SubscribeInventoryStream>,
             tonic::Status,
         >;
-        /// Fleet-wide name to row: NOT_FOUND, or AmbiguousAgentName with the
-        /// candidates. Every other call takes an agent id.
+        /// Fleet-wide name to row: NOT_FOUND, or FAILED_PRECONDITION when the name
+        /// is ambiguous. Every other call takes an agent id.
         async fn resolve_agent(
             &self,
             request: tonic::Request<super::ResolveAgentRequest>,

@@ -510,9 +510,9 @@ mod tests {
 
     /// The types code encodes on its own rather than inside another
     /// message or a call: frames on an agent's sockets, the journal's
-    /// steps, the spec an agent starts from, the link's framing, error
-    /// details, and each provider's item, input
-    /// and snapshot bodies, which travel as bytes.
+    /// steps, the spec an agent starts from, the link's framing, the error
+    /// reason, and each provider's item, input and snapshot bodies, which
+    /// travel as bytes.
     const ENCODED_ON_THEIR_OWN: &[&str] = &[
         "AgentSpec",
         "CtlFrame",
@@ -522,8 +522,6 @@ mod tests {
         "Message",
         // Named, not encoded: an ErrorInfo's reason is a value's name.
         "ErrorReason",
-        "AmbiguousAgentName",
-        "AmbiguousHostName",
         "ClaudeItem",
         "ClaudeSnapshot",
         "ClaudePtyInput",

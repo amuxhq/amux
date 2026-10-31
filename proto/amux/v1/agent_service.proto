@@ -18,8 +18,8 @@ import "amux/v1/session_service.proto";
 
 service AgentService {
   rpc SubscribeInventory(Empty) returns (stream InventoryEvent);
-  // Fleet-wide name to row: NOT_FOUND, or AmbiguousAgentName with the
-  // candidates. Every other call takes an agent id.
+  // Fleet-wide name to row: NOT_FOUND, or FAILED_PRECONDITION when the name
+  // is ambiguous. Every other call takes an agent id.
   rpc ResolveAgent(ResolveAgentRequest) returns (Agent);
   rpc CreateAgent(CreateAgentRequest) returns (Agent);
   rpc RenameAgent(RenameAgentRequest) returns (Agent);

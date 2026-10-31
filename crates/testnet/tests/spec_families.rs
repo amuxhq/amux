@@ -23,8 +23,8 @@ use uuid::Uuid;
 use wire::agent_service_server::AgentService as _;
 use wire::session_service_server::SessionService as _;
 use wire::{
-    AgentRef, AmbiguousHostName, ClaudeSdkInput, CreateAgentRequest, InventoryEvent, Kind,
-    Lifecycle, Phase, claude_sdk_input,
+    AgentRef, ClaudeSdkInput, CreateAgentRequest, InventoryEvent, Kind, Lifecycle, Phase,
+    claude_sdk_input,
 };
 
 fn text(text: &str) -> Step {
@@ -291,17 +291,8 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
         .unwrap_err();
     assert_eq!(refused.code(), Code::FailedPrecondition);
     let error = wire_error(&refused);
-    let ambiguous = error
-        .detail::<AmbiguousHostName>()
-        .expect("the candidates ride the error");
-    let mut candidates: Vec<&str> = ambiguous
-        .candidates
-        .iter()
-        .map(|host| host.name())
-        .collect();
-    candidates.sort_unstable();
-    assert_eq!(candidates, ["BOX", "box"]);
-    println!("spawn on \"Box\": ambiguous between {candidates:?}");
+    assert_eq!(error.message, "2 trusted hosts answer to Box");
+    println!("spawn on \"Box\": FAILED_PRECONDITION ({})", error.message);
 
     let spawned = net
         .spawn_child("lead", child("helper", "box", says("Suite green.")))

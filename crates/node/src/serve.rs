@@ -6,9 +6,7 @@
 use daemon_core::payload::{CallError, PeerRequest, Response, Status};
 pub use daemon_core::serve::MAX_PAGE;
 use store::{AgentKey, StoreError};
-use wire::{
-    Agent, AmbiguousAgentName, ErrorCode, GetItemRequest, Item, ListItemsRequest, ListItemsResponse,
-};
+use wire::{Agent, ErrorCode, GetItemRequest, Item, ListItemsRequest, ListItemsResponse};
 
 use crate::driver::{Answers, Ask, Delivered};
 use crate::routing::core_host;
@@ -21,12 +19,11 @@ pub enum ServeError {
     #[error("no agent named {0}")]
     NoAgentNamed(String),
     #[error(
-        "{} names more than one agent; pick one with {}",
-        .detail.name,
+        "{name} names more than one agent; pick one with {}",
         .forms.join(" or ")
     )]
     Ambiguous {
-        detail: AmbiguousAgentName,
+        name: String,
         /// A form that picks each candidate: `name@host`, or its id where
         /// its host's name does not tell it apart.
         forms: Vec<String>,
@@ -74,8 +71,7 @@ impl From<Status> for ServeError {
 }
 
 impl ServeError {
-    /// The error as the wire carries it: a code, and for an ambiguous name
-    /// the candidates as an `amux.v1.AmbiguousAgentName` detail.
+    /// The error as the wire carries it: a code and the message.
     pub fn to_wire(&self) -> wire::Error {
         let code = match self {
             Self::NoAgent | Self::NoAgentNamed(_) | Self::NoItem(_) => ErrorCode::NotFound,
@@ -86,11 +82,7 @@ impl ServeError {
             Self::Store(_) | Self::Failed(_) => ErrorCode::Internal,
             Self::Stopped => ErrorCode::Unavailable,
         };
-        let error = wire::Error::new(code, self.to_string());
-        match self {
-            Self::Ambiguous { detail, .. } => error.with_detail(detail),
-            _ => error,
-        }
+        wire::Error::new(code, self.to_string())
     }
 }
 
@@ -208,10 +200,7 @@ impl ProfileRuntime {
             _ => {
                 let forms = self.picking_forms(&matches);
                 Err(ServeError::Ambiguous {
-                    detail: AmbiguousAgentName {
-                        name: reference.to_owned(),
-                        candidates: matches,
-                    },
+                    name: reference.to_owned(),
                     forms,
                 })
             }

@@ -6,8 +6,7 @@ package amux.v1;
 // details packed as Any. Where the code alone does not say what happened, a
 // google.rpc.ErrorInfo detail names it, with domain "amux.sh" and as reason
 // one of these values' names without its ERROR_REASON_ prefix
-// ("HOST_UNREACHABLE"). Typed details sit beside the types they name:
-// AmbiguousAgentName, AmbiguousHostName.
+// ("HOST_UNREACHABLE").
 enum ErrorReason {
   ERROR_REASON_UNSPECIFIED = 0;
   // Another host could not be reached, on code FAILED_PRECONDITION: an

@@ -415,7 +415,7 @@ ordinary peer calls; nothing about them is specific to messaging.
   does locally, since the parent edge names the parent's host.
 - **Spawn.** `host` names a trusted host; the local daemon resolves the name
   (an exact match, then one ignoring case, and otherwise `NOT_FOUND` listing
-  the known names or `AmbiguousHostName` with the candidates) and makes the
+  the known names, or `FAILED_PRECONDITION` when several answer) and makes the
   create on that host with the parent set to the calling agent on this host.
   The forwarded call waits up to 30 seconds, which covers the child's start
   there.

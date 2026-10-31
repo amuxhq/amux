@@ -76,7 +76,7 @@ meets often:
 | Code | When |
 | --- | --- |
 | `NOT_FOUND` | No agent with that id or name, no item with that key, no blob with that hash |
-| `FAILED_PRECONDITION` | An ambiguous name (detail `AmbiguousAgentName` with the candidates) |
+| `FAILED_PRECONDITION` | An ambiguous name; the message offers the forms that pick each candidate |
 | `FAILED_PRECONDITION`, reason `HOST_UNREACHABLE` | Older history lives on a host that cannot be reached, and nothing is held locally; a forwarded call that never left |
 | `PERMISSION_DENIED`, reason `PAYMENT_REQUIRED` | A forwarded call to a host only the relay reaches, on an account whose subscription lapsed to the free plan; a stop is answered `HOST_UNREACHABLE` in the same words instead, so clients hold it |
 | `RESOURCE_EXHAUSTED` | An attachment over the 64 MB limit |
@@ -149,8 +149,8 @@ message ResumeAgentRequest { bytes agent_id = 1; optional PromptSubmission initi
 
 `host` names the host that runs the agent, by id or by the name a person
 knows it by, resolved against this host and the trusted ones: exact first,
-then ignoring case. A name more than one host answers to is refused with the
-candidates (`AmbiguousHostName`). A host runs only the kinds its handshake
+then ignoring case. A name more than one host answers to is refused
+`FAILED_PRECONDITION`. A host runs only the kinds its handshake
 announces (`Capabilities.kinds`; a phone announces none): a create naming a
 kind its host does not run is refused `FAILED_PRECONDITION` in words ("phone
 runs no agents"), by the near daemon before forwarding and by the host

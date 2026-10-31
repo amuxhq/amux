@@ -19,9 +19,9 @@ use tonic::{Request, Response, Status};
 use wire::agent_service_server::AgentService;
 use wire::session_service_server::SessionService;
 use wire::{
-    Agent as Row, AgentRef, AgentSpec, AmbiguousAgentName, CreateAgentRequest, HostEntry,
-    InventoryEvent, Kind, Lifecycle, Phase, SendInputRequest, SendInputResponse,
-    SendMessageRequest, SendMessageResponse, create_agent_request, inventory_event,
+    Agent as Row, AgentRef, AgentSpec, CreateAgentRequest, HostEntry, InventoryEvent, Kind,
+    Lifecycle, Phase, SendInputRequest, SendInputResponse, SendMessageRequest, SendMessageResponse,
+    create_agent_request, inventory_event,
 };
 
 use crate::support;
@@ -124,15 +124,10 @@ impl AgentService for Fleet {
         let name = request.into_inner().name;
         self.record(Call::Resolve(name.clone()));
         if self.ambiguous.contains(&name) {
-            let detail = AmbiguousAgentName {
-                name: name.clone(),
-                candidates: vec![row(&REVIEWER, &HERE, &name), row(&CHILD, &STUDIO, &name)],
-            };
             let message = format!(
                 "{name} names more than one agent; pick one with {name}@here or {name}@studio"
             );
-            let error = wire::Error::new(wire::ErrorCode::FailedPrecondition, message.clone())
-                .with_detail(&detail);
+            let error = wire::Error::new(wire::ErrorCode::FailedPrecondition, message.clone());
             return Err(Status::with_details(
                 tonic::Code::FailedPrecondition,
                 message,

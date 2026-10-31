@@ -29,10 +29,11 @@ use crate::auth::cloud::{
 use crate::driver::CoreLinks;
 use crate::link::QuicCarrier;
 use crate::link::framed::FramedKind;
-use crate::routing::{
-    Host, LinkConnectorAuth, LinkConnectorRefreshReceiver, LinkConnectorRefreshRequest,
+use crate::link::run::{
+    LinkConnectorAuth, LinkConnectorRefreshReceiver, LinkConnectorRefreshRequest,
     LinkConnectorToken, LinkConnectorTokenRefresher, LinkCtx, spawn_connector,
 };
+use crate::routing::Host;
 use crate::transport::tls_connect_stream;
 
 const CLOUD_ROUTING_ESTABLISHMENT_TIMEOUT: Duration = Duration::from_secs(10);

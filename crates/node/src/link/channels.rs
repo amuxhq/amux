@@ -1285,7 +1285,6 @@ mod tests {
                         tokio::spawn(crate::link::run_link(
                             ctx,
                             Arc::new(QuicCarrier::from_accepted(connection)),
-                            crate::routing::ConnectRole::Acceptor,
                         ));
                     }
                 });
@@ -1337,7 +1336,7 @@ mod tests {
                     )
                     .with_expected_peer(peer);
                     let (_task, established) =
-                        crate::routing::spawn_connector(ctx, carrier.clone());
+                        crate::link::run::spawn_connector(ctx, carrier.clone());
                     let links = self.links.clone();
                     let up = Box::pin(async move {
                         established

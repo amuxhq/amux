@@ -30,8 +30,8 @@ use crate::link::channels::{Flight, ForwardedDial, ResumedDial, Resuming, says_r
 use crate::link::framed::{FramedKind, StreamEndpoint};
 use crate::link::quic::DEVICE_SERVER_NAME;
 use crate::link::socket::Path;
-use crate::link::{ChannelError, ChannelPool, LinkEndpoint, QuicCarrier};
-use crate::routing::{LinkCtx, LinkId, LiveLocalHost, core_host};
+use crate::link::{ChannelError, ChannelPool, LinkCtx, LinkEndpoint, QuicCarrier};
+use crate::routing::{LinkId, LiveLocalHost, core_host};
 use crate::transport::spawn_ssh_relay;
 use crate::trust::SharedTrustStore;
 
@@ -541,7 +541,7 @@ async fn establish(me: &Inner, peer: HostId, carrier: Arc<QuicCarrier>) -> Resul
     let connector_ctx = LinkCtx::new_live(me.local_host.clone(), me.channels.link_registry())
         .with_expected_peer(peer)
         .with_incoming_streams(me.incoming_streams_tx.clone());
-    let (connector_task, established) = crate::routing::spawn_connector(
+    let (connector_task, established) = crate::link::run::spawn_connector(
         connector_ctx.with_shutdown(me.shutdown.subscribe()),
         carrier,
     );
@@ -621,7 +621,7 @@ impl ForwardedDialer {
         let connector_ctx = LinkCtx::new_live(inner.local_host.clone(), registry.clone())
             .with_expected_peer(peer)
             .with_incoming_streams(inner.incoming_streams_tx.clone());
-        let (connector_task, established) = crate::routing::spawn_connector(
+        let (connector_task, established) = crate::link::run::spawn_connector(
             connector_ctx.with_shutdown(inner.shutdown.subscribe()),
             carrier.clone(),
         );

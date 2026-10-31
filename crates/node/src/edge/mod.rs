@@ -56,10 +56,10 @@ use crate::link::paths::PathDriver;
 use crate::link::quic::DEVICE_SERVER_NAME;
 use crate::link::resumption::{HOST_TICKETS, SessionTickets, TICKETS_DIR};
 use crate::link::socket::{Datagrams, LinkSocket};
-use crate::link::{ChannelPool, LinkEndpoint, QuicCarrier, run_link, serve_inbound_streams};
-use crate::routing::{
-    Capabilities, ConnectRole, LinkCtx, LinkRegistry, LiveLocalHost, LiveRoute, local_host,
+use crate::link::{
+    ChannelPool, LinkCtx, LinkEndpoint, QuicCarrier, run_link, serve_inbound_streams,
 };
+use crate::routing::{Capabilities, LinkRegistry, LiveLocalHost, LiveRoute, local_host};
 use crate::runtime::ProfileRuntime;
 use crate::services::{
     ConnectorParts, LocalPairingIdentity, PairingService, ReachabilityLinkConnector,
@@ -965,14 +965,12 @@ impl Edge {
         tokio::spawn(async move {
             let end = match QuicCarrier::accept_over_stream(accepting).await {
                 Ok(carrier) => match carrier.pinned_peer(&accept_trust) {
-                    Some(peer) => run_link(
-                        accept_ctx.with_authenticated_peer(peer),
-                        Arc::new(carrier),
-                        ConnectRole::Acceptor,
-                    )
-                    .await
-                    .err()
-                    .map(|error| error.to_string()),
+                    Some(peer) => {
+                        run_link(accept_ctx.with_authenticated_peer(peer), Arc::new(carrier))
+                            .await
+                            .err()
+                            .map(|error| error.to_string())
+                    }
                     None => Some("the connector presented no trusted key".to_owned()),
                 },
                 Err(error) => Some(error.to_string()),
@@ -1340,9 +1338,7 @@ fn serve_link_socket(
                             return;
                         };
                         let ctx = ctx.with_authenticated_peer(peer);
-                        if let Err(error) =
-                            run_link(ctx, Arc::new(carrier), ConnectRole::Acceptor).await
-                        {
+                        if let Err(error) = run_link(ctx, Arc::new(carrier)).await {
                             tracing::warn!(%error, "an SSH link ended with an error");
                         }
                     });

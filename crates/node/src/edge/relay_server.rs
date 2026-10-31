@@ -22,13 +22,11 @@ use crate::auth::jwt::JwtValidator;
 use crate::link::framed::{FramedKind, FramedPath};
 use crate::link::quic::{stream_carrier_kind, stream_path};
 use crate::link::relaying::Relaying;
+use crate::link::run::{AuthenticatedLinkUser, LinkTokenAuthenticator};
 use crate::link::socket::{LinkSocket, Path, PathId};
-use crate::link::{LinkEndpoint, QuicCarrier, run_link};
+use crate::link::{LinkCtx, LinkEndpoint, QuicCarrier, run_link};
 use crate::resource_limits::{Admitted, HandshakeAdmission};
-use crate::routing::{
-    AuthenticatedLinkUser, Capabilities, LinkCtx, LinkRegistry, LinkTokenAuthenticator,
-    LiveLocalHost, local_host,
-};
+use crate::routing::{Capabilities, LinkRegistry, LiveLocalHost, local_host};
 use crate::transport::tcp_incoming;
 use crate::{Clock, HostId};
 
@@ -387,7 +385,6 @@ impl CloudLinkServer {
                     if let Err(error) = run_link(
                         ctx,
                         Arc::new(carrier),
-                        crate::routing::ConnectRole::Acceptor,
                     )
                     .await
                     {
@@ -596,9 +593,10 @@ mod tests {
 
     use super::*;
     use crate::Tier;
-    use crate::link::run::spawn_connector;
+    use crate::link::run::{
+        LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher, spawn_connector,
+    };
     use crate::link::socket::LinkId;
-    use crate::routing::{LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher};
 
     const NAME: &str = "relay.test";
 

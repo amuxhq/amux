@@ -1,9 +1,9 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 2 agent_message {"envelope":"env-idle","from":"probe","text":"A2A_SOCKET_IDLE_21240"}
 effect inject env-idle via MessagingSocket
 effect reply env-idle queued
@@ -15,54 +15,54 @@ effect reply env-busy queued
 item agent-message:656e762d62757379 agent_message final input=env-busy at=0 text="A2A_SOCKET_BUSY_21240" envelope=656e762d62757379
 pending [env-busy,env-idle]
 ## 4 recorded 0: fact Transcript type=custom-title
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 7 recorded 3: fact Transcript type=permission-mode
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=? model_name=? mode=bypassPermissions context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=? model_name=? effort=? mode=bypassPermissions context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 11 recorded 7: fact Transcript type=user uuid=f30e3af6-7585-43a0-bff2-42f3eb53493b
 item f30e3af6-7585-43a0-bff2-42f3eb53493b prompt final at=1787443880224 text="Reply exactly READY and nothing else."
-snapshot WORKING queue=[] working_on=- at=1787443880224 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=? model_name=? mode=bypassPermissions context=? tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1787443880224 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=? model_name=? effort=? mode=bypassPermissions context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 14 recorded 10: fact Hook hook_event_name=Stop type=hook.stop
-snapshot WORKING queue=[] working_on=- at=1787443880224 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=? model_name=? mode=bypassPermissions context=? tasks=? background=[]
+snapshot WORKING queue=[] working_on=- at=1787443880224 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=? model_name=? effort=? mode=bypassPermissions context=? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 ## 16 recorded 12: fact Transcript type=assistant uuid=6770e217-dc12-44ac-aa3e-f9d8651ce95e
 item 6770e217-dc12-44ac-aa3e-f9d8651ce95e thinking final at=1787443881672 text=""
-snapshot WORKING queue=[] working_on=- at=1787443881672 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=35808 tasks=? background=[]
+snapshot WORKING queue=[] working_on=- at=1787443881672 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35808/? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 ## 18 recorded 14: fact Transcript type=assistant uuid=70cca43c-1567-454d-b513-aee897603d83
 item 70cca43c-1567-454d-b513-aee897603d83 message final at=1787443881674 text="READY"
 ## 22 recorded 18: fact Transcript type=system subtype=turn_duration uuid=b85b3963-3ef9-45af-8f4f-b2faac705088
 item turn:1 turn final at=1787443881703 text="" #1 TURN_OUTCOME_COMPLETED started=1787443880225
-snapshot IDLE queue=[] working_on=- at=1787443881703 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=35808 tasks=? background=[]
+snapshot IDLE queue=[] working_on=- at=1787443881703 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35808/? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 turn_end 1 last=70cca43c-1567-454d-b513-aee897603d83
 ## 28 recorded 24: fact Transcript type=user uuid=3df6809d-39e3-48ce-a73b-baf08099c9d8
-snapshot WORKING queue=[] working_on=- at=1787443882060 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=35808 tasks=? background=[]
+snapshot WORKING queue=[] working_on=- at=1787443882060 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35808/? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 pending [env-busy]
 ## 34 recorded 30: fact Transcript type=assistant uuid=2697ce1c-a9af-488f-80d8-bd2daa5f1106
 item 2697ce1c-a9af-488f-80d8-bd2daa5f1106 thinking final at=1787443886689 text=""
-snapshot WORKING queue=[] working_on=- at=1787443886689 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36035 tasks=? background=[]
+snapshot WORKING queue=[] working_on=- at=1787443886689 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=36035/? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 ## 36 recorded 32: fact Transcript type=assistant uuid=2cb9c201-f99c-449a-80a5-3411ed0f8d59
 item 2cb9c201-f99c-449a-80a5-3411ed0f8d59 message final at=1787443887287 text="I received the message from the probe session, but I need context to act on it. What should I do with `A2A_SOCKET_IDLE_21240`? \n\nIs it:\n- A process/socket to check or monitor?\n- A test or validation to run?\n- A log entry to search for?\n- Something else?\n\nLet me know what action you'd like me to take."
 ## 40 recorded 36: fact Transcript type=system subtype=turn_duration uuid=12e8722d-b052-4239-9c73-25b89c80dae6
 item turn:2 turn final at=1787443887318 text="" #2 TURN_OUTCOME_COMPLETED started=1787443882060
-snapshot IDLE queue=[] working_on=- at=1787443887322 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36035 tasks=? background=[]
+snapshot IDLE queue=[] working_on=- at=1787443887322 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=36035/? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 turn_end 2 last=2cb9c201-f99c-449a-80a5-3411ed0f8d59
 ## 43 recorded 39: fact Transcript type=user uuid=0a501bda-51f2-49be-a643-b0dcbc2053de
 item 0a501bda-51f2-49be-a643-b0dcbc2053de prompt final at=1787443887329 text="Use the Bash tool to run exactly: sleep 3. Then reply exactly BUSY_DONE."
-snapshot WORKING queue=[] working_on=- at=1787443887329 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36035 tasks=? background=[]
+snapshot WORKING queue=[] working_on=- at=1787443887329 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=36035/? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 ## 52 recorded 48: fact Transcript type=assistant uuid=babb0fd4-46ee-43c0-a44c-b5d929f8a9ad
 item babb0fd4-46ee-43c0-a44c-b5d929f8a9ad thinking final at=1787443888784 text=""
-snapshot WORKING queue=[] working_on=- at=1787443888784 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=37429 tasks=? background=[]
+snapshot WORKING queue=[] working_on=- at=1787443888784 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=37429/? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 ## 54 recorded 50: fact Transcript type=assistant uuid=024bb248-7211-4c68-b7c3-7af04d70a3a0
 item toolu_013jKhDLNrgrMEgFPXnugyHG tool final at=1787443888859 text="" Bash TOOL_STATE_RUNNING input=shell:"sleep 3"
 ## 56 recorded 52: fact Transcript type=user uuid=d98ca0de-ef5b-48c7-8e78-d97d98b672bb
 item toolu_013jKhDLNrgrMEgFPXnugyHG tool final at=1787443888859 text="" Bash TOOL_STATE_SUCCEEDED ended=1787443892370 input=shell:"sleep 3" out="(Bash completed with no output)"
 ## 64 recorded 60: fact Transcript type=assistant uuid=d2d590ca-ada1-4446-9283-9a90e27caa78
 item d2d590ca-ada1-4446-9283-9a90e27caa78 thinking final at=1787443893858 text=""
-snapshot WORKING queue=[] working_on=- at=1787443893858 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=37630 tasks=? background=[]
+snapshot WORKING queue=[] working_on=- at=1787443893858 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=37630/? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 ## 66 recorded 62: fact Transcript type=assistant uuid=1fa304dd-838d-48a8-bc36-dec87025c783
 item 1fa304dd-838d-48a8-bc36-dec87025c783 message final at=1787443893861 text="BUSY_DONE"
 ## 70 recorded 66: fact Transcript type=system subtype=turn_duration uuid=2cca810f-615d-494c-a372-0455bd4c9708
 item turn:3 turn final at=1787443893931 text="" #3 TURN_OUTCOME_COMPLETED started=1787443887329
-snapshot IDLE queue=[] working_on=- at=1787443893935 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=37630 tasks=? background=[]
+snapshot IDLE queue=[] working_on=- at=1787443893935 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=37630/? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 turn_end 3 last=1fa304dd-838d-48a8-bc36-dec87025c783
 ## 72 recorded 68: fact Transcript type=user uuid=fab2d431-bbc0-457f-9613-04d4050d004f
-snapshot WORKING queue=[] working_on=- at=1787443893940 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=37630 tasks=? background=[]
+snapshot WORKING queue=[] working_on=- at=1787443893940 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=37630/? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 pending []

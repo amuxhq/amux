@@ -32,6 +32,18 @@ pub(crate) struct ToolDecisionState {
     pub(crate) note: String,
 }
 
+impl ToolDecisionState {
+    /// The decision as the call's row carries it.
+    pub(crate) fn to_wire(&self) -> wire::ToolDecision {
+        wire::ToolDecision {
+            outcome: self.outcome,
+            note: self.note.clone(),
+            elsewhere: false,
+            granted: self.grant.clone().map(wire::tool_decision::Granted::Claude),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) enum AnswerShape {
     Permission,
@@ -81,6 +93,16 @@ pub(crate) enum Answer {
 
 /// Claude's own words for a tool use the person rejected.
 pub(crate) const REJECTED: &str = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file).";
+
+/// What Claude is handed for a plan dismissed by a prompt typed instead of
+/// deciding it: refused, and the turn stopped, so the prompt starts the next.
+pub(crate) fn plan_dismissed() -> PermissionResult {
+    PermissionResult::Deny {
+        message: REJECTED.to_owned(),
+        interrupt: Some(true),
+        tool_use_id: None,
+    }
+}
 
 /// The decision an answer hands Claude and the one it puts on the call's
 /// row, or None when the answer does not fit the ask. `input` is the

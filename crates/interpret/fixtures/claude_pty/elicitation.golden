@@ -1,104 +1,104 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 2 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"SessionStart","model":"claude-opus-5-5","permission_mode":"default","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
 effect follow "/t/s1.jsonl"
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 3 tick 1800000000010
 ## 4 fact {"channel":"transcript","json":{"message":{"content":"file the crash","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
 item u1 prompt final at=1800000000010 text="file the crash"
-snapshot WORKING queue=[] working_on=- at=1800000000010 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1800000000010 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 5 tick 1800000000100
 ## 6 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","session_id":"s1","tool_input":{"title":"Crash on launch"},"tool_name":"mcp__github__create_issue","tool_use_id":"t1","transcript_path":"/t/s1.jsonl"}}
-snapshot WORKING queue=[] working_on=- at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t1 create_issue since=1800000000100
+snapshot WORKING queue=[] working_on=- at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=t1 create_issue since=1800000000100
 ## 7 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"title":"Crash on launch"},"name":"mcp__github__create_issue","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.100Z","type":"assistant","uuid":"a1"}}
 item t1 tool final at=1800000000100 text="" github·create_issue TOOL_STATE_RUNNING input="{\"title\":\"Crash on launch\"}"
 ## 8 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"Notification","message":"Claude is waiting for your input","notification_type":"idle_prompt","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl"}}
 ## 9 tick 1800000000200
 ## 10 fact {"channel":"hook","json":{"amux_reply":101,"cwd":"/w","hook_event_name":"Elicitation","mcp_server_name":"github","message":"github needs your input","mode":"form","permission_mode":"default","requested_schema":{"properties":{"repo":{"type":"string"}},"required":["repo"],"type":"object"},"session_id":"s1","transcript_path":"/t/s1.jsonl"}}
 item ask:ask:1 ask final at=1800000000200 text="" form github open
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000000200 asks=[ask:1->ask:ask:1 form:github "github needs your input"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t1 create_issue since=1800000000100
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000000200 asks=[ask:1->ask:ask:1 form:github "github needs your input"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=t1 create_issue since=1800000000100
 ## 11 input {"answer":{"answer":{"allow":{}},"ask":"ask:1"},"id":"x2"}
 effect reply x2 rejected:UNSUPPORTED
 ## 12 input {"answer":{"answer":{"form":{"action":"accept","content":{"repo":"ada/amux"}}},"ask":"ask:1"},"id":"x1"}
 effect hook 101 answered {"hookSpecificOutput":{"hookEventName":"Elicitation","action":"accept","content":{"repo":"ada/amux"}}}
 effect reply x1 accepted
 item ask:ask:1 ask final at=1800000000200 text="" form github ASK_OUTCOME_ANSWERED fields=["repo"]
-snapshot WORKING queue=[] working_on=- at=1800000000200 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t1 create_issue since=1800000000100
+snapshot WORKING queue=[] working_on=- at=1800000000200 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=t1 create_issue since=1800000000100
 ## 13 resume
-snapshot WORKING queue=[] working_on=- at=1800000000200 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t1 create_issue since=1800000000100
+snapshot WORKING queue=[] working_on=- at=1800000000200 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=t1 create_issue since=1800000000100
 ## 14 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Filing it now.","type":"text"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.101Z","type":"assistant","uuid":"a1b"}}
 item a1b message final at=1800000000101 text="Filing it now."
 ## 15 tick 1800000030000
 ## 16 fact {"channel":"hook","json":{"cwd":"/w","duration_ms":29000,"hook_event_name":"PostToolUse","permission_mode":"default","session_id":"s1","tool_input":{"title":"Crash on launch"},"tool_name":"mcp__github__create_issue","tool_response":{"number":42},"tool_use_id":"t1","transcript_path":"/t/s1.jsonl"}}
-snapshot WORKING queue=[] working_on=- at=1800000030000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1800000030000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 17 fact {"channel":"transcript","json":{"message":{"content":[{"content":"{\"number\": 42}","is_error":false,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:30.000Z","toolUseResult":{"number":42},"type":"user","uuid":"r1"}}
 item t1 tool final at=1800000000100 text="" github·create_issue TOOL_STATE_SUCCEEDED started=1800000001000 ended=1800000030000 input="{\"title\":\"Crash on launch\"}" out="{\"number\": 42}"
 ## 18 tick 1800000030100
 ## 19 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","session_id":"s1","tool_input":{"account":"work"},"tool_name":"mcp__docs__sign_in","tool_use_id":"t2","transcript_path":"/t/s1.jsonl"}}
-snapshot WORKING queue=[] working_on=- at=1800000030100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t2 sign_in since=1800000030100
+snapshot WORKING queue=[] working_on=- at=1800000030100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=t2 sign_in since=1800000030100
 ## 20 fact {"channel":"hook","json":{"amux_reply":102,"cwd":"/w","elicitation_id":"e2","hook_event_name":"Elicitation","mcp_server_name":"docs","message":"docs needs your input","mode":"url","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl","url":"https://docs.example/sign-in"}}
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000030100 asks=[ask:2->- link:docs "docs needs your input" https://docs.example/sign-in] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t2 sign_in since=1800000030100
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000030100 asks=[ask:2->- link:docs "docs needs your input" https://docs.example/sign-in] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=t2 sign_in since=1800000030100
 ## 21 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t2","input":{"account":"work"},"name":"mcp__docs__sign_in","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:30.100Z","type":"assistant","uuid":"a2"}}
 item t2 tool final at=1800000030100 text="" docs·sign_in TOOL_STATE_RUNNING input="{\"account\":\"work\"}"
 item ask:ask:2 ask final at=1800000030100 text="" link docs open
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000030100 asks=[ask:2->ask:ask:2 link:docs "docs needs your input" https://docs.example/sign-in] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t2 sign_in since=1800000030100
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000030100 asks=[ask:2->ask:ask:2 link:docs "docs needs your input" https://docs.example/sign-in] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=t2 sign_in since=1800000030100
 ## 22 input {"id":"i1","interrupt":{}}
 effect terminal interrupt
 effect hook 102 answered {"hookSpecificOutput":{"hookEventName":"Elicitation","action":"cancel"}}
 effect reply i1 accepted
 item ask:ask:2 ask final at=1800000030100 text="" link docs ASK_OUTCOME_CANCELLED
-snapshot WORKING queue=[] working_on=- at=1800000030100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t2 sign_in since=1800000030100
+snapshot WORKING queue=[] working_on=- at=1800000030100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=t2 sign_in since=1800000030100
 ## 23 fact {"channel":"transcript","json":{"message":{"content":[{"content":"The user cancelled the sign-in.","is_error":true,"tool_use_id":"t2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:30.200Z","type":"user","uuid":"r2"}}
 item t2 tool final at=1800000030100 text="" docs·sign_in TOOL_STATE_FAILED ended=1800000030200 input="{\"account\":\"work\"}" out="The user cancelled the sign-in."
-snapshot WORKING queue=[] working_on=- at=1800000030100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1800000030100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 24 tick 1800000030300
 ## 25 fact {"channel":"hook","json":{"amux_reply":103,"cwd":"/w","hook_event_name":"Elicitation","mcp_server_name":"docs","message":"docs needs your input","mode":"form","permission_mode":"default","requested_schema":{"properties":{"repo":{"type":"string"}},"required":["repo"],"type":"object"},"session_id":"s1","transcript_path":"/t/s1.jsonl"}}
 item ask:ask:3 ask final at=1800000030300 text="" form docs open
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000030300 asks=[ask:3->ask:ask:3 form:docs "docs needs your input"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000030300 asks=[ask:3->ask:ask:3 form:docs "docs needs your input"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 26 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Signed out, filed #42.","type":"text"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:30.400Z","type":"assistant","uuid":"a3"}}
 effect hook 103 released
 item ask:ask:3 ask final at=1800000030300 text="" form docs ASK_OUTCOME_DISMISSED
 item a3 message final at=1800000030400 text="Signed out, filed #42."
-snapshot WORKING queue=[] working_on=- at=1800000030300 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1800000030300 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 27 tick 1800000030500
 ## 28 fact {"channel":"hook","json":{"amux_reply":104,"cwd":"/w","hook_event_name":"Elicitation","mcp_server_name":"docs","message":"docs needs your input","mode":"form","permission_mode":"default","requested_schema":{"properties":{"repo":{"type":"string"}},"required":["repo"],"type":"object"},"session_id":"s1","transcript_path":"/t/s1.jsonl"}}
 item ask:ask:4 ask final at=1800000030500 text="" form docs open
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000030500 asks=[ask:4->ask:ask:4 form:docs "docs needs your input"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000030500 asks=[ask:4->ask:ask:4 form:docs "docs needs your input"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 29 fact {"channel":"hook","json":{"background_tasks":[],"cwd":"/w","hook_event_name":"Stop","last_assistant_message":"Signed out, filed #42.","permission_mode":"default","session_id":"s1","stop_hook_active":false,"transcript_path":"/t/s1.jsonl"}}
 effect hook 104 released
 item ask:ask:4 ask final at=1800000030500 text="" form docs ASK_OUTCOME_DISMISSED
-snapshot WORKING queue=[] working_on=- at=1800000030500 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[]
+snapshot WORKING queue=[] working_on=- at=1800000030500 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 ## 30 fact {"channel":"transcript","json":{"durationMs":50,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:30.600Z","type":"system","uuid":"d1"}}
 item turn:1 turn final at=1800000030600 text="" #1 TURN_OUTCOME_COMPLETED started=1800000030550
-snapshot IDLE queue=[] working_on=- at=1800000030500 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[]
+snapshot IDLE queue=[] working_on=- at=1800000030500 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 turn_end 1 last=a3
 ## 31 tick 1800000040000
 ## 32 fact {"channel":"transcript","json":{"message":{"content":"try again","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:40.000Z","type":"user","uuid":"u2"}}
 item u2 prompt final at=1800000040000 text="try again"
-snapshot WORKING queue=[] working_on=- at=1800000040000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[]
+snapshot WORKING queue=[] working_on=- at=1800000040000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 ## 33 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","session_id":"s1","tool_input":{"title":"Crash on launch"},"tool_name":"mcp__github__create_issue","tool_use_id":"t5","transcript_path":"/t/s1.jsonl"}}
-snapshot WORKING queue=[] working_on=- at=1800000040000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[] running=t5 create_issue since=1800000040000
+snapshot WORKING queue=[] working_on=- at=1800000040000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=[] running=t5 create_issue since=1800000040000
 ## 34 fact {"channel":"hook","json":{"amux_reply":105,"cwd":"/w","hook_event_name":"Elicitation","mcp_server_name":"github","message":"github needs your input","mode":"form","permission_mode":"default","requested_schema":{"properties":{"repo":{"type":"string"}},"required":["repo"],"type":"object"},"session_id":"s1","transcript_path":"/t/s1.jsonl"}}
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000040000 asks=[ask:5->- form:github "github needs your input"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[] running=t5 create_issue since=1800000040000
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000040000 asks=[ask:5->- form:github "github needs your input"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=[] running=t5 create_issue since=1800000040000
 ## 35 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"SessionEnd","permission_mode":"default","reason":"other","session_id":"s1","transcript_path":"/t/s1.jsonl"}}
 effect hook 105 released
 item ask:ask:5 ask final at=1800000040000 text="" form github ASK_OUTCOME_DISMISSED
-snapshot WORKING queue=[] working_on=- at=1800000040000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[] running=t5 create_issue since=1800000040000
+snapshot WORKING queue=[] working_on=- at=1800000040000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=[] running=t5 create_issue since=1800000040000
 ## 36 tick 1800000050000
 ## 37 fact {"channel":"transcript","json":{"message":{"content":"once more","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:50.000Z","type":"user","uuid":"u3"}}
 item u3 prompt final at=1800000050000 text="once more"
 ## 38 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","session_id":"s1","tool_input":{"title":"Crash on launch"},"tool_name":"mcp__github__create_issue","tool_use_id":"t6","transcript_path":"/t/s1.jsonl"}}
-snapshot WORKING queue=[] working_on=- at=1800000050000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[] running=t5 create_issue since=1800000040000 running=t6 create_issue since=1800000050000
+snapshot WORKING queue=[] working_on=- at=1800000050000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=[] running=t5 create_issue since=1800000040000 running=t6 create_issue since=1800000050000
 ## 39 fact {"channel":"hook","json":{"amux_reply":106,"cwd":"/w","elicitation_id":"e6","hook_event_name":"Elicitation","mcp_server_name":"github","message":"github needs your input","mode":"url","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl","url":"https://github.example/sign-in"}}
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000050000 asks=[ask:6->- link:github "github needs your input" https://github.example/sign-in] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[] running=t5 create_issue since=1800000040000 running=t6 create_issue since=1800000050000
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000050000 asks=[ask:6->- link:github "github needs your input" https://github.example/sign-in] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=[] running=t5 create_issue since=1800000040000 running=t6 create_issue since=1800000050000
 ## 40 provider_exit {"code":1}
 effect hook 106 released
 item ask:ask:6 ask final at=1800000050000 text="" link github ASK_OUTCOME_DISMISSED
 item boundary:2 boundary final at=1800000050000 text="" BOUNDARY_KIND_EXITED cause=PROVIDER_EXITED detail="exit code 1"
-snapshot STARTING queue=[] working_on=- at=1800000050000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[]
+snapshot STARTING queue=[] working_on=- at=1800000050000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=[]
 incarnation_end PROVIDER_EXITED "exit code 1"

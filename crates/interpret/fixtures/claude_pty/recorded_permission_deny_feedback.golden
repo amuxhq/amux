@@ -1,36 +1,36 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1793308312156 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on=- at=1793308312156 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
+snapshot IDLE queue=[] working_on=- at=1793308312156 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
-snapshot IDLE queue=[] working_on=- at=1793308312196 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
+snapshot IDLE queue=[] working_on=- at=1793308312196 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 14 recorded 12: fact Transcript type=user uuid=335b9300-c427-4258-98e5-1b29839f0fdd
 item 335b9300-c427-4258-98e5-1b29839f0fdd prompt final at=1793308312403 text="Use the Bash tool to run exactly: printf denied > denied.txt. Then stop."
-snapshot WORKING queue=[] working_on=- at=1793308312403 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308312403 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 38 recorded 36: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01MrkrGH3LhhhPoF4crGT4pe
-snapshot WORKING queue=[] working_on=- at=1793308313881 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=? running=toolu_01MrkrGH3LhhhPoF4crGT4pe Bash since=1793308313881
+snapshot WORKING queue=[] working_on=- at=1793308313881 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01MrkrGH3LhhhPoF4crGT4pe Bash since=1793308313881
 ## 40 recorded 38: fact Hook hook_event_name=PermissionRequest
-snapshot NEEDS_YOU queue=[] working_on=- at=1793308313907 asks=[ask:1->- permission:Bash/session <MACHINE_PATH> deny-can-stop] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=? running=toolu_01MrkrGH3LhhhPoF4crGT4pe Bash since=1793308313881
+snapshot NEEDS_YOU queue=[] working_on=- at=1793308313907 asks=[ask:1->- permission:Bash/session <MACHINE_PATH> deny-can-stop] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01MrkrGH3LhhhPoF4crGT4pe Bash since=1793308313881
 ## 44 recorded 42: fact Transcript type=assistant uuid=846c1c3f-d387-4728-a8e4-70f0f2285e75
 item 846c1c3f-d387-4728-a8e4-70f0f2285e75 thinking final at=1793308313763 text=""
-snapshot NEEDS_YOU queue=[] working_on=- at=1793308315812 asks=[ask:1->- permission:Bash/session <MACHINE_PATH> deny-can-stop] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34728 tasks=? background=? running=toolu_01MrkrGH3LhhhPoF4crGT4pe Bash since=1793308313881
+snapshot NEEDS_YOU queue=[] working_on=- at=1793308315812 asks=[ask:1->- permission:Bash/session <MACHINE_PATH> deny-can-stop] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34728/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01MrkrGH3LhhhPoF4crGT4pe Bash since=1793308313881
 ## 45 recorded 43: fact Transcript type=assistant uuid=05352c63-2316-4f6b-b79c-ed614eaf294d
 item toolu_01MrkrGH3LhhhPoF4crGT4pe tool final at=1793308314082 text="" Bash TOOL_STATE_RUNNING input=shell:"printf denied > denied.txt"
-snapshot NEEDS_YOU queue=[] working_on=- at=1793308315812 asks=[ask:1->toolu_01MrkrGH3LhhhPoF4crGT4pe permission:Bash/session <MACHINE_PATH> deny-can-stop] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34728 tasks=? background=? running=toolu_01MrkrGH3LhhhPoF4crGT4pe Bash since=1793308313881
+snapshot NEEDS_YOU queue=[] working_on=- at=1793308315812 asks=[ask:1->toolu_01MrkrGH3LhhhPoF4crGT4pe permission:Bash/session <MACHINE_PATH> deny-can-stop] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34728/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01MrkrGH3LhhhPoF4crGT4pe Bash since=1793308313881
 ## 47 recorded 45: fact Transcript type=user uuid=6b220b98-f9a6-4928-b97b-14a026b90d29
 item toolu_01MrkrGH3LhhhPoF4crGT4pe tool final at=1793308314082 text="" Bash TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED elsewhere ended=1793308314186 input=shell:"printf denied > denied.txt" out="The user doesn't want to proceed with this tool use. The too…"
-snapshot WORKING queue=[] working_on=- at=1793308315813 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34728 tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308315813 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34728/? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 51 recorded 49: fact Transcript type=user uuid=cf1dc556-e2eb-4025-9562-7b5cad9e499b
 item cf1dc556-e2eb-4025-9562-7b5cad9e499b interruption final at=1793308314187 text=""
 item turn:1 turn final at=1793308314187 text="" #1 TURN_OUTCOME_INTERRUPTED started=1793308312403
-snapshot IDLE queue=[] working_on=- at=1793308315820 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34728 tasks=? background=?
+snapshot IDLE queue=[] working_on=- at=1793308315820 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34728/? tasks=? active=[] usage=? servers=? sign_in=? background=?
 turn_end 1 last=-
 ## 64 recorded 62: fact Transcript type=user uuid=79ba042e-9a41-4492-8c77-39c5fba59e63
 item 79ba042e-9a41-4492-8c77-39c5fba59e63 prompt final at=1793308316038 text="Use a read-only command instead"
-snapshot WORKING queue=[] working_on=- at=1793308316024 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34728 tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308316024 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34728/? tasks=? active=[] usage=? servers=? sign_in=? background=?

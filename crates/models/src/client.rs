@@ -133,7 +133,6 @@ struct Daemon {
 impl Daemon {
     fn snapshot(&self) -> Snapshot {
         Snapshot {
-            agent_id: AGENT_ID.to_vec(),
             revision: self.newest_snapshot,
             kind: KIND as i32,
             phase: self.phase as i32,
@@ -430,7 +429,6 @@ fn text_item(order: u64, revision: u64, text: &str) -> Item {
 
 fn item(order: u64, revision: u64, text: &str, kind: claude_item::Kind) -> Item {
     Item {
-        agent_id: AGENT_ID.to_vec(),
         key: format!("k{order}"),
         order,
         revision,
@@ -651,7 +649,6 @@ impl Machine for ClientModel {
                     .iter_mut()
                     .find(|item| item.order == *order)?;
                 let append = Append {
-                    agent_id: AGENT_ID.to_vec(),
                     key: item.key.clone(),
                     base_revision: item.revision,
                     revision,

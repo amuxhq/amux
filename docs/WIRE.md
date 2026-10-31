@@ -280,7 +280,6 @@ journal frames them, the store keeps them and every stream carries them.
 
 ```proto
 message Item {
-  bytes agent_id = 1;
   string key = 2;             // from the interpreter
   uint64 order = 3;           // assigned once per key by the owning daemon
   uint64 revision = 4;        // assigned on every upsert by the owning daemon
@@ -355,8 +354,8 @@ explicit unknown value until the interpreter learns it.
 Exactly one field is appendable: `Item.text`.
 
 ```proto
-message Append { bytes agent_id = 1; string key = 2; uint64 base_revision = 3;
-                 uint64 revision = 4; string text = 5; }
+message Append { string key = 2; uint64 base_revision = 3; uint64 revision = 4;
+                 string text = 5; }
 ```
 
 A client applies an append when the item it holds for `key` is at

@@ -290,7 +290,6 @@ impl Daemon {
         }
         let snapshot = cut.snapshot.unwrap_or_else(|| Snapshot {
             // Nothing emitted yet: the kind tag and an empty body.
-            agent_id: row.agent.agent.clone(),
             kind: row.kind,
             phase: wire::Phase::Starting as i32,
             ..Snapshot::default()

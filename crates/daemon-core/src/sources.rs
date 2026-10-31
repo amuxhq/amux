@@ -1626,7 +1626,6 @@ fn fold_tail(events: Vec<Record>, row: &AgentRow) -> (Vec<Item>, wire::Snapshot,
         }
     }
     let snapshot = snapshot.unwrap_or_else(|| wire::Snapshot {
-        agent_id: row.agent.agent.clone(),
         kind: row.kind,
         phase: wire::Phase::Starting as i32,
         ..wire::Snapshot::default()

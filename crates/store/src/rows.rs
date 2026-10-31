@@ -189,10 +189,9 @@ fn finish_agent((mut row, snapshot, git): RawAgent) -> Result<AgentRow, StoreErr
     Ok(row)
 }
 
-fn item_row(row: &Row<'_>, agent: &AgentKey) -> rusqlite::Result<(Item, Option<Vec<u8>>)> {
+fn item_row(row: &Row<'_>) -> rusqlite::Result<(Item, Option<Vec<u8>>)> {
     Ok((
         Item {
-            agent_id: agent.agent.clone(),
             key: row.get(0)?,
             order: row.get::<_, i64>(1)? as u64,
             revision: row.get::<_, i64>(2)? as u64,
@@ -438,7 +437,7 @@ impl Rows<'_> {
         let mut all: Vec<&dyn rusqlite::ToSql> = vec![&agent.host, &agent.agent];
         all.extend_from_slice(params);
         let rows = statement
-            .query_map(all.as_slice(), |row| item_row(row, agent))?
+            .query_map(all.as_slice(), item_row)?
             .collect::<Result<Vec<_>, _>>()?;
         rows.into_iter().map(finish_item).collect()
     }

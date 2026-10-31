@@ -713,7 +713,6 @@ fn commit(
     for (offset, step) in frames {
         for item in &step.items {
             let mut item = item.clone();
-            item.agent_id = agent.agent.clone();
             item.revision = row.next_revision;
             row.next_revision += 1;
             item.order = rows.commit_item(agent, &item, next_position)?;
@@ -732,7 +731,6 @@ fn commit(
             };
             row.next_revision += 1;
             committed.records.push(Record::Append(Append {
-                agent_id: agent.agent.clone(),
                 key: append.key.clone(),
                 base_revision,
                 revision,
@@ -741,7 +739,6 @@ fn commit(
         }
         if let Some(snapshot) = &step.snapshot {
             let mut snapshot = snapshot.clone();
-            snapshot.agent_id = agent.agent.clone();
             snapshot.revision = row.next_revision;
             row.next_revision += 1;
             let was = row.phase;
@@ -814,12 +811,7 @@ fn absorb(rows: &Rows<'_>, agent: &AgentKey, what: Absorb) -> Result<Absorbed, S
         stored: Vec::new(),
         joined: true,
     };
-    // An item as this replica holds it: under its agent's id here.
-    let absorb_item = |item: &Item| {
-        let mut item = item.clone();
-        item.agent_id = agent.agent.clone();
-        rows.absorb_item(agent, &item)
-    };
+    let absorb_item = |item: &Item| rows.absorb_item(agent, item);
     match what {
         Absorb::Delta { events, live } => {
             for event in events {

@@ -133,7 +133,6 @@ message IncarnationEnd {
 // and revision are zero in the journal and assigned by the owning daemon at
 // commit: order once per key, revision on every upsert.
 message Item {
-  bytes agent_id = 1;
   string key = 2;
   uint64 order = 3;
   uint64 revision = 4;
@@ -154,7 +153,6 @@ message Item {
 // The one delta: extends `text` on an open item. Sent only live, after
 // CaughtUp; a base mismatch makes the client call GetItem.
 message Append {
-  bytes agent_id = 1;
   string key = 2;
   uint64 base_revision = 3;
   uint64 revision = 4;
@@ -165,7 +163,6 @@ message Append {
 // the per-kind body is present in every snapshot, at an explicit unknown
 // until the interpreter learns it.
 message Snapshot {
-  bytes agent_id = 1;
   uint64 revision = 2;
   repeated QueuedInput queue = 3;
   // Which per-kind snapshot `body` holds. Before the interpreter's first

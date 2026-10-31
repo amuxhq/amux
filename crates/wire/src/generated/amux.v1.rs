@@ -321,8 +321,6 @@ impl ::prost::Name for IncarnationEnd {
 /// commit: order once per key, revision on every upsert.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Item {
-    #[prost(bytes = "vec", tag = "1")]
-    pub agent_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(string, tag = "2")]
     pub key: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
@@ -362,8 +360,6 @@ impl ::prost::Name for Item {
 /// CaughtUp; a base mismatch makes the client call GetItem.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Append {
-    #[prost(bytes = "vec", tag = "1")]
-    pub agent_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(string, tag = "2")]
     pub key: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
@@ -388,8 +384,6 @@ impl ::prost::Name for Append {
 /// until the interpreter learns it.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
-    #[prost(bytes = "vec", tag = "1")]
-    pub agent_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint64, tag = "2")]
     pub revision: u64,
     #[prost(message, repeated, tag = "3")]

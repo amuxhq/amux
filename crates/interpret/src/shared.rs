@@ -483,7 +483,6 @@ impl<A: OpenAsk> Shared<A> {
             _ => self.now_ms,
         };
         let snapshot = Snapshot {
-            agent_id: self.agent.clone(),
             revision: 0,
             queue: self.queue.entries.clone(),
             kind: self.kind,
@@ -582,7 +581,6 @@ impl<A: OpenAsk> Shared<A> {
                 .map_or(self.now_ms, |open| open.at_ms)
         });
         let item = Item {
-            agent_id: self.agent.clone(),
             key: draft.key,
             order: 0,
             revision: 0,
@@ -620,7 +618,6 @@ impl<A: OpenAsk> Shared<A> {
             return true;
         }
         emit.step.appends.push(Append {
-            agent_id: self.agent.clone(),
             key: key.to_owned(),
             base_revision: 0,
             revision: 0,

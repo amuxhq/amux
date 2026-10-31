@@ -45,7 +45,6 @@ use std::time::Instant;
 
 pub use daemon_core::payload::Source;
 pub use daemon_core::{Check, DumpReason, LinkId, StepBudget, Violation};
-use serde::{Deserialize, Serialize};
 
 /// How long the link stays on a path that keeps working before it may move
 /// to a better one, so two working paths never trade the link back and
@@ -59,13 +58,13 @@ pub const PROBE_INTERVAL_MS: u64 = 5_000;
 
 /// A byte-stream path (SSH, a framed TCP connection, an in-process pipe),
 /// named by the driver as it registers it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct PathId(pub u64);
 
 /// One way the link's packets can travel. Direct and Punched carry a peer
 /// address; Forwarded names the forwarding link (the relay's or a daemon's);
 /// Framed is a byte-stream path by id.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Path {
     Direct(SocketAddr),
     Punched(SocketAddr),
@@ -81,7 +80,7 @@ impl Path {
 }
 
 /// Why a forwarder would not carry the link's packets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ForwardRefusal {
     /// The forwarder holds no link to the peer.
     NoRoute,
@@ -93,7 +92,7 @@ pub enum ForwardRefusal {
 
 /// Everything the driver can tell the machine; the clock is an input like
 /// any other.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Input {
     Candidate {
         addr: SocketAddr,
@@ -194,7 +193,7 @@ pub const CHECKS: &[Check] = &[
 /// What a path is, apart from its kind: a punched path and a direct one to
 /// the same address are the same path, which becomes direct once the peer
 /// lists the address itself.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum Key {
     Addr(SocketAddr),
     Forwarded(LinkId),
@@ -212,7 +211,7 @@ impl From<Path> for Key {
 }
 
 /// What the machine knows of one path.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 struct PathState {
     /// When a probe on it was last answered, or a packet last arrived on
     /// it after one had been.
@@ -236,7 +235,7 @@ impl PathState {
 }
 
 /// The path carrying the link, since when.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Carrying {
     key: Key,
     path: Path,
@@ -244,17 +243,17 @@ struct Carrying {
 }
 
 /// The link moving off a path this step, kept for the invariant check.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Switch {
     from: Key,
     from_working: bool,
     held_ms: u64,
 }
 
-/// The machine: pure, cloneable, serialisable, stepped by the driver;
+/// The machine: pure, cloneable, stepped by the driver;
 /// invariants checked after every step as the daemon and relay cores do.
 /// Hashed and compared whole, so a checker can hold it as its state.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Paths {
     now_ms: u64,
     paid: bool,
@@ -1184,14 +1183,6 @@ mod tests {
         assert!(out.contains(&Output::Arm {
             at_ms: PROBE_INTERVAL_MS
         }));
-    }
-
-    #[test]
-    fn the_machine_round_trips_through_its_serialised_form() {
-        let mut paths = up(true);
-        answer(&mut paths, Path::Direct(lan()), 4);
-        let bytes = postcard::to_allocvec(&paths).unwrap();
-        assert_eq!(postcard::from_bytes::<Paths>(&bytes).unwrap(), paths);
     }
 
     fn violation(paths: &Paths) -> Option<Check> {

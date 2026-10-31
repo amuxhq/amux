@@ -2647,8 +2647,6 @@ name = "path-core"
 version = "0.1.0"
 dependencies = [
  "daemon-core",
- "postcard",
- "serde",
 ]
 
 [[package]]

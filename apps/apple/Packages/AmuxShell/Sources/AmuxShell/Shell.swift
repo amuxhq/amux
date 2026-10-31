@@ -5,9 +5,7 @@ import PhotosUI
 import StoreKit
 import SwiftUI
 import UniformTypeIdentifiers
-#if canImport(UIKit)
 import UIKit
-#endif
 
 /// Puts text on the system clipboard.
 ///
@@ -16,9 +14,7 @@ import UIKit
 /// screen that could not be photographed or replayed away from a device.
 @MainActor
 private func copy(_ text: String) {
-    #if canImport(UIKit)
     UIPasteboard.general.string = text
-    #endif
 }
 
 /// What the shell cannot do for itself and hands back to whoever assembled the
@@ -97,9 +93,7 @@ public enum ShellAction: Equatable, Sendable {
 /// be photographed or replayed away from a device.
 @MainActor
 private func leave(for url: URL) {
-    #if canImport(UIKit)
     UIApplication.shared.open(url)
-    #endif
 }
 
 /// This app's own page in the system's settings. A local network this phone
@@ -107,11 +101,9 @@ private func leave(for url: URL) {
 /// app has no second ask to offer.
 @MainActor
 private func openSystemSettings() {
-    #if canImport(UIKit)
     if let url = URL(string: UIApplication.openSettingsURLString) {
         UIApplication.shared.open(url)
     }
-    #endif
 }
 
 /// The app: three tabs, a stack under each, and a title menu on the Agents

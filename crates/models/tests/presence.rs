@@ -85,8 +85,13 @@ fn the_relay_refuses_then_carries_a_dial_at_ci_bounds() {
     let model = PresenceRouting::ci();
     let launched = model.init();
     assert!(launched.dialling(), "{launched:?}");
+    // Arrived at the relay, the target is left to dial this host; once the
+    // wait is over, this one dials it there.
     let claimed = take(&model, &launched, Action::ClaimUp(Via::Relay));
-    let refused = take(&model, &claimed, Action::Refused(Via::Relay));
+    assert!(!claimed.dialling(), "{claimed:?}");
+    let waited = take(&model, &claimed, Action::Retry);
+    assert!(waited.dialling(), "{waited:?}");
+    let refused = take(&model, &waited, Action::Refused(Via::Relay));
     assert_eq!(refused.presence(), Presence::Away, "{refused:?}");
 
     let left = take(&model, &refused, Action::Leave);

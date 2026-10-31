@@ -244,6 +244,8 @@ const NOT_AT_ONCE: &str = "a failed attempt is not followed at once by another: 
 const CALL_DIALS: &str =
     "a call wanting a host no attempt is out to, and no pause holds back, starts one at once";
 const LAST_ERROR: &str = "the dial error a client reads is the last failed attempt's";
+const ARRIVAL_DIALS: &str = "a host announced as just arrived, reached by nothing before, is left \
+     to dial this one: no attempt is out to it as the announcement is heard";
 
 #[derive(Clone)]
 pub struct State {
@@ -267,8 +269,9 @@ pub struct State {
     attempt: Option<Plan>,
     /// The attempt's deadline is armed.
     deadline: bool,
-    /// The pause before the next attempt is armed, and whether a link that
-    /// lived too short a while armed it.
+    /// The pause before the next attempt is armed, and whether it holds a
+    /// call back: a link that lived too short a while armed it, or the
+    /// target is left to dial this host.
     pause: Option<bool>,
     /// The account's plan pays for connections between hosts.
     paid: bool,
@@ -573,7 +576,14 @@ impl Machine for PresenceRouting {
                         ..Default::default()
                     }),
                 };
-                (vec![control(via, Body::NeighborUp(up))], Step::Other)
+                // Reached by nothing before, the target has just arrived
+                // where the claimant is, and dials this host itself.
+                let step = if s.claims.is_empty() && s.direct.is_empty() {
+                    Step::Arrived
+                } else {
+                    Step::Other
+                };
+                (vec![control(via, Body::NeighborUp(up))], step)
             }
             Action::ClaimDown(via) => {
                 next.used.downs += 1;
@@ -712,6 +722,9 @@ impl Machine for PresenceRouting {
             next.broken.insert(LAST_ERROR);
         }
         absorb(&mut next, out, step);
+        if step == Step::Arrived && next.attempt.is_some() {
+            next.broken.insert(ARRIVAL_DIALS);
+        }
         if step == Step::Wanted
             && before.direct.is_empty()
             && !before.revoked
@@ -746,6 +759,9 @@ impl Machine for PresenceRouting {
             }),
             Property::always(NOT_AT_ONCE, |_, s: &State| !s.broken.contains(NOT_AT_ONCE)),
             Property::always(CALL_DIALS, |_, s: &State| !s.broken.contains(CALL_DIALS)),
+            Property::always(ARRIVAL_DIALS, |_, s: &State| {
+                !s.broken.contains(ARRIVAL_DIALS)
+            }),
             Property::always(LAST_ERROR, |_, s: &State| !s.broken.contains(LAST_ERROR)),
             Property::always("the core never asks for a dump", |_, s: &State| {
                 s.dumped.is_none()
@@ -809,6 +825,8 @@ fn route_link(route: Route) -> LinkId {
 enum Step {
     /// A link of the target's own went.
     Lost,
+    /// A claim of the target came up while nothing reached it.
+    Arrived,
     Failed,
     Revoked,
     Deadline,
@@ -835,6 +853,9 @@ fn absorb(next: &mut State, out: Vec<Output>, step: Step) {
                 if matches!(step, Step::Failed | Step::Revoked | Step::Deadline) {
                     next.broken.insert(NOT_AT_ONCE);
                 }
+                if step == Step::Arrived {
+                    next.broken.insert(ARRIVAL_DIALS);
+                }
                 next.attempt = Some(plan);
             }
             Output::Abandon { .. } => next.attempt = None,
@@ -848,7 +869,7 @@ fn absorb(next: &mut State, out: Vec<Output>, step: Step) {
             Output::ArmTimer {
                 id: TimerId::Retry(_),
                 ..
-            } => next.pause = Some(step == Step::Lost),
+            } => next.pause = Some(matches!(step, Step::Lost | Step::Arrived)),
             Output::CancelTimer {
                 id: TimerId::Retry(_),
             } => next.pause = None,

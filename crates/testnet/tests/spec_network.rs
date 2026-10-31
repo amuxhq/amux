@@ -3290,6 +3290,108 @@ async fn a_network_change_redials_a_lost_relay_without_its_pause() {
     net.shutdown().await.unwrap();
 }
 
+/// A phone back after a sleep longer than a goodbye holds a desk off: the
+/// desk is retrying it, an attempt out, when the relay says it is back.
+/// The phone, handed the relay's list of who is there, dials the desk; the
+/// desk, told the phone has just arrived, drops its attempt and waits for
+/// that link rather than cross it. One link comes up, the phone's resumed
+/// dial, on a network of the relay alone and on one where the desk is a
+/// server the phone punches through to.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_phone_back_after_a_long_sleep_is_linked_once_by_its_own_dial() {
+    let server = |name| testnet::HostDecl {
+        lan: true,
+        discovery: false,
+        scope: Some("server".to_owned()),
+        router: Some(testnet::RouterKind::Open),
+        ..relay_host(name, "ada")
+    };
+    let phone = |name| testnet::HostDecl {
+        lan: true,
+        discovery: false,
+        scope: Some("phone".to_owned()),
+        router: Some(testnet::RouterKind::Ordinary),
+        ..relay_host(name, "ada")
+    };
+    for (shape, desk_decl, phone_decl) in [
+        (
+            "the relay alone",
+            relay_host("desk", "ada"),
+            relay_host("phone", "ada"),
+        ),
+        ("a server and a phone", server("desk"), phone("phone")),
+    ] {
+        let topology = Topology::new()
+            .relay(&["ada"])
+            .host_decl(desk_decl)
+            .host_decl(phone_decl);
+        let mut net = Net::start(topology).await.unwrap();
+        net.trust("desk", "phone").await.unwrap();
+        net.trust("phone", "desk").await.unwrap();
+        let (desk, phone_id) = (host_id(&net, "desk"), host_id(&net, "phone"));
+        until(
+            &format!("{shape}: the phone linked to the desk"),
+            || async {
+                match edge(&net, "phone").via(desk).await {
+                    LiveRoute::Offline => Err("offline"),
+                    _ => Ok(()),
+                }
+            },
+        )
+        .await
+        .unwrap();
+        let phone = edge(&net, "phone");
+        // Long enough for the phone's dial to have left it a ticket.
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        phone.suspend().await;
+        tokio::time::sleep(Duration::from_millis(
+            daemon_core::reach::ATTEMPT_DEADLINE_MS + 2_000,
+        ))
+        .await;
+        let marks = (
+            net.link_log("phone").unwrap().len(),
+            net.link_log("desk").unwrap().len(),
+        );
+        phone.resume().await;
+        until(&format!("{shape}: the phone linked again"), || async {
+            match (
+                phone.via(desk).await,
+                edge(&net, "desk").via(phone_id).await,
+            ) {
+                (LiveRoute::Offline, _) | (_, LiveRoute::Offline) => Err("offline"),
+                _ => Ok(()),
+            }
+        })
+        .await
+        .unwrap();
+        peer_inventory_hosts(&phone, desk)
+            .await
+            .expect("the phone's calls reach the desk");
+        // Long enough for a crossed dial from the desk to have come up.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let ups = |host: &str, peer, mark| {
+            net.link_log(host)
+                .unwrap()
+                .iter()
+                .skip(mark)
+                .filter(|line| {
+                    line.peer == peer && line.event == node::link_log::LinkTransition::Up
+                })
+                .copied()
+                .collect::<Vec<_>>()
+        };
+        let (phone_ups, desk_ups) = (ups("phone", desk, marks.0), ups("desk", phone_id, marks.1));
+        println!("{shape}: the phone saw {phone_ups:?}, the desk {desk_ups:?}");
+        assert_eq!(phone_ups.len(), 1, "{shape}: one link, not two crossed");
+        assert_eq!(desk_ups.len(), 1, "{shape}: one link, not two crossed");
+        assert!(
+            phone_ups[0].resumed,
+            "{shape}: the phone's own dial, resumed on the ticket its last link left"
+        );
+        net.shutdown().await.unwrap();
+    }
+}
+
 /// A phone about to be suspended says goodbye on every link, closes them
 /// and its relay link, and dials nothing while it sleeps; running again, it
 /// dials the relay and every host at once and is reached through the relay

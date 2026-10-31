@@ -660,6 +660,93 @@ fn a_host_that_said_goodbye_and_came_back_is_not_dialled_after_the_wait() {
     assert!(!daemon.reach().expecting(DESK));
 }
 
+/// The peer on `link` says `host` has just arrived where it is.
+fn arrived(daemon: &mut Daemon, link: u64, host: HostId) -> Vec<Output> {
+    step(
+        daemon,
+        Input::LinkControl {
+            link: LinkId(link),
+            frame: Message {
+                body: Some(Body::NeighborUp(wire::NeighborUp {
+                    host: Some(wire::Host {
+                        host_id: host.0.to_vec(),
+                        ..Default::default()
+                    }),
+                })),
+            },
+        },
+    )
+}
+
+#[test]
+fn a_host_announced_as_arriving_is_left_to_dial_and_dialled_once_an_attempt_passes() {
+    let mut daemon = daemon(trusting());
+    let (attempt, _) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);
+    failed(&mut daemon, DESK, attempt);
+    up(&mut daemon, 1, RELAY, CarrierKind::Relay);
+    at(&mut daemon, 60_000);
+
+    let out = arrived(&mut daemon, 1, DESK);
+    assert!(
+        dials(&out).iter().all(|(host, ..)| *host != DESK),
+        "the desk dials this host, handed the relay's list: {out:?}"
+    );
+    assert!(daemon.reach().expecting(DESK));
+    assert_eq!(
+        armed(&out, TimerId::Retry(DESK)),
+        Some(60_000 + ATTEMPT_DEADLINE_MS)
+    );
+    let out = step(&mut daemon, Input::Wanted { host: DESK });
+    assert!(dials(&out).is_empty(), "a call waits for the desk's link");
+
+    at(&mut daemon, 60_000 + ATTEMPT_DEADLINE_MS);
+    let out = step(
+        &mut daemon,
+        Input::Timer {
+            id: TimerId::Retry(DESK),
+        },
+    );
+    dial_of(&out, DESK);
+}
+
+#[test]
+fn an_attempt_out_to_a_host_announced_as_arriving_is_dropped_for_its_dial() {
+    let mut daemon = daemon(trusting());
+    let (attempt, _) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);
+    up(&mut daemon, 1, RELAY, CarrierKind::Relay);
+    let out = arrived(&mut daemon, 1, DESK);
+    assert!(out.contains(&Output::Abandon {
+        host: DESK,
+        attempt
+    }));
+    assert!(dials(&out).is_empty(), "{out:?}");
+    assert!(daemon.reach().expecting(DESK));
+
+    let out = up(&mut daemon, 2, DESK, CarrierKind::Direct);
+    assert!(out.contains(&Output::CancelTimer {
+        id: TimerId::Retry(DESK)
+    }));
+    assert!(!daemon.reach().expecting(DESK));
+}
+
+#[test]
+fn a_host_named_in_a_peers_list_or_reached_already_is_dialled_as_before() {
+    let mut daemon = daemon(trusting());
+    let (attempt, _) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);
+    failed(&mut daemon, DESK, attempt);
+    up(&mut daemon, 1, LAPTOP, CarrierKind::Direct);
+    let out = claims(&mut daemon, 1, &[DESK]);
+    dial_of(&out, DESK);
+    assert!(!daemon.reach().expecting(DESK), "this host is the newcomer");
+
+    // Claimed through the laptop already, the desk announced by the relay
+    // too has not just arrived: the attempt goes on, on the relay as well.
+    up(&mut daemon, 2, RELAY, CarrierKind::Relay);
+    let out = arrived(&mut daemon, 2, DESK);
+    assert!(dial_of(&out, DESK).1.through_relay, "{out:?}");
+    assert!(!daemon.reach().expecting(DESK));
+}
+
 #[test]
 fn the_offerer_dials_once_no_link_came_within_an_attempts_deadline_and_not_for_a_call() {
     let mut daemon = daemon(TrustStore::of_hosts([LAPTOP]));

@@ -53,8 +53,6 @@ pub fn redact(kind: Kind, target: RedactTarget) -> RedactTarget {
         Kind::ClaudeSdk => ClaudeSdk::redact(target),
         Kind::Codex => Codex::redact(target),
         Kind::Unspecified => match target {
-            RedactTarget::ItemBody(_) => RedactTarget::ItemBody(Vec::new()),
-            RedactTarget::SnapshotBody(_) => RedactTarget::SnapshotBody(Vec::new()),
             RedactTarget::Input(_) => RedactTarget::Input(Vec::new()),
             RedactTarget::AgentMessage(envelope) => {
                 ClaudeSdk::redact(RedactTarget::AgentMessage(envelope))
@@ -106,14 +104,6 @@ pub(crate) fn redact_kind<ItemBody: Name, SnapshotBody: Name, InputBody: Name, S
         ..Scrubber::default()
     };
     match target {
-        RedactTarget::ItemBody(body) => {
-            let name = scrubber.item_body.clone();
-            RedactTarget::ItemBody(scrubber.twice(|s| s.message(&name, &body)))
-        }
-        RedactTarget::SnapshotBody(body) => {
-            let name = scrubber.snapshot_body.clone();
-            RedactTarget::SnapshotBody(scrubber.twice(|s| s.message(&name, &body)))
-        }
         RedactTarget::Input(input) => {
             let name = type_name::<wire::Input>();
             RedactTarget::Input(scrubber.twice(|s| s.message(&name, &input)))

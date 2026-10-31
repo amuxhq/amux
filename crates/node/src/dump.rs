@@ -684,9 +684,7 @@ fn scope_name(scope: DumpScope) -> &'static str {
 
 fn redacted(kind: Kind, target: RedactTarget) -> Vec<u8> {
     match interpret::redact(kind, target) {
-        RedactTarget::ItemBody(bytes)
-        | RedactTarget::SnapshotBody(bytes)
-        | RedactTarget::Input(bytes)
+        RedactTarget::Input(bytes)
         | RedactTarget::AgentMessage(bytes)
         | RedactTarget::Checkpoint(bytes)
         | RedactTarget::Spec(bytes)

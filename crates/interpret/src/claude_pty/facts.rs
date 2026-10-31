@@ -171,7 +171,7 @@ impl State {
                     self.agent_fact(emit, fact);
                 }
             }
-            Channel::Stream | Channel::Rpc | Channel::Tools => {}
+            Channel::Stream | Channel::Rpc => {}
         }
     }
 

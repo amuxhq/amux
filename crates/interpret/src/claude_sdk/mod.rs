@@ -6,9 +6,9 @@
 //! Every user message the interpreter hands to Claude carries a uuid made
 //! from its input or envelope id. Claude echoes it on the message's replay,
 //! on its `command_lifecycle` frames and as its transcript row's uuid, so a
-//! reflection is matched to what was sent by id ([`CORRELATION`]); several
-//! messages written while a turn runs fold into that turn, so arrival order
-//! would mismatch them.
+//! reflection is matched to what was sent by id; several messages written
+//! while a turn runs fold into that turn, so arrival order would mismatch
+//! them (Claude 2.1.282, probed).
 //!
 //! What the agent offers comes from Claude, never from a client catalogue:
 //! the answer to the agent process's `initialize` request lists the models
@@ -52,20 +52,6 @@ use crate::{
 
 /// The interpreter for kind `claude_sdk`.
 pub struct ClaudeSdk;
-
-/// How a reflection is matched to the input it reflects.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Correlation {
-    /// By the uuid the interpreter put on the message.
-    ClientId,
-    /// By arrival order, one message per turn.
-    Fifo,
-}
-
-/// Decided by probing Claude 2.1.282: the uuid on a stdin user message is
-/// echoed exactly, and messages written during a turn fold into it, so
-/// arrival order cannot be trusted.
-pub const CORRELATION: Correlation = Correlation::ClientId;
 
 /// The uuid a user message for this input or envelope id carries. Claude
 /// wants a well-formed uuid, so the id's first sixteen bytes (zero padded)

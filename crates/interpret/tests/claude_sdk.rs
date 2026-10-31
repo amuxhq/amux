@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use interpret::claude_sdk::{CORRELATION, ClaudeSdk, Correlation, State, client_uuid};
+use interpret::claude_sdk::{ClaudeSdk, State, client_uuid};
 use interpret::{Channel, Effect, Event, Fact, Interpreter, run_golden};
 use serde_json::{Value, json};
 
@@ -312,8 +312,7 @@ fn a_stop_after_a_message_handed_to_an_idle_claude_interrupts_its_turn() {
 /// lifecycle frames, and found messages written during a turn folding into
 /// it: reflections are matched by that id, not by arrival order.
 #[test]
-fn probe_decided_sdk_correlation() {
-    assert_eq!(CORRELATION, Correlation::ClientId);
+fn reflections_are_matched_by_the_messages_uuid_not_arrival_order() {
     let mut state = started();
     let mut uuids = Vec::new();
     for (envelope, text) in [(b"env-1", "first"), (b"env-2", "second")] {

@@ -6,5 +6,5 @@ mod pairing;
 mod reachability;
 
 pub(crate) use pairing::{LocalPairingIdentity, PairingService};
+pub(crate) use reachability::ConnectorParts;
 pub use reachability::ReachabilityLinkConnector;
-pub(crate) use reachability::{ConnectorParts, Dialer};

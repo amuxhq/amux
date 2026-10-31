@@ -55,8 +55,8 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 use wire::{GetItemRequest, ListItemsRequest};
 
-use crate::connection::ConnectionManager;
 use crate::install::{CORE_RING, STORE, write_durably};
+use crate::routing::host_from_core;
 use crate::runtime::ProfileRuntime;
 
 /// How the reason of a dump the core asked for begins.
@@ -184,9 +184,6 @@ pub(crate) struct Driver {
     /// What links and channels reported, in the order they did.
     reports: Arc<Mutex<VecDeque<Report>>>,
     calls: Arc<CallTable>,
-    /// Where what the core decides about hosts goes, once the profile's
-    /// edge is up.
-    connections: Arc<Mutex<Weak<ConnectionManager>>>,
     /// The calls the core made of peers that are still out.
     outgoing: Outgoing,
     /// Where the core is held for stepping: the caller's cores, or this
@@ -232,7 +229,6 @@ impl Driver {
         let inputs = Feed::new(inputs, Some(cores.bell()));
         let calls = Arc::new(CallTable::default());
         let reports = Arc::new(Mutex::new(VecDeque::new()));
-        let connections = Arc::new(Mutex::new(Weak::new()));
         let outgoing = Outgoing::default();
         let window = Arc::new(pairing::PairWindow::default());
         let pairings = Arc::new(pairing::Carriers::default());
@@ -272,7 +268,6 @@ impl Driver {
             inputs: inputs.downgrade(),
             runtime,
             calls: calls.clone(),
-            connections: connections.clone(),
             outgoing: outgoing.clone(),
             timers: BTreeMap::new(),
             alarm: None,
@@ -292,7 +287,6 @@ impl Driver {
             inputs,
             reports,
             calls,
-            connections,
             outgoing,
             cores,
             stepper,
@@ -310,11 +304,6 @@ impl Driver {
     pub(crate) fn closed(&self) -> impl Future<Output = ()> + Send + 'static {
         let mut closed = self.closed.clone();
         async move { while closed.changed().await.is_ok() {} }
-    }
-
-    /// From now on what the core decides about hosts goes to `connections`.
-    pub(crate) fn attach_connections(&self, connections: Weak<ConnectionManager>) {
-        *self.connections.lock().unwrap() = connections;
     }
 
     /// Reports what a link or channel did. Never waits, so a stream can
@@ -586,7 +575,6 @@ pub(crate) struct CoreThread {
     inputs: WeakFeed,
     runtime: Weak<ProfileRuntime>,
     calls: Arc<CallTable>,
-    connections: Arc<Mutex<Weak<ConnectionManager>>>,
     outgoing: Outgoing,
     /// The timers the core armed, by their deadline on the profile's clock.
     /// The map is the truth: a timer the core cancelled or re-armed is not
@@ -840,7 +828,7 @@ impl CoreThread {
                 if let Some(stream) = stream {
                     tracing::debug!(
                         host = %runtime.host(),
-                        peer = %crate::routing::host_from_core(from),
+                        peer = %host_from_core(from),
                         stream,
                         "a peer opened a stream"
                     );
@@ -1187,18 +1175,18 @@ impl CoreThread {
                 }
             }
             Output::Abandon { host, attempt } => {
-                if let Some(connections) = self.connections() {
-                    connections.abandon(host, attempt);
+                if let Some(edge) = runtime.edge() {
+                    edge.reachability().abandon(host_from_core(host), attempt);
                 }
             }
             Output::Rediscover => {
-                if let Some(connections) = self.connections() {
-                    connections.rediscover();
+                if let Some(edge) = runtime.edge() {
+                    edge.reachability().requery();
                 }
             }
             Output::DropRoute { host, route } => {
-                if let Some(connections) = self.connections() {
-                    connections.drop_route(host, route);
+                if let Some(edge) = runtime.edge() {
+                    edge.connections().drop_route(host, route);
                 }
             }
             Output::Call {
@@ -1254,15 +1242,20 @@ impl CoreThread {
                 plan,
                 early,
             } => {
-                if let Some(connections) = self.connections() {
-                    connections.dial(host, attempt, plan, early);
+                if let Some(edge) = runtime.edge() {
+                    edge.reachability()
+                        .dial(host_from_core(host), attempt, plan, early);
                 }
             }
-            Output::DialRelay { attempt } => {
-                if let Some(connections) = self.connections() {
-                    connections.dial_relay(attempt);
+            Output::DialRelay { attempt } => match runtime.edge() {
+                Some(edge) => {
+                    tokio::spawn(async move { edge.dial_relay(attempt).await });
                 }
-            }
+                None => self.again.push_back(Input::RelayEnded {
+                    attempt,
+                    outcome: daemon_core::RelayOutcome::Lost("the edge is not up".to_owned()),
+                }),
+            },
             Output::SpawnAgent { dir, spec } => runtime.spawn_process(dir, *spec),
             Output::DialAgent { agent } => runtime.dial_agent(uuid::Uuid::from_bytes(agent.0)),
             Output::WriteControl { agent, frame } => {
@@ -1317,10 +1310,6 @@ impl CoreThread {
         }
     }
 
-    fn connections(&self) -> Option<Arc<ConnectionManager>> {
-        self.connections.lock().unwrap().upgrade()
-    }
-
     /// Does what the core left to the shell.
     fn shell_work(&mut self, runtime: &Arc<ProfileRuntime>, work: ShellWork) {
         match work {
@@ -1331,11 +1320,11 @@ impl CoreThread {
             ShellWork::Trust { store, changed } => {
                 *self.trust.write().unwrap() = *store;
                 if let Some((host, changed)) = changed {
-                    self.trust_changed(runtime.dir(), uuid::Uuid::from_bytes(host.0), changed);
+                    Self::trust_changed(runtime, uuid::Uuid::from_bytes(host.0), changed);
                 }
             }
             ShellWork::ReplacementEnded { host } => {
-                self.replacement_ended(uuid::Uuid::from_bytes(host.0))
+                Self::replacement_ended(runtime, uuid::Uuid::from_bytes(host.0))
             }
             ShellWork::PairWindow { active, locked_out } => self.window.publish(active, locked_out),
             ShellWork::Pairing(event) => pairing::record(&event, runtime.analytics()),
@@ -1346,13 +1335,13 @@ impl CoreThread {
     /// for a host forgotten, the tickets and tokens it gave this profile's
     /// dials, which nothing would dial it with again.
     fn trust_changed(
-        &self,
-        profile: &Path,
+        runtime: &ProfileRuntime,
         host: uuid::Uuid,
         changed: daemon_core::trust::TrustChanged,
     ) {
         use daemon_core::trust::{PairingUpdate, TrustChanged};
 
+        let profile = runtime.dir();
         let update = match changed {
             TrustChanged::Paired(update) => update,
             TrustChanged::Removed(_) => {
@@ -1371,19 +1360,18 @@ impl CoreThread {
             }
             _ => return,
         };
-        let Some(connections) = self.connections() else {
-            return;
-        };
-        if update == PairingUpdate::ReplacedPubkey {
-            connections.finish_host_replacement(host);
+        if update == PairingUpdate::ReplacedPubkey
+            && let Some(edge) = runtime.edge()
+        {
+            edge.connections().finish_host_replacement(host);
         }
     }
 
     /// A key replacement that was not written: the host's connections may
     /// open again under the key it had.
-    fn replacement_ended(&self, host: uuid::Uuid) {
-        if let Some(connections) = self.connections() {
-            connections.finish_host_replacement(host);
+    fn replacement_ended(runtime: &ProfileRuntime, host: uuid::Uuid) {
+        if let Some(edge) = runtime.edge() {
+            edge.connections().finish_host_replacement(host);
         }
     }
 
@@ -1422,9 +1410,8 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
             let Some(runtime) = runtime.upgrade() else {
                 return;
             };
-            let connections = runtime.driver().connections.lock().unwrap().upgrade();
-            if let Some(connections) = connections {
-                connections
+            if let Some(edge) = runtime.edge() {
+                edge.connections()
                     .teardown_host(uuid::Uuid::from_bytes(host.0))
                     .await;
             }
@@ -1603,11 +1590,7 @@ async fn call_peer(
     request: PeerRequest,
 ) -> Option<Answer> {
     let runtime = runtime.upgrade()?;
-    Some(
-        runtime
-            .call_peer(crate::routing::host_from_core(host), request)
-            .await,
-    )
+    Some(runtime.call_peer(host_from_core(host), request).await)
 }
 
 /// The fsync job: replaces the file at `path` with `bytes` so that a crash

@@ -738,9 +738,12 @@ impl ProfileRuntime {
             self.analytics.clone(),
         )
         .await?;
-        let edge = self.edge.get_or_init(|| edge).clone();
+        let started = self.edge.get_or_init(|| edge.clone());
+        if Arc::ptr_eq(started, &edge) {
+            edge.begin(options).await;
+        }
         self.tell_own_host();
-        Ok(edge)
+        Ok(started.clone())
     }
 
     /// The profile's network edge, once started.

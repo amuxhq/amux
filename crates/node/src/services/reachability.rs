@@ -54,35 +54,6 @@ pub struct ReachabilityLinkConnector {
     inner: Arc<Inner>,
 }
 
-/// What the core's outputs reach the attempts by.
-pub(crate) struct Dialer(Weak<Inner>);
-
-impl Dialer {
-    pub(crate) fn dial(
-        &self,
-        host: HostId,
-        attempt: AttemptId,
-        plan: Plan,
-        early: Vec<PeerRequest>,
-    ) {
-        if let Some(inner) = self.0.upgrade() {
-            ReachabilityLinkConnector { inner }.dial(host, attempt, plan, early);
-        }
-    }
-
-    pub(crate) fn abandon(&self, host: HostId, attempt: AttemptId) {
-        if let Some(inner) = self.0.upgrade() {
-            inner.abandon(host, Some(attempt));
-        }
-    }
-
-    pub(crate) fn rediscover(&self) {
-        if let Some(inner) = self.0.upgrade() {
-            inner.discovery.requery();
-        }
-    }
-}
-
 struct Inner {
     identity: DeviceIdentity,
     trust_store: SharedTrustStore,
@@ -168,7 +139,6 @@ impl ReachabilityLinkConnector {
         let dialer = Arc::new(ForwardedDialer(Arc::downgrade(&inner)));
         inner.channels.dial_forwarded_with(dialer.clone());
         inner.channels.dial_resumed_with(dialer);
-        inner.connections.set_dialer(Dialer(Arc::downgrade(&inner)));
         Self { inner }
     }
 
@@ -261,7 +231,19 @@ impl ReachabilityLinkConnector {
         }
     }
 
-    fn dial(&self, host: HostId, attempt: AttemptId, plan: Plan, early: Vec<PeerRequest>) {
+    /// The core gave up on `attempt` to `host`.
+    pub(crate) fn abandon(&self, host: HostId, attempt: AttemptId) {
+        self.inner.abandon(host, Some(attempt));
+    }
+
+    /// The core says to dial `host` on every path of `plan`.
+    pub(crate) fn dial(
+        &self,
+        host: HostId,
+        attempt: AttemptId,
+        plan: Plan,
+        early: Vec<PeerRequest>,
+    ) {
         let inner = &self.inner;
         if inner.stopped.load(Ordering::SeqCst) {
             return;

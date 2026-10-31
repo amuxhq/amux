@@ -362,11 +362,6 @@ impl Edge {
         }
         let channels = Arc::new(ChannelPool::new(links));
         let connections = ConnectionManager::new(channels.clone(), analytics.clone());
-        if let Some(runtime) = runtime.upgrade() {
-            runtime
-                .driver()
-                .attach_connections(Arc::downgrade(&connections));
-        }
         let (incoming_streams_tx, incoming_streams_rx) = mpsc::channel(64);
         let (trusted_tx, trusted_rx) = mpsc::channel(64);
         let (pairing_tx, pairing_rx) = mpsc::channel(64);
@@ -542,28 +537,32 @@ impl Edge {
             paths,
             interfaces: options.interfaces.clone(),
         });
-        // The core dials the relay through the edge's cloud link.
-        let weak = Arc::downgrade(&edge);
-        edge.connections.set_relay_dialer(Arc::new(move |attempt| {
-            let Some(edge) = weak.upgrade() else {
-                return;
-            };
-            tokio::spawn(async move { edge.dial_relay(attempt).await });
-        }));
-        // The core dials every trusted host from here: a launch's first
-        // flights.
-        edge.reachability
-            .start_dialling(options.dial, options.lan.is_some());
-        edge.tasks.lock().unwrap().push(follow_plan(
-            &edge.status,
-            &edge.connections,
-            &edge.paths,
-            edge.local_host.clone(),
-        ));
-        if signed_in {
-            edge.start_cloud().await;
-        }
         Ok(edge)
+    }
+
+    /// Lets the core dial: every trusted host (a launch's first flights)
+    /// and, signed in, the relay. The core reaches the edge through its
+    /// runtime, so this follows the runtime holding it.
+    pub(crate) async fn begin(&self, options: &EdgeOptions) {
+        self.reachability
+            .start_dialling(options.dial, options.lan.is_some());
+        self.tasks.lock().unwrap().push(follow_plan(
+            &self.status,
+            &self.connections,
+            &self.paths,
+            self.local_host.clone(),
+        ));
+        self.start_cloud().await;
+    }
+
+    /// What dials the hosts the core says to.
+    pub(crate) fn reachability(&self) -> &ReachabilityLinkConnector {
+        &self.reachability
+    }
+
+    /// What carries calls on the links the core lists.
+    pub(crate) fn connections(&self) -> &Arc<ConnectionManager> {
+        &self.connections
     }
 
     pub fn host_id(&self) -> HostId {
@@ -927,7 +926,7 @@ impl Edge {
 
     /// Makes the relay attempt the core asked for, on the cloud link that
     /// is up; one asked for once the link has gone ends at once.
-    async fn dial_relay(&self, attempt: daemon_core::AttemptId) {
+    pub(crate) async fn dial_relay(&self, attempt: daemon_core::AttemptId) {
         match self.cloud.lock().await.as_ref() {
             Some(link) => link.dial(attempt),
             None => crate::driver::CoreLinks::new(self.runtime.clone()).report(

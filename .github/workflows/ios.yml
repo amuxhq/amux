@@ -20,7 +20,6 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
-      - 'journeys/topologies/phone-loopback.json'
       - 'scripts/bounded'
       - 'scripts/no-update-flags.sh'
       - 'scripts/py'

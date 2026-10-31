@@ -1,7 +1,0 @@
-{
-  "hosts": [{"name": "desk", "lan": true}],
-  "agents": [
-    {"name": "helper", "host": "desk", "kind": "claude_sdk",
-     "script": {"steps": [{"text": {"chunks": ["Ready when you are."]}}, "turn_end"]}}
-  ]
-}

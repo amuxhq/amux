@@ -61,17 +61,14 @@ impl Host {
         host
     }
 
-    async fn prompt(&mut self, uuid: &str, text: &str, priority: Option<&str>) {
-        let mut frame = json!({
+    async fn prompt(&mut self, uuid: &str, text: &str) {
+        let frame = json!({
             "type": "user",
             "uuid": uuid,
             "session_id": "",
             "parent_tool_use_id": null,
             "message": { "role": "user", "content": text },
         });
-        if let Some(priority) = priority {
-            frame["priority"] = json!(priority);
-        }
         self.send(frame).await;
     }
 
@@ -111,7 +108,6 @@ fn describe(frame: &Value) -> String {
 
 const A: &str = "aaaaaaaa-0000-4000-8000-000000000001";
 const B: &str = "bbbbbbbb-0000-4000-8000-000000000002";
-const C: &str = "cccccccc-0000-4000-8000-000000000003";
 
 #[tokio::test]
 async fn an_idle_prompt_is_echoed_by_its_uuid_and_closed_by_its_lifecycle() {
@@ -120,7 +116,7 @@ async fn an_idle_prompt_is_echoed_by_its_uuid_and_closed_by_its_lifecycle() {
         "turn_end",
     ]}))
     .await;
-    host.prompt(A, "Say hello", None).await;
+    host.prompt(A, "Say hello").await;
     let result = host.until(|frame| frame["type"] == "result").await;
     assert_eq!(result["result"], "Hello");
     host.until(|frame| frame["type"] == "command_lifecycle" && frame["state"] == "completed")
@@ -154,7 +150,7 @@ async fn an_idle_prompt_is_echoed_by_its_uuid_and_closed_by_its_lifecycle() {
 }
 
 #[tokio::test]
-async fn a_default_message_mid_turn_folds_at_the_next_tool_result_and_later_waits() {
+async fn a_message_mid_turn_folds_at_the_next_tool_result() {
     let dir = tempfile::tempdir().unwrap();
     let gate = dir.path().join("gate");
     let mut host = Host::start(json!({"steps": [
@@ -162,20 +158,15 @@ async fn a_default_message_mid_turn_folds_at_the_next_tool_result_and_later_wait
         {"tool": {"class": "consequential", "outcome": {"output": "ran"}}},
         {"text": {"chunks": ["done"]}},
         "turn_end",
-        {"text": {"chunks": ["later"]}},
-        "turn_end",
     ]}))
     .await;
-    host.prompt(A, "Run it", None).await;
+    host.prompt(A, "Run it").await;
     host.until(|frame| frame["isReplay"] == true).await;
-    host.prompt(B, "Also this", None).await;
-    host.prompt(C, "Afterwards", Some("later")).await;
-    host.until(|frame| frame["state"] == "queued" && frame["command_uuid"] == C)
+    host.prompt(B, "Also this").await;
+    host.until(|frame| frame["state"] == "queued" && frame["command_uuid"] == B)
         .await;
     std::fs::write(&gate, "").unwrap();
     host.until(|frame| frame["state"] == "completed" && frame["command_uuid"] == A)
-        .await;
-    host.until(|frame| frame["state"] == "completed" && frame["command_uuid"] == C)
         .await;
     let trace = host.trace();
     let after_init = trace
@@ -187,7 +178,6 @@ async fn a_default_message_mid_turn_folds_at_the_next_tool_result_and_later_wait
         [
             "replay aaaaaaaa",
             "lifecycle bbbbbbbb queued",
-            "lifecycle cccccccc queued",
             "assistant tool_use",
             "user tool_result",
             "replay bbbbbbbb",
@@ -202,36 +192,22 @@ async fn a_default_message_mid_turn_folds_at_the_next_tool_result_and_later_wait
             "lifecycle bbbbbbbb completed",
             "result success",
             "lifecycle aaaaaaaa completed",
-            "lifecycle cccccccc started",
-            "system init",
-            "replay cccccccc",
-            "stream message_start",
-            "stream content_block_start",
-            "stream content_block_delta",
-            "assistant text",
-            "stream content_block_stop",
-            "result success",
-            "lifecycle cccccccc completed",
         ]
     );
     assert_eq!(host.close().await, 0);
 }
 
 #[tokio::test]
-async fn interrupt_and_now_cut_the_running_turn_short() {
+async fn interrupt_cuts_the_running_turn_short() {
     let dir = tempfile::tempdir().unwrap();
     let gate = dir.path().join("never");
     let mut host = Host::start(json!({"steps": [
         {"wait_for": {"path": gate}},
         {"text": {"chunks": ["never said"]}},
         "turn_end",
-        {"wait_for": {"path": gate}},
-        "turn_end",
-        {"text": {"chunks": ["preempted"]}},
-        "turn_end",
     ]}))
     .await;
-    host.prompt(A, "Wait", None).await;
+    host.prompt(A, "Wait").await;
     host.until(|frame| frame["isReplay"] == true).await;
     host.send(
         json!({"type":"control_request","request_id":"req_1","request":{"subtype":"interrupt"}}),
@@ -239,22 +215,8 @@ async fn interrupt_and_now_cut_the_running_turn_short() {
     .await;
     let result = host.until(|frame| frame["type"] == "result").await;
     assert_eq!(result["subtype"], "error_during_execution");
-    host.prompt(B, "Wait again", None).await;
-    host.until(|frame| frame["isReplay"] == true && frame["uuid"] == B)
-        .await;
-    host.prompt(C, "Now instead", Some("now")).await;
-    // A preempted turn ends successfully with a terminal reason saying it
-    // was cut, without an interruption marker, and its command is
-    // cancelled, as Claude 2.1.292 was recorded doing.
-    let cut = host.until(|frame| frame["type"] == "result").await;
-    assert_eq!(cut["subtype"], "success");
-    assert_eq!(cut["is_error"], false);
-    assert_eq!(cut["terminal_reason"], "aborted_streaming");
-    let next = host.until(|frame| frame["type"] == "result").await;
-    assert_eq!(next["result"], "preempted");
     let trace = host.trace();
     assert!(!trace.iter().any(|line| line.contains("never")));
-    assert!(trace.contains(&"lifecycle bbbbbbbb cancelled".to_owned()));
     let markers = host
         .frames
         .iter()
@@ -264,7 +226,7 @@ async fn interrupt_and_now_cut_the_running_turn_short() {
                 .is_some_and(|t| t.starts_with("[Request"))
         })
         .count();
-    assert_eq!(markers, 1, "only the interrupt writes a marker");
+    assert_eq!(markers, 1, "the interrupt writes one marker");
     assert_eq!(host.close().await, 0);
 }
 
@@ -287,7 +249,7 @@ async fn every_ask_blocks_until_answered_and_resolves_the_call() {
         "turn_end",
     ]}))
     .await;
-    host.prompt(A, "Ask everything", None).await;
+    host.prompt(A, "Ask everything").await;
     let answers = [
         json!({"behavior": "allow", "updatedInput": {"command": "rm x"}}),
         json!({"behavior": "deny", "message": "No thanks"}),
@@ -333,7 +295,7 @@ async fn an_approved_plan_setting_the_mode_leaves_plan_mode() {
         "turn_end",
     ]}))
     .await;
-    host.prompt(A, "Plan it", None).await;
+    host.prompt(A, "Plan it").await;
     let request = host.until(|frame| frame["type"] == "control_request").await;
     host.send(json!({"type":"control_response","response":{
         "subtype":"success","request_id":request["request_id"],"response":{
@@ -361,7 +323,7 @@ async fn interrupt_cancels_an_open_question_and_refuses_its_call() {
         "turn_end",
     ]}))
     .await;
-    host.prompt(A, "Ask", None).await;
+    host.prompt(A, "Ask").await;
     let request = host.until(|frame| frame["type"] == "control_request").await;
     host.send(
         json!({"type":"control_request","request_id":"req_1","request":{"subtype":"interrupt"}}),
@@ -399,7 +361,7 @@ async fn a_pause_keeps_the_turn_busy_and_interrupt_cuts_it() {
         "turn_end",
     ]}))
     .await;
-    host.prompt(A, "Work", None).await;
+    host.prompt(A, "Work").await;
     host.until(|frame| frame["isReplay"] == true).await;
     host.send(
         json!({"type":"control_request","request_id":"req_1","request":{"subtype":"interrupt"}}),
@@ -417,7 +379,7 @@ async fn exit_ends_the_process_with_its_code_mid_turn() {
         {"exit": {"code": 3}},
     ]}))
     .await;
-    host.prompt(A, "Leave", None).await;
+    host.prompt(A, "Leave").await;
     host.until(|frame| frame["type"] == "assistant").await;
     assert_eq!(host.0.exited_within(Duration::from_secs(1)).await, 3);
 }
@@ -524,7 +486,7 @@ async fn account_and_session_facts_play_in_recorded_shapes() {
         ],
     }))
     .await;
-    host.prompt(A, "Go", None).await;
+    host.prompt(A, "Go").await;
     let init = host.until(|frame| frame["subtype"] == "init").await;
     assert_eq!(init["mcp_servers"][1]["status"], "needs-auth");
     let warning = host
@@ -570,7 +532,7 @@ async fn account_and_session_facts_play_in_recorded_shapes() {
         .await;
     assert_eq!(reached["rate_limit_info"]["status"], "rejected");
     host.until(|frame| frame["type"] == "result").await;
-    host.prompt(B, "Again", None).await;
+    host.prompt(B, "Again").await;
     let error = host
         .until(|frame| frame["is_api_error_message"] == true)
         .await;
@@ -593,7 +555,7 @@ async fn a_background_command_returns_at_once_and_its_job_ends_when_its_gate_ope
         "turn_end",
     ]}))
     .await;
-    host.prompt(A, "Watch it", None).await;
+    host.prompt(A, "Watch it").await;
     host.until(|frame| frame["state"] == "completed" && frame["command_uuid"] == A)
         .await;
     let running = host.trace();

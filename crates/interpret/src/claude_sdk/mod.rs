@@ -418,9 +418,6 @@ impl State {
             claude_sdk_input::Of::Withdraw(withdraw) => {
                 self.shared.withdraw(emit, &id, &withdraw.queued_input_id)
             }
-            // A message at the default priority joins the running turn at
-            // its next tool boundary. Priority "now" is not steering: it
-            // abandons the rest of the turn.
             // The job reads stopping until Claude says it ended, as a task
             // notification or a list without it.
             claude_sdk_input::Of::StopJob(stop) => {

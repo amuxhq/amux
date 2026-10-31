@@ -1504,7 +1504,6 @@ fn row_sets() -> Vec<RowSet> {
             "A model reroute with its reason.",
             vec![(
                 row(RowKind::ModelSwitch {
-                    from: "gpt-5".into(),
                     to: "gpt-5-mini".into(),
                     reason: "usage limit".into(),
                 }),

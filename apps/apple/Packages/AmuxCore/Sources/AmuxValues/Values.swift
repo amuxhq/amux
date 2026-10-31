@@ -5266,7 +5266,7 @@ public enum RowKind: Codable, Hashable, Sendable {
     case turnEnd(failed: Bool, durationMs: Int64?)
     case compaction(automatic: Bool, tokensAfter: UInt64?, tokensBefore: UInt64?)
     case error(errorKind: String, message: String, attempts: UInt32, gaveUp: Bool)
-    case modelSwitch(from: String, to: String, reason: String)
+    case modelSwitch(to: String, reason: String)
     case boundary(kind: BoundaryKind, cause: String)
     case agentMessage(from: String, kind: EnvelopeKind, text: [Segment], to: String, sent: SendState, rejection: String)
     /// Codex's automatic reviewer on an action. A client words the status,
@@ -5403,7 +5403,6 @@ public enum RowKind: Codable, Hashable, Sendable {
     }
 
     private enum ModelSwitchKeys: String, CodingKey {
-        case from
         case to
         case reason
     }
@@ -5579,7 +5578,6 @@ public enum RowKind: Codable, Hashable, Sendable {
             let _fields = try _container.nestedContainer(
                 keyedBy: ModelSwitchKeys.self, forKey: .modelSwitch)
             self = .modelSwitch(
-                from: try _fields.decode(String.self, forKey: .from),
                 to: try _fields.decode(String.self, forKey: .to),
                 reason: try _fields.decode(String.self, forKey: .reason))
         case .boundary:
@@ -5726,10 +5724,9 @@ public enum RowKind: Codable, Hashable, Sendable {
             try _fields.encode(message, forKey: .message)
             try _fields.encode(attempts, forKey: .attempts)
             try _fields.encode(gaveUp, forKey: .gaveUp)
-        case .modelSwitch(let from, let to, let reason):
+        case .modelSwitch(let to, let reason):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: ModelSwitchKeys.self, forKey: .modelSwitch)
-            try _fields.encode(from, forKey: .from)
             try _fields.encode(to, forKey: .to)
             try _fields.encode(reason, forKey: .reason)
         case .boundary(let kind, let cause):

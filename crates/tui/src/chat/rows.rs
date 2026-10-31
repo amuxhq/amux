@@ -361,8 +361,7 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
             }
             lines
         }
-        RowKind::ModelSwitch { from, to, reason } => {
-            let _ = from;
+        RowKind::ModelSwitch { to, reason } => {
             vec![head(
                 ("⇄", theme.muted()),
                 "Switched to",

@@ -85,9 +85,6 @@ private final class OneCloud: CloudService, @unchecked Sendable {
     func signIn(_ intent: SignInIntent, presenting: any WebAuthPresenter) async throws(CloudError) -> SignedInAccount {
         throw .unauthenticated
     }
-    func account(_ id: AccountId) async throws(CloudError) -> AccountFacts {
-        throw .unauthenticated
-    }
     func entitlement(_ id: AccountId) async throws(CloudError) -> Entitlement { .none }
     func requestDeletion(
         _ id: AccountId, confirmedEmail: String

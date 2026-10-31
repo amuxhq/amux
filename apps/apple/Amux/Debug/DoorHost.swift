@@ -458,7 +458,6 @@ final class DoorHost {
         case .signIn(.returning(let account)): "signIn hint \(account.email)"
         case .handOver(let id): "handOver \(id)"
         case .forgetSession(let id): "forgetSession \(id)"
-        case .account(let id): "account \(id)"
         case .entitlement(let id): "entitlement \(id)"
         case .recordPurchase(let id): "recordPurchase \(id)"
         case .requestDeletion(let id, let email): "requestDeletion \(id) as \(email)"
@@ -968,14 +967,6 @@ final class DoorCloud: CloudService, @unchecked Sendable {
         }
         await script.lend(from: lender)
         await served?.lend(from: lender)
-    }
-
-    func account(_ id: AccountId) async throws(CloudError) -> AccountFacts {
-        var facts = try await script.account(id)
-        if lock.withLock({ served }) != nil {
-            facts.entitlement = try await entitlement(id)
-        }
-        return facts
     }
 
     func entitlement(_ id: AccountId) async throws(CloudError) -> Entitlement {

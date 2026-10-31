@@ -210,14 +210,6 @@ public actor AmuxCloudService: CloudService {
 
     // MARK: - What the cloud knows
 
-    public func account(_ id: AccountId) async throws(CloudError) -> AccountFacts {
-        let who = try await who(with: try await bearer(for: id))
-        let entitlement = try await entitlement(id)
-        return AccountFacts(
-            id: AccountId(who.sub), email: who.email ?? "", displayName: who.name,
-            entitlement: entitlement)
-    }
-
     /// What this account is allowed to do, and where that came from.
     ///
     /// One read, and `pro` is the whole gate. Not the tier claim in the access

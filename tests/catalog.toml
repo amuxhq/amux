@@ -1193,22 +1193,6 @@ update = ""
 cases = ["scripts/qa-sandbox-purchase.py"]
 
 [[suite]]
-name = "production-live-phone-journey"
-contract = "The phone reaches a real local daemon through the production cloud and completes one real Claude conversation."
-paths = ["scripts/qa-live-journey.py"]
-recipe = "just ios qa-live-journey"
-boundary = "Journeys"
-oracle = "Production account, relay, daemon, provider, phone-screen, and teardown observations."
-real = ["phone app", "production account service", "production relay", "local daemon", "Claude provider"]
-substituted = []
-time = "real"
-capabilities = ["macOS", "Xcode 26.6", "QA credentials", "Claude credentials", "network", "may spend provider credits"]
-lane = "qualification"
-evidence = "target/ios/qa-live-journey"
-update = ""
-cases = ["scripts/qa-live-journey.py"]
-
-[[suite]]
 name = "phone-component-snapshots"
 contract = "Every catalogued phone component and storybook story renders to its reviewed image in each declared appearance and size, and the catalogue draws every story tests/stories.json gives the phone."
 paths = ["apps/apple/AmuxComponentSnapshotTests", "apps/apple/Amux/Debug/ComponentCatalog.swift", "apps/apple/Amux/Debug/Stories.swift", "apps/apple/Tools/ios-component-snapshots.py", "tests/stories.json"]

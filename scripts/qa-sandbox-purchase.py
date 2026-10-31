@@ -302,7 +302,7 @@ def watch(who: str, secret: str, minutes: int) -> None:
     purpose: they are answered from different places, and a purchase that
     moved one without the other is exactly the failure worth catching."""
     deadline = time.monotonic() + minutes * 60
-    browser, issued = qa_cloud.signed_in(who, secret)
+    issued = qa_cloud.signed_in(who, secret)
     token = issued["access_token"]
     print(f"signed {masked(who)} in at {BASE}; "
           f"the access token claims {qa_cloud.tier(token)}", flush=True)
@@ -332,7 +332,7 @@ def post_transaction(who: str, secret: str, transaction: Path) -> None:
     if signed.count(".") < 2:
         fail(f"{transaction} does not look like a signed transaction: the "
              "App Store's JWS is three dot-separated parts")
-    browser, issued = qa_cloud.signed_in(who, secret)
+    issued = qa_cloud.signed_in(who, secret)
     token = issued["access_token"]
     print(f"signed {masked(who)} in at {BASE}", flush=True)
     status, body = qa_cloud.ask(

@@ -373,7 +373,7 @@ async fn spawn_writes_spec_one_and_starts_the_agent_process() {
     let refused = wire::profile_admin_service_client::ProfileAdminServiceClient::new(
         local_channel(&dir.join(agent_dir::TOOLS_SOCK)).await,
     )
-    .list_peers(wire::ListPeersRequest {})
+    .list_peers(wire::Empty {})
     .await
     .expect_err("no administration on an agent's tools socket");
     assert_eq!(refused.code(), tonic::Code::Unimplemented);

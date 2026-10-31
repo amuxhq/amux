@@ -18,7 +18,7 @@ pub async fn run(config_path: Option<&Path>) -> Result<bool> {
     let door = connect::front_door_now(&config).await;
     let daemon = match &door {
         Some(door) => connect::installation(door.clone())
-            .get_installation(wire::GetInstallationRequest {})
+            .get_installation(wire::Empty {})
             .await
             .ok()
             .map(|installation| installation.into_inner().version),
@@ -66,7 +66,7 @@ pub async fn run(config_path: Option<&Path>) -> Result<bool> {
         && daemon.is_some()
     {
         let profiles = connect::installation(door)
-            .list_profiles(wire::ListProfilesRequest {})
+            .list_profiles(wire::Empty {})
             .await
             .map_err(crate::plain)?
             .into_inner()

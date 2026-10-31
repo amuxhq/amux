@@ -6828,18 +6828,6 @@ pub mod session_service_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SubscribeInventoryRequest {}
-impl ::prost::Name for SubscribeInventoryRequest {
-    const NAME: &'static str = "SubscribeInventoryRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SubscribeInventoryRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.SubscribeInventoryRequest".into()
-    }
-}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ResolveAgentRequest {
     #[prost(string, tag = "1")]
@@ -6943,18 +6931,6 @@ impl ::prost::Name for StopAgentRequest {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.StopAgentRequest".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct StopAgentResponse {}
-impl ::prost::Name for StopAgentResponse {
-    const NAME: &'static str = "StopAgentResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.StopAgentResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.StopAgentResponse".into()
     }
 }
 /// The composer of an exited chat sends its draft through initial_prompt.
@@ -7283,7 +7259,7 @@ pub mod agent_service_client {
         }
         pub async fn subscribe_inventory(
             &mut self,
-            request: impl tonic::IntoRequest<super::SubscribeInventoryRequest>,
+            request: impl tonic::IntoRequest<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::InventoryEvent>>,
             tonic::Status,
@@ -7373,10 +7349,7 @@ pub mod agent_service_client {
         pub async fn stop_agent(
             &mut self,
             request: impl tonic::IntoRequest<super::StopAgentRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::StopAgentResponse>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -7607,7 +7580,7 @@ pub mod agent_service_server {
             + 'static;
         async fn subscribe_inventory(
             &self,
-            request: tonic::Request<super::SubscribeInventoryRequest>,
+            request: tonic::Request<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<Self::SubscribeInventoryStream>,
             tonic::Status,
@@ -7629,10 +7602,7 @@ pub mod agent_service_server {
         async fn stop_agent(
             &self,
             request: tonic::Request<super::StopAgentRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::StopAgentResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         /// Spawn the directory again.
         async fn resume_agent(
             &self,
@@ -7765,9 +7735,8 @@ pub mod agent_service_server {
                     struct SubscribeInventorySvc<T: AgentService>(pub Arc<T>);
                     impl<
                         T: AgentService,
-                    > tonic::server::ServerStreamingService<
-                        super::SubscribeInventoryRequest,
-                    > for SubscribeInventorySvc<T> {
+                    > tonic::server::ServerStreamingService<super::Empty>
+                    for SubscribeInventorySvc<T> {
                         type Response = super::InventoryEvent;
                         type ResponseStream = T::SubscribeInventoryStream;
                         type Future = BoxFuture<
@@ -7776,7 +7745,7 @@ pub mod agent_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::SubscribeInventoryRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -7950,7 +7919,7 @@ pub mod agent_service_server {
                         T: AgentService,
                     > tonic::server::UnaryService<super::StopAgentRequest>
                     for StopAgentSvc<T> {
-                        type Response = super::StopAgentResponse;
+                        type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -8516,7 +8485,7 @@ pub mod peer_agent_service_client {
         }
         pub async fn subscribe_inventory(
             &mut self,
-            request: impl tonic::IntoRequest<super::SubscribeInventoryRequest>,
+            request: impl tonic::IntoRequest<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::InventoryEvent>>,
             tonic::Status,
@@ -8585,10 +8554,7 @@ pub mod peer_agent_service_client {
         pub async fn stop_agent(
             &mut self,
             request: impl tonic::IntoRequest<super::StopAgentRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::StopAgentResponse>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -8810,7 +8776,7 @@ pub mod peer_agent_service_server {
             + 'static;
         async fn subscribe_inventory(
             &self,
-            request: tonic::Request<super::SubscribeInventoryRequest>,
+            request: tonic::Request<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<Self::SubscribeInventoryStream>,
             tonic::Status,
@@ -8826,10 +8792,7 @@ pub mod peer_agent_service_server {
         async fn stop_agent(
             &self,
             request: tonic::Request<super::StopAgentRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::StopAgentResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn resume_agent(
             &self,
             request: tonic::Request<super::ResumeAgentRequest>,
@@ -8953,9 +8916,8 @@ pub mod peer_agent_service_server {
                     struct SubscribeInventorySvc<T: PeerAgentService>(pub Arc<T>);
                     impl<
                         T: PeerAgentService,
-                    > tonic::server::ServerStreamingService<
-                        super::SubscribeInventoryRequest,
-                    > for SubscribeInventorySvc<T> {
+                    > tonic::server::ServerStreamingService<super::Empty>
+                    for SubscribeInventorySvc<T> {
                         type Response = super::InventoryEvent;
                         type ResponseStream = T::SubscribeInventoryStream;
                         type Future = BoxFuture<
@@ -8964,7 +8926,7 @@ pub mod peer_agent_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::SubscribeInventoryRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -9096,7 +9058,7 @@ pub mod peer_agent_service_server {
                         T: PeerAgentService,
                     > tonic::server::UnaryService<super::StopAgentRequest>
                     for StopAgentSvc<T> {
-                        type Response = super::StopAgentResponse;
+                        type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -10066,18 +10028,6 @@ pub mod peer_session_service_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetInstallationRequest {}
-impl ::prost::Name for GetInstallationRequest {
-    const NAME: &'static str = "GetInstallationRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.GetInstallationRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.GetInstallationRequest".into()
-    }
-}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Installation {
     #[prost(string, tag = "1")]
@@ -10091,30 +10041,6 @@ impl ::prost::Name for Installation {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Installation".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ShutdownRequest {}
-impl ::prost::Name for ShutdownRequest {
-    const NAME: &'static str = "ShutdownRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ShutdownRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ShutdownRequest".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ShutdownResponse {}
-impl ::prost::Name for ShutdownResponse {
-    const NAME: &'static str = "ShutdownResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ShutdownResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ShutdownResponse".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -10222,18 +10148,6 @@ impl ::prost::Name for RelayConnected {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.RelayConnected".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ListProfilesRequest {}
-impl ::prost::Name for ListProfilesRequest {
-    const NAME: &'static str = "ListProfilesRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ListProfilesRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ListProfilesRequest".into()
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10466,7 +10380,7 @@ pub mod installation_service_client {
         }
         pub async fn get_installation(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetInstallationRequest>,
+            request: impl tonic::IntoRequest<super::Empty>,
         ) -> std::result::Result<tonic::Response<super::Installation>, tonic::Status> {
             self.inner
                 .ready()
@@ -10489,11 +10403,8 @@ pub mod installation_service_client {
         }
         pub async fn shutdown(
             &mut self,
-            request: impl tonic::IntoRequest<super::ShutdownRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ShutdownResponse>,
-            tonic::Status,
-        > {
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -10513,7 +10424,7 @@ pub mod installation_service_client {
         }
         pub async fn list_profiles(
             &mut self,
-            request: impl tonic::IntoRequest<super::ListProfilesRequest>,
+            request: impl tonic::IntoRequest<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<super::ListProfilesResponse>,
             tonic::Status,
@@ -10638,18 +10549,15 @@ pub mod installation_service_server {
     pub trait InstallationService: std::marker::Send + std::marker::Sync + 'static {
         async fn get_installation(
             &self,
-            request: tonic::Request<super::GetInstallationRequest>,
+            request: tonic::Request<super::Empty>,
         ) -> std::result::Result<tonic::Response<super::Installation>, tonic::Status>;
         async fn shutdown(
             &self,
-            request: tonic::Request<super::ShutdownRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ShutdownResponse>,
-            tonic::Status,
-        >;
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn list_profiles(
             &self,
-            request: tonic::Request<super::ListProfilesRequest>,
+            request: tonic::Request<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<super::ListProfilesResponse>,
             tonic::Status,
@@ -10755,7 +10663,7 @@ pub mod installation_service_server {
                     struct GetInstallationSvc<T: InstallationService>(pub Arc<T>);
                     impl<
                         T: InstallationService,
-                    > tonic::server::UnaryService<super::GetInstallationRequest>
+                    > tonic::server::UnaryService<super::Empty>
                     for GetInstallationSvc<T> {
                         type Response = super::Installation;
                         type Future = BoxFuture<
@@ -10764,7 +10672,7 @@ pub mod installation_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetInstallationRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -10804,16 +10712,15 @@ pub mod installation_service_server {
                     struct ShutdownSvc<T: InstallationService>(pub Arc<T>);
                     impl<
                         T: InstallationService,
-                    > tonic::server::UnaryService<super::ShutdownRequest>
-                    for ShutdownSvc<T> {
-                        type Response = super::ShutdownResponse;
+                    > tonic::server::UnaryService<super::Empty> for ShutdownSvc<T> {
+                        type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ShutdownRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -10849,8 +10756,7 @@ pub mod installation_service_server {
                     struct ListProfilesSvc<T: InstallationService>(pub Arc<T>);
                     impl<
                         T: InstallationService,
-                    > tonic::server::UnaryService<super::ListProfilesRequest>
-                    for ListProfilesSvc<T> {
+                    > tonic::server::UnaryService<super::Empty> for ListProfilesSvc<T> {
                         type Response = super::ListProfilesResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -10858,7 +10764,7 @@ pub mod installation_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ListProfilesRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -11558,18 +11464,6 @@ pub mod pairing_service_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SignOutRequest {}
-impl ::prost::Name for SignOutRequest {
-    const NAME: &'static str = "SignOutRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SignOutRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.SignOutRequest".into()
-    }
-}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StartPairingRequest {
     /// How long the window stays open; absent is the daemon's default for
@@ -11639,18 +11533,6 @@ impl ::prost::Name for PairingWindow {
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetPairingStatusRequest {}
-impl ::prost::Name for GetPairingStatusRequest {
-    const NAME: &'static str = "GetPairingStatusRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.GetPairingStatusRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.GetPairingStatusRequest".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PairingStatus {
     #[prost(bool, tag = "1")]
     pub active: bool,
@@ -11716,30 +11598,6 @@ impl ::prost::Name for PendingPair {
         "type.googleapis.com/amux.v1.PendingPair".into()
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct CancelPairingRequest {}
-impl ::prost::Name for CancelPairingRequest {
-    const NAME: &'static str = "CancelPairingRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.CancelPairingRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.CancelPairingRequest".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct CancelPairingResponse {}
-impl ::prost::Name for CancelPairingResponse {
-    const NAME: &'static str = "CancelPairingResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.CancelPairingResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.CancelPairingResponse".into()
-    }
-}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ConfirmPairRequest {
     /// PendingPair.token.
@@ -11772,18 +11630,6 @@ impl ::prost::Name for AbandonPairRequest {
         "type.googleapis.com/amux.v1.AbandonPairRequest".into()
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct AbandonPairResponse {}
-impl ::prost::Name for AbandonPairResponse {
-    const NAME: &'static str = "AbandonPairResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.AbandonPairResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.AbandonPairResponse".into()
-    }
-}
 /// SSH has already authenticated its peer outside the secret-based pairing
 /// protocol, so its identity commit is a separate, SSH-only operation.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -11801,18 +11647,6 @@ impl ::prost::Name for TrustSshPeerRequest {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.TrustSshPeerRequest".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct TrustSshPeerResponse {}
-impl ::prost::Name for TrustSshPeerResponse {
-    const NAME: &'static str = "TrustSshPeerResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.TrustSshPeerResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.TrustSshPeerResponse".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -11869,18 +11703,6 @@ impl ::prost::Name for Peer {
         "type.googleapis.com/amux.v1.Peer".into()
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetDeviceIdentityRequest {}
-impl ::prost::Name for GetDeviceIdentityRequest {
-    const NAME: &'static str = "GetDeviceIdentityRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.GetDeviceIdentityRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.GetDeviceIdentityRequest".into()
-    }
-}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeviceIdentity {
     #[prost(bytes = "vec", tag = "1")]
@@ -11898,18 +11720,6 @@ impl ::prost::Name for DeviceIdentity {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.DeviceIdentity".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ListPeersRequest {}
-impl ::prost::Name for ListPeersRequest {
-    const NAME: &'static str = "ListPeersRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ListPeersRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ListPeersRequest".into()
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -12013,7 +11823,7 @@ pub mod profile_admin_service_client {
         }
         pub async fn sign_out(
             &mut self,
-            request: impl tonic::IntoRequest<super::SignOutRequest>,
+            request: impl tonic::IntoRequest<super::Empty>,
         ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status> {
             self.inner
                 .ready()
@@ -12055,7 +11865,7 @@ pub mod profile_admin_service_client {
         }
         pub async fn get_pairing_status(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetPairingStatusRequest>,
+            request: impl tonic::IntoRequest<super::Empty>,
         ) -> std::result::Result<tonic::Response<super::PairingStatus>, tonic::Status> {
             self.inner
                 .ready()
@@ -12078,11 +11888,8 @@ pub mod profile_admin_service_client {
         }
         pub async fn cancel_pairing(
             &mut self,
-            request: impl tonic::IntoRequest<super::CancelPairingRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::CancelPairingResponse>,
-            tonic::Status,
-        > {
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -12145,10 +11952,7 @@ pub mod profile_admin_service_client {
         pub async fn abandon_pair(
             &mut self,
             request: impl tonic::IntoRequest<super::AbandonPairRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::AbandonPairResponse>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -12168,7 +11972,7 @@ pub mod profile_admin_service_client {
         }
         pub async fn get_device_identity(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetDeviceIdentityRequest>,
+            request: impl tonic::IntoRequest<super::Empty>,
         ) -> std::result::Result<tonic::Response<super::DeviceIdentity>, tonic::Status> {
             self.inner
                 .ready()
@@ -12192,10 +11996,7 @@ pub mod profile_admin_service_client {
         pub async fn trust_ssh_peer(
             &mut self,
             request: impl tonic::IntoRequest<super::TrustSshPeerRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::TrustSshPeerResponse>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -12215,7 +12016,7 @@ pub mod profile_admin_service_client {
         }
         pub async fn list_peers(
             &mut self,
-            request: impl tonic::IntoRequest<super::ListPeersRequest>,
+            request: impl tonic::IntoRequest<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<super::ListPeersResponse>,
             tonic::Status,
@@ -12325,7 +12126,7 @@ pub mod profile_admin_service_server {
     pub trait ProfileAdminService: std::marker::Send + std::marker::Sync + 'static {
         async fn sign_out(
             &self,
-            request: tonic::Request<super::SignOutRequest>,
+            request: tonic::Request<super::Empty>,
         ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status>;
         async fn start_pairing(
             &self,
@@ -12333,15 +12134,12 @@ pub mod profile_admin_service_server {
         ) -> std::result::Result<tonic::Response<super::PairingWindow>, tonic::Status>;
         async fn get_pairing_status(
             &self,
-            request: tonic::Request<super::GetPairingStatusRequest>,
+            request: tonic::Request<super::Empty>,
         ) -> std::result::Result<tonic::Response<super::PairingStatus>, tonic::Status>;
         async fn cancel_pairing(
             &self,
-            request: tonic::Request<super::CancelPairingRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::CancelPairingResponse>,
-            tonic::Status,
-        >;
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn begin_pair(
             &self,
             request: tonic::Request<super::BeginPairRequest>,
@@ -12353,24 +12151,18 @@ pub mod profile_admin_service_server {
         async fn abandon_pair(
             &self,
             request: tonic::Request<super::AbandonPairRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::AbandonPairResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn get_device_identity(
             &self,
-            request: tonic::Request<super::GetDeviceIdentityRequest>,
+            request: tonic::Request<super::Empty>,
         ) -> std::result::Result<tonic::Response<super::DeviceIdentity>, tonic::Status>;
         async fn trust_ssh_peer(
             &self,
             request: tonic::Request<super::TrustSshPeerRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::TrustSshPeerResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn list_peers(
             &self,
-            request: tonic::Request<super::ListPeersRequest>,
+            request: tonic::Request<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<super::ListPeersResponse>,
             tonic::Status,
@@ -12479,8 +12271,7 @@ pub mod profile_admin_service_server {
                     struct SignOutSvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
                         T: ProfileAdminService,
-                    > tonic::server::UnaryService<super::SignOutRequest>
-                    for SignOutSvc<T> {
+                    > tonic::server::UnaryService<super::Empty> for SignOutSvc<T> {
                         type Response = super::Profile;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -12488,7 +12279,7 @@ pub mod profile_admin_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::SignOutRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -12570,7 +12361,7 @@ pub mod profile_admin_service_server {
                     struct GetPairingStatusSvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
                         T: ProfileAdminService,
-                    > tonic::server::UnaryService<super::GetPairingStatusRequest>
+                    > tonic::server::UnaryService<super::Empty>
                     for GetPairingStatusSvc<T> {
                         type Response = super::PairingStatus;
                         type Future = BoxFuture<
@@ -12579,7 +12370,7 @@ pub mod profile_admin_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetPairingStatusRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -12619,16 +12410,15 @@ pub mod profile_admin_service_server {
                     struct CancelPairingSvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
                         T: ProfileAdminService,
-                    > tonic::server::UnaryService<super::CancelPairingRequest>
-                    for CancelPairingSvc<T> {
-                        type Response = super::CancelPairingResponse;
+                    > tonic::server::UnaryService<super::Empty> for CancelPairingSvc<T> {
+                        type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::CancelPairingRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -12759,7 +12549,7 @@ pub mod profile_admin_service_server {
                         T: ProfileAdminService,
                     > tonic::server::UnaryService<super::AbandonPairRequest>
                     for AbandonPairSvc<T> {
-                        type Response = super::AbandonPairResponse;
+                        type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -12803,7 +12593,7 @@ pub mod profile_admin_service_server {
                     struct GetDeviceIdentitySvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
                         T: ProfileAdminService,
-                    > tonic::server::UnaryService<super::GetDeviceIdentityRequest>
+                    > tonic::server::UnaryService<super::Empty>
                     for GetDeviceIdentitySvc<T> {
                         type Response = super::DeviceIdentity;
                         type Future = BoxFuture<
@@ -12812,7 +12602,7 @@ pub mod profile_admin_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetDeviceIdentityRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -12854,7 +12644,7 @@ pub mod profile_admin_service_server {
                         T: ProfileAdminService,
                     > tonic::server::UnaryService<super::TrustSshPeerRequest>
                     for TrustSshPeerSvc<T> {
-                        type Response = super::TrustSshPeerResponse;
+                        type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -12898,8 +12688,7 @@ pub mod profile_admin_service_server {
                     struct ListPeersSvc<T: ProfileAdminService>(pub Arc<T>);
                     impl<
                         T: ProfileAdminService,
-                    > tonic::server::UnaryService<super::ListPeersRequest>
-                    for ListPeersSvc<T> {
+                    > tonic::server::UnaryService<super::Empty> for ListPeersSvc<T> {
                         type Response = super::ListPeersResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -12907,7 +12696,7 @@ pub mod profile_admin_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ListPeersRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

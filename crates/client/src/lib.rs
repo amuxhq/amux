@@ -151,7 +151,7 @@ macro_rules! client_impl {
         #[async_trait]
         impl<$($generics)*> Client for $ty {
             async fn subscribe_inventory(&self) -> Result<EventStream<InventoryEvent>, RpcError> {
-                Ok(events($call!(self, agents, subscribe_inventory, wire::SubscribeInventoryRequest {}).await?.into_inner()))
+                Ok(events($call!(self, agents, subscribe_inventory, wire::Empty {}).await?.into_inner()))
             }
 
             async fn resolve_agent(&self, request: ResolveAgentRequest) -> Result<Agent, RpcError> {

@@ -109,7 +109,7 @@ pub async fn select(
     wanted: Option<&str>,
 ) -> Result<wire::Profile> {
     let listed = profiles
-        .list_profiles(wire::ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .map_err(crate::plain)?
         .into_inner()

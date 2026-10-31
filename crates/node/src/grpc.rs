@@ -247,7 +247,7 @@ impl AgentService for ClientApi {
 
     async fn subscribe_inventory(
         &self,
-        _request: Request<wire::SubscribeInventoryRequest>,
+        _request: Request<wire::Empty>,
     ) -> Result<Response<Self::SubscribeInventoryStream>, Status> {
         let runtime = self.runtime()?;
         let subscription = runtime
@@ -338,7 +338,7 @@ impl AgentService for ClientApi {
     async fn stop_agent(
         &self,
         request: Request<StopAgentRequest>,
-    ) -> Result<Response<wire::StopAgentResponse>, Status> {
+    ) -> Result<Response<wire::Empty>, Status> {
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(
@@ -350,7 +350,7 @@ impl AgentService for ClientApi {
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             let stopped = runtime.on_peer(host, request).await;
             return match stopped {
-                Ok(_) => Ok(Response::new(wire::StopAgentResponse {})),
+                Ok(_) => Ok(Response::new(wire::Empty {})),
                 // Never left, and the lapse is why: answered as unreachable
                 // in the lapse's words, so a client holds the stop as it
                 // holds a send and says the reason.
@@ -364,7 +364,7 @@ impl AgentService for ClientApi {
         runtime
             .stop(agent_id(&request.agent_id)?)
             .await
-            .map(|_| Response::new(wire::StopAgentResponse {}))
+            .map(|_| Response::new(wire::Empty {}))
             .map_err(|error| status(error.to_wire()))
     }
 

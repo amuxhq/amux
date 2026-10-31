@@ -173,7 +173,7 @@ impl Install {
     async fn client(&self) -> wire::ClientStubs {
         let door = self.front_door().await.expect("a daemon answers");
         let profile = InstallationServiceClient::new(door)
-            .list_profiles(wire::ListProfilesRequest {})
+            .list_profiles(wire::Empty {})
             .await
             .unwrap()
             .into_inner()

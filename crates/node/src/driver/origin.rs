@@ -129,7 +129,7 @@ async fn inventory<F: Future<Output = ()>>(
             (
                 client
                     .agents
-                    .subscribe_inventory(wire::SubscribeInventoryRequest {})
+                    .subscribe_inventory(wire::Empty {})
                     .await
                     .map(|response| response.into_inner()),
                 None,

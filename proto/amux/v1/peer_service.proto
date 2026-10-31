@@ -17,10 +17,10 @@ import "amux/v1/session_service.proto";
 // reaches that host here, one hop.
 
 service PeerAgentService {
-  rpc SubscribeInventory(SubscribeInventoryRequest) returns (stream InventoryEvent);
+  rpc SubscribeInventory(Empty) returns (stream InventoryEvent);
   rpc CreateAgent(CreateAgentRequest) returns (Agent);
   rpc RenameAgent(RenameAgentRequest) returns (Agent);
-  rpc StopAgent(StopAgentRequest) returns (StopAgentResponse);
+  rpc StopAgent(StopAgentRequest) returns (Empty);
   rpc ResumeAgent(ResumeAgentRequest) returns (Agent);
   rpc DeleteAgent(DeleteAgentRequest) returns (Empty);
   rpc SendMessage(PeerSendMessageRequest) returns (SendMessageResponse);

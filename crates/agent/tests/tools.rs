@@ -95,7 +95,7 @@ impl AgentService for Fleet {
 
     async fn subscribe_inventory(
         &self,
-        _: Request<wire::SubscribeInventoryRequest>,
+        _: Request<wire::Empty>,
     ) -> Result<Response<Events>, Status> {
         self.record(Call::Inventory);
         let mut events = self
@@ -196,12 +196,12 @@ impl AgentService for Fleet {
     async fn stop_agent(
         &self,
         request: Request<wire::StopAgentRequest>,
-    ) -> Result<Response<wire::StopAgentResponse>, Status> {
+    ) -> Result<Response<wire::Empty>, Status> {
         self.record(Call::Stop(request.into_inner()));
         self.severed().await?;
         match &self.refuse_stop {
             Some(status) => Err(status.clone()),
-            None => Ok(Response::new(wire::StopAgentResponse {})),
+            None => Ok(Response::new(wire::Empty {})),
         }
     }
 

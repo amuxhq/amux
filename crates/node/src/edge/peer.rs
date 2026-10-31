@@ -103,7 +103,7 @@ impl PeerAgentService for PeerApi {
 
     async fn subscribe_inventory(
         &self,
-        request: Request<wire::SubscribeInventoryRequest>,
+        request: Request<wire::Empty>,
     ) -> Result<Response<Self::SubscribeInventoryStream>, Status> {
         let from = caller(&request)?;
         let subscription = self
@@ -140,7 +140,7 @@ impl PeerAgentService for PeerApi {
     async fn stop_agent(
         &self,
         request: Request<StopAgentRequest>,
-    ) -> Result<Response<wire::StopAgentResponse>, Status> {
+    ) -> Result<Response<wire::Empty>, Status> {
         caller(&request)?;
         self.own(&request.get_ref().agent_id).await?;
         self.client.stop_agent(request).await

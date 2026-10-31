@@ -538,7 +538,7 @@ async fn the_own_entry_carries_this_profiles_sign_in() {
     net.admin("laptop")
         .await
         .unwrap()
-        .sign_out(wire::SignOutRequest {})
+        .sign_out(wire::Empty {})
         .await
         .unwrap();
     fleet

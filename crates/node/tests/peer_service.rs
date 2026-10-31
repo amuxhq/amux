@@ -318,7 +318,7 @@ async fn inventory_is_origin_only() {
         .laptop_peer()
         .await
         .agents
-        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .subscribe_inventory(wire::Empty {})
         .await
         .unwrap()
         .into_inner();

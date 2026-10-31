@@ -17,13 +17,13 @@ import "amux/v1/session_service.proto";
 // agent is refused there.
 
 service AgentService {
-  rpc SubscribeInventory(SubscribeInventoryRequest) returns (stream InventoryEvent);
+  rpc SubscribeInventory(Empty) returns (stream InventoryEvent);
   // Fleet-wide name to row: NOT_FOUND, or AmbiguousAgentName with the
   // candidates. Every other call takes an agent id.
   rpc ResolveAgent(ResolveAgentRequest) returns (Agent);
   rpc CreateAgent(CreateAgentRequest) returns (Agent);
   rpc RenameAgent(RenameAgentRequest) returns (Agent);
-  rpc StopAgent(StopAgentRequest) returns (StopAgentResponse);
+  rpc StopAgent(StopAgentRequest) returns (Empty);
   // Spawn the directory again.
   rpc ResumeAgent(ResumeAgentRequest) returns (Agent);
   // Removes the agent for good, stopping it first when it is live. Its
@@ -42,8 +42,6 @@ service AgentService {
   rpc GetCatalogue(GetCatalogueRequest) returns (GetCatalogueResponse);
   rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
 }
-
-message SubscribeInventoryRequest {}
 
 message ResolveAgentRequest {
   string name = 1;
@@ -88,8 +86,6 @@ message RenameAgentRequest {
 message StopAgentRequest {
   bytes agent_id = 1;
 }
-
-message StopAgentResponse {}
 
 // The composer of an exited chat sends its draft through initial_prompt.
 message ResumeAgentRequest {

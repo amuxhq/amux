@@ -136,7 +136,7 @@ impl EarlyCall {
             EarlyCall::SubscribeInventory => EarlyAnswer::Inventory(
                 client
                     .agents
-                    .subscribe_inventory(wire::SubscribeInventoryRequest {})
+                    .subscribe_inventory(wire::Empty {})
                     .await?
                     .into_inner(),
             ),
@@ -1057,7 +1057,7 @@ mod tests {
 
             async fn subscribe_inventory(
                 &self,
-                _: Request<wire::SubscribeInventoryRequest>,
+                _: Request<wire::Empty>,
             ) -> Answer<Self::SubscribeInventoryStream> {
                 self.inventory.fetch_add(1, Ordering::SeqCst);
                 let event = wire::InventoryEvent::default();
@@ -1080,10 +1080,7 @@ mod tests {
                 unanswered()
             }
 
-            async fn stop_agent(
-                &self,
-                _: Request<wire::StopAgentRequest>,
-            ) -> Answer<wire::StopAgentResponse> {
+            async fn stop_agent(&self, _: Request<wire::StopAgentRequest>) -> Answer<wire::Empty> {
                 unanswered()
             }
 

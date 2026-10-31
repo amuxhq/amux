@@ -1996,7 +1996,7 @@ impl Net {
                     .front_door(host)
                     .await
                     .map_err(|error| error.to_string())?
-                    .list_profiles(wire::ListProfilesRequest {})
+                    .list_profiles(wire::Empty {})
                     .await
                     .map_err(|status| status.message().to_owned())?
                     .into_inner()
@@ -2059,7 +2059,7 @@ impl Net {
             let info = self
                 .front_door(&host)
                 .await?
-                .list_profiles(wire::ListProfilesRequest {})
+                .list_profiles(wire::Empty {})
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
                 .into_inner()
@@ -2084,7 +2084,7 @@ impl Net {
             } else {
                 self.admin(&host)
                     .await?
-                    .sign_out(wire::SignOutRequest {})
+                    .sign_out(wire::Empty {})
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
                 self.sign_in(&host, account).await?;
@@ -2095,7 +2095,7 @@ impl Net {
                     .front_door(&host)
                     .await
                     .map_err(|error| error.to_string())?
-                    .list_profiles(wire::ListProfilesRequest {})
+                    .list_profiles(wire::Empty {})
                     .await
                     .map_err(|status| status.message().to_owned())?
                     .into_inner()
@@ -2874,7 +2874,7 @@ impl Net {
                     why,
                 })?
                 .agents
-                .subscribe_inventory(wire::SubscribeInventoryRequest {})
+                .subscribe_inventory(wire::Empty {})
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
                 .into_inner();

@@ -702,7 +702,7 @@ impl Install {
         .await
         .ok_or("its front door never answered")?;
         let profile = InstallationServiceClient::new(door)
-            .list_profiles(wire::ListProfilesRequest {})
+            .list_profiles(wire::Empty {})
             .await
             .map_err(|status| status.to_string())?
             .into_inner()

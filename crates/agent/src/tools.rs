@@ -420,7 +420,7 @@ impl Server {
         self.daemon(|mut client| async move {
             let mut stream = client
                 .agents
-                .subscribe_inventory(wire::SubscribeInventoryRequest {})
+                .subscribe_inventory(wire::Empty {})
                 .await?
                 .into_inner();
             let (mut hosts, mut agents) = (Vec::<HostEntry>::new(), Vec::<Agent>::new());

@@ -68,7 +68,7 @@ async fn info(net: &Net, host: &str) -> wire::Profile {
     let profile = id(net, host);
     door(net, host)
         .await
-        .list_profiles(wire::ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -155,7 +155,7 @@ async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Vec<Vec<u8>> {
     let mut client = from.peer(to).await.expect("a route to the peer");
     let mut events = client
         .agents
-        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .subscribe_inventory(wire::Empty {})
         .await
         .expect("the peer answers a trusted caller")
         .into_inner();
@@ -265,7 +265,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     // The device identity the profile reports is the one pairing pins.
     let identity = admin(&net, "desk")
         .await
-        .get_device_identity(wire::GetDeviceIdentityRequest {})
+        .get_device_identity(wire::Empty {})
         .await
         .unwrap()
         .into_inner();
@@ -303,7 +303,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     .unwrap();
     let desk_peers = admin(&net, "desk")
         .await
-        .list_peers(wire::ListPeersRequest {})
+        .list_peers(wire::Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -346,7 +346,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     let desk_addr = edge(&net, "desk").lan_addr().unwrap();
     let outside_pairing = match edge(&net, "stranger").unpinned_channel(desk_addr).await {
         Ok(channel) => wire::peer_agent_service_client(channel)
-            .subscribe_inventory(wire::SubscribeInventoryRequest {})
+            .subscribe_inventory(wire::Empty {})
             .await
             .map(|_| ())
             .expect_err("a stranger reaches no peer service")
@@ -369,7 +369,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
             .await
             .expect("pairing mode admits an unpinned stream"),
     )
-    .subscribe_inventory(wire::SubscribeInventoryRequest {})
+    .subscribe_inventory(wire::Empty {})
     .await
     .map(|_| ())
     .expect_err("pairing mode serves only pairing")
@@ -377,7 +377,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     assert_eq!(in_pairing, tonic::Code::Unimplemented);
     admin(&net, "desk")
         .await
-        .cancel_pairing(wire::CancelPairingRequest {})
+        .cancel_pairing(wire::Empty {})
         .await
         .unwrap();
     println!(
@@ -410,7 +410,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     .unwrap();
     let peers = admin(&net, "desk")
         .await
-        .list_peers(wire::ListPeersRequest {})
+        .list_peers(wire::Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -796,7 +796,7 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     // Signing out forgets the credential and keeps the binding.
     let signed_out = admin(&net, "desk")
         .await
-        .sign_out(wire::SignOutRequest {})
+        .sign_out(wire::Empty {})
         .await
         .unwrap()
         .into_inner();

@@ -149,7 +149,7 @@ async fn a_relay_link_whose_credential_lapses_at_the_relay_first_comes_back_on_a
 async fn reconnect(net: &Net, host: &str, account: &str) {
     admin(net, host)
         .await
-        .sign_out(wire::SignOutRequest {})
+        .sign_out(wire::Empty {})
         .await
         .expect("the profile signs out");
     until(&format!("{host}'s relay link to close"), || async {
@@ -459,7 +459,7 @@ async fn a_pairing_rerun_after_the_daemon_restarts_opens_a_fresh_window() {
     net.restart_daemon("desk").await.unwrap();
     let open = admin(&net, "desk")
         .await
-        .get_pairing_status(wire::GetPairingStatusRequest {})
+        .get_pairing_status(wire::Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -1103,7 +1103,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
             .await
             .unwrap()
             .agents
-            .subscribe_inventory(wire::SubscribeInventoryRequest {})
+            .subscribe_inventory(wire::Empty {})
             .await
             .unwrap()
             .into_inner();
@@ -1263,7 +1263,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         .expect_err("the desk's PIN window is still open");
     admin(&net, "desk")
         .await
-        .cancel_pairing(wire::CancelPairingRequest {})
+        .cancel_pairing(wire::Empty {})
         .await
         .unwrap();
     let qr = start_pairing(&net, "desk", qr_window()).await.unwrap();
@@ -1283,7 +1283,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     assert_eq!(across_qr.message(), across.message());
     admin(&net, "desk")
         .await
-        .cancel_pairing(wire::CancelPairingRequest {})
+        .cancel_pairing(wire::Empty {})
         .await
         .unwrap();
     let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
@@ -1404,7 +1404,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     let tunnel = edge(&net, "laptop").channel(desk).await.unwrap();
     let over_tunnel =
         wire::installation_service_client::InstallationServiceClient::new(tunnel.clone())
-            .list_profiles(wire::ListProfilesRequest {})
+            .list_profiles(wire::Empty {})
             .await
             .expect_err("no profile administration over a peer tunnel");
     assert_eq!(over_tunnel.code(), tonic::Code::Unimplemented);
@@ -1422,7 +1422,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     let on_socket = wire::installation_service_client::InstallationServiceClient::new(
         testnet::local_channel(&socket).await.unwrap(),
     )
-    .list_profiles(wire::ListProfilesRequest {})
+    .list_profiles(wire::Empty {})
     .await
     .expect_err("no installation administration on a profile's socket");
     assert_eq!(on_socket.code(), tonic::Code::Unimplemented);
@@ -1435,7 +1435,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         let mut client = wire::client_stubs(testnet::local_channel(socket).await.unwrap());
         let mut events = client
             .agents
-            .subscribe_inventory(wire::SubscribeInventoryRequest {})
+            .subscribe_inventory(wire::Empty {})
             .await
             .unwrap()
             .into_inner();
@@ -1617,7 +1617,7 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
         .await
         .unwrap()
         .agents
-        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .subscribe_inventory(wire::Empty {})
         .await
         .unwrap()
         .into_inner();
@@ -1980,7 +1980,7 @@ async fn bind(
 async fn profile_info(net: &Net, host: &str, profile: &[u8]) -> wire::Profile {
     door(net, host)
         .await
-        .list_profiles(wire::ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -2122,7 +2122,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     let key = edge(&net, "desk").public_key().to_vec();
     admin(&net, "desk")
         .await
-        .sign_out(wire::SignOutRequest {})
+        .sign_out(wire::Empty {})
         .await
         .unwrap();
     until("Ada's relay link to close", || async {
@@ -2340,7 +2340,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     .await;
     admin(&net, "desk")
         .await
-        .sign_out(wire::SignOutRequest {})
+        .sign_out(wire::Empty {})
         .await
         .unwrap();
     net.sever_link("desk", "laptop").unwrap();
@@ -2424,7 +2424,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     // opens no pairing window.
     let identity = admin(&net, "desk")
         .await
-        .get_device_identity(wire::GetDeviceIdentityRequest {})
+        .get_device_identity(wire::Empty {})
         .await
         .unwrap()
         .into_inner();

@@ -258,7 +258,7 @@ impl Install {
             .client
             .agents
             .clone()
-            .subscribe_inventory(wire::SubscribeInventoryRequest {})
+            .subscribe_inventory(wire::Empty {})
             .await
             .map_err(|status| status.to_string())?
             .into_inner();

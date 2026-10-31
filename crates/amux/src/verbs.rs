@@ -21,7 +21,7 @@ type Client = wire::ClientStubs;
 pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent>)> {
     let mut stream = client
         .agents
-        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .subscribe_inventory(wire::Empty {})
         .await
         .map_err(crate::plain)?
         .into_inner();

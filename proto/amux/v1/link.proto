@@ -29,7 +29,7 @@ message Message {
 // The handshake carries the sender's current neighbor snapshot; everything
 // after it is a delta (NeighborUp/NeighborDown) by definition.
 message Hello {
-  repeated uint32 supported_protocol_versions = 1;
+  uint32 protocol_version = 1;
   Host host = 2;
   repeated Host neighbors = 3;
   optional string auth_token = 4;
@@ -68,12 +68,6 @@ message HelloAccepted {
   optional string observed_addr = 6;
   // The acceptor's; see `Hello.public_addr`.
   optional string public_addr = 7;
-}
-
-// The one break-glass error: the peers share no protocol version.
-message ProtocolVersionMismatch {
-  repeated uint32 supported_protocol_versions = 1;
-  repeated uint32 peer_supported_protocol_versions = 2;
 }
 
 // "I have a direct link to this host." Strictly adjacency: a node never

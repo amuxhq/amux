@@ -3,7 +3,7 @@
 //! protocol messages and in gRPC status details.
 
 use prost::Message as _;
-use wire::{Error, ErrorCode, ProtocolVersionMismatch};
+use wire::{Error, ErrorCode};
 
 pub(crate) use crate::grpc::status;
 
@@ -15,25 +15,13 @@ pub(crate) fn invalid_argument(message: impl Into<String>) -> Error {
     error(ErrorCode::InvalidArgument, message)
 }
 
-/// The one break-glass refusal: the peers share no protocol version.
-pub(crate) fn version_mismatch(supported: Vec<u32>, peer: Vec<u32>) -> Error {
-    let detail = ProtocolVersionMismatch {
-        supported_protocol_versions: supported.clone(),
-        peer_supported_protocol_versions: peer.clone(),
-    };
-    Error::new(
-        ErrorCode::FailedPrecondition,
-        format!(
-            "the other machine needs updating (this one speaks protocol versions {supported:?}, \
-             it speaks {peer:?})"
-        ),
+/// The one break-glass refusal: the two ends of a link speak different
+/// protocol versions.
+pub(crate) fn version_mismatch() -> Error {
+    Error::because(
+        wire::ErrorReason::VersionMismatch,
+        "the other machine needs updating",
     )
-    .with_detail(&detail)
-}
-
-/// Whether an error is the version refusal.
-pub(crate) fn is_version_mismatch(error: &Error) -> bool {
-    error.detail::<ProtocolVersionMismatch>().is_some()
 }
 
 /// The wire error a status carries in its details, when it carries one.

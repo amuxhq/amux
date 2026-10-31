@@ -1092,7 +1092,7 @@ mod tests {
                 &mut sink,
                 &wire::Message {
                     body: Some(wire::message::Body::Hello(wire::Hello {
-                        supported_protocol_versions: vec![crate::PROTOCOL_VERSION],
+                        protocol_version: crate::PROTOCOL_VERSION,
                         host: Some(crate::routing::host_to_wire(&host)),
                         auth_token: Some(token.to_owned()),
                         runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),

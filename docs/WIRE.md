@@ -84,8 +84,8 @@ meets often:
 | `PERMISSION_DENIED` | An agent caller sent input to, or stopped, an agent that is not its own direct child |
 | `RESOURCE_EXHAUSTED` | A blob could not be written, most often a full disk |
 
-`ProtocolVersionMismatch` is the one break-glass detail; see
-[Versions](#versions).
+A link refused for another protocol version reads as `FAILED_PRECONDITION`,
+reason `VERSION_MISMATCH`; see [Versions](#versions).
 
 ## The calls
 
@@ -786,10 +786,9 @@ What the design already relies on:
 
 `wire::PROTOCOL_VERSION` (in [`crates/wire/src/lib.rs`](../crates/wire/src/lib.rs))
 is checked in one place: the link handshake between hosts. A connecting host
-lists its versions in `Hello.supported_protocol_versions`; the acceptor
-refuses a `Hello` that does not include its own version, answering with a
-`ProtocolVersionMismatch` detail, and the link closes with
-`LINK_CLOSE_REASON_VERSION_MISMATCH`. It is 1, and moves only for a break
+names its version in `Hello.protocol_version`; the acceptor refuses a `Hello`
+naming another, closing the link with `LINK_CLOSE_REASON_VERSION_MISMATCH`,
+which the connecting host reads as the error reason `VERSION_MISMATCH`. It is 1, and moves only for a break
 both ends of a link must take.
 
 Nothing else carries a version integer:

@@ -531,6 +531,12 @@ pub async fn run_link(
                     return Ok(());
                 }
             };
+            if hello.protocol_version != PROTOCOL_VERSION {
+                let reason = wire::LinkCloseReason::VersionMismatch;
+                write_message(&mut sink, &link_close(reason)).await?;
+                carrier.close(reason);
+                return Ok(());
+            }
             if let (Some(accounts), Some(session)) = (ctx.accounts.clone(), session.as_ref()) {
                 let (links, incoming) = accounts.account(session.user().user_id).await;
                 ctx.links = links;
@@ -1137,15 +1143,6 @@ fn accept_peer_hello(
     ctx: &LinkCtx,
     hello: wire::Hello,
 ) -> Result<(Host, Vec<Host>, RuntimeInstance), wire::Error> {
-    if !hello
-        .supported_protocol_versions
-        .contains(&PROTOCOL_VERSION)
-    {
-        return Err(net_error::version_mismatch(
-            vec![PROTOCOL_VERSION],
-            hello.supported_protocol_versions,
-        ));
-    }
     let host = hello
         .host
         .ok_or_else(|| "Hello.host is required".to_string())
@@ -1179,10 +1176,7 @@ fn accept_peer_hello_ack(
     accepted: wire::HelloAccepted,
 ) -> Result<(Host, Vec<Host>, RuntimeInstance), wire::Error> {
     if accepted.protocol_version != PROTOCOL_VERSION {
-        return Err(net_error::version_mismatch(
-            vec![PROTOCOL_VERSION],
-            vec![accepted.protocol_version],
-        ));
+        return Err(net_error::version_mismatch());
     }
     let host = accepted
         .host
@@ -1238,7 +1232,7 @@ fn connector_hello(
 ) -> wire::Message {
     wire::Message {
         body: Some(wire::message::Body::Hello(wire::Hello {
-            supported_protocol_versions: vec![PROTOCOL_VERSION],
+            protocol_version: PROTOCOL_VERSION,
             host: Some(host_to_wire(&ctx.local_host.snapshot())),
             neighbors: snapshot.iter().map(host_to_wire).collect(),
             auth_token: ctx
@@ -1330,7 +1324,7 @@ fn link_close_status(close: &wire::LinkClose) -> Option<tonic::Status> {
         return Some(protocol_status(error));
     }
     (reason == wire::LinkCloseReason::VersionMismatch)
-        .then(|| tonic::Status::failed_precondition("the other machine needs updating"))
+        .then(|| protocol_status(net_error::version_mismatch()))
 }
 
 /// A refresh refused for want of payment is the plan's word, not a fault.
@@ -1528,7 +1522,7 @@ mod tests {
             sink,
             &wire::Message {
                 body: Some(wire::message::Body::Hello(wire::Hello {
-                    supported_protocol_versions: vec![PROTOCOL_VERSION],
+                    protocol_version: PROTOCOL_VERSION,
                     host: Some(host_to_wire(peer)),
                     neighbors: Vec::new(),
                     auth_token: auth_token.map(str::to_string),
@@ -1891,7 +1885,7 @@ mod tests {
             &mut sink,
             &wire::Message {
                 body: Some(wire::message::Body::Hello(wire::Hello {
-                    supported_protocol_versions: vec![PROTOCOL_VERSION + 1],
+                    protocol_version: PROTOCOL_VERSION + 1,
                     host: Some(host_to_wire(&peer)),
                     neighbors: Vec::new(),
                     auth_token: None,
@@ -1903,17 +1897,14 @@ mod tests {
         )
         .await
         .unwrap();
-        let ack = read_message(&mut source).await.unwrap().unwrap();
-        let Some(wire::message::Body::HelloAck(wire::HelloAck {
-            outcome: Some(wire::hello_ack::Outcome::Error(error)),
-        })) = ack.body
-        else {
-            panic!("expected rejected HelloAck, got {ack:?}");
-        };
-        assert!(net_error::is_version_mismatch(&error), "{error:?}");
+        let close = expect_link_close(&mut source, wire::LinkCloseReason::VersionMismatch).await;
+        assert_eq!(
+            link_close_status(&close).map(|status| status.message().to_owned()),
+            Some("the other machine needs updating".to_owned())
+        );
         assert_eq!(
             acceptor_carrier.closed().await,
-            wire::LinkCloseReason::ProtocolError
+            wire::LinkCloseReason::VersionMismatch
         );
         task.await.unwrap().unwrap();
         assert!(links.link_to_peer(peer.id).await.is_none());

@@ -617,7 +617,6 @@ mod tests {
         "ProviderOffer",
         "Step",
         "Message",
-        "ProtocolVersionMismatch",
         // Named, not encoded: an ErrorInfo's reason is a value's name.
         "ErrorReason",
         "AmbiguousAgentName",

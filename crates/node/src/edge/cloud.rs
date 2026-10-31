@@ -787,8 +787,8 @@ async fn cloud_connection_error_from_status(
     observed: &RuntimeStatus,
     status: tonic::Status,
 ) -> CloudConnectionError {
-    if crate::net_error::from_status(&status)
-        .is_some_and(|error| crate::net_error::is_version_mismatch(&error))
+    if crate::net_error::from_status(&status).and_then(|error| error.reason())
+        == Some(wire::ErrorReason::VersionMismatch)
     {
         observed.report(Relay::VersionMismatch);
         return CloudConnectionError::NonRetriable(status.to_string());

@@ -4,7 +4,7 @@
 /// google.rpc.ErrorInfo detail names it, with domain "amux.sh" and as reason
 /// one of these values' names without its ERROR_REASON\_ prefix
 /// ("HOST_UNREACHABLE"). Typed details sit beside the types they name:
-/// AmbiguousAgentName, AmbiguousHostName, ProtocolVersionMismatch.
+/// AmbiguousAgentName, AmbiguousHostName.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ErrorReason {
@@ -15,6 +15,9 @@ pub enum ErrorReason {
     HostUnreachable = 1,
     /// The account's plan does not cover it, on code PERMISSION_DENIED.
     PaymentRequired = 2,
+    /// The far end of a link speaks another protocol version and one of the
+    /// two machines needs updating, on code FAILED_PRECONDITION.
+    VersionMismatch = 3,
 }
 impl ErrorReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -26,6 +29,7 @@ impl ErrorReason {
             Self::Unspecified => "ERROR_REASON_UNSPECIFIED",
             Self::HostUnreachable => "ERROR_REASON_HOST_UNREACHABLE",
             Self::PaymentRequired => "ERROR_REASON_PAYMENT_REQUIRED",
+            Self::VersionMismatch => "ERROR_REASON_VERSION_MISMATCH",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -34,6 +38,7 @@ impl ErrorReason {
             "ERROR_REASON_UNSPECIFIED" => Some(Self::Unspecified),
             "ERROR_REASON_HOST_UNREACHABLE" => Some(Self::HostUnreachable),
             "ERROR_REASON_PAYMENT_REQUIRED" => Some(Self::PaymentRequired),
+            "ERROR_REASON_VERSION_MISMATCH" => Some(Self::VersionMismatch),
             _ => None,
         }
     }
@@ -1030,8 +1035,8 @@ impl ::prost::Name for Message {
 /// after it is a delta (NeighborUp/NeighborDown) by definition.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Hello {
-    #[prost(uint32, repeated, tag = "1")]
-    pub supported_protocol_versions: ::prost::alloc::vec::Vec<u32>,
+    #[prost(uint32, tag = "1")]
+    pub protocol_version: u32,
     #[prost(message, optional, tag = "2")]
     pub host: ::core::option::Option<Host>,
     #[prost(message, repeated, tag = "3")]
@@ -1120,24 +1125,6 @@ impl ::prost::Name for HelloAccepted {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.HelloAccepted".into()
-    }
-}
-/// The one break-glass error: the peers share no protocol version.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProtocolVersionMismatch {
-    #[prost(uint32, repeated, tag = "1")]
-    pub supported_protocol_versions: ::prost::alloc::vec::Vec<u32>,
-    #[prost(uint32, repeated, tag = "2")]
-    pub peer_supported_protocol_versions: ::prost::alloc::vec::Vec<u32>,
-}
-impl ::prost::Name for ProtocolVersionMismatch {
-    const NAME: &'static str = "ProtocolVersionMismatch";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProtocolVersionMismatch".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ProtocolVersionMismatch".into()
     }
 }
 /// "I have a direct link to this host." Strictly adjacency: a node never

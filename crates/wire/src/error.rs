@@ -3,7 +3,7 @@
 //! The code is gRPC's own. What the code alone does not say rides in the
 //! details as Any: a `google.rpc.ErrorInfo` naming one of amux's
 //! [`ErrorReason`]s, and the typed details that sit beside the types they
-//! name (`AmbiguousAgentName`, `AmbiguousHostName`, `ProtocolVersionMismatch`).
+//! name (`AmbiguousAgentName`, `AmbiguousHostName`).
 
 use crate::ErrorReason;
 use crate::rpc::{Code, ErrorInfo, Status};
@@ -27,7 +27,7 @@ impl Status {
     pub fn because(reason: ErrorReason, message: impl Into<String>) -> Status {
         let code = match reason {
             ErrorReason::Unspecified => Code::Unknown,
-            ErrorReason::HostUnreachable => Code::FailedPrecondition,
+            ErrorReason::HostUnreachable | ErrorReason::VersionMismatch => Code::FailedPrecondition,
             ErrorReason::PaymentRequired => Code::PermissionDenied,
         };
         let info = ErrorInfo {

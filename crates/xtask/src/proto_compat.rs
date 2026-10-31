@@ -149,11 +149,7 @@ pub fn breaks(old: &FileDescriptorSet, new: &FileDescriptorSet) -> Vec<String> {
 
 /// The messages whose full name is on the wire, as the type of an error
 /// detail, so they keep it.
-const DETAILS: &[&str] = &[
-    ".amux.v1.AmbiguousAgentName",
-    ".amux.v1.AmbiguousHostName",
-    ".amux.v1.ProtocolVersionMismatch",
-];
+const DETAILS: &[&str] = &[".amux.v1.AmbiguousAgentName", ".amux.v1.AmbiguousHostName"];
 
 /// The package's messages, enums and services by full name, nested ones
 /// included.

@@ -507,11 +507,11 @@ dials from the same QUIC endpoint it listens on. A dialler whose direct link
 closes within a second of coming up waits out that second before dialling
 again, so a refused link is not redialled in a loop.
 
-Versioning is equality, not feature negotiation: both peers must select
-`PROTOCOL_VERSION` (`crates/wire/src/lib.rs`, currently 1). A peer offering
-no common version is closed with `VERSION_MISMATCH` and the error detail
-`ProtocolVersionMismatch`; clients show that host as "the other machine needs
-updating", never as a silent absence. A failed or expired cloud token closes
+Versioning is equality, not feature negotiation: both peers must speak
+`PROTOCOL_VERSION` (`crates/wire/src/lib.rs`, currently 1). A `Hello` naming
+another version is closed with `VERSION_MISMATCH`, which the dialler reads as
+the error reason `VERSION_MISMATCH`; clients show that host as "the other
+machine needs updating", never as a silent absence. A failed or expired cloud token closes
 the link with `AUTH_EXPIRED`. Reauthentication is not acknowledged; success is
 silence and failure is a close.
 
@@ -932,8 +932,7 @@ for any other incarnation.
 
 A refusal is a `google.rpc.Status`, gRPC's richer error model (Rust:
 `wire::Error`): a gRPC code, a message, and details packed as `Any`, among
-them typed details (`AmbiguousAgentName`, `AmbiguousHostName`,
-`ProtocolVersionMismatch`). It travels whole in the gRPC status details, its
+them typed details (`AmbiguousAgentName`, `AmbiguousHostName`). It travels whole in the gRPC status details, its
 code on the status itself (`crates/node/src/grpc.rs`, `status`), so generic
 gRPC tooling reads it. What the code alone does not say, a
 `google.rpc.ErrorInfo` detail names: domain `amux.sh`, reason an

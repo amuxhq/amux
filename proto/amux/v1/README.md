@@ -49,7 +49,7 @@ done, so the link carries on. A message the other end must understand is a
 break both ends take, and moves `PROTOCOL_VERSION`.
 
 `just proto-compat` checks all of this against the latest release.
-`PROTOCOL_VERSION` (`Hello.supported_protocol_versions`) moves only for a
+`PROTOCOL_VERSION` (`Hello.protocol_version`) moves only for a
 break both ends of a link must take.
 
 What a client writes into a dump is `amux.dump` (`crates/wire/proto/amux/dump/session.proto`),

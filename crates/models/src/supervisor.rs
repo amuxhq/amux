@@ -234,7 +234,7 @@ impl Pending {
             Output::BecomeInstalled { daemon } => Pending::BecomeInstalled(daemon),
             Output::ArmTimer { id, at_ms } => Pending::Arm(id, at_ms),
             Output::CancelTimer { id } => Pending::Cancel(id),
-            Output::Exit | Output::Fail { .. } => Pending::Ends,
+            Output::Exit => Pending::Ends,
             Output::Dump { reason } => Pending::Dump(format!("{reason:?}")),
             Output::Answer { .. } => return None,
         })

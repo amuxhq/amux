@@ -51,10 +51,6 @@ pub use crate::start::Resumed;
 /// A provider fact exactly as it arrived.
 pub type ProviderEvent = interpret::Fact;
 
-/// The checkpoint layout this build writes and restores. A checkpoint under
-/// any other is refused whole.
-pub const CHECKPOINT_SCHEMA: u32 = 1;
-
 /// Grace after the daemon leaves, when the spec leaves it unset.
 pub const DEFAULT_GRACE_MS: u64 = 5 * 60 * 1000;
 /// Drain deadline for an orphaned ask, when the spec leaves it unset: the
@@ -502,18 +498,11 @@ impl<I: Interpreter> Agent<I> {
                 self.settle(out);
             }
         }
-        if let Err(violation) = self.check_step_invariants() {
-            out.push(Output::Dump {
-                reason: DumpReason::Violation(violation),
-            });
-        }
-        let budget = self.params.budget;
-        let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
-        if micros > budget.micros {
-            out.push(Output::Dump {
-                reason: DumpReason::OverBudget { micros, budget },
-            });
-        }
+        let checked = self.check_step_invariants();
+        out.extend(
+            core_ring::finish_step(started, self.params.budget, 0, checked)
+                .map(|reason| Output::Dump { reason }),
+        );
     }
 
     /// The incarnation this core runs.
@@ -601,7 +590,7 @@ impl<I: Interpreter> Agent<I> {
         } = value;
         Ok(Self {
             interpreter: interpret::decode_checkpoint(interpreter)
-                .map_err(|error| RestoreError::Corrupt(error.to_string()))?,
+                .map_err(|error| RestoreError(error.to_string()))?,
             incarnation: *incarnation,
             params: params.clone(),
             now_ms: *now_ms,
@@ -674,11 +663,8 @@ impl<I: Interpreter> Agent<I> {
     /// The core as of this step, serialized: the interpreter's state, which
     /// is what the next incarnation resumes from. The lifecycle starts over
     /// with every incarnation.
-    pub fn checkpoint(&self) -> Checkpoint {
-        Checkpoint {
-            schema: CHECKPOINT_SCHEMA,
-            state: interpret::encode_checkpoint(&self.interpreter),
-        }
+    pub fn checkpoint(&self) -> Vec<u8> {
+        interpret::encode_checkpoint(&self.interpreter)
     }
 
     // --- inputs ----------------------------------------------------------
@@ -1223,48 +1209,14 @@ pub const CHECKS: &[Check] = &[
 
 pub use core_ring::{Check, DumpReason, StepBudget, Violation};
 
-/// The core's state as of one step, serialized, under the layout it was
-/// written with.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Checkpoint {
-    pub schema: u32,
-    pub state: Vec<u8>,
-}
-
-impl Checkpoint {
-    /// The interpreter's state the checkpoint holds, for the next
-    /// incarnation to resume. A checkpoint under another layout, or one
-    /// that does not decode, is refused.
-    pub fn interpreter<I: Interpreter>(&self) -> Result<I::State, RestoreError> {
-        if self.schema != CHECKPOINT_SCHEMA {
-            return Err(RestoreError::Schema {
-                found: self.schema,
-                expected: CHECKPOINT_SCHEMA,
-            });
-        }
-        interpret::decode_checkpoint(&self.state)
-            .map_err(|error| RestoreError::Corrupt(error.to_string()))
-    }
-}
-
-/// Why a checkpoint could not be restored.
+/// Why a value's interpreter state could not be restored: its bytes do not
+/// decode under this build's layout.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RestoreError {
-    /// Written under another layout.
-    Schema { found: u32, expected: u32 },
-    /// The bytes do not decode under this layout.
-    Corrupt(String),
-}
+pub struct RestoreError(String);
 
 impl fmt::Display for RestoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RestoreError::Schema { found, expected } => write!(
-                f,
-                "the checkpoint was written under layout {found}; this build reads {expected}"
-            ),
-            RestoreError::Corrupt(why) => write!(f, "the checkpoint does not decode: {why}"),
-        }
+        write!(f, "the checkpoint does not decode: {}", self.0)
     }
 }
 

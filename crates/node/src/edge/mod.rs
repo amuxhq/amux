@@ -793,7 +793,7 @@ impl Edge {
             .ok()
             .filter(|_| self.lan_addr.is_some());
         self.local_host.set_listed(own_listed(lan, Some(&addrs)));
-        let machines_told = self.paths.network_changed(addrs.clone());
+        let machines_told = self.paths.network_changed();
         crate::link_log::Rebind {
             rebound,
             machines_told,

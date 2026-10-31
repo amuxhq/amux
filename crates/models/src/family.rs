@@ -26,7 +26,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use daemon_core::payload::{
     Answer, CallError, CarrierKind, ClientRequest, JobResult, MessageFrom, MessageRefusal,
@@ -40,8 +40,8 @@ use prost::Message as _;
 use store::{AgentKey, Sqlite};
 use wire::{ErrorCode, InventoryEvent, Item, Lifecycle, Step, inventory_event};
 
-use crate::held::{Held, Slot};
-use crate::{Fault, Host, Machine, Property};
+use crate::held::{Dir, Held, Journal, Slot};
+use crate::{Machine, Property};
 
 /// The parent's host and the child's.
 const HOSTS: [HostId; 2] = [HostId(*b"parent-host-0000"), HostId(*b"child-host-00000")];
@@ -114,9 +114,6 @@ impl FamilyDeliveries {
         }
     }
 }
-
-/// An agent's journal: each segment's start offset and its bytes.
-type Journal = BTreeMap<u64, Vec<u8>>;
 
 /// One host: its core and store, its agents' journals, and the timers its
 /// core armed for later that the model may fire.
@@ -275,8 +272,8 @@ pub enum Action {
     LinkUp,
     /// The child's host unpairs from the parent's.
     Unpair,
-    /// The world's doing: a daemon crashes and starts again.
-    Fault(Fault),
+    /// The world's doing: the host's daemon crashes and starts again.
+    Crash(usize),
     /// The world stops changing: nobody creates, stops or deletes, no
     /// process exits unasked, no turn ends, the link stays as it is, the
     /// pairing stays and no daemon crashes. What the cores asked for still
@@ -496,8 +493,8 @@ impl Machine for FamilyDeliveries {
             out.push(Action::Unpair);
         }
         if world && s.used.crashes < self.crashes {
-            out.push(Action::Fault(Fault::Crash(Host(PARENTS as u8))));
-            out.push(Action::Fault(Fault::Crash(Host(CHILDS as u8))));
+            out.push(Action::Crash(PARENTS));
+            out.push(Action::Crash(CHILDS));
         }
     }
 
@@ -1193,11 +1190,10 @@ impl<'a> Transition<'a> {
                     }),
                 );
             }
-            Action::Fault(Fault::Crash(Host(host))) => {
+            Action::Crash(host) => {
                 self.next.used.crashes += 1;
-                self.crash(usize::from(*host));
+                self.crash(*host);
             }
-            Action::Fault(fault) => unreachable!("the family never offers {fault:?}"),
             Action::Rest => self.next.used.rested = true,
         }
     }
@@ -1380,64 +1376,6 @@ fn with_scratch<R>(f: impl FnOnce(&mut Scratch) -> R) -> R {
         });
         f(scratch)
     })
-}
-
-/// A directory holding one host's agents' journals, laid out only where
-/// they differ from what a transition starts from.
-struct Dir {
-    dir: tempfile::TempDir,
-    holds: BTreeMap<AgentId, Journal>,
-}
-
-impl Dir {
-    fn new() -> Self {
-        Self {
-            dir: tempfile::tempdir().expect("a directory for agents"),
-            holds: BTreeMap::new(),
-        }
-    }
-
-    fn path(&self) -> &Path {
-        self.dir.path()
-    }
-
-    fn lay_out(&mut self, journals: &BTreeMap<AgentId, Journal>) {
-        if self.holds == *journals {
-            return;
-        }
-        let agents: BTreeSet<AgentId> = self.holds.keys().chain(journals.keys()).copied().collect();
-        for agent in agents {
-            let (held, wanted) = (self.holds.get(&agent), journals.get(&agent));
-            if held == wanted {
-                continue;
-            }
-            let dir = daemon_core::ingest::journal_dir(self.dir.path(), agent);
-            let _ = std::fs::remove_dir_all(&dir);
-            if let Some(journal) = wanted {
-                std::fs::create_dir_all(&dir).expect("the journal directory");
-                for (start, bytes) in journal {
-                    std::fs::write(journal::segment_path(&dir, *start), bytes)
-                        .expect("a segment is written");
-                }
-            }
-        }
-        self.holds = journals.clone();
-    }
-
-    fn read_back(&mut self, agent: AgentId) -> Journal {
-        let dir = daemon_core::ingest::journal_dir(self.dir.path(), agent);
-        let journal: Journal = journal::segments(&dir)
-            .expect("the journal lists")
-            .into_iter()
-            .map(|start| {
-                let bytes =
-                    std::fs::read(journal::segment_path(&dir, start)).expect("a segment reads");
-                (start, bytes)
-            })
-            .collect();
-        self.holds.insert(agent, journal.clone());
-        journal
-    }
 }
 
 fn hex(bytes: &[u8]) -> String {

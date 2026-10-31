@@ -3,6 +3,7 @@
 //! relay and path cores, whose drivers report them the same way.
 
 use std::fmt;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
@@ -107,5 +108,65 @@ impl fmt::Display for DumpReason {
                 budget.micros
             ),
         }
+    }
+}
+
+/// The dumps a step that began at `started` ends by asking for: one for
+/// `checked`, the core's invariants after the step, when they broke, and
+/// one when the step ran longer than `budget`, not counting
+/// `excluded_micros` it spent waiting on something no step decides, such as
+/// a sync to the drive.
+pub fn finish_step(
+    started: Instant,
+    budget: StepBudget,
+    excluded_micros: u64,
+    checked: Result<(), Violation>,
+) -> impl Iterator<Item = DumpReason> {
+    let micros = u64::try_from(started.elapsed().as_micros())
+        .unwrap_or(u64::MAX)
+        .saturating_sub(excluded_micros);
+    let over = (micros > budget.micros).then_some(DumpReason::OverBudget { micros, budget });
+    checked
+        .err()
+        .map(DumpReason::Violation)
+        .into_iter()
+        .chain(over)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BROKEN: Check = Check {
+        id: "test.broken",
+        sentence: "nothing breaks",
+    };
+
+    #[test]
+    fn a_step_ends_with_a_dump_for_a_broken_invariant_and_one_for_its_overrun() {
+        let broken = Violation {
+            invariant: BROKEN,
+            detail: "it broke".into(),
+        };
+        // Any step takes longer than nothing, given a clock fine enough;
+        // spin until one is measured over.
+        let started = Instant::now();
+        while started.elapsed().as_micros() == 0 {}
+        let zero = StepBudget { micros: 0 };
+        let dumps: Vec<DumpReason> = finish_step(started, zero, 0, Err(broken.clone())).collect();
+        assert!(
+            matches!(
+                &dumps[..],
+                [DumpReason::Violation(v), DumpReason::OverBudget { micros, budget }]
+                    if *v == broken && *micros > 0 && *budget == zero
+            ),
+            "{dumps:?}"
+        );
+        // Time spent waiting on the drive is not the step's own.
+        assert_eq!(finish_step(started, zero, u64::MAX, Ok(())).count(), 0);
+        assert_eq!(
+            finish_step(Instant::now(), StepBudget::DAEMON, 0, Ok(())).count(),
+            0
+        );
     }
 }

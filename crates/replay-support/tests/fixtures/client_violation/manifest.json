@@ -28,8 +28,7 @@
   },
   "core": {
     "inputs": 22,
-    "reads": 9,
-    "schema": 1
+    "reads": 9
   },
   "created_at_ms": 1792486993569,
   "daemon_version": "0.8.0",

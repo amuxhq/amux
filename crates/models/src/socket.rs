@@ -39,7 +39,7 @@ use socket_core::{
     Wire, WireTo, encode_delivered, encode_forwarded, encode_probe, encode_probe_answer, parse,
 };
 
-use crate::{Fault, Host, Machine, MsgIndex, Property};
+use crate::{Machine, Property};
 
 const LAPTOP_ID: HostId = HostId::from_u128(0x1a97_0000_0000_4000_8000_0000_0000_0001);
 const DESK_ID: HostId = HostId::from_u128(0xde5c_0000_0000_4000_8000_0000_0000_0002);
@@ -627,8 +627,17 @@ fn name(host: HostId) -> &'static str {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
-    Deliver(MsgIndex),
-    Fault(Fault),
+    /// The datagram at this place in flight arrives.
+    Deliver(usize),
+    /// The datagram at this place in flight is lost.
+    Lose(usize),
+    /// The datagram at this place in flight arrives twice, as a replayed
+    /// packet or a retransmission after its original.
+    Duplicate(usize),
+    /// The clock moves on.
+    Tick { ms: u64 },
+    /// The laptop's process dies; what it had written stays.
+    Crash,
     /// The laptop's process is killed and started again on another port.
     RestartElsewhere,
     /// The laptop's relay dial says its Hello at the silent address.
@@ -639,26 +648,18 @@ pub enum Action {
     RelayDown,
     /// The laptop dials the desk on every path it knows, its local
     /// address among them or not, and through the relay.
-    Dial {
-        direct: bool,
-    },
+    Dial { direct: bool },
     /// The laptop dials the desk through its relay link.
     DialThrough,
     /// One end of a connection sends.
-    Send {
-        conn: u8,
-        client: bool,
-    },
+    Send { conn: u8, client: bool },
     /// A host's path machine probes the address it knows the other at.
     Probe(Who),
     /// A host's path machine moves the link to a path its probe answered.
     Carry(Who, Path),
     /// One end of a connection that can no longer reach the other times
     /// out.
-    IdleOut {
-        conn: u8,
-        client: bool,
-    },
+    IdleOut { conn: u8, client: bool },
     /// The client sends its first flight again for a packet that was lost.
     Again(u8),
     /// A dial that lost packets gives its handshake up, and the laptop may
@@ -900,26 +901,24 @@ impl Machine for SocketModel {
     }
 
     fn actions(&self, s: &State, out: &mut Vec<Action>) {
-        out.extend((0..s.in_flight.len()).map(|at| Action::Deliver(MsgIndex(at))));
+        out.extend((0..s.in_flight.len()).map(Action::Deliver));
         if s.losses < self.losses {
-            out.extend((0..s.in_flight.len()).map(|at| Action::Fault(Fault::Lose(MsgIndex(at)))));
+            out.extend((0..s.in_flight.len()).map(Action::Lose));
         }
         if s.duplicates < self.duplicates {
-            out.extend(
-                (0..s.in_flight.len()).map(|at| Action::Fault(Fault::Duplicate(MsgIndex(at)))),
-            );
+            out.extend((0..s.in_flight.len()).map(Action::Duplicate));
         }
         // A relay dial gives up within its handshake timeout, long before
         // this much time passes, and dials afresh.
         let relay_dialling = s.laptop.relay.is_some_and(|relay| !relay.admitted);
         if s.ticks < self.ticks && !relay_dialling {
-            out.push(Action::Fault(Fault::Tick {
+            out.push(Action::Tick {
                 ms: PAST_UNCLAIMED_MS,
-            }));
+            });
             out.push(Action::RelayQuiet);
         }
         if s.restarts < self.restarts {
-            out.push(Action::Fault(Fault::Crash(Host(0))));
+            out.push(Action::Crash);
             if self.elsewhere {
                 out.push(Action::RestartElsewhere);
             }
@@ -1002,11 +1001,11 @@ impl Machine for SocketModel {
         let mut s = s.clone();
         let now = s.now_ms;
         match *action {
-            Action::Deliver(MsgIndex(at)) => {
+            Action::Deliver(at) => {
                 let datagram = s.in_flight.remove(at);
                 self.next_deliver(&mut s, datagram);
             }
-            Action::Fault(Fault::Lose(MsgIndex(at))) => {
+            Action::Lose(at) => {
                 let datagram = s.in_flight.remove(at);
                 s.losses += 1;
                 let lost = parse(&datagram.bytes).ok().and_then(|kind| match kind {
@@ -1021,12 +1020,12 @@ impl Machine for SocketModel {
                     conn.lost += 1;
                 }
             }
-            Action::Fault(Fault::Duplicate(MsgIndex(at))) => {
+            Action::Duplicate(at) => {
                 let datagram = s.in_flight[at].clone();
                 s.duplicates += 1;
                 s.send(datagram);
             }
-            Action::Fault(Fault::Tick { ms }) => {
+            Action::Tick { ms } => {
                 // A live link to the relay is heard from far more often
                 // than the time unnamed senders are kept: twice over the
                 // tick here.
@@ -1059,11 +1058,10 @@ impl Machine for SocketModel {
                 }
                 s.ticks += 1;
             }
-            Action::Fault(Fault::Crash(_)) => {
+            Action::Crash => {
                 let addr = s.laptop.addr;
                 self.restart(&mut s, addr);
             }
-            Action::Fault(_) => return None,
             Action::RestartElsewhere => {
                 let addr = if s.laptop.addr == LAPTOP_ADDR {
                     LAPTOP_MOVED

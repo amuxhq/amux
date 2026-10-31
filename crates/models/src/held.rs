@@ -8,10 +8,10 @@
 //! always, the dump only when the step changed the store, since most steps
 //! do not and a dump reads every table.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
-use daemon_core::{Checkpoint, Daemon, Fingerprint, Input, Output};
+use daemon_core::{AgentId, Checkpoint, Daemon, Fingerprint, Input, Output};
 use store::{AgentKey, Dump, Marker, Sqlite};
 
 /// One host: its core, as its checkpoint, and its store, as its dump.
@@ -198,8 +198,98 @@ struct Changes {
 impl Changes {
     fn of(store: &Sqlite) -> Self {
         Self {
-            rows: store.connection().total_changes(),
+            rows: store.changes(),
             markers: store.markers().clone(),
+        }
+    }
+}
+
+/// An agent's journal: each segment's start offset and its bytes.
+pub type Journal = BTreeMap<u64, Vec<u8>>;
+
+/// The journal's end: the offset one past its last byte.
+pub fn journal_end(journal: &Journal) -> u64 {
+    journal
+        .last_key_value()
+        .map_or(0, |(start, bytes)| start + bytes.len() as u64)
+}
+
+/// A directory holding one host's agents' journals, laid out only where
+/// they differ from what a step or transition starts from.
+pub(crate) struct Dir {
+    dir: tempfile::TempDir,
+    holds: BTreeMap<AgentId, Journal>,
+}
+
+impl Dir {
+    pub(crate) fn new() -> Self {
+        Self {
+            dir: tempfile::tempdir().expect("a directory for agents"),
+            holds: BTreeMap::new(),
+        }
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        self.dir.path()
+    }
+
+    pub(crate) fn lay_out(&mut self, journals: &BTreeMap<AgentId, Journal>) {
+        if self.holds == *journals {
+            return;
+        }
+        let agents: BTreeSet<AgentId> = self.holds.keys().chain(journals.keys()).copied().collect();
+        for agent in agents {
+            let (held, wanted) = (self.holds.get(&agent), journals.get(&agent));
+            if held == wanted {
+                continue;
+            }
+            let dir = daemon_core::ingest::journal_dir(self.dir.path(), agent);
+            let _ = std::fs::remove_dir_all(&dir);
+            if let Some(journal) = wanted {
+                std::fs::create_dir_all(&dir).expect("the journal directory");
+                for (start, bytes) in journal {
+                    std::fs::write(journal::segment_path(&dir, *start), bytes)
+                        .expect("a segment is written");
+                }
+            }
+        }
+        self.holds = journals.clone();
+    }
+
+    /// Reads back the agent's journal as a step left it.
+    pub(crate) fn read_back(&mut self, agent: AgentId) -> Journal {
+        let dir = daemon_core::ingest::journal_dir(self.dir.path(), agent);
+        let journal: Journal = journal::segments(&dir)
+            .expect("the journal lists")
+            .into_iter()
+            .map(|start| {
+                let bytes =
+                    std::fs::read(journal::segment_path(&dir, start)).expect("a segment reads");
+                (start, bytes)
+            })
+            .collect();
+        self.holds.insert(agent, journal.clone());
+        journal
+    }
+
+    /// Drops from `journals` the segments a step reclaimed.
+    pub(crate) fn reclaimed(&mut self, journals: &mut BTreeMap<AgentId, Journal>) {
+        let mut changed = false;
+        for (agent, journal) in journals.iter_mut() {
+            if journal.len() <= 1 {
+                continue;
+            }
+            let dir = daemon_core::ingest::journal_dir(self.dir.path(), *agent);
+            let left: BTreeSet<u64> = journal::segments(&dir)
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
+            let before = journal.len();
+            journal.retain(|start, _| left.contains(start));
+            changed |= journal.len() != before;
+        }
+        if changed {
+            self.holds = journals.clone();
         }
     }
 }

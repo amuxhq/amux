@@ -29,9 +29,8 @@
 //! armed for now is a delivery at once, one armed for later fires when the
 //! clock passes it. Jobs are carried out by fakes: nothing outside the
 //! agents' journals is written, a kill ends the process at once, git reads
-//! find no repository. After every step that wrote a host's store, the
-//! host's core checks every invariant it knows (`check_all`); a broken one,
-//! or a core asking for a dump, fails the net.
+//! find no repository. A core asking for a dump, which every step whose
+//! invariants break does, fails the net.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
@@ -105,15 +104,8 @@ impl Debug for Core {
     }
 }
 
-/// An agent's journal: each segment's start offset and its bytes.
-pub type Journal = BTreeMap<u64, Vec<u8>>;
-
-/// The journal's end: the offset one past its last byte.
-pub fn journal_end(journal: &Journal) -> u64 {
-    journal
-        .last_key_value()
-        .map_or(0, |(start, bytes)| start + bytes.len() as u64)
-}
+use crate::held::Dir;
+pub use crate::held::{Journal, journal_end};
 
 /// Appends a framed step as the journal writer does: an empty step writes
 /// nothing, and a frame that would take a non-empty segment past its size
@@ -194,8 +186,6 @@ pub enum Failure {
     /// A core asked for a dump: a step over its budget or a broken
     /// invariant its own step checks.
     Dump(String),
-    /// A host's store broke an invariant its core checks after a write.
-    Violation(String),
     /// The drivers met something no driver should: a spec naming no agent.
     Driver(String),
     /// A promise a machine's own model checks, judged here as the net
@@ -206,9 +196,7 @@ pub enum Failure {
 impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Failure::Dump(what) | Failure::Violation(what) | Failure::Driver(what) => {
-                f.write_str(what)
-            }
+            Failure::Dump(what) | Failure::Driver(what) => f.write_str(what),
             Failure::Broke(promise, what) => write!(f, "{what}, breaking \"{promise}\""),
         }
     }
@@ -883,10 +871,6 @@ impl Net {
         self.w.running.get(&agent).copied()
     }
 
-    pub fn agent_name(&self, agent: AgentId) -> Option<&str> {
-        self.plan.names.get(&agent).map(String::as_str)
-    }
-
     pub fn client(&self, h: usize, call: CallId) -> Option<&ClientCall> {
         self.w.clients.get(&(h, call))
     }
@@ -1280,7 +1264,7 @@ impl Transition<'_> {
             let at = self.steps;
             self.w.failure = Some(match failure {
                 Failure::Dump(what) => Failure::Dump(format!("at step {at}: {what}")),
-                Failure::Violation(what) => Failure::Violation(format!("at step {at}: {what}")),
+
                 Failure::Driver(what) => Failure::Driver(format!("at step {at}: {what}")),
                 Failure::Broke(promise, what) => {
                     Failure::Broke(promise, format!("at step {at}: {what}"))
@@ -1445,22 +1429,13 @@ impl Transition<'_> {
         let (slot, dir) = self.scratch.of(id);
         dir.lay_out(&host.journals);
         let home = agents_home(id);
-        let mut violation = None;
         let mut broke = None;
         let (out, print) = slot.with_core(&mut host.held, (dir.path(), &home), |daemon| {
             let mut out = Vec::new();
             for input in inputs {
-                let before = daemon.store().changes();
                 let kind = input.kind();
                 let from = out.len();
                 daemon.step(input, &mut out);
-                if daemon.store().changes() != before
-                    && let Err(broken) = daemon.check_all()
-                {
-                    violation.get_or_insert(format!(
-                        "{name}'s store broke an invariant after {kind}: {broken}"
-                    ));
-                }
                 if broke.is_none() {
                     broke = judge_step(daemon, &out[from..], kind, name, &others);
                 }
@@ -1470,9 +1445,6 @@ impl Transition<'_> {
         host.print = Some(print);
         dir.reclaimed(&mut host.journals);
         let scratch = dir.path().to_path_buf();
-        if let Some(violation) = violation {
-            self.fail(Failure::Violation(violation));
-        }
         if let Some((promise, what)) = broke {
             self.fail(Failure::Broke(promise, what));
         }
@@ -1579,26 +1551,13 @@ impl Transition<'_> {
         let running = &self.w.running;
         let (slot, dir) = self.scratch.of(id);
         dir.lay_out(&host.journals);
-        let name = &plan.name;
-        let mut violation = None;
         let (out, print) = slot.start_with(
             &mut host.held,
             (dir.path(), &agents),
             |store| Daemon::new(store, options),
             |daemon| {
                 let mut out = Vec::new();
-                let mut step = |daemon: &mut Daemon, input: Input| {
-                    let before = daemon.store().changes();
-                    let kind = input.kind();
-                    daemon.step(input, &mut out);
-                    if daemon.store().changes() != before
-                        && let Err(broken) = daemon.check_all()
-                    {
-                        violation.get_or_insert(format!(
-                            "{name}'s store broke an invariant after {kind}: {broken}"
-                        ));
-                    }
-                };
+                let mut step = |daemon: &mut Daemon, input: Input| daemon.step(input, &mut out);
                 step(
                     daemon,
                     Input::Tick {
@@ -1639,9 +1598,6 @@ impl Transition<'_> {
         host.print = Some(print);
         dir.reclaimed(&mut host.journals);
         let scratch = dir.path().to_path_buf();
-        if let Some(violation) = violation {
-            self.fail(Failure::Violation(violation));
-        }
         if let Some((promise, what)) = broke {
             self.fail(Failure::Broke(promise, what));
         }
@@ -2130,11 +2086,9 @@ impl Transition<'_> {
                 // bookkeeping have no part in a net of cores.
                 Output::OpenChannel { .. }
                 | Output::ChannelRefused { .. }
-                | Output::CloseChannel { .. }
                 | Output::DropRoute { .. }
                 | Output::DialRelay { .. }
                 | Output::Rediscover
-                | Output::LinkControl { .. }
                 | Output::SendFile { .. }
                 | Output::ForgetAgent { .. }
                 | Output::Ingested { .. }
@@ -2232,8 +2186,7 @@ impl Transition<'_> {
             | Job::CheckpointWal
             | Job::TeardownHost { .. }
             | Job::RefreshToken { .. }
-            | Job::SendPush(_)
-            | Job::Upload(_) => JobResult::Done,
+            | Job::SendPush(_) => JobResult::Done,
         })
     }
 
@@ -2430,9 +2383,7 @@ impl Transition<'_> {
         let (h, agent_id) = (process.host, process.agent);
         if let Some(Core(value)) = process.core.take() {
             let core = Agent::<Kind>::from_value(&value).expect("an agent's value restores");
-            self.w
-                .resumes
-                .insert(agent_id, core.checkpoint().state.clone());
+            self.w.resumes.insert(agent_id, core.checkpoint());
         }
         if self.w.running.get(&agent_id) == Some(&p) {
             self.w.running.remove(&agent_id);
@@ -2867,7 +2818,7 @@ fn job_kind(job: &Job) -> &'static str {
         Job::RefreshToken { .. } => "RefreshToken",
         Job::SendPush(_) => "SendPush",
         Job::NextSpec { .. } => "NextSpec",
-        Job::Upload(_) => "Upload",
+
         Job::KillAgent { .. } => "KillAgent",
         Job::AwaitUnlocked { .. } => "AwaitUnlocked",
         Job::RemoveDir { .. } => "RemoveDir",
@@ -2905,70 +2856,6 @@ fn with_scratch<R>(f: impl FnOnce(&mut Scratch) -> R) -> R {
         static SCRATCH: RefCell<Scratch> = RefCell::new(Scratch { hosts: HashMap::new() });
     }
     SCRATCH.with(|scratch| f(&mut scratch.borrow_mut()))
-}
-
-/// A directory holding one host's agents' journals, laid out only where
-/// they differ from what a step starts from.
-struct Dir {
-    dir: tempfile::TempDir,
-    holds: BTreeMap<AgentId, Journal>,
-}
-
-impl Dir {
-    fn new() -> Self {
-        Self {
-            dir: tempfile::tempdir().expect("a directory for agents"),
-            holds: BTreeMap::new(),
-        }
-    }
-
-    fn path(&self) -> &Path {
-        self.dir.path()
-    }
-
-    fn lay_out(&mut self, journals: &BTreeMap<AgentId, Journal>) {
-        if self.holds == *journals {
-            return;
-        }
-        let agents: BTreeSet<AgentId> = self.holds.keys().chain(journals.keys()).copied().collect();
-        for agent in agents {
-            let (held, wanted) = (self.holds.get(&agent), journals.get(&agent));
-            if held == wanted {
-                continue;
-            }
-            let dir = daemon_core::ingest::journal_dir(self.dir.path(), agent);
-            let _ = std::fs::remove_dir_all(&dir);
-            if let Some(journal) = wanted {
-                std::fs::create_dir_all(&dir).expect("the journal directory");
-                for (start, bytes) in journal {
-                    std::fs::write(journal::segment_path(&dir, *start), bytes)
-                        .expect("a segment is written");
-                }
-            }
-        }
-        self.holds = journals.clone();
-    }
-
-    /// Drops from `journals` the segments a step reclaimed.
-    fn reclaimed(&mut self, journals: &mut BTreeMap<AgentId, Journal>) {
-        let mut changed = false;
-        for (agent, journal) in journals.iter_mut() {
-            if journal.len() <= 1 {
-                continue;
-            }
-            let dir = daemon_core::ingest::journal_dir(self.dir.path(), *agent);
-            let left: BTreeSet<u64> = journal::segments(&dir)
-                .unwrap_or_default()
-                .into_iter()
-                .collect();
-            let before = journal.len();
-            journal.retain(|start, _| left.contains(start));
-            changed |= journal.len() != before;
-        }
-        if changed {
-            self.holds = journals.clone();
-        }
-    }
 }
 
 #[cfg(test)]

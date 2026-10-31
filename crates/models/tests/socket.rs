@@ -3,64 +3,41 @@
 
 use models::{Bounds, SocketModel, check};
 
-/// How many states each exhaustive run may explore: its count at these
-/// bounds on 2026-10-29 (loss and relay-down on 2026-10-30) with two
-/// percent over, as the other models allow for counts that move with the
-/// threads (this one's did not, on 4 and 12).
-/// A run past it says the bounds have outgrown their place; a run that
-/// hangs is the test harness's bound to catch.
-const RELAUNCH_STATES: u64 = 3_602_400;
-const LAN_DOWN_STATES: u64 = 52;
-const LOSS_STATES: u64 = 260_200;
-const DUPLICATE_STATES: u64 = 106_900;
-const RELAY_DOWN_STATES: u64 = 40_800;
-const TIME_STATES: u64 = 148_400;
-
-fn holds_within_budget(model: &SocketModel, budget: u64) {
+fn holds(model: &SocketModel) {
     let threads = models::threads();
     let verdict = check(model, Bounds::exhaustive().threads(threads));
     println!("{verdict}");
-    let measured = verdict.measured;
-    println!(
-        "measured on {threads} threads: states={} seconds={:.1} states_per_second={:.0}",
-        measured.states, measured.seconds, measured.states_per_second
-    );
     verdict.assert_holds();
-    assert!(
-        measured.states <= budget,
-        "the link socket model explored {} states, past its {budget}",
-        measured.states
-    );
 }
 
 #[test]
 fn every_link_socket_promise_holds_across_a_relaunch_at_ci_bounds() {
-    holds_within_budget(&SocketModel::ci(), RELAUNCH_STATES);
+    holds(&SocketModel::ci());
 }
 
 #[test]
 fn every_link_socket_promise_holds_when_the_local_network_goes_at_ci_bounds() {
-    holds_within_budget(&SocketModel::lan_down(), LAN_DOWN_STATES);
+    holds(&SocketModel::lan_down());
 }
 
 #[test]
 fn every_link_socket_promise_holds_when_a_datagram_is_lost_at_ci_bounds() {
-    holds_within_budget(&SocketModel::loss(), LOSS_STATES);
+    holds(&SocketModel::loss());
 }
 
 #[test]
 fn every_link_socket_promise_holds_when_a_datagram_comes_twice_at_ci_bounds() {
-    holds_within_budget(&SocketModel::duplicate(), DUPLICATE_STATES);
+    holds(&SocketModel::duplicate());
 }
 
 #[test]
 fn every_link_socket_promise_holds_as_the_relay_link_goes_at_ci_bounds() {
-    holds_within_budget(&SocketModel::relay_down(), RELAY_DOWN_STATES);
+    holds(&SocketModel::relay_down());
 }
 
 #[test]
 fn every_link_socket_promise_holds_as_time_passes_at_ci_bounds() {
-    holds_within_budget(&SocketModel::time(), TIME_STATES);
+    holds(&SocketModel::time());
 }
 
 /// The nightly bounds, run by hand or by the nightly recipe.

@@ -40,12 +40,11 @@
 #![forbid(unsafe_code)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::time::Instant;
 
 pub use daemon_core::payload::Source;
 pub use daemon_core::{Check, DumpReason, LinkId, StepBudget, Violation};
-use serde::{Deserialize, Serialize};
 
 /// How long the link stays on a path that keeps working before it may move
 /// to a better one, so two working paths never trade the link back and
@@ -59,13 +58,13 @@ pub const PROBE_INTERVAL_MS: u64 = 5_000;
 
 /// A byte-stream path (SSH, a framed TCP connection, an in-process pipe),
 /// named by the driver as it registers it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct PathId(pub u64);
 
 /// One way the link's packets can travel. Direct and Punched carry a peer
 /// address; Forwarded names the forwarding link (the relay's or a daemon's);
 /// Framed is a byte-stream path by id.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Path {
     Direct(SocketAddr),
     Punched(SocketAddr),
@@ -81,7 +80,7 @@ impl Path {
 }
 
 /// Why a forwarder would not carry the link's packets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ForwardRefusal {
     /// The forwarder holds no link to the peer.
     NoRoute,
@@ -93,7 +92,7 @@ pub enum ForwardRefusal {
 
 /// Everything the driver can tell the machine; the clock is an input like
 /// any other.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Input {
     Candidate {
         addr: SocketAddr,
@@ -125,9 +124,7 @@ pub enum Input {
         reason: ForwardRefusal,
     },
     /// The host's own interface addresses changed; every path is suspect.
-    NetworkChanged {
-        addrs: Vec<IpAddr>,
-    },
+    NetworkChanged,
     Plan {
         paid: bool,
     },
@@ -196,7 +193,7 @@ pub const CHECKS: &[Check] = &[
 /// What a path is, apart from its kind: a punched path and a direct one to
 /// the same address are the same path, which becomes direct once the peer
 /// lists the address itself.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum Key {
     Addr(SocketAddr),
     Forwarded(LinkId),
@@ -214,7 +211,7 @@ impl From<Path> for Key {
 }
 
 /// What the machine knows of one path.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 struct PathState {
     /// When a probe on it was last answered, or a packet last arrived on
     /// it after one had been.
@@ -238,7 +235,7 @@ impl PathState {
 }
 
 /// The path carrying the link, since when.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Carrying {
     key: Key,
     path: Path,
@@ -246,17 +243,17 @@ struct Carrying {
 }
 
 /// The link moving off a path this step, kept for the invariant check.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Switch {
     from: Key,
     from_working: bool,
     held_ms: u64,
 }
 
-/// The machine: pure, cloneable, serialisable, stepped by the driver;
+/// The machine: pure, cloneable, stepped by the driver;
 /// invariants checked after every step as the daemon and relay cores do.
 /// Hashed and compared whole, so a checker can hold it as its state.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Paths {
     now_ms: u64,
     paid: bool,
@@ -272,8 +269,6 @@ pub struct Paths {
     on_all: Vec<Path>,
     /// The Tick last asked for.
     armed: Option<u64>,
-    /// The host's interface addresses, as last told.
-    local: Vec<IpAddr>,
     switched: Option<Switch>,
     budget: StepBudget,
 }
@@ -301,7 +296,6 @@ impl Paths {
             carrying: None,
             on_all: Vec::new(),
             armed: None,
-            local: Vec::new(),
             switched: None,
             budget,
         }
@@ -333,7 +327,7 @@ impl Paths {
                 self.paths.remove(&Key::Forwarded(link));
             }
             Input::ForwardRefused { link, reason } => self.forward_refused(link, reason, out),
-            Input::NetworkChanged { addrs } => self.network_changed(addrs, out),
+            Input::NetworkChanged => self.network_changed(out),
             Input::Plan { paid } => self.plan(paid, out),
             Input::LinkUp => {
                 self.link_up = true;
@@ -361,36 +355,17 @@ impl Paths {
         self.keep_probing(out);
         self.select(out);
         self.arm(out);
-        if let Err(violation) = self.check_step_invariants() {
-            out.push(Output::Dump {
-                reason: DumpReason::Violation(violation),
-            });
-        }
-        let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
-        if micros > self.budget.micros {
-            out.push(Output::Dump {
-                reason: DumpReason::OverBudget {
-                    micros,
-                    budget: self.budget,
-                },
-            });
-        }
+        let checked = self.check_step_invariants();
+        out.extend(
+            daemon_core::finish_step(started, self.budget, 0, checked)
+                .map(|reason| Output::Dump { reason }),
+        );
     }
 
     /// The path carrying the link, for display; None while nothing has
     /// answered.
     pub fn carrying(&self) -> Option<&Path> {
         self.carrying.as_ref().map(|carrying| &carrying.path)
-    }
-
-    /// How long one step may take before it is reported.
-    pub fn budget(&self) -> StepBudget {
-        self.budget
-    }
-
-    /// The interface addresses last told in a network change.
-    pub fn local_addrs(&self) -> &[IpAddr] {
-        &self.local
     }
 
     /// The invariants, checked after every step over the few paths held.
@@ -559,8 +534,7 @@ impl Paths {
         }
     }
 
-    fn network_changed(&mut self, addrs: Vec<IpAddr>, out: &mut Vec<Output>) {
-        self.local = addrs;
+    fn network_changed(&mut self, out: &mut Vec<Output>) {
         for state in self.paths.values_mut() {
             state.stale = true;
             state.probe_deadline_ms = None;
@@ -1202,14 +1176,6 @@ mod tests {
         }));
     }
 
-    #[test]
-    fn the_machine_round_trips_through_its_serialised_form() {
-        let mut paths = up(true);
-        answer(&mut paths, Path::Direct(lan()), 4);
-        let bytes = postcard::to_allocvec(&paths).unwrap();
-        assert_eq!(postcard::from_bytes::<Paths>(&bytes).unwrap(), paths);
-    }
-
     fn violation(paths: &Paths) -> Option<Check> {
         paths.check_step_invariants().err().map(|v| v.invariant)
     }
@@ -1249,7 +1215,7 @@ mod tests {
     }
 
     #[test]
-    fn a_violation_is_a_dump_and_a_slow_step_is_one_too() {
+    fn a_violation_is_a_dump() {
         let mut paths = up(false);
         paths.sources.insert(public(), [Source::Observed].into());
         paths
@@ -1261,20 +1227,5 @@ mod tests {
             output,
             Output::Dump { reason: DumpReason::Violation(v) } if v.invariant == NO_CROSS_NETWORK_AFTER_LAPSE
         )));
-
-        let mut paths = Paths::with_budget(0, true, StepBudget { micros: 0 });
-        let over = (0..100_000).any(|now_ms| {
-            let mut out = Vec::new();
-            paths.step(Input::Tick { now_ms }, &mut out);
-            out.iter().any(|o| {
-                matches!(
-                    o,
-                    Output::Dump {
-                        reason: DumpReason::OverBudget { .. }
-                    }
-                )
-            })
-        });
-        assert!(over, "no step measured over a zero budget");
     }
 }

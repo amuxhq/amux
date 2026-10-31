@@ -278,9 +278,8 @@ second link to a peer is a crossed dial whose newer link both sides keep, then
 each neighbor whose link claims the host. The adjacency discipline on the wire,
 which link of a crossed dial stays and what each link is told of its
 neighbors, is the forwarding core's (`crates/relay-core`), which every host's
-link registry steps. What each host said of itself, the cap on how many
-hosts this profile does not trust it holds, and which hosts said they no longer
-trust this one are the daemon core's too (`crates/daemon-core/src/catalogue.rs`),
+link registry steps. What each host said of itself and which hosts said they
+no longer trust this one are the daemon core's too (`crates/daemon-core/src/catalogue.rs`),
 and so is the host set the inventory carries
 (`crates/daemon-core/src/host_set.rs`).
 

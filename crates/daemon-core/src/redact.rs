@@ -51,14 +51,13 @@ pub(crate) fn write_opaque<S: Serializer>(
 }
 
 impl Checkpoint {
-    /// This checkpoint with its state redacted; one under another layout,
-    /// or one that does not decode, is refused.
+    /// This checkpoint with its state redacted; one that does not decode is
+    /// refused.
     pub fn redacted(&self, redactor: &dyn Redactor) -> Result<Checkpoint, RestoreError> {
         let parts = crate::checkpoint_parts(self)?;
         Ok(Checkpoint {
-            schema: self.schema,
             state: postcard::to_allocvec(&Redacting::value(&parts, redactor))
-                .map_err(|error| RestoreError::Corrupt(error.to_string()))?,
+                .map_err(RestoreError::of)?,
         })
     }
 }

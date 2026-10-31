@@ -35,7 +35,6 @@
 //! so after the removal only a resumed link can reach the core.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
@@ -52,12 +51,11 @@ use daemon_core::{
 use store::{AgentKey, AgentRow, Dump, Sqlite};
 use wire::{Item, Step, session_event};
 
-use crate::{Fault, Host, Machine, MsgIndex, Property};
+use crate::held::{Journal, journal_end};
+use crate::{Machine, Property};
 
 const OWN: &[u8; 16] = b"own-host-0000000";
 const AGENT: AgentId = AgentId(*b"agent-0000000000");
-/// The daemon, as the fault vocabulary names hosts.
-const DAEMON: Host = Host(0);
 /// Where the core is told agent directories live whenever it checkpoints,
 /// so its checkpoint names the same place on every thread. A step points it
 /// at this thread's directory first.
@@ -180,15 +178,6 @@ impl SingleDaemon {
             ..Self::ci()
         }
     }
-}
-
-/// The journal's segment files: each one's start offset and its bytes.
-type Journal = BTreeMap<u64, Vec<u8>>;
-
-fn journal_end(journal: &Journal) -> u64 {
-    journal
-        .last_key_value()
-        .map_or(0, |(start, bytes)| start + bytes.len() as u64)
 }
 
 /// The installation's generation record, as the drive holds it.
@@ -432,11 +421,16 @@ pub enum Action {
     /// The driver, told the peer is no longer trusted, closes its link as
     /// revoked.
     Revoke,
-    /// The world's doing: the daemon's process dies at a step; the machine
-    /// loses power, taking the store and the journal back to what the drive
-    /// has; the drive refuses the commit of the next nudge; or the peer's
-    /// early data arrives again, replayed on a connection of its own.
-    Fault(Fault),
+    /// The daemon's process dies at a step.
+    Crash,
+    /// The machine loses power, taking the store and the journal back to
+    /// what the drive has.
+    PowerLoss,
+    /// The drive refuses the commit of the next nudge.
+    WriteRefused,
+    /// The peer's early data arrives again, replayed on a connection of its
+    /// own.
+    Duplicate,
 }
 
 impl Machine for SingleDaemon {
@@ -490,7 +484,7 @@ impl Machine for SingleDaemon {
         let Some(run) = &s.run else {
             out.push(Action::Start);
             if s.used.downs < self.downs {
-                out.push(Action::Fault(Fault::PowerLoss(DAEMON)));
+                out.push(Action::PowerLoss);
                 out.push(Action::Reboot);
             }
             return;
@@ -500,7 +494,7 @@ impl Machine for SingleDaemon {
         if journal_end(&s.journal) != s.cursor {
             out.push(Action::Nudge);
             if s.used.refusals < self.refusals {
-                out.push(Action::Fault(Fault::WriteRefused(DAEMON)));
+                out.push(Action::WriteRefused);
             }
         }
         if run.ingest_armed {
@@ -531,7 +525,7 @@ impl Machine for SingleDaemon {
         // while the core holds no input back, so what the store shows after
         // it is the replay's doing alone.
         if s.used.resumes > 0 && s.used.replays < self.replays && run.held == 0 {
-            out.push(Action::Fault(Fault::Duplicate(MsgIndex(0))));
+            out.push(Action::Duplicate);
         }
         if self.unpin && s.used.unpins == 0 {
             out.push(Action::Unpin);
@@ -540,8 +534,8 @@ impl Machine for SingleDaemon {
             out.push(Action::Revoke);
         }
         if s.used.downs < self.downs {
-            out.push(Action::Fault(Fault::Crash(DAEMON)));
-            out.push(Action::Fault(Fault::PowerLoss(DAEMON)));
+            out.push(Action::Crash);
+            out.push(Action::PowerLoss);
             out.push(Action::Reboot);
         }
     }
@@ -563,7 +557,7 @@ impl Machine for SingleDaemon {
             }
             Action::Writeback => next.written_back = journal_end(&next.journal),
             Action::Nudge => self.step(&mut next, Input::Nudge { agent: AGENT }, false),
-            Action::Fault(Fault::WriteRefused(_)) => {
+            Action::WriteRefused => {
                 next.used.refusals += 1;
                 self.step(&mut next, Input::Nudge { agent: AGENT }, true);
             }
@@ -653,7 +647,7 @@ impl Machine for SingleDaemon {
                     self.serve_early(&mut next, PEER_LINK, EARLY_CALL);
                 }
             }
-            Action::Fault(Fault::Duplicate(_)) => {
+            Action::Duplicate => {
                 next.used.replays += 1;
                 let before = next.store.clone();
                 if self.resumed(&mut next, REPLAY_LINK) {
@@ -689,11 +683,11 @@ impl Machine for SingleDaemon {
                     self.step(&mut next, down, false);
                 }
             }
-            Action::Fault(Fault::Crash(_)) => {
+            Action::Crash => {
                 next.used.downs += 1;
                 next.run = None;
             }
-            Action::Fault(Fault::PowerLoss(_)) => {
+            Action::PowerLoss => {
                 next.used.downs += 1;
                 next.run = None;
                 next.store = next.durable.clone();
@@ -729,7 +723,6 @@ impl Machine for SingleDaemon {
                 next.boot += 1;
                 next.owed |= next.unfinished;
             }
-            Action::Fault(fault) => unreachable!("the single daemon never offers {fault:?}"),
         }
         Some(next)
     }
@@ -1166,8 +1159,8 @@ pub struct Broken {
 
 /// What one step of a core running anywhere broke of the promises a step
 /// is judged by alone, `out` being what it asked for: a dump it asked for
-/// (named by the invariant that failed, when one did), an invariant its
-/// store breaks, or a row it answered that the store does not hold. The
+/// (named by the invariant that failed, when one did), or a row it
+/// answered that the store does not hold. The
 /// rest of the single daemon's promises need the world the model tracks
 /// around the core: what reached the drive, the run before.
 pub fn judge_step(daemon: &Daemon, out: &[Output]) -> Option<Broken> {
@@ -1186,12 +1179,7 @@ pub fn judge_step(daemon: &Daemon, out: &[Output]) -> Option<Broken> {
             },
         });
     }
-    if let Err(violation) = daemon.check_all() {
-        return Some(Broken {
-            promise: violation.invariant.sentence,
-            detail: violation.detail,
-        });
-    }
+
     answered_unheld(daemon, out).map(|row| Broken {
         promise: COMMIT_BEFORE_BROADCAST,
         detail: format!("answered {row} before the store held it"),

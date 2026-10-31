@@ -394,7 +394,6 @@ impl ProfileRuntime {
             "agents": agents,
             "client": { "sessions": sessions },
             "core": core.map(|core| serde_json::json!({
-                "schema": core.schema,
                 "inputs": core.inputs,
                 "reads": core.reads,
             })),
@@ -768,7 +767,6 @@ fn fitted(kind: Kind, step: &Step, len: usize) -> Vec<u8> {
 
 /// What the core's part of a bundle holds, for the manifest.
 struct CoreDumped {
-    schema: u32,
     /// Inputs, and lines saying what an ingest read.
     inputs: usize,
     reads: usize,
@@ -811,7 +809,6 @@ fn write_core(captured: &Captured, scratch: &Path, out: &Path) -> Result<CoreDum
     std::fs::copy(scratch, out.join(CORE_STORE))
         .map_err(|error| format!("writing {CORE_STORE}: {error}"))?;
     Ok(CoreDumped {
-        schema: checkpoint.schema,
         inputs,
         reads,
         cursors: cursors

@@ -12,7 +12,7 @@
 //! every stream open on it.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use daemon_core::payload::{CarrierKind, PeerAddress, Source};
@@ -45,8 +45,6 @@ pub struct PathDriver {
 struct State {
     machines: HashMap<HostId, Machine>,
     paid: bool,
-    /// The host's interface addresses, as last told.
-    local: Vec<IpAddr>,
     /// The forwarding links to the relay: a path to every peer.
     relays: BTreeSet<LinkId>,
     next_nonce: u64,
@@ -90,7 +88,6 @@ impl PathDriver {
             state: Mutex::new(State {
                 machines: HashMap::new(),
                 paid: false,
-                local: Vec::new(),
                 relays: BTreeSet::new(),
                 next_nonce: uuid::Uuid::new_v4().as_u64_pair().0,
             }),
@@ -250,17 +247,14 @@ impl PathDriver {
 
     /// The host's network changed: every path is suspect, and each machine
     /// probes its paths again. How many machines were told.
-    pub(crate) fn network_changed(&self, addrs: Vec<IpAddr>) -> usize {
+    pub(crate) fn network_changed(&self) -> usize {
         let mut state = self.lock();
-        state.local = addrs.clone();
         // An answer to a probe sent before the change says nothing of the
         // network now.
         for machine in state.machines.values_mut() {
             machine.probes.clear();
         }
-        self.step_all(&mut state, || Input::NetworkChanged {
-            addrs: addrs.clone(),
-        })
+        self.step_all(&mut state, || Input::NetworkChanged)
     }
 
     /// The path carrying the link to `peer`, as its machine chose it.
@@ -522,13 +516,10 @@ impl State {
     /// `peer`'s machine, made on the plan and network as they are now,
     /// with every relay path, if it has none.
     fn machine(&mut self, peer: HostId, now_ms: u64) -> &mut Machine {
-        let (paid, local, relays) = (self.paid, self.local.clone(), self.relays.clone());
+        let (paid, relays) = (self.paid, self.relays.clone());
         self.machines.entry(peer).or_insert_with(|| {
             let mut paths = Paths::new(now_ms, paid);
             let mut out = Vec::new();
-            if !local.is_empty() {
-                paths.step(Input::NetworkChanged { addrs: local }, &mut out);
-            }
             for link in relays {
                 paths.step(Input::ForwardingUp { link }, &mut out);
             }
@@ -1116,7 +1107,7 @@ mod tests {
     async fn path_gives_the_peer_of_a_link_dialled_by_address_its_machine() {
         let linked = linked_dialling(false, true).await;
         assert_eq!(linked.laptop_paths.machines(), 1);
-        assert_eq!(linked.laptop_paths.network_changed(Vec::new()), 1);
+        assert_eq!(linked.laptop_paths.network_changed(), 1);
         assert!(linked.client.close_reason().is_none(), "the link stayed up");
     }
 
@@ -1145,9 +1136,9 @@ mod tests {
                 .map(|probe| probe.nonce)
         };
         // A network change: every path is probed afresh.
-        paths.network_changed(Vec::new());
+        paths.network_changed();
         let before = nonce_on(paths).expect("the LAN is probed again");
-        paths.network_changed(Vec::new());
+        paths.network_changed();
         let outstanding = nonce_on(paths).expect("and again");
         assert_ne!(before, outstanding);
 
@@ -1188,7 +1179,7 @@ mod tests {
         assert_eq!(paths.carrying(desk), None, "and carries nothing");
 
         // The answer in time is the one that counts, once.
-        paths.network_changed(Vec::new());
+        paths.network_changed();
         let fresh = nonce_on(paths).expect("probed again");
         paths.answered(ProbeAnswered {
             from: desk,

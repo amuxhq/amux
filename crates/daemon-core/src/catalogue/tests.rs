@@ -159,46 +159,6 @@ fn pair(id: HostId, pubkey: Vec<u8>) -> TrustChange {
 }
 
 #[test]
-fn past_the_cap_a_claim_evicts_the_oldest_untrusted_host_held_only_by_a_claim() {
-    let mut daemon = daemon(&[DESK]);
-    // The relay's own entry and the hosts it claims fill the cap; the
-    // trusted desk does not count toward it.
-    let claimed: Vec<HostId> = (0..HOST_CAP as u32 - 1).map(numbered).collect();
-    let reaches: Vec<HostId> = std::iter::once(DESK).chain(claimed.clone()).collect();
-    linked(&mut daemon, 1, RELAY, CarrierKind::Relay, &reaches);
-    let catalogue = &daemon.routing.catalogue;
-    assert!(catalogue.said(claimed[0]).is_some());
-    assert_eq!(catalogue.relays_to(claimed[0]), vec![RELAY]);
-
-    let newcomer = numbered(HOST_CAP as u32);
-    neighbor_up(&mut daemon, 1, newcomer);
-    let catalogue = &daemon.routing.catalogue;
-    assert!(catalogue.said(newcomer).is_some(), "the newcomer is held");
-    assert!(
-        catalogue.said(claimed[0]).is_none(),
-        "the oldest claim went"
-    );
-    assert!(catalogue.said(claimed[1]).is_some());
-    assert!(
-        catalogue.said(DESK).is_some(),
-        "a trusted host is never evicted"
-    );
-    assert!(
-        catalogue.said(RELAY).is_some(),
-        "a linked host is never evicted"
-    );
-
-    // A direct link is held past the cap too, and the next oldest claim
-    // makes room.
-    let dialed = numbered(HOST_CAP as u32 + 1);
-    linked(&mut daemon, 2, dialed, CarrierKind::Direct, &[]);
-    let catalogue = &daemon.routing.catalogue;
-    assert!(catalogue.said(dialed).is_some());
-    assert!(catalogue.said(claimed[1]).is_none());
-    assert_eq!(catalogue.untrusted(&BTreeSet::from([DESK])), HOST_CAP);
-}
-
-#[test]
 fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
     let mut daemon = daemon(&[DESK]);
     linked(&mut daemon, 1, DESK, CarrierKind::Direct, &[]);

@@ -127,17 +127,9 @@ on the runner's four cores. `just tests-check` fails when a model is missing
 from the job's matrix. Linux minutes cost a public repository nothing, and each job
 stays far inside the run's wall time, which the iOS gate sets.
 
-A model's bounds are sized to that runner; its test asserts the state count
-those bounds explore, not the time (a run that hangs is the job guard's).
-A CI run
-measured the models there at their CI bounds: the runner took 2.1 to 4.2 times
-the enrolled Mac's four-thread time, and replication, the model heaviest on
-the store, was the slowest (274 s against 66 s); a later run measured presence
-at 4.7 times (339.9 s against 73 s). So a model's budget is at least twice its
-runner time, rounded up to a whole minute, and no budget is above 600 s; a
-model whose doubled runner time would pass that has its CI bounds cut; a model
-not yet measured there is sized from its four-thread Mac time times 4.7. The models' README records each model's times. The job
-guard is 25 minutes.
+A model's bounds are sized to that runner: a run that outgrows them is
+caught by the job guard, 25 minutes, and bounds that would not fit move to the
+model's nightly test.
 
 The Models at nightly bounds workflow runs each model's ignored nightly
 test, the same matrix, daily and by hand; `just models-nightly` runs the

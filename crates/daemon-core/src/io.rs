@@ -14,9 +14,9 @@ use crate::ids::{
     AgentId, AttemptId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId,
 };
 use crate::payload::{
-    AgentSpec, AnalyticsBatch, Answer, CarrierKind, ChannelClass, ChannelError, ClientRequest,
-    ControlFrame, Hello, JobResult, LinkCloseReason, LinkFrame, PairMessage, PeerRequest,
-    PublicKey, Push, Response, Status,
+    AgentSpec, Answer, CarrierKind, ChannelClass, ChannelError, ClientRequest, ControlFrame, Hello,
+    JobResult, LinkCloseReason, LinkFrame, PairMessage, PeerRequest, PublicKey, Push, Response,
+    Status,
 };
 use crate::presence::Route;
 use crate::reach::{AttemptOutcome, Plan};
@@ -460,9 +460,6 @@ pub enum Output {
         class: ChannelClass,
         reason: ChannelError,
     },
-    CloseChannel {
-        channel: ChannelId,
-    },
     /// `route` no longer carries `host`'s traffic: forget the channels
     /// opened on it, so the next call opens a fresh one.
     DropRoute {
@@ -542,10 +539,6 @@ pub enum Output {
         call: CallId,
         path: PathBuf,
         range: Range<u64>,
-    },
-    LinkControl {
-        link: LinkId,
-        frame: LinkFrame,
     },
     /// Dial the agent's process until a connection says Hello, reported
     /// as [`Input::AgentHello`], and report each Nudge on it; once the
@@ -736,15 +729,10 @@ pub enum Job {
     /// Replace the file at `path` with `bytes` so that a crash or power
     /// cut leaves the old file or the new one, and the new one is on the
     /// drive before the job is done.
-    Fsync {
-        path: PathBuf,
-        bytes: Vec<u8>,
-    },
+    Fsync { path: PathBuf, bytes: Vec<u8> },
     /// Close every connection to `host`: its key is being replaced, and
     /// nothing opened under the old one may outlive it.
-    TeardownHost {
-        host: HostId,
-    },
+    TeardownHost { host: HostId },
     /// Run a passive WAL checkpoint on a connection to the profile store
     /// of the job's own, so the store's main file holds every commit; one
     /// that cannot move the whole WAL fails.
@@ -760,9 +748,7 @@ pub enum Job {
     /// Exchange the account's refresh token for a fresh relay credential
     /// and present it on `link`, which reports it as [`Input::Credential`];
     /// a refresh that fails ends the link.
-    RefreshToken {
-        link: LinkId,
-    },
+    RefreshToken { link: LinkId },
     /// Hand the push to the profile's sender.
     SendPush(Push),
     /// Build the exited agent's next spec from its newest, carrying the
@@ -773,24 +759,16 @@ pub enum Job {
         bootstrap: Option<wire::Bootstrap>,
         snapshot: Option<Vec<u8>>,
     },
-    Upload(AnalyticsBatch),
     /// Kill the agent's process group from outside: the process this
     /// daemon started, or the one on the other end of its control socket.
     /// Fails when there is none it can kill.
-    KillAgent {
-        agent: AgentId,
-    },
+    KillAgent { agent: AgentId },
     /// Wait until no process holds the agent's directory's lock, at most
     /// `patience_ms` on the profile's clock.
-    AwaitUnlocked {
-        agent: AgentId,
-        patience_ms: u64,
-    },
+    AwaitUnlocked { agent: AgentId, patience_ms: u64 },
     /// Remove the directory and everything in it; one already gone is
     /// removed.
-    RemoveDir {
-        path: PathBuf,
-    },
+    RemoveDir { path: PathBuf },
     /// Compare the working tree at `cwd` with `base`, answered as
     /// [`JobResult::Compared`] or [`JobResult::CompareFailed`]; the patch
     /// is built only `with_patch`.
@@ -801,10 +779,7 @@ pub enum Job {
     },
     /// Make a worktree of the repository at `repo` named `name`, answered
     /// as [`JobResult::Worktree`] or [`JobResult::Refused`].
-    MakeWorktree {
-        repo: PathBuf,
-        name: String,
-    },
+    MakeWorktree { repo: PathBuf, name: String },
 }
 
 #[cfg(test)]

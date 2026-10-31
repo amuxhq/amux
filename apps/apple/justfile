@@ -23,11 +23,11 @@ python := "scripts/py"
 default:
     @just --list ios
 
-# The Rust tools the phone recipes drive: the screenshot comparator and door
-# client, and the served test network the journeys connect a simulator to with
-# the amux and fake providers its machines run. One cargo invocation builds
-# them all, so the served net runs binaries whose features match its own and
-# builds nothing itself.
+# The Rust tools the phone recipes drive: the screenshot comparator and the
+# served test network the journeys connect a simulator to with the amux and
+# fake providers its machines run. One cargo invocation builds them all, so the
+# served net runs binaries whose features match its own and builds nothing
+# itself.
 # Build the Rust tools the phone recipes drive.
 tools:
     {{bounded}} 900 cargo build --locked -p ios-tools -p testnet -p qualification -p amux -p provider-fakes --bins

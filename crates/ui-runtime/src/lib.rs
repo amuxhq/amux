@@ -6,6 +6,7 @@
 //! their own clock, and keep a bounded trace for dumps. Nothing is
 //! persisted: every open rebuilds from the runtime's rows.
 
+mod drafts;
 mod dump;
 mod fleet;
 pub mod inputs;

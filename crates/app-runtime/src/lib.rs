@@ -135,15 +135,13 @@ impl AppRuntime {
             cap: DEFAULT_CAP.max(tail),
         };
         let session = self.fleet.open(agent, window).await?;
-        // A draft that cannot be read is one the person never sees again,
-        // not a chat that cannot open.
+        // Read after this agent's earlier saves, so a chat reopened at once
+        // finds what was left in it. A draft that cannot be read is one the
+        // person never sees again, not a chat that cannot open.
         let kept = self
-            .client
-            .get_draft(wire::GetDraftRequest {
-                agent_id: agent.agent.clone(),
-            })
+            .fleet
+            .kept_draft(agent)
             .await
-            .ok()
             .map(|draft| Draft::kept(&draft))
             .filter(|draft| !draft.parts.is_empty());
         let id = self.next_chat.fetch_add(1, Ordering::Relaxed);
@@ -155,7 +153,6 @@ impl AppRuntime {
             Arc::downgrade(&self.fleet),
             Arc::new(move || wake(Wake::Chat(id))),
             self.clock.clone(),
-            self.client.clone(),
             kept,
         );
         Ok(chat)

@@ -9,7 +9,6 @@ use std::time::{Duration, Instant};
 
 use client::{Client, SystemClock};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use futures_util::future::{BoxFuture, Shared};
 use prost::Message as _;
 use ratatui::Frame as Paint;
 use ratatui::text::{Line, Span};
@@ -302,11 +301,6 @@ pub struct App {
     host_offers: HashMap<Vec<u8>, wire::Catalogue>,
     /// Each host's provider asked once per hash the host named.
     offers_asked: HashSet<OfferAsked>,
-    /// Every draft save sent as a chat closed, in order: a chat opening
-    /// reads its draft back from this machine's daemon only after them, so
-    /// it finds what was left in it, an emptied one empty; and the client
-    /// quits only after them.
-    draft_saves: Shared<BoxFuture<'static, ()>>,
     /// A chat closed under the person: home takes no key until
     /// [`crate::chat::ASK_ARMS_MS`] pass with none, as an ask arms, so the
     /// rest of what they were typing never acts on another agent. The last
@@ -346,20 +340,6 @@ fn composer_draft(editor: &crate::editor::Editor) -> wire::Draft {
     wire::Draft {
         text: editor.text().to_owned(),
         attachments: editor.attachments().to_vec(),
-    }
-}
-
-/// Saves drafts with this machine's daemon; a failure loses only what a
-/// client kept in memory anyway.
-async fn save_drafts(client: Arc<dyn Client>, drafts: Vec<(Vec<u8>, wire::Draft)>) {
-    for (agent_id, draft) in drafts {
-        let request = wire::UpdateDraftRequest {
-            agent_id,
-            draft: Some(draft),
-        };
-        // Nowhere to say it as the client closes; the draft was only ever
-        // in this client's memory before.
-        let _ = client.update_draft(request).await;
     }
 }
 
@@ -409,9 +389,6 @@ impl App {
             report_asked: false,
             report: None,
             host_offers: HashMap::new(),
-            draft_saves: futures_util::FutureExt::shared(
-                Box::pin(std::future::ready(())) as BoxFuture<'static, ()>
-            ),
             home_held: None,
             offers_asked: HashSet::new(),
             events,
@@ -683,8 +660,6 @@ impl App {
         }
         self.opening = Some(agent.clone());
         let fleet = self.fleet.clone();
-        let client = self.client.clone();
-        let saved = self.draft_saves.clone();
         self.spawn(async move {
             let window = Window {
                 tail: PAGE,
@@ -694,15 +669,7 @@ impl App {
                 .open(&agent, window)
                 .await
                 .map_err(|error| error.to_string());
-            saved.await;
-            let request = wire::GetDraftRequest {
-                agent_id: agent.agent.clone(),
-            };
-            let kept = client
-                .get_draft(request)
-                .await
-                .ok()
-                .filter(|draft| !draft.text.is_empty() || !draft.attachments.is_empty());
+            let kept = fleet.kept_draft(&agent).await;
             Some(AppEvent::Opened {
                 agent,
                 result,
@@ -743,28 +710,19 @@ impl App {
         for id in taken {
             chat.session.discard(&id);
         }
-        let draft = vec![(chat.agent.agent.clone(), composer_draft(&chat.view.editor))];
-        let (client, before) = (self.client.clone(), self.draft_saves.clone());
-        let save = futures_util::FutureExt::shared(Box::pin(async move {
-            before.await;
-            save_drafts(client, draft).await;
-        }) as BoxFuture<'static, ()>);
-        tokio::spawn(save.clone());
-        self.draft_saves = save;
+        self.fleet
+            .keep_draft(&chat.agent, composer_draft(&chat.view.editor));
     }
 
     /// Hands the open chat's draft to this machine's daemon after every
-    /// save sent before; awaited as the client quits.
+    /// save asked for before; awaited as the client quits.
     pub fn keep_drafts(&mut self) -> impl std::future::Future<Output = ()> + Send + 'static {
-        let open = self
-            .chat
-            .as_ref()
-            .map(|chat| (chat.agent.agent.clone(), composer_draft(&chat.view.editor)));
-        let (client, before) = (self.client.clone(), self.draft_saves.clone());
-        async move {
-            before.await;
-            save_drafts(client, open.into_iter().collect()).await;
+        if let Some(chat) = &self.chat {
+            self.fleet
+                .keep_draft(&chat.agent, composer_draft(&chat.view.editor));
         }
+        let fleet = self.fleet.clone();
+        async move { fleet.drafts_kept().await }
     }
 
     fn field_text(&self) -> bool {

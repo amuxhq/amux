@@ -6,8 +6,10 @@ amux has two rich clients, the terminal client ([TERMINAL.md](TERMINAL.md)) and 
 ([IOS.md](IOS.md)). Both are thin shells over one Rust library: a pure model of an open chat and of the fleet,
 a driver that owns the streams and does every piece of I/O, and a set of views that turn the model into plain
 content values. Each client composes those values in its own layout and owns only what is ephemeral: panes,
-scroll position, focus, drafts and which rows are expanded. A client hands its unsent drafts to its own machine's
-daemon (`UpdateDraft`, `GetDraft`) so a draft outlives the client; they never leave that machine. A deleted
+scroll position, focus, drafts and which rows are expanded. A client hands its unsent drafts to the fleet driver, which keeps them
+with its own machine's daemon (`UpdateDraft`, `GetDraft`) so a draft outlives the chat and the client; they never
+leave that machine. Saves to one agent go in order, the newest winning, and a chat reads its draft only after them,
+so one reopened at once finds what was left in it. A deleted
 agent's draft goes with it: the daemon forgets it when the agent is deleted (its children too) or removed by
 retention, here or on the host that ran it, and the terminal client saves nothing for a chat that closed because
 its agent was deleted.

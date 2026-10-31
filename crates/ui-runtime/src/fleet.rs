@@ -24,6 +24,7 @@ use wire::{
 };
 
 use crate::Backoff;
+use crate::drafts::Drafts;
 use crate::session::{Catalogues, Session};
 use crate::trace::{DriverEvent, DriverTrace, Ring, Structure as _, TraceEvent};
 
@@ -110,6 +111,8 @@ struct Inner {
     foreground: AtomicBool,
     /// Shared by every session, so a catalogue is fetched once per hash.
     catalogues: Arc<Catalogues>,
+    /// Each agent's draft saves, kept here so they outlive its chat.
+    drafts: Drafts,
     me: Weak<Inner>,
 }
 
@@ -393,6 +396,7 @@ impl Fleet {
             sessions: Mutex::new(HashMap::new()),
             foreground: AtomicBool::new(true),
             catalogues: Arc::default(),
+            drafts: Drafts::default(),
             me: me.clone(),
         });
         let mut stream = inner.client.subscribe_inventory().await?;
@@ -506,6 +510,29 @@ impl Fleet {
             session.set_foreground(true);
         }
         Ok(session)
+    }
+
+    /// Keeps the composer's draft for an agent with this machine's daemon,
+    /// so it outlives the chat and the client; an empty one is kept too, so
+    /// the chat reopens empty. Saves to one agent go in order, and one
+    /// overtaken before it is sent is never sent.
+    pub fn keep_draft(&self, agent: &AgentKey, draft: wire::Draft) {
+        self.inner
+            .drafts
+            .keep(self.inner.client.clone(), agent, draft);
+    }
+
+    /// The draft this machine's daemon keeps for an agent, read after every
+    /// save to it asked for before; None when there is none, it is empty or
+    /// it cannot be read.
+    pub async fn kept_draft(&self, agent: &AgentKey) -> Option<wire::Draft> {
+        self.inner.drafts.kept(&*self.inner.client, agent).await
+    }
+
+    /// Resolves once every draft save asked for before has been handed to
+    /// the daemon: what a client waits on as it quits.
+    pub async fn drafts_kept(&self) {
+        self.inner.drafts.flushed(&*self.inner.client).await;
     }
 
     /// A chat on the agent closed: the last one to close narrows its

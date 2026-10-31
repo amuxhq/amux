@@ -26,7 +26,7 @@ use crate::connection::ConnectionManager;
 use crate::discovery::{Discovery, DiscoveryEvent, FoundHosts};
 use crate::edge::first_flight::FirstFlights;
 use crate::identity::DeviceIdentity;
-use crate::link::channels::{Flight, ForwardedDial, ResumedDial, Resuming, says_revoked};
+use crate::link::channels::{Flight, ResumedDial, Resuming, says_revoked};
 use crate::link::framed::{FramedKind, StreamEndpoint};
 use crate::link::quic::DEVICE_SERVER_NAME;
 use crate::link::socket::Path;
@@ -589,7 +589,7 @@ async fn await_connector(
 
 /// Dials links for the channel pool: a host's first flight, a call's need
 /// for a link, and a pairing through a forwarder.
-struct ForwardedDialer(Weak<Inner>);
+pub(crate) struct ForwardedDialer(Weak<Inner>);
 
 impl ForwardedDialer {
     fn inner(&self) -> Result<Arc<Inner>, ChannelError> {
@@ -670,7 +670,7 @@ impl ForwardedDialer {
     /// one as no longer trusted, or a forwarder that refused to carry the
     /// dial, is what the call is told; otherwise it finds the link up or
     /// not.
-    async fn want(&self, peer: HostId) -> Result<(), ChannelError> {
+    pub(crate) async fn want(&self, peer: HostId) -> Result<(), ChannelError> {
         let inner = self.inner()?;
         let registry = inner.channels.link_registry().clone();
         if registry.native_carrier_to_peer(peer).await.is_some() {
@@ -739,7 +739,10 @@ impl ForwardedDialer {
         }
     }
 
-    async fn pair(
+    /// Dials `peer`'s pairing service through the forwarder at the far end
+    /// of `through`, presenting no certificate: the host answers only while
+    /// its pairing window is open. The dial is given up after `deadline`.
+    pub(crate) async fn pair(
         &self,
         peer: HostId,
         through: LinkId,
@@ -799,21 +802,6 @@ impl ResumedDial for ForwardedDialer {
         flight: Flight,
     ) -> BoxFuture<'_, Result<Resuming, ChannelError>> {
         Box::pin(self.resume(peer, flight))
-    }
-}
-
-impl ForwardedDial for ForwardedDialer {
-    fn want(&self, peer: HostId) -> BoxFuture<'_, Result<(), ChannelError>> {
-        Box::pin(self.want(peer))
-    }
-
-    fn pair_through(
-        &self,
-        peer: HostId,
-        through: LinkId,
-        deadline: Duration,
-    ) -> BoxFuture<'_, Result<tonic::transport::Channel, ChannelError>> {
-        Box::pin(self.pair(peer, through, deadline))
     }
 }
 

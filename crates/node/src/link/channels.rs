@@ -23,6 +23,7 @@ use crate::dispatcher::TunnelDispatcher;
 use crate::driver::CoreLinks;
 use crate::identity::IdentityError;
 use crate::routing::{LinkId, LinkRegistry, Route};
+use crate::services::ForwardedDialer;
 use crate::transport::{Compressed, channel_from_single_io};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize)]
@@ -92,24 +93,6 @@ impl ChannelError {
             _ => tonic::Status::unavailable(self.to_string()),
         }
     }
-}
-
-/// What a call reaches a host it has no link to by, and a pairing a host
-/// through a forwarder by.
-pub(crate) trait ForwardedDial: Send + Sync + 'static {
-    /// Asks for a link of `peer`'s own now, returning once the attempt it
-    /// brought about has ended, however it ended.
-    fn want(&self, peer: HostId) -> BoxFuture<'_, Result<(), ChannelError>>;
-
-    /// Dials `peer`'s pairing service through the forwarder at the far end
-    /// of `through`, presenting no certificate: the host answers only while
-    /// its pairing window is open. The dial is given up after `deadline`.
-    fn pair_through(
-        &self,
-        peer: HostId,
-        through: LinkId,
-        deadline: std::time::Duration,
-    ) -> BoxFuture<'_, Result<Channel, ChannelError>>;
 }
 
 /// Where a session subscription starts: the origin's tail, or after a
@@ -320,7 +303,7 @@ pub struct ChannelPool {
     lifetimes: RwLock<HashMap<ChannelKey, Vec<Weak<CancellationToken>>>>,
     links: Arc<LinkRegistry>,
     /// How a link through a forwarder is dialled, once the edge is up.
-    forwarded: OnceLock<Arc<dyn ForwardedDial>>,
+    forwarded: OnceLock<Arc<ForwardedDialer>>,
     /// How a link resuming with a ticket is dialled, once the edge is up.
     resumed: OnceLock<Arc<dyn ResumedDial>>,
 }
@@ -363,7 +346,7 @@ impl ChannelPool {
     }
 
     /// Dials links through forwarders with `dial` from now on.
-    pub(crate) fn dial_forwarded_with(&self, dial: Arc<dyn ForwardedDial>) {
+    pub(crate) fn dial_forwarded_with(&self, dial: Arc<ForwardedDialer>) {
         let _ = self.forwarded.set(dial);
     }
 
@@ -627,7 +610,7 @@ impl ChannelPool {
         self.forwarded
             .get()
             .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?
-            .pair_through(peer, through, deadline)
+            .pair(peer, through, deadline)
             .await
     }
 

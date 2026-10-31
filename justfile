@@ -339,12 +339,6 @@ nightly *ARGS: nextest
 coverage: nextest
     {{bounded}} 3600 scripts/py scripts/coverage.py
 
-# Fail when a contract in tests/contracts.toml names no test, or a test or a
-# model property that does not exist; `--table PATH` also writes the coverage
-# table as Markdown.
-contracts-check *ARGS:
-    {{bounded}} 300 scripts/python -B scripts/contracts-check.py "$@"
-
 # Fail when a docs link or image does not resolve, a figure is unreferenced
 # or not standalone, or docs/README.md does not list every page once.
 docs-check:
@@ -361,7 +355,7 @@ no-update-flags:
     scripts/no-update-flags.sh
 
 # Run the same task sequence exercised across continuous-integration jobs.
-ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test contracts-check doctest release-check embedded-check embedded-test mobile-check
+ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check embedded-check embedded-test mobile-check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,

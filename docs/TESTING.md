@@ -2,8 +2,8 @@
 
 *For developers adding a test, running one, or deciding where a new one belongs.*
 
-This page is an index. The suites themselves are listed in `tests/catalog.toml`; the promises they hold are
-listed in `tests/contracts.toml`; `just --list` is the command surface. The multi-host harness has its own page,
+This page is an index. The suites themselves are listed in `tests/catalog.toml`; `just --list` is the command
+surface. The multi-host harness has its own page,
 [TestNet](TESTNET.md), measured performance has [Performance](PERFORMANCE.md), the phone's snapshots
 and journeys are described in [the iPhone app](IOS.md), and adversarial testing by agents has
 [QA](QA.md).
@@ -64,7 +64,6 @@ path that ends. A failure prints a path to the state that broke it.
 just test-crate models                     # every machine at its CI bounds
 just suite protocol-models family::        # one machine
 just models-nightly [machine..]            # the larger nightly bounds, one machine after another
-cargo run -p models --bin properties       # every property's sentence, by machine
 ```
 
 Each machine's CI bounds are sized to finish within its CI job's time guard on a four-core runner, and its
@@ -138,7 +137,7 @@ just nightly --seeds 2000        # thousands of seeds per story, then the models
 Under `cargo nextest run` the same switch is the environment: `TESTNET_MODE=simulated`, with `TESTNET_SEEDS=N` or
 `TESTNET_SEED=N`.
 
-## The catalogue and the contracts
+## The catalogue
 
 `tests/catalog.toml` lists every suite once: its contract in a sentence, paths, focused recipe, boundary, oracle,
 what is real and what is substituted, its time requirement (`none`, `driven` or `real`), required capabilities,
@@ -155,22 +154,6 @@ just tests-list    # print the catalogue: suite, boundary, lane, time, recipe
 just tests-check   # fail on a missing recipe, target, module, feature, journey or baseline,
                    # or on a test target or suite module the catalogue does not list
 ```
-
-`tests/contracts.toml` lists every promise the design makes that a test must hold, grouped by source (a worked
-failure, an invariant, a suite contract, or a model property), each with the tests that hold it. A test is named as
-`<package>/<target>::<test path>` for Cargo (`<target>` is `lib`, `bin:<name>`, or `integration`, whose test paths
-start with the suite's module, as in `node/integration::supervisor::<test>`),
-`swift:<Target>/<Class>/<method>` for XCTest, or `journey:<client>/<story>` for a story in
-`journeys/manifest.json`. A model property is named by its crate, machine and sentence, which must be one the
-crate's `properties` binary lists (`cargo run -p models --bin properties`), with the checker test that explores
-it and the real-mode stories that demonstrate it.
-
-```sh
-just contracts-check                      # fail when a contract names no test, a test or a property that does not exist
-just contracts-check --table coverage.md  # also write the contract-to-test table as Markdown
-```
-
-Renaming a test means updating its contract entry; CI runs both checks.
 
 ## Running tests
 

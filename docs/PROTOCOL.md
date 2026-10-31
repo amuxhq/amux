@@ -53,7 +53,7 @@ properties` lists every one. The main machines:
 
 A test that restates one of these rules is a second copy and goes; what the
 models do not reach (a real carrier, a handshake, a relay's token check)
-keeps its tests, listed in [`tests/contracts.toml`](../tests/contracts.toml).
+keeps its tests.
 
 ## The mental model
 

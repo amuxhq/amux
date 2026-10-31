@@ -173,7 +173,6 @@ pub struct PostToolUse {
     pub common: Common,
     pub tool_name: String,
     pub tool_input: Value,
-    pub tool_response: Value,
     pub tool_use_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,

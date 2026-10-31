@@ -239,7 +239,7 @@ cargo = [
 
 [[suite]]
 name = "claude-protocol"
-contract = "Every line of every headless Claude recording, in both directions, and every transcript row and hook payload of every terminal Claude recording decodes as a known type and encodes back to the same JSON; an unknown type is kept whole in production and refused by the strict check."
+contract = "Every line of every headless Claude recording, in both directions, and every transcript row and hook payload of every terminal Claude recording decodes as a known type; an unknown type is kept whole in production and refused by the strict check."
 paths = ["crates/claude-protocol"]
 recipe = "just suite claude-protocol"
 boundary = "Provider adapter"

@@ -120,7 +120,7 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
             if let Some(uuid) = &user.uuid {
                 id = crate::serde_pb::from_hex(&uuid.replace('-', ""))?;
             }
-            if turn_running && user.priority.is_none() {
+            if turn_running {
                 send_now = Some(Input::new(
                     format!("stdin-{inputs}-now").into_bytes(),
                     ClaudeSdkInput {

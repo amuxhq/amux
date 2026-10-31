@@ -109,17 +109,6 @@ open_string_enum!(Role {
     Assistant => "assistant",
 });
 
-// ── StopReason ──────────────────────────────────────────────────────
-
-open_string_enum!(StopReason {
-    EndTurn => "end_turn",
-    MaxTokens => "max_tokens",
-    StopSequence => "stop_sequence",
-    ToolUse => "tool_use",
-    Refusal => "refusal",
-    PauseTurn => "pause_turn",
-});
-
 // ── ContentBlock ────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize)]
@@ -331,7 +320,6 @@ open_string_enum!(ImageSourceType { Base64 => "base64" });
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Usage {
     pub input_tokens: u64,
-    pub output_tokens: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_creation_input_tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -364,20 +352,6 @@ pub struct ApiMessage {
     pub content: Vec<ContentBlock>,
     #[serde(default = "crate::absent::model")]
     pub model: String,
-    /// Outer None means absent; Some(None) preserves an explicit null at stream start.
-    #[serde(
-        default,
-        deserialize_with = "present_nullable",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub stop_reason: Option<Option<StopReason>>,
-    /// Distinguishes an omitted field from an explicit null on the wire.
-    #[serde(
-        default,
-        deserialize_with = "present_nullable",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub stop_sequence: Option<Option<String>>,
     #[serde(default = "crate::absent::usage")]
     pub usage: Usage,
     #[serde(flatten)]
@@ -476,7 +450,6 @@ pub enum StreamEvent {
         extensions: Extensions,
     },
     MessageDelta {
-        delta: StreamMessageDelta,
         usage: StreamMessageUsage,
         #[serde(flatten)]
         extensions: Extensions,
@@ -525,7 +498,6 @@ impl<'de> Deserialize<'de> for StreamEvent {
                 .map_err(serde::de::Error::custom),
             "message_delta" => parse_payload(raw, "type")
                 .map(|value: MessageDeltaEvent| Self::MessageDelta {
-                    delta: value.delta,
                     usage: value.usage,
                     extensions: value.extensions,
                 })
@@ -616,18 +588,7 @@ impl<'de> Deserialize<'de> for StreamDelta {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StreamMessageDelta {
-    #[serde(deserialize_with = "required_stream_option")]
-    pub stop_reason: Option<StopReason>,
-    #[serde(deserialize_with = "required_stream_option")]
-    pub stop_sequence: Option<String>,
-    #[serde(flatten)]
-    pub extensions: Extensions,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamMessageUsage {
-    pub output_tokens: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -670,7 +631,6 @@ struct ContentBlockStopEvent {
 
 #[derive(Deserialize)]
 struct MessageDeltaEvent {
-    delta: StreamMessageDelta,
     usage: StreamMessageUsage,
     #[serde(flatten)]
     extensions: Extensions,
@@ -702,14 +662,6 @@ struct ToolInputStreamDelta {
     partial_json: String,
     #[serde(flatten)]
     extensions: Extensions,
-}
-
-fn required_stream_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    Option::deserialize(deserializer)
 }
 
 #[derive(Deserialize)]

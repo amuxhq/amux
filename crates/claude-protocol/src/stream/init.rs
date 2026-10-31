@@ -18,8 +18,6 @@ pub struct SlashCommand {
     pub name: String,
     pub description: String,
     pub argument_hint: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub aliases: Option<Vec<String>>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

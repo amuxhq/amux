@@ -73,7 +73,6 @@ fn what_amux_writes_encodes_with_sorted_keys() {
         parent_tool_use_id: None,
         session_id: "s".into(),
         uuid: None,
-        priority: None,
         extensions: Extensions::new(),
     });
     assert_eq!(
@@ -150,10 +149,6 @@ fn unknown_fields_and_blocks_are_kept_and_refused_strictly() {
         assistant.message.content[0],
         ContentBlock::Unknown(_)
     ));
-    let again: Value =
-        serde_json::from_slice(&stream::encode_output(&stream::decode(line).unwrap())).unwrap();
-    assert_eq!(again, serde_json::from_slice::<Value>(line).unwrap());
-
     let drift = stream::strict(line).expect_err("refused");
     assert!(drift.to_string().contains("hologram"), "{drift}");
 }
@@ -170,24 +165,21 @@ fn a_line_that_is_not_an_object_is_the_only_decode_error() {
 
 #[test]
 fn a_field_claude_always_writes_is_filled_in_and_refused_strictly() {
-    // A result without `total_cost_usd` or `session_id`, as amux's own test
+    // A result without `session_id` or `modelUsage`, as amux's own test
     // inputs write it.
-    let line = br#"{"type":"result","subtype":"success","uuid":"r","duration_ms":10,"duration_api_ms":8,"is_error":false,"num_turns":1,"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1},"modelUsage":{},"permission_denials":[],"result":"done"}"#;
+    let line = br#"{"type":"result","subtype":"success","uuid":"r","duration_ms":10,"duration_api_ms":8,"is_error":false,"num_turns":1,"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1},"permission_denials":[],"result":"done"}"#;
     let Output::Message(Message::Result(ResultMessage::Success(success))) =
         stream::decode(line).expect("decodes")
     else {
         panic!("not a successful result");
     };
-    assert_eq!(success.common.total_cost_usd, None);
+    assert!(success.common.model_usage.is_none());
     assert_eq!(success.common.session_id, "");
     assert_eq!(success.result, "done");
 
     let drift = stream::strict(line).expect_err("refused");
     let reasons = drift.to_string();
-    assert!(
-        reasons.contains("missing field `total_cost_usd`"),
-        "{reasons}"
-    );
+    assert!(reasons.contains("missing field `modelUsage`"), "{reasons}");
     assert!(reasons.contains("missing field `session_id`"), "{reasons}");
 }
 

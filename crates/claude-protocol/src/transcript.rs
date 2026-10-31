@@ -6,7 +6,7 @@
 //! keeps for its own interface (titles, modes, file history, its input
 //! queue). Unknown row types, system subtypes and attachment types are kept
 //! whole and refused by [`strict`]; unknown fields of a known row are kept
-//! in its `extensions` and written back by [`encode`].
+//! in its `extensions`.
 
 use std::path::PathBuf;
 
@@ -107,11 +107,6 @@ pub fn strict(line: &[u8]) -> Result<Row, Drift> {
     })
 }
 
-/// One row as Claude would write it, with no trailing newline.
-pub fn encode(row: &Row) -> Vec<u8> {
-    decoding::encode(row)
-}
-
 /// The fields every row of the conversation carries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -163,9 +158,6 @@ pub struct UserRow {
     /// The summary that replaces the conversation after a compaction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_compact_summary: Option<bool>,
-    /// What the person typed when refusing a tool call.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub user_feedback: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -194,8 +186,6 @@ pub struct AssistantRow {
     pub is_api_error_message: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api_error_status: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
     #[serde(flatten)]
@@ -233,12 +223,8 @@ pub struct TurnDuration {
     pub envelope: Envelope,
     #[serde(default = "crate::absent::duration_ms")]
     pub duration_ms: Option<u64>,
-    #[serde(default = "crate::absent::message_count")]
-    pub message_count: u64,
     #[serde(default = "crate::absent::is_meta")]
     pub is_meta: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pending_background_agent_count: Option<u64>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -265,8 +251,6 @@ pub struct CompactBoundary {
     pub level: String,
     #[serde(default = "crate::absent::compact_metadata")]
     pub compact_metadata: CompactMetadata,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub logical_parent_uuid: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -431,8 +415,6 @@ pub struct LastPromptRow {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueOperationRow {
-    /// `enqueue`, `dequeue` or `remove`.
-    pub operation: String,
     pub session_id: String,
     pub timestamp: String,
     #[serde(flatten)]

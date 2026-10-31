@@ -894,7 +894,6 @@ impl Provider {
             parent_tool_use_id: None,
             session_id: self.session.clone(),
             uuid: Some(uuid.to_owned()),
-            priority: None,
             extensions: Default::default(),
         });
         self.write_line(&claude_stream::encode(&line)).await

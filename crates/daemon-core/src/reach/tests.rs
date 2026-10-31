@@ -277,11 +277,7 @@ fn a_host_is_in_one_attempt_at_a_time() {
         dials(&step(&mut daemon, Input::Wanted { host: DESK })),
         Vec::new()
     );
-    assert_eq!(
-        dials(&step(&mut daemon, Input::TryAgain { host: DESK })),
-        Vec::new(),
-        "nothing new to dial"
-    );
+
 
     // A path the attempt was not given: the attempt gives way to one on
     // every path at once.

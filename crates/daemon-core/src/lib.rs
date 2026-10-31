@@ -284,10 +284,7 @@ impl Daemon {
             Input::WantChannel { link, peer } => self.want_channel(link, peer, out),
             Input::ChannelClosed { channel } => self.channel_closed(channel),
             Input::PlanChanged => self.plan_changed(out),
-            Input::TryAgain { host } => {
-                self.reconsider(host, out);
-                self.sources_try_again(host, out);
-            }
+
             Input::Started => self.trust_started(out),
             Input::ChangeTrust(change) => self.change_trust(change, None, out),
             Input::Policy(policy) => self.set_policy(policy, out),

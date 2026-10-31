@@ -81,10 +81,7 @@ pub enum Input {
     },
     /// The account's plan changed: what the relay carries changed with it.
     PlanChanged,
-    /// Try the host now: what kept channels to it from opening is gone.
-    TryAgain {
-        host: HostId,
-    },
+
     /// The host's trust ended or is being replaced.
     HostForgotten {
         host: HostId,
@@ -280,7 +277,7 @@ impl Input {
 
             Input::ChannelClosed { .. } => "ChannelClosed",
             Input::PlanChanged => "PlanChanged",
-            Input::TryAgain { .. } => "TryAgain",
+
             Input::HostForgotten { .. } => "HostForgotten",
             Input::Started => "Started",
             Input::ChangeTrust(_) => "ChangeTrust",

@@ -565,11 +565,9 @@ terminal's storybook, so the two clients show the same screens by the same
 names, and a story only one client has says why. It also says what each story
 shows; the golden manifest (`Goldens/manifest.json`) says it for every other
 example. The suite fails when an example is described in neither or both, or
-when the list names a story the catalogue does not draw, and
-`just ios script-tests` fails when a story has no Xcode preview. The previews
-(the `…Previews.swift` files beside the catalogue) open each story on a device
-of its own, and each family's gallery preview scrolls through every example of
-that family.
+when the list names a story the catalogue does not draw. In Xcode's canvas
+(`Previews.swift` beside the catalogue) each family's gallery preview scrolls
+through every example of that family.
 
 ```sh
 just ios component-snapshots

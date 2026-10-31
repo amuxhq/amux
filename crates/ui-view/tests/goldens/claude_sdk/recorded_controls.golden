@@ -1,17 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Reply with exactly CONTROL_OK and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 12 recorded 11: fact Stream type=system subtype=init uuid=7ac550ed-3ef4-4800-8518-ed638ee33ccc
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 16 recorded 15: fact Stream type=assistant uuid=c6e53c97-144e-45de-a87a-be8a155077dd
-  row    3 msg_011CgWLC5qw9RH1cLbqvad3s:0 Thinking { text: "", open: false, duration_ms: Some(1501) }
-## 18 recorded 17: fact Stream type=assistant uuid=f5cf5b91-4c0c-40eb-8348-f814bcf9a60e
-  row    4 msg_011CgWLC5qw9RH1cLbqvad3s:1 Prose { text: [Text("CONTROL_OK")], streaming: false, working_note: false }
 ## 22 recorded 21: fact Stream type=result subtype=success uuid=da8aae8a-aae5-407b-aacc-fd99321aca4d
-  row    5 turn:1 TurnEnd { duration_ms: Some(1482), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

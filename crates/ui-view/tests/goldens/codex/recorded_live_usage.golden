@@ -1,20 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 5 recorded 4: fact Rpc "{\"id\":\"agent-thread\",\"result\":{\"activePermissionProfile\":{\"extends\":n…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 16 recorded 15: input 0x31a73756a09243cab54264448dca91b7
-  row    2 prompt:31a73756a09243cab54264448dca91b7 Prompt { text: [Text("Reply with the single word pong and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 23 recorded 22: fact Rpc method=deprecationNotice
-  row    3 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
-## 38 recorded 37: fact Rpc method=item/started
-  row    4 msg_0c624e0cba2963f6016ac5c001dd14819180a0673f9b6febb9 Prose { text: [], streaming: true, working_note: false }
-## 39 recorded 38: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0c624e0cba2963f6016ac5c001dd14819180a0673f9b6febb9 Prose { text: [Text("pong")], streaming: true, working_note: false }
-## 41 recorded 40: fact Rpc method=item/completed
-  row    4 msg_0c624e0cba2963f6016ac5c001dd14819180a0673f9b6febb9 Prose { text: [Text("pong")], streaming: false, working_note: false }
 ## 47 recorded 46: fact Rpc method=turn/completed
-  row    5 turn:1 TurnEnd { duration_ms: Some(1942), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

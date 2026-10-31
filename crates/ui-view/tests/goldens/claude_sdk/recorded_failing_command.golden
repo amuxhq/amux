@@ -1,27 +1,12 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=89910ba2-fbf4-4d77-8322-a28ac1b8d567
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 12 recorded 11: fact Stream type=assistant uuid=4b8f714f-e692-4b0d-b0a8-49c87defe1f2
-  row    3 msg_011CgWLSqqUudAXDnAfgAniS:0 Thinking { text: "", open: false, duration_ms: Some(1801) }
 ## 14 recorded 13: fact Stream type=assistant uuid=8a8653a8-a045-4b65-a5de-c317787c5b80
-  row    4 toolu_01Pu2LGmUtLtRuSFnt7kpBkg Command { command: "ls does-not-exist", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_01Pu2LGmUtLtRuSFnt7kpBkg..toolu_01Pu2LGmUtLtRuSFnt7kpBkg x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_01Pu2LGmUtLtRuSFnt7kpBkg" }) queue=[] underway=[] refused=[]
 ## 18 recorded 17: fact Stream type=user uuid=ac04eff5-b91a-4a5a-bf28-591d30a3a936
-  row    4 toolu_01Pu2LGmUtLtRuSFnt7kpBkg Command { command: "ls does-not-exist", state: Failed, exit_code: None, output_head: ["Exit code 1", "ls: does-not-exist: No such file or directory"], more_lines: 0, output_trimmed: false, output_tail: ["Exit code 1", "ls: does-not-exist: No such file or directory"], duration_ms: Some(181) } run[toolu_01Pu2LGmUtLtRuSFnt7kpBkg..toolu_01Pu2LGmUtLtRuSFnt7kpBkg x1 r…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 20 recorded 19: fact Stream type=assistant uuid=3dfc02f2-a03d-429e-9483-7ec9f1cd20fb
-  row    5 msg_011CgWLSzRfVNCZt6VodnJLR:0 Thinking { text: "", open: false, duration_ms: Some(1016) }
-## 22 recorded 21: fact Stream type=assistant uuid=74cff045-bc77-4bd8-b737-69bb4ec4e0a9
-  row    4 toolu_01Pu2LGmUtLtRuSFnt7kpBkg Command { command: "ls does-not-exist", state: Failed, exit_code: None, output_head: ["Exit code 1", "ls: does-not-exist: No such file or directory"], more_lines: 0, output_trimmed: false, output_tail: ["Exit code 1", "ls: does-not-exist: No such file or directory"], duration_ms: Some(181) } run[toolu_01Pu2LGmUtLtRuSFnt7kpBkg..toolu_01Pu2LGmUtLtRuSFnt7kpBkg x1 r…
-  row    6 msg_011CgWLSzRfVNCZt6VodnJLR:1 Prose { text: [Text("Yes, the command failed. It exited with code 1 and returned the error: `ls: does-not-exist: No such file or directory`.")], streaming: false, working_note: false }
 ## 24 recorded 23: fact Stream type=result subtype=success uuid=29bfdad3-2bb5-467d-952e-6635700deb53
-  row    4 toolu_01Pu2LGmUtLtRuSFnt7kpBkg Command { command: "ls does-not-exist", state: Failed, exit_code: None, output_head: ["Exit code 1", "ls: does-not-exist: No such file or directory"], more_lines: 0, output_trimmed: false, output_tail: ["Exit code 1", "ls: does-not-exist: No such file or directory"], duration_ms: Some(181) } run[toolu_01Pu2LGmUtLtRuSFnt7kpBkg..toolu_01Pu2LGmUtLtRuSFnt7kpBkg x1 r…
-  row    7 turn:1 TurnEnd { duration_ms: Some(3340), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

@@ -1,28 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 5 recorded 4: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"on-…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 8 recorded 7: agent_message stdin-4
-  row    2 agent-message:737464696e2d34 AgentMessage { from: "", kind: Message, text: [Text("Reply with exactly CODEX_SPEC_INJECT_IDLE and nothing else.")], to: "", sent: Unspecified, rejection: "" }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 20 recorded 19: fact Rpc method=item/started
-  row    3 msg_055115bef0bf2729016a9348574dc087d28574870349ece42c Prose { text: [], streaming: true, working_note: false }
-## 22 recorded 21: fact Rpc method=item/agentMessage/delta
-  row    3 msg_055115bef0bf2729016a9348574dc087d28574870349ece42c Prose { text: [Text("CODE")], streaming: true, working_note: false }
-## 26 recorded 25: fact Rpc method=item/agentMessage/delta
-  row    3 msg_055115bef0bf2729016a9348574dc087d28574870349ece42c Prose { text: [Text("CODEX")], streaming: true, working_note: false }
-## 27 recorded 26: fact Rpc method=item/agentMessage/delta
-  row    3 msg_055115bef0bf2729016a9348574dc087d28574870349ece42c Prose { text: [Text("CODEX_SPEC")], streaming: true, working_note: false }
-## 28 recorded 27: fact Rpc method=item/agentMessage/delta
-  row    3 msg_055115bef0bf2729016a9348574dc087d28574870349ece42c Prose { text: [Text("CODEX_SPEC_IN")], streaming: true, working_note: false }
-## 30 recorded 29: fact Rpc method=item/agentMessage/delta
-  row    3 msg_055115bef0bf2729016a9348574dc087d28574870349ece42c Prose { text: [Text("CODEX_SPEC_INJECT")], streaming: true, working_note: false }
-## 32 recorded 31: fact Rpc method=item/agentMessage/delta
-  row    3 msg_055115bef0bf2729016a9348574dc087d28574870349ece42c Prose { text: [Text("CODEX_SPEC_INJECT_IDLE")], streaming: true, working_note: false }
-## 34 recorded 33: fact Rpc method=item/completed
-  row    3 msg_055115bef0bf2729016a9348574dc087d28574870349ece42c Prose { text: [Text("CODEX_SPEC_INJECT_IDLE")], streaming: false, working_note: false }
 ## 40 recorded 39: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(2638), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

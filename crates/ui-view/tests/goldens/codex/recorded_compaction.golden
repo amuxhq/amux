@@ -1,38 +1,12 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 8 recorded 7: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"nev…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 11 recorded 10: input stdin-4
-  row    2 prompt:737464696e2d34 Prompt { text: [Text("Reply with exactly CODEX_SPEC_BEFORE_COMPACT and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 27 recorded 26: fact Rpc method=item/started
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [], streaming: true, working_note: false }
-## 29 recorded 28: fact Rpc method=item/agentMessage/delta
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODE")], streaming: true, working_note: false }
-## 31 recorded 30: fact Rpc method=item/agentMessage/delta
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX")], streaming: true, working_note: false }
-## 33 recorded 32: fact Rpc method=item/agentMessage/delta
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC")], streaming: true, working_note: false }
-## 35 recorded 34: fact Rpc method=item/agentMessage/delta
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC_BE")], streaming: true, working_note: false }
-## 37 recorded 36: fact Rpc method=item/agentMessage/delta
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC_BEFORE")], streaming: true, working_note: false }
-## 39 recorded 38: fact Rpc method=item/agentMessage/delta
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC_BEFORE_COM")], streaming: true, working_note: false }
-## 41 recorded 40: fact Rpc method=item/agentMessage/delta
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC_BEFORE_COMPACT")], streaming: true, working_note: false }
-## 43 recorded 42: fact Rpc method=item/completed
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC_BEFORE_COMPACT")], streaming: false, working_note: false }
 ## 49 recorded 48: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(4065), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 51 recorded 50: input stdin-5
-  row    5 prompt:737464696e2d35 Prompt { text: [Text("/compact")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 63 recorded 62: fact Rpc method=item/completed
-  row    6 boundary:2 Boundary { kind: Compacted, cause: "" }
 ## 67 recorded 66: fact Rpc method=turn/completed
-  row    7 turn:2 TurnEnd { duration_ms: Some(2991), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

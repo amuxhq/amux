@@ -1,30 +1,16 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Use AskUserQuestion to ask exactly one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue. Then repeat my answer.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=ac6b74db-5e41-4421-b669-308b4734e385
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 12 recorded 11: fact Stream type=assistant uuid=bd4ac4e1-8b96-4037-bfc4-3539c17c1bb7
-  row    3 msg_011CgWLDiQPXbB4tGh5dLgBQ:0 Thinking { text: "", open: false, duration_ms: Some(1715) }
-## 14 recorded 13: fact Stream type=assistant uuid=03df0d60-1d3b-4bbc-b551-3552cd3aed04
-  row    4 toolu_01WWbxM7XgUsSypsZWy8eonT [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The color blue", preview: "", recommended: false }], allow_other: true, secret: …
 ## 16 recorded 15: fact Stream type=control_request
   ask 1cb69f1e-63c1-4712-a662-3d556b1b5941 -> "toolu_01WWbxM7XgUsSypsZWy8eonT" 1/1 Open
     choices 
     body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The color blue", preview: "", recommended: false }], allow_other: true, secret: false }])
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 18 recorded 17: input stdin-3
-  row    4 toolu_01WWbxM7XgUsSypsZWy8eonT [Answered: Color = Blue skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The color blue", preview: "", recommended: false }], allow_other…
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 24 recorded 23: fact Stream type=assistant uuid=97b22fcb-c698-4627-812c-574510808908
-  row    5 msg_011CgWLDsws3yNFFvc5E6dPT:0 Thinking { text: "", open: false, duration_ms: Some(1037) }
-## 26 recorded 25: fact Stream type=assistant uuid=52bce241-fd51-4732-b427-d684faeb252a
-  row    6 msg_011CgWLDsws3yNFFvc5E6dPT:1 Prose { text: [Text("You chose **Blue** as your preferred color.")], streaming: false, working_note: false }
 ## 28 recorded 27: fact Stream type=result subtype=success uuid=64f1ccbe-365a-47fc-a90f-42cf9436ddc9
-  row    7 turn:1 TurnEnd { duration_ms: Some(3519), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

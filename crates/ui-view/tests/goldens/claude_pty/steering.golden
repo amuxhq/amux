@@ -3,36 +3,24 @@
 ## 1 input {"id":"p0","prompt":{"text":"Plan it."}}
   composer Send activity=None queue=[QueuedRow { input_id: [112, 48], text: [Text("Plan it.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 3 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 fact {"channel":"transcript","json":{"message":{"content":"Plan it.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
-  row    2 u1 Prompt { text: [Text("Plan it.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 5 fact {"channel":"transcript","json":{"message":{"content":[{"id":"toolu_1","input":{"command":"make build"},"name":"Bash","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.020Z","type":"assistant","uuid":"a1"}}
-  row    3 toolu_1 Command { command: "make build", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_1..toolu_1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_1" }) queue=[] underway=[] refused=[]
 ## 6 input {"id":"p1","prompt":{"text":"Use the staging config."}}
   composer Send activity=Some(Running { key: "toolu_1" }) queue=[QueuedRow { input_id: [112, 49], text: [Text("Use the staging config.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 7 input {"id":"n1","send_now":{"target":"p1"}}
   composer Send activity=Some(Running { key: "toolu_1" }) queue=[QueuedRow { input_id: [112, 49], text: [Text("Use the staging config.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
 ## 11 fact {"channel":"transcript","json":{"message":{"content":[{"content":"built","tool_use_id":"toolu_1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.040Z","type":"user","uuid":"u2"}}
-  row    3 toolu_1 Command { command: "make build", state: Succeeded, exit_code: None, output_head: ["built"], more_lines: 0, output_trimmed: false, output_tail: ["built"], duration_ms: Some(20) } run[toolu_1..toolu_1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 49], text: [Text("Use the staging config.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
 ## 13 fact {"channel":"transcript","json":{"attachment":{"commandMode":"prompt","humanTurn":true,"origin":{"kind":"human"},"prompt":"Use the staging config.","source_uuid":"src-q1","type":"queued_command"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.060Z","type":"attachment","uuid":"q1"}}
-  row    3 toolu_1 Command { command: "make build", state: Succeeded, exit_code: None, output_head: ["built"], more_lines: 0, output_trimmed: false, output_tail: ["built"], duration_ms: Some(20) } run[toolu_1..toolu_1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-  row    4 q1 Prompt { text: [Text("Use the staging config.")], steered: true }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 14 agent_message {"envelope":"e1","from":"lead","text":"Status?"}
-  row    5 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: [Text("Status?")], to: "", sent: Unspecified, rejection: "" }
-## 16 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Built with the staging config.","type":"text"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.070Z","type":"assistant","uuid":"a2"}}
-  row    6 a2 Prose { text: [Text("Built with the staging config.")], streaming: false, working_note: false }
 ## 17 input {"id":"p2","prompt":{"text":"Then summarise."}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 50], text: [Text("Then summarise.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 18 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.080Z","type":"system","uuid":"d1"}}
-  row    7 turn:1 TurnEnd { duration_ms: Some(5), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 20 fact {"channel":"transcript","json":{"message":{"content":"Then summarise.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.090Z","type":"user","uuid":"u3"}}
-  row    8 u3 Prompt { text: [Text("Then summarise.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 21 input {"id":"p3","prompt":{"text":"Also check the logs."}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 51], text: [Text("Also check the logs.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
@@ -40,24 +28,15 @@
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 51], text: [Text("Also check the logs.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
 ## 23 input {"id":"p4","prompt":{"text":"And the tests."}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 51], text: [Text("Also check the logs.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }, QueuedRow { input_id: [112, 52], text: [Text("And the tests.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
-## 25 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Summary.","type":"text"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.110Z","type":"assistant","uuid":"a3"}}
-  row    9 a3 Prose { text: [Text("Summary.")], streaming: false, working_note: false }
 ## 27 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.130Z","type":"system","uuid":"d2"}}
-  row   10 turn:2 TurnEnd { duration_ms: Some(5), failed: false }
   composer Send activity=None queue=[QueuedRow { input_id: [112, 51], text: [Text("Also check the logs.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }, QueuedRow { input_id: [112, 52], text: [Text("And the tests.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 28 fact {"channel":"transcript","json":{"message":{"content":"Also check the logs.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.140Z","type":"user","uuid":"u4"}}
-  row   11 u4 Prompt { text: [Text("Also check the logs.")], steered: false }
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 52], text: [Text("And the tests.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
-## 29 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Logs are clean.","type":"text"}],"id":"m4","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.150Z","type":"assistant","uuid":"a4"}}
-  row   12 a4 Prose { text: [Text("Logs are clean.")], streaming: false, working_note: false }
 ## 30 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.160Z","type":"system","uuid":"d3"}}
-  row   13 turn:3 TurnEnd { duration_ms: Some(5), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 31 fact {"channel":"transcript","json":{"message":{"content":"And the tests.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.170Z","type":"user","uuid":"u5"}}
-  row   14 u5 Prompt { text: [Text("And the tests.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 32 fact {"channel":"transcript","json":{"message":{"content":[{"id":"toolu_2","input":{"command":"make test"},"name":"Bash","type":"tool_use"}],"id":"m5","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.180Z","type":"assistant","uuid":"a5"}}
-  row   15 toolu_2 Command { command: "make test", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_2..toolu_2 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_2" }) queue=[] underway=[] refused=[]
 ## 34 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"make test"},"tool_name":"Bash"}}
   ask ask:1 -> "toolu_2" 1/1 Open
@@ -67,15 +46,11 @@
 ## 35 input {"id":"p5","prompt":{"text":"Stop after this."}}
   composer Send activity=None queue=[QueuedRow { input_id: [112, 53], text: [Text("Stop after this.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 37 fact {"channel":"transcript","json":{"message":{"content":[{"content":"tests ran","tool_use_id":"toolu_2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.185Z","type":"user","uuid":"u7"}}
-  row   15 toolu_2 Command { command: "make test", state: Succeeded, exit_code: None, output_head: ["tests ran"], more_lines: 0, output_trimmed: false, output_tail: ["tests ran"], duration_ms: Some(5) } run[toolu_2..toolu_2 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true …
   ask none
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 53], text: [Text("Stop after this.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 38 input {"id":"n7","send_now":{"target":"p5"}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 53], text: [Text("Stop after this.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
 ## 39 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.190Z","type":"user","uuid":"u6"}}
-  row   15 toolu_2 Command { command: "make test", state: Succeeded, exit_code: None, output_head: ["tests ran"], more_lines: 0, output_trimmed: false, output_tail: ["tests ran"], duration_ms: Some(5) } run[toolu_2..toolu_2 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true }
-  row   16 u6 Hidden collapsed
-  row   17 turn:4 Stopped
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

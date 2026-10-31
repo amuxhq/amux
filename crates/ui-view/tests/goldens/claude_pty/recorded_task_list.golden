@@ -1,29 +1,15 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 3 recorded 1: fact Hook hook_event_name=SessionStart
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 13 recorded 11: fact Transcript type=user uuid=6bcb3b33-c3b2-4218-842a-af4537719260
-  row    2 6bcb3b33-c3b2-4218-842a-af4537719260 Prompt { text: [Text("Track this work with your task tools: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 36 recorded 34: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01HhD2XhtWuKUDgixBanANq8
   composer Send activity=Some(Running { key: "toolu_01HhD2XhtWuKUDgixBanANq8" }) queue=[] underway=[] refused=[]
 ## 38 recorded 36: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01HhD2XhtWuKUDgixBanANq8
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 42 recorded 40: fact Transcript type=assistant uuid=d1dfaa6a-5cc0-4e23-b10c-d04565e0494d
-  row    3 d1dfaa6a-5cc0-4e23-b10c-d04565e0494d Thinking { text: "", open: false, duration_ms: Some(2384) }
 ## 43 recorded 41: fact Transcript type=assistant uuid=c499f9b8-5604-4080-ab7c-43dbd72eddb5
-  row    4 toolu_01HhD2XhtWuKUDgixBanANq8 Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Running, result: "" } run[toolu_01HhD2XhtWuKUDgixBanANq8..toolu_01HhD2XhtWuKUDgixBanANq8 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_01HhD2XhtWuKUDgixBanANq8" }) queue=[] underway=[] refused=[]
 ## 45 recorded 43: fact Transcript type=user uuid=3b727aad-d711-4e8a-a132-e199278a72ce
-  row    4 toolu_01HhD2XhtWuKUDgixBanANq8 Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded, result: "" } run[toolu_01HhD2XhtWuKUDgixBanANq8..toolu_01HhD2XhtWuKUDgixBanANq8 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 72 recorded 70: fact Transcript type=assistant uuid=dd81342f-ecf4-4dd4-adc0-9182fb2f5f17
-  row    5 dd81342f-ecf4-4dd4-adc0-9182fb2f5f17 Thinking { text: "", open: false, duration_ms: Some(1427) }
-## 93 recorded 91: fact Transcript type=assistant uuid=2986b0c3-e7fc-4beb-bb6c-8dd43ba73236
-  row    6 2986b0c3-e7fc-4beb-bb6c-8dd43ba73236 Thinking { text: "", open: false, duration_ms: Some(2137) }
-## 101 recorded 99: fact Hook hook_event_name=MessageDisplay
-  row    4 toolu_01HhD2XhtWuKUDgixBanANq8 Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded, result: "" } run[toolu_01HhD2XhtWuKUDgixBanANq8..toolu_01HhD2XhtWuKUDgixBanANq8 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-  row    7 stream:0d8af667-d00b-4795-bc9e-85614a295184 Prose { text: [Text("Done.")], streaming: true, working_note: false }
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 6bcb3b33-c3b2-4218-842a-af4537719260 Prompt { text: [Text("Track this work with your task tools: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop.")], steered: false }

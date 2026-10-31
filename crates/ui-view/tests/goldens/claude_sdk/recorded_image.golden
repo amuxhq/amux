@@ -1,29 +1,12 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Name the color of the attached image in one word. Then read square.png in the working directory with the Read tool and say whether it is the same image.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=e2966cad-38df-4365-b742-2b8d2eb0cb3e
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 12 recorded 11: fact Stream type=assistant uuid=989a6ed6-3afd-4322-b404-cfa4222c8632
-  row    3 msg_011CgWLSRvZZcNKv1idAYXP1:0 Thinking { text: "", open: false, duration_ms: Some(2192) }
-## 14 recorded 13: fact Stream type=assistant uuid=0b766b4b-257b-476a-b6cf-ea9130a1b469
-  row    4 msg_011CgWLSRvZZcNKv1idAYXP1:1 Prose { text: [Text("Red.\n\nLet me read square.png from the working directory.")], streaming: false, working_note: false }
 ## 16 recorded 15: fact Stream type=assistant uuid=3ce4c9da-3173-4b21-ae0a-f675414deb2f
-  row    5 toolu_01MEg9ACmnFEbQyqiqLtyqne Explore { verb: Read, subject: "<MACHINE_PATH>", state: Running, result: "" } run[toolu_01MEg9ACmnFEbQyqiqLtyqne..toolu_01MEg9ACmnFEbQyqiqLtyqne x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_01MEg9ACmnFEbQyqiqLtyqne" }) queue=[] underway=[] refused=[]
 ## 20 recorded 19: fact Stream type=user uuid=dc168c63-28c8-4e05-962a-5a632de50d5f
-  row    5 toolu_01MEg9ACmnFEbQyqiqLtyqne Image { image: Some(BlobRef { hash: [13, 188, 137, 79, 133, 238, 125, 12, 106, 7, 238, 253, 141, 85, 231, 43, 84, 34, 114, 38, 133, 218, 117, 229, 18, 219, 233, 73, 35, 210, 211, 35], name: "", mime: "image/png", size: 99 }), path: "<MACHINE_PATH>", generated: false } run[toolu_01MEg9ACmnFEbQyqiqLtyqne..toolu_01MEg9ACmnFEbQyqiqLtyqne x1 recent=0 live RunCounts {…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 22 recorded 21: fact Stream type=assistant uuid=1c3a5c5f-288e-4c98-a5aa-3996a95b9243
-  row    6 msg_011CgWLSdYZAa936ZqDSuTvr:0 Thinking { text: "", open: false, duration_ms: Some(1464) }
-## 24 recorded 23: fact Stream type=assistant uuid=8eb78d73-c36d-47e7-b683-08f5f0b13a8c
-  row    5 toolu_01MEg9ACmnFEbQyqiqLtyqne Image { image: Some(BlobRef { hash: [13, 188, 137, 79, 133, 238, 125, 12, 106, 7, 238, 253, 141, 85, 231, 43, 84, 34, 114, 38, 133, 218, 117, 229, 18, 219, 233, 73, 35, 210, 211, 35], name: "", mime: "image/png", size: 99 }), path: "<MACHINE_PATH>", generated: false } run[toolu_01MEg9ACmnFEbQyqiqLtyqne..toolu_01MEg9ACmnFEbQyqiqLtyqne x1 recent=0 RunCounts { comm…
-  row    7 msg_011CgWLSdYZAa936ZqDSuTvr:1 Prose { text: [Text("Yes, they are the same image—both solid red squares.")], streaming: false, working_note: false }
 ## 26 recorded 25: fact Stream type=result subtype=success uuid=88e242db-88af-4a47-a258-44008d3f6edb
-  row    5 toolu_01MEg9ACmnFEbQyqiqLtyqne Image { image: Some(BlobRef { hash: [13, 188, 137, 79, 133, 238, 125, 12, 106, 7, 238, 253, 141, 85, 231, 43, 84, 34, 114, 38, 133, 218, 117, 229, 18, 219, 233, 73, 35, 210, 211, 35], name: "", mime: "image/png", size: 99 }), path: "<MACHINE_PATH>", generated: false } run[toolu_01MEg9ACmnFEbQyqiqLtyqne..toolu_01MEg9ACmnFEbQyqiqLtyqne x1 recent=0 RunCounts { comm…
-  row    8 turn:1 TurnEnd { duration_ms: Some(4278), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

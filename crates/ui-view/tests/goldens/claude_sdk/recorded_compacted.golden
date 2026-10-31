@@ -1,42 +1,20 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Write three paragraphs about the history of rope-making.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=6fa428e5-6150-432c-8514-3e8f667277f7
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 12 recorded 11: fact Stream type=assistant uuid=027adff7-4add-4d48-9e53-f2c59369857e
-  row    3 msg_011CgWLA6y5rpxvkBF57axBT:0 Thinking { text: "", open: false, duration_ms: Some(1934) }
-## 14 recorded 13: fact Stream type=assistant uuid=02eaefaf-b256-48c8-94a3-df541380ac04
-  row    4 msg_011CgWLA6y5rpxvkBF57axBT:1 Prose { text: [Text("# The History of Rope-Making\n\nRope-making is one of humanity's oldest crafts, dating back at least to the prehistoric era when early humans discovered that twisting plant fibers together created strong, durable cords. Archaeological evidence suggests that twisted plant fibers were used as early as 20,000 years ago, particularly in ancient …
 ## 18 recorded 17: fact Stream type=result subtype=success uuid=2cfa6991-b1b7-42af-bfa4-baa95f236b69
-  row    5 turn:1 TurnEnd { duration_ms: Some(6661), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 20 recorded 19: input stdin-3
-  row    6 73746469-6e2d-4300-8000-000000000000 Prompt { text: [Text("Now three more paragraphs about knots.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 28 recorded 27: fact Stream type=assistant uuid=a279bfa0-36a4-42b1-8498-d7d03af6c85c
-  row    7 msg_011CgWLAaouUBb5BJXKUjjYq:0 Thinking { text: "", open: false, duration_ms: Some(1174) }
-## 30 recorded 29: fact Stream type=assistant uuid=cbcc0690-ef3b-4426-bb32-dcf18dd3939f
-  row    8 msg_011CgWLAaouUBb5BJXKUjjYq:1 Prose { text: [Text("# The History and Significance of Knots\n\nKnots are among humanity's most fundamental discoveries, representing one of the earliest applications of rope and cordage in practical problem-solving. Archaeological evidence suggests that humans have been tying knots for at least 100,000 years, using them to secure bundles, create fishing nets, a…
 ## 32 recorded 31: fact Stream type=result subtype=success uuid=eff7949a-fd91-4404-8db6-df149f53cd97
-  row    9 turn:2 TurnEnd { duration_ms: Some(6354), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 34 recorded 33: input stdin-4
-  row   10 73746469-6e2d-4400-8000-000000000000 Prompt { text: [Text("/compact")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 36 recorded 35: fact Stream type=system subtype=status uuid=335a34cf-0794-4ca4-8a83-3fa3e1d49ae7
-  row   11 335a34cf-0794-4ca4-8a83-3fa3e1d49ae7 Hidden collapsed
   composer Send activity=Some(Compacting) queue=[] underway=[] refused=[]
 ## 42 recorded 41: fact Stream type=system subtype=compact_boundary uuid=be835eab-7b1e-4c04-927b-1f6e8dcdb955
-  row   12 be835eab-7b1e-4c04-927b-1f6e8dcdb955 Compaction { tokens_before: Some(25097), tokens_after: Some(4034), automatic: false }
-  row   13 boundary:2 Boundary { kind: Compacted, cause: "" }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 44 recorded 43: fact Stream type=user uuid=261f445f-8fc0-40c3-8cee-fc75d36a06a2
-  row   14 261f445f-8fc0-40c3-8cee-fc75d36a06a2 SlashOutput { command: "/compact", args: "", output: "Compacted" }
 ## 45 recorded 44: fact Stream type=result subtype=success uuid=8962e152-536c-4ab9-babf-3257fd381157
-  row   15 turn:3 TurnEnd { duration_ms: Some(11797), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

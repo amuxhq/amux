@@ -1,16 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 7 recorded 6: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"nev…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 11 recorded 10: input stdin-4
-  row    2 prompt:737464696e2d34 Prompt { text: [Text("Reply with exactly CODEX_SPEC_UNREACHABLE.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 15 recorded 14: fact Rpc method=warning
-  row    3 warning:2 Error { error_kind: "warning", message: "Model metadata for `codex-spec-no-such-model` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.", attempts: 0, gave_up: true } attention
-## 31 recorded 30: fact Rpc method=error
-  row    4 error:01a0db79-665d-7dd0-a475-3e9f066bfadb Error { error_kind: "other", message: "{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'codex-spec-no-such-model' model is not supported when using Codex with a ChatGPT account.\"}}", attempts: 0, gave_up: true } attention
 ## 33 recorded 32: fact Rpc method=turn/completed
-  row    5 turn:1 TurnEnd { duration_ms: Some(3209), failed: true }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

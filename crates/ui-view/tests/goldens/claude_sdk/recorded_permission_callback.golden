@@ -1,15 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Use the Write tool once to create tool.txt containing exactly TOOL_OK, then reply exactly DONE.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=1c55df49-66db-44c6-8c81-e52559bb5383
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 12 recorded 11: fact Stream type=assistant uuid=5646e68c-3ce6-4f96-9063-1fc3b7a6ae26
-  row    3 msg_011CgWLDJXTR41oLqEzozmCq:0 Thinking { text: "", open: false, duration_ms: Some(2070) }
 ## 14 recorded 13: fact Stream type=assistant uuid=d0f0ce7f-0d8b-4044-8034-48846cd999d9
-  row    4 toolu_01EL5DWY3x1bL3WmhF7d4j1d FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Running } run[toolu_01EL5DWY3x1bL3WmhF7d4j1d..toolu_01EL5DWY3x1bL3WmhF7d4j1d x1 recent=0 live RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_01EL5DWY3x1bL3WmhF7d4j1d" }) queue=[] underway=[] refused=[]
 ## 16 recorded 15: fact Stream type=control_request
   ask c49aa720-db5e-429c-8936-e6b5b9f5861a -> "toolu_01EL5DWY3x1bL3WmhF7d4j1d" 1/1 Open
@@ -17,20 +10,11 @@
     body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 0, lines: [Line(PatchLine { number: None, kind: Added, text: "TOOL_OK" })], line: None, reason: "", created: None }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 18 recorded 17: input stdin-3
-  row    4 toolu_01EL5DWY3x1bL3WmhF7d4j1d FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Running } run[toolu_01EL5DWY3x1bL3WmhF7d4j1d..toolu_01EL5DWY3x1bL3WmhF7d4j1d x1 recent=0 live RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note…
   ask none
   composer Send activity=Some(Running { key: "toolu_01EL5DWY3x1bL3WmhF7d4j1d" }) queue=[] underway=[] refused=[]
 ## 22 recorded 21: fact Stream type=user uuid=f67b17b6-957d-4ebf-951e-55a38b031322
-  row    4 toolu_01EL5DWY3x1bL3WmhF7d4j1d FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[toolu_01EL5DWY3x1bL3WmhF7d4j1d..toolu_01EL5DWY3x1bL3WmhF7d4j1d x1 recent=0 live RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, no…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 24 recorded 23: fact Stream type=assistant uuid=6b3979c0-15ae-49b5-9011-cd041c3db3e7
-  row    5 msg_011CgWLDXDSSghEogWeAPReq:0 Thinking { text: "", open: false, duration_ms: Some(1345) }
-## 26 recorded 25: fact Stream type=assistant uuid=bf42cddc-79ee-4a1b-8c87-4b4246f60edf
-  row    4 toolu_01EL5DWY3x1bL3WmhF7d4j1d FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[toolu_01EL5DWY3x1bL3WmhF7d4j1d..toolu_01EL5DWY3x1bL3WmhF7d4j1d x1 recent=0 RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: N…
-  row    6 msg_011CgWLDXDSSghEogWeAPReq:1 Prose { text: [Text("DONE")], streaming: false, working_note: false }
 ## 28 recorded 27: fact Stream type=result subtype=success uuid=de4ba7ce-e7e3-48fa-a6c5-976de544ad0a
-  row    4 toolu_01EL5DWY3x1bL3WmhF7d4j1d FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[toolu_01EL5DWY3x1bL3WmhF7d4j1d..toolu_01EL5DWY3x1bL3WmhF7d4j1d x1 recent=0 RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: N…
-  row    7 turn:1 TurnEnd { duration_ms: Some(4495), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

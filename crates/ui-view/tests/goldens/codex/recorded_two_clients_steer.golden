@@ -1,108 +1,26 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 7 recorded 6: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"on-…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 19 recorded 18: input p1
-  row    2 prompt:7031 Prompt { text: [Text("Run the shell command `sleep 8` and wait for it to finish. Then reply with CODEX_SPEC_DONE followed by anything else you were asked to say.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 30 recorded 29: fact Rpc method=item/started
-  row    3 rs_07d8d3c4de38268d016ac459217e8087d2abfb6c8aea9de9d6 Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
 ## 32 recorded 31: fact Rpc method=item/completed
-  row    3 rs_07d8d3c4de38268d016ac459217e8087d2abfb6c8aea9de9d6 Thinking { text: "", open: false, duration_ms: Some(1571) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 34 recorded 33: fact Rpc method=item/started
-  row    4 msg_07d8d3c4de38268d016ac45921de8487d2bac71115dfffa880 Prose { text: [], streaming: true, working_note: true }
-## 36 recorded 35: fact Rpc method=item/agentMessage/delta
-  row    4 msg_07d8d3c4de38268d016ac45921de8487d2bac71115dfffa880 Prose { text: [Text("Running")], streaming: true, working_note: true }
-## 38 recorded 37: fact Rpc method=item/agentMessage/delta
-  row    4 msg_07d8d3c4de38268d016ac45921de8487d2bac71115dfffa880 Prose { text: [Text("Running the")], streaming: true, working_note: true }
-## 39 recorded 38: fact Rpc method=item/agentMessage/delta
-  row    4 msg_07d8d3c4de38268d016ac45921de8487d2bac71115dfffa880 Prose { text: [Text("Running the requested")], streaming: true, working_note: true }
-## 41 recorded 40: fact Rpc method=item/agentMessage/delta
-  row    4 msg_07d8d3c4de38268d016ac45921de8487d2bac71115dfffa880 Prose { text: [Text("Running the requested command")], streaming: true, working_note: true }
-## 43 recorded 42: fact Rpc method=item/agentMessage/delta
-  row    4 msg_07d8d3c4de38268d016ac45921de8487d2bac71115dfffa880 Prose { text: [Text("Running the requested command and")], streaming: true, working_note: true }
-## 45 recorded 44: fact Rpc method=item/agentMessage/delta
-  row    4 msg_07d8d3c4de38268d016ac45921de8487d2bac71115dfffa880 Prose { text: [Text("Running the requested command and waiting")], streaming: true, working_note: true }
-## 47 recorded 46: fact Rpc method=item/agentMessage/delta
-  row    4 msg_07d8d3c4de38268d016ac45921de8487d2bac71115dfffa880 Prose { text: [Text("Running the requested command and waiting for")], streaming: true, working_note: true }
-## 49 recorded 48: fact Rpc method=item/agentMessage/delta
-  row    4 msg_07d8d3c4de38268d016ac45921de8487d2bac71115dfffa880 Prose { text: [Text("Running the requested command and waiting for it")], streaming: true, working_note: true }
-## 51 recorded 50: fact Rpc method=item/agentMessage/delta
-  row    4 msg_07d8d3c4de38268d016ac45921de8487d2bac71115dfffa880 Prose { text: [Text("Running the requested command and waiting for it to")], streaming: true, working_note: true }
-## 53 recorded 52: fact Rpc method=item/agentMessage/delta
-  row    4 msg_07d8d3c4de38268d016ac45921de8487d2bac71115dfffa880 Prose { text: [Text("Running the requested command and waiting for it to finish")], streaming: true, working_note: true }
-## 55 recorded 54: fact Rpc method=item/agentMessage/delta
-  row    4 msg_07d8d3c4de38268d016ac45921de8487d2bac71115dfffa880 Prose { text: [Text("Running the requested command and waiting for it to finish.")], streaming: true, working_note: true }
-## 57 recorded 56: fact Rpc method=item/completed
-  row    4 msg_07d8d3c4de38268d016ac45921de8487d2bac71115dfffa880 Prose { text: [Text("Running the requested command and waiting for it to finish.")], streaming: false, working_note: true }
 ## 59 recorded 58: fact Rpc method=item/started
-  row    5 exec-c7b1b818-a699-4bc1-8b5f-fac431636b7c Command { command: "sleep 8", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[exec-c7b1b818-a699-4bc1-8b5f-fac431636b7c..exec-c7b1b818-a699-4bc1-8b5f-fac431636b7c x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "exec-c7b1b818-a699-4bc1-8b5f-fac431636b7c" }) queue=[] underway=[] refused=[]
 ## 61 recorded 60: input s1
   composer Send activity=Some(Running { key: "exec-c7b1b818-a699-4bc1-8b5f-fac431636b7c" }) queue=[QueuedRow { input_id: [115, 49], text: [Text("Also say CODEX_SPEC_AMUX_STEER.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 62 recorded 61: input stdin-6
   composer Send activity=Some(Running { key: "exec-c7b1b818-a699-4bc1-8b5f-fac431636b7c" }) queue=[QueuedRow { input_id: [115, 49], text: [Text("Also say CODEX_SPEC_AMUX_STEER.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
 ## 67 recorded 66: fact Rpc method=item/completed
-  row    5 exec-c7b1b818-a699-4bc1-8b5f-fac431636b7c Command { command: "sleep 8", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(7878) } run[exec-c7b1b818-a699-4bc1-8b5f-fac431636b7c..exec-c7b1b818-a699-4bc1-8b5f-fac431636b7c x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 …
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [115, 49], text: [Text("Also say CODEX_SPEC_AMUX_STEER.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
-## 74 recorded 73: fact Rpc method=item/completed
-  row    5 exec-c7b1b818-a699-4bc1-8b5f-fac431636b7c Command { command: "sleep 8", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(7878) } run[exec-c7b1b818-a699-4bc1-8b5f-fac431636b7c..exec-c7b1b818-a699-4bc1-8b5f-fac431636b7c x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-  row    6 01a10efc-5020-7040-adf7-7ea9a7ebc9de Prompt { text: [Text("Also say CODEX_SPEC_OTHER_STEER.")], steered: true }
 ## 78 recorded 77: fact Rpc method=item/completed
-  row    7 steer:7331 Prompt { text: [Text("Also say CODEX_SPEC_AMUX_STEER.")], steered: true }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 80 recorded 79: fact Rpc method=item/started
-  row    8 rs_07d8d3c4de38268d016ac4592cb0a887d28b89f0b5f2d92572 Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
 ## 82 recorded 81: fact Rpc method=item/completed
-  row    8 rs_07d8d3c4de38268d016ac4592cb0a887d28b89f0b5f2d92572 Thinking { text: "", open: false, duration_ms: Some(1705) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 84 recorded 83: fact Rpc method=item/started
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [], streaming: true, working_note: false }
-## 85 recorded 84: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODE")], streaming: true, working_note: false }
-## 87 recorded 86: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX")], streaming: true, working_note: false }
-## 89 recorded 88: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC")], streaming: true, working_note: false }
-## 91 recorded 90: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE")], streaming: true, working_note: false }
-## 93 recorded 92: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODE")], streaming: true, working_note: false }
-## 95 recorded 94: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX")], streaming: true, working_note: false }
-## 97 recorded 96: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX_SPEC")], streaming: true, working_note: false }
-## 99 recorded 98: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX_SPEC_OTHER")], streaming: true, working_note: false }
-## 101 recorded 100: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX_SPEC_OTHER_ST")], streaming: true, working_note: false }
-## 103 recorded 102: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX_SPEC_OTHER_STE")], streaming: true, working_note: false }
-## 105 recorded 104: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX_SPEC_OTHER_STEER")], streaming: true, working_note: false }
-## 107 recorded 106: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX_SPEC_OTHER_STEER CODE")], streaming: true, working_note: false }
-## 109 recorded 108: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX_SPEC_OTHER_STEER CODEX")], streaming: true, working_note: false }
-## 111 recorded 110: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX_SPEC_OTHER_STEER CODEX_SPEC")], streaming: true, working_note: false }
-## 113 recorded 112: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX_SPEC_OTHER_STEER CODEX_SPEC_AM")], streaming: true, working_note: false }
-## 115 recorded 114: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX_SPEC_OTHER_STEER CODEX_SPEC_AMUX")], streaming: true, working_note: false }
-## 117 recorded 116: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX_SPEC_OTHER_STEER CODEX_SPEC_AMUX_ST")], streaming: true, working_note: false }
-## 119 recorded 118: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX_SPEC_OTHER_STEER CODEX_SPEC_AMUX_STE")], streaming: true, working_note: false }
-## 121 recorded 120: fact Rpc method=item/agentMessage/delta
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX_SPEC_OTHER_STEER CODEX_SPEC_AMUX_STEER")], streaming: true, working_note: false }
-## 123 recorded 122: fact Rpc method=item/completed
-  row    9 msg_07d8d3c4de38268d016ac4592d78b887d2b92cd8e9f413f0b9 Prose { text: [Text("CODEX_SPEC_DONE CODEX_SPEC_OTHER_STEER CODEX_SPEC_AMUX_STEER")], streaming: false, working_note: false }
 ## 129 recorded 128: fact Rpc method=turn/completed
-  row   10 turn:1 TurnEnd { duration_ms: Some(13964), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

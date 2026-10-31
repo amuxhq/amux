@@ -1,61 +1,24 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 2 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"SessionStart","model":"claude-opus-5-5","permission_mode":"default","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 4 fact {"channel":"transcript","json":{"message":{"content":"write a short poem, then list the files","role":"user"},"origin":{"kind":"human"},"promptId":"q1","promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:01.000Z","type":"user","uuid":"u1"}}
-  row    2 u1 Prompt { text: [Text("write a short poem, then list the files")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 fact {"channel":"hook","json":{"cwd":"/w","delta":"The river carries the sky,\n","final":false,"hook_event_name":"MessageDisplay","index":0,"message_id":"d-a","permission_mode":"default","prompt_id":"q1","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
-  row    3 stream:d-a Prose { text: [Text("The river carries the sky,\n")], streaming: true, working_note: false }
-## 7 fact {"channel":"hook","json":{"cwd":"/w","delta":"and the stones hum along.\n","final":false,"hook_event_name":"MessageDisplay","index":1,"message_id":"d-a","permission_mode":"default","prompt_id":"q1","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
-  row    3 stream:d-a Prose { text: [Text("The river carries the sky,\nand the stones hum along.\n")], streaming: true, working_note: false }
-## 8 fact {"channel":"hook","json":{"cwd":"/w","delta":"The sea waits.","final":true,"hook_event_name":"MessageDisplay","index":2,"message_id":"d-a","permission_mode":"default","prompt_id":"q1","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
-  row    3 stream:d-a Prose { text: [Text("The river carries the sky,\nand the stones hum along.\nThe sea waits.")], streaming: true, working_note: false }
-## 9 fact {"channel":"transcript","json":{"message":{"content":[{"text":"The river carries the sky,\nand the stones hum along.\nThe sea waits.","type":"text"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:02.000Z","type":"assistant","uuid":"a1"}}
-  row    3 stream:d-a Prose { text: [Text("The river carries the sky,\nand the stones hum along.\nThe sea waits.")], streaming: false, working_note: false }
 ## 10 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","prompt_id":"q1","session_id":"s1","tool_input":{"command":"ls"},"tool_name":"Bash","tool_use_id":"t1","transcript_path":"/t/s1.jsonl"}}
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
-## 11 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Listing them now.","type":"text"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:03.000Z","type":"assistant","uuid":"a2"}}
-  row    4 a2 Prose { text: [Text("Listing them now.")], streaming: false, working_note: false }
-## 13 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"command":"ls"},"name":"Bash","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:03.000Z","type":"assistant","uuid":"a3"}}
-  row    5 t1 Command { command: "ls", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[t1..t1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
 ## 14 fact {"channel":"transcript","json":{"message":{"content":[{"content":"a.txt","is_error":false,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"promptId":"q1","sessionId":"s1","timestamp":"2027-01-15T08:00:04.000Z","toolUseResult":{"stderr":"","stdout":"a.txt"},"type":"user","uuid":"r1"}}
-  row    5 t1 Command { command: "ls", state: Succeeded, exit_code: None, output_head: ["a.txt"], more_lines: 0, output_trimmed: false, output_tail: ["a.txt"], duration_ms: Some(1000) } run[t1..t1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 15 fact {"channel":"hook","json":{"cwd":"/w","duration_ms":20,"hook_event_name":"PostToolUse","permission_mode":"default","prompt_id":"q1","session_id":"s1","tool_input":{"command":"ls"},"tool_name":"Bash","tool_response":{"stdout":"a.txt"},"tool_use_id":"t1","transcript_path":"/t/s1.jsonl"}}
-  row    5 t1 Command { command: "ls", state: Succeeded, exit_code: None, output_head: ["a.txt"], more_lines: 0, output_trimmed: false, output_tail: ["a.txt"], duration_ms: Some(1000) } run[t1..t1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-## 16 fact {"channel":"hook","json":{"cwd":"/w","delta":"There is one file:\n","final":false,"hook_event_name":"MessageDisplay","index":0,"message_id":"d-c","permission_mode":"default","prompt_id":"q1","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn1"}}
-  row    5 t1 Command { command: "ls", state: Succeeded, exit_code: None, output_head: ["a.txt"], more_lines: 0, output_trimmed: false, output_tail: ["a.txt"], duration_ms: Some(1000) } run[t1..t1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-  row    6 stream:d-c Prose { text: [Text("There is one file:\n")], streaming: true, working_note: false }
 ## 18 fact {"channel":"transcript","json":{"message":{"content":"[Request interrupted by user]","role":"user"},"origin":{"kind":"human"},"promptId":"q1","promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:05.000Z","type":"user","uuid":"u2"}}
-  row    5 t1 Command { command: "ls", state: Succeeded, exit_code: None, output_head: ["a.txt"], more_lines: 0, output_trimmed: false, output_tail: ["a.txt"], duration_ms: Some(1000) } run[t1..t1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-  row    6 stream:d-c Prose { text: [Text("There is one file:\n")], streaming: false, working_note: false }
-  row    7 u2 Hidden collapsed
-  row    8 turn:1 Stopped
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 20 input {"id":"p2","prompt":{"text":"carry on"}}
   composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 50], text: [Text("carry on")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
 ## 22 fact {"channel":"transcript","json":{"message":{"content":"carry on","role":"user"},"origin":{"kind":"human"},"promptId":"q2","promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:06.000Z","type":"user","uuid":"u3"}}
-  row    9 u3 Prompt { text: [Text("carry on")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 23 fact {"channel":"hook","json":{"cwd":"/w","delta":"Second reply.\n","final":false,"hook_event_name":"MessageDisplay","index":0,"message_id":"d-d","permission_mode":"default","prompt_id":"q2","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn-q2"}}
-  row   10 stream:d-d Prose { text: [Text("Second reply.\n")], streaming: true, working_note: false }
-## 24 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Second reply.","type":"text"}],"id":"m5","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:07.000Z","type":"assistant","uuid":"a5"}}
-  row   10 stream:d-d Prose { text: [Text("Second reply.")], streaming: false, working_note: false }
 ## 25 fact {"channel":"transcript","json":{"durationMs":1100,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:07.100Z","type":"system","uuid":"d2"}}
-  row   11 turn:2 TurnEnd { duration_ms: Some(1100), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 26 input {"id":"p3","prompt":{"text":"and again"}}
   composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 51], text: [Text("and again")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
 ## 28 fact {"channel":"transcript","json":{"message":{"content":"and again","role":"user"},"origin":{"kind":"human"},"promptId":"q3","promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:08.000Z","type":"user","uuid":"u4"}}
-  row   12 u4 Prompt { text: [Text("and again")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 30 fact {"channel":"hook","json":{"cwd":"/w","delta":"Third reply.\n","final":false,"hook_event_name":"MessageDisplay","index":0,"message_id":"d-e","permission_mode":"default","prompt_id":"q3","session_id":"s1","transcript_path":"/t/s1.jsonl","turn_id":"turn-q3"}}
-  row   13 stream:d-e Prose { text: [Text("Third reply.\n")], streaming: true, working_note: false }
-## 31 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Third reply.","type":"text"}],"id":"m6","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:09.000Z","type":"assistant","uuid":"a6"}}
-  row   13 stream:d-e Prose { text: [Text("Third reply.")], streaming: false, working_note: false }
 ## 32 fact {"channel":"transcript","json":{"durationMs":1000,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:09.100Z","type":"system","uuid":"d3"}}
-  row   14 turn:3 TurnEnd { duration_ms: Some(1000), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

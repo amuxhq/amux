@@ -1,17 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Count slowly from one to two hundred, one number per line.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=bacd229e-ecac-41c8-a9b7-c64ae5c42086
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 12 recorded 11: fact Stream type=assistant uuid=e590215b-d92b-484f-a11b-05de8d987f4d
-  row    3 msg_011CgWLSEcfqLZLux1B6WWjd:0 Thinking { text: "", open: false, duration_ms: Some(1608) }
-## 18 recorded 17: fact Stream type=assistant uuid=fb877ff8-5f6f-4cec-ace2-fe416cb3664b
-  row    4 msg_011CgWLSEcfqLZLux1B6WWjd:1 Prose { text: [Text("1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11")], streaming: false, working_note: false }
 ## 22 recorded 21: fact Stream type=result subtype=error_during_execution uuid=77126197-ba7f-4efa-90bb-444f4799e72d
-  row    5 turn:1 Stopped
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

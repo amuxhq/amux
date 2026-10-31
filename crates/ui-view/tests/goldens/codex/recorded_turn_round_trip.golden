@@ -1,26 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 5 recorded 4: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"on-…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 8 recorded 7: input stdin-4
-  row    2 prompt:737464696e2d34 Prompt { text: [Text("Reply with exactly CODEX_SPEC_PONG and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 23 recorded 22: fact Rpc method=item/started
-  row    3 msg_06c4950302592050016a934835b27887d28ecfc4578303dc9a Prose { text: [], streaming: true, working_note: false }
-## 25 recorded 24: fact Rpc method=item/agentMessage/delta
-  row    3 msg_06c4950302592050016a934835b27887d28ecfc4578303dc9a Prose { text: [Text("CODE")], streaming: true, working_note: false }
-## 27 recorded 26: fact Rpc method=item/agentMessage/delta
-  row    3 msg_06c4950302592050016a934835b27887d28ecfc4578303dc9a Prose { text: [Text("CODEX")], streaming: true, working_note: false }
-## 29 recorded 28: fact Rpc method=item/agentMessage/delta
-  row    3 msg_06c4950302592050016a934835b27887d28ecfc4578303dc9a Prose { text: [Text("CODEX_SPEC")], streaming: true, working_note: false }
-## 31 recorded 30: fact Rpc method=item/agentMessage/delta
-  row    3 msg_06c4950302592050016a934835b27887d28ecfc4578303dc9a Prose { text: [Text("CODEX_SPEC_P")], streaming: true, working_note: false }
-## 33 recorded 32: fact Rpc method=item/agentMessage/delta
-  row    3 msg_06c4950302592050016a934835b27887d28ecfc4578303dc9a Prose { text: [Text("CODEX_SPEC_PONG")], streaming: true, working_note: false }
-## 35 recorded 34: fact Rpc method=item/completed
-  row    3 msg_06c4950302592050016a934835b27887d28ecfc4578303dc9a Prose { text: [Text("CODEX_SPEC_PONG")], streaming: false, working_note: false }
 ## 41 recorded 40: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(3741), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

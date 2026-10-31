@@ -1,18 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 3 recorded 1: fact Hook hook_event_name=SessionStart
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 13 recorded 11: fact Transcript type=user uuid=3f63746e-8a40-4bc4-ae6c-20d544aee4f5
-  row    2 3f63746e-8a40-4bc4-ae6c-20d544aee4f5 Prompt { text: [Text("Reply exactly PTY_SPEC_PROMPT_OK and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 35 recorded 33: fact Hook hook_event_name=MessageDisplay
-  row    3 stream:8ef7f140-6579-4247-b806-fa67426a6ec2 Prose { text: [Text("PTY_SPEC_PROMPT_OK")], streaming: true, working_note: false }
-## 39 recorded 37: fact Transcript type=assistant uuid=6cb0cd6f-dd8d-4bbc-a193-910bfe1f803c
-  row    4 6cb0cd6f-dd8d-4bbc-a193-910bfe1f803c Thinking { text: "", open: false, duration_ms: Some(184) }
-## 40 recorded 38: fact Transcript type=assistant uuid=a34018f9-3024-4961-88fa-a74a7e4f9024
-  row    3 stream:8ef7f140-6579-4247-b806-fa67426a6ec2 Prose { text: [Text("PTY_SPEC_PROMPT_OK")], streaming: false, working_note: false }
 ## 44 recorded 42: fact Transcript type=system subtype=turn_duration uuid=be1ad089-789e-449a-81c5-021d9a05da01
-  row    5 turn:1 TurnEnd { duration_ms: Some(1423), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

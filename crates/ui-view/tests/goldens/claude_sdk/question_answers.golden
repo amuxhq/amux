@@ -1,23 +1,15 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 1 fact {"channel":"stream","json":{"claude_code_version":"2.1.283","model":"claude-sonnet-5","permissionMode":"default","session_id":"s1","subtype":"init","type":"system","uuid":"init-s1"}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 2 input {"id":"p1","prompt":{"text":"ask me three things"}}
-  row    2 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("ask me three things")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 3 fact {"channel":"stream","json":{"message":{"content":[{"id":"t1","input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"The color red","label":"Red"},{"description":"The color blue","label":"Blue"}],"question":"Which color do you prefer?"},{"header":"Fruit","multiSelect":false,"options":[{"description":"A crisp apple","label":"Apple"},{"description":"A sweet pear",…
-  row    3 t1 [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The color blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { head…
 ## 4 fact {"channel":"stream","json":{"request":{"display_name":"AskUserQuestion","input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"The color red","label":"Red"},{"description":"The color blue","label":"Blue"}],"question":"Which color do you prefer?"},{"header":"Fruit","multiSelect":false,"options":[{"description":"A crisp apple","label":"Apple"},{"description":"A s…
   ask req-1 -> "t1" 1/1 Open
     choices 
     body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The color blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Fruit", question: "Which fruit do you pr…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 5 input {"answer":{"answer":{"notes":["the blue of the logo",null,"both, for the shelf"],"selected":[1,null,[0,1]]},"ask":"req-1"},"id":"a1"}
-  row    3 t1 [Answered: Color = Blue note="the blue of the logo"; Fruit = (skipped); Tools = Hammer, Saw note="both, for the shelf" skipped=1] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description…
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 7 fact {"channel":"stream","json":{"message":{"content":[{"id":"t2","input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"The color red","label":"Red"},{"description":"The color blue","label":"Blue"}],"question":"Which color do you prefer?"},{"header":"Fruit","multiSelect":false,"options":[{"description":"A crisp apple","label":"Apple"},{"description":"A sweet pear",…
-  row    4 t2 [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The color blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { head…
 ## 8 fact {"channel":"stream","json":{"request":{"display_name":"AskUserQuestion","input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"The color red","label":"Red"},{"description":"The color blue","label":"Blue"}],"question":"Which color do you prefer?"},{"header":"Fruit","multiSelect":false,"options":[{"description":"A crisp apple","label":"Apple"},{"description":"A s…
   ask req-2 -> "t2" 1/1 Open
     choices 
@@ -28,11 +20,9 @@
     choices 
     body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The color blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Fruit", question: "Which fruit do you pr…
 ## 10 input {"answer":{"answer":{"reply":{"selected":[0,null,null],"text":"Pick whatever matches the old page."}},"ask":"req-2"},"id":"a2"}
-  row    4 t2 [Replied: Color = Red; Fruit = (skipped); Tools = (skipped) skipped=2 reply="Pick whatever matches the old page."] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The color bl…
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 12 fact {"channel":"stream","json":{"duration_api_ms":3000,"duration_ms":4000,"is_error":false,"num_turns":3,"result":"ok","session_id":"s1","stop_reason":"end_turn","subtype":"success","type":"result","uuid":"r1"}}
-  row    5 turn:1 TurnEnd { duration_ms: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

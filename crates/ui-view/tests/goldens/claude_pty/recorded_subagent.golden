@@ -1,43 +1,14 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 3 recorded 1: fact Hook hook_event_name=SessionStart
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 14 recorded 12: fact Transcript type=user uuid=2f0598bc-80a7-4e8b-9849-e5fcefc9f93d
-  row    2 2f0598bc-80a7-4e8b-9849-e5fcefc9f93d Prompt { text: [Text("Use the Agent tool to start one general-purpose subagent with this task: read config.txt with the Read tool and report its single line. Wait for it, then tell me what it reported.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 42 recorded 40: fact Transcript type=assistant uuid=869016fd-96c6-401a-9095-b3758f966746
-  row    3 869016fd-96c6-401a-9095-b3758f966746 Thinking { text: "", open: false, duration_ms: Some(1800) }
 ## 43 recorded 41: fact Transcript type=assistant uuid=4ecffbec-a0a3-41e6-9d63-faba7c3655ef
-  row    4 toolu_01Cvx6Ut32dU8F1bJ3ukkFti Subagent { description: "Read config.txt and report content", running: true, tool_count: 0, last_tool: "", answer: "", duration_ms: None } run[toolu_01Cvx6Ut32dU8F1bJ3ukkFti..toolu_01Cvx6Ut32dU8F1bJ3ukkFti x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
   composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
-## 44 recorded 42: fact Transcript type=user uuid=68dc9e02-5240-48ed-b4c7-bb2e375805f8
-  row    4 toolu_01Cvx6Ut32dU8F1bJ3ukkFti Subagent { description: "Read config.txt and report content", running: true, tool_count: 0, last_tool: "", answer: "", duration_ms: None } run[toolu_01Cvx6Ut32dU8F1bJ3ukkFti..toolu_01Cvx6Ut32dU8F1bJ3ukkFti x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
-## 54 recorded 52: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01HGQCaicV1PKqpeBTTvPoFX
-  row    4 toolu_01Cvx6Ut32dU8F1bJ3ukkFti Subagent { description: "Read config.txt and report content", running: true, tool_count: 1, last_tool: "Read", answer: "", duration_ms: None } run[toolu_01Cvx6Ut32dU8F1bJ3ukkFti..toolu_01Cvx6Ut32dU8F1bJ3ukkFti x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
-## 62 recorded 60: fact Hook hook_event_name=MessageDisplay
-  row    4 toolu_01Cvx6Ut32dU8F1bJ3ukkFti Subagent { description: "Read config.txt and report content", running: true, tool_count: 1, last_tool: "Read", answer: "", duration_ms: None } run[toolu_01Cvx6Ut32dU8F1bJ3ukkFti..toolu_01Cvx6Ut32dU8F1bJ3ukkFti x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
-  row    5 stream:2094f7da-53e7-4b1b-b885-c549c79abc85 Prose { text: [Text("I've launched the agent to read config.txt. Waiting for it to complete...")], streaming: true, working_note: false }
-## 66 recorded 64: fact Transcript type=assistant uuid=e27cf3d7-5023-4dd7-8557-79839b3e0d29
-  row    6 e27cf3d7-5023-4dd7-8557-79839b3e0d29 Thinking { text: "", open: false, duration_ms: Some(114) }
-## 67 recorded 65: fact Transcript type=assistant uuid=ad83cc47-2bce-47bb-9d1b-c8a57b89b5a3
-  row    5 stream:2094f7da-53e7-4b1b-b885-c549c79abc85 Prose { text: [Text("I've launched the agent to read config.txt. Waiting for it to complete...")], streaming: false, working_note: false }
 ## 70 recorded 68: fact Transcript type=system subtype=turn_duration uuid=b020c207-97a1-4f78-900e-0acc31f97637
-  row    4 toolu_01Cvx6Ut32dU8F1bJ3ukkFti Subagent { description: "Read config.txt and report content", running: true, tool_count: 1, last_tool: "Read", answer: "", duration_ms: None } run[toolu_01Cvx6Ut32dU8F1bJ3ukkFti..toolu_01Cvx6Ut32dU8F1bJ3ukkFti x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
-  row    7 turn:1 TurnEnd { duration_ms: Some(6023), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 80 recorded 78: fact Transcript type=user uuid=a7c527c9-3b2a-4e3f-9390-20cbc50b2b1d
-  row    4 toolu_01Cvx6Ut32dU8F1bJ3ukkFti Subagent { description: "Read config.txt and report content", running: false, tool_count: 1, last_tool: "Read", answer: "The file `config.txt` contains a single line of content:\n\n```\nVALUE=1\n```", duration_ms: Some(4989) } run[toolu_01Cvx6Ut32dU8F1bJ3ukkFti..toolu_01Cvx6Ut32dU8F1bJ3ukkFti x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, …
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 82 recorded 80: fact Hook hook_event_name=MessageDisplay
-  row    8 stream:f82704e9-de15-46ba-b88a-965ca470951e Prose { text: [Text("The agent has completed. It read config.txt and found it contains a single line:\n\n```\n")], streaming: true, working_note: false }
-## 84 recorded 82: fact Hook hook_event_name=MessageDisplay
-  row    8 stream:f82704e9-de15-46ba-b88a-965ca470951e Prose { text: [Text("The agent has completed. It read config.txt and found it contains a single line:\n\n```\nVALUE=1\n```")], streaming: true, working_note: false }
-## 89 recorded 87: fact Transcript type=assistant uuid=a5a0a23c-31db-4d24-b821-d575410399ff
-  row    9 a5a0a23c-31db-4d24-b821-d575410399ff Thinking { text: "", open: false, duration_ms: Some(55) }
-## 91 recorded 89: fact Transcript type=assistant uuid=4a58f313-f1d3-47bf-94c0-46b1b3d6a406
-  row    8 stream:f82704e9-de15-46ba-b88a-965ca470951e Prose { text: [Text("The agent has completed. It read config.txt and found it contains a single line:\n\n```\nVALUE=1\n```")], streaming: false, working_note: false }
 ## 94 recorded 92: fact Transcript type=system subtype=turn_duration uuid=5a4399f6-77fe-459c-a639-3726a4d4ffab
-  row   10 turn:2 TurnEnd { duration_ms: Some(10180), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

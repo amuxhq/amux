@@ -330,8 +330,9 @@ naming the carrier and the golden line that shows it.
 
 **The views.** [`crates/ui-view/tests/goldens.rs`](../crates/ui-view/tests/goldens.rs) replays every interpreter
 fixture of all three kinds, commits its emission the way the daemon does, reduces it into a `SessionState`, and
-records the views (rows, ask card with its choices, overview, composer, queue, prompts underway and refused, settings) after every frame
-into `crates/ui-view/tests/goldens/<kind>/<fixture>.golden`. Authored goldens cover inputs and composer states;
+records into `crates/ui-view/tests/goldens/<kind>/<fixture>.golden` where the ask card (with its choices) and the
+composer (queue, prompts underway and refused) moved after each frame, then the rows, overview and settings the
+fixture leaves. Authored goldens cover inputs and composer states;
 `views.rs` checks row invariants over random windows; `answers.rs` checks that the interpreter accepts the input
 each card's choices build. These goldens are the content oracle for both clients. Rewrite them with
 `UI_VIEW_UPDATE_GOLDENS=1 just test-crate ui-view` and review the diff.

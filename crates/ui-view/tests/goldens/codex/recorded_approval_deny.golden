@@ -1,44 +1,12 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 5 recorded 4: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"on-…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 8 recorded 7: input stdin-4
-  row    2 prompt:737464696e2d34 Prompt { text: [Text("Run this exact shell command and no substitute: /usr/bin/touch <MACHINE_PATH> Then say DONE.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 24 recorded 23: fact Rpc method=item/started
-  row    3 rs_073bfcd196c14513016a934842bacc87d2b7e2649e44dbc391 Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
 ## 26 recorded 25: fact Rpc method=item/completed
-  row    3 rs_073bfcd196c14513016a934842bacc87d2b7e2649e44dbc391 Thinking { text: "", open: false, duration_ms: Some(3221) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 28 recorded 27: fact Rpc method=item/started
-  row    4 msg_073bfcd196c14513016a934843be8887d2b5dc2bf12506562f Prose { text: [], streaming: true, working_note: true }
-## 30 recorded 29: fact Rpc method=item/agentMessage/delta
-  row    4 msg_073bfcd196c14513016a934843be8887d2b5dc2bf12506562f Prose { text: [Text("I")], streaming: true, working_note: true }
-## 32 recorded 31: fact Rpc method=item/agentMessage/delta
-  row    4 msg_073bfcd196c14513016a934843be8887d2b5dc2bf12506562f Prose { text: [Text("I need")], streaming: true, working_note: true }
-## 33 recorded 32: fact Rpc method=item/agentMessage/delta
-  row    4 msg_073bfcd196c14513016a934843be8887d2b5dc2bf12506562f Prose { text: [Text("I need filesystem")], streaming: true, working_note: true }
-## 35 recorded 34: fact Rpc method=item/agentMessage/delta
-  row    4 msg_073bfcd196c14513016a934843be8887d2b5dc2bf12506562f Prose { text: [Text("I need filesystem write")], streaming: true, working_note: true }
-## 37 recorded 36: fact Rpc method=item/agentMessage/delta
-  row    4 msg_073bfcd196c14513016a934843be8887d2b5dc2bf12506562f Prose { text: [Text("I need filesystem write approval")], streaming: true, working_note: true }
-## 39 recorded 38: fact Rpc method=item/agentMessage/delta
-  row    4 msg_073bfcd196c14513016a934843be8887d2b5dc2bf12506562f Prose { text: [Text("I need filesystem write approval to")], streaming: true, working_note: true }
-## 41 recorded 40: fact Rpc method=item/agentMessage/delta
-  row    4 msg_073bfcd196c14513016a934843be8887d2b5dc2bf12506562f Prose { text: [Text("I need filesystem write approval to run")], streaming: true, working_note: true }
-## 43 recorded 42: fact Rpc method=item/agentMessage/delta
-  row    4 msg_073bfcd196c14513016a934843be8887d2b5dc2bf12506562f Prose { text: [Text("I need filesystem write approval to run that")], streaming: true, working_note: true }
-## 45 recorded 44: fact Rpc method=item/agentMessage/delta
-  row    4 msg_073bfcd196c14513016a934843be8887d2b5dc2bf12506562f Prose { text: [Text("I need filesystem write approval to run that exact")], streaming: true, working_note: true }
-## 47 recorded 46: fact Rpc method=item/agentMessage/delta
-  row    4 msg_073bfcd196c14513016a934843be8887d2b5dc2bf12506562f Prose { text: [Text("I need filesystem write approval to run that exact command")], streaming: true, working_note: true }
-## 49 recorded 48: fact Rpc method=item/agentMessage/delta
-  row    4 msg_073bfcd196c14513016a934843be8887d2b5dc2bf12506562f Prose { text: [Text("I need filesystem write approval to run that exact command.")], streaming: true, working_note: true }
-## 51 recorded 50: fact Rpc method=item/completed
-  row    4 msg_073bfcd196c14513016a934843be8887d2b5dc2bf12506562f Prose { text: [Text("I need filesystem write approval to run that exact command.")], streaming: false, working_note: true }
 ## 56 recorded 55: fact Rpc method=item/started
-  row    5 exec-5509f507-4aa7-4fac-aa66-d088ac31060f Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[exec-5509f507-4aa7-4fac-aa66-d088ac31060f..exec-5509f507-4aa7-4fac-aa66-d088ac31060f x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0…
   composer Send activity=Some(Running { key: "exec-5509f507-4aa7-4fac-aa66-d088ac31060f" }) queue=[] underway=[] refused=[]
 ## 57 recorded 56: fact Rpc method=item/commandExecution/requestApproval
   ask 0 -> "exec-5509f507-4aa7-4fac-aa66-d088ac31060f" 1/1 Open
@@ -46,44 +14,11 @@
     body Command { command: "/usr/bin/touch <MACHINE_PATH>", cwd: "<MACHINE_PATH>", reason: "Allow the exact requested command to create the file?", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 59 recorded 58: input stdin-5
-  row    5 exec-5509f507-4aa7-4fac-aa66-d088ac31060f Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[exec-5509f507-4aa7-4fac-aa66-d088ac31060f..exec-5509f507-4aa7-4fac-aa66-d088ac31060f x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0,…
   ask none
   composer Send activity=Some(Running { key: "exec-5509f507-4aa7-4fac-aa66-d088ac31060f" }) queue=[] underway=[] refused=[]
 ## 61 recorded 60: fact Rpc method=item/completed
-  row    5 exec-5509f507-4aa7-4fac-aa66-d088ac31060f Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(2) } run[exec-5509f507-4aa7-4fac-aa66-d088ac31060f..exec-5509f507-4aa7-4fac-aa66-d088ac31060f x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents:…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 68 recorded 67: fact Rpc method=item/started
-  row    5 exec-5509f507-4aa7-4fac-aa66-d088ac31060f Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(2) } run[exec-5509f507-4aa7-4fac-aa66-d088ac31060f..exec-5509f507-4aa7-4fac-aa66-d088ac31060f x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
-  row    6 msg_073bfcd196c14513016a93484730dc87d2a9020fd7e4998c63 Prose { text: [], streaming: true, working_note: false }
-## 70 recorded 69: fact Rpc method=item/agentMessage/delta
-  row    6 msg_073bfcd196c14513016a93484730dc87d2a9020fd7e4998c63 Prose { text: [Text("Unable")], streaming: true, working_note: false }
-## 72 recorded 71: fact Rpc method=item/agentMessage/delta
-  row    6 msg_073bfcd196c14513016a93484730dc87d2a9020fd7e4998c63 Prose { text: [Text("Unable to")], streaming: true, working_note: false }
-## 74 recorded 73: fact Rpc method=item/agentMessage/delta
-  row    6 msg_073bfcd196c14513016a93484730dc87d2a9020fd7e4998c63 Prose { text: [Text("Unable to run")], streaming: true, working_note: false }
-## 76 recorded 75: fact Rpc method=item/agentMessage/delta
-  row    6 msg_073bfcd196c14513016a93484730dc87d2a9020fd7e4998c63 Prose { text: [Text("Unable to run the")], streaming: true, working_note: false }
-## 78 recorded 77: fact Rpc method=item/agentMessage/delta
-  row    6 msg_073bfcd196c14513016a93484730dc87d2a9020fd7e4998c63 Prose { text: [Text("Unable to run the command")], streaming: true, working_note: false }
-## 80 recorded 79: fact Rpc method=item/agentMessage/delta
-  row    6 msg_073bfcd196c14513016a93484730dc87d2a9020fd7e4998c63 Prose { text: [Text("Unable to run the command because")], streaming: true, working_note: false }
-## 82 recorded 81: fact Rpc method=item/agentMessage/delta
-  row    6 msg_073bfcd196c14513016a93484730dc87d2a9020fd7e4998c63 Prose { text: [Text("Unable to run the command because filesystem")], streaming: true, working_note: false }
-## 84 recorded 83: fact Rpc method=item/agentMessage/delta
-  row    6 msg_073bfcd196c14513016a93484730dc87d2a9020fd7e4998c63 Prose { text: [Text("Unable to run the command because filesystem-write")], streaming: true, working_note: false }
-## 86 recorded 85: fact Rpc method=item/agentMessage/delta
-  row    6 msg_073bfcd196c14513016a93484730dc87d2a9020fd7e4998c63 Prose { text: [Text("Unable to run the command because filesystem-write approval")], streaming: true, working_note: false }
-## 88 recorded 87: fact Rpc method=item/agentMessage/delta
-  row    6 msg_073bfcd196c14513016a93484730dc87d2a9020fd7e4998c63 Prose { text: [Text("Unable to run the command because filesystem-write approval was")], streaming: true, working_note: false }
-## 90 recorded 89: fact Rpc method=item/agentMessage/delta
-  row    6 msg_073bfcd196c14513016a93484730dc87d2a9020fd7e4998c63 Prose { text: [Text("Unable to run the command because filesystem-write approval was denied")], streaming: true, working_note: false }
-## 92 recorded 91: fact Rpc method=item/agentMessage/delta
-  row    6 msg_073bfcd196c14513016a93484730dc87d2a9020fd7e4998c63 Prose { text: [Text("Unable to run the command because filesystem-write approval was denied.")], streaming: true, working_note: false }
-## 94 recorded 93: fact Rpc method=item/completed
-  row    6 msg_073bfcd196c14513016a93484730dc87d2a9020fd7e4998c63 Prose { text: [Text("Unable to run the command because filesystem-write approval was denied.")], streaming: false, working_note: false }
 ## 100 recorded 99: fact Rpc method=turn/completed
-  row    5 exec-5509f507-4aa7-4fac-aa66-d088ac31060f Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(2) } run[exec-5509f507-4aa7-4fac-aa66-d088ac31060f..exec-5509f507-4aa7-4fac-aa66-d088ac31060f x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
-  row    7 turn:1 TurnEnd { duration_ms: Some(7991), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

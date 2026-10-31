@@ -1,42 +1,20 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input 0x22222222222242228222222222222201
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 22222222-2222-4222-8222-222222222201 Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly DONE-N plus any extra words the user asked for.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 10 recorded 9: fact Stream type=system subtype=init uuid=232c259c-59ff-44c5-a150-17bf510f88be
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 18 recorded 17: fact Stream type=assistant uuid=504bf5e4-5946-49ad-aca9-2965fedeb190
-  row    3 msg_011CgWLZvDrDHS5qPDGZmZ8c:0 Thinking { text: "", open: false, duration_ms: Some(3176) }
 ## 20 recorded 19: fact Stream type=assistant uuid=6e59529b-ae0e-4e03-8c43-6881b736ab0b
-  row    4 toolu_01GJoEwPpjTVCPiPJtAacB3C Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_01GJoEwPpjTVCPiPJtAacB3C..toolu_01GJoEwPpjTVCPiPJtAacB3C x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_01GJoEwPpjTVCPiPJtAacB3C" }) queue=[] underway=[] refused=[]
 ## 26 recorded 25: input 0x22222222222242228222222222222204
   composer Send activity=Some(Running { key: "toolu_01GJoEwPpjTVCPiPJtAacB3C" }) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 4], text: [Text("Also append the word NUTMEG.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 32 recorded 31: fact Stream type=user uuid=02fe0803-967b-4f59-a882-307c59548438
-  row    4 toolu_01GJoEwPpjTVCPiPJtAacB3C Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15212) } run[toolu_01GJoEwPpjTVCPiPJtAacB3C..toolu_01GJoEwPpjTVCPiPJtAacB3C x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagent…
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 4], text: [Text("Also append the word NUTMEG.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 34 recorded 33: fact Stream type=result subtype=success uuid=c46d53a4-3f63-474c-819b-ebbc2d66fe66
-  row    4 toolu_01GJoEwPpjTVCPiPJtAacB3C Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15212) } run[toolu_01GJoEwPpjTVCPiPJtAacB3C..toolu_01GJoEwPpjTVCPiPJtAacB3C x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0,…
-  row    5 turn:1 Stopped
-  row    6 22222222-2222-4222-8222-222222222204 Prompt { text: [Text("Also append the word NUTMEG.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 47 recorded 46: fact Stream type=assistant uuid=c79e9153-aff9-49d9-bf89-7d576bb02b63
-  row    7 msg_011CgWLbJCTwxMN1x1c9R6A7:0 Thinking { text: "", open: false, duration_ms: Some(1598) }
 ## 49 recorded 48: fact Stream type=assistant uuid=8b60e2a4-7d8d-4266-813f-2000b5347a09
-  row    8 toolu_015ZQV6Ek9UM8cPp7tJikSDf Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_015ZQV6Ek9UM8cPp7tJikSDf..toolu_015ZQV6Ek9UM8cPp7tJikSDf x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_015ZQV6Ek9UM8cPp7tJikSDf" }) queue=[] underway=[] refused=[]
 ## 55 recorded 54: fact Stream type=user uuid=6b4d4527-f02d-4336-9e7e-93b114c38e26
-  row    8 toolu_015ZQV6Ek9UM8cPp7tJikSDf Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5104) } run[toolu_015ZQV6Ek9UM8cPp7tJikSDf..toolu_015ZQV6Ek9UM8cPp7tJikSDf x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents:…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 61 recorded 60: fact Stream type=assistant uuid=a93976a7-a885-4846-8252-200b7da870f7
-  row    9 msg_011CgWLbpFUecSV1aG3XRwRD:0 Thinking { text: "", open: false, duration_ms: Some(6700) }
-## 63 recorded 62: fact Stream type=assistant uuid=e1642622-9cd1-47d2-b700-6a1e51f6265e
-  row    8 toolu_015ZQV6Ek9UM8cPp7tJikSDf Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5104) } run[toolu_015ZQV6Ek9UM8cPp7tJikSDf..toolu_015ZQV6Ek9UM8cPp7tJikSDf x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
-  row   10 msg_011CgWLbpFUecSV1aG3XRwRD:1 Prose { text: [Text("DONE-N NUTMEG")], streaming: false, working_note: false }
 ## 65 recorded 64: fact Stream type=result subtype=success uuid=37611f89-018c-4f2f-b5ec-b87bbc79d62e
-  row    8 toolu_015ZQV6Ek9UM8cPp7tJikSDf Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5104) } run[toolu_015ZQV6Ek9UM8cPp7tJikSDf..toolu_015ZQV6Ek9UM8cPp7tJikSDf x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
-  row   11 turn:2 TurnEnd { duration_ms: Some(8653), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

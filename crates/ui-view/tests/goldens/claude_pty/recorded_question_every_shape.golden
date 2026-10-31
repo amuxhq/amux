@@ -1,9 +1,6 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 3 recorded 1: fact Hook hook_event_name=SessionStart
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 13 recorded 11: fact Transcript type=user uuid=0ee82fd0-231e-4674-b571-d77cc039c022
-  row    2 0ee82fd0-231e-4674-b571-d77cc039c022 Prompt { text: [Text("Use exactly one AskUserQuestion call containing exactly four questions, in this order. 1: header Color, question 'Which color do you prefer?', single-select, options Red and Blue. 2: header Tools, question 'Which tools do you need?', multiSelect true, options Hammer, Saw and Drill. 3: header Layout, question 'Which layout should the p…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 38 recorded 36: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_014Pht6rfzd2sTpWXMUpuKyP
   composer Send activity=Some(Running { key: "toolu_014Pht6rfzd2sTpWXMUpuKyP" }) queue=[] underway=[] refused=[]
@@ -12,15 +9,11 @@
     choices 
     body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Red color", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue color", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Which tools do you need?", mu…
   composer Send activity=None queue=[] underway=[] refused=[]
-## 43 recorded 41: fact Transcript type=assistant uuid=4f166fe8-2abd-4fcf-b2df-03de2ae99434
-  row    3 4f166fe8-2abd-4fcf-b2df-03de2ae99434 Thinking { text: "", open: false, duration_ms: Some(2354) }
 ## 45 recorded 43: fact Transcript type=assistant uuid=7b185743-7e76-4623-865f-32f49040289e
-  row    4 toolu_014Pht6rfzd2sTpWXMUpuKyP [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Red color", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue color", preview: "", recommended: false }], allow_other: true, secret: false },…
   ask ask:1 -> "toolu_014Pht6rfzd2sTpWXMUpuKyP" 1/1 Open
     choices 
     body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Red color", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue color", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Which tools do you need?", mu…
 ## 49 recorded 47: fact Transcript type=user uuid=05a88200-917d-4c91-af9b-f5624cd0faf4
-  row    4 toolu_014Pht6rfzd2sTpWXMUpuKyP [Answered: Color = Blue; Tools = Hammer, Drill; Layout = Grid; Snack = "Dried mango" skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Red color", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue co…
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat

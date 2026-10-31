@@ -1,42 +1,12 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"on-…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 9 recorded 8: input stdin-4
-  row    2 prompt:737464696e2d34 Prompt { text: [Text("Send two separate assistant messages in this turn: first exactly CODEX_SPEC_FIRST in commentary, then exactly CODEX_SPEC_SECOND as the final answer.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 22 recorded 21: fact Rpc method=item/started
-  row    3 rs_0c55feb572459127016a93486173c887d28317ad03147fec76 Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
 ## 24 recorded 23: fact Rpc method=item/completed
-  row    3 rs_0c55feb572459127016a93486173c887d28317ad03147fec76 Thinking { text: "", open: false, duration_ms: Some(4143) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 26 recorded 25: fact Rpc method=item/started
-  row    4 msg_0c55feb572459127016a934861bf6887d28dfc52e3aa94f16b Prose { text: [], streaming: true, working_note: true }
-## 28 recorded 27: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0c55feb572459127016a934861bf6887d28dfc52e3aa94f16b Prose { text: [Text("CODE")], streaming: true, working_note: true }
-## 29 recorded 28: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0c55feb572459127016a934861bf6887d28dfc52e3aa94f16b Prose { text: [Text("CODEX")], streaming: true, working_note: true }
-## 31 recorded 30: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0c55feb572459127016a934861bf6887d28dfc52e3aa94f16b Prose { text: [Text("CODEX_SPEC")], streaming: true, working_note: true }
-## 33 recorded 32: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0c55feb572459127016a934861bf6887d28dfc52e3aa94f16b Prose { text: [Text("CODEX_SPEC_FIRST")], streaming: true, working_note: true }
-## 35 recorded 34: fact Rpc method=item/completed
-  row    4 msg_0c55feb572459127016a934861bf6887d28dfc52e3aa94f16b Prose { text: [Text("CODEX_SPEC_FIRST")], streaming: false, working_note: true }
-## 37 recorded 36: fact Rpc method=item/started
-  row    5 msg_0c55feb572459127016a934861f11087d2a954de2ba1465f7e Prose { text: [], streaming: true, working_note: false }
-## 39 recorded 38: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0c55feb572459127016a934861f11087d2a954de2ba1465f7e Prose { text: [Text("CODE")], streaming: true, working_note: false }
-## 40 recorded 39: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0c55feb572459127016a934861f11087d2a954de2ba1465f7e Prose { text: [Text("CODEX")], streaming: true, working_note: false }
-## 42 recorded 41: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0c55feb572459127016a934861f11087d2a954de2ba1465f7e Prose { text: [Text("CODEX_SPEC")], streaming: true, working_note: false }
-## 44 recorded 43: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0c55feb572459127016a934861f11087d2a954de2ba1465f7e Prose { text: [Text("CODEX_SPEC_SECOND")], streaming: true, working_note: false }
-## 46 recorded 45: fact Rpc method=item/completed
-  row    5 msg_0c55feb572459127016a934861f11087d2a954de2ba1465f7e Prose { text: [Text("CODEX_SPEC_SECOND")], streaming: false, working_note: false }
 ## 53 recorded 52: fact Rpc method=turn/completed
-  row    6 turn:1 TurnEnd { duration_ms: Some(4841), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

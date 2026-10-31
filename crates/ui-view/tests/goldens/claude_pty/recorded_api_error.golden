@@ -1,14 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 3 recorded 1: fact Hook hook_event_name=SessionStart
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 11 recorded 9: fact Transcript type=user uuid=53d70f05-9455-468a-8b5a-9fe24936d464
-  row    2 53d70f05-9455-468a-8b5a-9fe24936d464 Prompt { text: [Text("Reply exactly PTY_SPEC_API_ERROR and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 32 recorded 30: fact Transcript type=assistant uuid=8da88e3c-98e2-43bf-843c-7111c72c5ba6
-  row    3 8da88e3c-98e2-43bf-843c-7111c72c5ba6 Error { error_kind: "server_error", message: "API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)", attempts: 0, gave_up: true } attention
 ## 33 recorded 31: fact Transcript type=system subtype=turn_duration uuid=cef450ac-502d-47f1-9a46-419f1e890b9c
-  row    4 turn:1 TurnEnd { duration_ms: Some(1914), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

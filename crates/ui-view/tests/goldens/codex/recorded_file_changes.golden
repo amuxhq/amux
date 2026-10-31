@@ -1,90 +1,24 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 7 recorded 6: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"nev…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 11 recorded 10: input stdin-4
-  row    2 prompt:737464696e2d34 Prompt { text: [Text("Use apply_patch for every change, one patch per step: first create notes.txt containing the line one; then change that line to two; then delete old.txt. Then reply DONE.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 28 recorded 27: fact Rpc method=item/started
-  row    3 rs_0fdbb478bf498617016ab7291b4b0887d2ac0f0e8cde625b47 Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
 ## 30 recorded 29: fact Rpc method=item/completed
-  row    3 rs_0fdbb478bf498617016ab7291b4b0887d2ac0f0e8cde625b47 Thinking { text: "", open: false, duration_ms: Some(3812) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 32 recorded 31: fact Rpc method=item/started
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [], streaming: true, working_note: true }
-## 33 recorded 32: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I")], streaming: true, working_note: true }
-## 35 recorded 34: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I’ll")], streaming: true, working_note: true }
-## 37 recorded 36: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I’ll make")], streaming: true, working_note: true }
-## 39 recorded 38: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I’ll make the")], streaming: true, working_note: true }
-## 41 recorded 40: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I’ll make the three")], streaming: true, working_note: true }
-## 43 recorded 42: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I’ll make the three requested")], streaming: true, working_note: true }
-## 45 recorded 44: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I’ll make the three requested changes")], streaming: true, working_note: true }
-## 47 recorded 46: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I’ll make the three requested changes as")], streaming: true, working_note: true }
-## 49 recorded 48: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I’ll make the three requested changes as separate")], streaming: true, working_note: true }
-## 51 recorded 50: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I’ll make the three requested changes as separate patches")], streaming: true, working_note: true }
-## 52 recorded 51: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I’ll make the three requested changes as separate patches in")], streaming: true, working_note: true }
-## 54 recorded 53: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I’ll make the three requested changes as separate patches in order")], streaming: true, working_note: true }
-## 56 recorded 55: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I’ll make the three requested changes as separate patches in order.")], streaming: true, working_note: true }
-## 58 recorded 57: fact Rpc method=item/completed
-  row    4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I’ll make the three requested changes as separate patches in order.")], streaming: false, working_note: true }
 ## 60 recorded 59: fact Rpc method=item/started
-  row    5 exec-8e77da47-ed05-4328-8c00-28d7e42ef310 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Running } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-8e77da47-ed05-4328-8c00-28d7e42ef310 x1 recent=0 live RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "exec-8e77da47-ed05-4328-8c00-28d7e42ef310" }) queue=[] underway=[] refused=[]
 ## 62 recorded 61: fact Rpc method=item/completed
-  row    5 exec-8e77da47-ed05-4328-8c00-28d7e42ef310 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-8e77da47-ed05-4328-8c00-28d7e42ef310 x1 recent=0 live RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 63 recorded 62: fact Rpc method=turn/diff/updated
-  row    6 diff:01a0db78-83d5-7ff0-820e-122e9a43ee0f Hidden collapsed
 ## 69 recorded 68: fact Rpc method=item/started
-  row    5 exec-8e77da47-ed05-4328-8c00-28d7e42ef310 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8 x2 recent=1 live]
-  row    6 diff:01a0db78-83d5-7ff0-820e-122e9a43ee0f Hidden run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8 x2 live] collapsed
-  row    7 exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: None }], state: Running } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8 x2 recent=0 live RunCounts { commands: 0, edits: 2, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8" }) queue=[] underway=[] refused=[]
 ## 71 recorded 70: fact Rpc method=item/completed
-  row    7 exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8 x2 recent=0 live RunCounts { commands: 0, edits: 2, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 73 recorded 72: fact Rpc method=turn/diff/updated
-  row    6 diff:01a0db78-83d5-7ff0-820e-122e9a43ee0f Hidden run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8 x2 live] collapsed
 ## 79 recorded 78: fact Rpc method=item/started
-  row    5 exec-8e77da47-ed05-4328-8c00-28d7e42ef310 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=2 live]
-  row    6 diff:01a0db78-83d5-7ff0-820e-122e9a43ee0f Hidden run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 live] collapsed
-  row    7 exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=1 live]
-  row    8 exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Deleted, added: 0, removed: 1, line: None }], state: Running } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=0 live RunCounts { commands: 0, edits: 3, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754" }) queue=[] underway=[] refused=[]
 ## 81 recorded 80: fact Rpc method=item/completed
-  row    8 exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Deleted, added: 0, removed: 1, line: None }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=0 live RunCounts { commands: 0, edits: 3, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 82 recorded 81: fact Rpc method=turn/diff/updated
-  row    6 diff:01a0db78-83d5-7ff0-820e-122e9a43ee0f Hidden run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 live] collapsed
-## 89 recorded 88: fact Rpc method=item/started
-  row    5 exec-8e77da47-ed05-4328-8c00-28d7e42ef310 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=2] collapsed
-  row    6 diff:01a0db78-83d5-7ff0-820e-122e9a43ee0f Hidden run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3] collapsed
-  row    7 exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=1] collapsed
-  row    8 exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Deleted, added: 0, removed: 1, line: None }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=0 RunCounts { commands: 0, edits: 3, reads: 0, searches: 0, subagents: 0, other: 0 }]
-  row    9 msg_0fdbb478bf498617016ab72921bbac87d2838294812ce8b3c3 Prose { text: [], streaming: true, working_note: false }
-## 91 recorded 90: fact Rpc method=item/agentMessage/delta
-  row    9 msg_0fdbb478bf498617016ab72921bbac87d2838294812ce8b3c3 Prose { text: [Text("DONE")], streaming: true, working_note: false }
-## 93 recorded 92: fact Rpc method=item/completed
-  row    9 msg_0fdbb478bf498617016ab72921bbac87d2838294812ce8b3c3 Prose { text: [Text("DONE")], streaming: false, working_note: false }
 ## 102 recorded 101: fact Rpc method=turn/completed
-  row    5 exec-8e77da47-ed05-4328-8c00-28d7e42ef310 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=2] collapsed
-  row    7 exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=1] collapsed
-  row    8 exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Deleted, added: 0, removed: 1, line: None }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=0 RunCounts { commands: 0, edits: 3, reads: 0, searches: 0, subagents: 0, other: 0 }]
-  row   10 turn:1 TurnEnd { duration_ms: Some(10348), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

@@ -814,7 +814,7 @@ answer.
 - **Agent messages** go to Codex with `thread/inject_items`. Codex reports
   nothing about an injected item, so the interpreter writes the agent-message
   item itself, at acceptance. A probe of codex-cli 0.157.0 settled when the
-  message counts as consumed (`CODEX_INJECT_CONSUMPTION`): a running turn
+  message counts as consumed: a running turn
   answers items injected into it before it ends, so a message injected
   mid-turn is consumed at the inject's acknowledgement; an inject into an idle
   thread is answered by an empty turn the interpreter starts for it, and is
@@ -822,7 +822,7 @@ answer.
   thread is running is held until it is; if a prompt is waiting for the
   thread as well (a spawn's task), the held messages are injected and ride
   that prompt's turn instead of an empty one, so the model reads its task
-  with them. Both arms have goldens of their own.
+  with them.
 
 ## Provider transport crates
 

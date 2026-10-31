@@ -35,9 +35,9 @@ use wire::{
 };
 
 use super::{
-    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, InjectConsumption, ListedSkill, Proposed,
-    RESUME_REQUEST, Request, State, Streamed, WorkState, ask_key, client_message_id,
-    elicitation_response, item_body, work_ask, work_complete,
+    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, ListedSkill, Proposed, RESUME_REQUEST,
+    Request, State, Streamed, WorkState, ask_key, client_message_id, elicitation_response,
+    item_body, work_ask, work_complete,
 };
 use crate::claude_common::compact_json;
 use crate::shared::{Output, json_as_written, patch_first_change};
@@ -654,7 +654,11 @@ impl State {
                 during_turn,
                 turn_over,
             } => {
-                if during_turn && self.consumption == InjectConsumption::DrainedMidTurn {
+                // A running turn samples again with injected items in
+                // context before it ends (codex-cli 0.157.0 onwards), so a
+                // message injected mid-turn is consumed at the inject's
+                // acknowledgement and needs no turn of its own.
+                if during_turn {
                     if turn_over && !self.shared.is_busy() {
                         // The turn it was sent into ended first: nothing
                         // answers it until a turn starts.
@@ -2621,9 +2625,6 @@ impl State {
         self.interrupt_pending = false;
         if outcome == TurnOutcome::Completed {
             self.open_plan_ask(&turn_id);
-        }
-        if self.consumption == InjectConsumption::ParkedUntilNextTurn {
-            self.turn_over_parked(emit);
         }
     }
 

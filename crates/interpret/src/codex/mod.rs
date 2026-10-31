@@ -37,7 +37,6 @@ mod facts;
 mod recording;
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::marker::PhantomData;
 
 use codex_protocol::client::{
     Answer, CustomReview, ElicitationAction, ElicitationResponse, GrantScope, InjectItemsParams,
@@ -71,54 +70,6 @@ use crate::{
     Shared, SnapshotView, Stepped, agent_message_body, agent_message_key, ask_item, codex_input,
     human, serde_pb, unknown,
 };
-
-/// When an agent message injected into Codex counts as consumed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum InjectConsumption {
-    /// A running turn does not see injected items; they wait for the next
-    /// turn. At turn end, while messages are parked, the interpreter starts
-    /// an empty turn, and the messages leave the pending set at that turn's
-    /// acknowledgement.
-    ParkedUntilNextTurn,
-    /// A running turn samples again with injected items in context before
-    /// it ends, so a message injected mid-turn leaves the pending set at the
-    /// inject's acknowledgement and no turn is started for it. An inject
-    /// acknowledged after its turn ended was recorded into an idle thread,
-    /// so it is kicked as an idle inject is.
-    DrainedMidTurn,
-}
-
-/// Decided by probing codex-cli 0.157.0: a running turn drains items
-/// injected into it and answers them under the same turn id. An inject into
-/// an idle thread still needs an empty turn to be answered, and is consumed
-/// at that turn's acknowledgement under either arm.
-pub const CODEX_INJECT_CONSUMPTION: InjectConsumption = InjectConsumption::DrainedMidTurn;
-
-/// Which consumption arm an interpreter type runs.
-pub trait Arm {
-    const CONSUMPTION: InjectConsumption;
-}
-
-/// The arm the probe decided.
-pub struct Probed;
-impl Arm for Probed {
-    const CONSUMPTION: InjectConsumption = CODEX_INJECT_CONSUMPTION;
-}
-
-/// The parked arm, whatever the probe decided; for its own goldens.
-pub struct Parked;
-impl Arm for Parked {
-    const CONSUMPTION: InjectConsumption = InjectConsumption::ParkedUntilNextTurn;
-}
-
-/// The drained arm, whatever the probe decided; for its own goldens.
-pub struct Drained;
-impl Arm for Drained {
-    const CONSUMPTION: InjectConsumption = InjectConsumption::DrainedMidTurn;
-}
-
-/// The Codex interpreter with a fixed consumption arm.
-pub struct CodexWith<A: Arm>(PhantomData<A>);
 
 /// The slash commands amux runs for Codex: name, description and argument
 /// hint. More of Codex's own view's commands are one entry each here and
@@ -281,14 +232,14 @@ fn mentions(text: &str) -> Vec<&str> {
 }
 
 /// The interpreter for kind `codex`.
-pub type Codex = CodexWith<Probed>;
+pub struct Codex;
 
 /// A request this interpreter sent, awaiting its response.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 enum Request {
     /// `turn/start`. Agent messages that leave the pending set at its
-    /// acknowledgement ride along: a kick, or the next turn in the parked
-    /// arm.
+    /// acknowledgement ride along: a kick for an idle inject, or held
+    /// messages a queued prompt's turn carries.
     Turn {
         #[serde(with = "serde_pb::bytes_vec")]
         consumes: Vec<Vec<u8>>,
@@ -551,7 +502,6 @@ fn offered_modes() -> Vec<OfferedMode> {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct State {
     shared: Shared<CodexAsk>,
-    consumption: InjectConsumption,
     /// The spec's incarnation: a later one's first thread is a resume.
     incarnation: u32,
     /// The agent's name, which the thread carries.
@@ -601,10 +551,6 @@ pub struct State {
     /// Agent messages accepted while no thread was running.
     #[serde(with = "serde_pb::msgs")]
     held: Vec<Envelope>,
-    /// Agent messages injected mid-turn, waiting for the next turn (parked
-    /// arm only).
-    #[serde(with = "serde_pb::bytes_vec")]
-    parked: Vec<Vec<u8>>,
     works: BTreeMap<String, WorkState>,
     /// Child threads' file changes, by item id, which their approvals show:
     /// the rest of a child's work is drawn by its own subagent row.
@@ -661,12 +607,7 @@ impl State {
         &self.shared
     }
 
-    /// The arm this state runs.
-    pub fn consumption(&self) -> InjectConsumption {
-        self.consumption
-    }
-
-    fn new(spec: &AgentSpec, producer_version: &str, consumption: InjectConsumption) -> Self {
+    fn new(spec: &AgentSpec, producer_version: &str) -> Self {
         let created_mode = spec
             .config
             .as_ref()
@@ -674,7 +615,6 @@ impl State {
             .filter(|mode| MODES.iter().any(|(value, _)| value == mode));
         Self {
             shared: Shared::new(spec, KIND, producer_version),
-            consumption,
             incarnation: spec.incarnation,
             name: spec.name.clone(),
             names_set: 0,
@@ -706,7 +646,6 @@ impl State {
             next_request: 0,
             next_boundary: 0,
             held: Vec::new(),
-            parked: Vec::new(),
             works: BTreeMap::new(),
             child_changes: BTreeMap::new(),
             sent: BTreeMap::new(),
@@ -1126,7 +1065,7 @@ impl State {
 
     /// Starts a turn for a prompt. Its item is written now, keyed by its
     /// input id; Codex's reflection of it is recognised and left out.
-    fn submit(&mut self, emit: &mut Emit, entry: QueuedInput, mut consumes: Vec<Vec<u8>>) {
+    fn submit(&mut self, emit: &mut Emit, entry: QueuedInput, consumes: Vec<Vec<u8>>) {
         let key = prompt_key(&entry.input_id);
         let command = Command::parse(&entry.text).and_then(Result::ok);
         match &command {
@@ -1195,7 +1134,6 @@ impl State {
                     }
                     _ => crate::shared::provider_text(&entry),
                 };
-                consumes.append(&mut self.parked);
                 let mut params = self.turn_params(&text);
                 params.client_user_message_id = Some(client_message_id(&entry.input_id));
                 let request = self
@@ -1367,10 +1305,8 @@ impl State {
         self.inject_items(emit, envelope, during_turn);
         if !during_turn {
             // An idle thread records the item and waits; an empty turn
-            // answers it under either arm.
+            // answers it.
             self.kick(emit, vec![envelope.id.clone()]);
-        } else if self.consumption == InjectConsumption::ParkedUntilNextTurn {
-            self.parked.push(envelope.id.clone());
         }
     }
 
@@ -1454,16 +1390,6 @@ impl State {
         }
         let consumes = held.into_iter().map(|envelope| envelope.id).collect();
         self.submit(emit, entry, consumes);
-    }
-
-    /// At turn end in the parked arm: parked messages need a turn. A queued
-    /// prompt's turn carries them; else an empty one is started.
-    fn turn_over_parked(&mut self, emit: &mut Emit) {
-        if self.parked.is_empty() || !self.shared.queue().is_empty() {
-            return;
-        }
-        let parked = std::mem::take(&mut self.parked);
-        self.kick(emit, parked);
     }
 
     fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: CodexAnswer) {
@@ -1883,12 +1809,12 @@ impl Checkpoint for State {
 
 const KIND: wire::Kind = wire::Kind::Codex;
 
-impl<A: Arm> Interpreter for CodexWith<A> {
+impl Interpreter for Codex {
     type State = State;
     const KIND: wire::Kind = KIND;
 
     fn initial(spec: &AgentSpec, producer_version: &str) -> (State, Step) {
-        let mut state = State::new(spec, producer_version, A::CONSUMPTION);
+        let mut state = State::new(spec, producer_version);
         let step = state.shared.initial_step(Self::unknown_snapshot());
         (state, step)
     }

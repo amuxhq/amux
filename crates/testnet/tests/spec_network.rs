@@ -2151,8 +2151,11 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     until("the work profile to need a sign-in", || async {
         let info = profile_info(&net, "desk", &work).await;
         matches!(
-            info.relay_state(),
-            Some(wire::relay_link::State::SignInAgain(_))
+            info.standing(),
+            Some(wire::cloud_standing::Standing::SignedIn(wire::RelayLink {
+                state: Some(wire::relay_link::State::SignInAgain(_)),
+                ..
+            }))
         )
         .then_some(())
         .ok_or_else(|| format!("cloud {:?}", info.cloud))

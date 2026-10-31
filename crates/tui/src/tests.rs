@@ -1369,7 +1369,13 @@ fn announced(id: &[u8], name: &str, by: &[(&str, bool)]) -> wire::inventory_even
             ..wire::Host::default()
         })
         .collect();
-    wire::inventory_event::Of::Host(wire::HostEntry::announced_host(id, name, by))
+    wire::inventory_event::Of::Host(wire::HostEntry {
+        standing: Some(wire::host_entry::Standing::Candidate(wire::Candidate {
+            addrs: Vec::new(),
+            announced_by: by,
+        })),
+        ..wire::HostEntry::candidate_host(id, name, Vec::new())
+    })
 }
 
 #[test]

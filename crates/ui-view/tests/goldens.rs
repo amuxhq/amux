@@ -21,8 +21,8 @@ use interpret::{Interpreter, Replayed, replay};
 use support::Committer;
 use ui_state::{InputOutcome, Msg, SessionState};
 use ui_view::{
-    ChatOptions, ToolRows, ask_card, chat_rows, composer, context, overview, prompts_underway,
-    queue_rows, refused_prompts, settings, sign_in,
+    ToolRows, ask_card, composer, context, overview, prompts_underway, queue_rows, refused_prompts,
+    settings, sign_in,
 };
 use wire::{Kind, SessionEvent, session_event};
 
@@ -190,9 +190,7 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
     let mut committer = Committer::default();
     let mut out = String::new();
     let open = HashSet::new();
-    let opts = ChatOptions {
-        tools: ToolRows::Collapse { open: &open },
-    };
+    let tools = ToolRows::Collapse { open: &open };
     let mut last_card = None;
     let mut last_composer = String::new();
     for (index, frame) in frames.iter().enumerate() {
@@ -258,8 +256,7 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
         }
     }
     let _ = writeln!(out, "== chat");
-    let head = state.transcript().head().unwrap_or(0);
-    for row in chat_rows(&state, 0..=head, &opts) {
+    for row in crate::support::all_rows(&state, tools) {
         let _ = writeln!(out, "  {}", describe_row(&row));
     }
     let _ = writeln!(out, "== overview {:?}", overview(&state, None));

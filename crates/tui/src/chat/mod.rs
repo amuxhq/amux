@@ -28,9 +28,8 @@ use ui_state::{
 };
 pub use ui_view::Comparison;
 use ui_view::{
-    AskBody, AskCard, CardState, Changeable, ChatOptions, ClientCommand, ExitCause, FamilyHeader,
-    Offline, Reach, RowKind, Slash, ToolRows, ask_card, chat_rows_for, composer, overview,
-    queue_rows,
+    AskBody, AskCard, CardState, Changeable, ClientCommand, ExitCause, FamilyHeader, Offline,
+    Reach, RowKind, Slash, ToolRows, ask_card, chat_rows_for, composer, overview, queue_rows,
 };
 use wire::{Attachment, attachment};
 
@@ -3166,20 +3165,21 @@ fn ends_with_exit(state: &SessionState) -> bool {
     let Some(held) = transcript.head().and_then(|head| transcript.at(head)) else {
         return false;
     };
-    let everything = ChatOptions {
-        tools: ToolRows::ShowAll,
-    };
-    chat_rows_for(state, std::slice::from_ref(&held.item.key), &everything)
-        .last()
-        .is_some_and(|row| {
-            matches!(
-                row.kind,
-                RowKind::Boundary {
-                    kind: wire::BoundaryKind::Exited,
-                    ..
-                }
-            )
-        })
+    chat_rows_for(
+        state,
+        std::slice::from_ref(&held.item.key),
+        ToolRows::ShowAll,
+    )
+    .last()
+    .is_some_and(|row| {
+        matches!(
+            row.kind,
+            RowKind::Boundary {
+                kind: wire::BoundaryKind::Exited,
+                ..
+            }
+        )
+    })
 }
 
 /// The sign-in box in the composer's place, framed with the composer's
@@ -3741,14 +3741,7 @@ fn pinned(
     {
         return None;
     }
-    let row = chat_rows_for(
-        state,
-        std::slice::from_ref(&key),
-        &ChatOptions {
-            tools: ToolRows::ShowAll,
-        },
-    )
-    .pop()?;
+    let row = chat_rows_for(state, std::slice::from_ref(&key), ToolRows::ShowAll).pop()?;
     let next = owners
         .iter()
         .enumerate()

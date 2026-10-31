@@ -2,7 +2,6 @@
 //! steps is an attribute on its members (see [`crate::run`]).
 
 use std::collections::HashSet;
-use std::ops::RangeInclusive;
 
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -56,19 +55,6 @@ pub enum ToolRows<'a> {
     Collapse {
         open: &'a HashSet<Key>,
     },
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct ChatOptions<'a> {
-    pub tools: ToolRows<'a>,
-}
-
-impl Default for ChatOptions<'_> {
-    fn default() -> Self {
-        ChatOptions {
-            tools: ToolRows::ShowAll,
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
@@ -457,42 +443,28 @@ pub enum DecisionView {
     Dismissed,
 }
 
-/// Rows for the held items whose order falls in `range`: the terminal's
-/// call, for what is on screen.
-pub fn chat_rows(state: &SessionState, range: RangeInclusive<u64>, opts: &ChatOptions) -> Vec<Row> {
-    if range.start() > range.end() {
-        return Vec::new();
-    }
-    state
-        .transcript()
-        .range(range)
-        .map(|held| row(state, held, opts))
-        .collect()
-}
-
-/// Rows for these keys, in order, skipping keys not held: the phone's call,
-/// for the cells an update changed.
-pub fn chat_rows_for(state: &SessionState, keys: &[Key], opts: &ChatOptions) -> Vec<Row> {
+/// Rows for these keys, in order, skipping keys not held.
+pub fn chat_rows_for(state: &SessionState, keys: &[Key], tools: ToolRows) -> Vec<Row> {
     let transcript = state.transcript();
     let mut held: Vec<&Held> = keys.iter().filter_map(|key| transcript.get(key)).collect();
     held.sort_by_key(|held| held.item.order);
     held.dedup_by_key(|held| held.item.order);
     held.into_iter()
-        .map(|held| row(state, held, opts))
+        .map(|held| row(state, held, tools))
         .collect()
 }
 
-fn row(state: &SessionState, held: &Held, opts: &ChatOptions) -> Row {
+fn row(state: &SessionState, held: &Held, tools: ToolRows) -> Row {
     let item = &held.item;
     let (kind, decision, failed) = kind_of(state, held);
     let mut run = crate::run::run_of(state, held, &kind, failed);
-    if let (ToolRows::Collapse { open }, Some(run)) = (&opts.tools, run.as_mut()) {
+    if let (ToolRows::Collapse { open }, Some(run)) = (tools, run.as_mut()) {
         run.open = crate::run::run_is_open(state, item.order, open);
     }
     let step = held.class.fold() == Fold::Step;
     let kept = run.as_ref().is_some_and(|run| run.unresolved_failure);
     let collapsed = matches!(kind, RowKind::Hidden)
-        || match opts.tools {
+        || match tools {
             ToolRows::ShowAll => false,
             ToolRows::Hide => step && !kept,
             ToolRows::Collapse { .. } => run.as_ref().is_some_and(|run| {

@@ -7,9 +7,7 @@ use std::collections::HashSet;
 
 use prost::Message;
 use ui_state::{Key, Msg, SessionState};
-use ui_view::{
-    ChatOptions, Row, Run, RunCounts, ToolRows, chat_rows, keep_open_runs, run_is_open, toggle_run,
-};
+use ui_view::{Row, Run, RunCounts, ToolRows, keep_open_runs, run_is_open, toggle_run};
 use wire::{Item, Kind, Phase, SessionEvent, ToolClass, ToolState, session_event};
 
 fn event(of: session_event::Of) -> Msg {
@@ -149,7 +147,7 @@ fn session_from(first: u64, cap: usize, items: &[It]) -> SessionState {
 }
 
 fn rows(state: &SessionState, tools: ToolRows) -> Vec<Row> {
-    chat_rows(state, 0..=u64::MAX, &ChatOptions { tools })
+    crate::support::all_rows(state, tools)
 }
 
 fn run_at(state: &SessionState, order: u64) -> Option<Run> {

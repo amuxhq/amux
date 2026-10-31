@@ -781,7 +781,6 @@ mod tests {
             "Answer",
             // Borrowed option types; the chat holds its own open runs.
             "ToolRows",
-            "ChatOptions",
             // A landed edit's first patch lines, which only the terminal
             // draws: ui_view::patch_head is called by no bridge function.
             "PatchHead",

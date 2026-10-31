@@ -2,10 +2,22 @@
 
 use std::collections::HashMap;
 
+use ui_state::SessionState;
+use ui_view::{Row, ToolRows, chat_rows_for};
 use wire::{SessionEvent, session_event};
 
 /// The window's cap: more rows than any case here delivers.
 pub const CAP: usize = 200;
+
+/// Every row the state holds, oldest first.
+pub fn all_rows(state: &SessionState, tools: ToolRows) -> Vec<Row> {
+    let keys: Vec<_> = state
+        .transcript()
+        .iter()
+        .map(|held| held.item.key.clone())
+        .collect();
+    chat_rows_for(state, &keys, tools)
+}
 
 /// Commits interpreter steps the way the owning daemon does.
 #[derive(Clone, Default)]

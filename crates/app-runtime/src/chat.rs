@@ -10,8 +10,8 @@ use tokio::task::JoinHandle;
 use ui_runtime::{Fleet, InputError, PageError, Session};
 use ui_state::{InputOutcome, InputState, Key, Refusal, SessionState};
 use ui_view::{
-    AskCard, ChatOptions, Comparison, FormValue, Overview, QuestionResponse, Row, SettingChange,
-    SettingsView, ToolRows,
+    AskCard, Comparison, FormValue, Overview, QuestionResponse, Row, SettingChange, SettingsView,
+    ToolRows,
 };
 use wire::{BlobRef, send_input_response};
 
@@ -135,10 +135,11 @@ impl Chat {
     /// folded to its newest step unless the reader opened it.
     pub fn rows_for(&self, keys: &[Key]) -> Vec<Row> {
         let open = self.open_runs.lock().unwrap();
-        let opts = ChatOptions {
-            tools: ToolRows::Collapse { open: &open },
-        };
-        ui_view::chat_rows_for(&self.session.state(), keys, &opts)
+        ui_view::chat_rows_for(
+            &self.session.state(),
+            keys,
+            ToolRows::Collapse { open: &open },
+        )
     }
 
     /// Opens or closes the run `member` belongs to; the next delta carries
@@ -243,10 +244,7 @@ impl Chat {
             ui_view::keep_open_runs(&state, &mut open);
         }
         let (keys, wanted) = sent.keys_moved(state.transcript(), reloaded, changed);
-        let opts = ChatOptions {
-            tools: ToolRows::Collapse { open: &open },
-        };
-        let rows = ui_view::chat_rows_for(&state, &wanted, &opts);
+        let rows = ui_view::chat_rows_for(&state, &wanted, ToolRows::Collapse { open: &open });
         let frame = {
             let mut first_drawn = self.first_drawn.lock().unwrap();
             note_drawn(&state, &mut first_drawn);

@@ -150,8 +150,20 @@ fn page(state: &mut SessionState, items: Vec<Item>, exhausted: bool) {
     });
 }
 
-fn all_rows(state: &SessionState, opts: &ChatOptions) -> Vec<Row> {
-    chat_rows(state, 0..=u64::MAX, opts)
+use crate::support::all_rows;
+
+/// The rows of the held items whose orders fall in `orders`.
+fn rows_in(
+    state: &SessionState,
+    orders: std::ops::RangeInclusive<u64>,
+    tools: ToolRows,
+) -> Vec<Row> {
+    let keys: Vec<Key> = state
+        .transcript()
+        .range(orders)
+        .map(|held| held.item.key.clone())
+        .collect();
+    chat_rows_for(state, &keys, tools)
 }
 
 /// One step of the walk: an item at the head, a revision of a held order or a
@@ -202,7 +214,7 @@ proptest! {
     /// A walk of live items, revisions and pages; after every step the row
     /// invariants hold.
     #[test]
-    fn row_ids_never_move_and_rows_by_keys_equal_rows_by_range(
+    fn row_ids_never_move_and_rows_by_keys_equal_the_whole_chats(
         kind in prop::sample::select(KINDS.to_vec()),
         steps in vec(step(), 0..=58),
     ) {
@@ -213,11 +225,9 @@ proptest! {
         state.update(event(session_event::Of::Item(read(kind, head, 1))));
         state.update(caught_up());
         let open = HashSet::new();
-        let opts = ChatOptions {
-            tools: ToolRows::Collapse { open: &open },
-        };
+        let opts = ToolRows::Collapse { open: &open };
         for (revision, step) in (2..).zip(steps) {
-            let before: Vec<Key> = all_rows(&state, &opts)
+            let before: Vec<Key> = all_rows(&state, opts)
                 .into_iter()
                 .map(|row| row.id)
                 .collect();
@@ -251,7 +261,7 @@ proptest! {
                     kind, order, revision, tool,
                 ))));
             }
-            let rows = all_rows(&state, &opts);
+            let rows = all_rows(&state, opts);
             let after: Vec<Key> = rows.iter().map(|row| row.id.clone()).collect();
             // Ids keep their relative order; new ids arrive only at the edges.
             let kept: Vec<&Key> = after.iter().filter(|id| before.contains(id)).collect();
@@ -265,20 +275,20 @@ proptest! {
                     "nothing inserted between held rows"
                 );
             }
-            // Rows for keys are the same rows as by range.
+            // Rows for some keys are the same rows as for every key.
             let keys: Vec<Key> = after
                 .iter()
                 .zip(step.picks.iter().chain(std::iter::repeat(&false)))
                 .filter(|(_, picked)| **picked)
                 .map(|(key, _)| key.clone())
                 .collect();
-            let by_keys = chat_rows_for(&state, &keys, &opts);
-            let by_range: Vec<Row> = rows
+            let by_keys = chat_rows_for(&state, &keys, opts);
+            let of_all: Vec<Row> = rows
                 .iter()
                 .filter(|row| keys.contains(&row.id))
                 .cloned()
                 .collect();
-            prop_assert_eq!(by_keys, by_range);
+            prop_assert_eq!(by_keys, of_all);
             // open_below only for the oldest run, and only while older
             // history exists.
             let transcript = state.transcript();
@@ -313,13 +323,11 @@ fn a_folded_run_draws_at_its_newest_step_and_opens_by_any_step() {
         }
         state.update(event(session_event::Of::Item(item(kind, 9, 9, None))));
         let none = HashSet::new();
-        let opts = ChatOptions {
-            tools: ToolRows::Collapse { open: &none },
-        };
-        let rows = chat_rows(&state, 2..=5, &opts);
+        let opts = ToolRows::Collapse { open: &none };
+        let rows = rows_in(&state, 2..=5, opts);
         let orders: Vec<u64> = rows.iter().map(|row| row.order).collect();
         assert_eq!(orders, vec![2, 3, 4, 5], "a range is its own rows");
-        let rows = chat_rows(&state, 1..=9, &opts);
+        let rows = rows_in(&state, 1..=9, opts);
         let last = rows.iter().find(|row| row.order == 8).unwrap();
         let run = last.run.as_ref().unwrap();
         assert!(run.is_last() && !last.collapsed);
@@ -328,29 +336,15 @@ fn a_folded_run_draws_at_its_newest_step_and_opens_by_any_step() {
         assert!(rows[3..7].iter().all(|row| row.collapsed));
         // Opened by one of its steps.
         let open: HashSet<Key> = ["k6".to_owned()].into();
-        let opts = ChatOptions {
-            tools: ToolRows::Collapse { open: &open },
-        };
+        let opts = ToolRows::Collapse { open: &open };
         assert!(
-            chat_rows(&state, 4..=8, &opts)
+            rows_in(&state, 4..=8, opts)
                 .iter()
                 .all(|row| !row.collapsed)
         );
-        let hidden = chat_rows(
-            &state,
-            1..=9,
-            &ChatOptions {
-                tools: ToolRows::Hide,
-            },
-        );
+        let hidden = rows_in(&state, 1..=9, ToolRows::Hide);
         assert!(hidden.iter().filter(|row| row.collapsed).count() == 5);
-        let shown = chat_rows(
-            &state,
-            1..=9,
-            &ChatOptions {
-                tools: ToolRows::ShowAll,
-            },
-        );
+        let shown = rows_in(&state, 1..=9, ToolRows::ShowAll);
         assert!(shown.iter().all(|row| !row.collapsed));
     }
 }
@@ -393,7 +387,7 @@ fn attachments_keep_their_positions() {
         prompt.text = "\u{FFFC}first".into();
         prompt.attachments = vec![image.clone()];
         state.update(event(session_event::Of::Item(prompt)));
-        let rows = all_rows(&state, &ChatOptions::default());
+        let rows = all_rows(&state, ToolRows::ShowAll);
         assert_eq!(
             rows[0].kind,
             RowKind::Prompt {
@@ -2261,7 +2255,7 @@ fn an_agent_message_carries_its_attachments_as_chips() {
         wire::ClaudeSnapshot::default(),
         vec![message],
     );
-    let rows = all_rows(&state, &ChatOptions::default());
+    let rows = all_rows(&state, ToolRows::ShowAll);
     let RowKind::AgentMessage { text, from, .. } = &rows[0].kind else {
         panic!("{:?}", rows[0].kind);
     };
@@ -3030,10 +3024,8 @@ fn a_codex_command_that_dropped_output_is_marked_trimmed() {
     state.update(event(session_event::Of::Item(command(1, 4096))));
     state.update(event(session_event::Of::Item(command(2, 0))));
     state.update(caught_up());
-    let opts = ChatOptions {
-        tools: ToolRows::ShowAll,
-    };
-    let trimmed: Vec<bool> = all_rows(&state, &opts)
+    let opts = ToolRows::ShowAll;
+    let trimmed: Vec<bool> = all_rows(&state, opts)
         .into_iter()
         .filter_map(|row| match row.kind {
             RowKind::Command { output_trimmed, .. } => Some(output_trimmed),
@@ -3349,7 +3341,7 @@ fn a_file_step_inside_the_agents_folder_is_named_relative_to_it() {
         ToolState::Succeeded,
     ))));
     state.update(caught_up());
-    let paths: Vec<String> = all_rows(&state, &ChatOptions::default())
+    let paths: Vec<String> = all_rows(&state, ToolRows::ShowAll)
         .into_iter()
         .filter_map(|row| match row.kind {
             RowKind::FileChange { files, .. } => Some(files[0].path.clone()),
@@ -3387,7 +3379,7 @@ fn an_exited_agents_unfinished_step_is_not_drawn_running() {
         "python3 -c 'import time; time.sleep(40)'",
     ))));
     state.update(caught_up());
-    let phases: Vec<CallPhase> = all_rows(&state, &ChatOptions::default())
+    let phases: Vec<CallPhase> = all_rows(&state, ToolRows::ShowAll)
         .iter()
         .filter_map(Row::call_phase)
         .collect();
@@ -3440,7 +3432,7 @@ fn an_explore_step_keeps_its_failure_reason_and_its_result() {
     state.update(event(session_event::Of::Item(search)));
     state.update(event(session_event::Of::Item(fetch)));
     state.update(caught_up());
-    let rows = format!("{:?}", all_rows(&state, &ChatOptions::default()));
+    let rows = format!("{:?}", all_rows(&state, ToolRows::ShowAll));
     for outcome in ["No such tool available", "Received 577 bytes"] {
         assert!(
             rows.contains(outcome),
@@ -3486,7 +3478,7 @@ fn command_output_keeps_no_colour_codes_and_loses_no_words_after_a_return() {
     item.body = body.encode_to_vec();
     state.update(event(session_event::Of::Item(item)));
     state.update(caught_up());
-    let output: Vec<String> = all_rows(&state, &ChatOptions::default())
+    let output: Vec<String> = all_rows(&state, ToolRows::ShowAll)
         .into_iter()
         .filter_map(|row| match row.kind {
             RowKind::Command { output_head, .. } => Some(output_head),
@@ -3556,16 +3548,11 @@ fn a_patch_that_failed_does_not_say_it_created_its_file() {
         }),
     );
     let state = codex_session(Phase::Idle, vec![patch]);
-    let rows: Vec<String> = all_rows(
-        &state,
-        &ChatOptions {
-            tools: ToolRows::ShowAll,
-        },
-    )
-    .into_iter()
-    .filter(|row| matches!(row.kind, RowKind::FileChange { .. }))
-    .map(|row| format!("{:?}", row.kind))
-    .collect();
+    let rows: Vec<String> = all_rows(&state, ToolRows::ShowAll)
+        .into_iter()
+        .filter(|row| matches!(row.kind, RowKind::FileChange { .. }))
+        .map(|row| format!("{:?}", row.kind))
+        .collect();
     assert!(
         !rows.is_empty() && rows.iter().all(|row| !row.contains("Created")),
         "the failed patch's step reads as a created file: {rows:?}"
@@ -3662,7 +3649,7 @@ fn a_turn_ended_by_reply_instead_is_not_drawn_as_stopped() {
         }),
     );
     let state = codex_session(Phase::Working, vec![question, turn]);
-    let kinds: Vec<String> = all_rows(&state, &ChatOptions::default())
+    let kinds: Vec<String> = all_rows(&state, ToolRows::ShowAll)
         .into_iter()
         .map(|row| format!("{:?}", row.kind))
         .collect();
@@ -3962,7 +3949,7 @@ fn a_steps_time_leaves_out_the_wait_for_approval() {
         state.update(event(session_event::Of::Item(item)));
     }
     state.update(caught_up());
-    let times: Vec<Option<i64>> = all_rows(&state, &ChatOptions::default())
+    let times: Vec<Option<i64>> = all_rows(&state, ToolRows::ShowAll)
         .into_iter()
         .filter_map(|row| match row.kind {
             RowKind::Command { duration_ms, .. } => Some(duration_ms),

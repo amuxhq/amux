@@ -1,21 +1,21 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.312"}}
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
-item boundary:1 boundary final at=1793309542510 text="" BOUNDARY_KIND_STARTED session=2c1ed2ab-55a2-4248-8499-93f6e5b5e6c3 version=2.1.312
-snapshot IDLE queue=[] working_on=- at=1793309542510 asks=[] session=2c1ed2ab-55a2-4248-8499-93f6e5b5e6c3 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
+item boundary:1 boundary final at=1793453925903 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1793453925903 asks=[] session=8aa35055-14b3-4882-ba9d-57426b8c7a0b model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
-snapshot IDLE queue=[] working_on=- at=1793309542546 asks=[] session=2c1ed2ab-55a2-4248-8499-93f6e5b5e6c3 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
-## 13 recorded 11: fact Transcript type=user uuid=ff489948-0eae-4a87-a69f-f793138ce775
-item ff489948-0eae-4a87-a69f-f793138ce775 prompt final at=1793309542785 text="Reply exactly PTY_SPEC_SIGN_IN and nothing else."
-snapshot WORKING queue=[] working_on=- at=1793309542785 asks=[] session=2c1ed2ab-55a2-4248-8499-93f6e5b5e6c3 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
-## 33 recorded 31: fact Transcript type=assistant uuid=ad4f467a-a62d-402b-88e2-4b23c1138285
-item ad4f467a-a62d-402b-88e2-4b23c1138285 api_error final at=1793309543046 text="" authentication_failed "Invalid API key · Fix external API key" retry=false 0/0
-## 35 recorded 33: fact Transcript type=system subtype=turn_duration uuid=aaed4b8c-c9c6-4dba-9708-a83bbe8af154
-item turn:1 turn final at=1793309543050 text="" #1 TURN_OUTCOME_COMPLETED started=1793309542769
-snapshot IDLE queue=[] working_on=- at=1793309542995 asks=[] session=2c1ed2ab-55a2-4248-8499-93f6e5b5e6c3 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=? tasks=? background=?
+snapshot IDLE queue=[] working_on=- at=1793453926449 asks=[] session=8aa35055-14b3-4882-ba9d-57426b8c7a0b model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 13 recorded 11: fact Transcript type=user uuid=f7b2c700-f151-42f9-83a3-b4956894f91d
+item f7b2c700-f151-42f9-83a3-b4956894f91d prompt final at=1793453926682 text="Reply with the single word pong and nothing else."
+snapshot WORKING queue=[] working_on=- at=1793453926682 asks=[] session=8aa35055-14b3-4882-ba9d-57426b8c7a0b model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 35 recorded 33: fact Transcript type=assistant uuid=0a03504d-2392-4617-b402-3201912adafc
+item 0a03504d-2392-4617-b402-3201912adafc api_error final at=1793453932061 text="" authentication_failed "Invalid API key · Fix external API key" retry=false 0/0
+## 37 recorded 35: fact Transcript type=system subtype=turn_duration uuid=451e0229-99df-41ac-9f95-b1d3828256d6
+item turn:1 turn final at=1793453932068 text="" #1 TURN_OUTCOME_COMPLETED started=1793453926665
+snapshot IDLE queue=[] working_on=- at=1793453931932 asks=[] session=8aa35055-14b3-4882-ba9d-57426b8c7a0b model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 1 last=-

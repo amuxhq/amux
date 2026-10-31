@@ -83,6 +83,7 @@ pub fn definitions() -> Map<String, Value> {
         wire::Catalogue,
         app_runtime::values::Directories,
         app_runtime::values::AgentAct,
+        app_runtime::values::ChatAct,
         app_runtime::values::UsageEvent,
         app_runtime::values::ReportSent,
     );
@@ -780,7 +781,6 @@ mod tests {
             "Answer",
             // Borrowed option types; the chat holds its own open runs.
             "ToolRows",
-            "ChatOptions",
             // A landed edit's first patch lines, which only the terminal
             // draws: ui_view::patch_head is called by no bridge function.
             "PatchHead",

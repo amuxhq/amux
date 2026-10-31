@@ -46,7 +46,7 @@
 
 ## Verifying
 
-- [Testing](TESTING.md) — boundaries, lanes, the suite catalogue and contracts, how to run, where fixtures and
+- [Testing](TESTING.md) — boundaries, lanes, the suite catalogue, how to run, where fixtures and
   evidence live.
 - [TestNet](TESTNET.md) — the multi-host harness, `testnet serve` and `testnet ctl`.
 - [QA](QA.md) — adversarial testing by agents: running `just qa`, what a run leaves behind, and turning findings

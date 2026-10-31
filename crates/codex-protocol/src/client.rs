@@ -8,12 +8,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::Extra;
-use crate::items::{ToolOutputContent, UserInput};
+use crate::items::UserInput;
 use crate::macros::{method_enum, string_enum, tagged_enum};
 use crate::server::{CommandDecision, PermissionProfile};
 use crate::thread::{
-    ApprovalsReviewer, AskForApproval, CollaborationMode, ReasoningEffort, ReasoningSummary,
-    SandboxMode, SandboxPolicy,
+    ApprovalsReviewer, AskForApproval, CollaborationMode, ReasoningEffort, SandboxMode,
+    SandboxPolicy,
 };
 
 method_enum! {
@@ -25,7 +25,6 @@ method_enum! {
         "thread/unsubscribe" => ThreadUnsubscribe(ThreadIdParams),
         "thread/name/set" => ThreadSetName(ThreadSetNameParams),
         "thread/read" => ThreadRead(ThreadReadParams),
-        "thread/list" => ThreadList(ThreadListParams),
         "thread/compact/start" => ThreadCompactStart(ThreadIdParams),
         "thread/inject_items" => ThreadInjectItems(InjectItemsParams),
         "thread/backgroundTerminals/list" => BackgroundTerminalsList(BackgroundTerminalsListParams),
@@ -86,36 +85,11 @@ pub struct ThreadStartParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model_provider: Option<String>,
-    /// Codex configuration for this thread, keyed by dotted path, as
-    /// `codex --config` takes it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub config: Option<Extra>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<AskForApproval>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<SandboxMode>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub developer_instructions: Option<String>,
-    /// Tools amux defines for the thread.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dynamic_tools: Option<Vec<DynamicTool>>,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-/// A function tool the thread may call; Codex asks amux to run it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DynamicTool {
-    pub name: String,
-    pub description: String,
-    /// The JSON schema of the tool's arguments.
-    pub input_schema: Value,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub defer_loading: Option<bool>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -128,10 +102,6 @@ pub struct ThreadResumeParams {
     pub cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub approval_policy: Option<AskForApproval>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sandbox: Option<SandboxMode>,
     /// Answer without the turns, for a client that pages them from the
     /// history on disk, as Codex's own app does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -157,30 +127,6 @@ pub struct ThreadReadParams {
     pub thread_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_turns: Option<bool>,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-/// Every filter is written, null when unset.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadListParams {
-    #[serde(default)]
-    pub cursor: Option<String>,
-    #[serde(default)]
-    pub limit: Option<i64>,
-    #[serde(default)]
-    pub sort_key: Option<String>,
-    #[serde(default)]
-    pub model_providers: Option<Vec<String>>,
-    #[serde(default)]
-    pub source_kinds: Option<Vec<String>>,
-    #[serde(default)]
-    pub archived: Option<bool>,
-    #[serde(default)]
-    pub cwd: Option<String>,
-    #[serde(default)]
-    pub search_term: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -269,8 +215,6 @@ pub struct BackgroundTerminalsListParams {
     pub thread_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub limit: Option<i64>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -293,8 +237,6 @@ pub struct TurnStartParams {
         skip_serializing_if = "Option::is_none"
     )]
     pub effort: Option<Option<ReasoningEffort>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub summary: Option<ReasoningSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<AskForApproval>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -338,8 +280,6 @@ pub struct ModelListParams {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SkillsListParams {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cwds: Option<Vec<String>>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -360,7 +300,6 @@ pub struct AccountReadParams {
 pub enum ClientResponse {
     CommandApproval(CommandApprovalResponse),
     PermissionsApproval(PermissionsApprovalResponse),
-    ToolCall(ToolCallResponse),
     Elicitation(ElicitationResponse),
     UserInput(UserInputResponse),
 }
@@ -387,15 +326,6 @@ string_enum! {
         Turn = "turn",
         Session = "session",
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolCallResponse {
-    pub content_items: Vec<ToolOutputContent>,
-    pub success: bool,
-    #[serde(flatten)]
-    pub extra: Extra,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

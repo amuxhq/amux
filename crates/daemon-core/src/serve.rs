@@ -15,14 +15,12 @@ use wire::{
 };
 
 use crate::ids::{CallId, JobId};
-use crate::io::{FromShell, Output};
+use crate::io::Output;
 use crate::payload::{CallError, ClientRequest, Opening, Response, Status};
 use crate::{Daemon, Pending};
 
 /// The most items one Fetch returns, whatever the limit asked for.
 pub const MAX_PAGE: u32 = 500;
-/// The most rows a peer's catch-up may ask for.
-pub const MAX_CAP: u32 = 10_000;
 
 /// Open calls, by id: what each streams, or that it awaits a job; and the
 /// agents nothing is told about for now.
@@ -258,7 +256,6 @@ impl Daemon {
                 cap,
                 generation: held,
             } => {
-                let cap = cap.min(MAX_CAP);
                 // A cursor of another generation names revisions this
                 // origin may have minted again for different content, so
                 // it is answered as a cursor too far behind is: with a
@@ -293,7 +290,6 @@ impl Daemon {
         }
         let snapshot = cut.snapshot.unwrap_or_else(|| Snapshot {
             // Nothing emitted yet: the kind tag and an empty body.
-            agent_id: row.agent.agent.clone(),
             kind: row.kind,
             phase: wire::Phase::Starting as i32,
             ..Snapshot::default()
@@ -530,24 +526,6 @@ impl Daemon {
             self.publish_inventory(Arc::new(event), out);
         }
         Ok(())
-    }
-
-    /// What the shell changed outside a step.
-    pub(crate) fn shell_changed(&mut self, change: FromShell, out: &mut Vec<Output>) {
-        match change {
-            FromShell::Session { agent, event } => self.publish_session(&agent, event, out),
-            FromShell::Row { agent, event } => {
-                if !self.answers.muted(&agent) {
-                    self.publish_inventory(event, out);
-                }
-            }
-            FromShell::Mute(agent) => {
-                self.answers.muted.insert(Key::from(&agent));
-            }
-            FromShell::Unmute(agent) => {
-                self.answers.muted.remove(&Key::from(&agent));
-            }
-        }
     }
 }
 
@@ -802,31 +780,25 @@ mod tests {
         call(&mut daemon, 1, subscribe_session(b"agent-0000000000"));
         call(&mut daemon, 2, subscribe_session(b"agent-0000000000"));
         let detached = Arc::new(event(session_event::Of::Detached(wire::Detached {})));
-        step(
-            &mut daemon,
-            Input::FromShell(FromShell::Mute(agent.clone())),
-        );
+        daemon.answers.mute(&agent);
         assert_eq!(
             step(
                 &mut daemon,
-                Input::FromShell(FromShell::Session {
+                Input::ShellSession {
                     agent: agent.clone(),
                     event: detached.clone(),
-                })
+                }
             ),
             Vec::new()
         );
-        step(
-            &mut daemon,
-            Input::FromShell(FromShell::Unmute(agent.clone())),
-        );
+        daemon.answers.unmute(&agent);
         assert_eq!(
             step(
                 &mut daemon,
-                Input::FromShell(FromShell::Session {
+                Input::ShellSession {
                     agent: agent.clone(),
                     event: detached.clone(),
-                })
+                }
             ),
             vec![
                 Output::Answer {
@@ -841,7 +813,7 @@ mod tests {
         );
 
         let mut removed = Vec::new();
-        daemon.removed_for_good(&agent, wire::RemovalReason::Retention, &mut removed);
+        daemon.removed_for_good(&agent, &mut removed);
         assert_eq!(
             removed,
             vec![

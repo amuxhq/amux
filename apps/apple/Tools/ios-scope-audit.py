@@ -16,9 +16,8 @@ DERIVED = Path("target/ios/DerivedData")
 APP = DERIVED / "Build/Products/Release-iphonesimulator/Amux.app"
 # Reporting a problem ships: the report store, its bundle, its screens, the
 # freeze that photographs the window and the dump the report carries are in
-# every build. What stays out is what only driving needs: the view-state trace
-# (written by the door, and `ReportFreeze.driven` that asks it) and the library
-# built with the driving tools.
+# every build. What stays out is what only driving needs: the door and the
+# library built with the driving tools.
 DEBUG_SYMBOLS = (
     "DoorServer", "DoorHost", "DoorCapture", "DoorFrames",
     "DrivenRoot", "VisibleTree", "AmuxTestSupport",
@@ -269,7 +268,7 @@ def main() -> None:
                   "PASS: no frozen-frame or test-support resource in the bundle.",
                   f"PASS: Bonjour limited to {' '.join(BONJOUR_SERVICES)} behind the agreed explanation "
                   "and no legacy browser; iPhone destinations only;",
-                  "no amuxcloud or React Native package; no driving or trace code.",
+                  "no amuxcloud or React Native package; no driving code.",
                   "PASS: in-app attention copy, Contact Support and Report a Problem remain;",
                   "the report screen, its freeze and the record snapshot ship."]
     lines += ["Limit: simulator Release bundle inspection; distribution signing is checked before release."]

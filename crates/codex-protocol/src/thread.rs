@@ -22,48 +22,9 @@ pub struct Thread {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cli_version: Option<String>,
     #[serde(default)]
-    pub name: Option<String>,
-    #[serde(default)]
-    pub cwd: String,
-    #[serde(default)]
-    pub path: Option<String>,
-    #[serde(default)]
-    pub status: ThreadStatus,
-    #[serde(default)]
     pub turns: Vec<Turn>,
     #[serde(flatten)]
     pub extra: Extra,
-}
-
-tagged_enum! {
-    pub enum ThreadStatus {
-        "notLoaded" => NotLoaded(Extra),
-        "idle" => Idle(Extra),
-        "systemError" => SystemError(Extra),
-        "active" => Active(ActiveStatus),
-    }
-}
-
-/// Read when the status is left out: no known status.
-impl Default for ThreadStatus {
-    fn default() -> Self {
-        Self::Unknown(Extra::new())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ActiveStatus {
-    pub active_flags: Vec<ThreadActiveFlag>,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-string_enum! {
-    pub enum ThreadActiveFlag {
-        WaitingOnApproval = "waitingOnApproval",
-        WaitingOnUserInput = "waitingOnUserInput",
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -189,7 +150,6 @@ tagged_enum! {
     pub enum SandboxPolicy {
         "dangerFullAccess" => DangerFullAccess(Extra),
         "readOnly" => ReadOnly(Extra),
-        "externalSandbox" => ExternalSandbox(Extra),
         "workspaceWrite" => WorkspaceWrite(Extra),
     }
 }
@@ -215,7 +175,7 @@ impl SandboxPolicy {
             Self::DangerFullAccess(_) => Some(SandboxMode::DangerFullAccess),
             Self::ReadOnly(_) => Some(SandboxMode::ReadOnly),
             Self::WorkspaceWrite(_) => Some(SandboxMode::WorkspaceWrite),
-            Self::ExternalSandbox(_) | Self::Unknown(_) => None,
+            Self::Unknown(_) => None,
         }
     }
 }
@@ -230,16 +190,6 @@ string_enum! {
         XHigh = "xhigh",
         Max = "max",
         Ultra = "ultra",
-    }
-}
-
-string_enum! {
-    /// How much of its reasoning the model summarises.
-    pub enum ReasoningSummary {
-        Auto = "auto",
-        Concise = "concise",
-        Detailed = "detailed",
-        None = "none",
     }
 }
 
@@ -278,7 +228,6 @@ pub struct ThreadSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     pub collaboration_mode: CollaborationMode,
-    pub cwd: String,
     #[serde(default)]
     pub effort: Option<ReasoningEffort>,
     pub model: String,
@@ -291,7 +240,6 @@ pub struct ThreadSettings {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadTokenUsage {
     pub last: TokenUsageBreakdown,
-    pub total: TokenUsageBreakdown,
     #[serde(default)]
     pub model_context_window: Option<i64>,
     #[serde(flatten)]
@@ -301,14 +249,6 @@ pub struct ThreadTokenUsage {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenUsageBreakdown {
-    #[serde(default)]
-    pub input_tokens: i64,
-    #[serde(default)]
-    pub cached_input_tokens: i64,
-    #[serde(default)]
-    pub output_tokens: i64,
-    #[serde(default)]
-    pub reasoning_output_tokens: i64,
     pub total_tokens: i64,
     #[serde(flatten)]
     pub extra: Extra,
@@ -319,8 +259,6 @@ pub struct TokenUsageBreakdown {
 pub struct RateLimitSnapshot {
     #[serde(default)]
     pub limit_id: Option<String>,
-    #[serde(default)]
-    pub limit_name: Option<String>,
     #[serde(default)]
     pub primary: Option<RateLimitWindow>,
     #[serde(default)]
@@ -350,7 +288,6 @@ pub struct RateLimitWindow {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreditsSnapshot {
-    pub has_credits: bool,
     pub unlimited: bool,
     #[serde(default)]
     pub balance: Option<String>,

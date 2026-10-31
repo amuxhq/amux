@@ -246,11 +246,7 @@ async fn an_agent_created_from_another_host_gets_its_worktree_on_its_own_host() 
     desk_edge.trust(&laptop_edge).await.unwrap();
     laptop_edge.trust(&desk_edge).await.unwrap();
     let link = laptop_edge.link_in_process(&desk_edge).unwrap();
-    assert!(
-        laptop_edge
-            .wait_for_route(desk_runtime.host(), PATIENCE)
-            .await
-    );
+    assert!(wait_for_route(&laptop_edge, desk_runtime.host(), PATIENCE).await);
     let from_laptop = node::ClientApi::new(&laptop_runtime, None);
     let on_desk = |name: &str| CreateAgentRequest {
         host: Some(wire::HostRef {

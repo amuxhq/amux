@@ -1,5 +1,5 @@
 {
-  "about": "Claude reads an image file: the Read row carries the image it read. The recording ends at the Stop hook, before the reply's own row, so the reply streamed through MessageDisplay is still open.",
+  "about": "An image attached to a prompt from amux, then read back from the project.",
   "spec": {
     "created_at_ms": 0
   },
@@ -8,17 +8,13 @@
       "fact": {
         "channel": "agent",
         "json": {
-          "type": "launch",
-          "version": "2.1.312"
+          "type": "launch"
         }
       }
     }
   ],
   "recording": {
-    "path": "../../../claude-specs/fixtures/pty/image/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/pty/image/io.jsonl",
     "format": "claude_pty_io"
-  },
-  "end": {
-    "streams_may_remain": true
   }
 }

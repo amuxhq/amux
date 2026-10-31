@@ -22,14 +22,14 @@ fn rows_of(
 
 /// A finished reply of exactly `words`.
 fn reply(order: u64, words: &str) -> Item {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
     Item {
         key: format!("r{order}"),
         order,
         revision: order,
         text: words.into(),
         kind: Kind::ClaudeSdk as i32,
-        body: wire::ClaudeSdkItem {
+        body: wire::ClaudeItem {
             kind: Some(K::Message(wire::Text { complete: true })),
         }
         .encode_to_vec(),
@@ -205,11 +205,9 @@ fn a_long_edit_path_keeps_the_files_name() {
 #[test]
 fn a_codex_rule_for_a_long_command_reads_whole() {
     let script = format!("echo {} > long.txt && touch END_MARK", "a".repeat(170));
-    let answer = |decision: wire::Decision| {
-        ui_view::Answer::Codex(wire::CodexAnswer {
-            of: Some(wire::codex_answer::Of::Approve(decision as i32)),
-            ..Default::default()
-        })
+    let answer = |decision: wire::Decision| wire::Answer {
+        of: Some(wire::answer::Of::Approve(decision as i32)),
+        ..Default::default()
     };
     let choice = |outcome, decision| Choice {
         outcome,
@@ -294,16 +292,13 @@ fn a_long_commands_choices_stay_on_a_short_screen() {
         "command": command,
         "description": "Write a long line to a file",
     });
-    let grant = |rules: Vec<String>, directories: Vec<String>| wire::ScopeChoice {
-        index: 0,
-        grant: Some(wire::ClaudeGrant {
-            rules,
-            directories,
-            destination_word: "localSettings".into(),
-            ..Default::default()
-        }),
+    let grant = |rules: Vec<String>, directories: Vec<String>| wire::ClaudeGrant {
+        rules,
+        directories,
+        destination_word: "localSettings".into(),
+        ..Default::default()
     };
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         asks: vec![wire::Ask {
             key: "ask-1".into(),
             item_key: "call-1".into(),
@@ -343,7 +338,12 @@ fn a_long_commands_choices_stay_on_a_short_screen() {
     }
 }
 
-fn fleet_screen_at(view: &mut FleetView, fleet: &FleetState, width: u16, height: u16) -> String {
+fn fleet_screen_at(
+    view: &mut crate::home::Home,
+    fleet: &FleetState,
+    width: u16,
+    height: u16,
+) -> String {
     let mut terminal =
         ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
     terminal
@@ -365,7 +365,7 @@ fn a_refused_rename_keeps_its_reason_and_way_out_at_80_columns() {
         &mut fleet,
         agent_row(b"p", "brisk-raven", Phase::Idle, None),
     );
-    let mut view = FleetView::default();
+    let mut view = crate::home::Home::default();
     fleet_screen_at(&mut view, &fleet, 80, 24);
     view.key(&fleet, key(KeyCode::Char('r')));
     for c in " X".chars() {
@@ -482,7 +482,7 @@ fn an_idle_rows_background_jobs_are_counted_on_it() {
     };
     agent.background_jobs = 1;
     inventory(&mut fleet, wire::inventory_event::Of::Agent(agent.clone()));
-    let mut view = FleetView::default();
+    let mut view = crate::home::Home::default();
     let screen = fleet_screen_at(&mut view, &fleet, 80, 24);
     assert!(
         screen.contains("1 background job"),
@@ -497,7 +497,7 @@ fn an_idle_rows_background_jobs_are_counted_on_it() {
 /// A multi-select question of three options, each with a description, and
 /// Something else, as an agent asks it.
 fn toppings() -> SessionState {
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         asks: vec![wire::Ask {
             key: "q-1".into(),
             item_key: "call-q".into(),
@@ -578,7 +578,7 @@ fn long_question() -> (SessionState, String) {
         questions about whether the choice will be easy to reverse later. Given all of that, \
         which direction should we take for this decision?"
         .to_owned();
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         asks: vec![wire::Ask {
             key: "q-1".into(),
             item_key: "call-q".into(),

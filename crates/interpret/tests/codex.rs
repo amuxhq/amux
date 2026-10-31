@@ -1,11 +1,9 @@
-//! The Codex interpreter against the recorded app-server sessions in
-//! codex-specs and authored facts for what no recording shows.
+//! The Codex interpreter against the app-server sessions the live lane
+//! recorded in codex-specs and authored facts for what no recording shows.
 
 use std::path::{Path, PathBuf};
 
-use interpret::codex::{
-    CODEX_INJECT_CONSUMPTION, Codex, CodexWith, Drained, InjectConsumption, Parked, State,
-};
+use interpret::codex::{Codex, State};
 use interpret::{Channel, Effect, Event, Fact, Interpreter, run_golden};
 use serde_json::{Value, json};
 
@@ -31,6 +29,8 @@ macro_rules! goldens {
 }
 
 goldens! {
+    a_message_injected_mid_turn_is_consumed_at_the_inject_acknowledgement => "inject_drained",
+    a_message_whose_turn_ended_before_its_acknowledgement_is_kicked => "inject_drained_turn_end",
     amuxs_own_tools_draw_a_message_or_nothing => "amux_tools",
     another_client_drives_the_same_thread => "co_drive",
     plans_open_a_decision_amux_answers => "plans",
@@ -55,55 +55,30 @@ goldens! {
     recorded_automatic_review => "recorded_automatic_review",
     recorded_background_terminal => "recorded_background_terminal",
     recorded_compaction => "recorded_compaction",
-    recorded_dynamic_tools => "recorded_dynamic_tools",
     recorded_exploring => "recorded_exploring",
     recorded_failing_command => "recorded_failing_command",
     recorded_file_changes => "recorded_file_changes",
     recorded_file_moved => "recorded_file_moved",
     recorded_image => "recorded_image",
-    recorded_initialize_and_start => "recorded_initialize_and_start",
-    recorded_inject_busy => "recorded_inject_busy",
     recorded_inject_drain => "recorded_inject_drain",
     recorded_inject_idle => "recorded_inject_idle",
     recorded_interrupt => "recorded_interrupt",
-    recorded_plan_mode => "recorded_plan_mode",
     recorded_reasoning_summary => "recorded_reasoning_summary",
     recorded_signed_out => "recorded_signed_out",
     recorded_subagent => "recorded_subagent",
-    recorded_thread_list_and_resume => "recorded_thread_list_and_resume",
     recorded_tool_server_form => "recorded_tool_server_form",
     recorded_turn_error => "recorded_turn_error",
     recorded_turn_retries => "recorded_turn_retries",
+    recorded_steer_folded => "recorded_steer_folded",
     recorded_turn_round_trip => "recorded_turn_round_trip",
     recorded_two_assistant_messages => "recorded_two_assistant_messages",
-    recorded_two_clients_prompt => "recorded_two_clients_prompt",
-    recorded_two_clients_approval => "recorded_two_clients_approval",
-    recorded_two_clients_steer => "recorded_two_clients_steer",
     recorded_web_search => "recorded_web_search",
     recorded_live_plan => "recorded_live_plan",
     recorded_live_questions => "recorded_live_questions",
     recorded_live_usage => "recorded_live_usage",
     recorded_live_permission => "recorded_live_permission",
     recorded_live_mode => "recorded_live_mode",
-}
-
-/// Each consumption arm has its own golden over the same facts, so the
-/// probe's constant can flip without losing either.
-const ARM_FIXTURES: &[&str] = &["inject_parked", "inject_drained", "inject_drained_turn_end"];
-
-#[test]
-fn the_parked_arm_kicks_an_empty_turn_and_consumes_at_its_acknowledgement() {
-    run_golden::<CodexWith<Parked>>(&fixtures().join("inject_parked.json")).assert_ok();
-}
-
-#[test]
-fn the_drained_arm_consumes_at_the_inject_acknowledgement() {
-    run_golden::<CodexWith<Drained>>(&fixtures().join("inject_drained.json")).assert_ok();
-}
-
-#[test]
-fn the_drained_arm_kicks_a_message_whose_turn_ended_before_its_acknowledgement() {
-    run_golden::<CodexWith<Drained>>(&fixtures().join("inject_drained_turn_end.json")).assert_ok();
+    recorded_live_attach => "recorded_live_attach",
 }
 
 #[test]
@@ -118,7 +93,6 @@ fn every_fixture_has_a_test() {
     on_disk.sort();
     let mut named = FIXTURES
         .iter()
-        .chain(ARM_FIXTURES)
         .map(|name| (*name).to_owned())
         .collect::<Vec<_>>();
     named.sort();
@@ -156,8 +130,8 @@ fn agent_message(id: &[u8]) -> Event {
 fn prompt(id: &[u8], text: &str) -> Event {
     Event::Input(wire::Input::new(
         id.to_vec(),
-        wire::CodexInput {
-            of: Some(wire::codex_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: text.into(),
                 ..Default::default()
             })),
@@ -168,35 +142,35 @@ fn prompt(id: &[u8], text: &str) -> Event {
 /// A thread with a turn running and an agent message injected into it,
 /// acknowledged; then the turn ends. Returns what the turn end wrote and
 /// the state after it.
-fn inject_mid_turn<I: Interpreter<State = State>>() -> (State, Vec<Value>, bool) {
+fn inject_mid_turn() -> (State, Vec<Value>, bool) {
     let spec = wire::AgentSpec {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = I::initial(&spec, "test");
-    I::step(
+    let (mut state, _) = Codex::initial(&spec);
+    Codex::step(
         &mut state,
         rpc(
             json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.157.0", "turns": []}, "model": "m"}}),
         ),
     );
-    I::step(&mut state, prompt(b"p1", "count"));
-    I::step(
+    Codex::step(&mut state, prompt(b"p1", "count"));
+    Codex::step(
         &mut state,
         rpc(
             json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
         ),
     );
-    let inject = writes(&I::step(&mut state, agent_message(b"e1")).effects);
+    let inject = writes(&Codex::step(&mut state, agent_message(b"e1")).effects);
     assert_eq!(inject.len(), 1, "one inject, no kick while a turn runs");
     assert_eq!(inject[0]["method"], "thread/inject_items");
-    I::step(
+    Codex::step(
         &mut state,
         rpc(json!({"id": inject[0]["id"], "result": {}})),
     );
     let after_ack = state.shared().pending_messages().contains(&b"e1".to_vec());
     let end = writes(
-        &I::step(
+        &Codex::step(
             &mut state,
             rpc(json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "completed"}}})),
         )
@@ -209,14 +183,12 @@ fn is_empty_turn(write: &Value) -> bool {
     write["method"] == "turn/start" && write["params"]["input"] == json!([])
 }
 
-/// A probe of codex-cli 0.157.0 found that a running turn drains injected
-/// items: the message is consumed at the inject's acknowledgement and no
-/// empty turn is kicked at turn end.
+/// A running turn drains injected items (codex-cli 0.157.0 onwards): the
+/// message is consumed at the inject's acknowledgement and no empty turn is
+/// kicked at turn end.
 #[test]
-fn probe_decided_codex_consumption() {
-    assert_eq!(CODEX_INJECT_CONSUMPTION, InjectConsumption::DrainedMidTurn);
-    let (state, end, pending_after_ack) = inject_mid_turn::<Codex>();
-    assert_eq!(state.consumption(), InjectConsumption::DrainedMidTurn);
+fn a_message_injected_mid_turn_is_consumed_at_its_acknowledgement() {
+    let (state, end, pending_after_ack) = inject_mid_turn();
     assert!(!pending_after_ack, "consumed at the inject acknowledgement");
     assert!(
         !end.iter().any(is_empty_turn),
@@ -226,50 +198,30 @@ fn probe_decided_codex_consumption() {
 }
 
 #[test]
-fn the_parked_arm_keeps_the_message_pending_until_the_kicked_turn_is_acknowledged() {
-    let (mut state, end, pending_after_ack) = inject_mid_turn::<CodexWith<Parked>>();
-    assert!(pending_after_ack, "an acknowledged inject is still parked");
-    let kick = end
-        .iter()
-        .find(|write| is_empty_turn(write))
-        .expect("an empty turn is kicked at turn end");
-    assert!(!state.shared().quiescent());
-    CodexWith::<Parked>::step(
+fn an_idle_inject_is_kicked() {
+    let (mut state, _) = Codex::initial(&wire::AgentSpec::default());
+    Codex::step(
         &mut state,
-        rpc(json!({"id": kick["id"], "result": {"turn": {"id": "turn-2"}}})),
+        rpc(json!({"method": "thread/started", "params": {"thread": {"id": "t1"}}})),
+    );
+    let sent = writes(&Codex::step(&mut state, agent_message(b"e1")).effects);
+    assert_eq!(sent[0]["method"], "thread/inject_items");
+    assert!(is_empty_turn(&sent[1]), "{sent:?}");
+    Codex::step(&mut state, rpc(json!({"id": sent[0]["id"], "result": {}})));
+    assert!(
+        !state.shared().pending_messages().is_empty(),
+        "an idle inject waits for its turn"
+    );
+    Codex::step(
+        &mut state,
+        rpc(json!({"id": sent[1]["id"], "result": {"turn": {"id": "turn-1"}}})),
     );
     assert!(state.shared().pending_messages().is_empty());
 }
 
 #[test]
-fn an_idle_inject_is_kicked_under_either_arm() {
-    fn idle<I: Interpreter<State = State>>() {
-        let (mut state, _) = I::initial(&wire::AgentSpec::default(), "test");
-        I::step(
-            &mut state,
-            rpc(json!({"method": "thread/started", "params": {"thread": {"id": "t1"}}})),
-        );
-        let sent = writes(&I::step(&mut state, agent_message(b"e1")).effects);
-        assert_eq!(sent[0]["method"], "thread/inject_items");
-        assert!(is_empty_turn(&sent[1]), "{sent:?}");
-        I::step(&mut state, rpc(json!({"id": sent[0]["id"], "result": {}})));
-        assert!(
-            !state.shared().pending_messages().is_empty(),
-            "an idle inject waits for its turn"
-        );
-        I::step(
-            &mut state,
-            rpc(json!({"id": sent[1]["id"], "result": {"turn": {"id": "turn-1"}}})),
-        );
-        assert!(state.shared().pending_messages().is_empty());
-    }
-    idle::<CodexWith<Parked>>();
-    idle::<CodexWith<Drained>>();
-}
-
-#[test]
 fn a_prompt_with_attachments_leaves_them_to_the_agent_process() {
-    let (mut state, _) = Codex::initial(&wire::AgentSpec::default(), "test");
+    let (mut state, _) = Codex::initial(&wire::AgentSpec::default());
     Codex::step(
         &mut state,
         rpc(json!({"method": "thread/started", "params": {"thread": {"id": "t1"}}})),
@@ -278,8 +230,8 @@ fn a_prompt_with_attachments_leaves_them_to_the_agent_process() {
         &mut state,
         Event::Input(wire::Input::new(
             b"p1".to_vec(),
-            wire::CodexInput {
-                of: Some(wire::codex_input::Of::Prompt(wire::PromptInput {
+            wire::AgentInput {
+                of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                     text: "What is this? \u{FFFC}".into(),
                     attachments: vec![wire::Attachment::default()],
                 })),
@@ -394,7 +346,7 @@ fn an_attachment_element_in_a_reply_becomes_an_item_attachment() {
             agent_id: b"agent".to_vec(),
             ..Default::default()
         };
-        let (mut state, _) = Codex::initial(&spec, "test");
+        let (mut state, _) = Codex::initial(&spec);
         Codex::step(
             &mut state,
             rpc(
@@ -454,7 +406,7 @@ fn approval_elicited(server: &str, persist: Value) -> (Vec<Value>, Vec<wire::Cod
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = Codex::initial(&spec, "test");
+    let (mut state, _) = Codex::initial(&spec);
     Codex::step(
         &mut state,
         rpc(
@@ -555,10 +507,10 @@ fn an_mcp_approval_answered_always_persists_it() {
     let key = agent.snapshot.asks[0].key.clone();
     let answered = agent.step(Event::Input(wire::Input::new(
         b"a1".to_vec(),
-        wire::CodexInput {
-            of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Answer(wire::Answer {
                 ask_key: key,
-                of: Some(wire::codex_answer::Of::Approve(
+                of: Some(wire::answer::Of::Approve(
                     wire::Decision::ApproveAlways as i32,
                 )),
             })),
@@ -582,7 +534,7 @@ fn approval_outside_offered_decisions_is_rejected() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = Codex::initial(&spec, "test");
+    let (mut state, _) = Codex::initial(&spec);
     Codex::step(
         &mut state,
         rpc(
@@ -615,10 +567,10 @@ fn approval_outside_offered_decisions_is_rejected() {
     let approve = |id: &[u8], decision: wire::Decision| {
         Event::Input(wire::Input::new(
             id.to_vec(),
-            wire::CodexInput {
-                of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
+            wire::AgentInput {
+                of: Some(wire::agent_input::Of::Answer(wire::Answer {
                     ask_key: key.clone(),
-                    of: Some(wire::codex_answer::Of::Approve(decision as i32)),
+                    of: Some(wire::answer::Of::Approve(decision as i32)),
                 })),
             },
         ))
@@ -683,7 +635,7 @@ fn the_job_list_empties_when_codex_exits() {
         incarnation: spec.incarnation + 1,
         ..spec
     };
-    let (_, step) = Codex::reincarnate(listed, &next, "test");
+    let (_, step) = Codex::reincarnate(listed, &next);
     assert_eq!(
         (jobs(&exited.step), jobs(&step)),
         (Some((true, 0)), Some((true, 0))),
@@ -697,7 +649,7 @@ fn command_running() -> State {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = Codex::initial(&spec, "test");
+    let (mut state, _) = Codex::initial(&spec);
     for event in [
         rpc(
             json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.160.0", "turns": []}, "model": "m"}}),
@@ -831,7 +783,7 @@ fn catalogue_written(stepped: &interpret::Stepped) -> Option<Vec<u8>> {
 #[test]
 fn a_skills_changed_notice_asks_again_and_rebuilds_the_catalogue() {
     let script = interpret::fixture_script::<Codex>(&fixtures().join("offered.json")).unwrap();
-    let (mut state, _) = Codex::initial(&script.spec, &script.producer);
+    let (mut state, _) = Codex::initial(&script.spec);
     let mut first_ask = None;
     let mut answer = None;
     let mut hash = None;
@@ -921,7 +873,7 @@ fn the_settings_notice_names_the_mode_and_who_answers_approvals() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = Codex::initial(&spec, "test");
+    let (mut state, _) = Codex::initial(&spec);
     Codex::step(
         &mut state,
         rpc(
@@ -955,16 +907,9 @@ fn the_settings_notice_names_the_mode_and_who_answers_approvals() {
         .expect("the notice moves the snapshot");
     let snapshot = wire::CodexSnapshot::decode(snapshot.body.as_slice()).unwrap();
     println!(
-        "permission={:?} mode={:?} approval={:?} sandbox={:?} reviewer={:?} collaboration={:?}",
-        snapshot.permission,
-        snapshot.mode,
-        snapshot.approval_policy,
-        snapshot.sandbox,
-        snapshot.approvals_reviewer,
-        snapshot.collaboration_mode
+        "permission={:?} mode={:?} approval={:?}",
+        snapshot.permission, snapshot.mode, snapshot.approval_policy,
     );
-    assert_eq!(snapshot.approvals_reviewer.as_deref(), Some("auto_review"));
-    assert_eq!(snapshot.collaboration_mode.as_deref(), Some("plan"));
     assert_eq!(snapshot.permission.as_deref(), Some("auto"));
     assert_eq!(snapshot.mode.as_deref(), Some("plan"));
 }
@@ -991,7 +936,7 @@ fn a_mode_chosen_at_creation_is_set_by_the_first_turn() {
         }),
         ..Default::default()
     };
-    let (mut state, _) = Codex::initial(&spec, "test");
+    let (mut state, _) = Codex::initial(&spec);
     let stepped = Codex::step(
         &mut state,
         rpc(
@@ -1046,7 +991,7 @@ fn failed_report(id: &[u8]) -> Event {
 /// the item it injects into the thread.
 #[test]
 fn a_failed_report_is_worded_for_the_parents_provider() {
-    let (mut state, _) = Codex::initial(&wire::AgentSpec::default(), "test");
+    let (mut state, _) = Codex::initial(&wire::AgentSpec::default());
     Codex::step(
         &mut state,
         rpc(json!({"method": "thread/started", "params": {"thread": {"id": "t1"}}})),
@@ -1079,7 +1024,7 @@ fn a_refused_thread_resume_ends_the_incarnation_with_codexs_words() {
         incarnation: 2,
         ..Default::default()
     };
-    let (mut state, _) = Codex::initial(&spec, "test");
+    let (mut state, _) = Codex::initial(&spec);
     Codex::step(
         &mut state,
         rpc(
@@ -1134,7 +1079,7 @@ fn a_parents_message_that_resumes_its_child_reaches_codex_labelled() {
         }),
         ..Default::default()
     };
-    let (mut state, _) = Codex::initial(&spec, "test");
+    let (mut state, _) = Codex::initial(&spec);
     let stepped = Codex::step(
         &mut state,
         rpc(
@@ -1171,7 +1116,7 @@ fn codexs_goal_updates_and_config_warnings_are_not_unreadable_rows() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = Codex::initial(&spec, "test");
+    let (mut state, _) = Codex::initial(&spec);
     Codex::step(
         &mut state,
         rpc(
@@ -1217,7 +1162,7 @@ fn codexs_moderation_and_read_state_notices_are_not_unreadable_rows() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = Codex::initial(&spec, "test");
+    let (mut state, _) = Codex::initial(&spec);
     Codex::step(
         &mut state,
         rpc(
@@ -1252,7 +1197,7 @@ fn a_command_approval_shows_the_command_codex_shows_not_its_shell_wrapper() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = Codex::initial(&spec, "test");
+    let (mut state, _) = Codex::initial(&spec);
     Codex::step(
         &mut state,
         rpc(
@@ -1307,7 +1252,7 @@ fn a_command_codex_keeps_running_past_an_interrupt_is_not_drawn_cancelled() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = Codex::initial(&spec, "test");
+    let (mut state, _) = Codex::initial(&spec);
     Codex::step(
         &mut state,
         rpc(
@@ -1390,7 +1335,7 @@ fn idle_codex() -> State {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = Codex::initial(&spec, "test");
+    let (mut state, _) = Codex::initial(&spec);
     Codex::step(
         &mut state,
         rpc(
@@ -1556,8 +1501,8 @@ fn an_interrupt_lists_the_commands_codex_keeps_running() {
         ),
         Event::Input(wire::Input::new(
             b"i1".to_vec(),
-            wire::CodexInput {
-                of: Some(wire::codex_input::Of::Interrupt(wire::Interrupt {})),
+            wire::AgentInput {
+                of: Some(wire::agent_input::Of::Interrupt(wire::Interrupt {})),
             },
         )),
         rpc(
@@ -1609,7 +1554,7 @@ fn a_commands_time_starts_after_the_approval_it_waited_for() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = Codex::initial(&spec, "test");
+    let (mut state, _) = Codex::initial(&spec);
     let item = |status: &str, duration: Value| {
         json!({"type": "commandExecution", "id": "cmd-1", "command": "curl -sI https://example.com",
             "cwd": "/work", "commandActions": [], "status": status, "exitCode": 0,
@@ -1663,7 +1608,7 @@ fn a_prompt_over_codexs_limit_is_refused_before_it_is_sent() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = Codex::initial(&spec, "test");
+    let (mut state, _) = Codex::initial(&spec);
     Codex::step(
         &mut state,
         rpc(
@@ -1723,7 +1668,7 @@ impl Driven {
             agent_id: b"agent".to_vec(),
             ..Default::default()
         };
-        let (state, step) = Codex::initial(&spec, "test");
+        let (state, step) = Codex::initial(&spec);
         let snapshot = wire::CodexSnapshot::decode(
             step.snapshot.expect("an initial snapshot").body.as_slice(),
         )
@@ -1859,7 +1804,8 @@ fn a_late_turn_start_answer_does_not_reopen_an_ended_turn() {
         agent.rpc(json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "completed"}}}));
         agent.rpc(json!({"id": start["id"], "result": {"turn": {"id": "turn-1"}}}));
         assert_eq!(
-            agent.snapshot.active_turn, None,
+            serde_json::to_value(&agent.state).unwrap()["active_turn"],
+            serde_json::Value::Null,
             "{method}'s late answer reopened the ended turn"
         );
     }
@@ -1875,8 +1821,8 @@ fn resuming() -> Driven {
         incarnation: 2,
         ..Default::default()
     };
-    let state = std::mem::replace(&mut first.state, Codex::initial(&spec, "test").0);
-    let (state, step) = Codex::reincarnate(state, &spec, "test");
+    let state = std::mem::replace(&mut first.state, Codex::initial(&spec).0);
+    let (state, step) = Codex::reincarnate(state, &spec);
     let snapshot = wire::CodexSnapshot::decode(step.snapshot.unwrap().body.as_slice()).unwrap();
     Driven {
         state,
@@ -2382,8 +2328,8 @@ fn a_stopped_background_command_reads_stopping_until_it_ends() {
     let stop = |id: &[u8], key: &str| {
         Event::Input(wire::Input::new(
             id.to_vec(),
-            wire::CodexInput {
-                of: Some(wire::codex_input::Of::StopJob(wire::StopJob {
+            wire::AgentInput {
+                of: Some(wire::agent_input::Of::StopJob(wire::StopJob {
                     key: key.into(),
                 })),
             },

@@ -6,7 +6,6 @@ extension Design {
         case screenTitle
         case sectionTitle
         case identifier         // an agent or host name — something you could type
-        case identifierUnread
         case body
         case bodyEmphasis
         case detail             // supporting prose, one step down
@@ -37,9 +36,11 @@ extension Design {
             FontSpec(family: faces.body, size: 13,
                      weight: .semibold, relativeTo: .footnote, tracking: 0)
         case .identifier:
-            identifierSpec(weight: type.identifierIsMono ? .medium : .semibold)
-        case .identifierUnread:
-            identifierSpec(weight: type.identifierIsMono ? .bold : .heavy)
+            type.identifierIsMono
+                ? FontSpec(family: faces.mono, size: body - 0.5,
+                           weight: .medium, relativeTo: .subheadline, tracking: 0)
+                : FontSpec(family: faces.body, size: body + 1,
+                           weight: .semibold, relativeTo: .subheadline, tracking: 0)
         case .body:
             FontSpec(family: faces.body, size: body,
                      weight: .regular, relativeTo: .callout, tracking: 0)
@@ -59,14 +60,6 @@ extension Design {
             FontSpec(family: faces.mono, size: body - 3.5,
                      weight: .regular, relativeTo: .caption, tracking: 0)
         }
-    }
-
-    private func identifierSpec(weight: Font.Weight) -> FontSpec {
-        type.identifierIsMono
-            ? FontSpec(family: faces.mono, size: type.bodySize - 0.5,
-                       weight: weight, relativeTo: .subheadline, tracking: 0)
-            : FontSpec(family: faces.body, size: type.bodySize + 1,
-                       weight: weight, relativeTo: .subheadline, tracking: 0)
     }
 
     /// Every role scales with the reader's content size; nothing is set at a

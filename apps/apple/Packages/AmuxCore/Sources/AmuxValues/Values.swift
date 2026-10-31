@@ -9,8 +9,6 @@ public enum AccountBinding: String, Codable, Hashable, Sendable, CaseIterable {
     case signedOut = "SignedOut"
     /// Never signed in: this device works on its own network.
     case unbound = "Unbound"
-    /// Signed in, with the relay link turned off.
-    case paused = "Paused"
 }
 
 /// The account this device's profile is bound to, as the account screens
@@ -1611,6 +1609,217 @@ public struct Changes: Codable, Hashable, Sendable {
     }
 }
 
+/// An act on an open chat. Its answer is a `SendOutcome` for `Send` (as
+/// `{"Ok": SendOutcome}`), a `CommandOutcome` for `Command`, a `SendOutcome`
+/// or null for `Resend`, a `PageOutcome` for `PageOlder`, and an
+/// `ActOutcome` for every other.
+public enum ChatAct: Codable, Hashable, Sendable {
+    case send(Draft)
+    /// A draft that names a command the client handles itself (`/model`,
+    /// `/effort`, `/rename`) or one the agent does not run; the outcome's
+    /// `Send` says to send it as typed.
+    case command(Draft)
+    /// Answers the head ask, named by its key, with the choice at `choice`
+    /// on its card; `note` goes back with a choice that takes one.
+    case answer(ask: String, choice: UInt32, note: String)
+    /// Submits the head form ask with one value per field, in the form's
+    /// order; the shared view checks and encodes them.
+    case answerForm(ask: String, values: [FormValue])
+    /// Answers the head question ask with one response per question.
+    case answerQuestions(ask: String, responses: [QuestionResponse])
+    /// Replies to the head question ask in the person's own words instead,
+    /// with what they had answered so far.
+    case replyInstead(ask: String, reply: String, soFar: [QuestionResponse])
+    /// A pick from the settings view.
+    case changeSetting(SettingChange)
+    /// Takes a queued prompt, by input id, back out of the queue.
+    case withdraw([UInt8])
+    /// Steers a queued prompt into the running turn.
+    case sendNow([UInt8])
+    /// Sends a not-confirmed input again under a new id.
+    case resend([UInt8])
+    /// Stops the agent's turn; the agent stays.
+    case interrupt
+    /// Stops one background job by the key its `JobStop` gives.
+    case stopJob(String)
+    /// Takes terminal Claude's own view back to the agent's conversation
+    /// after it switched to another.
+    case switchBack
+    /// The exited composer's one tap: resumes the agent with the draft as
+    /// its first prompt; on anything but Done the draft stays the
+    /// composer's.
+    case resume(Draft)
+    /// Up to this many rows older than the oldest held; they arrive below
+    /// the oldest.
+    case pageOlder(UInt32)
+
+    private enum Tag: String, CodingKey {
+        case send = "Send"
+        case command = "Command"
+        case answer = "Answer"
+        case answerForm = "AnswerForm"
+        case answerQuestions = "AnswerQuestions"
+        case replyInstead = "ReplyInstead"
+        case changeSetting = "ChangeSetting"
+        case withdraw = "Withdraw"
+        case sendNow = "SendNow"
+        case resend = "Resend"
+        case stopJob = "StopJob"
+        case resume = "Resume"
+        case pageOlder = "PageOlder"
+    }
+
+    private enum AnswerKeys: String, CodingKey {
+        case ask
+        case choice
+        case note
+    }
+
+    private enum AnswerFormKeys: String, CodingKey {
+        case ask
+        case values
+    }
+
+    private enum AnswerQuestionsKeys: String, CodingKey {
+        case ask
+        case responses
+    }
+
+    private enum ReplyInsteadKeys: String, CodingKey {
+        case ask
+        case reply
+        case soFar = "so_far"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "Interrupt": self = .interrupt
+            case "SwitchBack": self = .switchBack
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no ChatAct is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a ChatAct names exactly one variant"))
+        }
+        switch _tag {
+        case .send:
+            self = .send(try _container.decode(Draft.self, forKey: .send))
+        case .command:
+            self = .command(try _container.decode(Draft.self, forKey: .command))
+        case .answer:
+            let _fields = try _container.nestedContainer(
+                keyedBy: AnswerKeys.self, forKey: .answer)
+            self = .answer(
+                ask: try _fields.decode(String.self, forKey: .ask),
+                choice: try _fields.decode(UInt32.self, forKey: .choice),
+                note: try _fields.decode(String.self, forKey: .note))
+        case .answerForm:
+            let _fields = try _container.nestedContainer(
+                keyedBy: AnswerFormKeys.self, forKey: .answerForm)
+            self = .answerForm(
+                ask: try _fields.decode(String.self, forKey: .ask),
+                values: try _fields.decode([FormValue].self, forKey: .values))
+        case .answerQuestions:
+            let _fields = try _container.nestedContainer(
+                keyedBy: AnswerQuestionsKeys.self, forKey: .answerQuestions)
+            self = .answerQuestions(
+                ask: try _fields.decode(String.self, forKey: .ask),
+                responses: try _fields.decode([QuestionResponse].self, forKey: .responses))
+        case .replyInstead:
+            let _fields = try _container.nestedContainer(
+                keyedBy: ReplyInsteadKeys.self, forKey: .replyInstead)
+            self = .replyInstead(
+                ask: try _fields.decode(String.self, forKey: .ask),
+                reply: try _fields.decode(String.self, forKey: .reply),
+                soFar: try _fields.decode([QuestionResponse].self, forKey: .soFar))
+        case .changeSetting:
+            self = .changeSetting(try _container.decode(SettingChange.self, forKey: .changeSetting))
+        case .withdraw:
+            self = .withdraw(try _container.decode([UInt8].self, forKey: .withdraw))
+        case .sendNow:
+            self = .sendNow(try _container.decode([UInt8].self, forKey: .sendNow))
+        case .resend:
+            self = .resend(try _container.decode([UInt8].self, forKey: .resend))
+        case .stopJob:
+            self = .stopJob(try _container.decode(String.self, forKey: .stopJob))
+        case .resume:
+            self = .resume(try _container.decode(Draft.self, forKey: .resume))
+        case .pageOlder:
+            self = .pageOlder(try _container.decode(UInt32.self, forKey: .pageOlder))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .send(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .send)
+        case .command(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .command)
+        case .answer(let ask, let choice, let note):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: AnswerKeys.self, forKey: .answer)
+            try _fields.encode(ask, forKey: .ask)
+            try _fields.encode(choice, forKey: .choice)
+            try _fields.encode(note, forKey: .note)
+        case .answerForm(let ask, let values):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: AnswerFormKeys.self, forKey: .answerForm)
+            try _fields.encode(ask, forKey: .ask)
+            try _fields.encode(values, forKey: .values)
+        case .answerQuestions(let ask, let responses):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: AnswerQuestionsKeys.self, forKey: .answerQuestions)
+            try _fields.encode(ask, forKey: .ask)
+            try _fields.encode(responses, forKey: .responses)
+        case .replyInstead(let ask, let reply, let soFar):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: ReplyInsteadKeys.self, forKey: .replyInstead)
+            try _fields.encode(ask, forKey: .ask)
+            try _fields.encode(reply, forKey: .reply)
+            try _fields.encode(soFar, forKey: .soFar)
+        case .changeSetting(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .changeSetting)
+        case .withdraw(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .withdraw)
+        case .sendNow(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .sendNow)
+        case .resend(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .resend)
+        case .interrupt:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Interrupt")
+        case .stopJob(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .stopJob)
+        case .switchBack:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("SwitchBack")
+        case .resume(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .resume)
+        case .pageOlder(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .pageOlder)
+        }
+    }
+}
+
 /// What moved in an open chat since the host last heard: each field only
 /// when it moved.
 public struct ChatDelta: Codable, Hashable, Sendable {
@@ -1683,9 +1892,8 @@ public struct ChatFrame: Codable, Hashable, Sendable {
     public var git: Git?
     /// Only a problem; it replaces the composer with a foot card.
     public var signIn: SignInView?
-    public var waiting: Waiting?
 
-    public init(agent: AgentKey, name: String, kind: Kind, phase: PhaseView, composer: ComposerView, controls: ControlsSummary, connection: Connection, caughtUp: Bool, hasOlder: Bool, arrivalsHeld: Bool, queue: [QueuedRow], underway: [SentPrompt], refused: [RefusedPrompt], askInput: [UInt8]?, context: ContextView?, ended: String?, git: Git?, signIn: SignInView?, waiting: Waiting?) {
+    public init(agent: AgentKey, name: String, kind: Kind, phase: PhaseView, composer: ComposerView, controls: ControlsSummary, connection: Connection, caughtUp: Bool, hasOlder: Bool, arrivalsHeld: Bool, queue: [QueuedRow], underway: [SentPrompt], refused: [RefusedPrompt], askInput: [UInt8]?, context: ContextView?, ended: String?, git: Git?, signIn: SignInView?) {
         self.agent = agent
         self.name = name
         self.kind = kind
@@ -1704,7 +1912,6 @@ public struct ChatFrame: Codable, Hashable, Sendable {
         self.ended = ended
         self.git = git
         self.signIn = signIn
-        self.waiting = waiting
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1726,7 +1933,6 @@ public struct ChatFrame: Codable, Hashable, Sendable {
         case ended
         case git
         case signIn = "sign_in"
-        case waiting
     }
 }
 
@@ -2397,18 +2603,15 @@ public struct Directories: Codable, Hashable, Sendable {
 public struct Directory: Codable, Hashable, Sendable {
     public var path: String
     public var name: String
-    public var lastUsedMs: Int64?
 
-    public init(path: String, name: String, lastUsedMs: Int64?) {
+    public init(path: String, name: String) {
         self.path = path
         self.name = name
-        self.lastUsedMs = lastUsedMs
     }
 
     private enum CodingKeys: String, CodingKey {
         case path
         case name
-        case lastUsedMs = "last_used_ms"
     }
 }
 
@@ -3710,8 +3913,7 @@ public enum InputState: Codable, Hashable, Sendable {
     /// was not current, or refused because the agent's host could not be
     /// reached. The client holds it, shown pending with Cancel, and sends
     /// it again under the same id once the host is reachable. It lives only
-    /// as long as this client: closing the client drops it (a held prompt's
-    /// words go back to the draft).
+    /// as long as this client: closing the client drops it.
     case held
 
     private enum Tag: String, CodingKey {
@@ -3946,8 +4148,9 @@ public enum Kind: String, Codable, Hashable, Sendable, CaseIterable {
     case codex = "Codex"
 }
 
-/// Where a prompt on its way is drawn: where it was first drawn, which the
-/// client remembers, so a prompt does not jump as the agent starts work.
+/// Where a prompt on its way is drawn: where it was sent to (see
+/// `SentInput::in_feed`), so a prompt does not jump as the agent starts
+/// work.
 public enum Lands: String, Codable, Hashable, Sendable, CaseIterable {
     case feed = "Feed"
     case queue = "Queue"
@@ -4999,22 +5202,22 @@ public struct Refusal: Codable, Hashable, Sendable {
     }
 }
 
-/// The reasons the wire's refusals carry, one for one: the agent had exited
-/// or was exiting, its host is shutting down or cannot be reached, this
-/// agent cannot take an input of the kind, the ask the answer names had
-/// closed, the queued prompt it names was no longer queued, terminal
-/// Claude's own view is on another conversation, or the prompt is longer
-/// than the agent takes. A reason this build does not know is unspecified.
 public enum RefusalReason: String, Codable, Hashable, Sendable, CaseIterable {
     case unspecified = "Unspecified"
-    case exited = "Exited"
-    case exiting = "Exiting"
     case draining = "Draining"
+    case exiting = "Exiting"
+    case exited = "Exited"
     case hostUnreachable = "HostUnreachable"
-    case unsupported = "Unsupported"
+    /// The answer's ask is not open.
     case closedAsk = "ClosedAsk"
+    /// The withdraw or send-now target is not waiting in the queue.
     case notQueued = "NotQueued"
+    /// This agent version, kind or state cannot take the input.
+    case unsupported = "Unsupported"
+    /// Terminal Claude's own view switched to another conversation; this
+    /// agent's conversation is not the one on its screen.
     case conversationElsewhere = "ConversationElsewhere"
+    /// The prompt is longer than the agent takes; the detail names the limit.
     case tooLong = "TooLong"
 }
 
@@ -5268,7 +5471,7 @@ public enum RowKind: Codable, Hashable, Sendable {
     case turnEnd(failed: Bool, durationMs: Int64?)
     case compaction(automatic: Bool, tokensAfter: UInt64?, tokensBefore: UInt64?)
     case error(errorKind: String, message: String, attempts: UInt32, gaveUp: Bool)
-    case modelSwitch(from: String, to: String, reason: String)
+    case modelSwitch(to: String, reason: String)
     case boundary(kind: BoundaryKind, cause: String)
     case agentMessage(from: String, kind: EnvelopeKind, text: [Segment], to: String, sent: SendState, rejection: String)
     /// Codex's automatic reviewer on an action. A client words the status,
@@ -5405,7 +5608,6 @@ public enum RowKind: Codable, Hashable, Sendable {
     }
 
     private enum ModelSwitchKeys: String, CodingKey {
-        case from
         case to
         case reason
     }
@@ -5581,7 +5783,6 @@ public enum RowKind: Codable, Hashable, Sendable {
             let _fields = try _container.nestedContainer(
                 keyedBy: ModelSwitchKeys.self, forKey: .modelSwitch)
             self = .modelSwitch(
-                from: try _fields.decode(String.self, forKey: .from),
                 to: try _fields.decode(String.self, forKey: .to),
                 reason: try _fields.decode(String.self, forKey: .reason))
         case .boundary:
@@ -5728,10 +5929,9 @@ public enum RowKind: Codable, Hashable, Sendable {
             try _fields.encode(message, forKey: .message)
             try _fields.encode(attempts, forKey: .attempts)
             try _fields.encode(gaveUp, forKey: .gaveUp)
-        case .modelSwitch(let from, let to, let reason):
+        case .modelSwitch(let to, let reason):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: ModelSwitchKeys.self, forKey: .modelSwitch)
-            try _fields.encode(from, forKey: .from)
             try _fields.encode(to, forKey: .to)
             try _fields.encode(reason, forKey: .reason)
         case .boundary(let kind, let cause):

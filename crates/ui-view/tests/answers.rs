@@ -11,8 +11,9 @@ use std::path::{Path, PathBuf};
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
-use interpret::{Checkpoint, Effect, Event, Interpreter, decode_checkpoint, encode_checkpoint};
-use support::Committer;
+use interpret::{
+    Checkpoint, Committer, Effect, Event, Interpreter, decode_checkpoint, encode_checkpoint,
+};
 use ui_state::{InputOutcome, Msg, SessionState};
 use ui_view::{
     Answer, AskBody, AskCard, CardState, Changeable, QuestionResponse, SettingChange, answer_input,
@@ -28,18 +29,6 @@ fn fixtures(kind: &str) -> PathBuf {
         .join(kind)
 }
 
-fn agent(kind: Kind) -> wire::Agent {
-    wire::Agent {
-        agent_id: b"agent".to_vec(),
-        host_id: b"host".to_vec(),
-        kind: kind as i32,
-        lifecycle: wire::Lifecycle::Live as i32,
-        phase: wire::Phase::NeedsYou as i32,
-        incarnation: 1,
-        ..wire::Agent::default()
-    }
-}
-
 /// One interpreter and the session its emission builds, in step.
 #[derive(Clone)]
 struct Driven<S> {
@@ -51,15 +40,11 @@ struct Driven<S> {
 }
 
 impl<S: Checkpoint + Clone> Driven<S> {
-    fn start<I: Interpreter<State = S>>(
-        kind: Kind,
-        spec: &wire::AgentSpec,
-        producer: &str,
-    ) -> Self {
-        let (interpreter, first) = I::initial(spec, producer);
+    fn start<I: Interpreter<State = S>>(kind: Kind, spec: &wire::AgentSpec) -> Self {
+        let (interpreter, first) = I::initial(spec);
         let mut driven = Driven {
             interpreter,
-            session: SessionState::new(agent(kind), support::CAP),
+            session: SessionState::new(support::agent(kind, wire::Phase::NeedsYou), support::CAP),
             committer: Committer::default(),
             held: 0,
         };
@@ -191,7 +176,7 @@ fn offered(card: &AskCard) -> Vec<(String, Answer, &'static str)> {
                 },
             })
             .collect();
-        answers.push(("first options".into(), question_answer(card, &first), ""));
+        answers.push(("first options".into(), question_answer(&first), ""));
         if questions.iter().all(|question| question.allow_other) {
             let typed: Vec<QuestionResponse> = questions
                 .iter()
@@ -200,7 +185,7 @@ fn offered(card: &AskCard) -> Vec<(String, Answer, &'static str)> {
                     ..QuestionResponse::default()
                 })
                 .collect();
-            answers.push(("something else".into(), question_answer(card, &typed), ""));
+            answers.push(("something else".into(), question_answer(&typed), ""));
         }
         // A multi-select takes ticked options and typed words together.
         if questions
@@ -218,14 +203,14 @@ fn offered(card: &AskCard) -> Vec<(String, Answer, &'static str)> {
                 .collect();
             answers.push((
                 "picks and something else".into(),
-                question_answer(card, &both),
+                question_answer(&both),
                 "",
             ));
         }
         if card.question_skip {
             let mut skipped = first.clone();
             skipped[0] = QuestionResponse::skip();
-            answers.push(("one skipped".into(), question_answer(card, &skipped), ""));
+            answers.push(("one skipped".into(), question_answer(&skipped), ""));
         }
         if card.question_reply {
             let mut so_far = vec![QuestionResponse::skip(); questions.len()];
@@ -233,7 +218,7 @@ fn offered(card: &AskCard) -> Vec<(String, Answer, &'static str)> {
             so_far[0].other = first[0].other.clone();
             answers.push((
                 "reply instead".into(),
-                reply_answer(card, "Let's talk it through first", &so_far),
+                reply_answer("Let's talk it through first", &so_far),
                 "",
             ));
         }
@@ -275,7 +260,7 @@ where
     for path in &names {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
         let script = interpret::fixture_script::<I>(path).unwrap();
-        let mut driven = Driven::start::<I>(kind, &script.spec, &script.producer);
+        let mut driven = Driven::start::<I>(kind, &script.spec);
         let mut tried = BTreeSet::new();
         for (label, event) in script.events {
             driven.step::<I>(event);
@@ -287,10 +272,7 @@ where
             }
             for (choice, answer, note) in offered(&card) {
                 let at = format!("{dir}/{name} after {label:.80}: {} {choice}", card.key);
-                let Some(mut input) = answer_input(&card, &answer, note) else {
-                    failures.push(format!("{at}: no input"));
-                    continue;
-                };
+                let mut input = answer_input(&card, &answer, note);
                 input.input_id = format!("answer {choice}").into_bytes();
                 let mut fork = driven.clone();
                 let replies = fork.step::<I>(Some(Event::Input(input.clone())));
@@ -377,7 +359,7 @@ where
     for path in &names {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
         let script = interpret::fixture_script::<I>(path).unwrap();
-        let mut driven = Driven::start::<I>(kind, &script.spec, &script.producer);
+        let mut driven = Driven::start::<I>(kind, &script.spec);
         for (_, event) in script.events {
             driven.step::<I>(event);
         }
@@ -469,9 +451,9 @@ fn settings_picks_reach_the_interpreter() {
 /// "Something else": neither drops the other on the way to the agent.
 #[test]
 fn a_multi_select_answer_keeps_its_picks_beside_something_else() {
-    let path = fixtures("claude_pty").join("recorded_question_multi_other.json");
+    let path = fixtures("claude_pty").join("recorded_question_every_shape.json");
     let script = interpret::fixture_script::<ClaudePty>(&path).unwrap();
-    let mut driven = Driven::start::<ClaudePty>(Kind::ClaudePty, &script.spec, &script.producer);
+    let mut driven = Driven::start::<ClaudePty>(Kind::ClaudePty, &script.spec);
     let mut card = None;
     for (_, event) in script.events {
         driven.step::<ClaudePty>(event);
@@ -501,11 +483,11 @@ fn a_multi_select_answer_keeps_its_picks_beside_something_else() {
             },
         })
         .collect();
-    let answer = question_answer(&card, &given);
-    let Answer::Claude(wire::ClaudeAnswer {
-        of: Some(wire::claude_answer::Of::Question(sent)),
+    let answer = question_answer(&given);
+    let wire::Answer {
+        of: Some(wire::answer::Of::Question(sent)),
         ..
-    }) = &answer
+    } = &answer
     else {
         panic!("{answer:?}");
     };
@@ -516,7 +498,7 @@ fn a_multi_select_answer_keeps_its_picks_beside_something_else() {
     assert_eq!(sent.answers[multi].selected, [0, 1]);
     assert_eq!(sent.answers[multi].other.as_deref(), Some("and the docs"));
 
-    let mut input = answer_input(&card, &answer, "").expect("an input");
+    let mut input = answer_input(&card, &answer, "");
     input.input_id = b"both".to_vec();
     let replies = driven.step::<ClaudePty>(Some(Event::Input(input)));
     assert!(

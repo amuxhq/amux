@@ -65,8 +65,8 @@ Stories that need any of those run on the real net only.
 
 `testnet::modes::run_story(topology, real, simulated)` runs a story on the net `TESTNET_MODE` names: `real` (or
 nothing) once, `simulated` under each seed, a few by default, `TESTNET_SEEDS=N` for N of them, `TESTNET_SEED=N` for
-exactly one. `just sim` runs every story the catalogue gives a simulated mode, and `just nightly --seeds N` walks
-thousands of seeds per story and reports each failing one; see [Testing](TESTING.md#two-modes-of-the-many-daemons-harness).
+exactly one. `just sim` runs every story the catalogue gives a simulated mode, and `just sim --seeds N` walks N seeds
+per story, as the nightly workflow does with thousands; see [Testing](TESTING.md#two-modes-of-the-many-daemons-harness).
 
 ## Topologies
 
@@ -209,7 +209,7 @@ A supervised host runs under `amux supervise`, from a copy of the build under te
 [release feed](#the-release-feed), and starts the daemon again by itself after a kill.
 
 What a process host refuses, because it reaches into a runtime the net does not hold: `checkpoint_host`,
-`rewind_host`, `assert_block_invariant` and `refuse_calls`. `set_tier` changes the account, but a process host's
+`rewind_host` and `assert_block_invariant`. `set_tier` changes the account, but a process host's
 daemon learns of it on its own schedule rather than at once.
 
 A process host keeps the machine's time, so a net with one runs on wall time (`ClockMode::Wall`); on a driven
@@ -504,14 +504,12 @@ verb without fields is a bare string (`"Shutdown"`).
 | --- | --- |
 | `{"Sever": {"a", "b"}}`, `{"Restore": {"a", "b"}}` | Cut or restore a link: a declared or added one, or on a gated LAN any pairing between the two. |
 | `{"Link": {"a", "b"}}` | Whether both ends route to each other directly: `{"up": true}`. |
-| `{"Trust": {"a", "b"}}`, `{"Untrust": {"a", "b"}}` | Trust as pairing does; forget as unpairing does. |
-| `{"RefuseCalls": {"a", "b", "refuse"}}` | While `refuse` is true, `a` fails every channel to `b` before it opens, as when the far end refuses each one, with the link listed; `b` reads offline to `a` as soon as one fails, and stays offline over a link that comes back. The first call that fails acts as in production: an in-process link between them closes, or the relay's cached channel is dropped and a fresh one retried. Lifting it has `a` try a channel at once and links an in-process link again, as redialling would (`Net::redial` does that alone). |
+| `{"Trust": {"a", "b"}}` | Trust as pairing does. |
 | `{"SetTier": {"account", "tier"}}` | Change what an account has bought (`pro` or `free`). |
 | `{"SignIn": {"host", "account"}}` | Sign a host's profile in to a declared account. |
 | `{"KillDaemon": {"host"}}`, `{"StopDaemon": {"host"}}` | Crash or cleanly stop a host's daemon. |
 | `{"RestartDaemon": {"host"}}` | Kill it if it is running, then start it again. |
 | `{"Checkpoint": {"host"}}`, `{"Rewind": {"host", "cuts": [{"agent", "byte"}]}}` | Record what reached the drive; lose power back to it. |
-| `{"Advance": {"ms"}}` | Refused: a served net runs on wall time. |
 | `{"Spawn": {"agent": {…}}}` | Start an agent declared as in a topology: `{"id": "…"}`. |
 | `{"Resume": {"agent", "text"}}` | Start an exited agent again, optionally with a prompt: `{"incarnation": n}`. |
 | `{"Send": {"agent", "text"}}` | Send a prompt through the agent's host: `{"verdict": "…", "input_id": "<hex>"}`. |
@@ -524,14 +522,9 @@ verb without fields is a bare string (`"Shutdown"`).
 | `{"AddAccount": {"account": {"name", "tier"}}}` | Add an account to the relay, starting the relay if none runs. |
 | `{"NetFaults": {"target", "delay_ms", "loss_percent", "jitter_ms", "reorder_percent", "rate_bytes_per_sec"}}` | Make a host's network, or the relay's (`"relay"`), bad; all zero makes it clean. Every field but `target` may be left out. |
 | `{"LanGate": {"host"}}`, `{"LanFaults": {"host", …}}` | A host's front gate for a client outside the net: `{"addr": "…"}`; its faults, with the fields `NetFaults` takes. |
-| `{"RelayGate": {}}`, `{"RelayFaults": {…}}` | A gate in front of the relay's QUIC carrier: `{"addr": "…"}`; its faults. |
+| `{"RelayGate": {}}` | A gate in front of the relay's QUIC carrier: `{"addr": "…"}`; `NetFaults` with `"relay"` makes it bad. |
 | `{"PairGate": {"from", "to"}}` | The gate `from` dials to reach `to`'s LAN listener: `{"addr": "…"}`. |
 | `{"BlockUdp": {"host", "blocked"}}` | Drop every datagram on the host's way to the relay, or stop. |
-| `{"SetRouter": {"host", "kind"}}` | Put a router (`open`, `ordinary` or `strict`) in front of the host's link socket, now and on every start after. |
-| `{"ChangeNetwork": {"host"}}` | Move a running host onto another network: its link socket rebinds and its links migrate. |
-| `{"BindIpv6Only": {"host"}}` | Bind the host's socket to IPv6 loopback alone from its next start. |
-| `{"CarryingPath": {"host", "peer"}}` | The path carrying the host's link to the peer, by its link log: `{"path": "lan"}`, or `{"path": null}` while the link is down. |
-| `{"LinkLog": {"host"}}` | Every line the host has written to the link log, oldest first: `[{"peer", "event", "path", "resumed", "early_data", "first_packet_to_catch_up_ms"}]`. |
 | `{"Flap": {"a", "b", "down_ms", "up_ms"}}`, `{"FlapStop": {}}` | Sever and restore a link on a period, until stopped; stop every flap, leaving each link restored. |
 | `{"Release": {"version", "channel", "rollout", "broken"}}` | Publish the build under test on the release feed (channel `stable` by default) and have supervised hosts check now. |
 | `{"Status": {}}` | The readiness record as it stands now, with `topology`: the declaration that would start this net again, run-time additions included. |
@@ -548,7 +541,7 @@ A reply is `{"ok": <value>}`, where a verb's value is usually its acknowledgemen
 | Kind | Meaning |
 | --- | --- |
 | `invalid` | The request did not parse, or named a host, agent or link the net does not have. |
-| `refused` | The net refused: a host down or running, no checkpoint, wall time. |
+| `refused` | The net refused: a host down or running, no checkpoint. |
 | `stuck` | An observation did not see its consequence in time. |
 | `violation` | The replica block invariant does not hold. |
 | `closed` | The net has shut down. |
@@ -557,10 +550,6 @@ An error does not undo a verb that had already started.
 
 `Shutdown` is the clean end. An interrupt (Ctrl-C) also shuts the net down; in both cases the root directory is
 removed, so copy anything you need (a dump, a log) out of it first.
-
-Every door verb is a net capability or a declared composition of two. The map is `door::CAPABILITIES`, the crate
-documentation in `crates/testnet/src/lib.rs` lists the same table, and a test holds the two to each other. Adding a
-verb means adding the capability to `Net` first.
 
 ## `testnet ctl`
 
@@ -598,7 +587,7 @@ what holds the port.
 | --- | --- |
 | The net | `up [TOPOLOGY]`, `down`, `status` |
 | Topology | `host add NAME [--lan] [--discovery] [--bonjour] [--account A] [--process] [--supervised] [--provider real\|fake] [--script FILE]`, `host remove NAME`, `link A B`, `unlink A B`, `account add NAME [--tier pro\|free]` |
-| Faults | `sever A B`, `restore A B`, `flap A B --down D --up U`, `flap stop`, `net HOST\|relay [--loss P] [--delay D] [--jitter D] [--reorder P] [--rate R]`, `block-udp HOST on\|off`, `refuse-calls A B on\|off`, `kill HOST`, `stop HOST`, `restart HOST`, `freeze AGENT`, `thaw AGENT` |
+| Faults | `sever A B`, `restore A B`, `flap A B --down D --up U`, `flap stop`, `net HOST\|relay [--loss P] [--delay D] [--jitter D] [--reorder P] [--rate R]`, `block-udp HOST on\|off`, `kill HOST`, `stop HOST`, `restart HOST`, `freeze AGENT`, `thaw AGENT` |
 | Accounts and releases | `sign-in HOST ACCOUNT`, `tier ACCOUNT pro\|free`, `release publish VERSION [--channel C] [--rollout P] [--broken]` |
 | Agents | `spawn NAME --host H [--kind claude-sdk\|claude-pty\|codex] [--provider real\|fake] [--script FILE] [--prompt P] [--model M] [--permission P] [--mode M] [--parent A] [--cwd D] [--wait] [--timeout S]`, `send AGENT TEXT [--wait]`, `wait AGENT`, `stop-agent AGENT`, `resume AGENT [TEXT]`, `gate open NAME` |
 | A host's own record | `fleet HOST` (its own agents and its trusted peers', as its clients show them; rows a host it no longer trusts left behind are listed apart), `chat HOST AGENT` (each item with what its body decodes as, and the asks waiting on a person), `block HOST AGENT`, `provider-input AGENT` |
@@ -658,8 +647,8 @@ from the net's account service, as the app does from amux.sh.
 **Accounts.** The relay's account service answers sign-in, relay credentials and the plan read a phone makes
 (`/api/graphql`): a Pro account has access given to it, one moved from Pro to Free had that access end when it
 moved, and one that was always Free has none. `tier ACCOUNT pro|free` changes the account, and every host signed in
-to it learns at once: an in-process host asks over its relay link, and a process host's profile is paused and
-resumed, which dials the relay afresh (its relay link drops for that moment). `status` prints each account's tier
+to it learns at once: an in-process host asks over its relay link, and a process host's profile signs out and in
+again, which dials the relay afresh (its relay link drops for that moment). `status` prints each account's tier
 as it is now. A process host's debug daemon trusts the relay's certificate through `AMUX_CLOUD_TLS_CA`, so it reaches
 the relay where the account service names it, but not through the net's gates: `block-udp` and `net` do not touch
 its way to the relay.

@@ -21,7 +21,7 @@ use ui_view::{
 
 use super::rows::{
     RowFacts, call_verb, chip, detail, explore_verb, markdown_linked, patch_lines, segment_lines,
-    state_meta, tail,
+    state_meta,
 };
 use crate::text::{self, first_line, pad_to, push, push_right};
 use crate::theme::Theme;
@@ -317,7 +317,7 @@ pub fn row_lines(
             } => {
                 let mut line = Line::from(Span::raw(" ".repeat(WORDS)));
                 let words = match duration_ms {
-                    Some(ms) => format!("Worked {}", worked(*ms)),
+                    Some(ms) => format!("Worked {}", text::ran_for(*ms)),
                     None => "Turn ended".to_owned(),
                 };
                 push(&mut line, words, theme.faint(), width);
@@ -1284,7 +1284,7 @@ fn step(
         }
         let left = room.saturating_sub(text::line_width(&line));
         let shown = if text::str_width(&subject) > left && left > 8 {
-            tail(&subject, left)
+            text::tail(&subject, left)
         } else {
             subject
         };
@@ -1435,17 +1435,6 @@ fn step_detail(row: &Row, facts: &RowFacts, width: usize, theme: Theme) -> Vec<L
             detail(answer, width, theme.muted(), DETAIL_LINES, theme)
         }
         _ => Vec::new(),
-    }
-}
-
-/// A turn's length at a glance: "25s", "6m", "1h 12m". Seconds stop
-/// mattering past the first minute.
-fn worked(ms: i64) -> String {
-    let secs = ms.max(0) / 1_000;
-    match secs {
-        0..60 => format!("{}s", secs.max(1)),
-        60..3_600 => format!("{}m", secs / 60),
-        _ => format!("{}h {}m", secs / 3_600, secs % 3_600 / 60),
     }
 }
 

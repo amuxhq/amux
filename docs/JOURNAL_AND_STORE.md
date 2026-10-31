@@ -51,8 +51,8 @@ a global offset: it opens the segment whose name is the largest at or below
 that offset and seeks to the difference.
 
 The writer closes a segment before it creates the next one. A segment is
-therefore final, never written again, exactly when a later segment exists
-(`journal::is_final`). Nothing else needs to record which files are complete.
+therefore final, never written again, exactly when a later segment exists.
+Nothing else needs to record which files are complete.
 
 ![Segment naming makes a reader's state a single integer and makes "is this file final?" answerable by the existence of the next file. The writer closes a segment before it creates the next, so once 0002097152 exists, 0001048576 never changes again. The same scheme is used for pty/.](figures/journal-segments.svg)
 
@@ -126,7 +126,7 @@ Ingest is a step of the profile's core, in
 [`crates/daemon-core/src/ingest.rs`](../crates/daemon-core/src/ingest.rs).
 Each live agent has one watcher task in
 [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs). It dials
-`ctl.sock`, hands the agent's `AgentHello` to the core, and calls
+`ctl.sock`, keeps the agent's `AgentHello`, tells the core it arrived, and calls
 `ProfileRuntime::ingest` on every `Nudge`, which feeds the core a `Nudge`
 input and waits until the journal has been read to its end. It also ingests
 when it first adopts a connection, when the startup sweep finds an agent, and
@@ -369,8 +369,8 @@ the connection and are rebuilt as ingest and sources run.
 
 ### Schema
 
-The schema is the migration in
-[`crates/store/src/migrations.rs`](../crates/store/src/migrations.rs).
+The schema is the text in
+[`crates/store/src/schema.rs`](../crates/store/src/schema.rs).
 
 `agents`: one row per agent, own or replica, keyed by `(origin_host, agent_id)`.
 
@@ -404,7 +404,6 @@ a newer peer is stored and served rather than refused.
 | `position` | The wire `order`: transcript position, assigned once per key |
 | `revision` | Assigned on every upsert |
 | `at_ms` | When it happened, from the envelope |
-| `producer_version` | The agent binary that wrote it |
 | `input_id` | Set on a prompt's reflection and on an agent message's item |
 | `text` | The one appendable field |
 | `kind` | The envelope's `Kind`, as its wire integer: which per-kind body this is |
@@ -425,7 +424,6 @@ The rest:
 | `trusted_hosts` | One row per paired host: its pinned key, name, when it was paired, whether it is on the account, what it last said of itself (signed in, platform), its SSH target, the addresses it last answered at and the addresses it listed with their sources (both JSON). Pairing, unpairing, a key replacement and a rollback commit synced; the rest are ordinary commits. |
 | `drafts` | This machine's clients' unsent draft per agent, an encoded `amux.v1.Draft`. Deleted when it is emptied and when the agent goes. |
 | `recent_directories` | The directories agents were started in, with when each was last used: the 200 newest are kept, and a directory stays after the agents that ran there are deleted. |
-| `schema_migrations` | Each applied migration's number and SHA-256 |
 
 The schema's own text comments every column.
 
@@ -438,39 +436,17 @@ The shipped daemon and the phone runtime install `NoopSender` as the push
 sender, so notification rows are written, fall due and are deleted without a
 push being sent.
 
-### Migrations
+### Schema version
 
-The first migration is the schema the first release ships. From that release
-on, migrations are forward only, append only and additive: a column with a
-default, a table, an index. Every table is `STRICT`, so a value of the wrong
-type is refused rather than stored. Opening a store takes the write lock, checks
-its history and applies the migrations it lacks in one transaction, so the
-history it checked is the one it migrates. Shipped
-text is never edited: the store records each migration's hash in
-`schema_migrations` and refuses to open a file whose history disagrees
-(`OpenError::OtherHistory`).
-
-That refusal is also what happens to a store written before the release
-schema: its history is a different first migration, so it is never carried
-forward. Opening it fails with an error that names the file and says it
-predates the release schema; the daemon does not start, and the file is left
-exactly as it was, for the person to move aside.
-
-`user_version` holds the schema stamp, `SCHEMA_STAMP`: the minimum number of
-migrations a binary must know to read the file. A binary opens any store whose
-stamp is at most the migrations it ships, so an older binary opens a store a
-later one migrated; one that is too old fails with `OpenError::TooNew`. The
-history is checked before the stamp, so a store from before the release reads
-as that, not as one from a newer build. Because an older binary keeps writing
-a store a later one migrated, every write names its columns and updates a held
-row in place (`ON CONFLICT ... DO UPDATE`), never `INSERT OR REPLACE`: a
-replace rewrites the whole row and would reset a column the older binary does
-not know. `crates/store/tests/fixtures/store-v1.sqlite` is a store the first
-release's schema wrote; every later build must open it and read its rows. A
-drop, rename or rewrite ships only after the stamp has been raised past every
-binary that read the earlier shape.
-The file's `application_id` marks it as an amux store; any other SQLite file is
-refused as foreign.
+The schema is one text and there are no migrations. Every table is `STRICT`, so a value of the wrong
+type is refused rather than stored. Opening a fresh file takes the write lock
+and creates the whole schema in one transaction, stamping the file's
+`application_id` (an amux store) and `user_version` (`SCHEMA_VERSION`). Any
+other SQLite file is refused as foreign, and a store stamped with another
+version, as every store written before a schema change is, fails with
+`OpenError::OtherSchema`: the error names the file, the daemon does not start,
+and the file is left exactly as it was, for the person to move aside. A schema
+change raises `SCHEMA_VERSION`.
 
 ### Own rows and replica rows
 
@@ -521,9 +497,9 @@ minutes (`ProfileRuntime::start_retention` in
 [`crates/node/src/retention.rs`](../crates/node/src/retention.rs)). The store
 decides what goes; the daemon then closes the removed agents' streams, tells the
 fleet (`AgentRemoved` with reason `REMOVAL_REASON_RETENTION`) and deletes their
-directories, which takes their blobs with them. Row cost is `store::item_bytes`:
-the envelope's variable fields, 4 bytes for its kind and a fixed 48 bytes a
-row; the store's SQL counts the same.
+directories, which takes their blobs with them. A row costs the bytes of the
+envelope's variable fields, 4 bytes for its kind and a fixed 48 bytes a row,
+counted in the store's SQL.
 
 **Own rows** (`Sqlite::sweep_own`, in
 [`crates/store/src/retention.rs`](../crates/store/src/retention.rs)), against
@@ -587,16 +563,16 @@ loss and unclean reboots:
 | single daemon | commit before broadcast; the open is one cut; a segment is reclaimed only below the last checkpoint's cursor; the generation bumps after an unclean reboot, and only then; a checkpoint plus the inputs since reproduces the state |
 | replication | a replica's block is contiguous and agrees with the origin; no row survives from another generation; the cursor is complete |
 
-`cargo run -p models --bin properties` prints each in full. What the models
-do not reach, the files themselves (a torn tail, a frame cut at a byte, a
-migration, the SQLite file on another platform), is held by named tests,
-mapped in [`tests/contracts.toml`](../tests/contracts.toml). The main ones:
+Each is written in full in the models' `src/single_daemon.rs` and
+`src/replication.rs`. What the models do not reach, the files themselves (a
+torn tail, a frame cut at a byte, a store of another schema, the SQLite file
+on another platform), is held by named tests. The main ones:
 
 | Where | What it holds |
 | --- | --- |
 | [`crates/journal/tests/journal.rs`](../crates/journal/tests/journal.rs) | Segment naming, rotation, torn tails, reclaim below a cursor |
 | [`crates/store/tests/conformance.rs`](../crates/store/tests/conformance.rs) | Commit, absorb, pages, cuts, lookups and deletes |
-| [`crates/store/tests/sqlite.rs`](../crates/store/tests/sqlite.rs) | Migrations, refusing a store with another history, one transaction per commit, reopening |
+| [`crates/store/tests/sqlite.rs`](../crates/store/tests/sqlite.rs) | Refusing a store of another schema, one transaction per commit, reopening |
 | [`crates/store/tests/retention.rs`](../crates/store/tests/retention.rs) | Own and replica sweeps |
 | [`crates/node/tests/single_daemon.rs`](../crates/node/tests/single_daemon.rs) | Ingest, re-derivation, power loss and the generation bump |
 

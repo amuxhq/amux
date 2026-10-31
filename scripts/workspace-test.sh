@@ -13,10 +13,8 @@ set -eu
 compile_bound=1200
 run_bound=1000
 
-# The whole workspace unless the arguments name packages. The workspace run
-# names the desktop SQLite linkage explicitly; a named package that lacks the
-# feature would refuse it, and its store dependency links SQLite by default.
-scope="--workspace --features bundled"
+# The whole workspace unless the arguments name packages.
+scope=--workspace
 for arg do
     case "$arg" in
         --) break ;;

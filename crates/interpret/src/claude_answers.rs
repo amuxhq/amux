@@ -12,9 +12,9 @@ use claude_protocol::stream::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use wire::{AskClosed, ClaudeGrant, DecisionOutcome, FormAction, claude_answer, permission_answer};
+use wire::{AskClosed, ClaudeGrant, DecisionOutcome, FormAction, answer, permission_answer};
 
-use crate::claude_common::{Verdict, claude_grant, permission_scopes};
+use crate::claude_common::{Verdict, permission_scopes};
 use crate::{ask_item, serde_pb};
 
 /// What answering an ask decided, for the call it held.
@@ -30,6 +30,18 @@ pub(crate) struct ToolDecisionState {
     #[serde(with = "serde_pb::opt_msg")]
     pub(crate) grant: Option<ClaudeGrant>,
     pub(crate) note: String,
+}
+
+impl ToolDecisionState {
+    /// The decision as the call's row carries it.
+    pub(crate) fn to_wire(&self) -> wire::ToolDecision {
+        wire::ToolDecision {
+            outcome: self.outcome,
+            note: self.note.clone(),
+            elsewhere: false,
+            granted: self.grant.clone().map(wire::tool_decision::Granted::Claude),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -82,6 +94,16 @@ pub(crate) enum Answer {
 /// Claude's own words for a tool use the person rejected.
 pub(crate) const REJECTED: &str = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file).";
 
+/// What Claude is handed for a plan dismissed by a prompt typed instead of
+/// deciding it: refused, and the turn stopped, so the prompt starts the next.
+pub(crate) fn plan_dismissed() -> PermissionResult {
+    PermissionResult::Deny {
+        message: REJECTED.to_owned(),
+        interrupt: Some(true),
+        tool_use_id: None,
+    }
+}
+
 /// The decision an answer hands Claude and the one it puts on the call's
 /// row, or None when the answer does not fit the ask. `input` is the
 /// call's input as Claude asked it, and `suggestions` each scope choice it
@@ -91,7 +113,7 @@ pub(crate) fn decide(
     input: &str,
     suggestions: &[String],
     asked: Option<&wire::QuestionAsk>,
-    answer: claude_answer::Of,
+    answer: answer::Of,
 ) -> Option<(Answer, Option<Decided>)> {
     let input = serde_json::from_str::<Value>(input).unwrap_or(Value::Null);
     let decided = |outcome: DecisionOutcome, grant: Option<ClaudeGrant>, note: &str| {
@@ -124,9 +146,7 @@ pub(crate) fn decide(
         })
     };
     match (shape, answer) {
-        (AnswerShape::Permission, claude_answer::Of::Permission(permission)) => match permission
-            .of?
-        {
+        (AnswerShape::Permission, answer::Of::Permission(permission)) => match permission.of? {
             permission_answer::Of::Allow(chosen) => {
                 let mut permissions = None;
                 let mut grant = None;
@@ -134,8 +154,9 @@ pub(crate) fn decide(
                     let suggestion =
                         serde_json::from_str::<PermissionUpdate>(suggestions.get(index as usize)?)
                             .ok()?;
-                    let scopes = permission_scopes(std::slice::from_ref(&suggestion));
-                    grant = scopes.first().map(claude_grant);
+                    grant = permission_scopes(std::slice::from_ref(&suggestion))
+                        .into_iter()
+                        .next();
                     permissions = Some(vec![suggestion]);
                 }
                 Some((
@@ -148,7 +169,7 @@ pub(crate) fn decide(
                 decided(DecisionOutcome::Denied, None, &no.note),
             )),
         },
-        (AnswerShape::Plan { switch }, claude_answer::Of::Plan(plan)) => {
+        (AnswerShape::Plan { switch }, answer::Of::Plan(plan)) => {
             let start = |mode: PermissionMode, verdict: Verdict| {
                 let update = PermissionUpdate::SetMode {
                     mode,
@@ -179,7 +200,7 @@ pub(crate) fn decide(
                 wire::PlanChoice::Unspecified => None,
             }
         }
-        (AnswerShape::Question(questions), claude_answer::Of::Question(answer)) => {
+        (AnswerShape::Question(questions), answer::Of::Question(answer)) => {
             if answer.answers.len() != questions.len() {
                 return None;
             }
@@ -227,7 +248,7 @@ pub(crate) fn decide(
         }
         // The question is refused with the person's own words, which
         // Claude hands the model as the call's result.
-        (AnswerShape::Question(questions), claude_answer::Of::Reply(reply)) => {
+        (AnswerShape::Question(questions), answer::Of::Reply(reply)) => {
             if reply.text.trim().is_empty()
                 || (!reply.answers_so_far.is_empty()
                     && reply.answers_so_far.len() != questions.len())
@@ -244,7 +265,7 @@ pub(crate) fn decide(
                 Some(Decided::Question(closed)),
             ))
         }
-        (AnswerShape::Form, claude_answer::Of::Form(form)) => {
+        (AnswerShape::Form, answer::Of::Form(form)) => {
             let result = match FormAction::try_from(form.action).ok()? {
                 FormAction::Accept => ElicitationResult::Accept {
                     content: Some(
@@ -257,7 +278,7 @@ pub(crate) fn decide(
             };
             Some((Answer::Elicitation(result), None))
         }
-        (AnswerShape::Link, claude_answer::Of::Link(link)) => Some((
+        (AnswerShape::Link, answer::Of::Link(link)) => Some((
             Answer::Elicitation(form_action(FormAction::try_from(link.action).ok()?)?),
             None,
         )),

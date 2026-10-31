@@ -1,7 +1,7 @@
 //! A profile's standing with its cloud account: what the person asked for
 //! and, while signed in, what its relay link is doing. The front door and
 //! an embedder report it as one value, so no reader sees a link connected
-//! on a profile that is paused or signed out.
+//! on a profile that is signed out.
 
 use tokio::sync::watch;
 
@@ -19,21 +19,18 @@ pub enum Cloud {
     Unbound,
     /// Signed out, still tied to its account.
     SignedOut,
-    /// Signed in, with the relay link held down.
-    Paused,
     SignedIn(Relay),
 }
 
 impl Cloud {
     /// Whether the profile is signed in to the account it is bound to:
     /// none while it was never bound, so a profile that only ever worked
-    /// on its own network never reads as signed out. A paused profile is
-    /// still signed in; the person chose to stay off the relay.
+    /// on its own network never reads as signed out.
     pub fn signed_in(&self) -> Option<bool> {
         match self {
             Cloud::Unbound => None,
             Cloud::SignedOut => Some(false),
-            Cloud::Paused | Cloud::SignedIn(_) => Some(true),
+            Cloud::SignedIn(_) => Some(true),
         }
     }
 

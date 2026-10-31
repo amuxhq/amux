@@ -231,7 +231,7 @@ public struct ChatScreen: View {
     /// pieces, measured on a 402-point phone.
     private static let barSpends: CGFloat = 160
 
-    private var detached: Bool { model.frame?.waiting == .detached }
+    private var detached: Bool { model.frame?.composer.mode == .holds(.detached) }
 
     private var placeLine: String {
         if detached, subject.reachable { return String(localized: "\(subject.host) · out of reach") }

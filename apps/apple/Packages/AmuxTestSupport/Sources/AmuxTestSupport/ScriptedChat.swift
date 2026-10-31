@@ -56,7 +56,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         name: String = "refactor-auth", kind: Kind = .claudeSdk, phase: PhaseView = .idle,
         mode: Composer = .send, activity: Activity? = nil, caughtUp: Bool = true,
         hasOlder: Bool = false, queue: [QueuedRow] = [], underway: [SentPrompt] = [],
-        refused: [RefusedPrompt] = [], waiting: Waiting? = nil, switchedAway: Bool = false
+        refused: [RefusedPrompt] = [], switchedAway: Bool = false
     ) -> ChatFrame {
         ChatFrame(
             agent: agent, name: name, kind: kind, phase: phase,
@@ -64,7 +64,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             caughtUp: caughtUp, hasOlder: hasOlder, arrivalsHeld: false, queue: queue,
             underway: underway, refused: refused, askInput: nil, context: nil,
             ended: nil,
-            git: nil, signIn: nil, waiting: waiting)
+            git: nil, signIn: nil)
     }
 
     /// The facts around a chat's rows: what the frame reports of the agent,

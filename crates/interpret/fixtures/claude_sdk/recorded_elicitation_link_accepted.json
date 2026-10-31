@@ -1,10 +1,10 @@
 {
-  "about": "A tool server asks the person to open a link; Claude hands the link to the caller, who accepts.",
+  "about": "A tool server asks the person to open a link; Claude hands the link over and the person accepts.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/sdk/elicitation_link_accepted/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/sdk/elicitation_link_accepted/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

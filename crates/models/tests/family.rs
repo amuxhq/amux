@@ -1,14 +1,7 @@
 //! The family rule and the deliveries outbox explored over two hosts' real
-//! daemon cores at the bounds `just test` runs, and walked by seed.
+//! daemon cores at the bounds `just test` runs.
 
-use models::{Bounds, FamilyDeliveries, check, walk};
-
-/// How many states the exhaustive run may explore: the most it explored at
-/// these bounds on 2026-10-30 (209,382 to 213,130 states on twelve, four
-/// and two threads) with two percent over, since the count moves with the
-/// threads. A run past it says the bounds have outgrown their place; a run
-/// that hangs is the test harness's bound to catch.
-const BUDGET_STATES: u64 = 217_400;
+use models::{Bounds, FamilyDeliveries, check};
 
 #[test]
 fn every_family_promise_holds_at_ci_bounds() {
@@ -18,37 +11,7 @@ fn every_family_promise_holds_at_ci_bounds() {
         Bounds::exhaustive().threads(threads),
     );
     println!("{verdict}");
-    let measured = verdict.measured;
-    println!(
-        "measured on {threads} threads: states={} seconds={:.1} states_per_second={:.0}",
-        measured.states, measured.seconds, measured.states_per_second
-    );
     verdict.assert_holds();
-    assert!(
-        measured.states <= BUDGET_STATES,
-        "the family model explored {} states, past its {BUDGET_STATES}",
-        measured.states
-    );
-}
-
-#[test]
-fn one_seed_walks_one_family_schedule() {
-    let model = FamilyDeliveries::ci();
-    let bounds = Bounds::depth(40);
-    let first = walk(&model, bounds, 7);
-    let again = walk(&model, bounds, 7);
-    println!("{first}");
-    assert_eq!(
-        first.actions, again.actions,
-        "one seed walked two schedules"
-    );
-    assert_eq!(first.failure, again.failure);
-    assert!(first.failure.is_none(), "{first}");
-    let other = walk(&model, bounds, 8);
-    assert_ne!(
-        first.actions, other.actions,
-        "two seeds walked one schedule"
-    );
 }
 
 /// The nightly bounds, run by hand or by the nightly recipe.

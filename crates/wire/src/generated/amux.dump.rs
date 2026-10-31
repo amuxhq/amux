@@ -132,6 +132,8 @@ pub struct ClientInput {
     pub seen_queued: bool,
     #[prost(uint64, tag = "5")]
     pub left_at: u64,
+    #[prost(bool, tag = "6")]
+    pub in_feed: bool,
 }
 impl ::prost::Name for ClientInput {
     const NAME: &'static str = "ClientInput";

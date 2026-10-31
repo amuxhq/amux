@@ -118,10 +118,7 @@ Each item runs `<binary> [--config <path>] supervise`, where `<binary>` is the
 running `amux` executable, and sends the supervisor's own output to
 `<data_dir>/supervisor.log`. If a supervisor started by hand is already
 running, `amux init` stops it first so the login item's supervisor owns the
-install; agents keep running and the new daemon adopts them. The committed
-goldens under
-[`crates/amux/tests/goldens/login`](../crates/amux/tests/goldens/login) show the
-exact text of all three files.
+install; agents keep running and the new daemon adopts them.
 
 ## Stop goes to the owner
 
@@ -158,7 +155,7 @@ before anything else runs, so nothing it starts inherits them. The pipe carries
 three things:
 
 1. **`prepared`**, written by the daemon once it has taken the installation
-   lock, migrated its stores and looked at every agent directory without
+   lock, opened its stores and looked at every agent directory without
    writing to any of them.
 2. **`go`**, the supervisor's answer. Only after `go` does the daemon finish
    its startup sweep, bind its sockets and serve.
@@ -167,8 +164,8 @@ three things:
 
 A daemon with no pipe has no supervisor and goes straight on. Before `go`,
 nothing the daemon has done needs undoing if the supervisor puts the previous
-binary back: the only writes are the generation file and the store migration,
-which from the first release on is additive. That is what makes activation the
+binary back: the only writes are the generation file and creating a profile
+store that did not exist. That is what makes activation the
 rollback checkpoint. The
 daemon's startup order is described in [Architecture](ARCHITECTURE.md).
 
@@ -300,8 +297,8 @@ three ways:
 
 Rollback restores the binary only, and only before activation. There is no
 store backup: the store the previous binary reopens holds nothing the new one
-wrote except its migration, which from the first release on is additive,
-transactional and stamped as a minimum version. A bad release that has already activated is fixed by a
+wrote, because a binary refuses a store of another schema version rather than
+change it. A bad release that has already activated is fixed by a
 corrective release with a higher version, never by moving back.
 
 The supervisor needs write access to the directory holding the `amux` binary,
@@ -347,7 +344,7 @@ logged and leaves the machine free to sleep, which is no worse than
 | --- | --- |
 | [`crates/node/tests/supervisor.rs`](../crates/node/tests/supervisor.rs) | The real supervisor driving a stand-in binary (`fake-amux`) whose daemon mode is scripted per version, against a local manifest server, with releases signed by the test key. Restart on every exit and stop on request; install a newer signed release and exec it keeping pid, child, pipe and lock; refuse a bad hash or signature; roll back after K starts that never prepare and skip the rejected build; stop a daemon that hangs before `prepared` at the start deadline; restart without rollback after `go`; kill at the stop deadline; the three recovery cases above; the real `amux daemon` exiting when its supervisor dies; rollout and version choice. |
 | [`crates/amux/tests/supervise_cli.rs`](../crates/amux/tests/supervise_cli.rs) | The CLI around it, with the real binary: login units matching their goldens, `amux init` writing and registering one, stop going to the supervisor first or to the daemon when there is none, a client starting the supervisor only where the install has one, the sleep assertion under `keep_awake` (macOS), `amux config set channel`, and `amux update` reporting a build that never started and leaving it alone after, and `amux update --retry` installing a build this machine had rolled back. |
-| [`crates/amux/tests/overlap.rs`](../crates/amux/tests/overlap.rs) | Releases overlapping on one machine. Agents started by the previous build work on after an update; a terminal client of the previous build keeps working and names the newer daemon; the previous build reopens and works in a store the new build migrated before it was killed ahead of `prepared`; restarting the generated LaunchAgent under a running turn leaves the agent running. "The previous build" is a copy of the build under test re-stamped one version lower (`node::release::restamp`). |
+| [`crates/amux/tests/overlap.rs`](../crates/amux/tests/overlap.rs) | Releases overlapping on one machine. Agents started by the previous build work on after an update; a terminal client of the previous build keeps working and names the newer daemon; the previous build reopens and works in a store the new build opened before it was killed ahead of `prepared`; restarting the generated LaunchAgent under a running turn leaves the agent running. "The previous build" is a copy of the build under test re-stamped one version lower (`node::release::restamp`). |
 | [`crates/amux/tests/process.rs`](../crates/amux/tests/process.rs) | A daemon killed mid-turn loses nothing: agents finish without it and the next daemon adopts them. |
 
 `just journey system survive-daemon` tells the same story end to end: agents of

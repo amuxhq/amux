@@ -64,7 +64,7 @@ fn an_in_flight_tool_is_running_named_by_its_call() {
 fn terminal_claudes_announced_call_is_running_until_a_newer_row() {
     let mut state = working(Kind::ClaudePty);
     let mut announced = snapshot(Kind::ClaudePty, 2, Phase::Working, &[], &[]);
-    announced.body = wire::ClaudePtySnapshot {
+    announced.body = wire::ClaudeSnapshot {
         running_calls: vec![wire::RunningCall {
             tool_use_id: "t1".into(),
             tool_name: "Bash".into(),

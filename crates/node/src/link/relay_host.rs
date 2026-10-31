@@ -14,19 +14,16 @@ use std::time::SystemTime;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{Mutex, mpsc, watch};
 use tokio::task::{JoinHandle, JoinSet};
-use wire::pb;
 
 use super::framed::{FramedKind, StreamOnly};
 use super::quic::LinkEndpoint;
 use super::resumption::SessionTickets;
-use super::run::spawn_connector_with_auth_establishment_and_shutdown;
+use super::run::spawn_connector;
 use super::socket::LinkSocket;
 use super::{ByteStream, LinkCtx, QuicCarrier};
 use crate::identity::DeviceIdentity;
-use crate::routing::{
-    Capabilities, LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher, LinkRegistry,
-    LiveLocalHost, local_host,
-};
+use crate::link::run::{LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher};
+use crate::routing::{Capabilities, LinkRegistry, LiveLocalHost, local_host};
 use crate::trust::{SharedTrustStore, TrustStore};
 use crate::{HostId, Tier};
 
@@ -159,12 +156,10 @@ impl RelayHost {
             None,
         );
         let (shutdown, shutdown_rx) = watch::channel(false);
-        let (relay_link, established) = spawn_connector_with_auth_establishment_and_shutdown(
-            ctx,
+        let (relay_link, established) = spawn_connector(
+            ctx.with_connector_auth(auth, None)
+                .with_shutdown(shutdown_rx),
             relay.clone(),
-            auth,
-            shutdown_rx,
-            None,
         );
         established
             .await
@@ -209,7 +204,6 @@ impl RelayHost {
                 peer.identity.public_key().to_vec(),
                 "relay-host".to_owned(),
                 None,
-                chrono::Utc::now(),
             )
             .map_err(|error| tonic::Status::internal(error.to_string()))?;
         Ok(())
@@ -308,9 +302,9 @@ impl Drop for RelayHost {
             .expect("the links lock is poisoned")
             .abort_all();
         for carrier in self.peers.borrow().values() {
-            carrier.close(pb::LinkCloseReason::UserShutdown);
+            carrier.close(wire::LinkCloseReason::UserShutdown);
         }
-        self.relay.close(pb::LinkCloseReason::UserShutdown);
+        self.relay.close(wire::LinkCloseReason::UserShutdown);
         self.relay_link.abort();
     }
 }

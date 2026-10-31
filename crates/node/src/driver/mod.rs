@@ -39,25 +39,24 @@ pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
 use core_ring::{DumpLimit, Ring};
 use daemon_core::payload::{
-    Answer, BlobRefusal, CallError, ChannelClass, ChannelError, ClientRequest, JobResult,
-    PeerFailure, PeerReply, PeerRequest, PublicKey, Response, Status,
+    Answer, BlobRefusal, CallError, ChannelError, ClientRequest, JobResult, PeerFailure, PeerReply,
+    PeerRequest, Response, Status,
 };
 use daemon_core::{
     CallId, ChannelId, Daemon, DrainReport, HostId, IngestEnd, Ingested, Input, Job, JobId, LinkId,
     Output, Recorded, Retain, Retained, Settings, ShellWork, StartOptions, TimerId,
 };
 pub(crate) use feed::{Feed, WeakFeed};
-pub(crate) use links::{CoreLinks, Wanted, core_error};
+pub(crate) use links::{CoreLinks, Wanted};
 pub use stepped::Cores;
 use store::Sqlite;
 pub use streams::{InventorySubscription, Subscription};
-use tokio::runtime::Handle;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 use wire::{GetItemRequest, ListItemsRequest};
 
-use crate::connection::ConnectionManager;
 use crate::install::{CORE_RING, STORE, write_durably};
+use crate::routing::host_from_core;
 use crate::runtime::ProfileRuntime;
 
 /// How the reason of a dump the core asked for begins.
@@ -127,12 +126,10 @@ pub(crate) enum Fed {
     },
     /// A read of the store, between steps.
     Read(Box<dyn FnOnce(&Sqlite) + Send>),
-    /// For tests: a write beneath the core's own, between steps.
-    Beneath(Box<dyn FnOnce(&mut Sqlite) + Send>),
     /// The shell wants a channel, and waits for the core's word on it.
     Channel {
         want: Input,
-        reply: oneshot::Sender<Result<Opened, ChannelError>>,
+        reply: oneshot::Sender<Result<ChannelId, ChannelError>>,
     },
     /// A link resuming with a ticket came up, and holds what its peer sent
     /// early until the core says whether it takes the identity the ticket
@@ -175,21 +172,12 @@ pub(crate) enum Ask {
     Ready(ClientRequest),
 }
 
-/// A channel the core said to open, under the id it gave. The link it
-/// rides already pinned the peer's key.
-pub(crate) struct Opened {
-    pub(crate) channel: ChannelId,
-}
-
 /// A profile's core thread, from the shell's side.
 pub(crate) struct Driver {
     inputs: Feed,
     /// What links and channels reported, in the order they did.
     reports: Arc<Mutex<VecDeque<Report>>>,
     calls: Arc<CallTable>,
-    /// Where what the core decides about hosts goes, once the profile's
-    /// edge is up.
-    connections: Arc<Mutex<Weak<ConnectionManager>>>,
     /// The calls the core made of peers that are still out.
     outgoing: Outgoing,
     /// Where the core is held for stepping: the caller's cores, or this
@@ -235,7 +223,6 @@ impl Driver {
         let inputs = Feed::new(inputs, Some(cores.bell()));
         let calls = Arc::new(CallTable::default());
         let reports = Arc::new(Mutex::new(VecDeque::new()));
-        let connections = Arc::new(Mutex::new(Weak::new()));
         let outgoing = Outgoing::default();
         let window = Arc::new(pairing::PairWindow::default());
         let pairings = Arc::new(pairing::Carriers::default());
@@ -246,13 +233,9 @@ impl Driver {
         let store_at_checkpoint = Sqlite::checkpoint_wal(&dir.join(STORE))
             .inspect_err(|error| tracing::warn!(%error, "moving the store's WAL at start failed"))
             .is_ok();
-        let ring = Ring::open(
-            dir.join(CORE_RING),
-            RING_BYTES,
-            &daemon.checkpoint().to_bytes(),
-        )
-        .inspect_err(|error| tracing::warn!(%error, "the core's input ring does not open"))
-        .ok();
+        let ring = Ring::open(dir.join(CORE_RING), RING_BYTES, &daemon.checkpoint())
+            .inspect_err(|error| tracing::warn!(%error, "the core's input ring does not open"))
+            .ok();
         let (closed, closed_seen) = watch::channel(());
         let core = CoreThread {
             daemon,
@@ -275,7 +258,6 @@ impl Driver {
             inputs: inputs.downgrade(),
             runtime,
             calls: calls.clone(),
-            connections: connections.clone(),
             outgoing: outgoing.clone(),
             timers: BTreeMap::new(),
             alarm: None,
@@ -295,7 +277,6 @@ impl Driver {
             inputs,
             reports,
             calls,
-            connections,
             outgoing,
             cores,
             stepper,
@@ -315,11 +296,6 @@ impl Driver {
         async move { while closed.changed().await.is_ok() {} }
     }
 
-    /// From now on what the core decides about hosts goes to `connections`.
-    pub(crate) fn attach_connections(&self, connections: Weak<ConnectionManager>) {
-        *self.connections.lock().unwrap() = connections;
-    }
-
     /// Reports what a link or channel did. Never waits, so a stream can
     /// say it ended as it is dropped.
     pub(crate) fn report(&self, input: Input) {
@@ -328,31 +304,24 @@ impl Driver {
         let _ = self.inputs.try_send(Fed::Wake);
     }
 
-    /// Asks the core for a channel to `peer` over `link`, with the key the
-    /// shell pinned for the peer, and waits for its word.
+    /// Asks the core for a channel to `peer` over `link`, and waits for
+    /// its word.
     pub(crate) async fn want_channel(
         &self,
         link: LinkId,
         peer: HostId,
-        class: ChannelClass,
-        pin: Option<PublicKey>,
-    ) -> Result<Opened, ChannelError> {
+    ) -> Result<ChannelId, ChannelError> {
         let (reply, word) = oneshot::channel();
-        let want = Input::WantChannel {
-            link,
-            peer,
-            class,
-            pin,
-        };
+        let want = Input::WantChannel { link, peer };
         if self
             .inputs
             .send(Fed::Channel { want, reply })
             .await
             .is_err()
         {
-            return Err(ChannelError::LinkClosed);
+            return Err(ChannelError::NoLink);
         }
-        word.await.unwrap_or(Err(ChannelError::LinkClosed))
+        word.await.unwrap_or(Err(ChannelError::NoLink))
     }
 
     /// Hands a client's call to the core and returns its answers. `room` is
@@ -495,19 +464,6 @@ impl Driver {
         word.await.unwrap_or(false)
     }
 
-    /// For tests: writes the store beneath the core, between steps.
-    pub(crate) async fn beneath<T: Send + 'static>(
-        &self,
-        write: impl FnOnce(&mut Sqlite) -> T + Send + 'static,
-    ) -> Option<T> {
-        let (done, value) = oneshot::channel();
-        let write = Box::new(move |store: &mut Sqlite| {
-            let _ = done.send(write(store));
-        });
-        self.inputs.send(Fed::Beneath(write)).await.ok()?;
-        value.await.ok()
-    }
-
     /// Feeds the core an input.
     pub(crate) async fn feed(&self, input: Input) {
         let _ = self.inputs.send(Fed::Input(input)).await;
@@ -598,7 +554,7 @@ pub(crate) struct CoreThread {
     reports: Arc<Mutex<VecDeque<Report>>>,
     /// Whoever waits for the core's word on the channel the step under way
     /// was asked for.
-    channel_reply: Option<oneshot::Sender<Result<Opened, ChannelError>>>,
+    channel_reply: Option<oneshot::Sender<Result<ChannelId, ChannelError>>>,
     /// Whoever holds a resumed link's early streams until the core decides
     /// the step under way: told false if it refuses the link.
     resumed_reply: Option<oneshot::Sender<bool>>,
@@ -608,7 +564,6 @@ pub(crate) struct CoreThread {
     inputs: WeakFeed,
     runtime: Weak<ProfileRuntime>,
     calls: Arc<CallTable>,
-    connections: Arc<Mutex<Weak<ConnectionManager>>>,
     outgoing: Outgoing,
     /// The timers the core armed, by their deadline on the profile's clock.
     /// The map is the truth: a timer the core cancelled or re-armed is not
@@ -722,10 +677,6 @@ impl CoreThread {
                 look(&self.daemon);
                 return true;
             }
-            Fed::Beneath(write) => {
-                write(self.daemon.store_beneath());
-                return true;
-            }
             Fed::Capture { store, done } => {
                 let _ = done.send(self.capture(&store));
                 return true;
@@ -832,22 +783,9 @@ impl CoreThread {
             | Fed::Forward { .. }
             | Fed::Look(_)
             | Fed::Read(_)
-            | Fed::Beneath(_)
             | Fed::Capture { .. } => None,
         };
-        let launch = runtime.launch();
-        let settings = Settings {
-            notify_delay_ms: launch.notify_delay_ms,
-            push_retry_ms: launch.push_retry_ms.max(0) as u64,
-            checkpoint_interval_ms: launch.checkpoint_interval_ms.max(0) as u64,
-            tail_rows: launch.tail_rows,
-            source_backoff_ms: launch.source_backoff_ms.max(0) as u64,
-            source_backoff_max_ms: launch.source_backoff_max_ms.max(0) as u64,
-            start_deadline_ms: launch.start_deadline_ms.max(0) as u64,
-            stop_deadline_ms: launch.stop_deadline_ms.max(0) as u64,
-            delivery_retry_ms: launch.delivery_retry_ms.max(0) as u64,
-            reply_patience_ms: launch.reply_patience_ms.max(0) as u64,
-        };
+        let settings = runtime.core_settings();
         if self.settings != Some(settings) {
             self.settings = Some(settings);
             self.step(&runtime, Input::Configure(settings), &mut out);
@@ -858,7 +796,7 @@ impl CoreThread {
                 request: runtime.client_request(self.daemon.store(), ask),
             }),
             Some(Arriving::Peer(from, call, request)) => {
-                let request = runtime.peer_request(*request);
+                let request = *request;
                 let stream = match &request {
                     PeerRequest::SubscribeInventory => Some("inventory"),
                     PeerRequest::SubscribeSession(_) => Some("session"),
@@ -867,7 +805,7 @@ impl CoreThread {
                 if let Some(stream) = stream {
                     tracing::debug!(
                         host = %runtime.host(),
-                        peer = %crate::routing::host_from_core(from),
+                        peer = %host_from_core(from),
                         stream,
                         "a peer opened a stream"
                     );
@@ -1196,39 +1134,30 @@ impl CoreThread {
                     "the daemon core",
                 );
             }
-            Output::OpenChannel { channel, .. } => match self.channel_reply.take() {
+            Output::Channel(word) => match self.channel_reply.take() {
                 Some(reply) => {
-                    if reply.send(Ok(Opened { channel })).is_err() {
+                    if let Err(Ok(channel)) = reply.send(word) {
                         // Nobody waits to open it: it never opened.
-                        self.again.push_back(Input::ChannelClosed {
-                            channel,
-                            reason: ChannelError::LinkClosed,
-                        });
+                        self.again.push_back(Input::ChannelClosed { channel });
                     }
                 }
-                None => tracing::error!(
-                    ?channel,
-                    "the daemon core opened a channel nobody asked for"
-                ),
-            },
-            Output::ChannelRefused { reason, .. } => {
-                if let Some(reply) = self.channel_reply.take() {
-                    let _ = reply.send(Err(reason));
+                None => {
+                    tracing::error!(?word, "the daemon core answered a channel nobody asked for")
                 }
-            }
+            },
             Output::Abandon { host, attempt } => {
-                if let Some(connections) = self.connections() {
-                    connections.abandon(host, attempt);
+                if let Some(edge) = runtime.edge() {
+                    edge.reachability().abandon(host_from_core(host), attempt);
                 }
             }
             Output::Rediscover => {
-                if let Some(connections) = self.connections() {
-                    connections.rediscover();
+                if let Some(edge) = runtime.edge() {
+                    edge.reachability().requery();
                 }
             }
             Output::DropRoute { host, route } => {
-                if let Some(connections) = self.connections() {
-                    connections.drop_route(host, route);
+                if let Some(edge) = runtime.edge() {
+                    edge.connections().drop_route(host, route);
                 }
             }
             Output::Call {
@@ -1284,15 +1213,20 @@ impl CoreThread {
                 plan,
                 early,
             } => {
-                if let Some(connections) = self.connections() {
-                    connections.dial(host, attempt, plan, early);
+                if let Some(edge) = runtime.edge() {
+                    edge.reachability()
+                        .dial(host_from_core(host), attempt, plan, early);
                 }
             }
-            Output::DialRelay { attempt } => {
-                if let Some(connections) = self.connections() {
-                    connections.dial_relay(attempt);
+            Output::DialRelay { attempt } => match runtime.edge() {
+                Some(edge) => {
+                    tokio::spawn(async move { edge.dial_relay(attempt).await });
                 }
-            }
+                None => self.again.push_back(Input::RelayEnded {
+                    attempt,
+                    outcome: daemon_core::RelayOutcome::Lost("the edge is not up".to_owned()),
+                }),
+            },
             Output::SpawnAgent { dir, spec } => runtime.spawn_process(dir, *spec),
             Output::DialAgent { agent } => runtime.dial_agent(uuid::Uuid::from_bytes(agent.0)),
             Output::WriteControl { agent, frame } => {
@@ -1344,17 +1278,7 @@ impl CoreThread {
                     let _ = reply.send(false);
                 }
             }
-            output @ (Output::CloseChannel { .. } | Output::LinkControl { .. }) => {
-                tracing::error!(
-                    ?output,
-                    "the daemon core asked for what this driver does not carry out yet"
-                );
-            }
         }
-    }
-
-    fn connections(&self) -> Option<Arc<ConnectionManager>> {
-        self.connections.lock().unwrap().upgrade()
     }
 
     /// Does what the core left to the shell.
@@ -1367,11 +1291,11 @@ impl CoreThread {
             ShellWork::Trust { store, changed } => {
                 *self.trust.write().unwrap() = *store;
                 if let Some((host, changed)) = changed {
-                    self.trust_changed(runtime.dir(), uuid::Uuid::from_bytes(host.0), changed);
+                    Self::trust_changed(runtime, uuid::Uuid::from_bytes(host.0), changed);
                 }
             }
             ShellWork::ReplacementEnded { host } => {
-                self.replacement_ended(uuid::Uuid::from_bytes(host.0))
+                Self::replacement_ended(runtime, uuid::Uuid::from_bytes(host.0))
             }
             ShellWork::PairWindow { active, locked_out } => self.window.publish(active, locked_out),
             ShellWork::Pairing(event) => pairing::record(&event, runtime.analytics()),
@@ -1382,13 +1306,13 @@ impl CoreThread {
     /// for a host forgotten, the tickets and tokens it gave this profile's
     /// dials, which nothing would dial it with again.
     fn trust_changed(
-        &self,
-        profile: &Path,
+        runtime: &ProfileRuntime,
         host: uuid::Uuid,
         changed: daemon_core::trust::TrustChanged,
     ) {
         use daemon_core::trust::{PairingUpdate, TrustChanged};
 
+        let profile = runtime.dir();
         let update = match changed {
             TrustChanged::Paired(update) => update,
             TrustChanged::Removed(_) => {
@@ -1407,19 +1331,18 @@ impl CoreThread {
             }
             _ => return,
         };
-        let Some(connections) = self.connections() else {
-            return;
-        };
-        if update == PairingUpdate::ReplacedPubkey {
-            connections.finish_host_replacement(host);
+        if update == PairingUpdate::ReplacedPubkey
+            && let Some(edge) = runtime.edge()
+        {
+            edge.connections().finish_host_replacement(host);
         }
     }
 
     /// A key replacement that was not written: the host's connections may
     /// open again under the key it had.
-    fn replacement_ended(&self, host: uuid::Uuid) {
-        if let Some(connections) = self.connections() {
-            connections.finish_host_replacement(host);
+    fn replacement_ended(runtime: &ProfileRuntime, host: uuid::Uuid) {
+        if let Some(edge) = runtime.edge() {
+            edge.connections().finish_host_replacement(host);
         }
     }
 
@@ -1458,9 +1381,8 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
             let Some(runtime) = runtime.upgrade() else {
                 return;
             };
-            let connections = runtime.driver().connections.lock().unwrap().upgrade();
-            if let Some(connections) = connections {
-                connections
+            if let Some(edge) = runtime.edge() {
+                edge.connections()
                     .teardown_host(uuid::Uuid::from_bytes(host.0))
                     .await;
             }
@@ -1579,7 +1501,6 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
                 Err(error) => JobResult::Failed(error.to_string()),
             }
         }
-        op @ Job::Upload(_) => JobResult::Failed(format!("this driver does not run {op:?} yet")),
     };
     feed(&inputs, Input::JobDone { job, result }).await;
 }
@@ -1640,11 +1561,7 @@ async fn call_peer(
     request: PeerRequest,
 ) -> Option<Answer> {
     let runtime = runtime.upgrade()?;
-    Some(
-        runtime
-            .call_peer(crate::routing::host_from_core(host), request)
-            .await,
-    )
+    Some(runtime.call_peer(host_from_core(host), request).await)
 }
 
 /// The fsync job: replaces the file at `path` with `bytes` so that a crash
@@ -1670,7 +1587,6 @@ impl ProfileRuntime {
         match ask {
             Ask::SubscribeSession { agent_id, tail } => {
                 self.used(store, &agent_id);
-                self.run_join_hook();
                 ClientRequest::SubscribeSession { agent_id, tail }
             }
             Ask::ListItems(request) => {
@@ -1680,25 +1596,6 @@ impl ProfileRuntime {
             Ask::GetItem(request) => ClientRequest::GetItem(request),
             Ask::SubscribeInventory => ClientRequest::SubscribeInventory,
             Ask::Ready(request) => request,
-        }
-    }
-
-    /// Completes a paired host's call from what the shell owns, as
-    /// [`ProfileRuntime::client_request`] does a client's.
-    fn peer_request(&self, request: PeerRequest) -> PeerRequest {
-        match request {
-            PeerRequest::SubscribeSession(request) => {
-                self.run_join_hook();
-                PeerRequest::SubscribeSession(request)
-            }
-            request => request,
-        }
-    }
-
-    fn run_join_hook(&self) {
-        let hook = self.join_hook.lock().unwrap().clone();
-        if let Some(hook) = hook {
-            Handle::current().block_on(hook());
         }
     }
 }

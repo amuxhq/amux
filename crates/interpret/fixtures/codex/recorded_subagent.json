@@ -1,10 +1,10 @@
 {
-  "about": "Codex spawns a child thread: a collaboration row naming the child; the child's own activity stays out of this chat.",
+  "about": "Codex spawns a child thread and waits for it: the spawn arrives as sub-agent activity, which draws nothing, so the one collaboration row is the wait; the child's own activity stays out of this chat.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../codex-specs/fixtures/runtime/subagent/io.jsonl",
+    "path": "../../../codex-specs/fixtures/live/subagent/io.jsonl",
     "format": "codex_io"
   }
 }

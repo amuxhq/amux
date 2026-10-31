@@ -1,17 +1,10 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 2 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"SessionStart","model":"claude-opus-5-5","permission_mode":"default","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 4 fact {"channel":"transcript","json":{"message":{"content":"file the crash","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
-  row    2 u1 Prompt { text: [Text("file the crash")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 6 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","session_id":"s1","tool_input":{"title":"Crash on launch"},"tool_name":"mcp__github__create_issue","tool_use_id":"t1","transcript_path":"/t/s1.jsonl"}}
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
-## 7 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"title":"Crash on launch"},"name":"mcp__github__create_issue","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.100Z","type":"assistant","uuid":"a1"}}
-  row    3 t1 ToolCall { server: "github", tool: "create_issue", fact: "Crash on launch", state: Running, result: "" } run[t1..t1 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
 ## 10 fact {"channel":"hook","json":{"amux_reply":101,"cwd":"/w","hook_event_name":"Elicitation","mcp_server_name":"github","message":"github needs your input","mode":"form","permission_mode":"default","requested_schema":{"properties":{"repo":{"type":"string"}},"required":["repo"],"type":"object"},"session_id":"s1","transcript_path":"/t/s1.jsonl"}}
-  row    3 t1 ToolCall { server: "github", tool: "create_issue", fact: "Crash on launch", state: Running, result: "" } run[t1..t1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
-  row    4 ask:ask:1 Ask(Form { server: "github", message: "github needs your input", fields: [], resolution: Open }) attention
   ask ask:1 -> "ask:ask:1" 1/1 Open
     choices Submit*, Decline
     body Form { server: "github", message: "github needs your input", fields: [FormField { name: "repo", title: "repo", description: "", required: true, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
@@ -21,15 +14,10 @@
     choices Submit*, Decline
     body Form { server: "github", message: "github needs your input", fields: [FormField { name: "repo", title: "repo", description: "", required: true, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
 ## 12 input {"answer":{"answer":{"form":{"action":"accept","content":{"repo":"ada/amux"}}},"ask":"ask:1"},"id":"x1"}
-  row    4 ask:ask:1 Ask(Form { server: "github", message: "github needs your input", fields: ["repo"], resolution: Answered })
   ask none
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
-## 14 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Filing it now.","type":"text"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.101Z","type":"assistant","uuid":"a1b"}}
-  row    5 a1b Prose { text: [Text("Filing it now.")], streaming: false, working_note: false }
 ## 16 fact {"channel":"hook","json":{"cwd":"/w","duration_ms":29000,"hook_event_name":"PostToolUse","permission_mode":"default","session_id":"s1","tool_input":{"title":"Crash on launch"},"tool_name":"mcp__github__create_issue","tool_response":{"number":42},"tool_use_id":"t1","transcript_path":"/t/s1.jsonl"}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 17 fact {"channel":"transcript","json":{"message":{"content":[{"content":"{\"number\": 42}","is_error":false,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:30.000Z","toolUseResult":{"number":42},"type":"user","uuid":"r1"}}
-  row    3 t1 ToolCall { server: "github", tool: "create_issue", fact: "Crash on launch", state: Succeeded, result: "{\"number\": 42}" } run[t1..t1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
 ## 19 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","session_id":"s1","tool_input":{"account":"work"},"tool_name":"mcp__docs__sign_in","tool_use_id":"t2","transcript_path":"/t/s1.jsonl"}}
   composer Send activity=Some(Running { key: "t2" }) queue=[] underway=[] refused=[]
 ## 20 fact {"channel":"hook","json":{"amux_reply":102,"cwd":"/w","elicitation_id":"e2","hook_event_name":"Elicitation","mcp_server_name":"docs","message":"docs needs your input","mode":"url","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl","url":"https://docs.example/sign-in"}}
@@ -38,46 +26,33 @@
     body Link { server: "docs", message: "docs needs your input", url: "https://docs.example/sign-in", local_page: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 21 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t2","input":{"account":"work"},"name":"mcp__docs__sign_in","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:30.100Z","type":"assistant","uuid":"a2"}}
-  row    6 t2 ToolCall { server: "docs", tool: "sign_in", fact: "work", state: Running, result: "" } run[t2..t2 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
-  row    7 ask:ask:2 Ask(Link { server: "docs", message: "docs needs your input", url: "https://docs.example/sign-in", resolution: Open }) attention
   ask ask:2 -> "ask:ask:2" 1/1 Open
     choices OpenLink*, Decline
     body Link { server: "docs", message: "docs needs your input", url: "https://docs.example/sign-in", local_page: false }
 ## 22 input {"id":"i1","interrupt":{}}
-  row    7 ask:ask:2 Ask(Link { server: "docs", message: "docs needs your input", url: "https://docs.example/sign-in", resolution: Cancelled })
   ask none
   composer Send activity=Some(Running { key: "t2" }) queue=[] underway=[] refused=[]
 ## 23 fact {"channel":"transcript","json":{"message":{"content":[{"content":"The user cancelled the sign-in.","is_error":true,"tool_use_id":"t2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:30.200Z","type":"user","uuid":"r2"}}
-  row    6 t2 ToolCall { server: "docs", tool: "sign_in", fact: "work", state: Failed, result: "The user cancelled the sign-in." } run[t2..t2 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 25 fact {"channel":"hook","json":{"amux_reply":103,"cwd":"/w","hook_event_name":"Elicitation","mcp_server_name":"docs","message":"docs needs your input","mode":"form","permission_mode":"default","requested_schema":{"properties":{"repo":{"type":"string"}},"required":["repo"],"type":"object"},"session_id":"s1","transcript_path":"/t/s1.jsonl"}}
-  row    8 ask:ask:3 Ask(Form { server: "docs", message: "docs needs your input", fields: [], resolution: Open }) attention
   ask ask:3 -> "ask:ask:3" 1/1 Open
     choices Submit*, Decline
     body Form { server: "docs", message: "docs needs your input", fields: [FormField { name: "repo", title: "repo", description: "", required: true, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 26 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Signed out, filed #42.","type":"text"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:30.400Z","type":"assistant","uuid":"a3"}}
-  row    8 ask:ask:3 Ask(Form { server: "docs", message: "docs needs your input", fields: [], resolution: Dismissed })
-  row    9 a3 Prose { text: [Text("Signed out, filed #42.")], streaming: false, working_note: false }
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 28 fact {"channel":"hook","json":{"amux_reply":104,"cwd":"/w","hook_event_name":"Elicitation","mcp_server_name":"docs","message":"docs needs your input","mode":"form","permission_mode":"default","requested_schema":{"properties":{"repo":{"type":"string"}},"required":["repo"],"type":"object"},"session_id":"s1","transcript_path":"/t/s1.jsonl"}}
-  row   10 ask:ask:4 Ask(Form { server: "docs", message: "docs needs your input", fields: [], resolution: Open }) attention
   ask ask:4 -> "ask:ask:4" 1/1 Open
     choices Submit*, Decline
     body Form { server: "docs", message: "docs needs your input", fields: [FormField { name: "repo", title: "repo", description: "", required: true, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 29 fact {"channel":"hook","json":{"background_tasks":[],"cwd":"/w","hook_event_name":"Stop","last_assistant_message":"Signed out, filed #42.","permission_mode":"default","session_id":"s1","stop_hook_active":false,"transcript_path":"/t/s1.jsonl"}}
-  row   10 ask:ask:4 Ask(Form { server: "docs", message: "docs needs your input", fields: [], resolution: Dismissed })
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 30 fact {"channel":"transcript","json":{"durationMs":50,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:30.600Z","type":"system","uuid":"d1"}}
-  row    3 t1 ToolCall { server: "github", tool: "create_issue", fact: "Crash on launch", state: Succeeded, result: "{\"number\": 42}" } run[t1..t1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
-  row    6 t2 ToolCall { server: "docs", tool: "sign_in", fact: "work", state: Failed, result: "The user cancelled the sign-in." } run[t2..t2 x1 recent=0 unresolved RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
-  row   11 turn:1 TurnEnd { duration_ms: Some(50), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 32 fact {"channel":"transcript","json":{"message":{"content":"try again","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:40.000Z","type":"user","uuid":"u2"}}
-  row   12 u2 Prompt { text: [Text("try again")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 33 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","session_id":"s1","tool_input":{"title":"Crash on launch"},"tool_name":"mcp__github__create_issue","tool_use_id":"t5","transcript_path":"/t/s1.jsonl"}}
   composer Send activity=Some(Running { key: "t5" }) queue=[] underway=[] refused=[]
@@ -87,11 +62,8 @@
     body Form { server: "github", message: "github needs your input", fields: [FormField { name: "repo", title: "repo", description: "", required: true, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 35 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"SessionEnd","permission_mode":"default","reason":"other","session_id":"s1","transcript_path":"/t/s1.jsonl"}}
-  row   13 ask:ask:5 Ask(Form { server: "github", message: "github needs your input", fields: [], resolution: Dismissed })
   ask none
   composer Send activity=Some(Running { key: "t5" }) queue=[] underway=[] refused=[]
-## 37 fact {"channel":"transcript","json":{"message":{"content":"once more","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:50.000Z","type":"user","uuid":"u3"}}
-  row   14 u3 Prompt { text: [Text("once more")], steered: false }
 ## 38 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","session_id":"s1","tool_input":{"title":"Crash on launch"},"tool_name":"mcp__github__create_issue","tool_use_id":"t6","transcript_path":"/t/s1.jsonl"}}
   composer Send activity=Some(Running { key: "t6" }) queue=[] underway=[] refused=[]
 ## 39 fact {"channel":"hook","json":{"amux_reply":106,"cwd":"/w","elicitation_id":"e6","hook_event_name":"Elicitation","mcp_server_name":"github","message":"github needs your input","mode":"url","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl","url":"https://github.example/sign-in"}}
@@ -100,8 +72,6 @@
     body Link { server: "github", message: "github needs your input", url: "https://github.example/sign-in", local_page: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 40 provider_exit {"code":1}
-  row   15 ask:ask:6 Ask(Link { server: "github", message: "github needs your input", url: "https://github.example/sign-in", resolution: Dismissed })
-  row   16 boundary:2 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
   ask none
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

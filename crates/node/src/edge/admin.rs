@@ -26,13 +26,12 @@ use super::Edge;
 use super::account::AccountRecord;
 use crate::HostId;
 use crate::auth::AccessToken;
-use crate::driver::pairing::status as pairing_status;
+use crate::driver::pairing::{self, status as pairing_status};
 use crate::pairing::PAIR_MODE_TTL;
 use crate::runtime::ProfileRuntime;
 use crate::services::LocalPairingIdentity;
 use crate::trust::{Reachability, TrustEntry, TrustStore};
 
-const MAX_PAIRING_NAME_BYTES: usize = 256;
 const QR_SECRET_LEN: usize = daemon_core::pairing::QR_SECRET_LEN;
 /// A demo window is a standing shared secret; bound how long any window
 /// can live.
@@ -40,21 +39,7 @@ const PAIR_MODE_MAX_TTL: Duration = Duration::from_secs(90 * 86_400);
 
 /// Every refusal a guessing peer could learn from reads the same.
 fn invalid_pin() -> Status {
-    Status::permission_denied("INVALID_PIN")
-}
-
-/// Why a pairing failed, as analytics reads a refusal.
-fn pairing_failure(status: &Status) -> analytics::PairingFailure {
-    use analytics::PairingFailure;
-    match status.code() {
-        tonic::Code::PermissionDenied => PairingFailure::WrongSecret,
-        tonic::Code::InvalidArgument if status.message().contains("SELF_PAIRING") => {
-            PairingFailure::SelfPairing
-        }
-        tonic::Code::Unavailable => PairingFailure::Unreachable,
-        tonic::Code::DeadlineExceeded => PairingFailure::TimedOut,
-        _ => PairingFailure::Other,
-    }
+    pairing_status(&PairFailure::invalid_pin())
 }
 
 /// A call the core refused, as the front door says it.
@@ -112,23 +97,7 @@ pub(crate) fn peer_entry_to_wire(host_id: HostId, entry: &TrustEntry) -> wire::P
         host_id: host_id.as_bytes().to_vec(),
         name: entry.name.clone(),
         pubkey: entry.pubkey.clone(),
-        paired_at_ms: entry.paired_at.timestamp_millis(),
-        reachabilities: entry
-            .on_account
-            .then_some(wire::peer_reachability::Kind::Cloud(wire::Empty {}))
-            .into_iter()
-            .chain(entry.ssh.as_ref().map(|ssh| {
-                wire::peer_reachability::Kind::SshTarget(wire::SshTarget {
-                    target: ssh.clone(),
-                })
-            }))
-            .chain((!entry.direct.is_empty()).then(|| {
-                wire::peer_reachability::Kind::Direct(wire::DirectReachability {
-                    addrs: entry.direct.iter().map(ToString::to_string).collect(),
-                })
-            }))
-            .map(|kind| wire::PeerReachability { kind: Some(kind) })
-            .collect(),
+        ssh_target: entry.ssh.clone().map(|target| wire::SshTarget { target }),
     }
 }
 
@@ -199,11 +168,6 @@ impl Edge {
         let method = request
             .method
             .ok_or_else(|| Status::invalid_argument("StartPairingRequest.method is required"))?;
-        if self.host_name.len() > MAX_PAIRING_NAME_BYTES {
-            return Err(Status::invalid_argument(
-                "host_name is too long for pairing",
-            ));
-        }
         let ttl = pairing_ttl(request.ttl_seconds)?;
         self.reachability.requery();
         let (label, method) = match method {
@@ -290,7 +254,7 @@ impl Edge {
             self.analytics.record(analytics::Event::PairingFailed {
                 role: analytics::Role::Joiner,
                 method,
-                reason: pairing_failure(status),
+                reason: pairing::counted_as(pairing::failure(status).counted()),
             });
         }
         begun
@@ -345,7 +309,7 @@ impl Edge {
             .ok_or_else(|| Status::unavailable("the profile is stopping"))?;
         let local =
             LocalPairingIdentity::from_device_identity(&self.identity).named(&self.host_name);
-        let initiate = |found: bool, reachability: Reachability| Initiate {
+        let initiate = |found: bool, reachability: Option<Reachability>| Initiate {
             local: local.clone(),
             secret: secret.clone(),
             expect: requested_host.map(|host| daemon_core::HostId(*host.as_bytes())),
@@ -378,7 +342,7 @@ impl Edge {
                     &mut wire::pairing_service_client::PairingServiceClient::new(
                         dial.channel.clone(),
                     ),
-                    initiate(found, Reachability::Direct { addrs: vec![addr] }),
+                    initiate(found, Some(Reachability::Direct { addrs: vec![addr] })),
                 )
                 .await
                 .map_err(refused);
@@ -420,7 +384,7 @@ impl Edge {
                 {
                     Ok(channel) => channel,
                     Err(crate::link::ChannelError::Refused(
-                        wire::pb::ForwardRefusal::PaymentRequired,
+                        wire::ForwardRefusal::PaymentRequired,
                     )) => {
                         unpaid = true;
                         continue;
@@ -434,14 +398,7 @@ impl Edge {
                     .driver()
                     .initiate(
                         &mut wire::pairing_service_client::PairingServiceClient::new(channel),
-                        initiate(
-                            false,
-                            if relay {
-                                Reachability::Cloud
-                            } else {
-                                Reachability::Forwarded
-                            },
-                        ),
+                        initiate(false, relay.then_some(Reachability::Cloud)),
                     )
                     .await
                     .map_err(refused)
@@ -579,9 +536,7 @@ impl Edge {
 
     /// Forgets a paired host: its key leaves the trust store, its links
     /// close with USER_REVOKED, and every connection it holds here ends.
-    pub async fn unpair(&self, peer: HostRef, _reason: String) -> Result<wire::Peer, Status> {
-        // The reason the client gave stays on the wire for a client that
-        // may show it; nothing here records it.
+    pub async fn unpair(&self, peer: HostRef) -> Result<wire::Peer, Status> {
         let host = {
             let store = self
                 .trust
@@ -601,7 +556,7 @@ impl Edge {
     }
 
     /// Binds the profile to an account, or signs a bound profile back in,
-    /// and starts its cloud link unless the connection is paused.
+    /// and starts its cloud link.
     pub(crate) async fn bind_account(
         &self,
         record: AccountRecord,
@@ -616,16 +571,6 @@ impl Edge {
     pub(crate) async fn sign_out(&self) -> std::io::Result<()> {
         self.account.sign_out().await?;
         self.stop_cloud().await;
-        Ok(())
-    }
-
-    pub(crate) async fn set_paused(&self, paused: bool) -> std::io::Result<()> {
-        self.account.set_paused(paused).await?;
-        if paused {
-            self.stop_cloud().await;
-        } else {
-            self.start_cloud().await;
-        }
         Ok(())
     }
 

@@ -1,7 +1,7 @@
 //! Committed protobuf messages for every amux protocol boundary: the session
 //! records the journal frames and the store keeps, the agent process's spec
-//! and control frames, and the client, peer, pairing, profile and
-//! installation services.
+//! and control frames, and the client, pairing, profile and installation
+//! services.
 
 /// Protocol version for the native-stream link handshake. It moves only for
 /// a break both ends of a link must take; see `proto/amux/v1/README.md` at the repository root.
@@ -35,17 +35,11 @@ pub use google::rpc;
 
 mod error;
 pub use amux::v1::*;
-pub use error::DOMAIN as ERROR_DOMAIN;
 /// An error's code, gRPC's own.
 pub use rpc::Code as ErrorCode;
 /// amux's error, a `google.rpc.Status`: named apart so it never reads as
 /// tonic's `Status`, the transport's carrier for it.
 pub use rpc::Status as Error;
-
-pub mod pb {
-    pub use super::amux::v1::*;
-    pub use super::{Error, ErrorCode};
-}
 
 /// Bound for link-control messages and application-stream prefaces.
 pub const MESSAGE_SIZE_LIMIT: usize = 16 * 1024 * 1024;
@@ -100,24 +94,6 @@ sized_service!(
     SessionServiceServer,
     SessionService
 );
-sized_service!(
-    peer_agent_service_client,
-    peer_agent_service_server,
-    peer_agent_service_client,
-    PeerAgentServiceClient,
-    peer_agent_service_server,
-    PeerAgentServiceServer,
-    PeerAgentService
-);
-sized_service!(
-    peer_session_service_client,
-    peer_session_service_server,
-    peer_session_service_client,
-    PeerSessionServiceClient,
-    peer_session_service_server,
-    PeerSessionServiceServer,
-    PeerSessionService
-);
 
 /// The client services' stubs on one profile or tools socket: what a
 /// caller that speaks gRPC directly holds.
@@ -136,75 +112,21 @@ pub fn client_stubs(channel: tonic::transport::Channel) -> ClientStubs {
     }
 }
 
-/// A person's input as its kind's own message: what a client builds and
-/// what the agent of that kind decodes from [`Input::body`].
-#[derive(Clone, Debug, PartialEq)]
-pub enum KindInput {
-    ClaudePty(ClaudePtyInput),
-    ClaudeSdk(ClaudeSdkInput),
-    Codex(CodexInput),
-}
-
-impl KindInput {
-    pub fn kind(&self) -> Kind {
-        match self {
-            Self::ClaudePty(_) => Kind::ClaudePty,
-            Self::ClaudeSdk(_) => Kind::ClaudeSdk,
-            Self::Codex(_) => Kind::Codex,
-        }
-    }
-
-    fn encode(&self) -> Vec<u8> {
-        use prost::Message as _;
-        match self {
-            Self::ClaudePty(input) => input.encode_to_vec(),
-            Self::ClaudeSdk(input) => input.encode_to_vec(),
-            Self::Codex(input) => input.encode_to_vec(),
-        }
-    }
-}
-
-impl From<ClaudePtyInput> for KindInput {
-    fn from(input: ClaudePtyInput) -> Self {
-        Self::ClaudePty(input)
-    }
-}
-
-impl From<ClaudeSdkInput> for KindInput {
-    fn from(input: ClaudeSdkInput) -> Self {
-        Self::ClaudeSdk(input)
-    }
-}
-
-impl From<CodexInput> for KindInput {
-    fn from(input: CodexInput) -> Self {
-        Self::Codex(input)
-    }
-}
-
 impl Input {
-    /// `input` encoded under its kind, with the client's input id.
-    pub fn new(input_id: Vec<u8>, input: impl Into<KindInput>) -> Self {
-        let input = input.into();
+    /// `input` encoded, with the client's input id.
+    pub fn new(input_id: Vec<u8>, input: AgentInput) -> Self {
+        use prost::Message as _;
         Self {
             input_id,
-            kind: input.kind() as i32,
-            body: input.encode(),
+            body: input.encode_to_vec(),
         }
     }
 
-    /// The body read as the kind it names. None for a kind this build does
-    /// not know or a body that does not decode; an arm this build does not
-    /// know decodes as a message with no arm set.
-    pub fn decode_body(&self) -> Option<KindInput> {
+    /// The body, or None for one that does not decode; an arm this build
+    /// does not know decodes as a message with no arm set.
+    pub fn decode_body(&self) -> Option<AgentInput> {
         use prost::Message as _;
-        let body = self.body.as_slice();
-        match Kind::try_from(self.kind).ok()? {
-            Kind::ClaudePty => ClaudePtyInput::decode(body).ok().map(KindInput::ClaudePty),
-            Kind::ClaudeSdk => ClaudeSdkInput::decode(body).ok().map(KindInput::ClaudeSdk),
-            Kind::Codex => CodexInput::decode(body).ok().map(KindInput::Codex),
-            Kind::Unspecified => None,
-        }
+        AgentInput::decode(self.body.as_slice()).ok()
     }
 }
 
@@ -235,18 +157,13 @@ impl Profile {
         self.cloud.as_ref()?.standing.as_ref()
     }
 
-    /// What the profile's relay link is doing, while it is signed in.
-    pub fn relay_state(&self) -> Option<&relay_link::State> {
-        match self.standing()? {
-            cloud_standing::Standing::SignedIn(link) => link.state.as_ref(),
-            _ => None,
-        }
-    }
-
     /// The profile's relay link, while it is signed in and connected.
     pub fn relay_connected(&self) -> Option<&RelayConnected> {
-        match self.relay_state()? {
-            relay_link::State::Connected(connected) => Some(connected),
+        match self.standing()? {
+            cloud_standing::Standing::SignedIn(RelayLink {
+                state: Some(relay_link::State::Connected(connected)),
+                ..
+            }) => Some(connected),
             _ => None,
         }
     }
@@ -307,20 +224,6 @@ impl HostEntry {
             })),
             ..Self::default()
         }
-    }
-
-    /// A host nobody paired that the neighbors `announced_by` say they
-    /// reach.
-    pub fn announced_host(
-        host_id: impl Into<Vec<u8>>,
-        name: impl Into<String>,
-        announced_by: Vec<Host>,
-    ) -> Self {
-        let mut entry = Self::candidate_host(host_id, name, Vec::new());
-        if let Some(host_entry::Standing::Candidate(candidate)) = &mut entry.standing {
-            candidate.announced_by = announced_by;
-        }
-        entry
     }
 
     /// The host's id, as its handshake gave it.
@@ -498,103 +401,6 @@ mod tests {
         FileDescriptorSet::decode(DESCRIPTOR_SET).expect("descriptor set should decode")
     }
 
-    fn methods(set: &FileDescriptorSet, service: &str) -> BTreeSet<String> {
-        set.file
-            .iter()
-            .flat_map(|file| file.service.iter())
-            .filter(|candidate| candidate.name() == service)
-            .flat_map(|candidate| candidate.method.iter())
-            .map(|method| method.name().to_owned())
-            .collect()
-    }
-
-    fn set_of(names: &[&str]) -> BTreeSet<String> {
-        names.iter().map(|name| (*name).to_owned()).collect()
-    }
-
-    #[test]
-    fn services_are_the_agent_session_peer_pairing_profile_admin_and_installation_surfaces() {
-        let set = descriptor();
-        let services = set
-            .file
-            .iter()
-            .flat_map(|file| file.service.iter())
-            .map(|service| service.name().to_owned())
-            .collect::<BTreeSet<_>>();
-        assert_eq!(
-            services,
-            set_of(&[
-                "AgentService",
-                "InstallationService",
-                "PairingService",
-                "PeerAgentService",
-                "PeerSessionService",
-                "ProfileAdminService",
-                "SessionService",
-            ])
-        );
-
-        let agents = methods(&set, "AgentService");
-        assert_eq!(
-            agents,
-            set_of(&[
-                "SubscribeInventory",
-                "ResolveAgent",
-                "CreateAgent",
-                "RenameAgent",
-                "StopAgent",
-                "ResumeAgent",
-                "DeleteAgent",
-                "SendMessage",
-                "PutBlob",
-                "GetBlob",
-                "GetDiff",
-                "GetCatalogue",
-                "ListRepositories",
-            ])
-        );
-        let sessions = methods(&set, "SessionService");
-        assert_eq!(
-            sessions,
-            set_of(&[
-                "SubscribeSession",
-                "ListItems",
-                "GetItem",
-                "SendInput",
-                "UpdateDraft",
-                "GetDraft",
-            ])
-        );
-
-        // The peer surface is the client surface minus name resolution and
-        // drafts (a draft stays on the machine it was typed on), over the
-        // same request and response messages. No host asks another for its
-        // side of a dump.
-        let mut peer_agents = agents.clone();
-        peer_agents.remove("ResolveAgent");
-        assert_eq!(methods(&set, "PeerAgentService"), peer_agents);
-        let mut peer_sessions = sessions.clone();
-        peer_sessions.remove("UpdateDraft");
-        peer_sessions.remove("GetDraft");
-        assert_eq!(methods(&set, "PeerSessionService"), peer_sessions);
-
-        let admin = methods(&set, "ProfileAdminService");
-        assert!(admin.contains("Dump") && admin.contains("SubmitReport"));
-        assert_eq!(
-            methods(&set, "InstallationService"),
-            set_of(&[
-                "GetInstallation",
-                "Shutdown",
-                "ListProfiles",
-                "SubscribeProfiles",
-                "CreateProfile",
-                "BindProfile",
-                "RenameProfile",
-                "DeleteProfile",
-            ])
-        );
-    }
-
     /// Every top-level enum, with its values named under it.
     fn enums(set: &FileDescriptorSet) -> BTreeMap<String, Vec<(String, i32)>> {
         set.file
@@ -632,9 +438,9 @@ mod tests {
 
     /// The types code encodes on its own rather than inside another
     /// message or a call: frames on an agent's sockets, the journal's
-    /// steps, the spec an agent starts from, the link's framing, error
-    /// details, and each provider's item, input
-    /// and snapshot bodies, which travel as bytes.
+    /// steps, the spec an agent starts from, the link's framing, the error
+    /// reason, and each provider's item, input and snapshot bodies, which
+    /// travel as bytes.
     const ENCODED_ON_THEIR_OWN: &[&str] = &[
         "AgentSpec",
         "CtlFrame",
@@ -642,19 +448,12 @@ mod tests {
         "ProviderOffer",
         "Step",
         "Message",
-        "ProtocolVersionMismatch",
         // Named, not encoded: an ErrorInfo's reason is a value's name.
         "ErrorReason",
-        "AmbiguousAgentName",
-        "AmbiguousHostName",
-        "ClaudePtyItem",
-        "ClaudePtyInput",
-        "ClaudePtySnapshot",
-        "ClaudeSdkItem",
-        "ClaudeSdkInput",
-        "ClaudeSdkSnapshot",
+        "ClaudeItem",
+        "ClaudeSnapshot",
+        "AgentInput",
         "CodexItem",
-        "CodexInput",
         "CodexSnapshot",
     ];
 
@@ -676,7 +475,7 @@ mod tests {
             messages.insert(name, message.clone());
         }
         let (mut messages, mut enums) = (BTreeMap::new(), BTreeSet::new());
-        // The vendored googleapis files are whole, used or not.
+        // The vendored googleapis files are google's, outside amux's package.
         for file in set
             .file
             .iter()

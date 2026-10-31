@@ -43,12 +43,7 @@ enum Leave {
 }
 
 /// Runs the terminal client until the person quits.
-pub async fn run(
-    client: Arc<dyn Client>,
-    mut config: TuiConfig,
-    mut attach: Option<AttachFn>,
-) -> Result<()> {
-    config.attach = attach.is_some();
+pub async fn run(client: Arc<dyn Client>, config: TuiConfig, mut attach: AttachFn) -> Result<()> {
     let fleet = Fleet::connect(client.clone(), SystemClock).await?;
     let mut app = App::new(client, fleet, config);
     loop {
@@ -57,21 +52,16 @@ pub async fn run(
                 app.keep_drafts().await;
                 return Ok(());
             }
-            Leave::Attach(agent) => {
-                let Some(attach) = attach.as_mut() else {
-                    continue;
-                };
-                match attach(*agent).await {
-                    Ok(AttachReturn::Exit) => return Ok(()),
-                    Ok(AttachReturn::Fleet(notice)) => {
-                        app.close_chat();
-                        if let Some(notice) = notice {
-                            app.notice(notice, Tone::Info);
-                        }
+            Leave::Attach(agent) => match attach(*agent).await {
+                Ok(AttachReturn::Exit) => return Ok(()),
+                Ok(AttachReturn::Fleet(notice)) => {
+                    app.close_chat();
+                    if let Some(notice) = notice {
+                        app.notice(notice, Tone::Info);
                     }
-                    Err(error) => app.notice(format!("attach failed: {error:#}"), Tone::Warn),
                 }
-            }
+                Err(error) => app.notice(format!("attach failed: {error:#}"), Tone::Warn),
+            },
         }
     }
 }

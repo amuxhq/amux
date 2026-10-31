@@ -7,14 +7,6 @@ description = "Agent multiplexer - CLI binary"
 publish = false
 autotests = false
 
-# `store` is a dependency only so `bundled` can name its feature.
-[package.metadata.cargo-shear]
-ignored = ["store"]
-
-[features]
-default = []
-bundled = ["store/bundled"]
-
 [[bin]]
 name = "amux"
 path = "src/main.rs"
@@ -38,8 +30,7 @@ serde_ignored = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
 toml_edit = { workspace = true }
-settings = { workspace = true }
-store = { workspace = true }
+settings = { workspace = true, features = ["clap"] }
 tokio = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }

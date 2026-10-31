@@ -1,8 +1,7 @@
-//! The dump printer against the committed bundle: the row, the journal in
-//! the emission goldens' format, the store slice, the facts as written, and
+//! The dump printer against a healthy bundle: the row, the journal in the
+//! emission goldens' format, the store slice, the facts as written, and
 //! every other file a bundle can hold.
 
-use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use daemon_core::{Daemon, Input, Recorded, StartOptions};
@@ -10,15 +9,12 @@ use replay_support::bundle::Bundle;
 use replay_support::show::{self, ShowError};
 use store::{AgentKey, AgentRow, Sqlite};
 
-const AGENT: &str = "d6832ca2-2f0a-4307-9cf6-5a0e13e937cc";
-
-fn fixture() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/bundle")
-}
+use crate::support;
 
 #[test]
 fn the_journal_prints_as_the_goldens_do_and_reads_beside_the_facts_replay() {
-    let bundle = Bundle::open(&fixture()).expect("the fixture bundle opens");
+    let dumped = support::healthy();
+    let bundle = Bundle::open(dumped.path()).expect("the bundle opens");
     let agent = &bundle.agents[0];
     let kind = agent.row.kind();
     let replayed = agent.replay_facts().expect("the facts replay");
@@ -27,30 +23,33 @@ fn the_journal_prints_as_the_goldens_do_and_reads_beside_the_facts_replay() {
     let journal = show::render_steps(kind, 1, &agent.journal[1..]).unwrap();
     let replay = show::render_steps(kind, 1, &replayed).unwrap();
     assert!(journal.starts_with("## 1 step\nitem "), "{journal}");
-    // The fixture's journal predates the catalogue's current encoding, so
-    // the hash its snapshots name is not the one a replay computes today;
-    // every other line matches.
-    let comparable = |text: &str| {
-        text.lines()
-            .filter(|line| !line.starts_with("snapshot catalogue "))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    assert_eq!(comparable(&replay), comparable(&journal));
+    assert_eq!(
+        support::placeholders_aside(&replay),
+        support::placeholders_aside(&journal)
+    );
 
-    let text = show::show(&fixture(), None).expect("the bundle prints");
+    // The printer compares them as written, so it shows where the
+    // placeholders first differ.
+    let text = show::show(dumped.path(), None).expect("the bundle prints");
     let whole = show::render_steps(kind, 0, &agent.journal).unwrap();
     assert!(
-        text.contains(&format!("-- journal (16 frames) --\n{whole}")),
+        text.contains(&format!(
+            "-- journal ({} frames) --\n{whole}",
+            agent.journal.len()
+        )),
         "{text}"
     );
-    assert!(text.contains("-- replay (15 steps) --\n"), "{text}");
     assert!(
-        text.contains(
-            "first difference in frame 1: journal \"snapshot catalogue 4030c5e1\", \
-             replay \"snapshot catalogue c5a5aa38\"\n"
-        ),
+        text.contains(&format!("-- replay ({} steps) --\n", replayed.len())),
         "{text}"
+    );
+    let difference = text
+        .lines()
+        .find(|line| line.starts_with("first difference in frame 1: journal "))
+        .expect("the first difference is named");
+    assert!(
+        difference.contains("<REDACTED_EMAIL>") && difference.contains("<REDACTED_IDENTIFIER>"),
+        "{difference}"
     );
     assert!(
         text.contains(&replay),
@@ -59,57 +58,89 @@ fn the_journal_prints_as_the_goldens_do_and_reads_beside_the_facts_replay() {
 }
 
 #[test]
-fn every_section_of_the_fixture_prints() {
-    let text = show::show(&fixture(), None).expect("the bundle prints");
+fn every_section_of_a_bundle_prints() {
+    let dumped = support::healthy();
+    let agent = dumped.agent();
+    let manifest = dumped.manifest();
+    let bundle = Bundle::open(dumped.path()).unwrap();
+    let rows = bundle.agents[0].store.as_ref().unwrap().items.len();
+    let facts = std::fs::read_to_string(
+        dumped
+            .path()
+            .join(format!("agents/{agent}/part/facts/0000000000")),
+    )
+    .unwrap();
+    let text = show::show(dumped.path(), None).expect("the bundle prints");
     for expected in [
-        "== dump 30dd8cad-608a-433a-89ff-dbbd17ef8038 ==\nreason \"fixture\"\n",
+        &format!(
+            "== dump {} ==\nreason \"a healthy net\"\n",
+            manifest["dump_id"].as_str().unwrap()
+        ),
         "errors none\n",
-        &format!("== agent {AGENT} (worker, CLAUDE_SDK) ==\n"),
-        &format!("-- row --\nagent_id {AGENT}\n"),
+        &format!("== agent {agent} (worker, CLAUDE_SDK) ==\n"),
+        &format!("-- row --\nagent_id {agent}\n"),
         "lifecycle LIVE\n",
-        "-- store (8 rows) --\norder=1 revision=6 item boundary:1 boundary final ",
-        "order=7 revision=21 item msg_fake331e0c860000000000000004:0 message final \
-         at=1791271653099 text=\"second answer more\"\n",
-        "snapshot revision=23\nsnapshot catalogue 4030c5e1\nsnapshot IDLE ",
-        "-- facts 0000000000 (45 lines) --\ncheckpoint {\"active_tasks\":{}",
+        &format!("-- store ({rows} rows) --\norder=1 revision="),
+        " message final ",
+        " text=\"second answer more\"\n",
+        "\nsnapshot catalogue ",
+        "\nsnapshot IDLE ",
+        &format!(
+            "-- facts 0000000000 ({} lines) --\ncheckpoint {{\"active_tasks\":{{}}",
+            facts.lines().count()
+        ),
         "-- part spec.1 (wire.AgentSpec) --\n",
         "== other files (0) ==\n",
     ] {
         assert!(text.contains(expected), "missing {expected:?} in\n{text}");
     }
-    let facts =
-        std::fs::read_to_string(fixture().join(format!("agents/{AGENT}/part/facts/0000000000")))
-            .unwrap();
     for line in facts.lines() {
         assert!(text.contains(&format!("\n{line}\n")), "{line}");
     }
 }
 
-/// What the committed bundle lacks: a daemon log, a client's part, an
-/// agent part's errors, and a facts line the redactor could not keep.
+/// What a dump of an in-process daemon lacks: a daemon log, a client's
+/// part, an agent part's errors, and a facts line the redactor could not
+/// keep.
 #[test]
 fn the_rest_of_a_bundle_prints_and_an_unreadable_fact_hides_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    copy(&fixture(), dir.path());
-    let agent = dir.path().join("agents").join(AGENT);
-    std::fs::write(dir.path().join("daemon.log"), "a line\n".repeat(4000)).unwrap();
-    std::fs::create_dir_all(dir.path().join("client/fleet")).unwrap();
-    std::fs::write(dir.path().join("client/fleet/state.txt"), "fleet open\n").unwrap();
+    let dumped = support::healthy();
+    let dir = dumped.path();
+    let agent = dir.join("agents").join(dumped.agent());
+    std::fs::write(dir.join("daemon.log"), "a line\n".repeat(4000)).unwrap();
+    std::fs::create_dir_all(dir.join("client/fleet")).unwrap();
+    std::fs::write(dir.join("client/fleet/state.txt"), "fleet open\n").unwrap();
     std::fs::write(agent.join("part/dump-errors"), "checkpoint 3: gone\n").unwrap();
+    // A fact in the middle becomes one no build reads; the lines around it
+    // and the facts after it print as they were. How many git events the
+    // run leaves in the bundle depends on timing, so any fact with a line
+    // before and after it will do; the first git event is taken if there is
+    // one.
     let facts = agent.join("part/facts/0000000000");
-    let mut lines = std::fs::read_to_string(&facts).unwrap();
-    lines = lines.replacen("{\"event\":\"git\"}", "{\"event\":\"unreadable\"}", 1);
-    std::fs::write(&facts, lines).unwrap();
+    let written = std::fs::read_to_string(&facts).unwrap();
+    let mut lines: Vec<&str> = written.lines().collect();
+    let git = "{\"event\":\"git\"}";
+    let later = lines.len() - 1;
+    let first = lines
+        .iter()
+        .position(|line| *line == git)
+        .filter(|at| 0 < *at && *at < later)
+        .unwrap_or(1);
+    assert!(
+        0 < first && first < later,
+        "a fact with lines before and after it"
+    );
+    lines[first] = "{\"event\":\"unreadable\"}";
+    std::fs::write(&facts, lines.join("\n") + "\n").unwrap();
 
-    let text = show::show(dir.path(), Some("worker")).expect("the bundle prints");
+    let text = show::show(dir, Some("worker")).expect("the bundle prints");
     for expected in [
         "-- part dump-errors (19 bytes) --\ncheckpoint 3: gone\n",
         "== other files (2) ==\n",
         "-- client/fleet/state.txt (11 bytes) --\nfleet open\n",
         "-- daemon.log (28000 bytes) --\ntext, not printed: ",
-        "{\"event\":\"tick\",\"at_ms\":1791271650055}\n{\"event\":\"unreadable\"}\n\
-         {\"event\":\"tick\",\"at_ms\":1791271650067}\n",
-        "{\"event\":\"tick\",\"at_ms\":1791271653120}\n{\"event\":\"git\"}\n",
+        &(lines[first - 1..=first + 1].join("\n") + "\n"),
+        &(lines[later - 1..=later].join("\n") + "\n"),
     ] {
         assert!(text.contains(expected), "missing {expected:?} in\n{text}");
     }
@@ -120,9 +151,11 @@ fn the_rest_of_a_bundle_prints_and_an_unreadable_fact_hides_nothing() {
 /// as shown.
 #[test]
 fn the_daemon_cores_part_prints_its_checkpoint_inputs_and_store() {
-    let dir = tempfile::tempdir().unwrap();
-    copy(&fixture(), dir.path());
-    let core = dir.path().join("core");
+    let dumped = support::healthy();
+    let dir = dumped.path();
+    // The daemon's own part gives way to one written here.
+    let core = dir.join("core");
+    std::fs::remove_dir_all(&core).unwrap();
     std::fs::create_dir_all(&core).unwrap();
 
     let own = [0x11; 16].to_vec();
@@ -146,7 +179,7 @@ fn the_daemon_cores_part_prints_its_checkpoint_inputs_and_store() {
     };
     store.commit(&agent, &[(57, step)], clock).unwrap();
     let daemon = Daemon::new(store, StartOptions::default());
-    std::fs::write(core.join("checkpoint"), daemon.checkpoint().to_bytes()).unwrap();
+    std::fs::write(core.join("checkpoint"), daemon.checkpoint()).unwrap();
     drop(daemon);
 
     let id = daemon_core::AgentId([0x22; 16]);
@@ -165,16 +198,17 @@ fn the_daemon_cores_part_prints_its_checkpoint_inputs_and_store() {
     }
     std::fs::write(core.join("inputs"), &written).unwrap();
 
-    let bundle = Bundle::open(dir.path()).expect("the bundle opens");
+    let bundle = Bundle::open(dir).expect("the bundle opens");
     let read = bundle
         .core
         .as_ref()
         .expect("the bundle has the core's part");
     assert_eq!(read.inputs, lines);
 
-    let text = show::show(dir.path(), None).expect("the bundle prints");
+    let text = show::show(dir, None).expect("the bundle prints");
     for expected in [
-        "\n== daemon core ==\n-- checkpoint (schema 1, ",
+        "\n== daemon core ==\n",
+        "\n-- checkpoint (",
         "-- inputs (1 inputs, 1 journal reads) --\n",
         &written,
         "-- store as of the checkpoint --\nagent 22222222-2222-2222-2222-222222222222 \
@@ -187,23 +221,34 @@ fn the_daemon_cores_part_prints_its_checkpoint_inputs_and_store() {
 
 #[test]
 fn the_binary_prints_one_agent_and_refuses_what_is_not_a_bundle() {
+    let dumped = support::healthy();
+    let agent = dumped.agent();
+    let prefix = &agent[..4];
     let run = |args: &[&std::ffi::OsStr]| {
         Command::new(env!("CARGO_BIN_EXE_dump-show"))
             .args(args)
             .output()
             .unwrap()
     };
-    let printed = run(&[fixture().as_os_str(), "--agent".as_ref(), "d683".as_ref()]);
+    let printed = run(&[
+        dumped.path().as_os_str(),
+        "--agent".as_ref(),
+        prefix.as_ref(),
+    ]);
     assert!(printed.status.success());
     let text = String::from_utf8(printed.stdout).unwrap();
-    assert_eq!(text, show::show(&fixture(), Some("d683")).unwrap());
-    assert!(text.contains(&format!("== agent {AGENT} (worker, CLAUDE_SDK) ==")));
+    assert_eq!(text, show::show(dumped.path(), Some(prefix)).unwrap());
+    assert!(text.contains(&format!("== agent {agent} (worker, CLAUDE_SDK) ==")));
 
-    let unknown = run(&[fixture().as_os_str(), "--agent".as_ref(), "nobody".as_ref()]);
+    let unknown = run(&[
+        dumped.path().as_os_str(),
+        "--agent".as_ref(),
+        "nobody".as_ref(),
+    ]);
     assert!(!unknown.status.success());
     assert!(String::from_utf8_lossy(&unknown.stderr).contains("no agent in the bundle matches"));
 
-    let elsewhere = fixture().join("agents");
+    let elsewhere = dumped.path().join("agents");
     let refused = run(&[elsewhere.as_os_str()]);
     assert!(!refused.status.success());
     assert_eq!(
@@ -219,40 +264,31 @@ fn the_binary_prints_one_agent_and_refuses_what_is_not_a_bundle() {
     ));
 }
 
-fn copy(from: &Path, to: &Path) {
-    for entry in std::fs::read_dir(from).unwrap() {
-        let entry = entry.unwrap();
-        let target = to.join(entry.file_name());
-        if entry.path().is_dir() {
-            std::fs::create_dir_all(&target).unwrap();
-            copy(&entry.path(), &target);
-        } else {
-            std::fs::copy(entry.path(), target).unwrap();
-        }
-    }
-}
-
 /// A client's session prints as the state its trace began from and every
 /// event its driver saw, so nothing in the bundle is left as bytes.
 #[test]
 fn a_clients_session_prints_its_checkpoint_and_every_event() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/client_violation");
-    let printed = show::show(&dir, None).expect("the bundle prints");
+    let dumped = support::client_violation();
+    let printed = show::show(dumped.path(), None).expect("the bundle prints");
     let section = printed
-        .split("\n== client session 01aaa7bf-2866-4f4a-af4d-08abe99db157 ==\n")
+        .split(&format!("\n== client session {} ==\n", dumped.agent()))
         .nth(1)
         .expect("a section for the session")
         .split("\n== ")
         .next()
         .unwrap();
     assert!(section.starts_with("-- checkpoint --\n"), "{section}");
-    assert!(section.contains("-- events (8) --"), "{section}");
+    let traced = &dumped.manifest()["client"]["sessions"][0]["traced"];
+    assert!(
+        section.contains(&format!("-- events ({traced}) --")),
+        "{section}"
+    );
     assert!(
         section.contains("driver Subscribed { tail: 16 }"),
         "{section}"
     );
     assert!(section.contains("order 1\n"), "{section}");
     assert!(section.contains(" order 3\n"), "{section}");
-    assert!(section.contains("CaughtUp rev 13"), "{section}");
+    assert!(section.contains(" CaughtUp rev "), "{section}");
     assert!(printed.contains("== other files (0) =="), "{printed}");
 }

@@ -49,6 +49,10 @@ class InventoryBoundary(unittest.TestCase):
         self.write(lint.EXEMPTIONS, json.dumps({"version": 1, "files": {}}))
         self.source = Path("apps/apple/Packages/AmuxFeatures/Sources/Feature.swift")
         self.write(self.source, 'Text("Pair")')
+        self.uses = Path("apps/apple/Packages/AmuxFeatures/Sources/Uses.swift")
+        self.write(self.uses, r'Text("Pair"); Text("Hello \(name)")')
+        self.debug_uses = Path("apps/apple/Amux/Debug/Uses.swift")
+        self.write(self.debug_uses, 'Text("Report")')
 
     def write(self, path, text):
         file = self.root / path
@@ -80,6 +84,17 @@ class InventoryBoundary(unittest.TestCase):
                 complaints, _ = lint.check(self.root)
                 self.assertTrue(any("uncatalogued literal" in issue for issue in complaints))
                 (self.root / path).unlink()
+
+    def test_catalogued_copy_no_literal_uses_is_reported(self):
+        (self.root / self.uses).unlink()
+        self.write(self.source, 'Text("Pair")')
+        self.assertEqual(lint.check(self.root)[0], [
+            f"{lint.CATALOGUE}: no literal uses the catalogued copy 'Hello %@'"])
+        # Debug copy is used only from a debug source.
+        (self.root / self.debug_uses).unlink()
+        self.write(self.source, 'Text("Pair"); Text("Hello \\(name)")')
+        self.assertEqual(lint.check(self.root)[0], [
+            f"{lint.DEBUG_CATALOGUE}: no literal uses the catalogued copy 'Report'"])
 
     def test_debug_catalogue_cannot_authorize_shipping_copy(self):
         self.write(self.source, 'Text("Report")')

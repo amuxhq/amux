@@ -11,12 +11,9 @@ import "amux/v1/records.proto";
 // Local Unix socket and in-process only. Calls are not retried by any
 // client; a mutation that loses its reply is re-run by the person.
 service InstallationService {
-  rpc GetInstallation(GetInstallationRequest) returns (Installation);
-  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
-  rpc ListProfiles(ListProfilesRequest) returns (ListProfilesResponse);
-  // Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh
-  // subscription.
-  rpc SubscribeProfiles(SubscribeProfilesRequest) returns (stream ProfileEvent);
+  rpc GetInstallation(Empty) returns (Installation);
+  rpc Shutdown(Empty) returns (Empty);
+  rpc ListProfiles(Empty) returns (ListProfilesResponse);
   rpc CreateProfile(CreateProfileRequest) returns (Profile);
   // Names a profile, or lets the installation pick or create one.
   rpc BindProfile(BindProfileRequest) returns (Profile);
@@ -24,13 +21,7 @@ service InstallationService {
   rpc DeleteProfile(DeleteProfileRequest) returns (Empty);
 }
 
-message GetInstallationRequest {}
-
 message Installation { string version = 1; }
-
-message ShutdownRequest {}
-
-message ShutdownResponse {}
 
 message Profile {
   bytes id = 1;
@@ -39,12 +30,6 @@ message Profile {
   string account_name = 4;
   string socket_path = 5;
   CloudStanding cloud = 6;
-  // The bound account's subject at its service, which stays after a
-  // sign-out; empty when unbound. What tells two profiles' accounts apart.
-  string account_subject = 7;
-  // Where the bound account's profile picture is, as its service said at
-  // sign-in; empty when it has none or the profile is unbound.
-  string account_picture = 8;
 }
 
 // A profile's standing with its cloud account: what the person asked for
@@ -55,9 +40,7 @@ message CloudStanding {
     Empty unbound = 1;
     // Signed out, still tied to its account.
     Empty signed_out = 2;
-    // Signed in, with the relay link held down.
-    Empty paused = 3;
-    RelayLink signed_in = 4;
+    RelayLink signed_in = 3;
   }
 }
 
@@ -91,19 +74,7 @@ enum RelayCarrier {
   RELAY_CARRIER_TCP = 2;
 }
 
-message ListProfilesRequest {}
-
 message ListProfilesResponse { repeated Profile profiles = 1; }
-
-message SubscribeProfilesRequest {}
-
-message ProfileEvent {
-  oneof of {
-    Profile upserted = 1;
-    bytes removed_id = 2;
-    CaughtUp caught_up = 3;
-  }
-}
 
 message CreateProfileRequest { optional string label = 1; }
 
@@ -119,7 +90,7 @@ message BindProfileRequest {
 
 message RenameProfileRequest {
   bytes profile_id = 1;
-  optional string override_name = 2;
+  string name = 2;
 }
 
 message DeleteProfileRequest {

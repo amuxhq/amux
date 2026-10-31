@@ -296,7 +296,8 @@ async fn a_new_provider_version_is_asked_again() {
     );
     assert_eq!(
         runtime
-            .held_host_catalogue(node::Provider::Claude)
+            .host_catalogue(node::Provider::Claude)
+            .await
             .unwrap()
             .provider_version,
         "2.1.300 (Claude Code)"
@@ -342,11 +343,7 @@ async fn a_paired_host_answers_for_its_peers_providers() {
     desk_edge.trust(&laptop_edge).await.unwrap();
     laptop_edge.trust(&desk_edge).await.unwrap();
     let _link = laptop_edge.link_in_process(&desk_edge).unwrap();
-    assert!(
-        laptop_edge
-            .wait_for_route(desk_runtime.host(), PATIENCE)
-            .await
-    );
+    assert!(wait_for_route(&laptop_edge, desk_runtime.host(), PATIENCE).await);
 
     let on_laptop = node::ClientApi::new(&laptop_runtime, None);
     let desk_host = desk_runtime.host();

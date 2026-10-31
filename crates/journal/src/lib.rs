@@ -63,14 +63,6 @@ pub fn segments(dir: &Path) -> io::Result<Vec<u64>> {
     Ok(starts)
 }
 
-/// True when a segment after `segment_start` exists, so that segment never
-/// changes again. What deletion below a durable cursor keys on.
-pub fn is_final(dir: &Path, segment_start: u64) -> io::Result<bool> {
-    Ok(segments(dir)?
-        .into_iter()
-        .any(|start| start > segment_start))
-}
-
 /// Segments lying entirely below `durable_cursor`, oldest first, except the
 /// newest `keep` of them: a segment is entirely below the cursor when the
 /// next segment starts at or before it.

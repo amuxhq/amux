@@ -5,12 +5,11 @@ use std::collections::BTreeSet;
 use codex_protocol::client::{
     BackgroundTerminalsListParams, BackgroundTerminalsTerminateParams, CommandApprovalResponse,
     ElicitationAction, ModelListParams, SkillsListParams, ThreadIdParams, ThreadReadParams,
-    ThreadResumeParams, ThreadSetNameParams, ToolCallResponse, TurnInterruptParams,
+    ThreadResumeParams, ThreadSetNameParams, TurnInterruptParams,
 };
 use codex_protocol::items::{
-    CommandAction, DynamicToolCallItem, FileUpdateChange, McpToolCallItem, MessagePhase,
-    PatchChangeKind, TextContent, ThreadItem, ToolOutputContent, UserInput, WebSearchAction,
-    WebSearchItem,
+    CommandAction, FileUpdateChange, McpToolCallItem, MessagePhase, PatchChangeKind, ThreadItem,
+    UserInput, WebSearchAction, WebSearchItem,
 };
 use codex_protocol::server::{
     AccountReadResponse, AutoApprovalReview, BackgroundTerminalTerminateResponse,
@@ -30,14 +29,14 @@ use wire::{
     AccessGrant, ApiError, BackgroundJob, CodexAsk, CodexUsage, CodexUsageWindow, CommandApproval,
     Decision, DecisionOutcome, FileChangeApproval, FormAsk, Limit, LinkAsk, McpToolApproval,
     OfferedModel, Question, QuestionAsk, QuestionOption, ReviewerVerdict, SignIn, SignInState,
-    TaskListStatus, ToolClass, ToolDecision, ToolServer, ToolServerHealth, ToolServerStatus,
-    ToolState, Turn, TurnOutcome, UsageMeter, UsageState, Work, codex_ask, codex_item, work,
+    TaskListStatus, ToolClass, ToolDecision, ToolServer, ToolServerStatus, ToolState, Turn,
+    TurnOutcome, UsageMeter, UsageState, Work, codex_ask, codex_item, work,
 };
 
 use super::{
-    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, InjectConsumption, ListedSkill, Proposed,
-    RESUME_REQUEST, Request, State, Streamed, WorkState, ask_key, client_message_id,
-    elicitation_response, item_body, work_ask, work_complete,
+    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, ListedSkill, Proposed, RESUME_REQUEST,
+    Request, State, Streamed, WorkState, ask_key, client_message_id, elicitation_response,
+    item_body, work_ask, work_complete,
 };
 use crate::claude_common::compact_json;
 use crate::shared::{Output, json_as_written, patch_first_change};
@@ -326,7 +325,6 @@ impl State {
                 let refusal = RpcError {
                     code: -32601,
                     message: format!("amux does not handle {method}"),
-                    data: None,
                     extra: Default::default(),
                 };
                 self.respond(emit, &ask_key(id), Err(refusal));
@@ -353,7 +351,6 @@ impl State {
                 let refused = RpcError {
                     code: 0,
                     message: String::new(),
-                    data: None,
                     extra: Default::default(),
                 };
                 self.response(emit, id, Err(refused));
@@ -654,7 +651,11 @@ impl State {
                 during_turn,
                 turn_over,
             } => {
-                if during_turn && self.consumption == InjectConsumption::DrainedMidTurn {
+                // A running turn samples again with injected items in
+                // context before it ends (codex-cli 0.157.0 onwards), so a
+                // message injected mid-turn is consumed at the inject's
+                // acknowledgement and needs no turn of its own.
+                if during_turn {
                     if turn_over && !self.shared.is_busy() {
                         // The turn it was sent into ended first: nothing
                         // answers it until a turn starts.
@@ -855,7 +856,6 @@ impl State {
             ClientRequest::BackgroundTerminalsList(BackgroundTerminalsListParams {
                 thread_id: self.thread(),
                 cursor,
-                limit: None,
                 extra: Default::default(),
             }),
             Request::Jobs { page, listed },
@@ -1066,9 +1066,6 @@ impl State {
             return;
         }
         self.thread_id = Some(id);
-        if let Some(version) = some_of(thread.cli_version.as_deref()) {
-            self.version = Some(version);
-        }
         self.shared.provider_started();
         let kind = if some_of(thread.forked_from_id.as_deref()).is_some() {
             wire::BoundaryKind::Forked
@@ -1192,19 +1189,6 @@ impl State {
             }
             ServerRequest::Elicitation(params) => {
                 return self.elicitation(emit, key, method, params, payload, child);
-            }
-            ServerRequest::ToolCall(_) => {
-                // Tools amux offers Codex are served by amux's tool server;
-                // a client-side tool is nothing this agent hosts.
-                let refused = ToolCallResponse {
-                    content_items: vec![ToolOutputContent::Text(TextContent {
-                        text: "This client hosts no dynamic tools.".into(),
-                        extra: Default::default(),
-                    })],
-                    success: false,
-                    extra: Default::default(),
-                };
-                return self.respond(emit, &key, Ok(ClientResponse::ToolCall(refused)));
             }
         };
         let (decisions, responses) = decisions
@@ -1559,24 +1543,6 @@ impl State {
             ServerNotification::ReasoningSummaryTextDelta(delta) => {
                 self.summary_delta(emit, &delta.item_id, delta.summary_index, &delta.delta);
             }
-            ServerNotification::TurnDiffUpdated(updated) => {
-                let key = format!("diff:{}", updated.turn_id);
-                let diff = (key.clone(), updated.diff);
-                if self.last_diff.as_ref() == Some(&diff) {
-                    return;
-                }
-                let patch = diff.1.clone();
-                self.last_diff = Some(diff);
-                self.emit_item(
-                    emit,
-                    ItemDraft {
-                        key,
-                        body: item_body(codex_item::Kind::TurnDiff(wire::TurnDiff { patch })),
-                        complete: true,
-                        ..Default::default()
-                    },
-                );
-            }
             ServerNotification::TurnPlanUpdated(updated) => {
                 self.plan = Some(
                     updated
@@ -1640,13 +1606,7 @@ impl State {
                     });
                 }
             }
-            ServerNotification::McpServerStatusUpdated(updated) => {
-                self.server_status(emit, updated)
-            }
-            // A reroute covers one request and Codex keeps the chosen model
-            // for the next; it also sends a warning saying so, with a link,
-            // which is what the person sees.
-            ServerNotification::ModelRerouted(_) => {}
+            ServerNotification::McpServerStatusUpdated(updated) => self.server_status(updated),
             ServerNotification::Error(error) => self.api_error(emit, error),
             ServerNotification::AutoApprovalReviewStarted(review) => {
                 self.review(emit, review, false)
@@ -1676,16 +1636,10 @@ impl State {
             // Nothing a client draws, or what another fact already covers.
             ServerNotification::ThreadStatusChanged(_)
             | ServerNotification::ThreadNameUpdated(_)
-            | ServerNotification::ThreadCompacted(_)
-            | ServerNotification::ThreadArchived(_)
-            | ServerNotification::ThreadUnarchived(_)
-            | ServerNotification::ThreadGoalUpdated(_)
             | ServerNotification::ThreadGoalCleared(_)
-            | ServerNotification::ThreadReadStateChanged(_)
-            | ServerNotification::TurnModerationMetadata(_)
             | ServerNotification::RemoteControlStatusChanged(_)
-            | ServerNotification::FileChangeOutputDelta(_)
-            | ServerNotification::TerminalInteraction(_) => {}
+            | ServerNotification::TerminalInteraction(_)
+            | ServerNotification::TurnDiffUpdated(_) => {}
             ServerNotification::SkillsChanged(_) => self.skills_changed(emit),
             // Configuration Codex found and did not apply: the person
             // wants to know, in Codex's words.
@@ -1725,7 +1679,6 @@ impl State {
             ServerNotification::SafetyBufferingUpdated(update) => {
                 self.safety_check(emit, &update.turn_id, update.show_buffering_ui)
             }
-            ServerNotification::HookStarted(_) | ServerNotification::HookCompleted(_) => {}
             // Codex closes a thread only once no client is subscribed, so
             // the agent's own thread closing means it is gone; the next
             // incarnation resumes it.
@@ -1802,7 +1755,7 @@ impl State {
         }
     }
 
-    fn server_status(&mut self, emit: &mut Emit, updated: McpServerStatusUpdated) {
+    fn server_status(&mut self, updated: McpServerStatusUpdated) {
         let name = updated.name;
         let status = match updated.status.as_str() {
             "starting" => ToolServerStatus::Starting,
@@ -1814,42 +1767,14 @@ impl State {
         let error = some_of(updated.error.as_deref())
             .or_else(|| some_of(updated.failure_reason.as_deref()))
             .unwrap_or_default();
-        let health = self.servers.get_or_insert_with(ToolServerHealth::default);
         let entry = ToolServer {
             name: name.clone(),
             status: status as i32,
-            error: error.clone(),
+            error,
         };
-        match health.servers.iter_mut().find(|server| server.name == name) {
+        match self.servers.iter_mut().find(|server| server.name == name) {
             Some(server) => *server = entry,
-            None => health.servers.push(entry),
-        }
-        let failed = health.servers.iter().any(|server| {
-            server.status == ToolServerStatus::Failed as i32
-                || server.status == ToolServerStatus::NeedsAuth as i32
-        });
-        health.state = if failed {
-            wire::HealthState::Degraded
-        } else {
-            wire::HealthState::Healthy
-        } as i32;
-        if matches!(
-            status,
-            ToolServerStatus::Failed | ToolServerStatus::NeedsAuth
-        ) {
-            self.emit_item(
-                emit,
-                ItemDraft {
-                    key: format!("mcp:{name}"),
-                    body: item_body(codex_item::Kind::McpStartup(wire::McpStartup {
-                        server: name,
-                        status: status as i32,
-                        error,
-                    })),
-                    complete: true,
-                    ..Default::default()
-                },
-            );
+            None => self.servers.push(entry),
         }
     }
 
@@ -2033,7 +1958,6 @@ impl State {
             ThreadItem::CommandExecution(_)
             | ThreadItem::FileChange(_)
             | ThreadItem::McpToolCall(_)
-            | ThreadItem::DynamicToolCall(_)
             | ThreadItem::WebSearch(_)
             | ThreadItem::ImageView(_)
             | ThreadItem::ImageGeneration(_)
@@ -2204,7 +2128,6 @@ impl State {
             ThreadItem::CommandExecution(command) => command.status.as_str(),
             ThreadItem::FileChange(change) => change.status.as_str(),
             ThreadItem::McpToolCall(call) => call.status.as_str(),
-            ThreadItem::DynamicToolCall(call) => call.status.as_str(),
             ThreadItem::CollabAgentToolCall(call) => call.status.as_str(),
             ThreadItem::ImageGeneration(image) => image.status.as_str(),
             _ => "",
@@ -2271,12 +2194,6 @@ impl State {
                     ToolClass::Consequential
                 },
             ),
-            ThreadItem::DynamicToolCall(call) => {
-                if completed && call.success == Some(false) {
-                    state = ToolState::Failed;
-                }
-                (work::Of::Mcp(dynamic_work(call)), ToolClass::Consequential)
-            }
             ThreadItem::WebSearch(search) => (
                 work::Of::WebSearch(web_search(search)),
                 ToolClass::WebSearch,
@@ -2373,7 +2290,6 @@ impl State {
         let duration_ms = match item {
             ThreadItem::CommandExecution(command) => command.duration_ms,
             ThreadItem::McpToolCall(call) => call.duration_ms,
-            ThreadItem::DynamicToolCall(call) => call.duration_ms,
             _ => None,
         };
         let at_ms = started.or(at_ms).unwrap_or(self.shared.now_ms());
@@ -2622,9 +2538,6 @@ impl State {
         if outcome == TurnOutcome::Completed {
             self.open_plan_ask(&turn_id);
         }
-        if self.consumption == InjectConsumption::ParkedUntilNextTurn {
-            self.turn_over_parked(emit);
-        }
     }
 
     /// At turn end nothing streams any more. A command still running
@@ -2812,18 +2725,6 @@ fn mcp_work(call: &McpToolCallItem) -> wire::McpToolCall {
             .as_ref()
             .map(|error| error.message.clone())
             .unwrap_or_default(),
-        subject: crate::shared::first_string(&call.arguments),
-    }
-}
-
-/// A dynamic tool call's work, drawn as a tool-server call.
-fn dynamic_work(call: &DynamicToolCallItem) -> wire::McpToolCall {
-    wire::McpToolCall {
-        server: call.namespace.clone().unwrap_or_default(),
-        tool: call.tool.clone(),
-        arguments_json: compact_json(&call.arguments).into_bytes(),
-        result_json: compact_json(&as_written(&call.content_items)).into_bytes(),
-        error: String::new(),
         subject: crate::shared::first_string(&call.arguments),
     }
 }

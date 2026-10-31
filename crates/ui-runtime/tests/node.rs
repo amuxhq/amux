@@ -47,7 +47,7 @@ async fn grpc(net: &Net) -> GrpcClient {
         .front_door("desk")
         .await
         .unwrap()
-        .list_profiles(wire::ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -230,6 +230,117 @@ async fn a_session_over_the_socket_reconnects_across_a_daemon_restart() {
     })
     .await;
     println!("{}", compact(&session.state().trace()));
+    fleet.close(&agent);
+    drop(session);
+    drop(fleet);
+    net.shutdown().await.unwrap();
+}
+
+/// The text of the draft desk's daemon keeps for `agent`, once it reads
+/// `wanted`.
+async fn kept_reads(client: &dyn Client, agent: &[u8], wanted: &str) {
+    let mut last = String::new();
+    let reached = tokio::time::timeout(PATIENCE, async {
+        loop {
+            last = client
+                .get_draft(wire::GetDraftRequest {
+                    agent_id: agent.to_vec(),
+                })
+                .await
+                .unwrap()
+                .text;
+            if last == wanted {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    assert!(
+        reached.is_ok(),
+        "the kept draft never read {wanted:?} (last {last:?})"
+    );
+}
+
+/// A prompt held while its agent's host can't be reached is in the agent's
+/// kept draft from the moment it is held, ahead of the composer's words: a
+/// held prompt lives only as long as the client, and one killed before the
+/// host is back finds the words there. A chat reopened meanwhile reads
+/// only the composer's words, the prompt being shown held, and once the
+/// host is back and the prompt goes, the draft is the composer's again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_prompt_held_for_an_unreachable_host_is_kept_in_the_draft_until_it_goes() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("laptop")
+            .link("desk", "laptop")
+            .agent(
+                AgentDecl::new("far", "laptop")
+                    .kind(FakeKind::ClaudeSdk)
+                    .steps(vec![
+                        text("Ready."),
+                        Step::TurnEnd,
+                        text("Tests pass."),
+                        Step::TurnEnd,
+                    ])
+                    .prompt("go"),
+            ),
+    )
+    .await
+    .unwrap();
+    net.settle("far").await.unwrap();
+    let client: Arc<dyn Client> = Arc::new(client::InProcess::new(net.client("desk").unwrap()));
+    let fleet = Fleet::connect(client.clone(), SystemClock).await.unwrap();
+    let far = net.agent("far").unwrap().id;
+    let agent = until_within(PATIENCE, fleet.changed(), || {
+        fleet.state().find(far.as_bytes()).map(ui_state::agent_key)
+    })
+    .await;
+    let session = fleet
+        .open(&agent, Window { tail: 20, cap: CAP })
+        .await
+        .unwrap();
+    until_within(PATIENCE, session.changed(), || {
+        (session.state().caught_up() && says(&session, "Ready.")).then_some(())
+    })
+    .await;
+
+    net.sever_link("desk", "laptop").unwrap();
+    until_within(PATIENCE, session.changed(), || {
+        let state = session.state();
+        state
+            .host()
+            .is_some_and(|host| host.online().is_none())
+            .then_some(())
+    })
+    .await;
+    let sent = session.send_prompt("Run the tests.", Vec::new()).await;
+    assert_eq!(
+        session.state().input_state(&sent.id),
+        Some(InputState::Held)
+    );
+    kept_reads(&*client, far.as_bytes(), "Run the tests.").await;
+    fleet.keep_draft(
+        &agent,
+        wire::Draft {
+            text: "Then the lint.".into(),
+            attachments: Vec::new(),
+        },
+    );
+    kept_reads(&*client, far.as_bytes(), "Run the tests.\nThen the lint.").await;
+    assert_eq!(
+        fleet.kept_draft(&agent).await.map(|draft| draft.text),
+        Some("Then the lint.".to_owned()),
+        "a chat reopened while the prompt is held reads the composer's words alone"
+    );
+
+    net.restore_link("desk", "laptop").await.unwrap();
+    until_within(PATIENCE, session.changed(), || {
+        (says(&session, "Tests pass.") && session.state().held().count() == 0).then_some(())
+    })
+    .await;
+    kept_reads(&*client, far.as_bytes(), "Then the lint.").await;
     fleet.close(&agent);
     drop(session);
     drop(fleet);

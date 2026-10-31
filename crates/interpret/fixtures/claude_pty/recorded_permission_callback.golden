@@ -1,0 +1,38 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"agent","json":{"type":"launch"}}
+effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue cd96cd29
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 3 recorded 1: fact Hook hook_event_name=SessionStart
+effect follow "<TRANSCRIPT_1>"
+item boundary:1 boundary final at=1793452825586 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1793452825586 asks=[] session=aaf1dfa7-589c-4610-a6b6-646121605d8a model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793452826106 asks=[] session=aaf1dfa7-589c-4610-a6b6-646121605d8a model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 12 recorded 10: fact Transcript type=user uuid=53595e3f-379f-415d-9a76-21b09045f068
+item 53595e3f-379f-415d-9a76-21b09045f068 prompt final at=1793452826317 text="Run exactly this shell command once, with your shell tool, and nothing else: touch decided.txt. Then reply with the single word done."
+snapshot WORKING queue=[] working_on=- at=1793452826317 asks=[] session=aaf1dfa7-589c-4610-a6b6-646121605d8a model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 38 recorded 36: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01YACd5CPNZcJjtngJcqcdNk
+snapshot WORKING queue=[] working_on=- at=1793452827050 asks=[] session=aaf1dfa7-589c-4610-a6b6-646121605d8a model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01YACd5CPNZcJjtngJcqcdNk Bash since=1793452827050
+## 40 recorded 38: fact Hook hook_event_name=PermissionRequest
+snapshot NEEDS_YOU queue=[] working_on=- at=1793452827080 asks=[ask:1->- permission:Bash/session <MACHINE_PATH>/session mode=acceptEdits deny-can-stop] session=aaf1dfa7-589c-4610-a6b6-646121605d8a model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01YACd5CPNZcJjtngJcqcdNk Bash since=1793452827050
+## 43 recorded 41: fact Transcript type=assistant uuid=e9087859-ffcb-4999-9fa3-5330b66e8c8d
+item toolu_01YACd5CPNZcJjtngJcqcdNk tool final at=1793452827250 text="" Bash TOOL_STATE_RUNNING input=shell:"touch decided.txt"
+snapshot NEEDS_YOU queue=[] working_on=- at=1793452827168 asks=[ask:1->toolu_01YACd5CPNZcJjtngJcqcdNk permission:Bash/session <MACHINE_PATH>/session mode=acceptEdits deny-can-stop] session=aaf1dfa7-589c-4610-a6b6-646121605d8a model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35606/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01YACd5CPNZcJjtngJcqcdNk Bash since=1793452827050
+## 45 recorded 43: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01YACd5CPNZcJjtngJcqcdNk
+snapshot NEEDS_YOU queue=[] working_on=- at=1793452827320 asks=[ask:1->toolu_01YACd5CPNZcJjtngJcqcdNk permission:Bash/session <MACHINE_PATH>/session mode=acceptEdits deny-can-stop] session=aaf1dfa7-589c-4610-a6b6-646121605d8a model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35606/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 48 recorded 46: fact Transcript type=user uuid=46df020b-005c-4c36-ac7e-b16097d26162
+item toolu_01YACd5CPNZcJjtngJcqcdNk tool final at=1793452827250 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere started=1793452827250 ended=1793452827557 input=shell:"touch decided.txt" out="(Bash completed with no output)"
+snapshot WORKING queue=[] working_on=- at=1793452827470 asks=[] session=aaf1dfa7-589c-4610-a6b6-646121605d8a model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35606/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 59 recorded 57: fact Hook hook_event_name=MessageDisplay
+item stream:7f8e221b-dff9-4c91-a16e-dfe950f7e143 message open at=1793452827966 text="done"
+## 60 recorded 58: fact Hook hook_event_name=Stop
+snapshot WORKING queue=[] working_on=- at=1793452827966 asks=[] session=aaf1dfa7-589c-4610-a6b6-646121605d8a model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35606/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 64 recorded 62: fact Transcript type=assistant uuid=6ece687e-5bd3-4e67-b91e-ad09bfa6211c
+item stream:7f8e221b-dff9-4c91-a16e-dfe950f7e143 message final at=1793452828160 text="done"
+snapshot WORKING queue=[] working_on=- at=1793452828069 asks=[] session=aaf1dfa7-589c-4610-a6b6-646121605d8a model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35732/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 66 recorded 64: fact Transcript type=system subtype=turn_duration uuid=3f45d97c-5b74-4096-9126-99fb3f3d1aa4
+item turn:1 turn final at=1793452828205 text="" #1 TURN_OUTCOME_COMPLETED started=1793452826371
+snapshot IDLE queue=[] working_on=- at=1793452828069 asks=[] session=aaf1dfa7-589c-4610-a6b6-646121605d8a model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35732/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+turn_end 1 last=stream:7f8e221b-dff9-4c91-a16e-dfe950f7e143

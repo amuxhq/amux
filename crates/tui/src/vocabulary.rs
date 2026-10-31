@@ -18,8 +18,7 @@ use ui_view::{
     AnswerView, AskBody, AskCard, AskRow, AttachmentView, CallPhase, CardState, Choice,
     ChoiceOutcome, Decision, DecisionView, EditLine, ExploreVerb, FileChangeView, FileRow, Granted,
     LineKind, Offline, OptionView, PatchHead, PatchLine, PermissionGrant, PlanVerdict,
-    QuestionView, QueuedRow, Reach, Refusal, RefusalReason, Resolution, Row, RowKind, Scope,
-    Segment,
+    QuestionView, QueuedRow, Reach, Refusal, Resolution, Row, RowKind, Scope, Segment,
 };
 use wire::{BlobRef, BoundaryKind, EnvelopeKind, SendState};
 
@@ -38,48 +37,6 @@ const PAGE_HEIGHT: u16 = 30;
 /// What terminal Claude's interpreter says when Claude shows a tool server's
 /// form in its own terminal.
 const UNANSWERABLE: &str = "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.";
-
-/// The whole frames drawn from served hosts, with what each shows; the
-/// frames test draws exactly these.
-pub const FRAMES: &[(&str, &str)] = &[
-    (
-        "home",
-        "Home at 110 columns as the laptop sees it: a terminal Claude, a headless Claude and a Codex on the desk, every one idle, the one whose turn ended last first, each row with its mark, name, folder and host and how long it has been idle, and under it the first line of what it last said; the first selected, its age giving way to the close mark; the keys under the list.",
-    ),
-    (
-        "home_60col",
-        "The same home at 60 columns: rows keep their mark, name, folder and host, and what each last said.",
-    ),
-    (
-        "home_standings",
-        "Home with every standing at 110 columns: the top line says the studio is away and counts who is working and who needs you; a headless Claude asking to run a command under Needs you; under Live, an unfolded family whose one-shot child finished, an agent on the offline studio saying so, an idle agent with what it last said and a working one; and the exited Codex folded under Exited.",
-    ),
-    ("home_standings_80col", "The same home at 80 columns."),
-    (
-        "hosts",
-        "The hosts overlay over that home: every trusted host with how it is reached (the desk direct, this machine, the studio offline), with how to pair another and esc to close.",
-    ),
-    (
-        "chat",
-        "A headless Claude chat on the desk read from the laptop: the header with its folder and the way to the diff and home, the first turn, the composer with its model and mode, and its keys.",
-    ),
-    (
-        "tool_form",
-        "A terminal Claude on the desk asking for a tool server's sign-in form, read from the laptop: the form in the composer's box, a step per field, with the conversation still above it: the prompt, the text that introduced the tool server's call, and the call folded.",
-    ),
-    (
-        "running_call",
-        "A terminal Claude on the desk mid-call, read from the laptop: the text that introduced the call above it and the call drawn running while it runs, before any result.",
-    ),
-    (
-        "rewind_before_swap",
-        "The same headless chat after the desk rewound under it: the Reset is pending, the second turn's rows stay on screen, and the header and the composer's edge say the host is away until the rebuilt transcript catches up.",
-    ),
-    (
-        "rewind_after_swap",
-        "After the CaughtUp: the rebuilt transcript swapped in, the rewound turn gone, and the composer live again.",
-    ),
-];
 
 /// The chat surroundings' frames: columns and rows.
 const CHAT_SIZE: (u16, u16) = (120, 28);
@@ -331,65 +288,41 @@ pub struct HomeScene {
     pub fleet: ui_state::FleetState,
     pub lines: std::collections::HashMap<ui_state::AgentKey, ui_view::SessionLine>,
     pub now: i64,
-    pub chat_in: crate::setup::ChatIn,
 }
 
-/// What a new agent starts with on the authored desk, as a person's
-/// settings would say.
-static DEFAULTS: std::sync::LazyLock<crate::setup::Defaults> = std::sync::LazyLock::new(|| {
-    let of = |model: &str, effort: &str| crate::setup::AgentDefaults {
-        model: model.into(),
-        effort: effort.into(),
-        permission: "default".into(),
-    };
-    crate::setup::Defaults {
-        claude: of("opus", "high"),
-        codex: of("gpt-6.1-sol", "medium"),
-    }
-});
+/// Home on the authored desk, chatting in amux, a new agent starting with
+/// the shipped settings.
+pub fn desk_home() -> crate::home::Home {
+    crate::home::Home::new(crate::home::Place {
+        local_host: b"desk".to_vec(),
+        version: String::new(),
+        working_dir: "~/src/amux".into(),
+        chat_in: settings::ChatInSetting::Amux,
+        defaults: settings::NewAgentSettings::default(),
+    })
+}
 
 impl HomeScene {
-    fn place(&self) -> crate::home::Place<'static> {
-        crate::home::Place {
-            local_host: b"desk",
-            version: "",
-            working_dir: "~/src/amux",
-            attach: false,
-            chat_in: self.chat_in,
-            defaults: &DEFAULTS,
-        }
-    }
-
     pub fn draw(
         &mut self,
         frame: &mut ratatui::Frame<'_>,
         area: ratatui::layout::Rect,
         theme: Theme,
     ) {
-        let place = self.place();
-        self.home.draw(
-            frame,
-            area,
-            &self.fleet,
-            &self.lines,
-            None,
-            self.now,
-            theme,
-            &place,
-        );
+        self.home
+            .draw(frame, area, &self.fleet, &self.lines, None, self.now, theme);
     }
 
     /// The open new-agent composer told what the desk offers its agent.
     pub fn offer(&mut self, provider: wire::Provider, catalogue: &wire::Catalogue) {
-        let place = self.place();
-        if let Some(setup) = self.home.open_setup(&place) {
+        if let Some(setup) = self.home.open_setup() {
             setup.offer(b"desk", provider, &[1; 32], catalogue);
         }
     }
 
     /// A key pressed on home, as the person would press it.
     pub fn key(&mut self, key: impl Into<crossterm::event::KeyEvent>) {
-        let _ = self.home.key(&self.fleet, key.into(), false);
+        let _ = self.home.key(&self.fleet, key.into());
     }
 }
 
@@ -644,19 +577,18 @@ pub fn authored_home() -> HomeScene {
     event(Of::CaughtUp(wire::CaughtUp { revision: 0 }));
     fleet.update(FleetMsg::Connection(Connection::Live));
 
-    let mut home = crate::home::Home::default();
+    let mut home = desk_home();
     // Exited unfolded, as the person would open it; the highlight back on
     // the first agent.
     let key = crossterm::event::KeyEvent::from;
-    home.key(&fleet, key(crossterm::event::KeyCode::End), false);
-    home.key(&fleet, key(crossterm::event::KeyCode::Enter), false);
+    home.key(&fleet, key(crossterm::event::KeyCode::End));
+    home.key(&fleet, key(crossterm::event::KeyCode::Enter));
     home.select(ui_state::agent_key(fleet.find(b"planner").expect("listed")));
     HomeScene {
         home,
         fleet,
         lines,
         now: NOW,
-        chat_in: crate::setup::ChatIn::Amux,
     }
 }
 
@@ -781,20 +713,14 @@ fn text(words: &str) -> Vec<Segment> {
 const CLOSED: RowState = RowState {
     focused: false,
     expanded: false,
-    rail: false,
-    joined: false,
 };
 const OPEN: RowState = RowState {
     focused: false,
     expanded: true,
-    rail: false,
-    joined: false,
 };
 const FOCUSED: RowState = RowState {
     focused: true,
     expanded: false,
-    rail: false,
-    joined: false,
 };
 
 /// What the layout would look up for an authored row: the first edit's
@@ -1577,7 +1503,6 @@ fn row_sets() -> Vec<RowSet> {
             "A model reroute with its reason.",
             vec![(
                 row(RowKind::ModelSwitch {
-                    from: "gpt-5".into(),
                     to: "gpt-5-mini".into(),
                     reason: "usage limit".into(),
                 }),
@@ -1702,7 +1627,7 @@ fn choice(outcome: ChoiceOutcome) -> Choice {
         outcome,
         primary: false,
         takes_note: false,
-        answer: ui_view::Answer::Claude(wire::ClaudeAnswer::default()),
+        answer: wire::Answer::default(),
     }
 }
 
@@ -1852,7 +1777,7 @@ fn cards() -> Vec<CardSet> {
     let mut sending = card(command(), command_choices());
     sending.state = CardState::Sending;
     let mut rejected = card(command(), command_choices());
-    rejected.state = CardState::Rejected(Refusal::of(RefusalReason::ClosedAsk));
+    rejected.state = CardState::Rejected(Refusal::of(wire::Refusal::ClosedAsk));
     let mut not_confirmed = card(command(), command_choices());
     not_confirmed.state = CardState::NotConfirmed;
     let mut second = card(command(), command_choices());
@@ -2473,8 +2398,8 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
                 .encode_to_vec()
             }
             _ => {
-                use wire::claude_sdk_item::Kind as K;
-                wire::ClaudeSdkItem {
+                use wire::claude_item::Kind as K;
+                wire::ClaudeItem {
                     kind: Some(if prompt {
                         K::Prompt(wire::Prompt {})
                     } else {
@@ -2558,7 +2483,7 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
         }
     };
 
-    let claude_working = wire::ClaudeSdkSnapshot {
+    let claude_working = wire::ClaudeSnapshot {
         model: Some("opus".into()),
         model_name: Some("Opus".into()),
         permission: Some("default".into()),
@@ -2569,7 +2494,7 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
     let changes = session(Kind::ClaudeSdk, claude_working);
     let claude = session(
         Kind::ClaudeSdk,
-        wire::ClaudeSdkSnapshot {
+        wire::ClaudeSnapshot {
             model: Some("opus".into()),
             model_name: Some("Opus".into()),
             permission: Some("default".into()),
@@ -2580,7 +2505,7 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
     );
     let everything = session(
         Kind::ClaudeSdk,
-        wire::ClaudeSdkSnapshot {
+        wire::ClaudeSnapshot {
             model: Some("opus".into()),
             model_name: Some("Opus".into()),
             permission: Some("default".into()),
@@ -2596,7 +2521,6 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
             model: Some("gpt-5.5".into()),
             model_name: Some("GPT-5.5".into()),
             approval_policy: Some("on-request".into()),
-            sandbox: Some("workspace-write".into()),
             usage: Some(codex_usage),
             ..Default::default()
         }
@@ -2756,20 +2680,9 @@ fn control_chats() -> Vec<(
                 }
                 .encode_to_vec()
             }
-            Kind::ClaudePty => {
-                use wire::claude_pty_item::Kind as K;
-                wire::ClaudePtyItem {
-                    kind: Some(if prompt {
-                        K::Prompt(wire::Prompt {})
-                    } else {
-                        K::Message(wire::Text { complete: true })
-                    }),
-                }
-                .encode_to_vec()
-            }
             _ => {
-                use wire::claude_sdk_item::Kind as K;
-                wire::ClaudeSdkItem {
+                use wire::claude_item::Kind as K;
+                wire::ClaudeItem {
                     kind: Some(if prompt {
                         K::Prompt(wire::Prompt {})
                     } else {
@@ -2844,7 +2757,7 @@ fn control_chats() -> Vec<(
 
     let claude_sdk = session(
         Kind::ClaudeSdk,
-        wire::ClaudeSdkSnapshot {
+        wire::ClaudeSnapshot {
             model: Some("claude-opus-5-5".into()),
             model_name: Some("Opus 5.5".into()),
             effort: Some("high".into()),
@@ -2886,18 +2799,16 @@ fn control_chats() -> Vec<(
         permission: Some("full-access".into()),
         mode: Some("plan".into()),
         approval_policy: Some("never".into()),
-        sandbox: Some("danger-full-access".into()),
         ..Default::default()
     });
     let codex_custom = codex_settings(wire::CodexSnapshot {
         mode: Some("default".into()),
         approval_policy: Some("untrusted".into()),
-        sandbox: Some("workspace-write".into()),
         ..Default::default()
     });
     let claude_pty = session(
         Kind::ClaudePty,
-        wire::ClaudePtySnapshot {
+        wire::ClaudeSnapshot {
             model: Some("claude-opus-5-5".into()),
             model_name: Some("Opus 5.5".into()),
             permission: Some("plan".into()),

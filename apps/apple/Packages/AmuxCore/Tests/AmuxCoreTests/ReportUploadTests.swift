@@ -9,7 +9,6 @@ private func wholeCapture() -> ReportCapture {
     ReportCapture(
         frame: FrozenFrame(png: Data([0x89, 0x50, 0x4E, 0x47]), width: 402, height: 874, scale: 3),
         dump: Task { .success(URL(fileURLWithPath: "/reports/dump-1")) },
-        trace: "{\"kind\":\"route\",\"screen\":\"run\"}\n",
         route: "run")
 }
 
@@ -48,27 +47,21 @@ final class ReportUploadTests: XCTestCase {
 
         let declared = try parts(upload)
         XCTAssertEqual(declared["frame"] as? String, "present")
-        XCTAssertEqual(declared["trace"] as? String, "present")
         XCTAssertNil(declared["dump"], "the runtime declares the dump it holds")
         XCTAssertEqual(upload.path, "/reports/dump-1")
         XCTAssertEqual(upload.frame, Data([0x89, 0x50, 0x4E, 0x47]))
-        XCTAssertEqual(upload.trace, "{\"kind\":\"route\",\"screen\":\"run\"}\n")
     }
 
-    /// A part that is missing says why. A reader who finds no trace has to be
+    /// A part that is missing says why. A reader who finds no dump has to be
     /// able to tell "withheld" from "lost" from "never existed".
     func testAMissingPartCarriesTheReasonItIsMissing() throws {
-        var capture = wholeCapture()
-        capture.trace = nil
-        capture.traceAbsent = "the view-state recording could not be written"
-
         let upload = ReportAssembly.upload(
-            from: capture, draft: ReportDraft(), build: "amux-ios/0.1.0",
+            from: wholeCapture(), draft: ReportDraft(), build: "amux-ios/0.1.0",
             dump: .failure(PartAbsent("nothing was connected")))
 
         let declared = try parts(upload)
         for (part, reason) in [
-            ("trace", "the view-state recording could not be written"),
+            ("trace", "the phone records no view trace"),
             ("dump", "nothing was connected"),
         ] {
             let absence = try XCTUnwrap(
@@ -76,18 +69,6 @@ final class ReportUploadTests: XCTestCase {
                 "\(part) should be declared absent")
             XCTAssertEqual(absence["reason"] as? String, reason)
         }
-        XCTAssertNil(upload.trace, "a trace declared absent is not handed over")
-        XCTAssertNil(declared["trace_kind"], "a report with no trace names no recorder")
-    }
-
-    /// Which recorder made the trace decides where the trace can be replayed,
-    /// so a trace that names none is not worth storing. The phone's came from
-    /// a native view, which a terminal cannot put back.
-    func testATraceNamesTheRecorderThatMadeIt() throws {
-        let upload = ReportAssembly.upload(
-            from: wholeCapture(), draft: ReportDraft(), build: "amux-ios/0.1.0", dump: dumped)
-
-        XCTAssertEqual(try parts(upload)["trace_kind"] as? String, "native_view")
     }
 
     /// The picture alone says nothing about how big the screen was, so the
@@ -170,7 +151,6 @@ final class ReportUploadTests: XCTestCase {
         XCTAssertEqual(retry.path, OneRuntime.kept)
         XCTAssertEqual(retry.header, first.header, "retry preserves every byte, including the time")
         XCTAssertEqual(retry.frame, first.frame)
-        XCTAssertEqual(retry.trace, first.trace)
         await reports.send(with: runtime, as: AccountId("ada"), build: "later")
         XCTAssertEqual(runtime.handed.count, 2, "sent is terminal")
     }

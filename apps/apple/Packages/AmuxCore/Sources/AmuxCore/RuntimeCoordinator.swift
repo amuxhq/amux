@@ -109,7 +109,7 @@ public final class RuntimeCoordinator {
     }
     /// Whether somebody is in front of the app, as the app last said.
     @ObservationIgnored public private(set) var active = true
-    @ObservationIgnored private var found: [FoundHost] = []
+    @ObservationIgnored private var found: [Found] = []
     @ObservationIgnored private var permission: LocalNetworkPermission = .unknown
     @ObservationIgnored private var fed: StoreBundle?
     /// The stores on screen as last told to `accountChanged`.
@@ -209,7 +209,7 @@ public final class RuntimeCoordinator {
             networkWatch.start { [weak self] in
                 Task { @MainActor in self?.networkChanged() }
             }
-            if !found.isEmpty { runtime.discovered(found.map(\.found)) }
+            if !found.isEmpty { runtime.discovered(found) }
             if !profiles.isEmpty {
                 registry.show(profiles)
                 place()
@@ -263,7 +263,7 @@ public final class RuntimeCoordinator {
         guard let runtime else { return }
         // A profile made since the browser last reported has not been told
         // what is on the network.
-        if !added.isEmpty, !found.isEmpty { runtime.discovered(found.map(\.found)) }
+        if !added.isEmpty, !found.isEmpty { runtime.discovered(found) }
         registry.show(listed)
         place()
     }
@@ -295,6 +295,9 @@ public final class RuntimeCoordinator {
                 failure = error.description
             }
         }
+        // The list moves whenever the profile's relay link does, so the
+        // account it carries is the one to draw.
+        if let view = profiles.first(where: { $0.id == id }) { stores.show(account: view.account) }
         listSources()
     }
 
@@ -361,7 +364,6 @@ public final class RuntimeCoordinator {
             return bound.map { _ in Nothing() }
         }
         registry.select(AccountId(view.subject))
-        await stores.refreshAccount()
         return .success(Nothing())
     }
 
@@ -371,7 +373,6 @@ public final class RuntimeCoordinator {
         guard let runtime = await started(),
               let entry = registry.accounts.first(where: { $0.id == account }) else { return }
         _ = await runtime.signOut(entry.profile)
-        await stores.refreshAccount()
     }
 
     /// Takes an account off this phone: its profile — its key, the machines
@@ -474,9 +475,9 @@ public final class RuntimeCoordinator {
 
     /// What the browser found, handed over whole to every profile, and to
     /// any runtime started later.
-    public func discovered(_ hosts: [FoundHost]) {
+    public func discovered(_ hosts: [Found]) {
         found = hosts
-        runtime?.discovered(hosts.map(\.found))
+        runtime?.discovered(hosts)
     }
 
     /// A bearer for an account, borrowed from its profile, which alone holds
@@ -498,17 +499,6 @@ public final class RuntimeCoordinator {
               case .success = await runtime.refreshEntitlement(entry.profile)
         else { return false }
         return true
-    }
-
-    /// The tail of the installation's log, for a report.
-    public func logTail(bytes: Int = 64 * 1024) -> String? {
-        guard let handle = try? FileHandle(
-            forReadingFrom: directory.appendingPathComponent("runtime.log"))
-        else { return nil }
-        defer { try? handle.close() }
-        let end = (try? handle.seekToEnd()) ?? 0
-        try? handle.seek(toOffset: end > UInt64(bytes) ? end - UInt64(bytes) : 0)
-        return (try? handle.readToEnd()).map { String(decoding: $0, as: UTF8.self) }
     }
 }
 

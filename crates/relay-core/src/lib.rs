@@ -421,20 +421,11 @@ impl Relay {
             Input::Expired { link } => self.expired(link, out),
             Input::Tick { now_ms } => self.now_ms = self.now_ms.max(now_ms),
         }
-        if let Err(violation) = self.check_step_invariants() {
-            out.push(Output::Dump {
-                reason: DumpReason::Violation(violation),
-            });
-        }
-        let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
-        if micros > self.budget.micros {
-            out.push(Output::Dump {
-                reason: DumpReason::OverBudget {
-                    micros,
-                    budget: self.budget,
-                },
-            });
-        }
+        let checked = self.check_step_invariants();
+        out.extend(
+            daemon_core::finish_step(started, self.budget, 0, checked)
+                .map(|reason| Output::Dump { reason }),
+        );
     }
 
     /// A link came up. Of two direct links between the same two processes
@@ -910,11 +901,6 @@ impl Relay {
     pub fn host_of(&self, link: LinkId) -> Option<HostId> {
         self.links.get(&link).map(|up| up.host)
     }
-
-    /// How long one step may take before it is reported.
-    pub fn budget(&self) -> StepBudget {
-        self.budget
-    }
 }
 
 #[cfg(test)]
@@ -1284,127 +1270,8 @@ mod tests {
         assert_eq!(pairs(&relay), vec![(1, 2)]);
     }
 
-    #[test]
-    fn a_lapse_to_free_ends_every_pair_through_the_link_and_tells_both_ends() {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
-        up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro));
-        up(&mut relay, 3, ALICE, TABLET, Some(Tier::Pro));
-        packet(&mut relay, 2, DESK);
-        packet(&mut relay, 2, TABLET);
-        packet(&mut relay, 1, TABLET);
-        assert_eq!(
-            step(
-                &mut relay,
-                Input::TierChanged {
-                    link: LinkId(2),
-                    tier: Tier::Pro,
-                },
-            ),
-            Vec::new(),
-            "a renewal ends nothing"
-        );
-        assert_eq!(
-            step(
-                &mut relay,
-                Input::TierChanged {
-                    link: LinkId(2),
-                    tier: Tier::Free,
-                },
-            ),
-            vec![
-                unforward(1, 2, ForwardRefusal::PaymentRequired, true),
-                unforward(3, 2, ForwardRefusal::PaymentRequired, true),
-            ]
-        );
-        assert_eq!(pairs(&relay), vec![(1, 3)], "pairs not through it stay");
-        assert_eq!(
-            packet(&mut relay, 1, LAPTOP),
-            Vec::new(),
-            "both ends were told already"
-        );
-        assert_eq!(packet(&mut relay, 2, DESK), Vec::new());
-        step(
-            &mut relay,
-            Input::Tick {
-                now_ms: REFUSAL_REPEAT_MS,
-            },
-        );
-        assert_eq!(
-            packet(&mut relay, 1, LAPTOP),
-            refuse(1, LAPTOP, ForwardRefusal::PaymentRequired)
-        );
-    }
-
-    fn tier(relay: &mut Relay, link: u64, tier: Tier) -> Vec<Output> {
-        step(
-            relay,
-            Input::TierChanged {
-                link: LinkId(link),
-                tier,
-            },
-        )
-    }
-
     fn asked(link: u64) -> Output {
         Output::RefreshCredential { link: LinkId(link) }
-    }
-
-    /// A purchase made on one device reaches the account's other hosts at
-    /// once: each link still on the free plan is asked for a fresh
-    /// credential.
-    #[test]
-    fn a_link_turning_paid_asks_its_accounts_free_links_for_a_fresh_credential() {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, Some(Tier::Free));
-        up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Free));
-        up(&mut relay, 3, ALICE, TABLET, Some(Tier::Free));
-        up(&mut relay, 4, BOB, DESK, Some(Tier::Free));
-
-        assert_eq!(
-            tier(&mut relay, 3, Tier::Pro),
-            vec![asked(2), asked(1)],
-            "only the paying account's free links, and not the paid one"
-        );
-        assert_eq!(
-            tier(&mut relay, 1, Tier::Pro),
-            vec![asked(2)],
-            "each paid credential asks the free links still left"
-        );
-        assert_eq!(tier(&mut relay, 2, Tier::Pro), Vec::new());
-        assert_eq!(packet(&mut relay, 1, LAPTOP), vec![forward(1, 2)]);
-    }
-
-    /// A link asked that comes back still free asks nothing: only a paid
-    /// credential asks, so a lapsed account's stale paid link costs its
-    /// free links one refresh, never a loop of them.
-    #[test]
-    fn a_free_link_that_refreshes_and_stays_free_asks_nothing() {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, Some(Tier::Free));
-        assert_eq!(
-            up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro)),
-            vec![told(1, LAPTOP, true), asked(1)]
-        );
-
-        assert_eq!(tier(&mut relay, 1, Tier::Free), Vec::new());
-        assert_eq!(
-            tier(&mut relay, 2, Tier::Pro),
-            vec![asked(1)],
-            "the next paid renewal asks again"
-        );
-    }
-
-    #[test]
-    fn a_paid_link_coming_up_asks_its_accounts_free_links() {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, Some(Tier::Free));
-        up(&mut relay, 2, ALICE, LAPTOP, None);
-        let out = up(&mut relay, 3, ALICE, TABLET, Some(Tier::Pro));
-        assert_eq!(
-            out,
-            vec![told(2, TABLET, true), told(1, TABLET, true), asked(1)]
-        );
     }
 
     /// A credential kept across launches can name a plan the account has
@@ -1426,38 +1293,6 @@ mod tests {
             vec![told(1, LAPTOP, true)],
             "an expired paid credential says nothing of the plan"
         );
-    }
-
-    #[test]
-    fn an_expired_token_ends_every_pair_through_the_link_until_a_fresh_one_comes() {
-        let mut relay = relay();
-        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
-        up(&mut relay, 2, ALICE, LAPTOP, Some(Tier::Pro));
-        packet(&mut relay, 1, LAPTOP);
-        assert_eq!(
-            step(&mut relay, Input::Expired { link: LinkId(2) }),
-            vec![unforward(1, 2, ForwardRefusal::NoRoute, true)]
-        );
-        assert_eq!(pairs(&relay), Vec::new());
-        step(
-            &mut relay,
-            Input::Tick {
-                now_ms: REFUSAL_REPEAT_MS,
-            },
-        );
-        assert_eq!(
-            packet(&mut relay, 2, DESK),
-            refuse(2, DESK, ForwardRefusal::NoRoute),
-            "nothing is forwarded for an expired link"
-        );
-        step(
-            &mut relay,
-            Input::TierChanged {
-                link: LinkId(2),
-                tier: Tier::Pro,
-            },
-        );
-        assert_eq!(packet(&mut relay, 1, LAPTOP), vec![forward(1, 2)]);
     }
 
     #[test]
@@ -1595,22 +1430,5 @@ mod tests {
             relay.check_step_invariants().map_err(|v| v.invariant),
             Err(NOTHING_BEFORE_ADMISSION)
         );
-    }
-
-    #[test]
-    fn a_step_over_its_budget_asks_for_a_dump() {
-        let mut relay = Relay::with_budget(RELAY, StepBudget { micros: 0 });
-        let mut out = Vec::new();
-        // Any step takes longer than nothing, given a clock fine enough;
-        // spin until one is measured over.
-        while out.is_empty() {
-            relay.step(Input::Tick { now_ms: 1 }, &mut out);
-        }
-        assert!(matches!(
-            out[..],
-            [Output::Dump {
-                reason: DumpReason::OverBudget { .. }
-            }]
-        ));
     }
 }

@@ -7,9 +7,6 @@ use uuid::Uuid;
 
 use crate::routing::{Capabilities, Host};
 
-pub(crate) const MAX_KINDS: usize = 64;
-pub(crate) const MAX_HOST_NAME_BYTES: usize = 256;
-
 /// One life of a host's runtime, drawn at random when the runtime starts.
 ///
 /// A host id outlives any process that holds it, so a peer cannot tell from
@@ -187,27 +184,6 @@ pub fn local_kinds() -> Vec<wire::Kind> {
     kinds
 }
 
-pub(crate) fn validate_remote_host(host: &Host) -> std::result::Result<(), String> {
-    if host.id == Uuid::nil() {
-        return Err("host_id must be non-zero".to_string());
-    }
-    if host.name.is_empty() {
-        return Err("host name must be non-empty".to_string());
-    }
-    if host.name.len() > MAX_HOST_NAME_BYTES {
-        return Err(format!(
-            "host name must be at most {MAX_HOST_NAME_BYTES} bytes"
-        ));
-    }
-    if host.version.is_empty() {
-        return Err("host version must be non-empty".to_string());
-    }
-    if host.capabilities.kinds.len() > MAX_KINDS {
-        return Err(format!("a host runs at most {MAX_KINDS} agent kinds"));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,29 +218,5 @@ mod tests {
                 "[fd12:3456::9]:4100"
             ]
         );
-    }
-
-    #[test]
-    fn validate_remote_host_rejects_too_many_kinds() {
-        let mut host = local_host(Uuid::from_u128(1), "peer", Capabilities::default(), false);
-        host.capabilities.kinds = vec![1; MAX_KINDS + 1];
-
-        let error = validate_remote_host(&host).expect_err("host should exceed the cap");
-
-        assert!(error.contains("agent kinds"));
-    }
-
-    #[test]
-    fn validate_remote_host_rejects_oversized_name() {
-        let host = local_host(
-            Uuid::from_u128(1),
-            &"a".repeat(MAX_HOST_NAME_BYTES + 1),
-            Capabilities::default(),
-            false,
-        );
-
-        let error = validate_remote_host(&host).expect_err("host name should exceed the cap");
-
-        assert!(error.contains("host name"));
     }
 }

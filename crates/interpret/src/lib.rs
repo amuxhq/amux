@@ -29,7 +29,7 @@ pub mod testkind;
 
 pub use claude_common::{FileStep, HOOK_ANSWER_FIELD, NOTEBOOK_OLD_SOURCE, file_step, tool_input};
 pub use golden::{
-    EndRules, FixtureInput, FixtureScript, GoldenReport, Replayed, UPDATE_GOLDENS_ENV,
+    Committer, EndRules, FixtureInput, FixtureScript, GoldenReport, Replayed, UPDATE_GOLDENS_ENV,
     check_invariants, claude_pty_input, claude_sdk_input, codex_input, fixture_script, render_item,
     render_steps, replay, run_golden, run_until,
 };
@@ -56,7 +56,7 @@ pub trait Interpreter {
 
     /// The state an agent starts in and the first journal frame: a Snapshot
     /// with phase starting and every field at its explicit unknown.
-    fn initial(spec: &AgentSpec, producer_version: &str) -> (Self::State, Step);
+    fn initial(spec: &AgentSpec) -> (Self::State, Step);
 
     /// One event in; the step to journal and the effects to perform out.
     fn step(state: &mut Self::State, event: Event) -> Stepped;
@@ -67,11 +67,7 @@ pub trait Interpreter {
     /// item key carries on, so the new incarnation never reuses a key. The
     /// step it starts with re-emits every open item in full on its existing
     /// key, and the snapshot.
-    fn reincarnate(
-        state: Self::State,
-        spec: &AgentSpec,
-        producer_version: &str,
-    ) -> (Self::State, Step);
+    fn reincarnate(state: Self::State, spec: &AgentSpec) -> (Self::State, Step);
 
     /// Removes secrets from a body, a facts-ring entry or a checkpoint while
     /// keeping its structure; the daemon calls it (through [`redact()`]) on a
@@ -183,8 +179,6 @@ pub enum Channel {
     Stream,
     /// A JSON-RPC message from the Codex app server.
     Rpc,
-    /// A call on the agent's own tool server (tools.sock).
-    Tools,
     /// What the agent process itself observed about the provider it
     /// launched: for Claude in a terminal, the version it found.
     Agent,
@@ -271,10 +265,6 @@ pub enum Carrier {
 /// What [`Interpreter::redact`] works on.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RedactTarget {
-    /// An `Item.body` of the kind.
-    ItemBody(Vec<u8>),
-    /// A `Snapshot.body` of the kind.
-    SnapshotBody(Vec<u8>),
     /// A facts-ring entry that is a provider fact.
     Fact(Fact),
     /// A facts-ring entry that is an input: an encoded `wire::Input`.

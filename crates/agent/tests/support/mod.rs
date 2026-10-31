@@ -15,10 +15,9 @@ use provider_fakes::{SCRIPT_ENV, Script, Step};
 use tokio::io::{ReadHalf, WriteHalf};
 use tokio::task::JoinHandle;
 use wire::{
-    AgentHello, AgentRef, AgentSpec, ClaudePtyInput, ClaudePtyItem, ClaudeSdkInput, ClaudeSdkItem,
-    ClaudeSdkSnapshot, CodexInput, CodexItem, CtlFrame, EffectiveConfig, Input, Kind, Phase,
-    PromptInput, Stop, claude_pty_input, claude_pty_item, claude_sdk_input, claude_sdk_item,
-    codex_input, codex_item, ctl_frame, send_input_response,
+    AgentInput, AgentRef, AgentSpec, ClaudeItem, ClaudeSnapshot, CodexItem, CtlFrame,
+    EffectiveConfig, Input, Kind, Phase, PromptInput, Stop, agent_input, claude_item, codex_item,
+    ctl_frame, send_input_response,
 };
 
 /// When every agent in these tests starts.
@@ -36,13 +35,6 @@ const RELEASE: &str = "@release";
 pub fn agent_release() -> PathBuf {
     PathBuf::from(RELEASE)
 }
-
-/// Runs the fake, then stays until the hold file exists: a provider that is
-/// slow to go away after it is asked to finish. The agent asks with the end
-/// of its input and SIGTERM, so the shell traps SIGTERM to outlast it; a
-/// trap with a command is reset in the fake, which keeps the default.
-const HOLD_SCRIPT: &str =
-    r#"trap : TERM; "$0" "$@"; while [ ! -e "$AMUX_TEST_HOLD" ]; do sleep 0.02; done"#;
 
 /// The fake provider binaries and the install path's stand-in.
 pub fn fakes() -> &'static Path {
@@ -71,9 +63,6 @@ pub struct Setup {
     pub initial_prompt: Option<&'static str>,
     /// Whether the agent has a parent, which makes it one-shot.
     pub parent: bool,
-    /// Keep the provider's process alive after the fake exits, until
-    /// [`Agent::unhold`].
-    pub hold: bool,
     /// The facts ring's size; the agent's default when zero.
     pub ring_bytes: u64,
     /// Terminal Claude without a messaging socket.
@@ -103,7 +92,6 @@ impl Setup {
             steps: Vec::new(),
             initial_prompt: None,
             parent: false,
-            hold: false,
             ring_bytes: 0,
             socketless: false,
             replay: None,
@@ -122,7 +110,6 @@ pub struct Agent {
     pub dir: PathBuf,
     pub clock: ManualClock,
     release: PathBuf,
-    hold: PathBuf,
     task: Mutex<Option<JoinHandle<Result<ExitCause, AgentError>>>>,
     reader: Mutex<(journal::Reader, Log)>,
 }
@@ -199,7 +186,6 @@ impl Agent {
             }
         }
         let release = root.path().join("release");
-        let hold = root.path().join("hold");
 
         let script = Script {
             steps: setup.steps,
@@ -221,27 +207,14 @@ impl Agent {
             Kind::Codex => "fake-codex",
             _ => "fake-claude-sdk",
         });
-        let (command, mut provider_args) = match (setup.command, setup.hold) {
-            (Some(command), _) => (command, Vec::new()),
-            (None, true) => (
-                "/bin/sh".to_owned(),
-                vec![
-                    "-c".to_owned(),
-                    HOLD_SCRIPT.to_owned(),
-                    fake.to_str().unwrap().to_owned(),
-                ],
-            ),
-            (None, false) => (fake.to_str().unwrap().to_owned(), Vec::new()),
-        };
-        provider_args.extend(setup.provider_args);
+        let command = setup
+            .command
+            .unwrap_or_else(|| fake.to_str().unwrap().to_owned());
+        let provider_args = setup.provider_args;
         let mut provider_env: std::collections::HashMap<String, String> = [
             (
                 SCRIPT_ENV.to_owned(),
                 script_path.to_str().unwrap().to_owned(),
-            ),
-            (
-                "AMUX_TEST_HOLD".to_owned(),
-                hold.to_str().unwrap().to_owned(),
             ),
             (
                 provider_fakes::INPUT_LOG_ENV.to_owned(),
@@ -291,7 +264,6 @@ impl Agent {
         }
         let spec = AgentSpec {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-            profile_id: vec![9; 16],
             kind: setup.kind as i32,
             cwd: work.to_str().unwrap().to_owned(),
             name: "test".into(),
@@ -311,7 +283,6 @@ impl Agent {
                 install_path: install_path(),
                 ..Default::default()
             }),
-            daemon_version: "test".into(),
             created_at_ms: T0,
             incarnation: 1,
             bootstrap: setup.initial_prompt.map(|text| bootstrap(b"p0", text)),
@@ -337,7 +308,6 @@ impl Agent {
             dir,
             clock,
             release,
-            hold,
             task: Mutex::new(Some(task)),
             reader: Mutex::new((reader, Log::default())),
         }
@@ -385,15 +355,13 @@ impl Agent {
         .await
         .unwrap();
         let (mut reader, writer) = tokio::io::split(stream);
-        let hello = match next_frame(&mut reader).await.of {
-            Some(ctl_frame::Of::Hello(hello)) => hello,
+        match next_frame(&mut reader).await.of {
+            Some(ctl_frame::Of::Hello(_)) => {}
             other => panic!("the first frame is a Hello, not {other:?}"),
-        };
+        }
         Daemon {
-            kind: self.kind,
             reader,
             writer,
-            hello,
             nudges: 0,
         }
     }
@@ -473,11 +441,6 @@ impl Agent {
     /// Lets a turn waiting on the release file go on.
     pub fn release(&self) {
         std::fs::write(&self.release, b"").unwrap();
-    }
-
-    /// Lets a held provider process go.
-    pub fn unhold(&self) {
-        std::fs::write(&self.hold, b"").unwrap();
     }
 
     /// The directory is free for the next incarnation: the lock is released
@@ -593,23 +556,14 @@ pub fn running(marker: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-pub fn prompt(kind: Kind, id: &[u8], text: &str) -> Input {
-    let prompt = PromptInput {
-        text: text.to_owned(),
-        ..Default::default()
-    };
+pub fn prompt(id: &[u8], text: &str) -> Input {
     Input::new(
         id.to_vec(),
-        match kind {
-            Kind::Codex => wire::KindInput::Codex(CodexInput {
-                of: Some(codex_input::Of::Prompt(prompt)),
-            }),
-            Kind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
-                of: Some(claude_pty_input::Of::Prompt(prompt)),
-            }),
-            _ => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
-                of: Some(claude_sdk_input::Of::Prompt(prompt)),
-            }),
+        AgentInput {
+            of: Some(agent_input::Of::Prompt(PromptInput {
+                text: text.to_owned(),
+                ..Default::default()
+            })),
         },
     )
 }
@@ -644,10 +598,8 @@ pub enum Verdict {
 
 /// A stand-in daemon on ctl.sock.
 pub struct Daemon {
-    kind: Kind,
     reader: ReadHalf<LocalStream>,
     writer: WriteHalf<LocalStream>,
-    pub hello: AgentHello,
     /// Nudges read so far.
     pub nudges: usize,
 }
@@ -661,7 +613,7 @@ impl Daemon {
 
     /// Sends a prompt and returns the agent's verdict on it.
     pub async fn prompt(&mut self, id: &[u8], text: &str) -> Verdict {
-        self.input(prompt(self.kind, id, text)).await
+        self.input(prompt(id, text)).await
     }
 
     /// Sends an agent message with envelope id `id`, as a parent would.
@@ -775,26 +727,6 @@ impl Log {
             .count()
     }
 
-    /// Terminal Claude's boundaries in order, as `KIND version`.
-    pub fn launches(&self) -> Vec<String> {
-        self.items()
-            .into_iter()
-            .filter_map(|(_, item)| {
-                match ClaudePtyItem::decode(item.body.as_slice()).ok()?.kind? {
-                    claude_pty_item::Kind::Boundary(boundary) => Some(format!(
-                        "{} {}",
-                        boundary
-                            .kind()
-                            .as_str_name()
-                            .trim_start_matches("BOUNDARY_KIND_"),
-                        boundary.provider_version,
-                    )),
-                    _ => None,
-                }
-            })
-            .collect()
-    }
-
     /// Boundaries in order, as `KIND` or `KIND cause`.
     pub fn boundaries(&self) -> Vec<String> {
         self.sequence()
@@ -877,7 +809,7 @@ impl Log {
     /// The permission the newest terminal Claude snapshot reports.
     pub fn permission(&self) -> Option<String> {
         let snapshot = self.snapshot()?;
-        wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+        wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
             .ok()?
             .permission
     }
@@ -893,13 +825,8 @@ impl Log {
         };
         let keys = |asks: Vec<wire::Ask>| asks.into_iter().map(|ask| ask.key).collect();
         match snapshot.kind() {
-            Kind::ClaudeSdk => keys(
-                ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
-                    .unwrap()
-                    .asks,
-            ),
-            Kind::ClaudePty => keys(
-                wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+            Kind::ClaudeSdk | Kind::ClaudePty => keys(
+                ClaudeSnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .asks,
             ),
@@ -919,13 +846,8 @@ impl Log {
             return Vec::new();
         };
         let jobs = match snapshot.kind() {
-            Kind::ClaudeSdk => {
-                ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
-                    .unwrap()
-                    .background_jobs
-            }
-            Kind::ClaudePty => {
-                wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+            Kind::ClaudeSdk | Kind::ClaudePty => {
+                ClaudeSnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .background_jobs
             }
@@ -944,26 +866,20 @@ impl Log {
         let Some(snapshot) = self.snapshot() else {
             return Vec::new();
         };
-        let servers = match snapshot.kind() {
-            Kind::ClaudeSdk => {
-                ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
-                    .unwrap()
-                    .servers
-            }
-            Kind::ClaudePty => {
-                wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+        match snapshot.kind() {
+            Kind::ClaudeSdk | Kind::ClaudePty => {
+                ClaudeSnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .servers
             }
             other => panic!("no snapshot reader for {other:?}"),
-        };
-        servers.map(|servers| servers.servers).unwrap_or_default()
+        }
     }
 
     pub fn open_asks(&self) -> usize {
         let snapshot = self.snapshot().expect("a snapshot");
         match snapshot.kind() {
-            Kind::ClaudeSdk => ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
+            Kind::ClaudeSdk => ClaudeSnapshot::decode(snapshot.body.as_slice())
                 .unwrap()
                 .asks
                 .len(),
@@ -975,14 +891,12 @@ impl Log {
 /// A boundary item's kind and cause as the log prints it.
 pub fn boundary(item: &wire::Item) -> Option<String> {
     let boundary = match item.kind() {
-        Kind::ClaudeSdk => match ClaudeSdkItem::decode(item.body.as_slice()).ok()?.kind? {
-            claude_sdk_item::Kind::Boundary(boundary) => boundary,
-            _ => return None,
-        },
-        Kind::ClaudePty => match ClaudePtyItem::decode(item.body.as_slice()).ok()?.kind? {
-            claude_pty_item::Kind::Boundary(boundary) => boundary,
-            _ => return None,
-        },
+        Kind::ClaudeSdk | Kind::ClaudePty => {
+            match ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+                claude_item::Kind::Boundary(boundary) => boundary,
+                _ => return None,
+            }
+        }
         Kind::Codex => match CodexItem::decode(item.body.as_slice()).ok()?.kind? {
             codex_item::Kind::Boundary(boundary) => boundary,
             _ => return None,

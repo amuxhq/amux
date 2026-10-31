@@ -8,17 +8,18 @@ publish = false
 autotests = false
 
 [features]
-default = ["bundled"]
-bundled = ["rusqlite/bundled"]
+# The store as a value, for the property checker: canonical dumps, restore
+# and the block views its checks judge.
+explore = []
 
 [dependencies]
 prost = { workspace = true }
-rusqlite = { workspace = true }
-sha2 = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }
 thiserror = { workspace = true }
 wire = { workspace = true }
 
 [dev-dependencies]
+store = { path = ".", features = ["explore"] }
 tempfile = { workspace = true }
 
 [[test]]

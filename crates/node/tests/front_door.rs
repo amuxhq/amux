@@ -58,7 +58,7 @@ async fn ttl_applies_to_each_method() {
         let admin = admin.clone();
         async move {
             admin
-                .get_pairing_status(Request::new(wire::GetPairingStatusRequest {}))
+                .get_pairing_status(Request::new(wire::Empty {}))
                 .await
                 .unwrap()
                 .into_inner()
@@ -69,7 +69,7 @@ async fn ttl_applies_to_each_method() {
         let admin = admin.clone();
         async move {
             admin
-                .cancel_pairing(Request::new(wire::CancelPairingRequest {}))
+                .cancel_pairing(Request::new(wire::Empty {}))
                 .await
                 .unwrap();
         }
@@ -191,7 +191,7 @@ async fn rename_and_delete_change_the_listed_profile() {
         let door = door.clone();
         let id = created.id.clone();
         async move {
-            door.list_profiles(Request::new(wire::ListProfilesRequest {}))
+            door.list_profiles(Request::new(wire::Empty {}))
                 .await
                 .unwrap()
                 .into_inner()
@@ -204,7 +204,7 @@ async fn rename_and_delete_change_the_listed_profile() {
     let renamed = door
         .rename_profile(Request::new(RenameProfileRequest {
             profile_id: created.id.clone(),
-            override_name: Some("kept".to_owned()),
+            name: "kept".to_owned(),
         }))
         .await
         .unwrap()

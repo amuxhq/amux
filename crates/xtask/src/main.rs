@@ -9,34 +9,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             xtask::proto_compat::main(&std::env::args().skip(2).collect::<Vec<_>>())
         }
         Some("release") => release::main(&std::env::args().skip(2).collect::<Vec<_>>()),
-        Some("restamp") => restamp(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
             eprintln!(
-                "usage: xtask <codegen|proto-compat [REF]|restamp FROM TO [VERSION]|release <key generate [--file PATH]|cut VERSION|deploy VERSION [--channel C] [--rollout N] [--key-file PATH]>>"
+                "usage: xtask <codegen|proto-compat [REF]|release <key generate [--file PATH]|cut VERSION|deploy VERSION [--channel C] [--rollout N] [--key-file PATH]>>"
             );
             std::process::exit(2);
         }
     }
-}
-
-/// Copies the amux binary at FROM to TO stamped with VERSION, by default
-/// one just below its own, to play the previous release in overlap tests.
-fn restamp(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let (Some(from), Some(to)) = (args.first(), args.get(1)) else {
-        return Err("usage: xtask restamp FROM TO [VERSION]".into());
-    };
-    let (from, to) = (Path::new(from), Path::new(to));
-    let version = match args.get(2) {
-        Some(version) => version.clone(),
-        None => {
-            let own = version_stamp::read_file(from)?;
-            version_stamp::previous(&own)
-                .ok_or_else(|| format!("{own} has a prerelease; name the version to stamp"))?
-        }
-    };
-    version_stamp::restamp(from, to, &version)?;
-    println!("{} reports {version}", to.display());
-    Ok(())
 }
 
 /// Wire types a view value holds.
@@ -61,6 +40,7 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.OfferedPermission",
     "amux.v1.Platform",
     "amux.v1.Provider",
+    "amux.v1.Refusal",
     "amux.v1.ReviewComment",
     "amux.v1.ReviewStatus",
     "amux.v1.RouteKind",
@@ -80,7 +60,6 @@ const PROTO_FILES: &[&str] = &[
     "amux/v1/dump.proto",
     "amux/v1/agent_service.proto",
     "amux/v1/session_service.proto",
-    "amux/v1/peer_service.proto",
     "amux/v1/installation_service.proto",
     "amux/v1/profile_admin_service.proto",
     "amux/v1/pairing_service.proto",
@@ -139,13 +118,16 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
             "#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]",
         );
     }
+    // The chat model's Refusal holds the wire's reason; the mirrors name
+    // the reason apart from it.
+    config.type_attribute("amux.v1.Refusal", "#[schemars(rename = \"RefusalReason\")]");
     // prost never derives Eq for a message with a repeated message field,
     // though every field here is Eq; the views that hold a Diff compare it.
     config.type_attribute("amux.v1.Diff", "#[derive(Eq)]");
     tonic_prost_build::configure()
-        // Keep generated clients, but omit tonic's transport convenience
-        // constructors. Otherwise `RoutingService.Connect` collides with the
-        // inherent `RoutingServiceClient::connect(endpoint)` constructor.
+        // Keep generated clients, but omit tonic's `connect(uri)`
+        // constructors: every client is built on a channel its caller dials
+        // through its own connector (a local socket or an amux channel).
         .build_transport(false)
         // The services need tonic and through it tokio; the messages need
         // neither, so the cores that only speak the messages leave the

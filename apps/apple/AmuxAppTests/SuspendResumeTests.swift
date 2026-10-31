@@ -56,11 +56,11 @@ final class SuspendResumeTests: XCTestCase {
         guard case .success(let desk) = await runtime.createProfile(),
               case .success(let link) = await runtime.offerPairing(desk.id),
               case .success(let pending) = await phone.beginPair(.link(link)),
-              case .success(let paired) = await phone.confirmPair(pending) else {
+              case .success = await phone.confirmPair(pending) else {
             first.stop()
             return XCTFail("the desk did not pair")
         }
-        await eventually("the desk trusted") { trusts(first, paired.hostId) }
+        await eventually("the desk trusted") { trusts(first, pending.hostId) }
 
         // Each checkpoint of the core starts a segment of its input ring,
         // with the core's state beside it as `<offset>.checkpoint`.
@@ -81,6 +81,6 @@ final class SuspendResumeTests: XCTestCase {
         second.start()
         guard await second.started() != nil else { return XCTFail("the runtime did not start again") }
         XCTAssertEqual(second.profile?.id, phone.id)
-        XCTAssertTrue(trusts(second, paired.hostId), "the relaunched phone forgot the desk")
+        XCTAssertTrue(trusts(second, pending.hostId), "the relaunched phone forgot the desk")
     }
 }

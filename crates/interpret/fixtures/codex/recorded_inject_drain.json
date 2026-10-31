@@ -4,7 +4,7 @@
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../codex-specs/fixtures/runtime/inject_drain/io.jsonl",
+    "path": "../../../codex-specs/fixtures/live/inject_drain/io.jsonl",
     "format": "codex_io"
   }
 }

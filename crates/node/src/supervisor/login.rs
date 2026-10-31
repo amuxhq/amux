@@ -190,3 +190,47 @@ fn windows_quote(word: &str) -> String {
     }
     format!("\"{}\"", word.replace('"', "\\\""))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every login item runs `amux supervise` with the install's config,
+    /// quoted for its service manager, comes back after a failure only,
+    /// and never takes the agents down with the supervisor.
+    #[test]
+    fn a_login_item_restarts_on_failure_only_and_leaves_the_agents_alone() {
+        let item = LoginItem {
+            binary: Path::new("/Users/someone/.amux/bin/amux"),
+            config: Some(Path::new(
+                "/Users/someone/Library/Application Support/amux/config & more.toml",
+            )),
+            path: "/opt/homebrew/bin:/usr/bin:/bin",
+            log: Path::new("/Users/someone/.amux/supervisor.log"),
+        };
+
+        let launch_agent = item.launch_agent();
+        assert!(launch_agent.contains(
+            "\t\t<string>--config</string>\n\t\t<string>/Users/someone/Library/Application \
+             Support/amux/config &amp; more.toml</string>\n\t\t<string>supervise</string>\n"
+        ));
+        assert!(launch_agent.contains("<key>AbandonProcessGroup</key>\n\t<true/>"));
+        assert!(launch_agent.contains("<key>SuccessfulExit</key>\n\t\t<false/>"));
+
+        let unit = item.systemd_unit();
+        assert!(unit.contains(
+            "\nExecStart=/Users/someone/.amux/bin/amux --config \"/Users/someone/Library/Application \
+             Support/amux/config & more.toml\" supervise\n"
+        ));
+        assert!(unit.contains("\nKillMode=process\n"));
+        assert!(unit.contains("\nRestart=on-failure\n"));
+        assert!(!unit.contains("Restart=always"));
+
+        let task = item.windows_task();
+        assert!(task.contains(
+            "<Arguments>--config &quot;/Users/someone/Library/Application Support/amux/config \
+             &amp; more.toml&quot; supervise</Arguments>"
+        ));
+        assert!(task.contains("<LogonTrigger>") && task.contains("<RestartOnFailure>"));
+    }
+}

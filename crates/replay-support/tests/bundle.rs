@@ -6,19 +6,23 @@ use std::path::Path;
 
 use replay_support::bundle::{AgentDump, Bundle, final_texts};
 use replay_support::replay::{Stage, Verdict};
+use replay_support::show;
 use ui_view::RowKind;
 use wire::Kind;
 
-fn bundle() -> Bundle {
-    Bundle::open(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/bundle"))
-        .expect("the fixture bundle opens")
+use crate::support;
+
+fn bundle() -> (support::Dumped, Bundle) {
+    let dumped = support::healthy();
+    let bundle = Bundle::open(dumped.path()).expect("the bundle opens");
+    (dumped, bundle)
 }
 
 #[test]
 fn the_facts_replay_through_the_interpreter_to_what_the_journal_holds() {
-    let bundle = bundle();
+    let (_dumped, bundle) = bundle();
     let [agent] = bundle.agents.as_slice() else {
-        panic!("one agent in the fixture");
+        panic!("one agent in the bundle");
     };
     assert_eq!(agent.row.kind(), Kind::ClaudeSdk);
     let replayed = agent.replay_facts().expect("the facts replay");
@@ -32,12 +36,16 @@ fn the_facts_replay_through_the_interpreter_to_what_the_journal_holds() {
         from_facts.values().any(|text| text == "second answer more"),
         "{from_facts:#?}"
     );
+    // As the goldens render it, with redaction placeholders set aside: the
+    // facts and the journal are redacted apart.
     let snapshot = |steps: &[wire::Step]| {
-        steps
-            .iter()
-            .rev()
-            .find_map(|step| step.snapshot.clone())
-            .map(|snapshot| (snapshot.phase, snapshot.body))
+        let snapshot = steps.iter().rev().find_map(|step| step.snapshot.clone());
+        let step = wire::Step {
+            snapshot: Some(snapshot.expect("a snapshot")),
+            ..wire::Step::default()
+        };
+        show::render_steps(Kind::ClaudeSdk, 0, &[step])
+            .map(|text| support::placeholders_aside(&text))
     };
     assert_eq!(
         snapshot(&replayed),
@@ -48,7 +56,7 @@ fn the_facts_replay_through_the_interpreter_to_what_the_journal_holds() {
 
 #[test]
 fn the_store_slice_replays_through_the_session_model_and_the_views() {
-    let bundle = bundle();
+    let (_dumped, bundle) = bundle();
     let agent = &bundle.agents[0];
     let state = agent.session();
     assert!(state.caught_up());
@@ -61,7 +69,7 @@ fn the_store_slice_replays_through_the_session_model_and_the_views() {
     let stored: Vec<&str> = agent
         .store
         .as_ref()
-        .expect("the fixture carries a slice")
+        .expect("the bundle carries a slice")
         .items
         .iter()
         .map(|item| item.key.as_str())
@@ -100,9 +108,10 @@ fn the_store_slice_replays_through_the_session_model_and_the_views() {
 #[test]
 fn a_packed_dump_opens_as_the_bundle_it_was_packed_from() {
     use prost::Message as _;
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/bundle");
+    let (dumped, bundle) = bundle();
+    let dir = dumped.path();
     let mut files = Vec::new();
-    let mut stack = vec![dir.clone()];
+    let mut stack = vec![dir.to_owned()];
     while let Some(at) = stack.pop() {
         for entry in std::fs::read_dir(&at).unwrap() {
             let path = entry.unwrap().path();
@@ -111,7 +120,7 @@ fn a_packed_dump_opens_as_the_bundle_it_was_packed_from() {
                 continue;
             }
             let name = path
-                .strip_prefix(&dir)
+                .strip_prefix(dir)
                 .unwrap()
                 .iter()
                 .map(|part| part.to_string_lossy())
@@ -134,8 +143,8 @@ fn a_packed_dump_opens_as_the_bundle_it_was_packed_from() {
 
     for named in [archive.as_path(), report.path()] {
         let opened = Bundle::open(named).expect("the packed dump opens");
-        assert_eq!(opened.agents.len(), bundle().agents.len());
-        assert_eq!(opened.agents[0].journal, bundle().agents[0].journal);
+        assert_eq!(opened.agents.len(), bundle.agents.len());
+        assert_eq!(opened.agents[0].journal, bundle.agents[0].journal);
     }
 }
 
@@ -157,10 +166,7 @@ fn a_dump_without_slices_has_no_session_or_views_stage() {
         }
     }
     let dir = tempfile::tempdir().unwrap();
-    copy(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/bundle"),
-        dir.path(),
-    );
+    copy(support::healthy().path(), dir.path());
     let verdicts = Bundle::open(dir.path()).unwrap().replay_all().unwrap();
     for stage in [Stage::Session, Stage::Views] {
         let verdict = verdicts

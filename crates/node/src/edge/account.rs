@@ -1,11 +1,10 @@
-//! A profile's account: which cloud account the profile is bound to, the
-//! credential that signs it in, and whether its connection is paused.
+//! A profile's account: which cloud account the profile is bound to, and
+//! the credential that signs it in.
 //!
 //! One private file, `profiles/<id>/account`, written whole on every change.
 //! Its absence is an unbound profile; a binding without a refresh token is a
-//! profile that signed out but stays tied to its account; `paused` keeps the
-//! credential and holds the cloud link down. Signing in or out also forgets
-//! the relay token the profile keeps beside it.
+//! profile that signed out but stays tied to its account. Signing in or out
+//! also forgets the relay token the profile keeps beside it.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -38,7 +37,6 @@ pub(crate) struct AccountRecord {
     pub(crate) bound_at_ms: i64,
     /// Absent after a sign-out.
     pub(crate) refresh_token: Option<String>,
-    pub(crate) paused: bool,
     /// The OAuth client the refresh token was issued to, which is the only
     /// one it refreshes under: the CLI's, or the phone's.
     pub(crate) client_id: String,
@@ -52,8 +50,6 @@ pub(crate) enum Binding {
     SignedIn,
     /// Signed out, still tied to its account.
     SignedOut,
-    /// Signed in, with the relay link held down.
-    Paused,
 }
 
 fn cli_client() -> String {
@@ -67,7 +63,7 @@ pub(crate) struct Account {
     access: Mutex<Option<AccessToken>>,
     /// One change to the record at a time, a refresh's exchange and save
     /// included: a refresh token may be single use, and a refresh that
-    /// saved its rotated token over a sign-out or a pause made meanwhile
+    /// saved its rotated token over a sign-out made meanwhile
     /// would undo it.
     changes: tokio::sync::Mutex<()>,
     /// Called after each change to the record: this host's own entry says
@@ -102,13 +98,12 @@ impl Account {
     pub(crate) fn binding(&self) -> Binding {
         match &*self.record.lock().unwrap() {
             None => Binding::Unbound,
-            Some(record) if record.paused => Binding::Paused,
             Some(record) if record.refresh_token.is_some() => Binding::SignedIn,
             Some(_) => Binding::SignedOut,
         }
     }
 
-    /// Whether the cloud link should run: bound, signed in and not paused.
+    /// Whether the cloud link should run: bound and signed in.
     pub(crate) fn wants_cloud(&self) -> bool {
         self.binding() == Binding::SignedIn
     }
@@ -169,15 +164,6 @@ impl Account {
         }
     }
 
-    /// A refresh under way finishes first.
-    pub(crate) async fn set_paused(&self, paused: bool) -> io::Result<()> {
-        let _change = self.changes.lock().await;
-        let record = self
-            .record()
-            .ok_or_else(|| io::Error::other("the profile is not bound to an account"))?;
-        self.write(AccountRecord { paused, ..record })
-    }
-
     /// The access token, refreshed first if it is missing or about to
     /// expire. Holds the record still from the exchange to the save.
     async fn access_token(&self) -> Result<AccessToken, AuthError> {
@@ -202,14 +188,13 @@ impl Account {
                     other => AuthError::Provider(other.to_string()),
                 })?;
         // Only onto the binding the exchange was made for, still signed in
-        // with the token it spent and not paused, and only the token.
+        // with the token it spent, and only the token.
         let current = self
             .record()
             .filter(|current| {
                 current.service == record.service
                     && current.subject == record.subject
                     && current.refresh_token.as_deref() == Some(refresh.as_str())
-                    && !current.paused
             })
             .ok_or(AuthError::Unauthenticated)?;
         if let Some(rotated) = rotated
@@ -375,7 +360,6 @@ pub(crate) async fn bind(
             |record| record.bound_at_ms,
         ),
         refresh_token: Some(refresh),
-        paused: existing.is_some_and(|record| record.paused),
         client_id,
     };
     edge.bind_account(record, access)
@@ -489,7 +473,6 @@ mod tests {
             picture: None,
             bound_at_ms: 1,
             refresh_token: Some("r1".into()),
-            paused: false,
             client_id: cli_client(),
         };
         let expired = AccessToken {
@@ -502,7 +485,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn signing_in_or_out_forgets_the_kept_relay_token_and_a_pause_keeps_it() {
+    async fn signing_in_or_out_forgets_the_kept_relay_token() {
         use crate::edge::token::{StoredToken, load_token, store_token};
         let dir = tempfile::tempdir().unwrap();
         let endpoint = TokenEndpoint::start().await;
@@ -521,8 +504,6 @@ mod tests {
         assert_eq!(load_token(dir.path()).unwrap(), None, "signing in");
 
         store_token(dir.path(), &kept).unwrap();
-        account.set_paused(true).await.unwrap();
-        assert_eq!(load_token(dir.path()).unwrap(), Some(kept), "pausing");
         account.sign_out().await.unwrap();
         assert_eq!(load_token(dir.path()).unwrap(), None, "signing out");
     }
@@ -544,30 +525,6 @@ mod tests {
 
         let reopened = Account::open(dir.path()).unwrap().record().unwrap();
         assert_eq!(reopened.refresh_token, None, "still signed out");
-    }
-
-    #[tokio::test]
-    async fn a_pause_during_a_refresh_survives_a_restart_with_the_rotated_token() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut endpoint = TokenEndpoint::start().await;
-        let account = signed_in(dir.path(), &endpoint).await;
-        let refreshing = tokio::spawn(AccountCredentials(account.clone()).access_token_owned());
-        endpoint.held().await;
-        let pausing = tokio::spawn({
-            let account = account.clone();
-            async move { account.set_paused(true).await }
-        });
-        endpoint.release();
-        refreshing.await.unwrap().unwrap();
-        pausing.await.unwrap().unwrap();
-
-        let reopened = Account::open(dir.path()).unwrap().record().unwrap();
-        assert!(reopened.paused, "still paused");
-        assert_eq!(
-            reopened.refresh_token.as_deref(),
-            Some("r2"),
-            "the rotated token, the only one that works now"
-        );
     }
 
     #[tokio::test]

@@ -21,8 +21,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use store::{AgentKey, AgentRow, Delivery, Marker, StoreError};
 use wire::{
-    Agent, AgentRemoved, AgentSpec, CtlFrame, ExitCause, Lifecycle, RemovalReason, ctl_frame,
-    inventory_event,
+    Agent, AgentRemoved, AgentSpec, CtlFrame, ExitCause, Lifecycle, ctl_frame, inventory_event,
 };
 
 use crate::ids::{AgentId, CallId, JobId, TimerId};
@@ -815,7 +814,6 @@ impl Daemon {
             let removed = AgentRemoved {
                 host_id: key.host.clone(),
                 agent_id: key.agent.clone(),
-                reason: RemovalReason::Deleted as i32,
             };
             let removed = inventory(inventory_event::Of::AgentRemoved(removed));
             self.agent_removed(&key, Arc::new(removed), out);
@@ -1545,10 +1543,7 @@ mod tests {
         fn live(&mut self, agent: AgentId, name: &str, parent: Option<AgentId>) {
             let (call, out) = self.call(create(agent, name, parent));
             assert!(out.contains(&Output::DialAgent { agent }), "{out:?}");
-            let out = self.step(Input::AgentHello {
-                agent,
-                hello: Default::default(),
-            });
+            let out = self.step(Input::AgentHello { agent });
             assert!(answer_of(&out, call).is_some(), "{out:?}");
         }
     }
@@ -1717,10 +1712,7 @@ mod tests {
             "{built:?}"
         );
         assert_eq!(rig.row(PARENT).unwrap().incarnation, 2);
-        let hello = rig.step(Input::AgentHello {
-            agent: PARENT,
-            hello: Default::default(),
-        });
+        let hello = rig.step(Input::AgentHello { agent: PARENT });
         assert!(answer_of(&hello, resume).is_some(), "{hello:?}");
     }
 
@@ -1846,8 +1838,7 @@ mod tests {
         // Removed for good before its host's listing caught up, as no input
         // removes another host's agent: the boundary's check names it.
         rig.daemon.touched = crate::Touched::default();
-        rig.daemon
-            .removed_for_good(&parent, wire::RemovalReason::Retention, &mut Vec::new());
+        rig.daemon.removed_for_good(&parent, &mut Vec::new());
         let violation = rig.daemon.check_step_invariants().unwrap_err();
         assert_eq!(violation.invariant, crate::DELETED_UNDER_A_STALE_LISTING);
     }
@@ -1871,10 +1862,7 @@ mod tests {
         rig.step(Input::Nudge { agent: PARENT });
         // A daemon that started again adopts the process, whose Hello makes
         // the next read to the journal's end announce its CaughtUp.
-        rig.step(Input::AgentHello {
-            agent: PARENT,
-            hello: Default::default(),
-        });
+        rig.step(Input::AgentHello { agent: PARENT });
         rig.call(ClientRequest::StopAgent { agent: PARENT });
         rig.call(ClientRequest::DeleteAgent { agent: PARENT });
 

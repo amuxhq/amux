@@ -52,7 +52,7 @@ async fn ipv6_only_hosts_link_and_stream_a_session() {
     // Pairing dials the desk's listener at the IPv6 address its window
     // names, and the link comes up on the address pairing used.
     let peer = pair(&net, "laptop", "desk").await;
-    println!("the laptop paired with the desk: {:?}", peer.reachabilities);
+    println!("the laptop paired with the desk: {peer:?}");
     until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     let desk = host_id(&net, "desk");
     let logged = net.link_log("laptop").unwrap();
@@ -188,7 +188,7 @@ async fn pair_over_ssh_from_the_cli_trusts_both_ends_and_links() {
         async move {
             admin(net, near)
                 .await
-                .list_peers(wire::ListPeersRequest {})
+                .list_peers(wire::Empty {})
                 .await
                 .unwrap()
                 .into_inner()
@@ -198,19 +198,19 @@ async fn pair_over_ssh_from_the_cli_trusts_both_ends_and_links() {
     let desk_seen = peers("laptop").await;
     assert_eq!(desk_seen.len(), 1);
     assert_eq!(desk_seen[0].host_id, desk.as_bytes());
-    assert!(
-        desk_seen[0].reachabilities.iter().any(|way| matches!(
-            &way.kind,
-            Some(wire::peer_reachability::Kind::SshTarget(ssh))
-                if ssh.target == desk_target
-        )),
+    assert_eq!(
+        desk_seen[0]
+            .ssh_target
+            .as_ref()
+            .map(|ssh| ssh.target.as_str()),
+        Some(desk_target.as_str()),
         "the laptop remembers where it reached the desk: {desk_seen:?}"
     );
     let laptop_seen = peers("desk").await;
     assert_eq!(laptop_seen.len(), 1);
     assert_eq!(laptop_seen[0].host_id, laptop.as_bytes());
     assert!(
-        laptop_seen[0].reachabilities.is_empty(),
+        laptop_seen[0].ssh_target.is_none(),
         "the desk did not dial, so it holds no way there: {laptop_seen:?}"
     );
     until_via(&net, "laptop", "desk", LiveRoute::Ssh).await;
@@ -287,7 +287,7 @@ async fn route_relay_signing_out_closes_the_links_the_relay_carried_until_signin
 
     admin(&net, "laptop")
         .await
-        .sign_out(wire::SignOutRequest {})
+        .sign_out(wire::Empty {})
         .await
         .unwrap();
     row_until(
@@ -353,7 +353,7 @@ async fn route_lan_signing_out_keeps_the_direct_link_and_the_session() {
 
     admin(&net, "laptop")
         .await
-        .sign_out(wire::SignOutRequest {})
+        .sign_out(wire::Empty {})
         .await
         .unwrap();
     row_until(
@@ -392,11 +392,7 @@ async fn route_lan_signing_out_keeps_the_direct_link_and_the_session() {
         .unwrap()
         .send_input(tonic::Request::new(wire::SendInputRequest {
             agent_id: net.agent("worker").unwrap().id.as_bytes().to_vec(),
-            input: Some(testnet::prompt(
-                testnet::FakeKind::ClaudeSdk,
-                uuid::Uuid::new_v4().as_bytes(),
-                "go",
-            )),
+            input: Some(testnet::prompt(uuid::Uuid::new_v4().as_bytes(), "go")),
         }))
         .await
         .unwrap();
@@ -591,7 +587,7 @@ async fn entitlement_free_sees_presence_and_carries_nothing_while_lan_and_ssh_re
         .unwrap();
     assert_eq!(
         (refused, reason),
-        (desk, wire::pb::ForwardRefusal::PaymentRequired)
+        (desk, wire::ForwardRefusal::PaymentRequired)
     );
     let worker = net.agent("worker").unwrap().id;
     let call = open_session(&edge(&net, "phone"), desk, worker)
@@ -721,7 +717,7 @@ async fn entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once()
             .collect();
         assert_eq!(
             heard,
-            vec![(*peer, wire::pb::ForwardRefusal::PaymentRequired)],
+            vec![(*peer, wire::ForwardRefusal::PaymentRequired)],
             "{host} is told once that the plan no longer carries its peer"
         );
         println!("{host} was told once: {heard:?}");
@@ -842,10 +838,7 @@ async fn pairing_relay_free_refused_leaves_the_window_open() {
         .await
         .expect("the relay refuses the tablet's pairing")
         .unwrap();
-    assert_eq!(
-        (to, reason),
-        (desk, wire::pb::ForwardRefusal::PaymentRequired)
-    );
+    assert_eq!((to, reason), (desk, wire::ForwardRefusal::PaymentRequired));
     assert!(edge(&net, "desk").pairing_active(), "the window stays open");
     let worker = net.agent("worker").unwrap().id;
     open_session(&edge(&net, "tablet"), desk, worker)
@@ -1080,20 +1073,20 @@ fn undiscovered(name: &str) -> HostDecl {
 /// Waits until the laptop has written down an address the desk answered
 /// at, which its next launch's first flight goes to.
 async fn remembers_where_the_desk_answered(net: &Net) {
-    let desk = wire::HostRef {
-        of: Some(wire::host_ref::Of::HostId(
-            host_id(net, "desk").as_bytes().to_vec(),
-        )),
-    };
+    let desk = host_id(net, "desk").as_bytes().to_vec();
     until("the laptop to remember where the desk answered", || {
-        let remembered = edge(net, "laptop")
-            .peer_entry(desk.clone())
-            .map(|entry| entry.reachabilities.len());
+        let desk = desk.clone();
         async move {
-            match remembered {
-                Ok(0) => Err("nowhere yet".to_owned()),
-                Ok(_) => Ok(()),
-                Err(status) => Err(status.to_string()),
+            let hosts = net
+                .runtime("laptop")
+                .map_err(|error| error.to_string())?
+                .read_store(|store| store.trusted_hosts())
+                .await
+                .map_err(|error| error.to_string())?
+                .map_err(|error| error.to_string())?;
+            match hosts.iter().find(|host| host.host_id == desk) {
+                Some(host) if host.direct != "[]" => Ok(()),
+                _ => Err("nowhere yet".to_owned()),
             }
         }
     })
@@ -1850,32 +1843,6 @@ async fn hold_buffer_bad_token_drops_the_held_packets_unanswered() {
     net.shutdown().await.unwrap();
 }
 
-/// A relaunch presents the relay credential the laptop kept and makes no
-/// call to the account service, and its link to the desk comes up through
-/// the relay as before.
-#[tokio::test(flavor = "multi_thread")]
-async fn token_relaunch_no_connect_reuses_the_kept_credential() {
-    let mut net = linked_through_the_relay(WEEK).await;
-    let connects = net.relay().unwrap().connects();
-    println!("signed in: the account service was called {connects:?}");
-    let mark = relaunch(&mut net, "laptop").await;
-
-    let up = logged(&net, "laptop", "desk", LinkTransition::Up, mark).await;
-    assert_eq!(up.path, PathKind::RelayUdp);
-    assert_eq!(
-        net.relay().unwrap().connects(),
-        connects,
-        "the relaunch made no call to the account service"
-    );
-    println!(
-        "relaunched: presented {:?}, the account service's connects unchanged",
-        net.relay().unwrap().presented()
-    );
-    streams_live(&net, &["laptop"], "worker", "said through the relay").await;
-    still_relayed(&net, "laptop", "desk");
-    net.shutdown().await.unwrap();
-}
-
 /// The account lapses at the account service while its hosts' week-long
 /// credentials still say paid: the relay keeps forwarding until the hourly
 /// refresh brings it credentials saying free, then stops and tells both
@@ -1920,7 +1887,7 @@ async fn token_lapse_within_hour_is_noticed_at_the_hourly_refresh() {
             .await
             .unwrap_or_else(|_| panic!("{host} is told at the refresh"))
             .unwrap();
-        assert_eq!(refusal, (*peer, wire::pb::ForwardRefusal::PaymentRequired));
+        assert_eq!(refusal, (*peer, wire::ForwardRefusal::PaymentRequired));
     }
     for (host, peer) in [("desk", "laptop"), ("laptop", "desk")] {
         let id = host_id(&net, peer);
@@ -2107,7 +2074,7 @@ async fn punch_lapse_drops_the_punched_path() {
             let id = profile(&net, host);
             let seen = door(&net, host)
                 .await
-                .list_profiles(wire::ListProfilesRequest {})
+                .list_profiles(wire::Empty {})
                 .await
                 .map_err(|status| status.message().to_owned())?
                 .into_inner()

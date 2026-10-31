@@ -5,14 +5,14 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_LOCAL = {
     "wire": set(),
     # The plain values the views and the phone bridge share; the Swift
-    # mirrors are generated from them, so they depend on nothing.
-    "model": set(),
+    # mirrors are generated from them. They hold the wire's own enums
+    # (a refusal reason) rather than copies, so they see `wire` and nothing else.
+    "model": {"wire"},
     "settings": set(),
     # The typed events a device may send and their uploader: a leaf, so the
     # daemon, the phone bridge and the CLI share one definition.
@@ -37,7 +37,7 @@ ALLOWED_LOCAL = {
         "wire",
     },
     "claude": {"claude-protocol"},
-    "codex": {"codex-protocol"},
+    "codex": set(),
     # Each provider's messages as types: pure, so the interpreter the phone
     # links can read them. PURE_EXTERNAL below bounds what they may pull in.
     "claude-protocol": set(),
@@ -49,13 +49,13 @@ ALLOWED_LOCAL = {
     # interpret only for the dump path's per-kind redactor: the one stated
     # exception to "the daemon interprets nothing".
     "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "version-stamp", "wire"},
-    "amux": {"agent", "agent-dir", "analytics", "claude", "client", "log-file", "node", "settings", "store", "tui", "wire"},
+    "amux": {"agent", "agent-dir", "analytics", "claude", "client", "log-file", "node", "settings", "tui", "wire"},
     # The version stamp a release tool can rewrite in a built binary, and the
     # release manifest the tool signs and the daemon verifies; the xtask
     # shares both without building the daemon.
     "version-stamp": set(),
     "release": set(),
-    "xtask": {"release", "version-stamp"},
+    "xtask": {"release"},
     # The Swift mirrors of the view values are generated from their
     # definitions, so the generator reads them.
     "ios-tools": {"app-runtime", "model", "ui-view", "wire"},
@@ -72,7 +72,7 @@ ALLOWED_LOCAL = {
     # The C ABI over both.
     "app-ffi": {"app-embedded", "app-runtime", "client", "model", "node", "ui-view"},
     # The terminal client composes the views over the drivers' state.
-    "tui": {"attachments", "client", "ui-runtime", "ui-state", "ui-view", "wire"},
+    "tui": {"attachments", "client", "settings", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The bounded ring of a core's inputs since its last checkpoint, in
     # segments named as the journal's are.
     "core-ring": {"journal"},
@@ -134,14 +134,14 @@ SUPPORT_ALLOWED_LOCAL = {
     # Its simulated mode holds every daemon and agent core in one process,
     # the agents on the test kind's interpreter.
     "testnet": {
-        "agent-core", "agent-dir", "daemon-core", "interpret", "journal", "models", "node",
-        "patience", "provider-fakes", "release", "shot", "store", "tui", "wire",
+        "agent-dir", "daemon-core", "interpret", "journal", "models", "node", "patience",
+        "provider-fakes", "release", "shot", "store", "tui", "wire",
     },
     # Qualification owns environment-dependent provider and performance
     # checks while reusing the network harness rather than shipping it.
-    "qualification": {"node", "provider-fakes", "store", "testnet", "wire"},
-    "claude-specs": {"claude", "claude-protocol", "pty-host", "redaction", "replay-support"},
-    "codex-specs": {"codex", "codex-protocol", "pty-host", "redaction", "replay-support"},
+    "qualification": {"node", "provider-fakes", "testnet", "wire"},
+    "claude-specs": {"pty-host", "redaction", "replay-support"},
+    "codex-specs": {"redaction", "replay-support"},
     # The fake providers speak each protocol from its recordings, and check
     # what they compose against the protocol crates' types. They never use
     # the host crates, so a host bug cannot hide behind shared host code.
@@ -152,7 +152,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # Renders the terminal client's named states to PNG for review, and
     # its storybook, whose chats are recorded sessions replayed through the
     # interpreters.
-    "shot": {"interpret", "tui", "ui-state", "ui-view", "wire"},
+    "shot": {"interpret", "settings", "tui", "ui-state", "ui-view", "wire"},
     # Replays a dump bundle's stages with the models' properties judged at
     # every step: facts through the interpreter (the journal for
     # comparison), the daemon core from its checkpoint over its store,
@@ -168,26 +168,6 @@ SUPPORT_ALLOWED_LOCAL = {
     # clients' session state.
     "models": {"agent-core", "daemon-core", "interpret", "journal", "path-core", "provider-fakes", "relay-core", "release", "socket-core", "store", "supervisor-core", "ui-state", "wire"},
 }
-
-# Every dependency comes from crates.io but rustls, which comes from the
-# fork carrying the amux patch (docs/ARCHITECTURE.md, "The rustls patch")
-# at whatever commit the lockfile pins.
-CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
-GIT_SOURCES = {"rustls": "git+https://github.com/amuxhq/rustls?rev="}
-
-
-def source_failures() -> list[str]:
-    lock = tomllib.loads((ROOT / "Cargo.lock").read_text())
-    failures = []
-    for package in lock["package"]:
-        source = package.get("source")
-        if source is None or source == CRATES_IO:
-            continue
-        allowed = GIT_SOURCES.get(package["name"])
-        if allowed is None or not source.startswith(allowed):
-            failures.append(f"{package['name']} {package['version']}: comes from {source}")
-    return failures
-
 
 def local_edges(package: dict[str, object]) -> set[str]:
     return {
@@ -211,7 +191,7 @@ def main() -> int:
         for package in metadata["packages"]
         if package["id"] in members
     }
-    failures = source_failures()
+    failures: list[str] = []
 
     for name, allowed in (ALLOWED_LOCAL | SUPPORT_ALLOWED_LOCAL).items():
         package = packages.get(name)

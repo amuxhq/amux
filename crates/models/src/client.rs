@@ -27,8 +27,8 @@ use std::hash::{Hash, Hasher};
 use prost::Message as _;
 use ui_state::{InputOutcome, InputState, Msg, SessionState};
 use wire::{
-    Agent, Append, ClaudeSdkItem, Item, Kind, Lifecycle, Phase, SendInputResponse, SessionEvent,
-    Snapshot, claude_sdk_item, session_event,
+    Agent, Append, ClaudeItem, Item, Kind, Lifecycle, Phase, SendInputResponse, SessionEvent,
+    Snapshot, claude_item, session_event,
 };
 
 use crate::{Machine, Property};
@@ -133,7 +133,6 @@ struct Daemon {
 impl Daemon {
     fn snapshot(&self) -> Snapshot {
         Snapshot {
-            agent_id: AGENT_ID.to_vec(),
             revision: self.newest_snapshot,
             kind: KIND as i32,
             phase: self.phase as i32,
@@ -424,19 +423,18 @@ fn text_item(order: u64, revision: u64, text: &str) -> Item {
         order,
         revision,
         text,
-        claude_sdk_item::Kind::Message(wire::Text { complete: true }),
+        claude_item::Kind::Message(wire::Text { complete: true }),
     )
 }
 
-fn item(order: u64, revision: u64, text: &str, kind: claude_sdk_item::Kind) -> Item {
+fn item(order: u64, revision: u64, text: &str, kind: claude_item::Kind) -> Item {
     Item {
-        agent_id: AGENT_ID.to_vec(),
         key: format!("k{order}"),
         order,
         revision,
         text: text.into(),
         kind: KIND as i32,
-        body: ClaudeSdkItem { kind: Some(kind) }.encode_to_vec(),
+        body: ClaudeItem { kind: Some(kind) }.encode_to_vec(),
         ..Item::default()
     }
 }
@@ -444,12 +442,12 @@ fn item(order: u64, revision: u64, text: &str, kind: claude_sdk_item::Kind) -> I
 fn prompt() -> wire::Input {
     wire::Input::new(
         INPUT.to_vec(),
-        wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: "and then this".into(),
                 attachments: Vec::new(),
             })),
-        }),
+        },
     )
 }
 
@@ -636,7 +634,7 @@ impl Machine for ClientModel {
                     order,
                     revision,
                     "and then this",
-                    claude_sdk_item::Kind::Prompt(wire::Prompt {}),
+                    claude_item::Kind::Prompt(wire::Prompt {}),
                 );
                 item.input_id = INPUT.to_vec();
                 next.daemon.items.push(item.clone());
@@ -651,7 +649,6 @@ impl Machine for ClientModel {
                     .iter_mut()
                     .find(|item| item.order == *order)?;
                 let append = Append {
-                    agent_id: AGENT_ID.to_vec(),
                     key: item.key.clone(),
                     base_revision: item.revision,
                     revision,

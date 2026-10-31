@@ -37,7 +37,6 @@ mod facts;
 mod recording;
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::marker::PhantomData;
 
 use codex_protocol::client::{
     Answer, CustomReview, ElicitationAction, ElicitationResponse, GrantScope, InjectItemsParams,
@@ -58,11 +57,11 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, AskClosed, AskItem, BackgroundJob, CodexAnswer, CodexAsk, CodexGrant, CodexItem,
-    CodexSnapshot, CodexUsage, ContextMeter, Decision, DecisionOutcome, Envelope, FormAction,
-    Input, KindInput, OfferedCommand, OfferedMode, OfferedModel, OfferedPermission, OfferedSkill,
-    QueuedInput, Refusal, Rejected, Step, TaskList, TaskListEntry, ToolDecision, ToolServerHealth,
-    Work, codex_answer, codex_ask, codex_grant, codex_input, codex_item, tool_decision, work,
+    AgentSpec, AskClosed, AskItem, BackgroundJob, CodexAsk, CodexGrant, CodexItem, CodexSnapshot,
+    CodexUsage, ContextMeter, Decision, DecisionOutcome, Envelope, FormAction, Input,
+    OfferedCommand, OfferedMode, OfferedModel, OfferedPermission, OfferedSkill, QueuedInput,
+    Refusal, Rejected, Step, TaskList, TaskListEntry, ToolDecision, ToolServer, Work, agent_input,
+    answer, codex_ask, codex_grant, codex_item, tool_decision, work,
 };
 
 use crate::claude_common::{clip, describe_tasks, or_dash};
@@ -71,54 +70,6 @@ use crate::{
     Shared, SnapshotView, Stepped, agent_message_body, agent_message_key, ask_item, codex_input,
     human, serde_pb, unknown,
 };
-
-/// When an agent message injected into Codex counts as consumed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum InjectConsumption {
-    /// A running turn does not see injected items; they wait for the next
-    /// turn. At turn end, while messages are parked, the interpreter starts
-    /// an empty turn, and the messages leave the pending set at that turn's
-    /// acknowledgement.
-    ParkedUntilNextTurn,
-    /// A running turn samples again with injected items in context before
-    /// it ends, so a message injected mid-turn leaves the pending set at the
-    /// inject's acknowledgement and no turn is started for it. An inject
-    /// acknowledged after its turn ended was recorded into an idle thread,
-    /// so it is kicked as an idle inject is.
-    DrainedMidTurn,
-}
-
-/// Decided by probing codex-cli 0.157.0: a running turn drains items
-/// injected into it and answers them under the same turn id. An inject into
-/// an idle thread still needs an empty turn to be answered, and is consumed
-/// at that turn's acknowledgement under either arm.
-pub const CODEX_INJECT_CONSUMPTION: InjectConsumption = InjectConsumption::DrainedMidTurn;
-
-/// Which consumption arm an interpreter type runs.
-pub trait Arm {
-    const CONSUMPTION: InjectConsumption;
-}
-
-/// The arm the probe decided.
-pub struct Probed;
-impl Arm for Probed {
-    const CONSUMPTION: InjectConsumption = CODEX_INJECT_CONSUMPTION;
-}
-
-/// The parked arm, whatever the probe decided; for its own goldens.
-pub struct Parked;
-impl Arm for Parked {
-    const CONSUMPTION: InjectConsumption = InjectConsumption::ParkedUntilNextTurn;
-}
-
-/// The drained arm, whatever the probe decided; for its own goldens.
-pub struct Drained;
-impl Arm for Drained {
-    const CONSUMPTION: InjectConsumption = InjectConsumption::DrainedMidTurn;
-}
-
-/// The Codex interpreter with a fixed consumption arm.
-pub struct CodexWith<A: Arm>(PhantomData<A>);
 
 /// The slash commands amux runs for Codex: name, description and argument
 /// hint. More of Codex's own view's commands are one entry each here and
@@ -155,10 +106,21 @@ pub const CLEAR_REQUEST: &str = "amux-clear-";
 /// Notifications amux never draws: the agent asks Codex not to send them at
 /// `initialize`, and the interpreter drops them should an older Codex send
 /// them anyway. A hook's effect on the turn reaches the conversation itself
-/// (a blocked call's output names the hook), as it does for Claude.
+/// (a blocked call's output names the hook), as it does for Claude. A model
+/// reroute covers one request and Codex keeps the chosen model for the
+/// next; Codex also sends a warning saying so, with a link, which is what
+/// the person sees.
 pub const DROPPED_NOTIFICATIONS: &[&str] = &[
     "hook/started",
     "hook/completed",
+    "model/rerouted",
+    "thread/archived",
+    "thread/unarchived",
+    "thread/goal/updated",
+    "thread/readState/changed",
+    "thread/compacted",
+    "turn/moderationMetadata",
+    "item/fileChange/outputDelta",
     "item/mcpToolCall/progress",
     "item/fileChange/patchUpdated",
     "app/list/updated",
@@ -281,14 +243,14 @@ fn mentions(text: &str) -> Vec<&str> {
 }
 
 /// The interpreter for kind `codex`.
-pub type Codex = CodexWith<Probed>;
+pub struct Codex;
 
 /// A request this interpreter sent, awaiting its response.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 enum Request {
     /// `turn/start`. Agent messages that leave the pending set at its
-    /// acknowledgement ride along: a kick, or the next turn in the parked
-    /// arm.
+    /// acknowledgement ride along: a kick for an idle inject, or held
+    /// messages a queued prompt's turn carries.
     Turn {
         #[serde(with = "serde_pb::bytes_vec")]
         consumes: Vec<Vec<u8>>,
@@ -551,7 +513,6 @@ fn offered_modes() -> Vec<OfferedMode> {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct State {
     shared: Shared<CodexAsk>,
-    consumption: InjectConsumption,
     /// The spec's incarnation: a later one's first thread is a resume.
     incarnation: u32,
     /// The agent's name, which the thread carries.
@@ -559,7 +520,6 @@ pub struct State {
     /// How many times the thread was named, for the requests' ids.
     names_set: u64,
     thread_id: Option<String>,
-    version: Option<String>,
     model: Option<String>,
     launch_model: Option<String>,
     effort: Option<String>,
@@ -601,10 +561,6 @@ pub struct State {
     /// Agent messages accepted while no thread was running.
     #[serde(with = "serde_pb::msgs")]
     held: Vec<Envelope>,
-    /// Agent messages injected mid-turn, waiting for the next turn (parked
-    /// arm only).
-    #[serde(with = "serde_pb::bytes_vec")]
-    parked: Vec<Vec<u8>>,
     works: BTreeMap<String, WorkState>,
     /// Child threads' file changes, by item id, which their approvals show:
     /// the rest of a child's work is drawn by its own subagent row.
@@ -618,15 +574,13 @@ pub struct State {
     context_window: Option<u64>,
     #[serde(with = "serde_pb::opt_msg")]
     usage: Option<CodexUsage>,
-    #[serde(with = "serde_pb::opt_msg")]
-    servers: Option<ToolServerHealth>,
+    #[serde(with = "serde_pb::msgs")]
+    servers: Vec<ToolServer>,
     #[serde(with = "serde_pb::opt_msg")]
     sign_in: Option<wire::SignIn>,
     /// Reviewer verdicts on work Codex has not reported yet.
     #[serde(with = "serde_pb::msg_map")]
     reviewed: BTreeMap<String, ToolDecision>,
-    /// The whole-turn diff last emitted, by key.
-    last_diff: Option<(String, String)>,
     /// The turn whose final error is already an item.
     final_error: Option<String>,
     /// Commands still running after the turn that started them ended.
@@ -638,10 +592,8 @@ pub struct State {
     /// The plan Codex proposed last.
     proposed: Option<Proposed>,
     /// The agent's folder, where a `/clear` starts its thread.
-    #[serde(default)]
     cwd: String,
     /// How many times `/clear` started a thread, which names each request.
-    #[serde(default)]
     clears: u32,
 }
 
@@ -661,25 +613,18 @@ impl State {
         &self.shared
     }
 
-    /// The arm this state runs.
-    pub fn consumption(&self) -> InjectConsumption {
-        self.consumption
-    }
-
-    fn new(spec: &AgentSpec, producer_version: &str, consumption: InjectConsumption) -> Self {
+    fn new(spec: &AgentSpec) -> Self {
         let created_mode = spec
             .config
             .as_ref()
             .and_then(|config| config.mode.clone())
             .filter(|mode| MODES.iter().any(|(value, _)| value == mode));
         Self {
-            shared: Shared::new(spec, KIND, producer_version),
-            consumption,
+            shared: Shared::new(spec, KIND),
             incarnation: spec.incarnation,
             name: spec.name.clone(),
             names_set: 0,
             thread_id: None,
-            version: None,
             model: None,
             launch_model: None,
             effort: None,
@@ -706,7 +651,6 @@ impl State {
             next_request: 0,
             next_boundary: 0,
             held: Vec::new(),
-            parked: Vec::new(),
             works: BTreeMap::new(),
             child_changes: BTreeMap::new(),
             sent: BTreeMap::new(),
@@ -715,11 +659,10 @@ impl State {
             context_tokens: None,
             context_window: None,
             usage: None,
-            servers: None,
+            servers: Vec::new(),
             sign_in: None,
             reviewed: BTreeMap::new(),
             final_error: None,
-            last_diff: None,
             background: None,
             jobs_asked: 0,
             plan: None,
@@ -738,7 +681,6 @@ impl State {
                     known: true,
                     used_tokens,
                     window_tokens: self.context_window,
-                    breakdown: Vec::new(),
                 },
             }),
             model: self.model.clone(),
@@ -763,15 +705,7 @@ impl State {
                 .clone()
                 .filter(|mode| MODES.iter().any(|(value, _)| value == mode)),
             approval_policy: self.approval.clone(),
-            sandbox: self.sandbox.clone(),
-            approvals_reviewer: self.reviewer.clone(),
-            collaboration_mode: self.collaboration.clone(),
-            active_turn: self.active_turn.clone(),
-            servers: Some(
-                self.servers
-                    .clone()
-                    .unwrap_or_else(unknown::tool_server_health),
-            ),
+            servers: self.servers.clone(),
             usage: Some(self.usage.clone().unwrap_or_else(unknown::codex_usage)),
             sign_in: Some(self.sign_in.clone().unwrap_or_else(unknown::sign_in)),
             background_jobs: Some(self.shared.jobs()),
@@ -999,8 +933,6 @@ impl State {
                 key: format!("boundary:{}", self.next_boundary),
                 body: item_body(codex_item::Kind::Boundary(wire::Boundary {
                     kind: kind as i32,
-                    provider_session: self.thread_id.clone().unwrap_or_default(),
-                    provider_version: self.version.clone().unwrap_or_default(),
                     cause: exit.cause,
                     cause_detail: exit.detail,
                 })),
@@ -1014,17 +946,16 @@ impl State {
 
     fn input(&mut self, emit: &mut Emit, input: Input) {
         let id = input.input_id.clone();
-        // Another kind's input, or an arm a newer client sends that this
-        // version cannot read.
+        // An arm a newer client sends that this version cannot read.
         let arm = match input.decode_body() {
-            Some(KindInput::Codex(wire::CodexInput { of: Some(arm) })) => arm,
+            Some(wire::AgentInput { of: Some(arm) }) => arm,
             _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
-            codex_input::Of::StopJob(stop) => self.stop_job(emit, &id, stop.key),
+            agent_input::Of::StopJob(stop) => self.stop_job(emit, &id, stop.key),
             // A `/word` that is not a command amux runs would reach the
             // model as words. A skill is mentioned as `$name` instead.
-            codex_input::Of::Prompt(prompt) if Command::parse(&prompt.text) == Some(Err(())) => {
+            agent_input::Of::Prompt(prompt) if Command::parse(&prompt.text) == Some(Err(())) => {
                 match self.names_skill(&prompt.text) {
                     Some(skill) => {
                         let detail = format!("Codex takes a skill as a mention: type ${skill}");
@@ -1041,7 +972,7 @@ impl State {
                 }
             }
             // Refused here, so the words go back to the composer.
-            codex_input::Of::Prompt(prompt) if prompt.text.chars().count() > PROMPT_CHARS_MOST => {
+            agent_input::Of::Prompt(prompt) if prompt.text.chars().count() > PROMPT_CHARS_MOST => {
                 self.shared.refuse(
                     emit,
                     &id,
@@ -1055,7 +986,7 @@ impl State {
                     },
                 )
             }
-            codex_input::Of::Prompt(prompt) => {
+            agent_input::Of::Prompt(prompt) => {
                 if let Some(key) = self.plan_ask() {
                     self.shared.close_ask(&key);
                     self.decide_plan(emit, wire::PlanVerdict::Dismissed, None);
@@ -1064,10 +995,10 @@ impl State {
                     self.submit(emit, entry, Vec::new());
                 }
             }
-            codex_input::Of::Withdraw(withdraw) => {
+            agent_input::Of::Withdraw(withdraw) => {
                 self.shared.withdraw(emit, &id, &withdraw.queued_input_id)
             }
-            codex_input::Of::SendNow(send) => {
+            agent_input::Of::SendNow(send) => {
                 let turn = self.active_turn.clone();
                 if let Some(entry) =
                     self.shared
@@ -1077,11 +1008,11 @@ impl State {
                     self.steer(emit, &turn, entry);
                 }
             }
-            codex_input::Of::Interrupt(_) => {
+            agent_input::Of::Interrupt(_) => {
                 self.interrupt(emit);
                 self.shared.accept(emit, &id, false);
             }
-            codex_input::Of::Permission(set) => {
+            agent_input::Of::Permission(set) => {
                 let Some(named) = permission(&set.value) else {
                     return self.shared.reject(emit, &id, Refusal::Unsupported);
                 };
@@ -1091,7 +1022,7 @@ impl State {
                 self.overrides.permission = Some(set.value);
                 self.shared.accept(emit, &id, false);
             }
-            codex_input::Of::Mode(set) => {
+            agent_input::Of::Mode(set) => {
                 if !MODES.iter().any(|(value, _)| *value == set.value) {
                     return self.shared.reject(emit, &id, Refusal::Unsupported);
                 }
@@ -1100,18 +1031,22 @@ impl State {
                 self.left_plan(emit);
                 self.shared.accept(emit, &id, false);
             }
-            codex_input::Of::Model(model) => {
+            agent_input::Of::Model(model) => {
                 let model = model.model.or_else(|| self.launch_model.clone());
                 self.model = model.clone();
                 self.overrides.model = model;
                 self.shared.accept(emit, &id, false);
             }
-            codex_input::Of::Effort(effort) => {
+            agent_input::Of::Effort(effort) => {
                 self.effort = effort.effort.clone();
                 self.overrides.effort = Some(effort.effort);
                 self.shared.accept(emit, &id, false);
             }
-            codex_input::Of::Answer(answer) => self.answer(emit, &id, answer),
+            agent_input::Of::Answer(answer) => self.answer(emit, &id, answer),
+            // Terminal Claude's keystrokes, and Claude's own clear.
+            agent_input::Of::Clear(_)
+            | agent_input::Of::CyclePermissionMode(_)
+            | agent_input::Of::SwitchBack(_) => self.shared.reject(emit, &id, Refusal::Unsupported),
         }
     }
 
@@ -1126,7 +1061,7 @@ impl State {
 
     /// Starts a turn for a prompt. Its item is written now, keyed by its
     /// input id; Codex's reflection of it is recognised and left out.
-    fn submit(&mut self, emit: &mut Emit, entry: QueuedInput, mut consumes: Vec<Vec<u8>>) {
+    fn submit(&mut self, emit: &mut Emit, entry: QueuedInput, consumes: Vec<Vec<u8>>) {
         let key = prompt_key(&entry.input_id);
         let command = Command::parse(&entry.text).and_then(Result::ok);
         match &command {
@@ -1195,7 +1130,6 @@ impl State {
                     }
                     _ => crate::shared::provider_text(&entry),
                 };
-                consumes.append(&mut self.parked);
                 let mut params = self.turn_params(&text);
                 params.client_user_message_id = Some(client_message_id(&entry.input_id));
                 let request = self
@@ -1367,10 +1301,8 @@ impl State {
         self.inject_items(emit, envelope, during_turn);
         if !during_turn {
             // An idle thread records the item and waits; an empty turn
-            // answers it under either arm.
+            // answers it.
             self.kick(emit, vec![envelope.id.clone()]);
-        } else if self.consumption == InjectConsumption::ParkedUntilNextTurn {
-            self.parked.push(envelope.id.clone());
         }
     }
 
@@ -1456,17 +1388,7 @@ impl State {
         self.submit(emit, entry, consumes);
     }
 
-    /// At turn end in the parked arm: parked messages need a turn. A queued
-    /// prompt's turn carries them; else an empty one is started.
-    fn turn_over_parked(&mut self, emit: &mut Emit) {
-        if self.parked.is_empty() || !self.shared.queue().is_empty() {
-            return;
-        }
-        let parked = std::mem::take(&mut self.parked);
-        self.kick(emit, parked);
-    }
-
-    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: CodexAnswer) {
+    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: wire::Answer) {
         let key = answer.ask_key;
         let Some(ask) = self.shared.asks().get(&key).cloned() else {
             return self.shared.reject(emit, id, Refusal::ClosedAsk);
@@ -1474,14 +1396,14 @@ impl State {
         let parsed = answer.of;
         if let Some(codex_ask::Body::Plan(_)) = ask.body {
             return match parsed {
-                Some(codex_answer::Of::Plan(plan)) => self.answer_plan(emit, id, &key, plan),
+                Some(answer::Of::Plan(plan)) => self.answer_plan(emit, id, &key, plan),
                 _ => self.shared.reject(emit, id, Refusal::Unsupported),
             };
         }
-        if let Some(codex_answer::Of::Approve(decision)) = parsed {
+        if let Some(answer::Of::Approve(decision)) = parsed {
             return self.approve(emit, id, &ask, decision);
         }
-        if let (Some(codex_ask::Body::Question(asked)), Some(codex_answer::Of::Reply(reply))) =
+        if let (Some(codex_ask::Body::Question(asked)), Some(answer::Of::Reply(reply))) =
             (&ask.body, &parsed)
         {
             return self.reply_instead(emit, id, &ask, asked, reply);
@@ -1731,10 +1653,10 @@ pub(crate) const USER_NOTE: &str = "user_note: ";
 fn codex_answer_response(
     ask: &CodexAsk,
     meta: &AskMeta,
-    answer: codex_answer::Of,
+    answer: answer::Of,
 ) -> Option<(ClientResponse, AskClosed)> {
     match (ask.body.as_ref()?, answer) {
-        (codex_ask::Body::Question(asked), codex_answer::Of::Question(answer)) => {
+        (codex_ask::Body::Question(asked), answer::Of::Question(answer)) => {
             if answer.answers.len() != meta.questions.len() {
                 return None;
             }
@@ -1771,7 +1693,7 @@ fn codex_answer_response(
                 ask_item::answered(asked, &answer)?,
             ))
         }
-        (codex_ask::Body::McpForm(asked), codex_answer::Of::Form(form)) => {
+        (codex_ask::Body::McpForm(asked), answer::Of::Form(form)) => {
             let action = form_action(form.action)?;
             let content = (action == ElicitationAction::Accept).then(|| {
                 serde_json::from_slice(&form.content_json)
@@ -1782,11 +1704,11 @@ fn codex_answer_response(
                 ask_item::form_sent(&form, &asked.schema_json),
             ))
         }
-        (codex_ask::Body::McpLink(_), codex_answer::Of::Link(link)) => Some((
+        (codex_ask::Body::McpLink(_), answer::Of::Link(link)) => Some((
             elicitation_response(form_action(link.action)?, None, None),
             ask_item::link_answered(link.action),
         )),
-        (codex_ask::Body::Access(asked), codex_answer::Of::Grant(grant)) => {
+        (codex_ask::Body::Access(asked), answer::Of::Grant(grant)) => {
             let subset = |granted: &[String], asked: &[String]| {
                 granted.iter().all(|path| asked.contains(path))
             };
@@ -1883,18 +1805,18 @@ impl Checkpoint for State {
 
 const KIND: wire::Kind = wire::Kind::Codex;
 
-impl<A: Arm> Interpreter for CodexWith<A> {
+impl Interpreter for Codex {
     type State = State;
     const KIND: wire::Kind = KIND;
 
-    fn initial(spec: &AgentSpec, producer_version: &str) -> (State, Step) {
-        let mut state = State::new(spec, producer_version, A::CONSUMPTION);
+    fn initial(spec: &AgentSpec) -> (State, Step) {
+        let mut state = State::new(spec);
         let step = state.shared.initial_step(Self::unknown_snapshot());
         (state, step)
     }
 
-    fn reincarnate(mut state: State, spec: &AgentSpec, producer_version: &str) -> (State, Step) {
-        state.shared.reincarnate(spec, producer_version);
+    fn reincarnate(mut state: State, spec: &AgentSpec) -> (State, Step) {
+        state.shared.reincarnate(spec);
         state.incarnation = spec.incarnation;
         state.name = spec.name.clone();
         state.resume()
@@ -1932,9 +1854,7 @@ impl<A: Arm> Interpreter for CodexWith<A> {
     }
 
     fn redact(target: RedactTarget) -> RedactTarget {
-        crate::redact::redact_kind::<wire::CodexItem, wire::CodexSnapshot, wire::CodexInput, State>(
-            target,
-        )
+        crate::redact::redact_kind::<wire::CodexItem, wire::CodexSnapshot, State>(target)
     }
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {
@@ -2092,17 +2012,6 @@ fn describe_item(body: &[u8]) -> ItemView {
             ),
         ),
         Some(Kind::Work(work)) => ("work", work_complete(&work), describe_work(&work)),
-        Some(Kind::McpStartup(startup)) => (
-            "mcp_startup",
-            true,
-            format!(
-                "{} {} {}",
-                startup.server,
-                wire::ToolServerStatus::try_from(startup.status)
-                    .map_or("?", |status| status.as_str_name()),
-                Value::String(startup.error)
-            ),
-        ),
         Some(Kind::Turn(turn)) => (
             "turn",
             true,
@@ -2119,10 +2028,8 @@ fn describe_item(body: &[u8]) -> ItemView {
             "boundary",
             true,
             format!(
-                "{} session={} version={}{}",
+                "{}{}",
                 wire::BoundaryKind::try_from(boundary.kind).map_or("?", |kind| kind.as_str_name()),
-                or_dash(&boundary.provider_session),
-                or_dash(&boundary.provider_version),
                 crate::claude_common::describe_cause(&boundary)
             ),
         ),
@@ -2151,11 +2058,6 @@ fn describe_item(body: &[u8]) -> ItemView {
                 unrecognized.fact_type,
                 Value::String(unrecognized.summary)
             ),
-        ),
-        Some(Kind::TurnDiff(diff)) => (
-            "turn_diff",
-            true,
-            format!("patch={}", clip(&diff.patch, 60)),
         ),
         Some(Kind::Ask(item)) => ("ask", true, ask_item::describe(&item)),
         Some(Kind::Verdict(verdict)) => (
@@ -2336,7 +2238,7 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
     let snapshot = CodexSnapshot::decode(body).unwrap_or_default();
     let context = snapshot.context.unwrap_or_default();
     let usage = snapshot.usage.unwrap_or_default();
-    let servers = snapshot.servers.unwrap_or_default();
+    let servers = snapshot.servers;
     let sign_in = snapshot.sign_in.unwrap_or_default();
     SnapshotView {
         asks: snapshot
@@ -2345,7 +2247,7 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
             .map(|ask| (ask.key.clone(), ask.item_key.clone()))
             .collect(),
         text: format!(
-            "asks=[{}] thread={} turn={} model={} model_name={} effort={} permission={} mode={} approval={} sandbox={} reviewer={} collaboration={} context={} plan={} usage={} servers={} sign_in={} background={}",
+            "asks=[{}] thread={} model={} model_name={} effort={} permission={} mode={} approval={} context={} plan={} usage={} servers={} sign_in={} background={}",
             snapshot
                 .asks
                 .iter()
@@ -2353,16 +2255,12 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
                 .collect::<Vec<_>>()
                 .join("; "),
             snapshot.thread_id.as_deref().unwrap_or("?"),
-            snapshot.active_turn.as_deref().unwrap_or("-"),
             snapshot.model.as_deref().unwrap_or("?"),
             crate::claude_common::describe_model_name(snapshot.model_name.as_deref()),
             snapshot.effort.as_deref().unwrap_or("?"),
             snapshot.permission.as_deref().unwrap_or("custom"),
             snapshot.mode.as_deref().unwrap_or("?"),
             snapshot.approval_policy.as_deref().unwrap_or("?"),
-            snapshot.sandbox.as_deref().unwrap_or("?"),
-            snapshot.approvals_reviewer.as_deref().unwrap_or("?"),
-            snapshot.collaboration_mode.as_deref().unwrap_or("?"),
             if context.known {
                 format!(
                     "{}/{}",
@@ -2376,24 +2274,7 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
             },
             describe_tasks(&snapshot.plan.unwrap_or_default()),
             describe_codex_usage(&usage),
-            match wire::HealthState::try_from(servers.state).unwrap_or_default() {
-                wire::HealthState::Unknown => "?".to_owned(),
-                state => format!(
-                    "{}[{}]",
-                    state.as_str_name(),
-                    servers
-                        .servers
-                        .iter()
-                        .map(|server| format!(
-                            "{}:{}",
-                            server.name,
-                            wire::ToolServerStatus::try_from(server.status)
-                                .map_or("?", |status| status.as_str_name())
-                        ))
-                        .collect::<Vec<_>>()
-                        .join(",")
-                ),
-            },
+            crate::shared::describe_servers(&servers),
             match wire::SignInState::try_from(sign_in.state).unwrap_or_default() {
                 wire::SignInState::Unknown => "?".to_owned(),
                 state => format!(

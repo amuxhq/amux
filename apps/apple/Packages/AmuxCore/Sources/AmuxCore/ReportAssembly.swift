@@ -3,15 +3,11 @@ import Foundation
 /// Turns a frozen capture and what somebody wrote about it into what the
 /// runtime sends.
 ///
-/// The phone writes `report.json` and hands over the frame and the trace;
+/// The phone writes `report.json` and hands over the frame;
 /// the runtime writes them into a report beside the dump it took when the
 /// screen froze, adds what only it knows (the schema, the dump's part), and
 /// uploads it the same way the terminal's report and a check's dump go.
 public enum ReportAssembly {
-    public static let reportFile = "report.json"
-    public static let frameFile = "frame.png"
-    public static let traceFile = "trace.jsonl"
-
     /// Everything the phone contributes to a report, ready to hand over.
     public static func upload(
         from capture: ReportCapture,
@@ -35,7 +31,7 @@ public enum ReportAssembly {
             header: header(
                 capture: capture, draft: draft, build: build, gitSHA: gitSHA,
                 createdAt: createdAt, dumpAbsent: dumpAbsent),
-            frame: capture.frame.png, trace: capture.trace, path: path)
+            frame: capture.frame.png, path: path)
     }
 
     /// Where the runtime's dump is, or why there is none.
@@ -60,19 +56,15 @@ public enum ReportAssembly {
         createdAt: Date, dumpAbsent: String?
     ) -> Data {
         func absent(_ reason: String) -> Any { ["absent": ["reason": reason]] }
+        // The account service asks every report to say whether it carries a
+        // trace; the phone records none.
         var declarations: [String: Any] = [
             "frame": "present",
-            "trace": capture.trace == nil
-                ? absent(capture.traceAbsent ?? "the view-state recording was not captured")
-                : "present",
+            "trace": absent("the phone records no view trace"),
         ]
         // The runtime declares a dump it holds; one it was never given is the
         // phone's to explain.
         if let dumpAbsent { declarations["dump"] = absent(dumpAbsent) }
-        // The recorder that made the trace, named only when there is a trace
-        // to name it for. What made it decides where it can be replayed: this
-        // one came from a native view, so a terminal cannot put it back.
-        if capture.trace != nil { declarations["trace_kind"] = "native_view" }
 
         let detail = [capture.route, capture.runtimeFailure].compactMap { $0 }
         let header: [String: Any] = [

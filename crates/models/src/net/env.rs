@@ -29,9 +29,8 @@
 //! armed for now is a delivery at once, one armed for later fires when the
 //! clock passes it. Jobs are carried out by fakes: nothing outside the
 //! agents' journals is written, a kill ends the process at once, git reads
-//! find no repository. After every step that wrote a host's store, the
-//! host's core checks every invariant it knows (`check_all`); a broken one,
-//! or a core asking for a dump, fails the net.
+//! find no repository. A core asking for a dump, which every step whose
+//! invariants break does, fails the net.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
@@ -71,8 +70,6 @@ type Kind = TestKind;
 
 /// Where a net's clock starts.
 pub const START_MS: u64 = 1_000_000;
-/// The version the agents' journals say wrote them.
-const PRODUCER: &str = env!("CARGO_PKG_VERSION");
 /// The segment size the agents' journals rotate at.
 const SEGMENT_BYTES: u64 = 1 << 20;
 
@@ -105,15 +102,8 @@ impl Debug for Core {
     }
 }
 
-/// An agent's journal: each segment's start offset and its bytes.
-pub type Journal = BTreeMap<u64, Vec<u8>>;
-
-/// The journal's end: the offset one past its last byte.
-pub fn journal_end(journal: &Journal) -> u64 {
-    journal
-        .last_key_value()
-        .map_or(0, |(start, bytes)| start + bytes.len() as u64)
-}
+use crate::held::Dir;
+pub use crate::held::{Journal, journal_end};
 
 /// Appends a framed step as the journal writer does: an empty step writes
 /// nothing, and a frame that would take a non-empty segment past its size
@@ -194,8 +184,6 @@ pub enum Failure {
     /// A core asked for a dump: a step over its budget or a broken
     /// invariant its own step checks.
     Dump(String),
-    /// A host's store broke an invariant its core checks after a write.
-    Violation(String),
     /// The drivers met something no driver should: a spec naming no agent.
     Driver(String),
     /// A promise a machine's own model checks, judged here as the net
@@ -206,9 +194,7 @@ pub enum Failure {
 impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Failure::Dump(what) | Failure::Violation(what) | Failure::Driver(what) => {
-                f.write_str(what)
-            }
+            Failure::Dump(what) | Failure::Driver(what) => f.write_str(what),
             Failure::Broke(promise, what) => write!(f, "{what}, breaking \"{promise}\""),
         }
     }
@@ -883,10 +869,6 @@ impl Net {
         self.w.running.get(&agent).copied()
     }
 
-    pub fn agent_name(&self, agent: AgentId) -> Option<&str> {
-        self.plan.names.get(&agent).map(String::as_str)
-    }
-
     pub fn client(&self, h: usize, call: CallId) -> Option<&ClientCall> {
         self.w.clients.get(&(h, call))
     }
@@ -992,10 +974,8 @@ impl Net {
         let id = self.plan.hosts[h].id;
         let mut held = self.w.hosts[h].held.clone();
         Some(with_scratch(|scratch| {
-            let (slot, dir) = scratch.of(id);
-            let home = agents_home(id);
-            slot.with_core(&mut held, (dir.path(), &home), |daemon| read(daemon))
-                .0
+            let (slot, _) = scratch.of(id);
+            slot.with_core(&mut held, |daemon| read(daemon)).0
         }))
     }
 
@@ -1205,8 +1185,6 @@ impl Net {
     }
 }
 
-/// Where a host's core is told its agents' directories live whenever it
-/// is taken back, so its checkpoint names the same place on every thread.
 /// How long a cut link goes unnoticed at the least: its keepalives must go
 /// unanswered first, so a link that was cut never reads as one that
 /// dropped as soon as it came up, which its host pauses before dialling
@@ -1280,7 +1258,7 @@ impl Transition<'_> {
             let at = self.steps;
             self.w.failure = Some(match failure {
                 Failure::Dump(what) => Failure::Dump(format!("at step {at}: {what}")),
-                Failure::Violation(what) => Failure::Violation(format!("at step {at}: {what}")),
+
                 Failure::Driver(what) => Failure::Driver(format!("at step {at}: {what}")),
                 Failure::Broke(promise, what) => {
                     Failure::Broke(promise, format!("at step {at}: {what}"))
@@ -1343,7 +1321,7 @@ impl Transition<'_> {
                     }
                     _ => {}
                 }
-                let input = self.served_by_the_shell(h, input);
+                let input = self.served_by_the_shell(input);
                 self.feed(h, input);
             }
             Delivery::Agent(p, Dbg(input)) => self.feed_agent(p, input),
@@ -1445,22 +1423,13 @@ impl Transition<'_> {
         let (slot, dir) = self.scratch.of(id);
         dir.lay_out(&host.journals);
         let home = agents_home(id);
-        let mut violation = None;
         let mut broke = None;
-        let (out, print) = slot.with_core(&mut host.held, (dir.path(), &home), |daemon| {
+        let (out, print) = slot.with_core(&mut host.held, |daemon| {
             let mut out = Vec::new();
             for input in inputs {
-                let before = daemon.store().changes();
                 let kind = input.kind();
                 let from = out.len();
                 daemon.step(input, &mut out);
-                if daemon.store().changes() != before
-                    && let Err(broken) = daemon.check_all()
-                {
-                    violation.get_or_insert(format!(
-                        "{name}'s store broke an invariant after {kind}: {broken}"
-                    ));
-                }
                 if broke.is_none() {
                     broke = judge_step(daemon, &out[from..], kind, name, &others);
                 }
@@ -1470,9 +1439,6 @@ impl Transition<'_> {
         host.print = Some(print);
         dir.reclaimed(&mut host.journals);
         let scratch = dir.path().to_path_buf();
-        if let Some(violation) = violation {
-            self.fail(Failure::Violation(violation));
-        }
         if let Some((promise, what)) = broke {
             self.fail(Failure::Broke(promise, what));
         }
@@ -1562,9 +1528,9 @@ impl Transition<'_> {
         });
         let options = StartOptions {
             generation,
-            agents: agents.clone(),
             replicas: home.join("replicas"),
             budget: StepBudget::UNLIMITED,
+            ..StartOptions::default()
         };
         let entry = wire::HostEntry {
             generation,
@@ -1579,69 +1545,48 @@ impl Transition<'_> {
         let running = &self.w.running;
         let (slot, dir) = self.scratch.of(id);
         dir.lay_out(&host.journals);
-        let name = &plan.name;
-        let mut violation = None;
-        let (out, print) = slot.start_with(
-            &mut host.held,
-            (dir.path(), &agents),
-            |store| Daemon::new(store, options),
-            |daemon| {
-                let mut out = Vec::new();
-                let mut step = |daemon: &mut Daemon, input: Input| {
-                    let before = daemon.store().changes();
-                    let kind = input.kind();
-                    daemon.step(input, &mut out);
-                    if daemon.store().changes() != before
-                        && let Err(broken) = daemon.check_all()
-                    {
-                        violation.get_or_insert(format!(
-                            "{name}'s store broke an invariant after {kind}: {broken}"
-                        ));
-                    }
-                };
-                step(
-                    daemon,
-                    Input::Tick {
-                        now_ms: now,
-                        link_ms: link,
-                    },
-                );
-                step(daemon, Input::Configure(settings));
-                step(daemon, Input::Entropy(entropy));
-                daemon.trust_for_test(trust_of(trusted));
-                step(daemon, Input::Started);
-                step(daemon, Input::OwnHost(Box::new(entry)));
-                let live: Vec<AgentId> = daemon
-                    .store()
-                    .agents()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|row| row.agent.host == id.0 && row.lifecycle == Lifecycle::Live as i32)
-                    .filter_map(|row| AgentId::from_slice(&row.agent.agent))
-                    .collect();
-                for agent in live {
-                    if running.contains_key(&agent) {
-                        step(daemon, Input::Adopted { agent });
-                        step(daemon, Input::Nudge { agent });
-                    } else {
-                        let ended = Ended::Away;
-                        step(daemon, Input::ControlClosed { agent, ended });
-                    }
+        let (out, print) = slot.start_with(&mut host.held, options, |daemon| {
+            let mut out = Vec::new();
+            let mut step = |daemon: &mut Daemon, input: Input| daemon.step(input, &mut out);
+            step(
+                daemon,
+                Input::Tick {
+                    now_ms: now,
+                    link_ms: link,
+                },
+            );
+            step(daemon, Input::Configure(settings));
+            step(daemon, Input::Entropy(entropy));
+            daemon.trust_for_test(trust_of(trusted));
+            step(daemon, Input::Started);
+            step(daemon, Input::OwnHost(Box::new(entry)));
+            let live: Vec<AgentId> = daemon
+                .store()
+                .agents()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|row| row.agent.host == id.0 && row.lifecycle == Lifecycle::Live as i32)
+                .filter_map(|row| AgentId::from_slice(&row.agent.agent))
+                .collect();
+            for agent in live {
+                if running.contains_key(&agent) {
+                    step(daemon, Input::Adopted { agent });
+                    step(daemon, Input::Nudge { agent });
+                } else {
+                    let ended = Ended::Away;
+                    step(daemon, Input::ControlClosed { agent, ended });
                 }
-                step(daemon, Input::Swept);
-                // The edge is up: every host listens at its address in the
-                // net, and dials what it trusts.
-                step(daemon, Input::Listening(true));
-                step(daemon, Input::Dialling(Dialling::All));
-                out
-            },
-        );
+            }
+            step(daemon, Input::Swept);
+            // The edge is up: every host listens at its address in the
+            // net, and dials what it trusts.
+            step(daemon, Input::Listening(true));
+            step(daemon, Input::Dialling(Dialling::All));
+            out
+        });
         host.print = Some(print);
         dir.reclaimed(&mut host.journals);
         let scratch = dir.path().to_path_buf();
-        if let Some(violation) = violation {
-            self.fail(Failure::Violation(violation));
-        }
         if let Some((promise, what)) = broke {
             self.fail(Failure::Broke(promise, what));
         }
@@ -1930,7 +1875,7 @@ impl Transition<'_> {
     /// A paired host's call as node's peer edge hands it to the core: a
     /// message as [`peer_message`] makes it, a create as [`peer_create`]
     /// does.
-    fn served_by_the_shell(&self, h: usize, input: Input) -> Input {
+    fn served_by_the_shell(&self, input: Input) -> Input {
         match input {
             Input::PeerCall {
                 call,
@@ -1944,7 +1889,7 @@ impl Transition<'_> {
                 from,
                 call,
                 request: PeerRequest::CreateAgent(create),
-            } => match peer_create(self.plan.hosts[h].id, create.clone(), self.w.now_ms) {
+            } => match peer_create(create.clone(), self.w.now_ms) {
                 Some(request) => Input::ClientCall { call, request },
                 None => Input::PeerCall {
                     from,
@@ -2128,13 +2073,10 @@ impl Transition<'_> {
                 // Channels are the links' own here: a call is carried
                 // whenever its link is up. Pairing, relays and the shell's
                 // bookkeeping have no part in a net of cores.
-                Output::OpenChannel { .. }
-                | Output::ChannelRefused { .. }
-                | Output::CloseChannel { .. }
+                Output::Channel(_)
                 | Output::DropRoute { .. }
                 | Output::DialRelay { .. }
                 | Output::Rediscover
-                | Output::LinkControl { .. }
                 | Output::SendFile { .. }
                 | Output::ForgetAgent { .. }
                 | Output::Ingested { .. }
@@ -2232,8 +2174,7 @@ impl Transition<'_> {
             | Job::CheckpointWal
             | Job::TeardownHost { .. }
             | Job::RefreshToken { .. }
-            | Job::SendPush(_)
-            | Job::Upload(_) => JobResult::Done,
+            | Job::SendPush(_) => JobResult::Done,
         })
     }
 
@@ -2264,7 +2205,7 @@ impl Transition<'_> {
                 inputs: Vec::new(),
             });
         let mut out = Vec::new();
-        let core = Agent::<Kind>::start(&spec, resumed, PRODUCER, self.w.now_ms, &mut out);
+        let core = Agent::<Kind>::start(&spec, resumed, self.w.now_ms, &mut out);
         self.w.specs.insert(agent_id, Dbg(spec));
         let p = self.w.processes.len();
         self.w.processes.push(Process {
@@ -2430,9 +2371,7 @@ impl Transition<'_> {
         let (h, agent_id) = (process.host, process.agent);
         if let Some(Core(value)) = process.core.take() {
             let core = Agent::<Kind>::from_value(&value).expect("an agent's value restores");
-            self.w
-                .resumes
-                .insert(agent_id, core.checkpoint().state.clone());
+            self.w.resumes.insert(agent_id, core.checkpoint());
         }
         if self.w.running.get(&agent_id) == Some(&p) {
             self.w.running.remove(&agent_id);
@@ -2540,14 +2479,8 @@ impl Transition<'_> {
             // As the daemon's driver does, a Hello is followed by a read of
             // the journal: what the process wrote before it dialled was
             // nudged to nobody.
-            Some(ctl_frame::Of::Hello(hello)) => {
-                self.feed(
-                    h,
-                    Input::AgentHello {
-                        agent: agent_id,
-                        hello,
-                    },
-                );
+            Some(ctl_frame::Of::Hello(_)) => {
+                self.feed(h, Input::AgentHello { agent: agent_id });
                 self.feed(h, Input::Nudge { agent: agent_id });
             }
             Some(ctl_frame::Of::Nudge(_)) => self.feed(h, Input::Nudge { agent: agent_id }),
@@ -2670,8 +2603,7 @@ fn rehome(output: Output, scratch: &Path, home: &Path) -> Output {
             dir: moved(dir),
             spec,
         },
-        // The core's checkpoint names the directory it was taken in, and
-        // nothing here reads the state back.
+        // Nothing here reads the state back, so the net need not hold it.
         Output::Checkpoint { .. } => Output::Checkpoint { state: Vec::new() },
         other => other,
     }
@@ -2681,15 +2613,10 @@ fn rehome(output: Output, scratch: &Path, home: &Path) -> Output {
 /// core through the client service: its spec built as a client's create's
 /// is, with the parent and the first prompt the request names. None when
 /// the request names no agent id.
-fn peer_create(
-    host: HostId,
-    request: wire::CreateAgentRequest,
-    now_ms: u64,
-) -> Option<ClientRequest> {
+fn peer_create(request: wire::CreateAgentRequest, now_ms: u64) -> Option<ClientRequest> {
     let agent = AgentId::from_slice(&request.agent_id)?;
     let mut spec = super::agent_spec(
         agent,
-        host,
         &request.cwd,
         request.parent,
         None,
@@ -2743,7 +2670,7 @@ fn addressed_to_process(delivery: &Delivery) -> Option<usize> {
     }
 }
 
-/// A served call's unary reply, as the peer service carries it.
+/// A served call's unary reply, as a paired host's call carries it.
 fn reply_of(response: Response) -> Option<PeerReply> {
     match response {
         Response::Fetched(fetched) => Some(PeerReply::Fetched(fetched)),
@@ -2754,7 +2681,7 @@ fn reply_of(response: Response) -> Option<PeerReply> {
     }
 }
 
-/// A refusal as the peer service sends it.
+/// A refusal as a paired host's call receives it.
 /// The wire error a call ending in `error` reaches a caller as, by
 /// node's mapping.
 pub fn wire_error(error: &CallError) -> wire::Error {
@@ -2867,7 +2794,7 @@ fn job_kind(job: &Job) -> &'static str {
         Job::RefreshToken { .. } => "RefreshToken",
         Job::SendPush(_) => "SendPush",
         Job::NextSpec { .. } => "NextSpec",
-        Job::Upload(_) => "Upload",
+
         Job::KillAgent { .. } => "KillAgent",
         Job::AwaitUnlocked { .. } => "AwaitUnlocked",
         Job::RemoveDir { .. } => "RemoveDir",
@@ -2894,9 +2821,10 @@ struct Scratch {
 
 impl Scratch {
     fn of(&mut self, id: HostId) -> &mut (Slot, Dir) {
-        self.hosts
-            .entry(id)
-            .or_insert_with(|| (Slot::new(&id.0), Dir::new()))
+        self.hosts.entry(id).or_insert_with(|| {
+            let dir = Dir::new();
+            (Slot::beside(&id.0, &dir), dir)
+        })
     }
 }
 
@@ -2905,70 +2833,6 @@ fn with_scratch<R>(f: impl FnOnce(&mut Scratch) -> R) -> R {
         static SCRATCH: RefCell<Scratch> = RefCell::new(Scratch { hosts: HashMap::new() });
     }
     SCRATCH.with(|scratch| f(&mut scratch.borrow_mut()))
-}
-
-/// A directory holding one host's agents' journals, laid out only where
-/// they differ from what a step starts from.
-struct Dir {
-    dir: tempfile::TempDir,
-    holds: BTreeMap<AgentId, Journal>,
-}
-
-impl Dir {
-    fn new() -> Self {
-        Self {
-            dir: tempfile::tempdir().expect("a directory for agents"),
-            holds: BTreeMap::new(),
-        }
-    }
-
-    fn path(&self) -> &Path {
-        self.dir.path()
-    }
-
-    fn lay_out(&mut self, journals: &BTreeMap<AgentId, Journal>) {
-        if self.holds == *journals {
-            return;
-        }
-        let agents: BTreeSet<AgentId> = self.holds.keys().chain(journals.keys()).copied().collect();
-        for agent in agents {
-            let (held, wanted) = (self.holds.get(&agent), journals.get(&agent));
-            if held == wanted {
-                continue;
-            }
-            let dir = daemon_core::ingest::journal_dir(self.dir.path(), agent);
-            let _ = std::fs::remove_dir_all(&dir);
-            if let Some(journal) = wanted {
-                std::fs::create_dir_all(&dir).expect("the journal directory");
-                for (start, bytes) in journal {
-                    std::fs::write(journal::segment_path(&dir, *start), bytes)
-                        .expect("a segment is written");
-                }
-            }
-        }
-        self.holds = journals.clone();
-    }
-
-    /// Drops from `journals` the segments a step reclaimed.
-    fn reclaimed(&mut self, journals: &mut BTreeMap<AgentId, Journal>) {
-        let mut changed = false;
-        for (agent, journal) in journals.iter_mut() {
-            if journal.len() <= 1 {
-                continue;
-            }
-            let dir = daemon_core::ingest::journal_dir(self.dir.path(), *agent);
-            let left: BTreeSet<u64> = journal::segments(&dir)
-                .unwrap_or_default()
-                .into_iter()
-                .collect();
-            let before = journal.len();
-            journal.retain(|start, _| left.contains(start));
-            changed |= journal.len() != before;
-        }
-        if changed {
-            self.holds = journals.clone();
-        }
-    }
 }
 
 #[cfg(test)]

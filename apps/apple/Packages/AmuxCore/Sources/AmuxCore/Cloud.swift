@@ -23,7 +23,6 @@ public protocol CloudService: Sendable {
     /// Where a fresh bearer comes from once the one a sign-in obtained has
     /// expired: the runtime whose profile holds the account's refresh token.
     func lend(from lender: @escaping @Sendable (AccountId) async -> String?) async
-    func account(_ id: AccountId) async throws(CloudError) -> AccountFacts
     func entitlement(_ id: AccountId) async throws(CloudError) -> Entitlement
     /// Hands over a purchase the App Store signed, so the subscription it paid
     /// for becomes this account's.
@@ -103,20 +102,6 @@ public struct SignedInAccount: Sendable, Equatable, Codable {
         self.email = email
         self.displayName = displayName
         self.picture = picture
-    }
-}
-
-public struct AccountFacts: Sendable, Equatable, Codable {
-    public var id: AccountId
-    public var email: String
-    public var displayName: String?
-    public var entitlement: Entitlement
-
-    public init(id: AccountId, email: String, displayName: String? = nil, entitlement: Entitlement) {
-        self.id = id
-        self.email = email
-        self.displayName = displayName
-        self.entitlement = entitlement
     }
 }
 

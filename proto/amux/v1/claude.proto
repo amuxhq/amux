@@ -4,9 +4,9 @@ package amux.v1;
 
 import "amux/v1/chat.proto";
 
-// Claude's per-kind bodies: the item and snapshot messages encoded into
-// Item.body and Snapshot.body for kinds claude_pty and claude_sdk, the
-// inputs each accepts, and the answers inside them.
+// Claude's bodies: the item and snapshot messages encoded into Item.body
+// and Snapshot.body for both kinds claude_pty and claude_sdk, the inputs
+// each kind accepts, and the answers inside them.
 
 message ClaudeCreateConfig {
   // Extra provider arguments exactly as the person gave them.
@@ -19,10 +19,10 @@ message ClaudeCreateConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Claude in a terminal
+// Items and snapshots (for both Claude kinds)
 // ---------------------------------------------------------------------------
 
-message ClaudePtyItem {
+message ClaudeItem {
   oneof kind {
     Prompt prompt = 1;
     Text message = 2;
@@ -30,8 +30,6 @@ message ClaudePtyItem {
     ToolCall tool = 4;
     Turn turn = 5;
     Compaction compaction = 6;
-    CompactSummary compact_summary = 7;
-    Interruption interruption = 8;
     AgentMessage agent_message = 9;
     ApiError api_error = 10;
     Boundary boundary = 11;
@@ -39,110 +37,19 @@ message ClaudePtyItem {
     Unrecognized unrecognized = 13;
     // A prompt delivered into the running turn; the text is the envelope's.
     Steer steer = 14;
-    // A dialog Claude shows in its own terminal that no hook can answer: an
-    // unanswerable ask that is its own row.
+    // An ask that is its own row: a tool server's form or link, or a
+    // dialog terminal Claude shows that no hook can answer.
     AskItem ask = 15;
     // The plan Claude declared, keyed by the call that declared it.
     Plan plan = 16;
+    Task task = 17;
+    Status status = 18;
+    ModelSwitch model_switch = 19;
   }
 }
 
-// The summary a compaction wrote into the transcript; the summary is the
-// envelope text.
-message CompactSummary {}
-
-// "You stopped it."
-message Interruption {}
-
-// Phase lives in the Snapshot envelope, once.
-message ClaudePtySnapshot {
-  repeated Ask asks = 1;
-  TaskList tasks = 2;
-  ContextMeter context = 3;
-  optional string model = 4;
-  // The running model as a person reads it; absent while the model is.
-  optional string model_name = 5;
-  optional string permission = 6;
-  // Absent until SessionStart or the first system event names it.
-  optional string provider_session = 7;
-  ClaudeUsage usage = 8;
-  ToolServerHealth servers = 9;
-  SignIn sign_in = 10;
-  BackgroundJobs background_jobs = 11;
-  // The calls PreToolUse hooks announced that no result has ended yet,
-  // oldest first. A call's transcript row can lag its hook by seconds while
-  // a background task runs, so the activity line reads the call from here
-  // until then.
-  repeated RunningCall running_calls = 12;
-  // The reasoning effort Claude last recorded running with; absent until it
-  // has. A provider string, validated against the catalogue's model levels.
-  optional string effort = 13;
-  // Claude's own view resumed another conversation, so it shows one that is
-  // not this agent's; prompts are refused until it is back. The phase is
-  // left as it is.
-  optional bool switched_away = 14;
-}
-
-message RunningCall {
-  string tool_use_id = 1;
-  string tool_name = 2;
-  int64 since_ms = 3;
-}
-
-message ClaudePtyInput {
-  oneof of {
-    PromptInput prompt = 1;
-    ClaudeAnswer answer = 2;
-    // Terminal Claude's permission-mode cycle, the one keystroke a remote
-    // client sends; the agent process emits the bytes for the Claude it
-    // runs. Raw terminal bytes never cross the wire; anything else is
-    // typed at the machine.
-    CyclePermissionMode cycle_permission_mode = 3;
-    Clear clear = 4;
-    Interrupt interrupt = 5;
-    WithdrawQueued withdraw = 6;
-    SendQueuedNow send_now = 7;
-    // Back to this agent's conversation after Claude's own view switched
-    // away: types `/resume <this agent's session>`.
-    SwitchBack switch_back = 8;
-  }
-}
-
-message CyclePermissionMode {}
-
-message SwitchBack {}
-
-// ---------------------------------------------------------------------------
-// Claude through the SDK
-// ---------------------------------------------------------------------------
-
-message ClaudeSdkItem {
-  oneof kind {
-    Prompt prompt = 1;
-    Text message = 2;
-    Thinking thinking = 3;
-    ToolCall tool = 4;
-    Task task = 5;
-    Turn turn = 6;
-    Status status = 7;
-    Boundary boundary = 8;
-    AgentMessage agent_message = 9;
-    ApiError api_error = 10;
-    SlashOutput slash = 11;
-    Unrecognized unrecognized = 12;
-    ModelSwitch model_switch = 13;
-    Compaction compaction = 14;
-    // A prompt delivered into the running turn; the text is the envelope's.
-    Steer steer = 15;
-    // A tool-server form or link: an ask that is the work.
-    AskItem ask = 16;
-    // The plan Claude declared, keyed by the call that declared it.
-    Plan plan = 17;
-  }
-}
-
-// A task the SDK reports whose starting call it never showed; a task of a
-// known call is progress on that call instead.
+// A task headless Claude reports whose starting call it never showed; a
+// task of a known call is progress on that call instead.
 message Task {
   string task_id = 1;
   string description = 2;
@@ -171,10 +78,10 @@ message Status {
 enum SdkStatus {
   SDK_STATUS_UNSPECIFIED = 0;
   SDK_STATUS_COMPACTING = 1;
-  SDK_STATUS_REQUESTING = 2;
 }
 
-message ClaudeSdkSnapshot {
+// Phase lives in the Snapshot envelope, once.
+message ClaudeSnapshot {
   repeated Ask asks = 1;
   TaskList tasks = 2;
   ContextMeter context = 3;
@@ -183,32 +90,43 @@ message ClaudeSdkSnapshot {
   // from, else the entry whose value is its id, else its id tidied.
   // Absent while the model is.
   optional string model_name = 5;
-  optional string effort = 6;
-  optional string permission = 7;
-  repeated Task active_tasks = 8;
-  ClaudeUsage usage = 9;
-  ToolServerHealth servers = 10;
-  SignIn sign_in = 11;
-  BackgroundJobs background_jobs = 12;
-  // Absent until the init event names it.
-  optional string provider_session = 13;
+  optional string permission = 6;
+  // Absent until the session's start names it.
+  optional string provider_session = 7;
+  ClaudeUsage usage = 8;
+  repeated ToolServer servers = 9;
+  SignIn sign_in = 10;
+  BackgroundJobs background_jobs = 11;
+  // Terminal Claude's calls PreToolUse hooks announced that no result has
+  // ended yet, oldest first. A call's transcript row can lag its hook by
+  // seconds while a background task runs, so the activity line reads the
+  // call from here until then.
+  repeated RunningCall running_calls = 12;
+  // The reasoning effort Claude runs with; absent until it says. A
+  // provider string, validated against the catalogue's model levels.
+  optional string effort = 13;
+  // Terminal Claude's own view resumed another conversation, so it shows
+  // one that is not this agent's; prompts are refused until it is back.
+  // The phase is left as it is.
+  optional bool switched_away = 14;
+  // The subagents and tasks headless Claude reports running.
+  repeated Task active_tasks = 15;
   // What it offers is in the catalogue the Snapshot names.
 }
 
-message ClaudeSdkInput {
-  oneof of {
-    PromptInput prompt = 1;
-    ClaudeAnswer answer = 2;
-    Interrupt interrupt = 3;
-    SetPermission permission = 4;
-    SetModel model = 5;
-    Clear clear = 6;
-    WithdrawQueued withdraw = 7;
-    SetEffort effort = 8;
-    SendQueuedNow send_now = 9;
-    StopJob stop_job = 10;
-  }
+message RunningCall {
+  string tool_use_id = 1;
+  string tool_name = 2;
+  int64 since_ms = 3;
 }
+
+// ---------------------------------------------------------------------------
+// Claude in a terminal
+// ---------------------------------------------------------------------------
+
+message CyclePermissionMode {}
+
+message SwitchBack {}
 
 // ---------------------------------------------------------------------------
 // Usage (for both Claude kinds)
@@ -234,19 +152,6 @@ message ClaudeUsageWindow {
 // Answers (for both Claude kinds)
 // ---------------------------------------------------------------------------
 
-// Rejected REFUSAL_CLOSED_ASK if ask_key is not open.
-message ClaudeAnswer {
-  string ask_key = 1;
-  oneof of {
-    PermissionAnswer permission = 2;
-    QuestionAnswer question = 3;
-    PlanAnswer plan = 4;
-    FormAnswer form = 5;
-    LinkAnswer link = 6;
-    ReplyInstead reply = 7;
-  }
-}
-
 message PermissionAnswer {
   oneof of {
     PermissionAllow allow = 1;
@@ -255,7 +160,7 @@ message PermissionAnswer {
 }
 
 message PermissionAllow {
-  // A ScopeChoice.index from the ask; absent allows once.
+  // The position of a scope in the ask's scopes; absent allows once.
   optional uint32 scope = 1;
 }
 

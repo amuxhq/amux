@@ -18,7 +18,7 @@ use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 use ui_state::{
     BlobStatus, Connection, InputId, InputOutcome, InputState, Key, Msg, Outcome, Refusal,
-    RefusalReason, SessionState,
+    SessionState,
 };
 use ui_view::SessionLine;
 use wire::dump::{ClientSessionEvents, ClientSessionHistory, ClientTraced, client_traced};
@@ -112,12 +112,18 @@ struct Model {
     /// What home last drew for this agent, as of the rows applied so far;
     /// home is woken when a row moves it.
     home_line: Option<SessionLine>,
+    /// The prompts held for an unreachable host as last told, by id.
+    held_told: Vec<InputId>,
 }
 
 /// Called when something outside the rows arrived on the stream, or rows
 /// that move the line home draws for the agent: what the fleet's home is
 /// woken by.
 pub(crate) type HomeWake = Box<dyn Fn() + Send + Sync>;
+
+/// Told the prompts a session holds for an unreachable host, oldest first,
+/// each as the draft it came from, whenever they change.
+pub(crate) type HeldTold = Box<dyn Fn(Vec<wire::Draft>) + Send + Sync>;
 
 /// The catalogues this client fetched, by hash: one fetch per version,
 /// shared by every chat whose agent offers the same.
@@ -147,6 +153,7 @@ pub(crate) struct Inner {
     model: Mutex<Model>,
     changed: watch::Sender<()>,
     home: OnceLock<HomeWake>,
+    held: OnceLock<HeldTold>,
     /// Whether anybody takes the changes: a session held off screen does
     /// not gather them, so they cannot grow while nobody reads them.
     gathering: AtomicBool,
@@ -193,6 +200,7 @@ impl Inner {
             changes,
             changed_keys,
             home_line,
+            held_told,
             ..
         } = &mut *model;
         trace.record(state, at_ms, TraceEvent::Msg(msg.clone()));
@@ -202,6 +210,29 @@ impl Inner {
             *cut = Some(trace.trace());
         }
         let read = read(state);
+        // Told under the same guard, so two messages applied at once are
+        // never told out of order; the listener never reads the session.
+        if let Some(told) = self.held.get() {
+            let held = || {
+                state.held().filter_map(|sent| match &sent.what {
+                    ui_state::InputWhat::Prompt { text, attachments } => {
+                        Some((sent, text, attachments))
+                    }
+                    _ => None,
+                })
+            };
+            if !held().map(|(sent, ..)| &sent.id).eq(held_told.iter()) {
+                *held_told = held().map(|(sent, ..)| sent.id.clone()).collect();
+                told(
+                    held()
+                        .map(|(_, text, attachments)| wire::Draft {
+                            text: text.clone(),
+                            attachments: attachments.clone(),
+                        })
+                        .collect(),
+                );
+            }
+        }
         if self.gathering.load(Ordering::Acquire) {
             changes.absorb(&outcome, changed_keys);
         }
@@ -246,7 +277,9 @@ impl Inner {
     fn subscribe_request(&self) -> SubscribeSessionRequest {
         SubscribeSessionRequest {
             agent_id: self.agent_id.clone(),
-            tail: self.tail.load(Ordering::Acquire),
+            from: Some(wire::subscribe_session_request::From::Tail(
+                self.tail.load(Ordering::Acquire),
+            )),
         }
     }
 
@@ -574,9 +607,11 @@ impl Session {
                 blobs: HashMap::new(),
                 ended: None,
                 home_line: None,
+                held_told: Vec::new(),
             }),
             changed,
             home: OnceLock::new(),
+            held: OnceLock::new(),
             gathering: AtomicBool::new(on_screen),
             reload: Notify::new(),
             closed: AtomicBool::new(false),
@@ -656,6 +691,12 @@ impl Session {
             model.home_line = Some(ui_view::session_line(&model.state, 0));
         }
         let _ = self.inner.home.set(wake);
+    }
+
+    /// Tells `told` the prompts the session holds for an unreachable host
+    /// each time they change.
+    pub(crate) fn on_held(&self, told: HeldTold) {
+        let _ = self.inner.held.set(told);
     }
 
     /// Sets the window: the tail a reopened stream starts with and the most
@@ -826,18 +867,8 @@ impl Session {
         self.inner.send(input).await
     }
 
-    /// A prompt in this agent's kind.
     pub async fn send_prompt(&self, text: &str, attachments: Vec<wire::Attachment>) -> Sent {
-        match inputs::prompt(self.kind(), text, attachments) {
-            Some(input) => self.send(input).await,
-            None => Sent {
-                id: Vec::new(),
-                outcome: InputOutcome::Reply(rejected(wire::Rejected {
-                    refusal: wire::Refusal::Unsupported as i32,
-                    detail: None,
-                })),
-            },
-        }
+        self.send(inputs::prompt(text, attachments)).await
     }
 
     /// Resumes an exited agent with no first message.
@@ -860,9 +891,7 @@ impl Session {
         }
         let id = draft.input_id.clone();
         // The draft shows as a prompt on its way until the resume answers.
-        if let Some(sending) = inputs::submitted(self.kind(), &draft) {
-            self.inner.apply(Msg::Send(sending));
-        }
+        self.inner.apply(Msg::Send(inputs::submitted(&draft)));
         let request = ResumeAgentRequest {
             agent_id: self.inner.agent_id.clone(),
             initial_prompt: Some(draft),
@@ -900,34 +929,34 @@ impl Session {
 
     /// Takes a queued prompt back out of the queue.
     pub async fn withdraw(&self, queued: &[u8]) -> Result<(), InputError> {
-        self.act(inputs::withdraw(self.kind(), queued)).await
+        self.act(inputs::withdraw(queued)).await
     }
 
     /// Steers a queued prompt into the running turn; the entry reads
     /// steered until its reflection lands.
     pub async fn send_now(&self, queued: &[u8]) -> Result<(), InputError> {
-        self.act(inputs::send_now(self.kind(), queued)).await
+        self.act(inputs::send_now(queued)).await
     }
 
     /// Answers an open ask with the input `ui_view::answer_input` made
     /// from its card and the person's choice; any open ask can be answered.
     pub async fn answer(&self, input: Input) -> Result<(), InputError> {
-        self.act(Some(input)).await
+        self.act(input).await
     }
 
     pub async fn interrupt(&self) -> Result<(), InputError> {
-        self.act(inputs::interrupt(self.kind())).await
+        self.act(inputs::interrupt()).await
     }
 
     /// Stops one background job by its key; the agent keeps running.
     pub async fn stop_job(&self, key: &str) -> Result<(), InputError> {
-        self.act(inputs::stop_job(self.kind(), key)).await
+        self.act(inputs::stop_job(key)).await
     }
 
     /// Takes the agent's own view back to its conversation after it
     /// switched to another (terminal Claude).
     pub async fn switch_back(&self) -> Result<(), InputError> {
-        self.act(inputs::switch_back(self.kind())).await
+        self.act(inputs::switch_back()).await
     }
 
     /// Forgets an input that was not confirmed.
@@ -935,12 +964,16 @@ impl Session {
         self.inner.apply(Msg::Discard(id.to_vec()));
     }
 
-    async fn act(&self, input: Option<Input>) -> Result<(), InputError> {
-        let Some(input) = input else {
-            return Err(InputError::Rejected(Refusal::of(
-                RefusalReason::Unsupported,
-            )));
-        };
+    /// Sends a not-confirmed input again under a new id, forgetting the
+    /// old one; None when this client sent no such input.
+    pub async fn resend(&self, id: &[u8]) -> Option<Sent> {
+        let mut input = self.state().inputs().get(id)?.input.clone();
+        self.discard(id);
+        input.input_id.clear();
+        Some(self.send(input).await)
+    }
+
+    async fn act(&self, input: Input) -> Result<(), InputError> {
         let sent = self.send(input).await;
         if self.inner.model().state.input_state(&sent.id) == Some(InputState::Held) {
             return Err(InputError::Held);
@@ -957,10 +990,6 @@ impl Session {
             }
             InputOutcome::Held => Err(InputError::Held),
         }
-    }
-
-    fn kind(&self) -> wire::Kind {
-        self.inner.model().state.kind()
     }
 
     /// An attachment's bytes, if fetched. A missing one starts its fetch,
@@ -1020,10 +1049,6 @@ impl Session {
     pub fn history(&self) -> ClientSessionHistory {
         self.inner.history()
     }
-
-    /// Drops the stream. Nothing is flushed: nothing was kept. Results of
-    /// calls still in flight change nothing.
-    pub fn close(self) {}
 }
 
 impl Drop for Session {

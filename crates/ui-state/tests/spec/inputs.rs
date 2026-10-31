@@ -1,7 +1,7 @@
 //! The five input states, resolution at CaughtUp, the exited composer and
 //! steering a queued prompt.
 
-use ui_state::{Composer, InputOutcome, InputState, Msg, Refusal, RefusalReason, SessionState};
+use ui_state::{Composer, InputOutcome, InputState, Msg, Refusal, SessionState};
 use wire::{Kind, Phase};
 
 use crate::spec::harness::*;
@@ -21,7 +21,7 @@ fn live(kind: Kind, phase: Phase, queue: &[(&[u8], bool)]) -> SessionState {
 fn a_prompt_is_sent_then_settled_by_its_reflection() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Idle, &[]);
-        apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "go")));
+        apply_checked(&mut state, Msg::Send(prompt_input(b"p1", "go")));
         assert_eq!(state.input_state(b"p1"), Some(InputState::Sent));
         assert_eq!(state.sending().count(), 1, "the optimistic row exists");
         apply_checked(&mut state, Msg::Sent(b"p1".to_vec(), accepted(false)));
@@ -44,7 +44,7 @@ fn a_prompt_is_sent_then_settled_by_its_reflection() {
 fn a_reflection_that_beats_the_reply_settles_it() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Idle, &[]);
-        apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "go")));
+        apply_checked(&mut state, Msg::Send(prompt_input(b"p1", "go")));
         apply_checked(&mut state, ev_item(prompt(kind, 2, 6, "go", b"p1")));
         apply_checked(&mut state, Msg::Sent(b"p1".to_vec(), accepted(false)));
         assert_eq!(state.input_state(b"p1"), Some(InputState::Settled));
@@ -55,7 +55,7 @@ fn a_reflection_that_beats_the_reply_settles_it() {
 fn a_queued_prompt_is_queued_until_it_leaves_the_queue() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Working, &[]);
-        apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "next")));
+        apply_checked(&mut state, Msg::Send(prompt_input(b"p1", "next")));
         apply_checked(&mut state, Msg::Sent(b"p1".to_vec(), accepted(true)));
         assert_eq!(state.input_state(b"p1"), Some(InputState::Queued));
         // A snapshot from before the queueing does not settle it.
@@ -87,7 +87,7 @@ fn a_queued_prompt_listed_before_its_reply_settles_when_it_leaves() {
     for kind in KINDS {
         // Withdrawn after the reply.
         let mut state = live(kind, Phase::Working, &[]);
-        apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "next")));
+        apply_checked(&mut state, Msg::Send(prompt_input(b"p1", "next")));
         apply_checked(
             &mut state,
             ev_snapshot(snapshot(kind, 6, Phase::Working, &[], &[(b"p1", false)])),
@@ -102,7 +102,7 @@ fn a_queued_prompt_listed_before_its_reply_settles_when_it_leaves() {
 
         // Withdrawn before the reply arrived.
         let mut state = live(kind, Phase::Working, &[]);
-        apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p2", "next")));
+        apply_checked(&mut state, Msg::Send(prompt_input(b"p2", "next")));
         apply_checked(
             &mut state,
             ev_snapshot(snapshot(kind, 6, Phase::Working, &[], &[(b"p2", false)])),
@@ -121,7 +121,7 @@ fn a_rejection_is_final_and_touches_no_row() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Idle, &[]);
         let before = projection(state.transcript());
-        apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "go")));
+        apply_checked(&mut state, Msg::Send(prompt_input(b"p1", "go")));
         let outcome = apply_checked(
             &mut state,
             Msg::Sent(b"p1".to_vec(), rejected(wire::Refusal::Draining)),
@@ -129,7 +129,7 @@ fn a_rejection_is_final_and_touches_no_row() {
         assert!(outcome.changed.is_empty());
         assert_eq!(
             state.input_state(b"p1"),
-            Some(InputState::Rejected(Refusal::of(RefusalReason::Draining)))
+            Some(InputState::Rejected(Refusal::of(wire::Refusal::Draining)))
         );
         assert_eq!(projection(state.transcript()), before);
     }
@@ -139,14 +139,8 @@ fn a_rejection_is_final_and_touches_no_row() {
 fn an_uncertain_input_found_in_the_queue_or_items_at_caught_up_resolves() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Working, &[]);
-        apply_checked(
-            &mut state,
-            Msg::Send(prompt_input(kind, b"q", "queued one")),
-        );
-        apply_checked(
-            &mut state,
-            Msg::Send(prompt_input(kind, b"r", "reflected one")),
-        );
+        apply_checked(&mut state, Msg::Send(prompt_input(b"q", "queued one")));
+        apply_checked(&mut state, Msg::Send(prompt_input(b"r", "reflected one")));
         apply_checked(
             &mut state,
             Msg::Connection(ui_state::Connection::Reconnecting),
@@ -189,10 +183,7 @@ fn an_uncertain_input_found_in_the_queue_or_items_at_caught_up_resolves() {
 fn a_prompt_withdrawn_before_a_reset_is_never_shown_as_queued() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Working, &[]);
-        apply_checked(
-            &mut state,
-            Msg::Send(prompt_input(kind, b"W", "withdraw me")),
-        );
+        apply_checked(&mut state, Msg::Send(prompt_input(b"W", "withdraw me")));
         apply_checked(&mut state, Msg::Sent(b"W".to_vec(), InputOutcome::Lost));
         let mut ever_queued = false;
         for msg in [
@@ -233,7 +224,7 @@ fn an_exited_chat_offers_resume_for_the_draft() {
 fn a_send_that_raced_the_exit_flips_the_composer_to_resume() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Idle, &[]);
-        apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "draft")));
+        apply_checked(&mut state, Msg::Send(prompt_input(b"p1", "draft")));
         apply_checked(
             &mut state,
             Msg::Sent(b"p1".to_vec(), rejected(wire::Refusal::Exited)),
@@ -245,14 +236,10 @@ fn a_send_that_raced_the_exit_flips_the_composer_to_resume() {
         );
         assert_eq!(
             state.input_state(b"p1"),
-            Some(InputState::Rejected(Refusal::of(RefusalReason::Exited)))
+            Some(InputState::Rejected(Refusal::of(wire::Refusal::Exited)))
         );
         let draft = &state.inputs().get(b"p1").unwrap().input;
-        assert_eq!(
-            draft,
-            &prompt_input(kind, b"p1", "draft"),
-            "the draft is intact"
-        );
+        assert_eq!(draft, &prompt_input(b"p1", "draft"), "the draft is intact");
         // A stale live entry of the same incarnation does not undo it.
         apply_checked(&mut state, Msg::Entry(agent(kind)));
         assert_eq!(state.composer(), Composer::Resume);
@@ -281,10 +268,7 @@ fn late_results_after_a_reopen_are_ignored() {
 fn send_now_marks_a_queued_prompt_steered_until_its_reflection() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Working, &[]);
-        apply_checked(
-            &mut state,
-            Msg::Send(prompt_input(kind, b"p1", "also check x")),
-        );
+        apply_checked(&mut state, Msg::Send(prompt_input(b"p1", "also check x")));
         apply_checked(&mut state, Msg::Sent(b"p1".to_vec(), accepted(true)));
         apply_checked(
             &mut state,
@@ -294,7 +278,7 @@ fn send_now_marks_a_queued_prompt_steered_until_its_reflection() {
             !state.queue()[0].steered,
             "prompts never steer on their own"
         );
-        apply_checked(&mut state, Msg::Send(send_now_input(kind, b"s1", b"p1")));
+        apply_checked(&mut state, Msg::Send(send_now_input(b"s1", b"p1")));
         assert!(
             state.queue()[0].steered,
             "steered while Send now is in flight"
@@ -325,7 +309,7 @@ fn send_now_marks_a_queued_prompt_steered_until_its_reflection() {
 fn a_host_unreachable_rejection_holds_the_prompt_until_the_chat_catches_up() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Idle, &[]);
-        apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "go")));
+        apply_checked(&mut state, Msg::Send(prompt_input(b"p1", "go")));
         apply_checked(
             &mut state,
             Msg::Sent(b"p1".to_vec(), rejected(wire::Refusal::HostUnreachable)),
@@ -385,7 +369,7 @@ fn a_prompt_held_after_its_host_came_back_goes_at_once() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Idle, &[]);
         apply_checked(&mut state, host(away()));
-        apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "go")));
+        apply_checked(&mut state, Msg::Send(prompt_input(b"p1", "go")));
         apply_checked(&mut state, host(online()));
         let outcome = apply_checked(
             &mut state,
@@ -404,7 +388,7 @@ fn a_prompt_held_while_its_host_read_online_goes_at_its_next_online_word() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Idle, &[]);
         apply_checked(&mut state, host(online()));
-        apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "go")));
+        apply_checked(&mut state, Msg::Send(prompt_input(b"p1", "go")));
         let outcome = apply_checked(
             &mut state,
             Msg::Sent(b"p1".to_vec(), rejected(wire::Refusal::HostUnreachable)),

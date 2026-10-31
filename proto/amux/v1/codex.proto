@@ -24,7 +24,6 @@ message CodexItem {
     Text message = 2;
     Reasoning reasoning = 3;
     Work work = 4;
-    McpStartup mcp_startup = 5;
     Turn turn = 6;
     // A prompt delivered into the running turn; the text is the envelope's.
     Steer steer = 7;
@@ -34,7 +33,6 @@ message CodexItem {
     Unrecognized unrecognized = 12;
     // Working notes, marked apart from the final answer.
     Text working_note = 13;
-    TurnDiff turn_diff = 14;
     ReviewerVerdict verdict = 15;
     // A question, access grant, tool-server form or link: an ask that is
     // the work.
@@ -153,17 +151,6 @@ message CollabWork {
   string prompt = 3;
 }
 
-message McpStartup {
-  string server = 1;
-  ToolServerStatus status = 2;
-  string error = 3;
-}
-
-// The whole-turn diff Codex reports at turn end.
-message TurnDiff {
-  string patch = 1;
-}
-
 // An automatic reviewer's verdict on an action.
 message ReviewerVerdict {
   ReviewStatus status = 1;
@@ -191,21 +178,15 @@ message CodexSnapshot {
   // The running model as a person reads it: the catalogue entry whose value
   // is its id, else its id tidied. Absent while the model is.
   optional string model_name = 4;
-  // The permission the raw settings below name; absent when they match no
-  // name, which reads as custom.
+  // The permission Codex's approval policy, sandbox and reviewer name;
+  // absent when they match no name, which reads as custom.
   optional string permission = 5;
   // The mode the collaboration mode names: "default" or "plan"; absent
   // until Codex says, or when it names neither.
   optional string mode = 6;
-  // Codex's own settings, absent until Codex says.
+  // Codex's own approval policy, absent until Codex says.
   optional string approval_policy = 7;
-  optional string sandbox = 8;
-  // Who answers approvals: "user", or a reviewer model ("auto_review").
-  optional string approvals_reviewer = 9;
-  optional string collaboration_mode = 10;
-  // Absent while no turn is known to be running.
-  optional string active_turn = 11;
-  ToolServerHealth servers = 12;
+  repeated ToolServer servers = 12;
   CodexUsage usage = 13;
   SignIn sign_in = 14;
   BackgroundJobs background_jobs = 15;
@@ -276,21 +257,6 @@ message McpToolApproval {
   bytes arguments_json = 3;
 }
 
-message CodexInput {
-  oneof of {
-    PromptInput prompt = 1;
-    CodexAnswer answer = 2;
-    Interrupt interrupt = 3;
-    SetPermission permission = 4;
-    SetMode mode = 5;
-    SetModel model = 6;
-    WithdrawQueued withdraw = 7;
-    SetEffort effort = 8;
-    SendQueuedNow send_now = 9;
-    StopJob stop_job = 10;
-  }
-}
-
 enum Decision {
   DECISION_UNSPECIFIED = 0;
   DECISION_APPROVE = 1;
@@ -306,18 +272,3 @@ enum Decision {
   DECISION_APPROVE_ALWAYS = 7;
 }
 
-// Rejected REFUSAL_CLOSED_ASK if ask_key is not open. An approval is rejected
-// REFUSAL_UNSUPPORTED when its decision is not one the ask offered.
-message CodexAnswer {
-  // CodexAsk.key: the app-server request id, or amux's own key for a plan.
-  string ask_key = 1;
-  oneof of {
-    Decision approve = 2;
-    QuestionAnswer question = 3;
-    FormAnswer form = 4;
-    LinkAnswer link = 5;
-    GrantAnswer grant = 6;
-    PlanAnswer plan = 7;
-    ReplyInstead reply = 8;
-  }
-}

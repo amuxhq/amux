@@ -26,11 +26,10 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::path::{Path, PathBuf};
 
 use daemon_core::payload::{
-    Answer, CallError, CarrierKind, ClientRequest, JobResult, MessageFrom, MessageRefusal,
-    PeerFailure, PeerReply, PeerRequest, Response, Status,
+    Answer, CarrierKind, ClientRequest, JobResult, MessageFrom, PeerFailure, PeerReply,
+    PeerRequest, Response, Status,
 };
 use daemon_core::{
     AgentId, CallId, Create, Daemon, Ended, Fingerprint, HostId, Input, Job, LinkId, Output,
@@ -38,10 +37,10 @@ use daemon_core::{
 };
 use prost::Message as _;
 use store::{AgentKey, Sqlite};
-use wire::{ErrorCode, InventoryEvent, Item, Lifecycle, Step, inventory_event};
+use wire::{InventoryEvent, Item, Lifecycle, Step, inventory_event};
 
-use crate::held::{Held, Slot};
-use crate::{Fault, Host, Machine, Property};
+use crate::held::{Dir, Held, Journal, Slot};
+use crate::{Machine, Property};
 
 /// The parent's host and the child's.
 const HOSTS: [HostId; 2] = [HostId(*b"parent-host-0000"), HostId(*b"child-host-00000")];
@@ -49,9 +48,6 @@ const PARENTS: usize = 0;
 const CHILDS: usize = 1;
 const PARENT: AgentId = AgentId(*b"parent-000000000");
 const CHILD: AgentId = AgentId(*b"child-0000000000");
-/// Where each host's core is told its agents' directories live whenever it
-/// checkpoints, so its checkpoint names the same place on every thread.
-const HOMES: [&str; 2] = ["/parent-host", "/child-host"];
 /// Each agent's journal fits one segment.
 const SEGMENT_BYTES: u64 = 1 << 20;
 /// The person's calls: creating the child, stopping and deleting the
@@ -114,9 +110,6 @@ impl FamilyDeliveries {
         }
     }
 }
-
-/// An agent's journal: each segment's start offset and its bytes.
-type Journal = BTreeMap<u64, Vec<u8>>;
 
 /// One host: its core and store, its agents' journals, and the timers its
 /// core armed for later that the model may fire.
@@ -275,8 +268,8 @@ pub enum Action {
     LinkUp,
     /// The child's host unpairs from the parent's.
     Unpair,
-    /// The world's doing: a daemon crashes and starts again.
-    Fault(Fault),
+    /// The world's doing: the host's daemon crashes and starts again.
+    Crash(usize),
     /// The world stops changing: nobody creates, stops or deletes, no
     /// process exits unasked, no turn ends, the link stays as it is, the
     /// pairing stays and no daemon crashes. What the cores asked for still
@@ -381,7 +374,7 @@ impl Machine for FamilyDeliveries {
         crate::share_sqlite_across_threads();
         let host = |index: usize| {
             let store = Sqlite::open_in_memory(HOSTS[index].0).expect("a store opens");
-            let daemon = Daemon::new(store, options(index));
+            let daemon = Daemon::new(store, options());
             let print = daemon.fingerprint();
             let (held, _) = Held::of(daemon);
             HostState {
@@ -496,8 +489,8 @@ impl Machine for FamilyDeliveries {
             out.push(Action::Unpair);
         }
         if world && s.used.crashes < self.crashes {
-            out.push(Action::Fault(Fault::Crash(Host(PARENTS as u8))));
-            out.push(Action::Fault(Fault::Crash(Host(CHILDS as u8))));
+            out.push(Action::Crash(PARENTS));
+            out.push(Action::Crash(CHILDS));
         }
     }
 
@@ -653,10 +646,9 @@ impl State {
 /// The options both cores run under: no step budget, since the model is a
 /// function of its actions alone and no step may ask for a dump because
 /// the machine ran slowly.
-fn options(index: usize) -> StartOptions {
+fn options() -> StartOptions {
     StartOptions {
         generation: 1,
-        agents: PathBuf::from(HOMES[index]),
         budget: StepBudget::UNLIMITED,
         ..StartOptions::default()
     }
@@ -723,11 +715,9 @@ impl<'a> Transition<'a> {
         let state = &mut self.next.hosts[host];
         let scratch = &mut self.scratch.dirs[host];
         scratch.lay_out(&state.journals);
-        let home = PathBuf::from(HOMES[host]);
-        let place = Some((scratch.path(), home.as_path()));
         let before = state.held.store.clone();
         let (out, print) =
-            self.scratch.slots[host].step_in(&mut state.held, input, place, Daemon::fingerprint);
+            self.scratch.slots[host].step_reading(&mut state.held, input, Daemon::fingerprint);
         state.print = print;
         if state.held.store != before {
             self.store_changed(host);
@@ -838,15 +828,7 @@ impl<'a> Transition<'a> {
                     let process = self.process(&agent.0);
                     if process.running && !process.connected {
                         process.connected = true;
-                        self.feed(
-                            host,
-                            Input::AgentHello {
-                                agent,
-                                hello: wire::AgentHello {
-                                    agent_id: agent.0.to_vec(),
-                                },
-                            },
-                        );
+                        self.feed(host, Input::AgentHello { agent });
                     }
                 }
                 Output::WriteControl { agent, frame } => {
@@ -1193,11 +1175,10 @@ impl<'a> Transition<'a> {
                     }),
                 );
             }
-            Action::Fault(Fault::Crash(Host(host))) => {
+            Action::Crash(host) => {
                 self.next.used.crashes += 1;
-                self.crash(usize::from(*host));
+                self.crash(*host);
             }
-            Action::Fault(fault) => unreachable!("the family never offers {fault:?}"),
             Action::Rest => self.next.used.rested = true,
         }
     }
@@ -1306,7 +1287,7 @@ impl<'a> Transition<'a> {
                 daemon_core::trust::TrustStore::of_hosts([HOSTS[PARENTS]])
                     .write_for_test(&mut store);
             }
-            let daemon = Daemon::new(store, options(host));
+            let daemon = Daemon::new(store, options());
             print = Some(daemon.fingerprint());
             daemon
         });
@@ -1345,21 +1326,10 @@ impl<'a> Transition<'a> {
 /// What the parent's driver sends back for a message call that ended with
 /// `status`: the reply, or the error code a refusal travels as.
 fn reply_of(status: &Status) -> Reply {
-    let code = match status {
-        Status::Ok => return Reply::Accepted,
-        Status::Failed(CallError::NoAgent)
-        | Status::Failed(CallError::Message(MessageRefusal::NoAgent | MessageRefusal::Stale)) => {
-            ErrorCode::NotFound
-        }
-        Status::Failed(CallError::Message(MessageRefusal::Unavailable)) => ErrorCode::Unavailable,
-        Status::Failed(CallError::Message(MessageRefusal::Lost)) => ErrorCode::Aborted,
-        Status::Failed(CallError::Message(MessageRefusal::Rejected(_))) => {
-            ErrorCode::FailedPrecondition
-        }
-        Status::Failed(CallError::Message(MessageRefusal::OtherHost)) => ErrorCode::Unimplemented,
-        Status::Failed(_) => ErrorCode::Internal,
-    };
-    Reply::Refused(code as i32)
+    match status {
+        Status::Ok => Reply::Accepted,
+        Status::Failed(error) => Reply::Refused(crate::net::wire_error(error).code),
+    }
 }
 
 /// This thread's stores and agents' directories, one of each per host.
@@ -1374,70 +1344,18 @@ fn with_scratch<R>(f: impl FnOnce(&mut Scratch) -> R) -> R {
     }
     SCRATCH.with(|scratch| {
         let mut scratch = scratch.borrow_mut();
-        let scratch = scratch.get_or_insert_with(|| Scratch {
-            slots: [Slot::new(&HOSTS[PARENTS].0), Slot::new(&HOSTS[CHILDS].0)],
-            dirs: [Dir::new(), Dir::new()],
+        let scratch = scratch.get_or_insert_with(|| {
+            let dirs = [Dir::new(), Dir::new()];
+            Scratch {
+                slots: [
+                    Slot::beside(&HOSTS[PARENTS].0, &dirs[PARENTS]),
+                    Slot::beside(&HOSTS[CHILDS].0, &dirs[CHILDS]),
+                ],
+                dirs,
+            }
         });
         f(scratch)
     })
-}
-
-/// A directory holding one host's agents' journals, laid out only where
-/// they differ from what a transition starts from.
-struct Dir {
-    dir: tempfile::TempDir,
-    holds: BTreeMap<AgentId, Journal>,
-}
-
-impl Dir {
-    fn new() -> Self {
-        Self {
-            dir: tempfile::tempdir().expect("a directory for agents"),
-            holds: BTreeMap::new(),
-        }
-    }
-
-    fn path(&self) -> &Path {
-        self.dir.path()
-    }
-
-    fn lay_out(&mut self, journals: &BTreeMap<AgentId, Journal>) {
-        if self.holds == *journals {
-            return;
-        }
-        let agents: BTreeSet<AgentId> = self.holds.keys().chain(journals.keys()).copied().collect();
-        for agent in agents {
-            let (held, wanted) = (self.holds.get(&agent), journals.get(&agent));
-            if held == wanted {
-                continue;
-            }
-            let dir = daemon_core::ingest::journal_dir(self.dir.path(), agent);
-            let _ = std::fs::remove_dir_all(&dir);
-            if let Some(journal) = wanted {
-                std::fs::create_dir_all(&dir).expect("the journal directory");
-                for (start, bytes) in journal {
-                    std::fs::write(journal::segment_path(&dir, *start), bytes)
-                        .expect("a segment is written");
-                }
-            }
-        }
-        self.holds = journals.clone();
-    }
-
-    fn read_back(&mut self, agent: AgentId) -> Journal {
-        let dir = daemon_core::ingest::journal_dir(self.dir.path(), agent);
-        let journal: Journal = journal::segments(&dir)
-            .expect("the journal lists")
-            .into_iter()
-            .map(|start| {
-                let bytes =
-                    std::fs::read(journal::segment_path(&dir, start)).expect("a segment reads");
-                (start, bytes)
-            })
-            .collect();
-        self.holds.insert(agent, journal.clone());
-        journal
-    }
 }
 
 fn hex(bytes: &[u8]) -> String {

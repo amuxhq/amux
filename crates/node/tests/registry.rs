@@ -36,63 +36,6 @@ async fn working(runtime: &node::ProfileRuntime, id: uuid::Uuid) -> Result<(), S
         .ok_or_else(|| format!("phase {phase}"))
 }
 
-/// A profile store written before the release schema stops the daemon:
-/// the error names the file and says why, and the file stays as it was
-/// for the person to move aside.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_store_from_before_the_release_schema_stops_the_daemon_and_is_kept() {
-    let install = Install::new();
-    let host = install.profile;
-    let path = install.profile_dir().join(node::STORE);
-    {
-        // The history a store written before the release recorded: seven
-        // migrations, the first of them not this build's.
-        let store = store::Sqlite::open(&path, host.as_bytes().to_vec()).unwrap();
-        let conn = store.connection();
-        conn.execute(
-            "UPDATE schema_migrations SET sha256 = \
-             'c12ecbd4ad0f378ef242319c0f137863c19e1dc5ef5a7310deeb951276b15a04' WHERE id = 1",
-            [],
-        )
-        .unwrap();
-        for id in 2..=7 {
-            conn.execute(
-                "INSERT INTO schema_migrations (id, sha256) VALUES (?1, 'pre-release')",
-                [id],
-            )
-            .unwrap();
-        }
-        conn.pragma_update(None, "user_version", 7).unwrap();
-    }
-    let before = std::fs::read(&path).unwrap();
-
-    let started = node::start(
-        install.options("boot-1", install.launch("idle", vec![])),
-        None,
-    )
-    .await;
-    let Err(error) = started else {
-        panic!("a daemon started on a store from before the release schema");
-    };
-    assert!(
-        matches!(
-            error,
-            StartError::Store {
-                error: store::OpenError::OtherHistory { id: 1, .. },
-                ..
-            }
-        ),
-        "{error}"
-    );
-    let message = error.to_string();
-    assert!(message.contains(&path.display().to_string()), "{message}");
-    assert!(
-        message.contains("predates this release's store schema"),
-        "{message}"
-    );
-    assert_eq!(std::fs::read(&path).unwrap(), before, "the store is kept");
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn the_installation_lock_admits_one_daemon() {
     let install = Install::new();
@@ -249,7 +192,7 @@ async fn startup_prepares_after_looking_and_writes_only_after_go() {
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(stamp, store::SCHEMA_STAMP, "migrated before prepared");
+        assert_eq!(stamp, store::SCHEMA_VERSION, "created before prepared");
     }
     assert!(
         install.agent_dir(orphan).exists(),
@@ -430,20 +373,18 @@ async fn spawn_writes_spec_one_and_starts_the_agent_process() {
     let refused = wire::profile_admin_service_client::ProfileAdminServiceClient::new(
         local_channel(&dir.join(agent_dir::TOOLS_SOCK)).await,
     )
-    .list_peers(wire::ListPeersRequest {})
+    .list_peers(wire::Empty {})
     .await
     .expect_err("no administration on an agent's tools socket");
     assert_eq!(refused.code(), tonic::Code::Unimplemented);
 
     let spec = spec(&dir, 1);
     assert_eq!(spec.agent_id, id.as_bytes().to_vec());
-    assert_eq!(spec.profile_id, install.profile.as_bytes().to_vec());
     assert_eq!(spec.kind(), wire::Kind::ClaudeSdk);
     assert_eq!(spec.cwd, install.work.to_string_lossy());
     assert_eq!(spec.name, "first");
     assert_eq!(spec.incarnation, 1);
     assert_eq!(spec.provider_command, launch.claude_command);
-    assert_eq!(spec.daemon_version, node::version());
     assert!(spec.bootstrap.is_some(), "spec.1 carries the first prompt");
     let config = spec.config.as_ref().unwrap();
     assert_eq!(config.install_path, launch.install_path.to_string_lossy());
@@ -775,10 +716,7 @@ async fn delete_aborts_first_and_its_children_here_follow() {
     {
         let mut row = AgentRow::new(remote.clone(), wire::Kind::Codex, "/");
         row.parent = Some(key(&runtime, parent));
-        runtime
-            .write_store_beneath(move |store| store.put_agent(&row).unwrap())
-            .await
-            .unwrap();
+        install.store().put_agent(&row).unwrap();
     }
     for id in [parent, child] {
         until("the turn to start", || working(&runtime, id))
@@ -1286,7 +1224,7 @@ async fn the_stop_deadline_kills_an_agent_adopted_from_an_earlier_daemon() {
     let install = Install::new();
     let never = install.path("never");
     let mut launch = install.launch("held", vec![wait_for(&never)]);
-    launch.stop_deadline_ms = 2_000;
+    launch.core.stop_deadline_ms = 2_000;
     let daemon = install.start("boot-1", launch.clone()).await;
     let runtime = runtime(&daemon, &install);
     let id = id_of(
@@ -1345,15 +1283,12 @@ fn lost_its_daemon(dir: &std::path::Path) -> Result<(), String> {
     frames
         .into_iter()
         .flat_map(|(_, step)| step.items)
-        .filter_map(|item| {
-            match wire::ClaudeSdkItem::decode(item.body.as_slice())
-                .ok()?
-                .kind?
-            {
-                wire::claude_sdk_item::Kind::Boundary(boundary) => Some(boundary.kind()),
+        .filter_map(
+            |item| match wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+                wire::claude_item::Kind::Boundary(boundary) => Some(boundary.kind()),
                 _ => None,
-            }
-        })
+            },
+        )
         .any(|kind| kind == wire::BoundaryKind::DaemonLost)
         .then_some(())
         .ok_or_else(|| "no daemon-lost boundary yet".to_owned())
@@ -1608,11 +1543,7 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
     desk_edge.trust(&laptop_edge).await.unwrap();
     laptop_edge.trust(&desk_edge).await.unwrap();
     let link = laptop_edge.link_in_process(&desk_edge).unwrap();
-    assert!(
-        laptop_edge
-            .wait_for_route(desk_runtime.host(), PATIENCE)
-            .await
-    );
+    assert!(wait_for_route(&laptop_edge, desk_runtime.host(), PATIENCE).await);
     let from_laptop = node::ClientApi::new(&laptop_runtime, None);
     let forwarded = from_laptop
         .list_repositories(listing(None, 50, Some(desk_runtime.host())))
@@ -1641,14 +1572,11 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
 
     // The desk stops trusting the laptop: its listing is refused.
     desk_edge
-        .unpair(
-            wire::HostRef {
-                of: Some(wire::host_ref::Of::HostId(
-                    laptop_runtime.host().as_bytes().to_vec(),
-                )),
-            },
-            "test".to_owned(),
-        )
+        .unpair(wire::HostRef {
+            of: Some(wire::host_ref::Of::HostId(
+                laptop_runtime.host().as_bytes().to_vec(),
+            )),
+        })
         .await
         .unwrap();
     // A call that crosses the link while the desk is closing it comes back
@@ -1712,7 +1640,7 @@ async fn a_codex_resume_after_a_kill_waits_for_the_old_server_instead_of_racing_
         log.to_string_lossy().into_owned(),
     );
     // The agent will not answer its stop: the daemon kills it at once.
-    launch.stop_deadline_ms = 500;
+    launch.core.stop_deadline_ms = 500;
     let daemon = install.start("boot-1", launch).await;
     let runtime = runtime(&daemon, &install);
     let id = id_of(
@@ -1834,7 +1762,7 @@ async fn a_codex_server_that_ignores_terminate_does_not_hold_its_thread_from_the
         log.to_string_lossy().into_owned(),
     );
     // The agent will not answer its stop: the daemon kills it at once.
-    launch.stop_deadline_ms = 500;
+    launch.core.stop_deadline_ms = 500;
     let daemon = install.start("boot-1", launch).await;
     let runtime = runtime(&daemon, &install);
     let id = id_of(
@@ -2036,10 +1964,10 @@ async fn a_restarted_daemon_serves_the_tools_of_the_agents_it_adopts() {
     );
 }
 
-fn sdk_input(of: wire::claude_sdk_input::Of) -> wire::Input {
+fn sdk_input(of: wire::agent_input::Of) -> wire::Input {
     wire::Input::new(
         uuid::Uuid::new_v4().as_bytes().to_vec(),
-        wire::ClaudeSdkInput { of: Some(of) },
+        wire::AgentInput { of: Some(of) },
     )
 }
 
@@ -2111,10 +2039,10 @@ async fn a_resume_keeps_the_permission_and_effort_the_agent_last_ran_with() {
         .unwrap();
     let id = id_of(&agent);
     for of in [
-        wire::claude_sdk_input::Of::Permission(wire::SetPermission {
+        wire::agent_input::Of::Permission(wire::SetPermission {
             value: "acceptEdits".into(),
         }),
-        wire::claude_sdk_input::Of::Effort(wire::SetEffort {
+        wire::agent_input::Of::Effort(wire::SetEffort {
             effort: Some("high".into()),
         }),
     ] {
@@ -2138,7 +2066,7 @@ async fn a_resume_keeps_the_permission_and_effort_the_agent_last_ran_with() {
             .unwrap();
         let body = cut
             .snapshot
-            .map(|snapshot| wire::ClaudeSdkSnapshot::decode(snapshot.body.as_slice()).unwrap())
+            .map(|snapshot| wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap())
             .unwrap_or_default();
         (body.permission.as_deref() == Some("acceptEdits")
             && body.effort.as_deref() == Some("high"))

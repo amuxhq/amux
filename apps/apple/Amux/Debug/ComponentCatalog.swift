@@ -186,7 +186,7 @@ enum ComponentCatalog {
             row("error", height: 140, expanded: false, r("z4", 28, .error(
                 errorKind: "Provider overloaded", message: "The API returned 529 ten times in a row.",
                 attempts: 10, gaveUp: true))),
-            row("model-switch", r("z5", 29, .modelSwitch(from: "opus", to: "sonnet 4.6", reason: "Opus declined this request"))),
+            row("model-switch", r("z5", 29, .modelSwitch(to: "sonnet 4.6", reason: "Opus declined this request"))),
             row("boundary", r("z6", 30, .boundary(kind: .resumed, cause: "after an update"))),
             row("agent-message", height: 130, r("m1", 31, .agentMessage(
                 from: "worker-2", kind: .finished, text: [.text("3 specs updated, all green.")], to: "",
@@ -458,9 +458,9 @@ enum ComponentCatalog {
                 ])),
             composer("resume", height: 200, frame: ScriptedChat.frame(phase: .exited(cause: .failed("code 1")), mode: .resume),
                      draft: "Pick up where you left off and rerun the tests.", settlesLate: true),
-            composer("detached", height: 180, frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false, waiting: .detached),
+            composer("detached", height: 180, frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false),
                      draft: "Also add a test for the new string."),
-            composer("catching-up", height: 160, frame: ScriptedChat.frame(mode: .holds(.catchingUp), caughtUp: false, waiting: .catchingUp)),
+            composer("catching-up", height: 160, frame: ScriptedChat.frame(mode: .holds(.catchingUp), caughtUp: false)),
             composer("strip", height: 280, frame: ScriptedChat.frame(phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 94_000, turnElapsedMs: 94_000)),
                      strip: ScriptedChat.strip(
                         tasks: F.pairingTasks,
@@ -603,13 +603,13 @@ enum ComponentCatalog {
                     card: F.card(.claudeSdk, .command(command: "cargo test -p amux-ui", cwd: "~/src/amux", reason: "", description: "Run the spec suite"), F.sdkPermissionChoices))
             }),
             chat("detached", chat: {
-                ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false, waiting: .detached))
+                ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false))
             }),
             chat("loading", readiness: ("chat.loading", "shown"), chat: {
-                ScriptedChat(rows: [], frame: ScriptedChat.frame(mode: .holds(.catchingUp), caughtUp: false, waiting: .catchingUp))
+                ScriptedChat(rows: [], frame: ScriptedChat.frame(mode: .holds(.catchingUp), caughtUp: false))
             }),
             chat("away", chat: {
-                ScriptedChat(rows: [], frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false, waiting: .detached))
+                ScriptedChat(rows: [], frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false))
             }, subject: F.awaySubject),
             chat("queued", chat: {
                 ScriptedChat(
@@ -1459,13 +1459,13 @@ extension CatalogFixtures {
         store.open(on: desk)
         store.listed(.success(Directories(
             recent: [
-                Directory(path: "~/src/amux", name: "amux", lastUsedMs: 5),
-                Directory(path: "~/src/amuxcloud", name: "amuxcloud", lastUsedMs: 4),
-                Directory(path: "~/src/promo", name: "promo", lastUsedMs: 3),
+                Directory(path: "~/src/amux", name: "amux"),
+                Directory(path: "~/src/amuxcloud", name: "amuxcloud"),
+                Directory(path: "~/src/promo", name: "promo"),
             ],
             repositories: [
-                Directory(path: "~/src/dotfiles", name: "dotfiles", lastUsedMs: 0),
-                Directory(path: "~/src/skills", name: "skills", lastUsedMs: 0),
+                Directory(path: "~/src/dotfiles", name: "dotfiles"),
+                Directory(path: "~/src/skills", name: "skills"),
             ], roots: ["~/src"])), asked: store.asking())
         for offered in NewAgentStore.Provider.allCases {
             let catalogue = offered == .codex ? codexCatalogue : claudeCatalogue
@@ -1615,7 +1615,7 @@ extension ComponentCatalog {
             store.enter("418207")
             let attempt = store.checking()
             store.reached(.success(CatalogFixtures.pendingLaptop), attempt: attempt)
-            store.paired(.success(CatalogFixtures.pairedLaptop), attempt: attempt)
+            store.paired(.success(CatalogFixtures.pendingLaptop.name), attempt: attempt)
         },
         confirm("link-checking", machine: nil) { _ = $0.checking() },
         confirm("link-refused", machine: nil) { store in
@@ -1853,12 +1853,6 @@ extension CatalogFixtures {
     static let pendingLaptop = PendingPair(
         token: [1, 2, 3], hostId: nearbyLaptop.hostId, name: "laptop", fingerprint: fingerprint(5),
         expiresAtMs: Int64((now.timeIntervalSince1970 + 4 * 60 + 12) * 1000), via: .direct)
-    /// The runtime's answer to a confirmed pairing, which only it makes.
-    static let pairedLaptop = try! JSONDecoder().decode(
-        Paired.self,
-        from: JSONSerialization.data(withJSONObject: [
-            "host_id": nearbyLaptop.hostId.map(Int.init), "name": nearbyLaptop.name,
-        ]))
 }
 
 extension CatalogFixtures {

@@ -5,7 +5,7 @@ use wire::{Hello, Message, NeighborUp};
 use super::*;
 use crate::ids::{CallId, JobId};
 use crate::io::{Input, Job};
-use crate::payload::{CarrierKind, ChannelClass, ClientRequest, JobResult, PublicKey};
+use crate::payload::{CarrierKind, ClientRequest, JobResult};
 use crate::trust::{Reachability, TrustStore};
 use crate::{StartOptions, StepBudget};
 
@@ -107,34 +107,21 @@ fn entry(daemon: &Daemon, id: HostId) -> wire::HostEntry {
         .expect("the host is in the host set")
 }
 
-/// Opens a calls channel to `peer` over `link`; returns its id.
+/// Opens a channel to `peer` over `link`; returns its id.
 fn channel(daemon: &mut Daemon, link: u64, peer: HostId) -> ChannelId {
     let out = step(
         daemon,
         Input::WantChannel {
             link: LinkId(link),
             peer,
-            class: ChannelClass::Calls,
-            pin: Some(PublicKey(vec![7; 32])),
         },
     );
-    let channel = out
-        .iter()
+    out.iter()
         .find_map(|output| match output {
-            Output::OpenChannel { channel, .. } => Some(*channel),
+            Output::Channel(Ok(channel)) => Some(*channel),
             _ => None,
         })
-        .expect("the core opens the channel");
-    step(
-        daemon,
-        Input::ChannelOpened {
-            channel,
-            link: LinkId(link),
-            peer,
-            class: ChannelClass::Calls,
-        },
-    );
-    channel
+        .expect("the core opens the channel")
 }
 
 fn teardown(out: &[Output]) -> JobId {
@@ -159,46 +146,6 @@ fn pair(id: HostId, pubkey: Vec<u8>) -> TrustChange {
 }
 
 #[test]
-fn past_the_cap_a_claim_evicts_the_oldest_untrusted_host_held_only_by_a_claim() {
-    let mut daemon = daemon(&[DESK]);
-    // The relay's own entry and the hosts it claims fill the cap; the
-    // trusted desk does not count toward it.
-    let claimed: Vec<HostId> = (0..HOST_CAP as u32 - 1).map(numbered).collect();
-    let reaches: Vec<HostId> = std::iter::once(DESK).chain(claimed.clone()).collect();
-    linked(&mut daemon, 1, RELAY, CarrierKind::Relay, &reaches);
-    let catalogue = &daemon.routing.catalogue;
-    assert!(catalogue.said(claimed[0]).is_some());
-    assert_eq!(catalogue.relays_to(claimed[0]), vec![RELAY]);
-
-    let newcomer = numbered(HOST_CAP as u32);
-    neighbor_up(&mut daemon, 1, newcomer);
-    let catalogue = &daemon.routing.catalogue;
-    assert!(catalogue.said(newcomer).is_some(), "the newcomer is held");
-    assert!(
-        catalogue.said(claimed[0]).is_none(),
-        "the oldest claim went"
-    );
-    assert!(catalogue.said(claimed[1]).is_some());
-    assert!(
-        catalogue.said(DESK).is_some(),
-        "a trusted host is never evicted"
-    );
-    assert!(
-        catalogue.said(RELAY).is_some(),
-        "a linked host is never evicted"
-    );
-
-    // A direct link is held past the cap too, and the next oldest claim
-    // makes room.
-    let dialed = numbered(HOST_CAP as u32 + 1);
-    linked(&mut daemon, 2, dialed, CarrierKind::Direct, &[]);
-    let catalogue = &daemon.routing.catalogue;
-    assert!(catalogue.said(dialed).is_some());
-    assert!(catalogue.said(claimed[1]).is_none());
-    assert_eq!(catalogue.untrusted(&BTreeSet::from([DESK])), HOST_CAP);
-}
-
-#[test]
 fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
     let mut daemon = daemon(&[DESK]);
     linked(&mut daemon, 1, DESK, CarrierKind::Direct, &[]);
@@ -218,7 +165,13 @@ fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
     linked(&mut daemon, 2, DESK, CarrierKind::Direct, &[]);
     linked(&mut daemon, 3, RELAY, CarrierKind::Relay, &[DESK]);
     assert!(daemon.routing.catalogue.said(DESK).is_none());
-    assert!(daemon.routing.catalogue.relays_to(DESK).is_empty());
+    assert!(
+        daemon
+            .routing
+            .catalogue
+            .claimed()
+            .all(|(host, ..)| host != DESK)
+    );
 
     step(
         &mut daemon,
@@ -228,7 +181,13 @@ fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
         },
     );
     neighbor_up(&mut daemon, 3, DESK);
-    assert_eq!(daemon.routing.catalogue.relays_to(DESK), vec![RELAY]);
+    assert!(
+        daemon
+            .routing
+            .catalogue
+            .claimed()
+            .any(|(host, _, relays)| host == DESK && relays == [RELAY])
+    );
 }
 
 #[test]

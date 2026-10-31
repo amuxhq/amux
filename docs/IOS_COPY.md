@@ -81,7 +81,8 @@ like any other shipping screen's. Copy only the driving tools use is in
 `AmuxTestSupport/Sources/AmuxTestSupport/Resources/DebugCopy.xcstrings`, whose
 resource directory is excluded from Release.
 
-Update the source and the catalogue together. Each catalogue entry has its
+Update the source and the catalogue together: a literal the catalogue lacks fails the
+inventory, and so does an entry no literal uses any more. Each catalogue entry has its
 English value and a comment locating its uses. Swift interpolation is shown
 as `%@` slots for review; the expression and its fallback literals are checked
 separately. These catalogues inventory the app's English copy. They do not

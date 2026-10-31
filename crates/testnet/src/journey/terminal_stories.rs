@@ -48,7 +48,6 @@ const STORIES: &[(&str, Tell)] = &[
     ("tool-server-asks", tool_server_asks),
     ("queue-and-steer", queue_and_steer),
     ("send-while-away", send_while_away),
-    ("send-rejected", send_rejected),
     ("send-may-not-have-arrived", send_may_not_have_arrived),
     ("composer-limits", composer_limits),
     ("new-agent-terminal", new_agent_terminal),
@@ -1390,7 +1389,6 @@ fn queue_and_steer(journey: &mut TerminalJourney) -> Proved {
     ])
 }
 
-const NOT_SENT: &str = "Rotate the backup keys.";
 const MAYBE: &str = "Prune the old snapshots.";
 fn send_while_away(journey: &mut TerminalJourney) -> Proved {
     let pane = journey.launch("terminal", "laptop", &[])?;
@@ -1426,53 +1424,6 @@ fn send_while_away(journey: &mut TerminalJourney) -> Proved {
         format!(
             "with the cabin back, the held prompt went by itself and the cabin holds {} once",
             quoted(BACKUP)
-        ),
-        control,
-        "the client exited 0".to_owned(),
-    ])
-}
-
-fn send_rejected(journey: &mut TerminalJourney) -> Proved {
-    let pane = journey.launch("terminal", "laptop", &[])?;
-    journey.open_chat(&pane, "backups")?;
-    // The laptop can no longer open a call to the cabin while the cabin's
-    // chat stays live: a send fails before it leaves the laptop.
-    journey.request(refuse_calls("laptop", "cabin", true), None)?;
-    journey.type_text(&pane, NOT_SENT)?;
-    journey.wait_terms(&pane, &[NOT_SENT])?;
-    journey.keys(&pane, &["Enter"])?;
-    // The failed call closes the link it could not open a stream on, so
-    // the cabin reads offline at once (the chat words it "cabin away")
-    // rather than online while nothing reaches it.
-    journey.wait_terms(&pane, &["cabin away", NOT_SENT, "sends when cabin is back"])?;
-    journey.frame(&pane, "not-sent")?;
-    std::thread::sleep(Duration::from_secs(2));
-    let refused = journey.chat("cabin", "backups", Some("refused"))?;
-    never_sent(&refused, NOT_SENT)?;
-    // Once a link to the cabin is up again it reads online, and the held
-    // prompt goes by itself.
-    journey.request(refuse_calls("laptop", "cabin", false), None)?;
-    journey.wait(
-        &pane,
-        |frame| at_rest(frame, &[NOT_SENT, BACKUP_DONE]) && !frame.contains("sends when"),
-        "the reply",
-    )?;
-    let heard = journey.wait_chat(
-        "cabin",
-        "backups",
-        |chat| phase(chat) == "IDLE" && prompts(chat, NOT_SENT).len() == 1,
-        "sent",
-    )?;
-    reflected_once(&heard, NOT_SENT)?;
-    let control = negative_control(never_sent(&heard, NOT_SENT))?;
-    journey.frame(&pane, "sent")?;
-    journey.quit_client(&pane)?;
-    Ok(vec![
-        "a send that could not leave the laptop was held, to send when the cabin is back, and the cabin read as out of reach".to_owned(),
-        "the cabin never received it".to_owned(),
-        format!(
-            "once the cabin was back the held prompt went by itself, and the cabin holds {} once",
-            quoted(NOT_SENT)
         ),
         control,
         "the client exited 0".to_owned(),

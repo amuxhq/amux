@@ -1,0 +1,20 @@
+{
+  "about": "A turn with Claude's thinking shown, on Haiku 4.5 (--max-thinking-tokens, --thinking-display summarized).",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "../../../claude-specs/fixtures/live/pty/configured_turn/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

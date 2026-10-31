@@ -33,61 +33,6 @@
 //! every delivery between them, so one seed is one schedule (see
 //! [`sim`]). The verbs, fences and observations both nets offer are the
 //! [`World`] trait, and a story written against it runs on either.
-//!
-//! <!-- door-capabilities:start -->
-//! | Door verb (`door::Control`) | Harness capability |
-//! | --- | --- |
-//! | `Sever` | `Net::sever_link` |
-//! | `Restore` | `Net::restore_link` |
-//! | `Link` | `Net::link_up` |
-//! | `Trust` | `Net::trust` |
-//! | `Untrust` | `Net::untrust` |
-//! | `RefuseCalls` | `Net::refuse_calls` |
-//! | `SetTier` | `Net::set_tier` |
-//! | `SignIn` | `Net::sign_in` |
-//! | `KillDaemon` | `Net::kill_daemon` |
-//! | `StopDaemon` | `Net::stop_daemon` |
-//! | `RestartDaemon` | `Net::kill_daemon when running + Net::restart_daemon` |
-//! | `Checkpoint` | `Net::checkpoint_host` |
-//! | `Rewind` | `Net::rewind_host` |
-//! | `Advance` | `Net::advance` |
-//! | `Spawn` | `Net::spawn` |
-//! | `Resume` | `Net::resume` |
-//! | `Send` | `Net::send` |
-//! | `Stop` | `Net::stop` |
-//! | `Freeze` | `Net::freeze` |
-//! | `Thaw` | `Net::thaw` |
-//! | `OpenGate` | `Net::open_gate` |
-//! | `LanGate` | `Net::lan_gate` |
-//! | `LanFaults` | `Net::set_lan_faults` |
-//! | `RelayGate` | `Net::relay_gate` |
-//! | `RelayFaults` | `Net::set_relay_faults` |
-//! | `RefuseReports` | `Relay::refuse_reports` |
-//! | `Reports` | `Relay::reports` |
-//! | `NetFaults` | `Net::set_net_faults` |
-//! | `BlockUdp` | `Net::block_udp` |
-//! | `SetRouter` | `Net::set_router` |
-//! | `ChangeNetwork` | `Net::change_network` |
-//! | `BindIpv6Only` | `Net::bind_ipv6_only` |
-//! | `CarryingPath` | `Net::carrying_path` |
-//! | `LinkLog` | `Net::link_log` |
-//! | `Flap` | `Net::sever_link + Net::restore_link on a period` |
-//! | `FlapStop` | `Net::restore_link for each flapping link` |
-//! | `PairGate` | `Net::pair_gate` |
-//! | `AddHost` | `Net::add_host` |
-//! | `RemoveHost` | `Net::remove_host` |
-//! | `AddLink` | `Net::add_link` |
-//! | `RemoveLink` | `Net::remove_link` |
-//! | `AddAccount` | `Net::add_account` |
-//! | `Settle` | `Net::input_settled when an input is named + Net::settle_within` |
-//! | `Release` | `Net::publish_release` |
-//! | `Status` | `Net::topology + Net::host` |
-//! | `Inventory` | `Net::observe_inventory + observe_until(CaughtUp)` |
-//! | `Block` | `Net::assert_block_invariant` |
-//! | `Chat` | `Net::observe or Net::observe_id + observe_until(CaughtUp)` |
-//! | `ProviderInput` | `Net::provider_input` |
-//! | `Shutdown` | `Net::shutdown + closes the control socket` |
-//! <!-- door-capabilities:end -->
 
 mod binaries;
 mod bonjour;

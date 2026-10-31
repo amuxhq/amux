@@ -1,33 +1,16 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 1 fact {"channel":"stream","json":{"claude_code_version":"2.1.282","model":"claude-opus-5-5","permissionMode":"default","session_id":"s1","subtype":"init","type":"system","uuid":"init-s1"}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 2 input {"id":"p1","prompt":{"text":"/cost"}}
-  row    2 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("/cost")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 3 fact {"channel":"stream","json":{"content":"Total cost: $0.12","subtype":"local_command_output","type":"system","uuid":"lc"}}
-  row    3 lc SlashOutput { command: "/cost", args: "", output: "Total cost: $0.12" }
 ## 4 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r0"}}
-  row    4 turn:1 TurnEnd { duration_ms: Some(1000), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 5 input {"id":"p2","prompt":{"text":"go"}}
-  row    5 70320000-0000-4000-8000-000000000000 Prompt { text: [Text("go")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 fact {"channel":"stream","json":{"api_refusal_explanation":"The request was declined by the safety system","content":"Switched model","direction":"down","fallback_model":"claude-sonnet-5","original_model":"claude-opus-5-5","request_id":null,"subtype":"model_refusal_fallback","trigger":"refusal","type":"system","uuid":"mr"}}
-  row    6 mr ModelSwitch { from: "claude-opus-5-5", to: "claude-sonnet-5", reason: "The request was declined by the safety system" }
-## 7 fact {"channel":"stream","json":{"content":"Declined","original_model":"claude-sonnet-5","request_id":null,"subtype":"model_refusal_no_fallback","type":"system","uuid":"mn"}}
-  row    7 mn Error { error_kind: "refusal", message: "Declined", attempts: 0, gave_up: true } attention
 ## 9 fact {"channel":"stream","json":{"attempt":2,"error":"server_error","error_status":529,"max_retries":10,"retry_delay_ms":4000,"subtype":"api_retry","type":"system","uuid":"ar"}}
-  row    8 ar Error { error_kind: "server_error", message: "server_error (529)", attempts: 2, gave_up: false }
   composer Send activity=Some(Retrying { attempt: 2, max_attempts: 10, retry_at_ms: Some(1800000005000) }) queue=[] underway=[] refused=[]
 ## 10 fact {"channel":"stream","json":{"message":{"content":[{"text":"On it.","type":"text"},{"id":"t1","input":{"working_on":"Fixing the parser"},"name":"mcp__amux__status","type":"tool_use"},{"id":"s1","name":"web_search","type":"server_tool_use"}],"id":"m1","model":"claude-sonnet-5","role":"assistant"},"type":"assistant","uuid":"m1"}}
-  row    9 m1:0 Prose { text: [Text("On it.")], streaming: false, working_note: false }
-  row   10 m1:2 Unrecognized { what: "assistant/server_tool_use", summary: "" }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 11 fact {"channel":"stream","json":{"error":"server_error","message":{"content":[{"text":"API Error: 529 overloaded","type":"text"}],"id":"m3","model":"claude-sonnet-5","role":"assistant"},"type":"assistant","uuid":"e3"}}
-  row   11 e3 Error { error_kind: "server_error", message: "API Error: 529 overloaded", attempts: 0, gave_up: true } attention
 ## 12 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.25,"type":"result","uuid":"r1"}}
-  row   12 turn:2 TurnEnd { duration_ms: Some(1000), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -35,7 +18,7 @@
      3 lc SlashOutput { command: "/cost", args: "", output: "Total cost: $0.12" }
      4 turn:1 TurnEnd { duration_ms: Some(1000), failed: false }
      5 70320000-0000-4000-8000-000000000000 Prompt { text: [Text("go")], steered: false }
-     6 mr ModelSwitch { from: "claude-opus-5-5", to: "claude-sonnet-5", reason: "The request was declined by the safety system" }
+     6 mr ModelSwitch { to: "claude-sonnet-5", reason: "The request was declined by the safety system" }
      7 mn Error { error_kind: "refusal", message: "Declined", attempts: 0, gave_up: true } attention
      8 ar Error { error_kind: "server_error", message: "server_error (529)", attempts: 2, gave_up: false }
      9 m1:0 Prose { text: [Text("On it.")], streaming: false, working_note: false }

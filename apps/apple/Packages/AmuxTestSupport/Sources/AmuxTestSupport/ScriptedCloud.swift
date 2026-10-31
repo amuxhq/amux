@@ -97,7 +97,6 @@ public enum CloudCall: Sendable, Equatable {
     /// An account kept, and with it the session this phone holds for it.
     case handOver(AccountId)
     case forgetSession(AccountId)
-    case account(AccountId)
     case entitlement(AccountId)
     case recordPurchase(AccountId)
     case requestDeletion(AccountId, confirmedEmail: String)
@@ -174,15 +173,6 @@ public final class ScriptedCloudService: CloudService, @unchecked Sendable {
 
     public func forgetSession(_ id: AccountId) async throws {
         _ = record(.forgetSession(id))
-    }
-
-    public func account(_ id: AccountId) async throws(CloudError) -> AccountFacts {
-        let state = record(.account(id))
-        await wait(state)
-        guard case .succeeds(let account) = state.signIn else { throw CloudError.unauthenticated }
-        return AccountFacts(
-            id: account.id, email: account.email, displayName: account.displayName,
-            entitlement: state.entitlement)
     }
 
     public func entitlement(_ id: AccountId) async throws(CloudError) -> Entitlement {

@@ -256,15 +256,9 @@ message SubagentProgress {
 
 message Boundary {
   BoundaryKind kind = 1;
-  string provider_session = 2;
-  string provider_version = 3;
   // For EXITED: why, and the cause's own words.
   ExitCause cause = 4;
   optional string cause_detail = 5;
-  // Was the keymap terminal Claude's answers were typed with; they now go
-  // through its hooks.
-  reserved 6;
-  reserved "keymap";
 }
 
 enum BoundaryKind {
@@ -458,8 +452,9 @@ message Ask {
 message PermissionAsk {
   string tool_name = 1;
   ToolInput input = 2;
-  // Every scope the provider offered, in order.
-  repeated ScopeChoice scopes = 3;
+  // Every scope the provider offered, in order; an answer names one by
+  // its position.
+  repeated ClaudeGrant scopes = 3;
   string reason = 4;
   string description = 5;
   // Denying always ends the turn (terminal Claude).
@@ -471,12 +466,6 @@ message PermissionAsk {
   // opens it on deny and takes no digit shortcut, and nothing pre-selects
   // approve.
   bool default_to_no = 9;
-}
-
-// One scope the provider offered; answers name its index.
-message ScopeChoice {
-  uint32 index = 1;
-  ClaudeGrant grant = 2;
 }
 
 message QuestionAsk {
@@ -639,12 +628,6 @@ message ContextMeter {
   bool known = 1;
   uint64 used_tokens = 2;
   optional uint64 window_tokens = 3;
-  repeated ContextShare breakdown = 4;
-}
-
-message ContextShare {
-  string category = 1;
-  uint64 tokens = 2;
 }
 
 enum UsageState {
@@ -674,18 +657,7 @@ enum Limit {
   LIMIT_WEEKLY = 2;
 }
 
-// Session strip: tool-server health, shown only when one fails.
-message ToolServerHealth {
-  HealthState state = 1;
-  repeated ToolServer servers = 2;
-}
-
-enum HealthState {
-  HEALTH_STATE_UNKNOWN = 0;
-  HEALTH_STATE_HEALTHY = 1;
-  HEALTH_STATE_DEGRADED = 2;
-}
-
+// Session strip: one tool server's health, shown only when one fails.
 message ToolServer {
   string name = 1;
   ToolServerStatus status = 2;

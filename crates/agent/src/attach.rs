@@ -327,16 +327,7 @@ impl Attached {
                 "pty.sock did not start with a hello",
             ));
         };
-        // A mode this version cannot read is refused, never taken as files.
-        let mode = PtyMode::try_from(hello.mode).map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "pty.sock offered a terminal mode this amux cannot read ({})",
-                    hello.mode
-                ),
-            )
-        })?;
+        let mode = hello.mode();
         Ok(Self {
             output: AttachedOutput {
                 reader,

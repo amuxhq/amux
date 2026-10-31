@@ -1,5 +1,5 @@
 {
-  "about": "Questions in every shape the tool offers: several questions, multi-select, previews and Other.",
+  "about": "Four questions in one ask: single and multiple choice, previews, an answer of the person's own.",
   "spec": {
     "created_at_ms": 0
   },
@@ -8,14 +8,13 @@
       "fact": {
         "channel": "agent",
         "json": {
-          "type": "launch",
-          "version": "2.1.312"
+          "type": "launch"
         }
       }
     }
   ],
   "recording": {
-    "path": "../../../claude-specs/fixtures/pty/question_every_shape/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/pty/question_every_shape/io.jsonl",
     "format": "claude_pty_io"
   }
 }

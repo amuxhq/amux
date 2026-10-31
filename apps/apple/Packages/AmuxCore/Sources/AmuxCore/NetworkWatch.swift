@@ -76,29 +76,3 @@ public final class SystemNetworkWatch: NetworkPathWatching, @unchecked Sendable 
         }
     }
 }
-
-/// A watch a test drives by hand: each `change()` while started is one
-/// change, told at once on the caller's thread.
-public final class FakeNetworkWatch: NetworkPathWatching, @unchecked Sendable {
-    private let lock = NSLock()
-    private var onChange: (@Sendable () -> Void)?
-
-    public init() {}
-
-    /// Whether the coordinator is watching.
-    public var started: Bool { lock.withLock { onChange != nil } }
-
-    public func start(_ onChange: @escaping @Sendable () -> Void) {
-        lock.withLock { self.onChange = onChange }
-    }
-
-    public func stop() {
-        lock.withLock { onChange = nil }
-    }
-
-    /// The network changed; nothing hears it unless the watch is started.
-    public func change() {
-        let told = lock.withLock { onChange }
-        told?()
-    }
-}

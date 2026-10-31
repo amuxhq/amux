@@ -7,8 +7,7 @@ use std::path::{Path, PathBuf};
 
 use codex_protocol::server::{
     AccountReadResponse, BackgroundTerminalsResponse, InitializeResponse, ModelListResponse,
-    SkillsListResponse, ThreadListResponse, ThreadReadResponse, ThreadResponse, TurnStartResponse,
-    TurnSteerResponse,
+    SkillsListResponse, ThreadReadResponse, ThreadResponse, TurnStartResponse, TurnSteerResponse,
 };
 use codex_protocol::{ClientMessage, RequestId, ServerMessage};
 use serde::Serialize;
@@ -19,15 +18,10 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// Every io.jsonl recorded from Codex: the spec corpus, the live captures
-/// beside it and the journeys'.
+/// Every io.jsonl recorded from Codex: the live lane's captures.
 fn recordings() -> Vec<PathBuf> {
     let mut found = Vec::new();
-    for dir in [
-        "crates/codex-specs/fixtures/runtime",
-        "crates/codex-specs/fixtures/live",
-        "journeys/recordings",
-    ] {
+    for dir in ["crates/codex-specs/fixtures/live"] {
         let mut entries: Vec<_> = std::fs::read_dir(root().join(dir))
             .unwrap_or_else(|error| panic!("{dir}: {error}"))
             .map(|entry| entry.expect("entry").path())
@@ -163,7 +157,6 @@ fn reread_as(method: &str, result: &Value) -> Result<Value, String> {
         "turn/steer" => reread::<TurnSteerResponse>(result),
         "model/list" => reread::<ModelListResponse>(result),
         "skills/list" => reread::<SkillsListResponse>(result),
-        "thread/list" => reread::<ThreadListResponse>(result),
         "thread/read" => reread::<ThreadReadResponse>(result),
         "account/read" => reread::<AccountReadResponse>(result),
         "thread/backgroundTerminals/list" => reread::<BackgroundTerminalsResponse>(result),

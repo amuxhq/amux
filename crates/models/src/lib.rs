@@ -38,111 +38,11 @@ pub use single_daemon::SingleDaemon;
 pub use socket::SocketModel;
 pub use supervisor::SupervisorUpdate;
 
-/// What the world may do to a machine between its own actions: the one
-/// fault vocabulary every model's environment and the simulator draw from,
-/// and the only thing either simulates. Each model offers the faults its
-/// slice of the world can suffer and says how each plays out on it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Fault {
-    /// The message at this place in flight is lost. On an ordered stream
-    /// the stream dies with it, taking everything behind it.
-    Lose(MsgIndex),
-    /// The message at this place in flight is held back behind the rest.
-    Delay(MsgIndex),
-    /// Two messages in flight swap places.
-    Reorder(MsgIndex, MsgIndex),
-    /// The message at this place in flight is delivered twice, as a
-    /// replayed packet or a retransmission arriving after its original.
-    Duplicate(MsgIndex),
-    /// The host's process dies at this step; what it had written stays.
-    Crash(Host),
-    /// The host's process dies without its clean shutdown, and comes back
-    /// knowing it did.
-    RebootUnclean(Host),
-    /// The host loses power: what was written but not synced is gone.
-    PowerLoss(Host),
-    /// The host's drive refuses the next write it is asked for, as a full
-    /// or failing drive does.
-    WriteRefused(Host),
-    /// The clock moves on.
-    Tick { ms: u64 },
-}
-
-/// A message's place among those in flight, oldest first.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct MsgIndex(pub usize);
-
-/// A host of a model, by its place in the model's topology.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Host(pub u8);
-
-/// One property of the protocol's models, as [`properties`] lists it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Listed {
-    /// The model's name: "replication", "single daemon", "composed net", ...
-    pub model: &'static str,
-    pub kind: PropertyKind,
-    pub sentence: &'static str,
-    pub parked: Option<Parked>,
-}
-
-/// Every property of the protocol's models at the bounds `just test` runs,
-/// each once: the composed net's topologies share one list. The contracts
-/// check names a model's property by its model and sentence, read from
-/// here by the `properties` binary.
-pub fn properties() -> Vec<Listed> {
-    fn of<M: Machine>(model: &'static str, machine: &M) -> Vec<Listed> {
-        machine
-            .properties()
-            .into_iter()
-            .map(|property| Listed {
-                model,
-                kind: property.kind,
-                sentence: property.sentence,
-                parked: property.parked,
-            })
-            .collect()
-    }
-    let mut listed = of("replication", &Replication::ci());
-    listed.extend(of("single daemon", &SingleDaemon::ci()));
-    listed.extend(of("presence and routing", &PresenceRouting::ci()));
-    listed.extend(of("family and deliveries", &FamilyDeliveries::ci()));
-    listed.extend(of("agent lifecycle", &AgentLifecycle::ci()));
-    listed.extend(of("supervisor update", &SupervisorUpdate::ci()));
-    listed.extend(of("client", &ClientModel::ci()));
-    listed.extend(of("path machine", &PathModel::ci()));
-    listed.extend(of("relay forwarding", &RelayModel::ci()));
-    listed.extend(of("link socket", &SocketModel::ci()));
-    for (_, model) in ComposedNet::ci() {
-        for property in of("composed net", &model) {
-            if !listed.contains(&property) {
-                listed.push(property);
-            }
-        }
-    }
-    listed
-}
-
-/// Every parked property of the protocol's models: the model, the
-/// property's sentence and why it is parked. The landing gate,
-/// `just parked-check`, fails while this is not empty.
-pub fn parked() -> Vec<(&'static str, &'static str, Parked)> {
-    properties()
-        .into_iter()
-        .filter_map(|listed| Some((listed.model, listed.sentence, listed.parked?)))
-        .collect()
-}
-
-/// How many threads a model's test explores with: `MODELS_THREADS` when
-/// set, so a run can price a model on a CI runner's core count, otherwise
-/// every core. The verdict and the state count are the same on any number
-/// of threads; only which counterexample is printed may differ.
+/// How many threads a model's test explores with: every core. The verdict
+/// is the same on any number of threads; only which counterexample is
+/// printed may differ.
 pub fn threads() -> usize {
-    std::env::var("MODELS_THREADS")
-        .ok()
-        .and_then(|threads| threads.parse().ok())
-        .filter(|threads| *threads > 0)
-        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |threads| threads.get()))
+    std::thread::available_parallelism().map_or(1, |threads| threads.get())
 }
 
 /// Turns off SQLite's memory statistics for this process before any
@@ -205,23 +105,6 @@ pub struct Property<M: Machine> {
     pub kind: PropertyKind,
     pub sentence: &'static str,
     pub holds: fn(&M, &M::State) -> bool,
-    /// Set while a decision about the property waits: the checker reports
-    /// it with its reason instead of exploring it.
-    pub parked: Option<Parked>,
-}
-
-/// A property whose decision waits, with the counterexample that raised it
-/// and why it waits. The property keeps its sentence and predicate as they
-/// were written; it is never weakened to pass. `just parked-check` fails
-/// while any property is parked.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Parked {
-    /// The date it was parked.
-    pub since: &'static str,
-    /// The path to the failing state, as the checker printed it, in short.
-    pub counterexample: &'static str,
-    /// What decision it waits on.
-    pub reason: &'static str,
 }
 
 impl<M: Machine> Property<M> {
@@ -230,7 +113,6 @@ impl<M: Machine> Property<M> {
             kind: PropertyKind::Always,
             sentence,
             holds,
-            parked: None,
         }
     }
 
@@ -239,7 +121,6 @@ impl<M: Machine> Property<M> {
             kind: PropertyKind::Sometimes,
             sentence,
             holds,
-            parked: None,
         }
     }
 
@@ -248,15 +129,6 @@ impl<M: Machine> Property<M> {
             kind: PropertyKind::Eventually,
             sentence,
             holds,
-            parked: None,
-        }
-    }
-
-    /// Parks the property while a decision about it waits.
-    pub fn parked(self, parked: Parked) -> Self {
-        Self {
-            parked: Some(parked),
-            ..self
         }
     }
 }
@@ -267,7 +139,6 @@ impl<M: Machine> Clone for Property<M> {
             kind: self.kind,
             sentence: self.sentence,
             holds: self.holds,
-            parked: self.parked,
         }
     }
 }
@@ -282,44 +153,33 @@ pub struct Bounds {
     /// Exploration threads. One keeps the reported counterexample the same on
     /// every run; more only change which path is reported.
     pub threads: usize,
-    /// Explore breadth first, so a failure prints the shortest path to it.
-    /// Depth first, the default, holds only each state's fingerprint and the
-    /// path being explored, where breadth first holds every state of the
-    /// frontier with its path, which at nightly bounds outgrew a 16 GB
-    /// runner where depth first stays near a gigabyte. A bounded depth always explores breadth first, since depth
-    /// first would skip a state it first met past the bound however short
-    /// its other paths are. `MODELS_SEARCH=breadth` sets this for every check.
-    pub breadth_first: bool,
 }
 
 impl Bounds {
-    /// Every reachable state, on one thread.
+    /// Every reachable state, on one thread, depth first: it holds only each
+    /// state's fingerprint and the path being explored, where breadth first
+    /// holds every state of the frontier with its path, which at nightly
+    /// bounds outgrew a 16 GB runner where depth first stays near a
+    /// gigabyte.
     pub const fn exhaustive() -> Self {
         Self {
             depth: None,
             threads: 1,
-            breadth_first: false,
         }
     }
 
-    /// Paths of at most `depth` actions, on one thread.
+    /// Paths of at most `depth` actions, on one thread, breadth first, since
+    /// depth first would skip a state it first met past the bound however
+    /// short its other paths are; a failure prints the shortest path to it.
     pub const fn depth(depth: usize) -> Self {
         Self {
             depth: Some(depth),
             threads: 1,
-            breadth_first: true,
         }
     }
 
     pub const fn threads(self, threads: usize) -> Self {
         Self { threads, ..self }
-    }
-
-    pub const fn breadth_first(self) -> Self {
-        Self {
-            breadth_first: true,
-            ..self
-        }
     }
 }
 
@@ -329,22 +189,6 @@ pub struct Measured {
     /// Distinct states explored.
     pub states: u64,
     pub seconds: f64,
-    pub states_per_second: f64,
-}
-
-impl Measured {
-    fn new(states: u64, seconds: f64) -> Self {
-        let states_per_second = if seconds > 0.0 {
-            states as f64 / seconds
-        } else {
-            0.0
-        };
-        Self {
-            states,
-            seconds,
-            states_per_second,
-        }
-    }
 }
 
 /// A path from the initial state to the state that decided a property.
@@ -367,8 +211,6 @@ pub enum Outcome {
     Fails(Counterexample),
     /// A `Sometimes` held in no explored state.
     NeverReached,
-    /// Not explored: the property is parked while a decision waits.
-    Parked(Parked),
 }
 
 /// One property's sentence and outcome.
@@ -384,15 +226,13 @@ pub struct Judged {
 pub struct Verdict {
     pub properties: Vec<Judged>,
     pub measured: Measured,
-    /// The longest path explored, in actions.
-    pub depth: usize,
 }
 
 impl Verdict {
     pub fn holds(&self) -> bool {
         self.properties
             .iter()
-            .all(|judged| matches!(judged.outcome, Outcome::Holds | Outcome::Parked(_)))
+            .all(|judged| matches!(judged.outcome, Outcome::Holds))
     }
 
     /// The outcome of the property with this sentence.
@@ -412,28 +252,15 @@ impl Verdict {
 
 impl Display for Verdict {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Measured {
-            states,
-            seconds,
-            states_per_second,
-        } = self.measured;
-        writeln!(
-            f,
-            "{states} states to depth {} in {seconds:.3}s ({states_per_second:.0} states per second)",
-            self.depth
-        )?;
+        let Measured { states, seconds } = self.measured;
+        writeln!(f, "{states} states in {seconds:.3}s")?;
         for judged in &self.properties {
             let (mark, path) = match &judged.outcome {
                 Outcome::Holds => ("holds", None),
                 Outcome::Fails(path) => ("FAILS", Some(path)),
                 Outcome::NeverReached => ("NEVER REACHED", None),
-                Outcome::Parked(_) => ("PARKED", None),
             };
             writeln!(f, "  {mark}: {:?} {}", judged.kind, judged.sentence)?;
-            if let Outcome::Parked(parked) = &judged.outcome {
-                writeln!(f, "    since {}: {}", parked.since, parked.reason)?;
-                writeln!(f, "    counterexample: {}", parked.counterexample)?;
-            }
             if let Some(path) = path {
                 for (step, (action, state)) in path.actions.iter().zip(&path.states).enumerate() {
                     writeln!(f, "    {}. {action}\n       {state}", step + 1)?;
@@ -452,11 +279,8 @@ pub fn check<M: Machine>(model: &M, bounds: Bounds) -> Verdict {
     if let Some(depth) = bounds.depth {
         builder = builder.target_max_depth(depth);
     }
-    let breadth_first = bounds.breadth_first
-        || bounds.depth.is_some()
-        || std::env::var("MODELS_SEARCH").is_ok_and(|search| search == "breadth");
     let started = Instant::now();
-    if breadth_first {
+    if bounds.depth.is_some() {
         judge(model, &builder.spawn_bfs().join(), started)
     } else {
         judge(model, &builder.spawn_dfs().join(), started)
@@ -470,13 +294,6 @@ fn judge<M: Machine>(model: &M, checker: &impl Checker<Adapter<M>>, started: Ins
     let judged = properties
         .iter()
         .map(|property| {
-            if let Some(parked) = property.parked {
-                return Judged {
-                    kind: property.kind,
-                    sentence: property.sentence,
-                    outcome: Outcome::Parked(parked),
-                };
-            }
             let found = checker.discovery(property.sentence);
             let outcome = match (property.kind, found) {
                 (PropertyKind::Sometimes, Some(_)) => Outcome::Holds,
@@ -521,8 +338,10 @@ fn judge<M: Machine>(model: &M, checker: &impl Checker<Adapter<M>>, started: Ins
         .collect();
     Verdict {
         properties: judged,
-        measured: Measured::new(checker.unique_state_count() as u64, seconds),
-        depth: checker.max_depth(),
+        measured: Measured {
+            states: checker.unique_state_count() as u64,
+            seconds,
+        },
     }
 }
 
@@ -573,11 +392,7 @@ impl<M: Machine> Display for Walk<M> {
 /// schedule on every run; every property is judged on every state reached.
 pub fn walk<M: Machine>(model: &M, bounds: Bounds, seed: u64) -> Walk<M> {
     let depth = bounds.depth.expect("a walk needs a depth bound");
-    let properties: Vec<_> = model
-        .properties()
-        .into_iter()
-        .filter(|property| property.parked.is_none())
-        .collect();
+    let properties = model.properties();
     let mut chooser = <UniformChooser as Chooser<Adapter<M>>>::new_state(&UniformChooser, seed);
     let mut walk = Walk {
         seed,
@@ -674,12 +489,7 @@ impl<M: Machine> Adapter<M> {
         }
         Self {
             machine: machine.clone(),
-            properties: Arc::new(
-                properties
-                    .into_iter()
-                    .filter(|property| property.parked.is_none())
-                    .collect(),
-            ),
+            properties: Arc::new(properties),
         }
     }
 }

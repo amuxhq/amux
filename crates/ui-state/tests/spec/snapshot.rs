@@ -9,7 +9,7 @@ use crate::spec::harness::*;
 fn strip_facts() -> (
     wire::ClaudeUsage,
     wire::CodexUsage,
-    wire::ToolServerHealth,
+    Vec<wire::ToolServer>,
     wire::SignIn,
     wire::BackgroundJobs,
 ) {
@@ -42,14 +42,11 @@ fn strip_facts() -> (
             }],
             credits: Some("12".into()),
         },
-        wire::ToolServerHealth {
-            state: wire::HealthState::Degraded as i32,
-            servers: vec![wire::ToolServer {
-                name: "github".into(),
-                status: wire::ToolServerStatus::Failed as i32,
-                error: "401".into(),
-            }],
-        },
+        vec![wire::ToolServer {
+            name: "github".into(),
+            status: wire::ToolServerStatus::Failed as i32,
+            error: "401".into(),
+        }],
         wire::SignIn {
             state: wire::SignInState::Expired as i32,
             account: "me".into(),
@@ -91,18 +88,17 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
         known: true,
         used_tokens: 71_000,
         window_tokens: Some(100_000),
-        breakdown: vec![],
     };
     let bodies = [
         (
             Kind::ClaudePty,
-            wire::ClaudePtySnapshot {
+            wire::ClaudeSnapshot {
                 tasks: Some(tasks.clone()),
-                context: Some(context.clone()),
+                context: Some(context),
                 model: Some("opus".into()),
                 permission: Some("plan".into()),
                 usage: Some(claude_usage.clone()),
-                servers: Some(servers.clone()),
+                servers: servers.clone(),
                 sign_in: Some(sign_in.clone()),
                 background_jobs: Some(background.clone()),
                 ..Default::default()
@@ -111,14 +107,14 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
         ),
         (
             Kind::ClaudeSdk,
-            wire::ClaudeSdkSnapshot {
+            wire::ClaudeSnapshot {
                 tasks: Some(tasks.clone()),
-                context: Some(context.clone()),
+                context: Some(context),
                 model: Some("opus".into()),
                 effort: Some("high".into()),
                 permission: Some("plan".into()),
                 usage: Some(claude_usage.clone()),
-                servers: Some(servers.clone()),
+                servers: servers.clone(),
                 sign_in: Some(sign_in.clone()),
                 background_jobs: Some(background.clone()),
                 ..Default::default()
@@ -129,14 +125,13 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
             Kind::Codex,
             wire::CodexSnapshot {
                 plan: Some(tasks.clone()),
-                context: Some(context.clone()),
+                context: Some(context),
                 model: Some("opus".into()),
                 effort: Some("high".into()),
                 permission: Some("plan".into()),
                 approval_policy: Some("on-request".into()),
-                sandbox: Some("workspace-write".into()),
                 usage: Some(codex_usage.clone()),
-                servers: Some(servers.clone()),
+                servers: servers.clone(),
                 sign_in: Some(sign_in.clone()),
                 background_jobs: Some(background.clone()),
                 ..Default::default()
@@ -187,15 +182,13 @@ fn unknown_is_explicit_and_never_depends_on_which_fact_came_first() {
 }
 
 #[test]
-fn the_envelope_carries_phase_queue_and_working_on() {
+fn the_envelope_carries_phase_and_queue() {
     for kind in KINDS {
         let mut state = SessionState::new(agent(kind), CAP);
-        let mut snap = snapshot(kind, 4, Phase::Working, &[], &[(b"q1", false)]);
-        snap.working_on = Some("fixing the build".into());
+        let snap = snapshot(kind, 4, Phase::Working, &[], &[(b"q1", false)]);
         apply_checked(&mut state, ev_snapshot(snap));
         let decoded = state.agent_state();
         assert_eq!(decoded.phase, Phase::Working);
-        assert_eq!(decoded.working_on.as_deref(), Some("fixing the build"));
         assert_eq!(decoded.queue.len(), 1);
         assert_eq!(decoded.revision, 4);
     }

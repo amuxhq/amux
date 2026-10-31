@@ -267,12 +267,12 @@ mod tests {
         assert!(!live.watch(b"\x1b[?2004l\x1b[?2004htwo"));
     }
 
-    /// Every recorded session is live before the recorder, which waited
-    /// for Claude's screen, typed its first key.
+    /// Every recorded terminal session reads live on Claude's screen
+    /// before the agent that drove it typed its first key.
     #[test]
     fn recorded_sessions_are_live_at_their_first_screen() {
-        let fixtures =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../claude-specs/fixtures/pty");
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../claude-specs/fixtures/live/pty");
         let mut checked = 0;
         for entry in std::fs::read_dir(&fixtures).expect("pty fixtures") {
             let path = entry.expect("fixture").path().join("io.jsonl");

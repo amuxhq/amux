@@ -12,6 +12,11 @@ chat shows. There is one per agent kind, in
 | `claude_sdk` | Headless Claude over stream-JSON | [`interpret::claude_sdk`](../crates/interpret/src/claude_sdk/mod.rs) |
 | `codex` | The Codex app server over JSON-RPC | [`interpret::codex`](../crates/interpret/src/codex/mod.rs) |
 
+The two Claude kinds write the same item and snapshot messages and share
+everything about drawing a call, a boundary and an agent message
+([`claude_common`](../crates/interpret/src/claude_common.rs)); they differ
+in how they read their provider and how an answer reaches it.
+
 The interpreters are the only place provider facts are read, and, with the
 client's thin per-kind layer, the only code that decodes an item or snapshot
 body. They run inside [the agent process](AGENT_PROCESS.md), which feeds
@@ -386,9 +391,10 @@ transcript row, in transcript order:
 - A queued-command attachment row is a prompt Claude took into the running
   turn at a tool boundary: a steer item.
 - Slash commands (`<command-name>` rows and their `<local-command-stdout>`
-  output, with terminal colour codes stripped), compaction boundaries and summaries, API error rows and the
-  interruption row (one beginning `[Request interrupted by user`) each become
-  their item.
+  output, with terminal colour codes stripped), compaction boundaries and API
+  error rows each become their item. The interruption row (one beginning
+  `[Request interrupted by user`) ends the turn as stopped, and a
+  compaction's summary row becomes nothing.
 - A `!command` typed in Claude's own view (`<bash-input>` and its
   `<bash-stdout>`/`<bash-stderr>` rows) is a Bash step with its output.
 - A user row of task-notification origin carries a background subagent's
@@ -440,9 +446,7 @@ Besides the session boundary `SessionStart` marks, a tool server's dialog,
 a streamed reply and a plan are the only items hooks make. When the call a
 dialog was raised under has only been announced by `PreToolUse` and its row
 has not landed, the dialog's item waits for that row, so it sits below the
-call. Recordings made before amux registered `PreToolUse` carry none, so an
-ask with no announced call is the oldest one for the same tool and input
-when that call's row lands.
+call.
 
 A subagent's calls reach the hooks socket carrying its agent id and never
 reach the followed transcript. They are counted as steps on the Agent row
@@ -531,18 +535,13 @@ rather than wrapping as pasted content, then Enter; interrupt as Escape; the
 cycle as Shift+Tab; trusting the folder as Down then Enter. These keys are
 Claude's own and have not changed across the versions amux hosts. Send now
 types the prompt's keys while the turn runs, which Claude takes at the
-turn's next tool boundary (the `steer_queued` and `steer_send_now`
-recordings, from 2.1.283).
+turn's next tool boundary (the `steer_folded` recording).
 
-The recording harness still answers Claude's menus with keys, as a person at
-its terminal does, so recordings keep covering asks answered in Claude's own
-view. Its versioned keymaps, the programs that interpret them and the
-evidence each carries live in
-[`crates/claude-specs/src/terminal/keymap.rs`](../crates/claude-specs/src/terminal/keymap.rs),
-and
-[`keymap_provenance.rs`](../crates/claude-specs/tests/keymap_provenance.rs)
-requires every verified entry to name a recording with the same version and
-run id.
+A person at Claude's own terminal may answer an ask there before amux does.
+The live lane covers that by attaching Claude's terminal and typing Claude's
+own keys into it: 1 on a permission, Escape on one, a digit on a question
+(the `terminal_allow`, `terminal_escape` and `terminal_question`
+recordings).
 
 ## Headless Claude
 
@@ -745,9 +744,9 @@ answer.
   | `item/tool/requestUserInput` | Question |
   | `mcpServer/elicitation/request` | A tool server's form or link, or, when Codex marks it as a tool-call approval, approval of the running tool server call. An approval for amux's own tool server is answered approved at once (for the session when Codex offers it) and opens no ask: amux's own tools never ask, on any kind |
 
-  `item/tool/call` is answered at once that this client hosts no dynamic
-  tools. Any other request is answered with a method-not-found error and
-  drawn as an unrecognized item.
+  Any other request is answered with a method-not-found error and drawn as
+  an unrecognized item; `item/tool/call` would be one, but Codex sends it
+  only for dynamic tools a client declares, and amux declares none.
 - **Turns.** `turn/started` begins one and records its id; `turn/completed`
   ends it with its status (completed, interrupted or failed, with an error
   item when the turn carries one) and dismisses every ask still open. A
@@ -777,10 +776,10 @@ answer.
   way. An approval Codex resolves (`serverRequest/resolved`) without amux's
   answer was answered elsewhere: its decision is marked so and reads
   allowed or denied by how the command then ends; one resolved because amux
-  interrupted the turn is dismissed. The recordings `two_clients_prompt`,
-  `two_clients_approval` and `two_clients_steer` hold real sessions of two
-  clients on one server; each line carries the client it belongs to, and
-  the interpreter reads only amux's.
+  interrupted the turn is dismissed. The live recording `attach` holds a
+  real session with Codex's own app attached: the app's prompt and the
+  approval it led to, answered from amux. A recording keeps amux's own
+  lines only, which is all the interpreter reads.
 - **Child threads' asks.** Codex sends a child thread's approval requests to
   every client of the server. Each ask keeps the thread that asked: a
   child's points at no row of the agent's turn (its work is drawn by the
@@ -819,7 +818,7 @@ answer.
 - **Agent messages** go to Codex with `thread/inject_items`. Codex reports
   nothing about an injected item, so the interpreter writes the agent-message
   item itself, at acceptance. A probe of codex-cli 0.157.0 settled when the
-  message counts as consumed (`CODEX_INJECT_CONSUMPTION`): a running turn
+  message counts as consumed: a running turn
   answers items injected into it before it ends, so a message injected
   mid-turn is consumed at the inject's acknowledgement; an inject into an idle
   thread is answered by an empty turn the interpreter starts for it, and is
@@ -827,7 +826,7 @@ answer.
   thread is running is held until it is; if a prompt is waiting for the
   thread as well (a spawn's task), the held messages are injected and ride
   that prompt's turn instead of an empty one, so the model reads its task
-  with them. Both arms have goldens of their own.
+  with them.
 
 ## Provider transport crates
 
@@ -836,19 +835,20 @@ The messages themselves are in the protocol crates, described with these in
 
 | Crate | What it holds | Who uses it |
 |---|---|---|
-| [`claude`](../crates/claude/src/lib.rs) | Hosting Claude Code: hook forwarding over the hook socket (`hooks`), launch settings and the environment scrub (`launch`), the messaging socket client (`messaging`), transcript tailing (`transcript`), session files (`history`) and version probing (`version`) | The agent process (hooks, launch, messaging, version, session files), `amux internal hook claude`, and `claude-specs` |
-| [`codex`](../crates/codex/src/lib.rs) | Hosting the Codex app server and a client for it: spawn, initialize, threads, turns, approvals, notifications, all on `codex-protocol` types | `codex-specs`, which drives Codex to record scenarios. The agent process and the interpreter write `codex-protocol` messages themselves |
-| [`pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal hosting: spawn in a process group, one output stream, input, resize, process-group signals, graceful termination | The agent process (terminal Claude and Codex views) and `claude-specs` |
+| [`claude`](../crates/claude/src/lib.rs) | Hosting Claude Code: hook forwarding over the hook socket (`hooks`), launch settings and the environment scrub (`launch`), the messaging socket client (`messaging`), session files (`history`) and version probing (`version`) | The agent process (hooks, launch, messaging, version, session files) and `amux internal hook claude` |
+| [`codex`](../crates/codex/src/lib.rs) | Hosting the Codex app server: the listening socket (stdio on Windows), the process group, and whole messages in and out as bytes | The agent process, for its Codex server and the catalogue probe |
+| [`pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal hosting: spawn in a process group, one output stream, input, resize, process-group signals, graceful termination | The agent process (terminal Claude and Codex views) and `claude-probe`'s terminal capture |
 
 ## Recordings and re-recording
 
-The interpreters are tested against real provider traffic, recorded by the
-spec crates and sanitized so it replays offline:
+The interpreters are tested against real provider traffic, recorded in the
+live lane with amux's own agent driving the provider, and sanitized so it
+replays offline:
 
 | Crate | Recordings |
 |---|---|
-| [`claude-specs`](../crates/claude-specs/src/lib.rs) | `fixtures/sdk/<spec>/` for headless Claude, `fixtures/pty/<spec>/` for terminal Claude, two transcript captures in `fixtures/claude-pty/` that cannot be regenerated in the tree ([their README](../crates/claude-specs/fixtures/claude-pty/README.md)), and the live run's captures in `fixtures/live/{sdk,pty}/<scenario>/`, driven by amux's own interpreter ([their README](../crates/claude-specs/fixtures/live/README.md)) |
-| [`codex-specs`](../crates/codex-specs/src/lib.rs) | `fixtures/runtime/<spec>/`, with the capture conditions in [`PROVENANCE.md`](../crates/codex-specs/fixtures/runtime/PROVENANCE.md), and the live run's captures in `fixtures/live/<scenario>/` ([their README](../crates/codex-specs/fixtures/live/README.md)) |
+| [`claude-specs`](../crates/claude-specs/src/lib.rs) | The live run's captures in `fixtures/live/{sdk,pty}/<scenario>/`: the whole headless Claude and terminal Claude corpora ([their README](../crates/claude-specs/fixtures/live/README.md)), and two transcript captures in `fixtures/claude-pty/` that cannot be regenerated in the tree ([their README](../crates/claude-specs/fixtures/claude-pty/README.md)) |
+| [`codex-specs`](../crates/codex-specs/src/bin/codex_probe/main.rs) | `fixtures/live/<scenario>/`, the live run's captures, driven by amux's own interpreter: the whole Codex corpus ([their README](../crates/codex-specs/fixtures/live/README.md)) |
 
 A recording is a directory holding `manifest.json` (the provider, version and
 model it was recorded with, its content hashes, the fields it observed, and
@@ -859,8 +859,8 @@ provider ids, timestamps, payloads and ordering are kept.
 
 An interpreter fixture names its recording by a relative path and a format
 (`claude_pty_io`, `transcript_rows`, `claude_sdk_io` or `codex_io`), so the
-same bytes feed the recorded replays in the spec crates, the provider fakes'
-conformance tests and the interpreter goldens.
+same bytes feed the provider fakes' conformance tests, the protocol crates'
+corpus checks and the interpreter goldens.
 
 ### Re-recording
 
@@ -868,47 +868,36 @@ The probes run the real provider under your own login, so they are never
 part of an ordinary test run.
 
 ```sh
-# Claude: list the specs and what each was recorded and verified with.
-cargo run -p claude-specs --bin claude-probe -- list [--sdk|--pty]
-# Record one or more specs again, terminal or headless.
-cargo run -p claude-specs --bin claude-probe -- record --pty <spec>...
-cargo run -p claude-specs --bin claude-probe -- record --sdk <spec>...
-# Run every spec live and record the evidence.
-cargo run -p claude-specs --bin claude-probe -- probe [--sdk] [--pty] [--out <dir>]
+# Terminal or headless Claude: run its live scenarios, then join each
+# passing capture.
+just live claude_pty <scenario>...
+cargo run -p claude-specs --bin claude-probe -- join target/live/recordings/claude_pty/<scenario> <name>
+just live claude_sdk <scenario>...
+cargo run -p claude-specs --bin claude-probe -- join target/live/recordings/claude_sdk/<scenario> <name>
 
-# Codex, the same three commands.
-cargo run -p codex-specs --bin codex-probe -- list
-cargo run -p codex-specs --bin codex-probe -- record <spec>...
-cargo run -p codex-specs --bin codex-probe -- probe [--out <dir>]
+# Codex, the same way.
+just live codex <scenario>...
+cargo run -p codex-specs --bin codex-probe -- join target/live/recordings/codex/<scenario> <name>
 ```
 
-`claude-probe` runs the `claude` on your `PATH`, or the one named by
-`CLAUDE_REAL_PATH`; `codex-probe` runs `codex` and records with the model its
-specs pin (`CAPTURE_MODEL` in `crates/codex-specs/src/specs.rs`). A Claude
-capture, terminal or headless, reads only project and local settings and only
-the tool servers its spec names (`--setting-sources project,local
---strict-mcp-config`, unless the spec names its own sources), so your own
-plugins, skills, agents, permission rules, default mode and connected accounts
-stay out of the recording. A terminal capture's transcript drops the rows that copy each API request and scrubs the
+The probe stands in for the provider on the lane's `PATH` and runs the real
+one past it. A live Codex agent runs on your account's default model
+in a Codex home holding only your login, with a config of its own where its
+scenario names one (a tool server, a provider, web search). A live Claude
+agent reads only project settings and the tool servers its scenario names
+(`--setting-sources project --strict-mcp-config`), and a terminal one starts
+in the default permission mode unless its scenario names another, so your
+own plugins, skills, agents, permission rules, default mode and connected
+accounts stay out of the recording. A terminal capture's transcript drops the rows that copy each API request and scrubs the
 attachments that carry your instructions, environment, attribution and what
 you have installed.
 
-`probe` runs every registered spec live and updates only the evidence its
-outcome permits. A spec that passes gets a verification (version, time, run
-id) appended to its manifest; for a terminal Claude spec, the same version,
-run id and spec name are appended to the harness keymap's `verified` list. A
-spec that fails live is recorded again, and reported failed if recording
-fails too. Each run writes `probe.json` (every spec's
-outcome) and `drift.json` (how the live shapes differ from the recorded
-ones) under `target/claude-probe/<run id>/` or `target/codex-probe/<run id>/`,
-or the directory `--out` names. `record --pty` also appends the keymap
-evidence, once the fresh recording has passed strict replay.
-
-After re-recording, run the replays and review the diffs:
+After re-recording, run the corpus checks and review the diffs:
 
 ```sh
-just test-crate claude-specs
-just suite codex-recorded-adapter spec_replay::
+just test-crate claude-protocol
+just test-crate provider-fakes
+just suite codex-protocol
 INTERPRET_UPDATE_GOLDENS=1 just test-crate interpret   # then review the golden diff
 ```
 
@@ -971,8 +960,8 @@ to the kind's bodies and to a golden, together. Run it on its own with
 - Give every item a key derived from the provider's own ids, stable across
   re-emission and across incarnations.
 - When a snapshot body gains a field, give it an unknown in `unknown.rs`.
-- Record the behaviour you depend on with the spec crate's probe, point a
-  fixture at the recording, and author fixtures only for what no recording
+- Record the behaviour you depend on in a live scenario and join it (see
+  [Re-recording](#re-recording)), point a fixture at the recording, and author fixtures only for what no recording
   can show.
 - Update `vocabulary.toml` and a golden when the change affects what a chat
   can show, and the client's per-kind layer when a body changes (see

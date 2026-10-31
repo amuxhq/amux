@@ -306,12 +306,6 @@ impl ProfileRuntime {
         }
     }
 
-    /// The copy for `provider` as held, asking nothing.
-    pub fn held_host_catalogue(&self, provider: Provider) -> Option<HostCatalogue> {
-        let held = self.offers().held.lock().unwrap();
-        held.get(&provider).map(|held| held.offer.clone())
-    }
-
     /// Runs `amux catalogue <provider>` in `folder`, in its own process
     /// group, and reads what it wrote to the profile's providers directory.
     /// The caller holds the provider's run lock.
@@ -346,7 +340,7 @@ impl ProfileRuntime {
             .spawn()
             .map_err(|error| CatalogueError::Helper(error.to_string()))?;
         let pid = child.id();
-        let deadline = Duration::from_millis(u64::try_from(launch.start_deadline_ms).unwrap_or(0));
+        let deadline = Duration::from_millis(launch.core.start_deadline_ms);
         let output = match tokio::time::timeout(deadline, child.wait_with_output()).await {
             Ok(output) => output.map_err(|error| CatalogueError::Helper(error.to_string()))?,
             Err(_) => {
@@ -357,7 +351,7 @@ impl ProfileRuntime {
                 return Err(CatalogueError::Helper(format!(
                     "asking {} took longer than {}ms",
                     provider_word(provider),
-                    launch.start_deadline_ms
+                    launch.core.start_deadline_ms
                 )));
             }
         };

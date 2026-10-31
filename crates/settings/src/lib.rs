@@ -50,33 +50,6 @@ pub enum ConfigError {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Invalid(String),
-    #[error("configuration disagrees on {field}: expected {}, found {}", expected.display(), actual.display())]
-    Disagreement {
-        field: &'static str,
-        expected: PathBuf,
-        actual: PathBuf,
-    },
-}
-
-impl Clone for ConfigError {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Io(error) => Self::Io(match error.raw_os_error() {
-                Some(code) => std::io::Error::from_raw_os_error(code),
-                None => std::io::Error::new(error.kind(), error.to_string()),
-            }),
-            Self::Invalid(message) => Self::Invalid(message.clone()),
-            Self::Disagreement {
-                field,
-                expected,
-                actual,
-            } => Self::Disagreement {
-                field,
-                expected: expected.clone(),
-                actual: actual.clone(),
-            },
-        }
-    }
 }
 
 /// The amux account service a profile signs in to unless told otherwise.
@@ -379,9 +352,10 @@ impl Default for NewAgentSettings {
     }
 }
 
-/// Where the palette comes from: the terminal amux was started in, a
-/// shipped theme name, or a YAML theme file path.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Where the palette comes from: the terminal amux was started in, or a
+/// shipped theme name.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ThemeSetting {
     /// Derived from what the terminal reports about its own colours, with
     /// the shipped dark palette as the fallback for a terminal that does
@@ -390,35 +364,6 @@ pub enum ThemeSetting {
     Terminal,
     Dark,
     Light,
-    File(PathBuf),
-}
-
-impl Serialize for ThemeSetting {
-    fn serialize<S: serde::Serializer>(
-        &self,
-        serializer: S,
-    ) -> std::result::Result<S::Ok, S::Error> {
-        match self {
-            Self::Terminal => serializer.serialize_str("terminal"),
-            Self::Dark => serializer.serialize_str("dark"),
-            Self::Light => serializer.serialize_str("light"),
-            Self::File(path) => path.serialize(serializer),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for ThemeSetting {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> std::result::Result<Self, D::Error> {
-        let value = String::deserialize(deserializer)?;
-        Ok(match value.as_str() {
-            "terminal" => Self::Terminal,
-            "dark" => Self::Dark,
-            "light" => Self::Light,
-            _ => Self::File(PathBuf::from(value)),
-        })
-    }
 }
 
 /// The terminal colour capability preference.
@@ -435,6 +380,7 @@ pub enum ColorSetting {
 /// agent's own interface (Claude Code's or Codex's), which a new agent is
 /// attached to when it starts and `amux attach` opens.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "lowercase")]
 pub enum ChatInSetting {
     #[default]
@@ -567,25 +513,15 @@ impl InstallationConfig {
         let base = path.parent().unwrap();
         config.root = absolute_path(&config.root, base)?;
         config.front_door_socket = socket_path(&config.front_door_socket, base)?;
-        if let ThemeSetting::File(theme) = &mut config.ui.theme {
-            *theme = absolute_path(theme, base)?;
-        }
         config.path = Some(path);
         config.validate()?;
         Ok(config)
     }
 
-    /// Checks what parsing alone cannot: the supervisor and updates pair,
-    /// the leader key and the host name.
+    /// Checks what parsing alone cannot: the supervisor and updates pair
+    /// and the host name.
     pub fn validate(&self) -> Result<(), ConfigError> {
         self.updates()?;
-        // Leader key must be ctrl+<a-z>
-        let ch = self.keybinds.leader.char;
-        if !ch.is_ascii_lowercase() {
-            return Err(ConfigError::Invalid(format!(
-                "invalid leader key: byte 0x{ch:02x} is not a lowercase letter (expected ctrl+<a-z>)"
-            )));
-        }
         match &self.host_name {
             Some(host_name) => validate_host_name(host_name),
             None => Ok(()),
@@ -617,34 +553,29 @@ impl InstallationConfig {
 }
 
 /// Every key the installation's file takes, dotted as `amux config` names
-/// them, in the order the file documents them.
-pub const INSTALLATION_KEYS: &[&str] = &[
-    "host_name",
-    "repository_roots",
-    "supervisor",
-    "updates",
-    "channel",
-    "keep_awake",
-    "telemetry",
-    "auto_reports",
-    "ui.theme",
-    "ui.color",
-    "ui.chat_in",
-    "keybinds.leader",
-    "new_agent.claude.model",
-    "new_agent.claude.effort",
-    "new_agent.claude.permission",
-    "new_agent.codex.model",
-    "new_agent.codex.effort",
-    "new_agent.codex.permission",
-    "root",
-    "front_door_socket",
-    "releases_url",
-    "discovery.scope",
-    "agent.grace_secs",
-    "agent.drain_secs",
-    "agent.facts_ring_mib",
-];
+/// them, in alphabetical order: the leaves of a default config, and the two
+/// that are absent until set.
+pub fn installation_keys() -> Vec<String> {
+    fn leaves(prefix: &str, table: &toml::Table, out: &mut Vec<String>) {
+        for (key, value) in table {
+            let path = if prefix.is_empty() {
+                key.clone()
+            } else {
+                format!("{prefix}.{key}")
+            };
+            match value {
+                toml::Value::Table(inner) => leaves(&path, inner, out),
+                _ => out.push(path),
+            }
+        }
+    }
+    let default = toml::Table::try_from(InstallationConfig::default())
+        .expect("the default config serialises");
+    let mut keys = vec!["host_name".to_owned(), "updates".to_owned()];
+    leaves("", &default, &mut keys);
+    keys.sort();
+    keys
+}
 
 /// The front door's address: a socket file, resolved like any other path, or
 /// on Windows a named pipe, which lives in the pipe namespace rather than on
@@ -698,9 +629,6 @@ mod tests {
         assert_eq!(socket_path(pipe, Path::new("/")).unwrap(), pipe);
     }
 
-    /// The key list `amux config` checks against is every field the file
-    /// takes: the leaves of a default config, and the two that are absent
-    /// until set.
     #[test]
     fn an_agent_setting_given_alone_keeps_the_shipped_rest() {
         let config = installation("[new_agent.claude]\nmodel = \"sonnet\"\n").unwrap();
@@ -710,34 +638,6 @@ mod tests {
             NewAgentSettings::default().claude.effort
         );
         assert_eq!(config.new_agent.codex, NewAgentSettings::default().codex);
-    }
-
-    #[test]
-    fn the_key_list_is_every_field() {
-        fn leaves(prefix: &str, table: &toml::Table, out: &mut Vec<String>) {
-            for (key, value) in table {
-                let path = if prefix.is_empty() {
-                    key.clone()
-                } else {
-                    format!("{prefix}.{key}")
-                };
-                match value {
-                    toml::Value::Table(inner) => leaves(&path, inner, out),
-                    _ => out.push(path),
-                }
-            }
-        }
-        let default = toml::Table::try_from(InstallationConfig::default()).unwrap();
-        let mut found = Vec::new();
-        leaves("", &default, &mut found);
-        found.extend(["host_name".to_owned(), "updates".to_owned()]);
-        found.sort();
-        let mut listed: Vec<String> = INSTALLATION_KEYS
-            .iter()
-            .map(|key| key.to_string())
-            .collect();
-        listed.sort();
-        assert_eq!(found, listed);
     }
 
     #[test]
@@ -808,21 +708,6 @@ mod tests {
     }
 
     #[test]
-    fn ui_theme_file_path_roundtrip() {
-        let config =
-            installation("[ui]\ntheme = \"themes/forest.yaml\"\ncolor = \"truecolor\"\n").unwrap();
-        assert_eq!(
-            config.ui.theme,
-            ThemeSetting::File(PathBuf::from("themes/forest.yaml"))
-        );
-        assert_eq!(config.ui.color, ColorSetting::TrueColor);
-
-        let parsed = installation(&toml::to_string(&config).unwrap()).unwrap();
-        assert_eq!(parsed.ui.theme, config.ui.theme);
-        assert_eq!(parsed.ui.color, config.ui.color);
-    }
-
-    #[test]
     fn unknown_ui_color_is_rejected() {
         let error = installation("[ui]\ncolor = \"millions\"\n").unwrap_err();
         assert!(error.to_string().contains("unknown variant"));
@@ -859,14 +744,6 @@ mod tests {
     #[test]
     fn a_yaml_file_is_refused() {
         assert!(installation("host_name: desk\nkeep_awake: off\n").is_err());
-    }
-
-    #[test]
-    fn validate_leader_key_bad_char() {
-        let mut config = InstallationConfig::default();
-        config.keybinds.leader = LeaderKey { char: b'1' };
-        let err = config.validate().unwrap_err();
-        assert!(err.to_string().contains("leader key"));
     }
 
     #[test]

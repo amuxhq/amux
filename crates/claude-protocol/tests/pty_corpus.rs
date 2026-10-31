@@ -1,23 +1,18 @@
 //! Every transcript row and hook payload in every terminal Claude recording
-//! decodes with nothing left unknown and encodes back to the same JSON. A
-//! failure here is provider drift, or a type that does not match what Claude
-//! writes.
-
-use std::path::{Path, PathBuf};
+//! decodes with nothing left unknown. A failure here is provider drift, or a
+//! type that does not match what Claude writes.
 
 use claude_protocol::{hooks, transcript};
 use serde_json::Value;
+
+use crate::fixtures;
 
 /// A row the recorder's transcript tailer adds when it has read the file
 /// to its end; amux's, not Claude's.
 const TAILER_MARKER: &str = "amux.transcript_ready";
 
-fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../claude-specs/fixtures")
-}
-
-/// The registered corpus and the live captures beside it.
-const ROOTS: [&str; 2] = ["pty", "live/pty"];
+/// The terminal corpus: amux's live captures.
+const ROOTS: [&str; 1] = ["live/pty"];
 
 enum Line {
     Row(String),
@@ -37,7 +32,7 @@ fn lines() -> Vec<(String, Line)> {
         recordings.extend(found);
     }
     assert!(
-        recordings.len() >= 31,
+        recordings.len() >= 29,
         "found only {} recordings",
         recordings.len()
     );
@@ -101,36 +96,6 @@ fn every_recorded_row_and_payload_is_known() {
 }
 
 #[test]
-fn every_recorded_row_and_payload_encodes_back_to_the_same_json() {
-    let mut failures = Vec::new();
-    for (place, line) in lines() {
-        let (written, encoded) = match &line {
-            Line::Row(row) => (
-                row,
-                transcript::encode(&transcript::decode(row.as_bytes()).expect("decodes")),
-            ),
-            Line::Hook(payload) => (
-                payload,
-                hooks::encode(&hooks::decode(payload.as_bytes()).expect("decodes")),
-            ),
-        };
-        let written: Value = serde_json::from_str(written).expect("line is JSON");
-        let again: Value = serde_json::from_slice(&encoded).expect("encoded is JSON");
-        if written != again {
-            let mut differences = Vec::new();
-            differ("", &written, &again, &mut differences);
-            failures.push(format!("{place}: {}", differences.join(", ")));
-        }
-    }
-    assert!(
-        failures.is_empty(),
-        "{} lines changed:\n{}",
-        failures.len(),
-        failures.join("\n")
-    );
-}
-
-#[test]
 fn an_invented_row_or_payload_is_unknown_and_fails_strict() {
     let row = br#"{"type":"teleport","destination":"mars","sessionId":"s"}"#;
     match transcript::decode(row).expect("an object decodes") {
@@ -184,28 +149,4 @@ fn a_queued_prompt_with_an_image_reads_as_blocks() {
         blocks.iter().map(|block| block.kind()).collect::<Vec<_>>(),
         ["text", "image"]
     );
-    let again: Value = serde_json::from_slice(&transcript::encode(&decoded)).unwrap();
-    assert_eq!(again, row);
-}
-
-/// Where two JSON values differ, as paths with what each side holds.
-fn differ(path: &str, written: &Value, encoded: &Value, out: &mut Vec<String>) {
-    match (written, encoded) {
-        (Value::Object(a), Value::Object(b)) => {
-            for key in a.keys().chain(b.keys().filter(|key| !a.contains_key(*key))) {
-                let inner = format!("{path}.{key}");
-                match (a.get(key), b.get(key)) {
-                    (Some(x), Some(y)) => differ(&inner, x, y, out),
-                    (x, y) => out.push(format!("{inner} written {x:?} encoded {y:?}")),
-                }
-            }
-        }
-        (Value::Array(a), Value::Array(b)) if a.len() == b.len() => {
-            for (index, (x, y)) in a.iter().zip(b).enumerate() {
-                differ(&format!("{path}[{index}]"), x, y, out);
-            }
-        }
-        (a, b) if a != b => out.push(format!("{path} written {a} encoded {b}")),
-        _ => {}
-    }
 }

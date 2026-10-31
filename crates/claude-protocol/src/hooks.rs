@@ -79,11 +79,6 @@ pub fn strict(bytes: &[u8]) -> Result<Payload, Drift> {
     })
 }
 
-/// One payload as Claude would write it.
-pub fn encode(payload: &Payload) -> Vec<u8> {
-    decoding::encode(payload)
-}
-
 /// The fields every hook payload carries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Common {
@@ -101,22 +96,9 @@ pub struct Common {
     /// The prompt the turn started from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scratchpad_dir: Option<PathBuf>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub effort: Option<Effort>,
     /// Set when a subagent, not the main conversation, raised the hook.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_type: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Effort {
-    pub level: String,
-    #[serde(flatten)]
-    pub extensions: Extensions,
 }
 
 /// A session starting, resuming, or starting over after a clear or a
@@ -186,7 +168,6 @@ pub struct PostToolUse {
     pub common: Common,
     pub tool_name: String,
     pub tool_input: Value,
-    pub tool_response: Value,
     pub tool_use_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
@@ -226,13 +207,6 @@ pub struct PermissionDenied {
 pub struct Notification {
     #[serde(flatten)]
     pub common: Common,
-    #[serde(default = "crate::absent::message")]
-    pub message: String,
-    /// What Claude is showing: `idle_prompt`, a permission prompt, or a
-    /// tool server's form (`elicitation_dialog`) or link
-    /// (`elicitation_url_dialog`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub notification_type: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -305,8 +279,6 @@ pub struct MessageDisplay {
 pub struct PostModelSwitch {
     #[serde(flatten)]
     pub common: Common,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from_model: Option<String>,
     pub to_model: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
@@ -319,15 +291,9 @@ pub struct PostModelSwitch {
 pub struct Stop {
     #[serde(flatten)]
     pub common: Common,
-    #[serde(default = "crate::absent::stop_hook_active")]
-    pub stop_hook_active: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_assistant_message: Option<String>,
     /// The jobs still running in the background.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_tasks: Option<Vec<BackgroundTask>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_crons: Option<Vec<Value>>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -337,12 +303,6 @@ pub struct Stop {
 pub struct SubagentStop {
     #[serde(flatten)]
     pub common: Common,
-    #[serde(default = "crate::absent::stop_hook_active")]
-    pub stop_hook_active: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_transcript_path: Option<PathBuf>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_assistant_message: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

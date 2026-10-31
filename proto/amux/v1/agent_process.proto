@@ -17,7 +17,6 @@ import "amux/v1/session_service.proto";
 message AgentSpec {
   // The directory name; ours, never the provider's.
   bytes agent_id = 1;
-  bytes profile_id = 2;
   Kind kind = 3;
   // The project directory the provider child is launched in, frozen at
   // spawn.
@@ -36,13 +35,9 @@ message AgentSpec {
   // Exactly what the agent process reads at start and nothing the daemon
   // consumes.
   EffectiveConfig config = 10;
-  // Which binary wrote this.
-  string daemon_version = 11;
   int64 created_at_ms = 12;
   // The n in spec.<n>.
   uint32 incarnation = 13;
-  // The path that ran for this incarnation: a record, not an instruction.
-  string provider_binary = 14;
   // What seeds the child's queue: the spawn's prompt, or a parent's
   // message on a parent-driven resume. Daemon-owned; a client never
   // supplies an envelope.

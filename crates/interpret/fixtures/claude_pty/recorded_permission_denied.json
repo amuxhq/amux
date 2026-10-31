@@ -1,0 +1,20 @@
+{
+  "about": "A command denied from amux with a note: the call reads denied and the note reaches Claude.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "../../../claude-specs/fixtures/live/pty/permission_denied/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

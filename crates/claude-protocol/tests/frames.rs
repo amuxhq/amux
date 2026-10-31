@@ -6,16 +6,16 @@ use std::path::Path;
 use claude_protocol::stream::control::{ControlOutcome, InitializeRequestBody};
 use claude_protocol::stream::{
     self, ContentBlock, ControlRequest, ControlRequestBody, ControlResponse, Extensions,
-    HookOutput, HookSpecificOutput, InitializationResult, Input, Message, MessageContent,
-    MessageParam, Output, PermissionMode, PermissionResult, PermissionUpdate,
-    PermissionUpdateDestination, ResultMessage, Role, SyncHookOutput, UserInput,
+    InitializationResult, Input, Message, MessageContent, MessageParam, Output, PermissionMode,
+    PermissionResult, PermissionUpdate, PermissionUpdateDestination, ResultMessage, Role,
+    UserInput,
 };
 use serde_json::Value;
 
 /// The lines of one recording that contain every needle, in order.
 fn recorded(spec: &str, stdout: bool, needles: &[&str]) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../claude-specs/fixtures/sdk")
+        .join("../claude-specs/fixtures/live/sdk")
         .join(spec)
         .join("io.jsonl");
     std::fs::read_to_string(&path)
@@ -73,7 +73,6 @@ fn what_amux_writes_encodes_with_sorted_keys() {
         parent_tool_use_id: None,
         session_id: "s".into(),
         uuid: None,
-        priority: None,
         extensions: Extensions::new(),
     });
     assert_eq!(
@@ -136,30 +135,6 @@ fn amux_answers_write_only_the_keys_amux_sets() {
         answer(&deny),
         r#"{"response":{"request_id":"req_1","response":{"behavior":"deny","interrupt":false,"message":"no"},"subtype":"success"},"type":"control_response"}"#
     );
-
-    let carry_on = HookOutput::Sync(SyncHookOutput {
-        r#continue: Some(true),
-        ..SyncHookOutput::default()
-    });
-    assert_eq!(
-        answer(&carry_on),
-        r#"{"response":{"request_id":"req_1","response":{"continue":true},"subtype":"success"},"type":"control_response"}"#
-    );
-    let decided = HookOutput::Sync(SyncHookOutput {
-        hook_specific_output: Some(HookSpecificOutput::PermissionRequest { decision: deny }),
-        ..SyncHookOutput::default()
-    });
-    assert_eq!(
-        answer(&decided),
-        r#"{"response":{"request_id":"req_1","response":{"hookSpecificOutput":{"decision":{"behavior":"deny","interrupt":false,"message":"no"},"hookEventName":"PermissionRequest"}},"subtype":"success"},"type":"control_response"}"#
-    );
-    let later = HookOutput::Async {
-        timeout: Some(std::time::Duration::from_secs(2)),
-    };
-    assert_eq!(
-        answer(&later),
-        r#"{"response":{"request_id":"req_1","response":{"async":true,"asyncTimeout":2000},"subtype":"success"},"type":"control_response"}"#
-    );
 }
 
 #[test]
@@ -174,10 +149,6 @@ fn unknown_fields_and_blocks_are_kept_and_refused_strictly() {
         assistant.message.content[0],
         ContentBlock::Unknown(_)
     ));
-    let again: Value =
-        serde_json::from_slice(&stream::encode_output(&stream::decode(line).unwrap())).unwrap();
-    assert_eq!(again, serde_json::from_slice::<Value>(line).unwrap());
-
     let drift = stream::strict(line).expect_err("refused");
     assert!(drift.to_string().contains("hologram"), "{drift}");
 }
@@ -194,24 +165,21 @@ fn a_line_that_is_not_an_object_is_the_only_decode_error() {
 
 #[test]
 fn a_field_claude_always_writes_is_filled_in_and_refused_strictly() {
-    // A result without `total_cost_usd` or `session_id`, as amux's own test
+    // A result without `session_id` or `modelUsage`, as amux's own test
     // inputs write it.
-    let line = br#"{"type":"result","subtype":"success","uuid":"r","duration_ms":10,"duration_api_ms":8,"is_error":false,"num_turns":1,"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1},"modelUsage":{},"permission_denials":[],"result":"done"}"#;
+    let line = br#"{"type":"result","subtype":"success","uuid":"r","duration_ms":10,"duration_api_ms":8,"is_error":false,"num_turns":1,"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1},"permission_denials":[],"result":"done"}"#;
     let Output::Message(Message::Result(ResultMessage::Success(success))) =
         stream::decode(line).expect("decodes")
     else {
         panic!("not a successful result");
     };
-    assert_eq!(success.common.total_cost_usd, None);
+    assert!(success.common.model_usage.is_none());
     assert_eq!(success.common.session_id, "");
     assert_eq!(success.result, "done");
 
     let drift = stream::strict(line).expect_err("refused");
     let reasons = drift.to_string();
-    assert!(
-        reasons.contains("missing field `total_cost_usd`"),
-        "{reasons}"
-    );
+    assert!(reasons.contains("missing field `modelUsage`"), "{reasons}");
     assert!(reasons.contains("missing field `session_id`"), "{reasons}");
 }
 
@@ -220,7 +188,7 @@ fn a_transcript_row_or_hook_missing_what_claude_always_writes_is_filled_in_and_r
     use claude_protocol::{hooks, transcript};
 
     // A user row and a hook payload as amux's own test inputs write them:
-    // no promptId, version, cwd and the rest of the envelope.
+    // no version, cwd and the rest of the envelope.
     let row = br#"{"type":"user","uuid":"u1","timestamp":"2027-01-15T08:00:00.000Z","message":{"role":"user","content":"go"}}"#;
     let transcript::Row::User(user) = transcript::decode(row).expect("decodes") else {
         panic!("not a user row");
@@ -228,7 +196,6 @@ fn a_transcript_row_or_hook_missing_what_claude_always_writes_is_filled_in_and_r
     assert_eq!(user.envelope.uuid, "u1");
     assert_eq!(user.envelope.version, "");
     let reasons = transcript::strict(row).expect_err("refused").to_string();
-    assert!(reasons.contains("missing field `promptId`"), "{reasons}");
     assert!(reasons.contains("missing field `version`"), "{reasons}");
 
     let hook = br#"{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{},"tool_use_id":"t1"}"#;

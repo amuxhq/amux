@@ -1,0 +1,24 @@
+{
+  "spec": "subagent",
+  "recorded": {
+    "provider": "codex",
+    "version": "0.166.0",
+    "model": "gpt-6.1-sol",
+    "at": "2026-10-31T11:58:08.414471Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:58cdc2b8065bb469f1143988d56cd18d3cff8539dcd159f9b65abde9cb4733c0",
+    "spawn.jsonl": "sha256:4c5fcab8a128a4aa6482301bf17ae7a554e62438622bef5369e13c2c0232a8fe"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 44,
+    "personal_identifiers": 2
+  },
+  "session_ids": [
+    "01a191d1-c38c-7c11-823d-8f50b87ef540"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

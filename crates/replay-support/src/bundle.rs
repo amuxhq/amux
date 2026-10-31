@@ -32,7 +32,7 @@ use interpret::codex::Codex;
 use interpret::ring::Entry;
 use prost::Message as _;
 use ui_state::{Msg, SessionState};
-use ui_view::{ChatOptions, Row};
+use ui_view::{Row, ToolRows};
 use wire::dump::{ClientSession, ClientSessionEvents, ClientTraced};
 use wire::{Agent, CaughtUp, Item, Kind, SessionEvent, Step, session_event};
 
@@ -439,13 +439,12 @@ impl AgentDump {
 
     /// Stage three: the rows the views draw for everything the state holds.
     pub fn rows(state: &SessionState) -> Vec<Row> {
-        let transcript = state.transcript();
-        match (transcript.oldest_held(), transcript.head()) {
-            (Some(oldest), Some(head)) => {
-                ui_view::chat_rows(state, oldest..=head, &ChatOptions::default())
-            }
-            _ => Vec::new(),
-        }
+        let keys: Vec<_> = state
+            .transcript()
+            .iter()
+            .map(|held| held.item.key.clone())
+            .collect();
+        ui_view::chat_rows_for(state, &keys, ToolRows::ShowAll)
     }
 }
 

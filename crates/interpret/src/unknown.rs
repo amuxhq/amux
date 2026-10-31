@@ -8,8 +8,8 @@
 //! is present with its own unknown state.
 
 use wire::{
-    BackgroundJobs, ClaudePtySnapshot, ClaudeSdkSnapshot, ClaudeUsage, CodexSnapshot, CodexUsage,
-    ContextMeter, HealthState, SignIn, SignInState, TaskList, ToolServerHealth, UsageState,
+    BackgroundJobs, ClaudeSnapshot, ClaudeUsage, CodexSnapshot, CodexUsage, ContextMeter, SignIn,
+    SignInState, TaskList, UsageState,
 };
 
 pub fn task_list() -> TaskList {
@@ -24,7 +24,6 @@ pub fn context_meter() -> ContextMeter {
         known: false,
         used_tokens: 0,
         window_tokens: None,
-        breakdown: Vec::new(),
     }
 }
 
@@ -40,13 +39,6 @@ pub fn codex_usage() -> CodexUsage {
         state: UsageState::Unknown as i32,
         windows: Vec::new(),
         credits: None,
-    }
-}
-
-pub fn tool_server_health() -> ToolServerHealth {
-    ToolServerHealth {
-        state: HealthState::Unknown as i32,
-        servers: Vec::new(),
     }
 }
 
@@ -67,8 +59,8 @@ pub fn background_jobs() -> BackgroundJobs {
 
 /// No ask is open until a fact opens one, so an empty ask list is known,
 /// not unknown.
-pub fn claude_pty() -> ClaudePtySnapshot {
-    ClaudePtySnapshot {
+pub fn claude() -> ClaudeSnapshot {
+    ClaudeSnapshot {
         asks: Vec::new(),
         tasks: Some(task_list()),
         context: Some(context_meter()),
@@ -79,28 +71,11 @@ pub fn claude_pty() -> ClaudePtySnapshot {
         effort: None,
         switched_away: None,
         usage: Some(claude_usage()),
-        servers: Some(tool_server_health()),
+        servers: Vec::new(),
         sign_in: Some(sign_in()),
         background_jobs: Some(background_jobs()),
         running_calls: Vec::new(),
-    }
-}
-
-pub fn claude_sdk() -> ClaudeSdkSnapshot {
-    ClaudeSdkSnapshot {
-        asks: Vec::new(),
-        tasks: Some(task_list()),
-        context: Some(context_meter()),
-        model: None,
-        model_name: None,
-        effort: None,
-        permission: None,
         active_tasks: Vec::new(),
-        usage: Some(claude_usage()),
-        servers: Some(tool_server_health()),
-        sign_in: Some(sign_in()),
-        background_jobs: Some(background_jobs()),
-        provider_session: None,
     }
 }
 
@@ -113,11 +88,7 @@ pub fn codex() -> CodexSnapshot {
         permission: None,
         mode: None,
         approval_policy: None,
-        sandbox: None,
-        approvals_reviewer: None,
-        collaboration_mode: None,
-        active_turn: None,
-        servers: Some(tool_server_health()),
+        servers: Vec::new(),
         usage: Some(codex_usage()),
         sign_in: Some(sign_in()),
         background_jobs: Some(background_jobs()),
@@ -197,8 +168,7 @@ mod tests {
 
     #[test]
     fn every_snapshot_field_has_an_explicit_unknown() {
-        assert_total("ClaudePtySnapshot", claude_pty().encode_to_vec());
-        assert_total("ClaudeSdkSnapshot", claude_sdk().encode_to_vec());
+        assert_total("ClaudeSnapshot", claude().encode_to_vec());
         assert_total("CodexSnapshot", codex().encode_to_vec());
     }
 }

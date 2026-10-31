@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 schemars = { workspace = true }
 serde = { workspace = true }
+wire = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

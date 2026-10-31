@@ -2,12 +2,9 @@
 
 use std::sync::Weak;
 
-use daemon_core::payload::{self, PublicKey};
-use daemon_core::{ChannelId, Input};
+use daemon_core::{ChannelId, Input, payload};
 
-use super::Opened;
 use crate::HostId;
-use crate::link::{ChannelClass, ChannelError};
 use crate::routing::{LinkId, core_host};
 use crate::runtime::ProfileRuntime;
 
@@ -46,27 +43,19 @@ impl CoreLinks {
         runtime.driver().resumed(up).await
     }
 
-    /// Asks the core for a channel to `peer` over `link`, with the key the
-    /// shell pinned for the peer: the id and key to open it under, or why
-    /// it is not opened.
+    /// Asks the core for a channel to `peer` over `link`: the id to open
+    /// it under, or why it is not opened.
     pub(crate) async fn want_channel(
         &self,
         link: LinkId,
         peer: HostId,
-        class: ChannelClass,
-        pin: Option<Vec<u8>>,
-    ) -> Result<Opened, payload::ChannelError> {
+    ) -> Result<ChannelId, payload::ChannelError> {
         let Some(runtime) = self.0.upgrade() else {
-            return Err(payload::ChannelError::LinkClosed);
+            return Err(payload::ChannelError::NoLink);
         };
         runtime
             .driver()
-            .want_channel(
-                link.core(),
-                core_host(peer),
-                core_class(class),
-                pin.map(PublicKey),
-            )
+            .want_channel(link.core(), core_host(peer))
             .await
     }
 
@@ -95,47 +84,9 @@ impl CoreLinks {
         runtime.driver().look(look).await
     }
 
-    /// The channel's handshake verified the key the core gave.
-    pub(crate) fn opened(
-        &self,
-        channel: ChannelId,
-        link: LinkId,
-        peer: HostId,
-        class: ChannelClass,
-    ) {
-        self.report(Input::ChannelOpened {
-            channel,
-            link: link.core(),
-            peer: core_host(peer),
-            class: core_class(class),
-        });
-    }
-
-    pub(crate) fn closed(&self, channel: ChannelId, reason: payload::ChannelError) {
-        self.report(Input::ChannelClosed { channel, reason });
-    }
-}
-
-pub(crate) fn core_class(class: ChannelClass) -> payload::ChannelClass {
-    match class {
-        ChannelClass::Calls => payload::ChannelClass::Calls,
-        ChannelClass::Session => payload::ChannelClass::Session,
-    }
-}
-
-/// Why a channel the core asked for did not open, as the core hears it.
-pub(crate) fn core_error(error: &ChannelError) -> payload::ChannelError {
-    match error {
-        ChannelError::NoRoute { .. } | ChannelError::LinkUnavailable { .. } => {
-            payload::ChannelError::LinkClosed
-        }
-        ChannelError::Refused(refusal) => payload::ChannelError::Refused(*refusal),
-        ChannelError::NoPairingRoute
-        | ChannelError::Handshake(_)
-        | ChannelError::TurnedAway { .. }
-        | ChannelError::Identity(_)
-        | ChannelError::Tls(_)
-        | ChannelError::Revoked => payload::ChannelError::Handshake(error.to_string()),
+    /// The channel closed, or never opened.
+    pub(crate) fn closed(&self, channel: ChannelId) {
+        self.report(Input::ChannelClosed { channel });
     }
 }
 

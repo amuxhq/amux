@@ -10,9 +10,7 @@ use wire::{Agent, HostEntry, Input, Item, Kind, QueuedInput, SessionEvent, sessi
 
 use crate::Key;
 use crate::body::{AgentState, ItemClass, OpenAsk};
-use crate::inputs::{
-    InputId, InputOutcome, InputState, InputWhat, Inputs, RefusalReason, SentInput,
-};
+use crate::inputs::{InputId, InputOutcome, InputState, InputWhat, Inputs, SentInput};
 use crate::transcript::{Appended, Changed, Held, Transcript};
 
 /// Everything the driver forwards to a session.
@@ -629,6 +627,7 @@ impl SessionState {
             }
             Msg::Send(input) => {
                 let id = input.input_id.clone();
+                let to_feed = self.phase() == PhaseView::Idle && self.queue().is_empty();
                 outcome.session = self.inputs.push(input);
                 if outcome.session
                     && let Some(sent) = self.inputs.get_mut(&id)
@@ -644,6 +643,11 @@ impl SessionState {
                     && sent.what.holds()
                 {
                     sent.state = InputState::Held;
+                }
+                if outcome.session
+                    && let Some(sent) = self.inputs.get_mut(&id)
+                {
+                    sent.in_feed = to_feed && sent.state == InputState::Sent;
                 }
                 // A reflection can beat the optimistic row only on a resend
                 // of a known id, which the push refuses.
@@ -973,7 +977,7 @@ impl SessionState {
                 }
                 Some(Of::Rejected(rejected)) => {
                     let refusal = crate::refusal(&rejected);
-                    if refusal.reason == RefusalReason::Exited {
+                    if refusal.reason == wire::Refusal::Exited {
                         self.exited_under = Some(incarnation);
                     }
                     InputState::Rejected(refusal)

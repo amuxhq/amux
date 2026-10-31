@@ -279,15 +279,11 @@ fn core_section(
     if !entry.is_null() {
         let _ = writeln!(out, "manifest {entry}");
     }
-    let _ = match daemon_core::Checkpoint::from_bytes(&core.checkpoint) {
-        Ok(checkpoint) => writeln!(
-            out,
-            "-- checkpoint (schema {}, {} bytes of state) --",
-            checkpoint.schema,
-            checkpoint.state.len()
-        ),
-        Err(error) => writeln!(out, "-- checkpoint ({error}) --"),
-    };
+    let _ = writeln!(
+        out,
+        "-- checkpoint ({} bytes of state) --",
+        core.checkpoint.len()
+    );
     shown.insert(at.join(CORE_CHECKPOINT));
 
     // The lines as written, as the facts are: what this build cannot read
@@ -510,11 +506,6 @@ fn row(out: &mut String, agent: &Agent) {
 fn spec_lines(out: &mut String, mut spec: AgentSpec) {
     let env: BTreeMap<_, _> = std::mem::take(&mut spec.provider_env).into_iter().collect();
     let _ = writeln!(out, "agent_id {}", id(&std::mem::take(&mut spec.agent_id)));
-    let _ = writeln!(
-        out,
-        "profile_id {}",
-        id(&std::mem::take(&mut spec.profile_id))
-    );
     let _ = writeln!(out, "provider_env {env:?}");
     let _ = writeln!(out, "{spec:?}");
 }

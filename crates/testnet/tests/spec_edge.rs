@@ -68,7 +68,7 @@ async fn info(net: &Net, host: &str) -> wire::Profile {
     let profile = id(net, host);
     door(net, host)
         .await
-        .list_profiles(wire::ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -155,7 +155,7 @@ async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Vec<Vec<u8>> {
     let mut client = from.peer(to).await.expect("a route to the peer");
     let mut events = client
         .agents
-        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .subscribe_inventory(wire::Empty {})
         .await
         .expect("the peer answers a trusted caller")
         .into_inner();
@@ -265,7 +265,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     // The device identity the profile reports is the one pairing pins.
     let identity = admin(&net, "desk")
         .await
-        .get_device_identity(wire::GetDeviceIdentityRequest {})
+        .get_device_identity(wire::Empty {})
         .await
         .unwrap()
         .into_inner();
@@ -303,7 +303,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     .unwrap();
     let desk_peers = admin(&net, "desk")
         .await
-        .list_peers(wire::ListPeersRequest {})
+        .list_peers(wire::Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -322,11 +322,11 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     let from_desk = peer_inventory_hosts(&edge(&net, "desk"), laptop_id).await;
     assert!(from_laptop.contains(&desk_id.as_bytes().to_vec()));
     assert!(from_desk.contains(&laptop_id.as_bytes().to_vec()));
-    println!("the peer services answered laptop -> desk and desk -> laptop");
+    println!("the services answered laptop -> desk and desk -> laptop");
 
     // A stranger that trusts the desk but that the desk never paired with
     // is refused: its pinned dial never becomes a link, and on the desk's
-    // listener, without a trusted key, there are no peer services to reach.
+    // listener, without a trusted key, there are no agent services to reach.
     edge(&net, "stranger")
         .trust(&edge(&net, "desk"))
         .await
@@ -345,11 +345,11 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     println!("the stranger's dial was refused: {refused}");
     let desk_addr = edge(&net, "desk").lan_addr().unwrap();
     let outside_pairing = match edge(&net, "stranger").unpinned_channel(desk_addr).await {
-        Ok(channel) => wire::peer_agent_service_client(channel)
-            .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        Ok(channel) => wire::agent_service_client(channel)
+            .subscribe_inventory(wire::Empty {})
             .await
             .map(|_| ())
-            .expect_err("a stranger reaches no peer service")
+            .expect_err("a stranger reaches no agent service")
             .code(),
         Err(_) => tonic::Code::Unavailable,
     };
@@ -363,13 +363,13 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
         })
         .await
         .unwrap();
-    let in_pairing = wire::peer_agent_service_client(
+    let in_pairing = wire::agent_service_client(
         edge(&net, "stranger")
             .unpinned_channel(desk_addr)
             .await
             .expect("pairing mode admits an unpinned stream"),
     )
-    .subscribe_inventory(wire::SubscribeInventoryRequest {})
+    .subscribe_inventory(wire::Empty {})
     .await
     .map(|_| ())
     .expect_err("pairing mode serves only pairing")
@@ -377,11 +377,11 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     assert_eq!(in_pairing, tonic::Code::Unimplemented);
     admin(&net, "desk")
         .await
-        .cancel_pairing(wire::CancelPairingRequest {})
+        .cancel_pairing(wire::Empty {})
         .await
         .unwrap();
     println!(
-        "stranger refused: pinned dial never links; unpinned peer services call {outside_pairing:?}, \
+        "stranger refused: pinned dial never links; unpinned agent services call {outside_pairing:?}, \
          in pairing mode {in_pairing:?}"
     );
     assert!(!edge(&net, "desk").is_trusted(stranger_id));
@@ -392,7 +392,6 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
         .await
         .unpair(UnpairRequest {
             peer: host_ref(laptop_id),
-            reason: "retired".to_owned(),
         })
         .await
         .unwrap()
@@ -409,14 +408,14 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     })
     .await
     .unwrap();
-    let gone = admin(&net, "desk")
+    let peers = admin(&net, "desk")
         .await
-        .get_peer(wire::GetPeerRequest {
-            peer: Some(host_ref(laptop_id).unwrap()),
-        })
+        .list_peers(wire::Empty {})
         .await
-        .expect_err("an unpaired host is no peer");
-    assert_eq!(gone.code(), tonic::Code::NotFound);
+        .unwrap()
+        .into_inner()
+        .peers;
+    assert!(peers.is_empty(), "an unpaired host is no peer: {peers:?}");
     // The desk said why as it closed the link: the laptop still trusts it,
     // but reads it as no longer trusting the laptop, and does not dial it.
     until(
@@ -794,40 +793,10 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
         "clock +910s: relay-ada-1 expired, the link lived on relay-ada-3 and then relay-ada-4"
     );
 
-    // Pausing drops the link and keeps the credential; resuming brings it
-    // back; signing out forgets the credential and keeps the binding.
-    let paused = admin(&net, "desk")
-        .await
-        .pause_profile(wire::PauseProfileRequest {})
-        .await
-        .unwrap()
-        .into_inner();
-    assert!(matches!(paused.standing(), Some(Standing::Paused(_))));
-    until("the relay link to go with the pause", || async {
-        let links = relay.links("ada").await;
-        links
-            .is_empty()
-            .then_some(())
-            .ok_or_else(|| format!("ada's links: {links:?}"))
-    })
-    .await
-    .unwrap();
-    admin(&net, "desk")
-        .await
-        .resume_profile(wire::ResumeProfileRequest {})
-        .await
-        .unwrap();
-    until("the relay link to come back", || async {
-        let links = relay.links("ada").await;
-        (!links.is_empty())
-            .then_some(())
-            .ok_or_else(|| format!("ada's links: {links:?}"))
-    })
-    .await
-    .unwrap();
+    // Signing out forgets the credential and keeps the binding.
     let signed_out = admin(&net, "desk")
         .await
-        .sign_out(wire::SignOutRequest {})
+        .sign_out(wire::Empty {})
         .await
         .unwrap()
         .into_inner();

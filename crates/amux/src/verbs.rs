@@ -8,11 +8,11 @@ use anyhow::{Result, anyhow, bail};
 use settings::{ChatInSetting, InstallationConfig};
 use uuid::Uuid;
 use wire::{
-    Agent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, DeleteAgentRequest, DumpRequest, HostEntry, Input, Kind, Lifecycle, Phase,
-    PromptInput, PromptSubmission, Refusal, RenameAgentRequest, ResolveAgentRequest,
-    ResumeAgentRequest, SendInputRequest, StopAgentRequest, claude_pty_input, claude_sdk_input,
-    codex_input, create_agent_request, inventory_event, send_input_response,
+    Agent, AgentInput, ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest,
+    DeleteAgentRequest, DumpRequest, HostEntry, Input, Kind, Lifecycle, Phase, PromptInput,
+    PromptSubmission, Refusal, RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest,
+    SendInputRequest, StopAgentRequest, agent_input, create_agent_request, inventory_event,
+    send_input_response,
 };
 
 type Client = wire::ClientStubs;
@@ -21,7 +21,7 @@ type Client = wire::ClientStubs;
 pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent>)> {
     let mut stream = client
         .agents
-        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .subscribe_inventory(wire::Empty {})
         .await
         .map_err(crate::plain)?
         .into_inner();
@@ -238,30 +238,12 @@ pub enum CliAgent {
     Codex,
 }
 
-/// Where a person chats with an agent: amux's chat, or the agent's own
-/// interface (Claude Code's or Codex's), as `ui.chat_in` names them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
-pub enum Interface {
-    Amux,
-    Native,
-}
-
-impl Interface {
-    /// The interface asked for, else the configured one.
-    pub fn chosen(asked: Option<Interface>, config: &InstallationConfig) -> Interface {
-        asked.unwrap_or(match config.ui.chat_in {
-            ChatInSetting::Amux => Interface::Amux,
-            ChatInSetting::Native => Interface::Native,
-        })
-    }
-}
-
 /// What a new agent runs on. Claude runs headless for amux's chat and in a
 /// terminal for its own; Codex is the same agent for both.
-fn kind_for(agent: CliAgent, interface: Interface) -> Kind {
+fn kind_for(agent: CliAgent, interface: ChatInSetting) -> Kind {
     match (agent, interface) {
-        (CliAgent::Claude, Interface::Amux) => Kind::ClaudeSdk,
-        (CliAgent::Claude, Interface::Native) => Kind::ClaudePty,
+        (CliAgent::Claude, ChatInSetting::Amux) => Kind::ClaudeSdk,
+        (CliAgent::Claude, ChatInSetting::Native) => Kind::ClaudePty,
         (CliAgent::Codex, _) => Kind::Codex,
     }
 }
@@ -278,28 +260,19 @@ fn submission(text: &str) -> PromptSubmission {
     }
 }
 
-pub fn prompt(kind: i32, text: &str) -> Input {
-    let prompt = PromptInput {
-        text: text.to_owned(),
-        attachments: Vec::new(),
-    };
-    let of = match Kind::try_from(kind).unwrap_or(Kind::Unspecified) {
-        Kind::Codex => wire::KindInput::Codex(CodexInput {
-            of: Some(codex_input::Of::Prompt(prompt)),
-        }),
-        Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
-            of: Some(claude_sdk_input::Of::Prompt(prompt)),
-        }),
-        Kind::ClaudePty | Kind::Unspecified => wire::KindInput::ClaudePty(ClaudePtyInput {
-            of: Some(claude_pty_input::Of::Prompt(prompt)),
-        }),
+pub fn prompt(text: &str) -> Input {
+    let of = AgentInput {
+        of: Some(agent_input::Of::Prompt(PromptInput {
+            text: text.to_owned(),
+            attachments: Vec::new(),
+        })),
     };
     Input::new(Uuid::new_v4().as_bytes().to_vec(), of)
 }
 
 pub struct Create {
     pub agent: CliAgent,
-    pub interface: Option<Interface>,
+    pub interface: Option<ChatInSetting>,
     pub name: Option<String>,
     pub cwd: Option<PathBuf>,
     pub model: Option<String>,
@@ -321,7 +294,7 @@ pub async fn create(
         Some(cwd) => std::path::absolute(cwd)?,
         None => std::env::current_dir()?,
     };
-    let interface = Interface::chosen(create.interface, config);
+    let interface = create.interface.unwrap_or(config.ui.chat_in);
     let defaults = match create.agent {
         CliAgent::Claude => &config.new_agent.claude,
         CliAgent::Codex => &config.new_agent.codex,
@@ -329,7 +302,7 @@ pub async fn create(
     let configured = |given: &Option<String>, default: &str| {
         given
             .clone()
-            .or_else(|| (interface == Interface::Amux).then(|| default.to_owned()))
+            .or_else(|| (interface == ChatInSetting::Amux).then(|| default.to_owned()))
     };
     let model = configured(&create.model, &defaults.model);
     let effort = configured(&create.effort, &defaults.effort);
@@ -383,7 +356,7 @@ pub async fn send(client: &mut Client, reference: &str, text: &str) -> Result<()
         .sessions
         .send_input(SendInputRequest {
             agent_id: agent.agent_id.clone(),
-            input: Some(prompt(agent.kind, text)),
+            input: Some(prompt(text)),
         })
         .await
         .map_err(crate::plain)?

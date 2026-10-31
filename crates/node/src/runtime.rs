@@ -50,10 +50,6 @@ use crate::{HostId, spec};
 
 pub type AgentId = Uuid;
 
-/// What [`ProfileRuntime::set_join_hook`] installs.
-pub type JoinHook =
-    Arc<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>;
-
 /// How long between looks at a directory whose process is starting,
 /// stopping or not answering: short, because a start and a resume wait on
 /// it, and each look is one lock attempt and one dial.
@@ -77,10 +73,6 @@ pub const DUMPS_FINISH_WITHIN: Duration = Duration::from_secs(5);
 /// A queue of one batch would close a caught-up reader whenever a short
 /// batch followed a full one before its task was scheduled.
 pub const FANOUT_CAPACITY: usize = 4 * INGEST_BATCH;
-/// The tail size K: the rows a replica keeps and asks for, and the newest
-/// rows own retention never trims. About an hour of a busy agent and
-/// several screens of scroll-back.
-pub const TAIL_ROWS: u32 = 200;
 
 /// What the daemon starts agents with; read at every spawn and resume, so
 /// a change affects the next incarnation and never a running agent.
@@ -94,48 +86,29 @@ pub struct Launch {
     /// Environment additions for every provider child.
     pub provider_env: HashMap<String, String>,
     pub agent: settings::AgentSettings,
-    /// The agent's journal segment size; its default when zero.
-    pub journal_segment_bytes: u64,
-    /// How long a new process has to take its lock and send its Hello.
-    pub start_deadline_ms: i64,
-    /// How long a stop may take before the daemon kills the process group.
-    pub stop_deadline_ms: i64,
+    /// What the profile's core reads: its deadlines, retry waits and the
+    /// tail size, compared and handed to it before each input.
+    pub core: daemon_core::Settings,
     /// How long one write on an agent's control connection may take,
     /// waiting for the connection included. Past it the agent is taken to
     /// have stopped reading, and the connection is closed.
     pub ctl_write_ms: i64,
-    /// How long an input waits for the interpreter's verdict, which it
-    /// gives at once; past this the answer is taken to be lost.
-    pub reply_patience_ms: i64,
-    /// How long a notification waits before it is sent, so an answer from
-    /// another client cancels it.
-    pub notify_delay_ms: i64,
     /// How far a subscription may fall behind its agent's broadcast before
     /// it is closed with Lagged. Read when a runtime opens.
     pub fanout_capacity: usize,
     /// The same for inventory subscriptions.
     pub inventory_capacity: usize,
-    /// How often the deliveries outbox is tried again while rows wait.
-    pub delivery_retry_ms: i64,
-    /// How long a push that failed waits before it is tried again.
-    pub push_retry_ms: i64,
     /// The bytes this profile's own rows may hold before retention removes
     /// exited agents and trims live ones.
     pub own_budget_bytes: u64,
     /// About how much one trimming round takes from the largest live agent.
     pub retention_chunk_bytes: u64,
-    /// The newest rows retention never trims: the tail size replicas keep.
-    pub tail_rows: u32,
     /// How often the retention sweep runs.
     pub retention_interval_ms: i64,
     /// The bytes rows replicated from other hosts may hold.
     pub replica_budget_bytes: u64,
     /// The bytes replica blob files may hold.
     pub replica_blob_budget_bytes: u64,
-    /// A source's first wait before reconnecting to a reachable origin;
-    /// it doubles on each failure up to the ceiling.
-    pub source_backoff_ms: i64,
-    pub source_backoff_max_ms: i64,
     /// Where the host looks for Git repositories to offer new agents.
     pub repository_roots: Vec<PathBuf>,
     /// How old the host's copy of what a provider offers may grow before
@@ -144,10 +117,6 @@ pub struct Launch {
     /// How often a copy's provider version is read to see whether it
     /// changed, and how soon a copy that says signed out is asked again.
     pub catalogue_recheck_ms: i64,
-    /// How long after a commit the profile's core checkpoints: what the
-    /// input ring holds, and how long ingested journal waits to be
-    /// reclaimed.
-    pub checkpoint_interval_ms: i64,
     /// How long one step of the profile's core may take before it is
     /// reported with a dump.
     pub step_budget: daemon_core::StepBudget,
@@ -183,29 +152,19 @@ impl Default for Launch {
             codex_command: "codex".to_owned(),
             provider_env: HashMap::new(),
             agent: settings::AgentSettings::default(),
-            journal_segment_bytes: 0,
-            start_deadline_ms: 20_000,
-            stop_deadline_ms: 30_000,
+            core: daemon_core::Settings::default(),
             ctl_write_ms: 5_000,
-            reply_patience_ms: 30_000,
-            notify_delay_ms: 30_000,
             fanout_capacity: FANOUT_CAPACITY,
             inventory_capacity: 1024,
-            delivery_retry_ms: 30_000,
-            push_retry_ms: 60_000,
             own_budget_bytes: OWN_BUDGET_BYTES,
             // A few MiB: a small overrun costs a small trim.
             retention_chunk_bytes: 4 << 20,
-            tail_rows: TAIL_ROWS,
             retention_interval_ms: 10 * 60_000,
             replica_budget_bytes: REPLICA_BUDGET_BYTES,
             replica_blob_budget_bytes: REPLICA_BLOB_BUDGET_BYTES,
-            source_backoff_ms: 1_000,
-            source_backoff_max_ms: 30_000,
             repository_roots: Vec::new(),
             catalogue_max_age_ms: 30 * 60_000,
             catalogue_recheck_ms: 60_000,
-            checkpoint_interval_ms: 60_000,
             step_budget: daemon_core::StepBudget::DAEMON,
             agent_step_budget_micros: 0,
             dump_interval_ms: core_ring::DumpLimit::INTERVAL_MS,
@@ -401,9 +360,6 @@ pub struct ProfileRuntime {
     launch: Mutex<Launch>,
     /// The profile's core thread, which owns the store.
     driver: crate::driver::Driver,
-    /// For tests: awaited by a subscribe on the core thread before the
-    /// core reads its cut.
-    pub(crate) join_hook: Mutex<Option<JoinHook>>,
     /// Counts the store's writes, own commits and absorbed replica rows
     /// alike, so a waiter wakes on the write it is waiting for instead of
     /// polling: a message waiting for its acceptance item, a test fencing
@@ -430,7 +386,7 @@ pub struct ProfileRuntime {
     pub(crate) daemon_log: Option<PathBuf>,
     pub(crate) supervisor_log: Option<PathBuf>,
     pub(crate) auto_reports: crate::reports::AutoReports,
-    worktrees: Arc<dyn crate::worktree::MakeWorktree>,
+    worktrees: crate::worktree::GitWorktrees,
     pub(crate) me: Weak<ProfileRuntime>,
     /// The network edge, once the profile is in service.
     edge: std::sync::OnceLock<Arc<crate::edge::Edge>>,
@@ -640,7 +596,7 @@ pub struct Profile {
     pub generation: u64,
     /// The profile's directory.
     pub dir: PathBuf,
-    /// The profile's store, open and migrated.
+    /// The profile's store, open.
     pub store: Sqlite,
     pub launch: Launch,
     pub clock: Arc<dyn Clock>,
@@ -656,7 +612,7 @@ pub struct Profile {
     /// Whether the dumps a check asks for are sent to the account service.
     pub auto_reports: crate::reports::AutoReports,
     /// What makes the worktree an agent asked to start in one starts in.
-    pub worktrees: Arc<dyn crate::worktree::MakeWorktree>,
+    pub worktrees: crate::worktree::GitWorktrees,
 }
 
 impl ProfileRuntime {
@@ -701,7 +657,6 @@ impl ProfileRuntime {
                 core = Some(thread);
                 driver
             },
-            join_hook: Mutex::new(None),
             commits: watch::Sender::new(0),
             ingested_frames: AtomicU64::new(0),
             push,
@@ -740,18 +695,13 @@ impl ProfileRuntime {
         if let Some(edge) = self.edge.get() {
             return Ok(edge.clone());
         }
-        let edge = crate::edge::Edge::start(
-            &self.dir,
-            self.profile,
-            options,
-            self.clock.clone(),
-            Arc::downgrade(self),
-            self.analytics.clone(),
-        )
-        .await?;
-        let edge = self.edge.get_or_init(|| edge).clone();
+        let edge = crate::edge::Edge::start(self, options).await?;
+        let started = self.edge.get_or_init(|| edge.clone());
+        if Arc::ptr_eq(started, &edge) {
+            edge.begin(options).await;
+        }
         self.tell_own_host();
-        Ok(edge)
+        Ok(started.clone())
     }
 
     /// The profile's network edge, once started.
@@ -835,24 +785,6 @@ impl ProfileRuntime {
             .unwrap_or(Err(StoreError::Closed))
     }
 
-    /// For tests: writes the store beneath the core's own steps, between
-    /// them, to set up what no input produces.
-    #[doc(hidden)]
-    pub async fn write_store_beneath<T: Send + 'static>(
-        &self,
-        write: impl FnOnce(&mut Sqlite) -> T + Send + 'static,
-    ) -> Result<T, Stopped> {
-        self.driver.beneath(write).await.ok_or(Stopped)
-    }
-
-    /// For tests: runs `hook` inside every subscribe between joining the
-    /// agent's channel and reading the cut, so a test can try to commit in
-    /// that window.
-    #[doc(hidden)]
-    pub fn set_join_hook(&self, hook: Option<JoinHook>) {
-        *self.join_hook.lock().unwrap() = hook;
-    }
-
     /// Replaces what the next spawn or resume starts with.
     pub fn set_launch(&self, launch: Launch) {
         *self.launch.lock().unwrap() = launch;
@@ -860,6 +792,12 @@ impl ProfileRuntime {
 
     pub fn launch(&self) -> Launch {
         self.launch.lock().unwrap().clone()
+    }
+
+    /// The settings the profile's core reads, without the rest of
+    /// [`Launch`].
+    pub(crate) fn core_settings(&self) -> daemon_core::Settings {
+        self.launch.lock().unwrap().core
     }
 
     /// The profile's directory.
@@ -1025,7 +963,6 @@ impl ProfileRuntime {
             &launch,
             spec::Incarnation {
                 agent_id: id.as_bytes(),
-                profile_id: self.profile.as_bytes(),
                 kind,
                 cwd: &request.cwd,
                 name: "",
@@ -1215,7 +1152,6 @@ impl ProfileRuntime {
             &self.launch(),
             spec::Incarnation {
                 agent_id: id.as_bytes(),
-                profile_id: self.profile.as_bytes(),
                 kind: previous.kind(),
                 cwd: &previous.cwd,
                 name: "",
@@ -1760,11 +1696,10 @@ impl ProfileRuntime {
         } = connected;
         *handle.peer.lock().unwrap() = peer;
         *handle.ctl.lock().await = Some(writer);
-        handle.hello.send_replace(Some(hello.clone()));
+        handle.hello.send_replace(Some(hello));
         self.driver()
             .feed(daemon_core::Input::AgentHello {
                 agent: core_agent(id),
-                hello,
             })
             .await;
         if let Err(error) = self.ingest(id).await {
@@ -2055,15 +1990,7 @@ fn last_settings(body: Option<&[u8]>, kind: Kind) -> spec::Settings {
         return spec::Settings::default();
     };
     match kind {
-        Kind::ClaudeSdk => wire::ClaudeSdkSnapshot::decode(body)
-            .map(|snapshot| spec::Settings {
-                model: snapshot.model,
-                permission: snapshot.permission,
-                mode: None,
-                effort: snapshot.effort,
-            })
-            .unwrap_or_default(),
-        Kind::ClaudePty => wire::ClaudePtySnapshot::decode(body)
+        Kind::ClaudeSdk | Kind::ClaudePty => wire::ClaudeSnapshot::decode(body)
             .map(|snapshot| spec::Settings {
                 model: snapshot.model,
                 permission: snapshot.permission,

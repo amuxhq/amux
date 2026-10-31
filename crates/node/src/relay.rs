@@ -18,8 +18,8 @@ use tokio::sync::oneshot;
 use uuid::Uuid;
 use wire::{
     AgentRef, AgentSender, Envelope, ErrorCode, Human, Lifecycle, Refusal, Rejected,
-    SendInputRequest, SendInputResponse, SendMessageRequest, SendMessageResponse, Sender,
-    ctl_frame, envelope, send_input_response, sender,
+    SendInputRequest, SendInputResponse, SendMessageResponse, Sender, ctl_frame, envelope,
+    send_input_response, sender,
 };
 
 use crate::driver::{Ask, Delivered};
@@ -222,9 +222,10 @@ impl ProfileRuntime {
         }
         let _handed = Handed::new(&handle);
         // Reply patience is policy time, on the profile's clock.
-        let patience = self
-            .clock()
-            .sleep_until(self.clock_now().saturating_add(launch.reply_patience_ms));
+        let patience = self.clock().sleep_until(
+            self.clock_now()
+                .saturating_add_unsigned(launch.core.reply_patience_ms),
+        );
         tokio::select! {
             waited = rx => match waited {
                 Ok(Some(verdict)) => Ok(verdict),
@@ -241,21 +242,13 @@ impl ProfileRuntime {
 
     /// Sends a message a person or one of this host's agents submitted.
     /// `caller` is the agent whose tools socket the call came in on, else
-    /// the person; the envelope's sender is set from it, since the request
-    /// cannot name one. It is an ordinary message: a child's reports come
-    /// only from the outbox. Answers once the recipient has accepted.
+    /// the person; the envelope's sender is set from it, whatever the
+    /// envelope says. Answers once the recipient has accepted.
     pub async fn send_message(
         &self,
-        request: SendMessageRequest,
+        envelope: Envelope,
         caller: Option<AgentId>,
     ) -> Result<SendMessageResponse, RelayError> {
-        let envelope = Envelope {
-            id: request.id,
-            context: request.context,
-            from: None,
-            to: request.to,
-            body: Some(envelope::Body::Message(request.body.unwrap_or_default())),
-        };
         let from = caller.map_or(MessageFrom::Person, |caller| {
             MessageFrom::Agent(core_agent(caller))
         });

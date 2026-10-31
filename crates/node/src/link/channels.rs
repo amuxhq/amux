@@ -1,6 +1,6 @@
 //! Tonic channels carried by independent native link streams.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
@@ -16,16 +16,15 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tonic::codegen::http;
 use tonic::transport::{Channel, Endpoint};
-use wire::pb;
 
 use super::{ByteStream, OpenError, QuicCarrier};
 use crate::HostId;
 use crate::dispatcher::TunnelDispatcher;
-use crate::driver::{CoreLinks, core_error};
+use crate::driver::CoreLinks;
 use crate::identity::IdentityError;
 use crate::routing::{LinkId, LinkRegistry, Route};
+use crate::services::ForwardedDialer;
 use crate::transport::{Compressed, channel_from_single_io};
-use crate::trust::SharedTrustStore;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -52,7 +51,7 @@ pub enum ChannelError {
     )]
     NoPairingRoute,
     #[error("the forwarder refused to carry the link: {0:?}")]
-    Refused(pb::ForwardRefusal),
+    Refused(wire::ForwardRefusal),
     #[error("no live link to host {host_id}")]
     LinkUnavailable { host_id: HostId },
     #[error("channel handshake failed: {0}")]
@@ -96,40 +95,14 @@ impl ChannelError {
     }
 }
 
-/// What a call reaches a host it has no link to by, and a pairing a host
-/// through a forwarder by.
-pub(crate) trait ForwardedDial: Send + Sync + 'static {
-    /// Asks for a link of `peer`'s own now, returning once the attempt it
-    /// brought about has ended, however it ended.
-    fn want(&self, peer: HostId) -> BoxFuture<'_, Result<(), ChannelError>>;
-
-    /// Dials `peer`'s pairing service through the forwarder at the far end
-    /// of `through`, presenting no certificate: the host answers only while
-    /// its pairing window is open. The dial is given up after `deadline`.
-    fn pair_through(
-        &self,
-        peer: HostId,
-        through: LinkId,
-        deadline: std::time::Duration,
-    ) -> BoxFuture<'_, Result<Channel, ChannelError>>;
-}
-
 /// Where a session subscription starts: the origin's tail, or after a
 /// revision this host already holds.
-pub type Cursor = wire::peer_subscribe_session_request::From;
+pub type Cursor = wire::subscribe_session_request::From;
 
 /// The only calls the channel pool writes before a link's handshake
 /// finishes, as early data the far end may see more than once: each reads
 /// and changes nothing. A send, a stop or a pairing call has no variant
 /// here, so it cannot be early data.
-///
-/// ```compile_fail
-/// let _ = node::EarlyCall::SendInput(wire::SendInputRequest::default());
-/// ```
-///
-/// ```
-/// let _ = node::EarlyCall::ListItems(wire::ListItemsRequest::default());
-/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum EarlyCall {
     /// The host's inventory, which always opens with all of it: the wire
@@ -139,19 +112,13 @@ pub enum EarlyCall {
         session: Vec<u8>,
         from: Cursor,
     },
-    ListItems(wire::ListItemsRequest),
-    GetBlob(wire::GetBlobRequest),
-    GetDiff(wire::GetDiffRequest),
 }
 
 impl EarlyCall {
     /// The channel the call rides, as the same call made later would.
     fn class(&self) -> ChannelClass {
         match self {
-            EarlyCall::SubscribeInventory
-            | EarlyCall::ListItems(_)
-            | EarlyCall::GetBlob(_)
-            | EarlyCall::GetDiff(_) => ChannelClass::Calls,
+            EarlyCall::SubscribeInventory => ChannelClass::Calls,
             EarlyCall::SubscribeSession { .. } => ChannelClass::Session,
         }
     }
@@ -161,9 +128,6 @@ impl EarlyCall {
         match self {
             EarlyCall::SubscribeInventory => "SubscribeInventory",
             EarlyCall::SubscribeSession { .. } => "SubscribeSession",
-            EarlyCall::ListItems(_) => "ListItems",
-            EarlyCall::GetBlob(_) => "GetBlob",
-            EarlyCall::GetDiff(_) => "GetDiff",
         }
     }
 
@@ -172,42 +136,29 @@ impl EarlyCall {
             EarlyCall::SubscribeInventory => EarlyAnswer::Inventory(
                 client
                     .agents
-                    .subscribe_inventory(wire::SubscribeInventoryRequest {})
+                    .subscribe_inventory(wire::Empty {})
                     .await?
                     .into_inner(),
             ),
             EarlyCall::SubscribeSession { session, from } => EarlyAnswer::Session(
                 client
                     .sessions
-                    .subscribe_session(wire::PeerSubscribeSessionRequest {
+                    .subscribe_session(wire::SubscribeSessionRequest {
                         agent_id: session,
                         from: Some(from),
                     })
                     .await?
                     .into_inner(),
             ),
-            EarlyCall::ListItems(request) => {
-                EarlyAnswer::Fetched(client.sessions.list_items(request).await?.into_inner())
-            }
-            EarlyCall::GetBlob(request) => {
-                EarlyAnswer::Blob(client.agents.get_blob(request).await?.into_inner())
-            }
-            EarlyCall::GetDiff(request) => {
-                EarlyAnswer::Diff(client.agents.get_diff(request).await?.into_inner())
-            }
         })
     }
 }
 
-/// The answer to an early call: the stream a subscription opened, or a
-/// unary call's reply.
+/// The answer to an early call: the stream the subscription opened.
 #[derive(Debug)]
 pub enum EarlyAnswer {
     Inventory(tonic::Streaming<wire::InventoryEvent>),
     Session(tonic::Streaming<wire::SessionEvent>),
-    Fetched(wire::ListItemsResponse),
-    Blob(wire::GetBlobResponse),
-    Diff(wire::Diff),
 }
 
 /// An early call under way: it went out with the link's first packets, and
@@ -228,7 +179,6 @@ impl Future for EarlyReply {
 /// A link a resumed dial brought up, and the calls written on it before
 /// its handshake finished, in the order they were given.
 pub struct ResumedLink {
-    pub link: LinkId,
     pub early_data: super::link_log::EarlyData,
     pub replies: Vec<EarlyReply>,
     /// What carries the link, which names the path it came up on.
@@ -331,7 +281,7 @@ impl Ending {
 
     fn tell_ended(&self) {
         if let Some((core, channel)) = self.tell.get() {
-            core.closed(*channel, daemon_core::payload::ChannelError::Ended);
+            core.closed(*channel);
         }
     }
 
@@ -352,20 +302,15 @@ pub struct ChannelPool {
     opening: std::sync::Mutex<HashMap<ChannelKey, Arc<tokio::sync::Mutex<()>>>>,
     lifetimes: RwLock<HashMap<ChannelKey, Vec<Weak<CancellationToken>>>>,
     links: Arc<LinkRegistry>,
-    /// Where a channel's pin comes from when no core gives one.
-    trust_store: Option<SharedTrustStore>,
     /// How a link through a forwarder is dialled, once the edge is up.
-    forwarded: OnceLock<Arc<dyn ForwardedDial>>,
+    forwarded: OnceLock<Arc<ForwardedDialer>>,
     /// How a link resuming with a ticket is dialled, once the edge is up.
     resumed: OnceLock<Arc<dyn ResumedDial>>,
-    /// Hosts no channel opens to while the link stays up: a fault a test
-    /// network injects.
-    refused: std::sync::Mutex<HashSet<HostId>>,
 }
 
-/// A channel the core said to open, whose outcome the core is told exactly
-/// once. One dropped before it was told, as a caller that gives up waiting
-/// drops its open, is told it was abandoned.
+/// A channel the core said to open, which the core hears closed when it is
+/// dropped before it opens, as when the open failed or a caller that gave
+/// up waiting dropped it.
 struct Telling {
     core: CoreLinks,
     channel: daemon_core::ChannelId,
@@ -373,25 +318,16 @@ struct Telling {
 }
 
 impl Telling {
-    fn opened(mut self, link: LinkId, key: ChannelKey) -> (CoreLinks, daemon_core::ChannelId) {
+    fn opened(mut self) -> (CoreLinks, daemon_core::ChannelId) {
         self.told = true;
-        self.core.opened(self.channel, link, key.peer, key.class);
         (self.core.clone(), self.channel)
-    }
-
-    fn failed(mut self, reason: daemon_core::payload::ChannelError) {
-        self.told = true;
-        self.core.closed(self.channel, reason);
     }
 }
 
 impl Drop for Telling {
     fn drop(&mut self) {
         if !self.told {
-            self.core.closed(
-                self.channel,
-                daemon_core::payload::ChannelError::Handshake("the open was abandoned".to_owned()),
-            );
+            self.core.closed(self.channel);
         }
     }
 }
@@ -403,22 +339,13 @@ impl ChannelPool {
             opening: std::sync::Mutex::new(HashMap::new()),
             lifetimes: RwLock::new(HashMap::new()),
             links,
-            trust_store: None,
             forwarded: OnceLock::new(),
             resumed: OnceLock::new(),
-            refused: std::sync::Mutex::default(),
-        }
-    }
-
-    pub(crate) fn with_trust(links: Arc<LinkRegistry>, trust_store: SharedTrustStore) -> Self {
-        Self {
-            trust_store: Some(trust_store),
-            ..Self::new(links)
         }
     }
 
     /// Dials links through forwarders with `dial` from now on.
-    pub(crate) fn dial_forwarded_with(&self, dial: Arc<dyn ForwardedDial>) {
+    pub(crate) fn dial_forwarded_with(&self, dial: Arc<ForwardedDialer>) {
         let _ = self.forwarded.set(dial);
     }
 
@@ -508,7 +435,6 @@ impl ChannelPool {
             .await;
         }
         Ok(ResumedLink {
-            link,
             early_data: carrier.early_data(),
             replies,
             carrier,
@@ -528,23 +454,8 @@ impl ChannelPool {
         lifetime: Arc<CancellationToken>,
     ) {
         if let Some(core) = self.links.core() {
-            let pinned = self.trust_store.as_ref().and_then(|trust_store| {
-                trust_store
-                    .read()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .pubkey_for_host(key.peer)
-                    .map(<[u8]>::to_vec)
-            });
-            match core.want_channel(link, key.peer, key.class, pinned).await {
-                Ok(opening) => {
-                    let telling = Telling {
-                        core: core.clone(),
-                        channel: opening.channel,
-                        told: false,
-                    };
-                    let (core, channel) = telling.opened(link, key);
-                    ended.arm(core, channel);
-                }
+            match core.want_channel(link, key.peer).await {
+                Ok(channel) => ended.arm(core.clone(), channel),
                 Err(_) => {
                     lifetime.cancel();
                     return;
@@ -563,30 +474,6 @@ impl ChannelPool {
                     link,
                 },
             );
-    }
-
-    /// From now on every channel to `peer` is refused while `refuse`
-    /// holds, as a link whose far end takes no stream would refuse it,
-    /// those already opening included, and no cached one is handed out.
-    /// The link each refusal was on closes, as any link a stream would not
-    /// open on does.
-    pub(crate) fn refuse(&self, peer: HostId, refuse: bool) {
-        let mut refused = self
-            .refused
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if refuse {
-            refused.insert(peer);
-        } else {
-            refused.remove(&peer);
-        }
-    }
-
-    fn refuses(&self, peer: HostId) -> bool {
-        self.refused
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .contains(&peer)
     }
 
     /// A stream would not open on `link` while it stayed up: it closes as
@@ -619,16 +506,12 @@ impl ChannelPool {
     }
 
     async fn open_channel(&self, key: ChannelKey) -> Result<Channel, ChannelError> {
-        let refused = self.refuses(key.peer);
-        let cached = if !refused {
-            self.by_key
-                .read()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .get(&key)
-                .cloned()
-        } else {
-            None
-        };
+        let cached = self
+            .by_key
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&key)
+            .cloned();
         if let Some(cached) = cached {
             if !self.route_is_live(key.route).await {
                 return Err(ChannelError::LinkUnavailable {
@@ -655,45 +538,21 @@ impl ChannelPool {
 
         let opened = std::time::Instant::now();
         let (link, carrier) = self.carrier(key.peer, key.route).await?;
-        let pinned = self.trust_store.as_ref().and_then(|trust_store| {
-            trust_store
-                .read()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .pubkey_for_host(key.peer)
-                .map(<[u8]>::to_vec)
-        });
-        // A profile's channels open at its core's word, which refuses a
-        // host no key is pinned for; a pool with no core asks the trust
-        // store itself.
-        let telling = match self.links.core() {
-            Some(core) => match core.want_channel(link, key.peer, key.class, pinned).await {
-                Ok(opening) => Some(Telling {
-                    core: core.clone(),
-                    channel: opening.channel,
-                    told: false,
-                }),
-                Err(refusal) => {
-                    return Err(match refusal {
-                        daemon_core::payload::ChannelError::Unpinned => unpinned(key.peer),
-                        _ => ChannelError::LinkUnavailable {
-                            host_id: route_link_peer(key.route),
-                        },
-                    });
-                }
-            },
-            None if pinned.is_none() && self.trust_store.is_some() => {
-                return Err(unpinned(key.peer));
-            }
-            None => None,
+        let unavailable = || ChannelError::LinkUnavailable {
+            host_id: route_link_peer(key.route),
         };
-        if refused {
-            let refusal = streams_refused();
-            if let Some(telling) = telling {
-                telling.failed(core_error(&refusal));
-            }
-            self.close_failed(link);
-            return Err(refusal);
-        }
+        // A channel opens at the profile core's word, which refuses a host
+        // no key is pinned for.
+        let core = self.links.core().ok_or_else(unavailable)?;
+        let telling = match core.want_channel(link, key.peer).await {
+            Ok(channel) => Telling {
+                core: core.clone(),
+                channel,
+                told: false,
+            },
+            Err(daemon_core::payload::ChannelError::Unpinned) => return Err(unpinned(key.peer)),
+            Err(_) => return Err(unavailable()),
+        };
         let ended = Arc::new(Ending::default());
         let secured = async {
             let stream = carrier
@@ -703,23 +562,12 @@ impl ChannelPool {
             Ok(self.channel_over(key, Watched::new(stream, ended.clone()), &ended))
         }
         .await;
-        // A refusal set while the channel was opening holds for it too, so
-        // no channel opens once it is set.
-        let secured = match secured {
-            Ok(_) if self.refuses(key.peer) => Err(streams_refused()),
-            secured => secured,
-        };
         if let Err(ChannelError::Handshake(_)) = &secured {
             self.close_failed(link);
         }
-        if let Some(telling) = telling {
-            match &secured {
-                Ok(_) => {
-                    let (core, channel) = telling.opened(link, key);
-                    ended.arm(core, channel);
-                }
-                Err(error) => telling.failed(core_error(error)),
-            }
+        if secured.is_ok() {
+            let (core, channel) = telling.opened();
+            ended.arm(core, channel);
         }
         let channel = secured?;
         tracing::debug!(
@@ -758,7 +606,7 @@ impl ChannelPool {
         self.forwarded
             .get()
             .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?
-            .pair_through(peer, through, deadline)
+            .pair(peer, through, deadline)
             .await
     }
 
@@ -1036,20 +884,21 @@ impl tower::Service<http::Request<tonic::body::Body>> for PeerChannel {
     }
 }
 
-/// The peer services' clients on one [`PeerChannel`].
+/// The client services' clients on one [`PeerChannel`], as a paired host
+/// is called.
 #[derive(Clone)]
 pub struct PeerClient {
-    pub agents: wire::peer_agent_service_client::PeerAgentServiceClient<PeerChannel>,
-    pub sessions: wire::peer_session_service_client::PeerSessionServiceClient<PeerChannel>,
+    pub agents: wire::agent_service_client::AgentServiceClient<PeerChannel>,
+    pub sessions: wire::session_service_client::SessionServiceClient<PeerChannel>,
 }
 
 pub(crate) fn peer_client(channel: Channel) -> PeerClient {
     let channel = PeerChannel::new(channel);
     PeerClient {
-        agents: wire::peer_agent_service_client::PeerAgentServiceClient::new(channel.clone())
+        agents: wire::agent_service_client::AgentServiceClient::new(channel.clone())
             .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
             .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT),
-        sessions: wire::peer_session_service_client::PeerSessionServiceClient::new(channel)
+        sessions: wire::session_service_client::SessionServiceClient::new(channel)
             .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
             .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT),
     }
@@ -1098,12 +947,6 @@ pub(crate) fn serve_inbound_streams(
 /// being replaced.
 fn unpinned(peer: HostId) -> ChannelError {
     ChannelError::Tls(format!("no key is pinned for host {peer}"))
-}
-
-/// What a channel the refusal hook turned away fails with: a stream that
-/// would not open, as on a link whose far end takes none.
-fn streams_refused() -> ChannelError {
-    ChannelError::Handshake("the link refused the stream".to_owned())
 }
 
 fn map_open_error(error: OpenError, route: Route) -> ChannelError {
@@ -1177,64 +1020,13 @@ mod tests {
         assert_eq!(opener_count(&pool), 0, "the host's lock went with the host");
     }
 
-    /// The early-call type has a variant for each call that reads, and for
-    /// nothing that writes: the match below has no wildcard, so a variant
-    /// added to it fails to compile here until it is listed.
-    #[test]
-    fn an_early_call_is_only_a_call_that_changes_nothing() {
-        let every = [
-            EarlyCall::SubscribeInventory,
-            EarlyCall::SubscribeSession {
-                session: Vec::new(),
-                from: Cursor::Tail(10),
-            },
-            EarlyCall::ListItems(wire::ListItemsRequest::default()),
-            EarlyCall::GetBlob(wire::GetBlobRequest::default()),
-            EarlyCall::GetDiff(wire::GetDiffRequest::default()),
-        ];
-        for call in &every {
-            match call {
-                EarlyCall::SubscribeInventory
-                | EarlyCall::SubscribeSession { .. }
-                | EarlyCall::ListItems(_)
-                | EarlyCall::GetBlob(_)
-                | EarlyCall::GetDiff(_) => {}
-            }
-        }
-        let methods: Vec<_> = every.iter().map(EarlyCall::method).collect();
-        assert_eq!(
-            methods,
-            [
-                "SubscribeInventory",
-                "SubscribeSession",
-                "ListItems",
-                "GetBlob",
-                "GetDiff"
-            ]
-        );
-        for writes in [
-            "SendInput",
-            "StopAgent",
-            "CreateAgent",
-            "RenameAgent",
-            "ResumeAgent",
-            "DeleteAgent",
-            "SendMessage",
-            "PutBlob",
-            "Pair",
-        ] {
-            assert!(!methods.contains(&writes), "{writes} cannot be early data");
-        }
-    }
-
     mod early {
         use std::sync::atomic::AtomicUsize;
         use std::time::Duration;
 
-        use tokio::sync::watch;
         use tonic::{Request, Response, Status};
-        use wire::peer_agent_service_server::PeerAgentService;
-        use wire::peer_session_service_server::PeerSessionService;
+        use wire::agent_service_server::AgentService;
+        use wire::session_service_server::SessionService;
 
         use super::*;
         use crate::identity::DeviceIdentity;
@@ -1243,13 +1035,13 @@ mod tests {
         use crate::link::{LinkEndpoint, QuicCarrier};
         use crate::routing::{Capabilities, Host, LiveLocalHost};
         use crate::transport::BoxedGrpcIo;
+        use crate::trust::SharedTrustStore;
 
         /// Counts the calls a host answered, by method.
         #[derive(Clone, Default)]
         struct Answering {
             inventory: Arc<AtomicUsize>,
             sessions: Arc<AtomicUsize>,
-            fetches: Arc<AtomicUsize>,
         }
 
         type Answer<T> = Result<Response<T>, Status>;
@@ -1261,18 +1053,25 @@ mod tests {
         }
 
         #[tonic::async_trait]
-        impl PeerAgentService for Answering {
+        impl AgentService for Answering {
             type SubscribeInventoryStream = Events<wire::InventoryEvent>;
 
             async fn subscribe_inventory(
                 &self,
-                _: Request<wire::SubscribeInventoryRequest>,
+                _: Request<wire::Empty>,
             ) -> Answer<Self::SubscribeInventoryStream> {
                 self.inventory.fetch_add(1, Ordering::SeqCst);
                 let event = wire::InventoryEvent::default();
                 Ok(Response::new(Box::pin(futures_util::stream::iter([Ok(
                     event,
                 )]))))
+            }
+
+            async fn resolve_agent(
+                &self,
+                _: Request<wire::ResolveAgentRequest>,
+            ) -> Answer<wire::Agent> {
+                unanswered()
             }
 
             async fn create_agent(
@@ -1289,10 +1088,7 @@ mod tests {
                 unanswered()
             }
 
-            async fn stop_agent(
-                &self,
-                _: Request<wire::StopAgentRequest>,
-            ) -> Answer<wire::StopAgentResponse> {
+            async fn stop_agent(&self, _: Request<wire::StopAgentRequest>) -> Answer<wire::Empty> {
                 unanswered()
             }
 
@@ -1312,7 +1108,7 @@ mod tests {
 
             async fn send_message(
                 &self,
-                _: Request<wire::PeerSendMessageRequest>,
+                _: Request<wire::Envelope>,
             ) -> Answer<wire::SendMessageResponse> {
                 unanswered()
             }
@@ -1348,12 +1144,12 @@ mod tests {
         }
 
         #[tonic::async_trait]
-        impl PeerSessionService for Answering {
+        impl SessionService for Answering {
             type SubscribeSessionStream = Events<wire::SessionEvent>;
 
             async fn subscribe_session(
                 &self,
-                _: Request<wire::PeerSubscribeSessionRequest>,
+                _: Request<wire::SubscribeSessionRequest>,
             ) -> Answer<Self::SubscribeSessionStream> {
                 self.sessions.fetch_add(1, Ordering::SeqCst);
                 let event = wire::SessionEvent::default();
@@ -1366,8 +1162,7 @@ mod tests {
                 &self,
                 _: Request<wire::ListItemsRequest>,
             ) -> Answer<wire::ListItemsResponse> {
-                self.fetches.fetch_add(1, Ordering::SeqCst);
-                Ok(Response::new(wire::ListItemsResponse::default()))
+                unanswered()
             }
 
             async fn get_item(&self, _: Request<wire::GetItemRequest>) -> Answer<wire::Item> {
@@ -1378,6 +1173,17 @@ mod tests {
                 &self,
                 _: Request<wire::SendInputRequest>,
             ) -> Answer<wire::SendInputResponse> {
+                unanswered()
+            }
+
+            async fn update_draft(
+                &self,
+                _: Request<wire::UpdateDraftRequest>,
+            ) -> Answer<wire::Draft> {
+                unanswered()
+            }
+
+            async fn get_draft(&self, _: Request<wire::GetDraftRequest>) -> Answer<wire::Draft> {
                 unanswered()
             }
         }
@@ -1401,13 +1207,12 @@ mod tests {
                     peer.public_key().to_vec(),
                     "peer".to_string(),
                     None,
-                    chrono::Utc::now(),
                 )
                 .unwrap();
             Arc::new(std::sync::RwLock::new(trust))
         }
 
-        /// A host answering links on loopback with the peer service, issuing
+        /// A host answering links on loopback with the agent and session services, issuing
         /// tickets from `tickets`. What it answered, and for each stream a
         /// dialler opened on a link, whether it arrived as early data.
         struct LoopbackHost {
@@ -1436,8 +1241,8 @@ mod tests {
                 });
                 tokio::spawn(
                     tonic::transport::Server::builder()
-                        .add_service(wire::peer_agent_service_server(answering.clone()))
-                        .add_service(wire::peer_session_service_server(answering.clone()))
+                        .add_service(wire::agent_service_server(answering.clone()))
+                        .add_service(wire::session_service_server(answering.clone()))
                         .serve_with_incoming(incoming),
                 );
                 let early = arrived_early.clone();
@@ -1466,13 +1271,15 @@ mod tests {
                             continue;
                         };
                         let links = Arc::new(LinkRegistry::new(local.id));
-                        let ctx = crate::link::LinkCtx::new(local.clone(), links)
-                            .with_authenticated_peer(peer)
-                            .with_incoming_streams(inbound_tx.clone());
+                        let ctx = crate::link::LinkCtx::new_live(
+                            LiveLocalHost::new(local.clone()),
+                            links,
+                        )
+                        .with_authenticated_peer(peer)
+                        .with_incoming_streams(inbound_tx.clone());
                         tokio::spawn(crate::link::run_link(
                             ctx,
                             Arc::new(QuicCarrier::from_accepted(connection)),
-                            crate::routing::ConnectRole::Acceptor,
                         ));
                     }
                 });
@@ -1518,17 +1325,13 @@ mod tests {
                         .await
                         .map_err(|error| ChannelError::Handshake(error.to_string()))?,
                     );
-                    let ctx = crate::link::run::LinkConnectorCtx::new_live(
+                    let ctx = crate::link::LinkCtx::new_live(
                         LiveLocalHost::new(self.local.clone()),
                         self.links.clone(),
                     )
                     .with_expected_peer(peer);
                     let (_task, established) =
-                        crate::routing::spawn_connector_with_establishment_and_shutdown(
-                            ctx,
-                            carrier.clone(),
-                            watch::channel(false).1,
-                        );
+                        crate::link::run::spawn_connector(ctx, carrier.clone());
                     let links = self.links.clone();
                     let up = Box::pin(async move {
                         established
@@ -1556,6 +1359,7 @@ mod tests {
 
         fn dialler(identity: DeviceIdentity, host: &DeviceIdentity, at: &LoopbackHost) -> Dialler {
             let links = Arc::new(LinkRegistry::new(identity.host_id));
+            let trust = trust_for(host);
             let pool = ChannelPool::new(links.clone());
             let dial = Arc::new(LoopbackDial {
                 // Handshakes take a fifth of a second, so the early calls
@@ -1563,7 +1367,7 @@ mod tests {
                 endpoint: crate::link::quic::slow_arrivals_endpoint(Duration::from_millis(200)),
                 local: host_named(&identity),
                 identity,
-                trust: trust_for(host),
+                trust,
                 links,
                 addr: std::sync::Mutex::new(at.endpoint.local_addr().unwrap()),
             });
@@ -1578,7 +1382,6 @@ mod tests {
                     session: b"agent".to_vec(),
                     from: Cursor::Tail(10),
                 },
-                EarlyCall::ListItems(wire::ListItemsRequest::default()),
             ]
         }
 
@@ -1605,35 +1408,29 @@ mod tests {
                         events.message().await.unwrap().expect("the session");
                         answered.push("session");
                     }
-                    EarlyAnswer::Fetched(_) => answered.push("fetch"),
-                    other => panic!("an answer to no call made: {other:?}"),
                 }
             }
-            assert_eq!(answered, ["inventory", "session", "fetch"]);
-            let key = ChannelKey {
-                peer: host,
-                route: Route::Direct(opened.link),
-                class: ChannelClass::Calls,
-            };
+            assert_eq!(answered, ["inventory", "session"]);
             assert!(
-                dialler.pool.by_key.read().unwrap().contains_key(&key),
+                dialler
+                    .pool
+                    .by_key
+                    .read()
+                    .unwrap()
+                    .keys()
+                    .any(|key| key.peer == host
+                        && matches!(key.route, Route::Direct(_))
+                        && key.class == ChannelClass::Calls),
                 "the link's calls channel serves the calls that follow"
             );
-            let carrier = dialler
-                .pool
-                .links
-                .native_carrier(&opened.link)
-                .await
-                .unwrap();
-            carrier.close(pb::LinkCloseReason::UserShutdown);
+            opened.carrier.close(wire::LinkCloseReason::UserShutdown);
             opened.early_data
         }
 
-        fn answered(host: &LoopbackHost) -> [usize; 3] {
+        fn answered(host: &LoopbackHost) -> [usize; 2] {
             [
                 host.answering.inventory.load(Ordering::SeqCst),
                 host.answering.sessions.load(Ordering::SeqCst),
-                host.answering.fetches.load(Ordering::SeqCst),
             ]
         }
 
@@ -1654,7 +1451,7 @@ mod tests {
                 [false, false],
                 "a calls and a session stream"
             );
-            assert_eq!(answered(&host), [1, 1, 1]);
+            assert_eq!(answered(&host), [1, 1]);
         }
 
         #[tokio::test]
@@ -1676,7 +1473,7 @@ mod tests {
                 [true, true],
                 "both channels' streams arrive as early data"
             );
-            assert_eq!(answered(&host), [2, 2, 2], "each call answered once a link");
+            assert_eq!(answered(&host), [2, 2], "each call answered once a link");
         }
 
         #[tokio::test]
@@ -1702,7 +1499,7 @@ mod tests {
             assert_eq!(restarted.arrived_early(), [false, false]);
             assert_eq!(
                 answered(&restarted),
-                [1, 1, 1],
+                [1, 1],
                 "the refused calls are made again, each once"
             );
         }

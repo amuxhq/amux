@@ -76,6 +76,7 @@ message ClientInput {
   amux.v1.Rejected rejected = 3;
   bool seen_queued = 4;
   uint64 left_at = 5;
+  bool in_feed = 6;
 }
 
 enum ClientInputState {

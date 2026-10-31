@@ -1,0 +1,24 @@
+{
+  "spec": "steer_folded",
+  "recorded": {
+    "provider": "codex",
+    "version": "0.166.0",
+    "model": "gpt-6.1-sol",
+    "at": "2026-10-31T12:18:23.721087Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:fafb05bc1aa26d6ac5538fdd5b007f8ae10ffef605bf7d0513a7dc7c00d47a43",
+    "spawn.jsonl": "sha256:4c5fcab8a128a4aa6482301bf17ae7a554e62438622bef5369e13c2c0232a8fe"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 44,
+    "personal_identifiers": 2
+  },
+  "session_ids": [
+    "01a191e4-0834-7ac3-bf56-b30f7f2d8f1f"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

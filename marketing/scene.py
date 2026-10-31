@@ -142,7 +142,7 @@ def build() -> None:
     subprocess.run(
         [str(ROOT / "scripts/bounded"), "1800", "cargo", "build", "--locked",
          "-p", "amux", "-p", "testnet", "-p", "provider-fakes", "-p", "claude-specs", "-p", "codex-specs",
-         "--bins", "--features", "amux/bundled"],
+         "--bins"],
         cwd=ROOT, check=True,
     )
 

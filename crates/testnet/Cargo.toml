@@ -12,7 +12,6 @@ name = "testnet"
 path = "src/bin/testnet.rs"
 
 [dependencies]
-agent-core = { workspace = true }
 agent-dir = { workspace = true }
 anyhow = { workspace = true }
 base64 = "0.22"

@@ -1,11 +1,9 @@
 //! Shared Claude Code process launch construction.
 
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde_json::Value;
-use uuid::Uuid;
 
 /// The variable naming the folder Claude reads an organization's managed
 /// settings from, in place of the platform's own.
@@ -48,55 +46,15 @@ pub const CHILD_SESSION_ENV_SCRUB: &[&str] = &[
     "CLAUDE_CODE_MESSAGING_TOKEN",
 ];
 
-/// A named MCP server inserted into Claude's managed launch configuration.
-#[derive(Debug, Clone, PartialEq)]
-pub struct McpServerConfig {
-    pub name: String,
-    pub config: Value,
-}
-
 /// Provider settings amux pins after user settings have been read.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ManagedSettings {
     pub hook_command: Vec<String>,
-    pub mcp_servers: Vec<McpServerConfig>,
     pub permissions_allow: Vec<String>,
     /// Let messages from other sessions on the messaging socket through at
     /// once. Without it a session in bypass-permissions mode holds them
     /// behind an approval nobody is there to give.
     pub accept_cross_session: bool,
-}
-
-/// Fully merged settings passed as Claude's one managed `--settings` value.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct MergedSettings(Value);
-
-impl MergedSettings {
-    pub fn empty() -> Self {
-        Self(Value::Object(serde_json::Map::new()))
-    }
-
-    pub fn as_value(&self) -> &Value {
-        &self.0
-    }
-
-    pub fn into_value(self) -> Value {
-        self.0
-    }
-}
-
-/// Everything shared launch construction needs for either Claude driver.
-#[derive(Debug, Clone)]
-pub struct Launch {
-    pub binary: PathBuf,
-    pub cwd: PathBuf,
-    pub args: Vec<String>,
-    pub session_id: Uuid,
-    pub resume: bool,
-    pub settings: MergedSettings,
-    pub hook_command: Vec<String>,
-    pub mcp_servers: Vec<McpServerConfig>,
-    pub env_scrub: &'static [&'static str],
 }
 
 /// Read each user `--settings` source relative to `cwd` and merge it in order.
@@ -108,23 +66,13 @@ pub fn load_user_settings(cwd: &Path, sources: &[String]) -> Result<Option<Value
     Ok((!sources.is_empty()).then_some(merged))
 }
 
-/// Merge managed hooks and MCP settings after user settings so the provider's
-/// routing cannot be replaced accidentally.
-pub fn merged_settings(user: Option<Value>, managed: &ManagedSettings) -> MergedSettings {
+/// Merge managed hooks and settings after user settings so the provider's
+/// routing cannot be replaced accidentally: the result is Claude's one
+/// managed `--settings` value.
+pub fn merged_settings(user: Option<Value>, managed: &ManagedSettings) -> Value {
     let mut merged = user.unwrap_or_else(|| Value::Object(serde_json::Map::new()));
     if !managed.hook_command.is_empty() {
         deep_merge(&mut merged, managed_hook_settings(&managed.hook_command));
-    }
-    if !managed.mcp_servers.is_empty() {
-        let servers = managed
-            .mcp_servers
-            .iter()
-            .map(|server| (server.name.clone(), server.config.clone()))
-            .collect();
-        deep_merge(
-            &mut merged,
-            serde_json::json!({"mcpServers": Value::Object(servers)}),
-        );
     }
     if managed.accept_cross_session {
         deep_merge(
@@ -138,7 +86,7 @@ pub fn merged_settings(user: Option<Value>, managed: &ManagedSettings) -> Merged
             serde_json::json!({"permissions": {"allow": managed.permissions_allow}}),
         );
     }
-    MergedSettings(merged)
+    merged
 }
 
 /// Remove and return every user settings source from an argument list.
@@ -168,45 +116,6 @@ pub fn take_settings_args(args: &mut Vec<String>) -> Result<Vec<String>> {
     }
     *args = retained;
     Ok(settings)
-}
-
-/// Build PTY-driver arguments. Host-owned name and messaging arguments may be
-/// supplied in `Launch::args`; callers decide them from runtime facts.
-pub fn pty_spawn_args(launch: &Launch) -> Vec<String> {
-    let mut args = Vec::new();
-    if launch.resume {
-        args.extend(["--resume".to_string(), launch.session_id.to_string()]);
-    }
-    args.extend(launch.args.clone());
-    append_managed(&mut args, launch);
-    args
-}
-
-fn append_managed(args: &mut Vec<String>, launch: &Launch) {
-    if !launch.mcp_servers.is_empty() {
-        let servers: BTreeMap<_, _> = launch
-            .mcp_servers
-            .iter()
-            .map(|server| (server.name.clone(), server.config.clone()))
-            .collect();
-        args.extend([
-            "--mcp-config".to_string(),
-            serde_json::json!({"mcpServers": servers}).to_string(),
-        ]);
-        args.extend([
-            "--allowedTools".to_string(),
-            launch
-                .mcp_servers
-                .iter()
-                .map(|server| format!("mcp__{}__*", server.name))
-                .collect::<Vec<_>>()
-                .join(","),
-        ]);
-    }
-    args.extend([
-        "--settings".to_string(),
-        launch.settings.as_value().to_string(),
-    ]);
 }
 
 fn read_settings(cwd: &Path, source: &str) -> Result<Value> {
@@ -310,8 +219,7 @@ mod tests {
     fn managed_settings_append_user_hooks_and_pin_managed_values() {
         let user = serde_json::json!({
             "theme": "dark",
-            "hooks": {"Stop": [{"hooks": [{"command": "user-hook"}]}]},
-            "mcpServers": {"amux": {"command": "spoofed"}}
+            "hooks": {"Stop": [{"hooks": [{"command": "user-hook"}]}]}
         });
         let managed = ManagedSettings {
             hook_command: vec![
@@ -319,17 +227,12 @@ mod tests {
                 "hooks".into(),
                 "claude".into(),
             ],
-            mcp_servers: vec![McpServerConfig {
-                name: "amux".into(),
-                config: serde_json::json!({"command":"/bin/amux","args":["mcp","agent"]}),
-            }],
             permissions_allow: vec!["Read(/managed/artifacts/**)".into()],
             accept_cross_session: true,
         };
-        let settings = merged_settings(Some(user), &managed).into_value();
+        let settings = merged_settings(Some(user), &managed);
         assert_eq!(settings["theme"], "dark");
         assert_eq!(settings["crossSessionInbound"], "accept");
-        assert_eq!(settings["mcpServers"]["amux"]["command"], "/bin/amux");
         assert_eq!(settings["hooks"]["Stop"].as_array().unwrap().len(), 2);
         let start = &settings["hooks"]["SessionStart"][0]["hooks"][0];
         assert_eq!(start["command"], "/Applications/amux tool");

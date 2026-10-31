@@ -6,12 +6,16 @@
 
 use std::path::Path;
 use std::process::Stdio;
+use std::time::Duration;
 
 use claude_protocol::stream::init::AccountInfo;
 use claude_protocol::stream::{self as claude_stream};
-use codex_protocol::ClientRequest;
-use codex_protocol::client::{AccountReadParams, ModelListParams, SkillsListParams};
+use codex_protocol::client::{
+    AccountReadParams, Capabilities, ClientInfo, InitializeParams, ModelListParams,
+    SkillsListParams,
+};
 use codex_protocol::server::{AccountReadResponse, ModelListResponse, SkillsListResponse};
+use codex_protocol::{ClientMessage, ClientNotification, ClientRequest, RequestId, ServerMessage};
 use prost::Message as _;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 use wire::{Catalogue, Provider, ProviderOffer};
@@ -158,20 +162,47 @@ fn claude_signed_in(account: &AccountInfo) -> bool {
 /// Codex's app server lists its models (in pages) and skills before any
 /// thread, and reads the account.
 async fn ask_codex(command: &str) -> Result<(Catalogue, bool), String> {
-    let codex = codex::connect(codex::CodexConfig {
-        codex_path: Some(command.into()),
-        client_name: "amux".into(),
-        client_version: crate::VERSION.into(),
-        ..codex::CodexConfig::default()
-    })
-    .await
-    .map_err(|error| format!("starting {command}: {error}"))?;
+    let listen = codex::host::Listen::Stdio;
+    let mut server = tokio::process::Command::new(command);
+    server.stderr(Stdio::null()).kill_on_drop(true);
+    let mut child = codex::host::spawn_server(server, &listen)
+        .map_err(|error| format!("starting {command}: {error}"))?;
+    let (sender, receiver) = codex::host::Connection::connect(&listen, &mut child, Duration::ZERO)
+        .await
+        .map_err(|error| format!("starting {command}: {error}"))?
+        .into_split();
+    let mut codex = CodexProbe {
+        sender,
+        receiver,
+        asked: 0,
+    };
     let asked = async {
+        let _: serde_json::Value = codex
+            .ask(ClientRequest::Initialize(InitializeParams {
+                client_info: ClientInfo {
+                    name: "amux".into(),
+                    title: None,
+                    version: crate::VERSION.into(),
+                    extra: Default::default(),
+                },
+                capabilities: Some(Capabilities {
+                    experimental_api: Some(true),
+                    opt_out_notification_methods: Vec::new(),
+                    extra: Default::default(),
+                }),
+                extra: Default::default(),
+            }))
+            .await?;
+        codex
+            .send(ClientMessage::notification(
+                ClientNotification::Initialized(()),
+            ))
+            .await?;
         let mut models = Vec::new();
         let mut cursor = None;
         loop {
             let page: ModelListResponse = codex
-                .request(ClientRequest::ModelList(ModelListParams {
+                .ask(ClientRequest::ModelList(ModelListParams {
                     cursor: cursor.take(),
                     ..Default::default()
                 }))
@@ -184,19 +215,75 @@ async fn ask_codex(command: &str) -> Result<(Catalogue, bool), String> {
             }
         }
         let skills: SkillsListResponse = codex
-            .request(ClientRequest::SkillsList(SkillsListParams::default()))
+            .ask(ClientRequest::SkillsList(SkillsListParams::default()))
             .await?;
         let account: AccountReadResponse = codex
-            .request(ClientRequest::AccountRead(AccountReadParams {
+            .ask(ClientRequest::AccountRead(AccountReadParams {
                 refresh_token: Some(false),
                 ..Default::default()
             }))
             .await?;
-        Ok::<_, codex::Error>((models, skills, account))
+        Ok::<_, String>((models, skills, account))
     }
     .await;
-    codex.close().await;
+    // The end of its input ends a stdio server; one that lingers is killed.
+    let _ = codex.sender.close().await;
+    if tokio::time::timeout(CODEX_EXIT_WAIT, child.wait())
+        .await
+        .is_err()
+    {
+        let _ = child.start_kill();
+    }
     let (models, skills, account) = asked.map_err(|error| format!("asking Codex: {error}"))?;
     let signed_in = account.account.is_some() || !account.requires_openai_auth;
     Ok((interpret::codex::host_catalogue(&models, skills), signed_in))
+}
+
+/// How long Codex has to exit once the probe has closed its input.
+const CODEX_EXIT_WAIT: Duration = Duration::from_secs(2);
+
+/// The probe's one connection to Codex's server, asking one thing at a time.
+struct CodexProbe {
+    sender: codex::host::Sender,
+    receiver: codex::host::Receiver,
+    asked: i64,
+}
+
+impl CodexProbe {
+    async fn send(&mut self, message: ClientMessage) -> Result<(), String> {
+        self.sender
+            .send(&codex_protocol::encode(&message))
+            .await
+            .map_err(|error| format!("writing to Codex: {error}"))
+    }
+
+    /// Sends `request` and reads its answer as `R`; whatever else the
+    /// server says meanwhile is passed over.
+    async fn ask<R: serde::de::DeserializeOwned>(
+        &mut self,
+        request: ClientRequest,
+    ) -> Result<R, String> {
+        self.asked += 1;
+        let id = RequestId::Integer(self.asked);
+        self.send(ClientMessage::request(id.clone(), request))
+            .await?;
+        loop {
+            let line = self
+                .receiver
+                .next()
+                .await
+                .ok_or("Codex ended before it answered")?
+                .map_err(|error| format!("reading Codex: {error}"))?;
+            if let Ok(ServerMessage::Response {
+                id: answered,
+                result,
+                ..
+            }) = codex_protocol::decode(&line)
+                && answered == id
+            {
+                let result = result.map_err(|error| error.message)?;
+                return codex_protocol::result(&result).map_err(|error| error.to_string());
+            }
+        }
+    }
 }

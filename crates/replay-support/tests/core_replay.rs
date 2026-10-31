@@ -1,35 +1,19 @@
 //! Dump bundles replayed through all four stages with the models'
-//! properties judged at every step. Both fixtures are bundles a real daemon
-//! wrote on a net served through `testnet ctl`, one host and one agent on
-//! the fake Claude SDK provider. `fixtures/healthy`: two turns, then `amux
-//! dump`. `fixtures/violation`: the dump the core asked for itself when a
-//! stream opened under a lower generation than one before it, on a build
-//! that recorded the highest generation opened as one more than it was.
-//! The first stream raised the record to 2 and a checkpoint kept it, so
-//! the second stream, after that checkpoint, breaks the invariant again
-//! when replayed by this build, which records it correctly.
-//! `fixtures/client_violation`: the dump a client asked for itself when the
-//! chat it had open failed its transcript's check, on a build whose session
-//! driver dropped the stream's row at order 2. The bundle carries the
-//! session's checkpoint and every message since through the CaughtUp the
-//! check failed at; replayed by this build, the window breaks at the row
-//! after the gap, the first message that leaves it two blocks.
+//! properties judged at every step: a healthy one, one whose core part
+//! breaks an invariant, and one whose client session breaks the window's
+//! one block. `support` says how each is written.
 
-use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use replay_support::bundle::Bundle;
 use replay_support::replay::{Failing, Stage, Verdict};
 
-fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name)
-}
+use crate::support::{self, copy_dir};
 
 #[test]
 fn every_stage_of_a_healthy_dump_holds() {
-    let bundle = Bundle::open(&fixture("healthy")).expect("the fixture opens");
+    let dumped = support::healthy();
+    let bundle = Bundle::open(dumped.path()).expect("the bundle opens");
     let core = bundle.core.as_ref().expect("the bundle carries the core");
     assert!(
         core.inputs
@@ -63,22 +47,15 @@ fn every_stage_of_a_healthy_dump_holds() {
     );
 }
 
-const CLIENT_AGENT: &str = "01aaa7bf-2866-4f4a-af4d-08abe99db157";
-
 #[test]
 fn a_dump_a_client_asked_for_replays_its_session_to_the_failing_message() {
-    let dir = fixture("client_violation");
-    let manifest: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
-    let reason = manifest["reason"].as_str().unwrap();
-    assert!(reason.starts_with("the client's transcript: "), "{reason}");
-    assert_eq!(manifest["automatic"], true);
-
-    let bundle = Bundle::open(&dir).expect("the fixture opens");
+    let dumped = support::client_violation();
+    let agent = dumped.agent();
+    let bundle = Bundle::open(dumped.path()).expect("the bundle opens");
     let [client] = &bundle.clients[..] else {
         panic!("{} client sessions", bundle.clients.len());
     };
-    assert_eq!(client.agent, CLIENT_AGENT);
+    assert_eq!(client.agent, agent);
     let history = client.history.as_ref().expect("the session reads");
     // The trace was cut at the message that failed the check live: the
     // CaughtUp the client checks its window at.
@@ -125,7 +102,7 @@ fn a_dump_a_client_asked_for_replays_its_session_to_the_failing_message() {
     // applied.
     assert_eq!(failing.step, 5, "{failing}");
     assert!(
-        failing.what.contains(CLIENT_AGENT) && failing.what.contains("order 3"),
+        failing.what.contains(&agent) && failing.what.contains("order 3"),
         "{failing}"
     );
     assert!(failing.detail.contains("between 1 and 3"), "{failing}");
@@ -133,13 +110,14 @@ fn a_dump_a_client_asked_for_replays_its_session_to_the_failing_message() {
 
 #[test]
 fn dump_replay_names_the_clients_failing_message_and_the_property() {
+    let dumped = support::client_violation();
     let output = Command::new(env!("CARGO_BIN_EXE_dump-replay"))
-        .arg(fixture("client_violation"))
+        .arg(dumped.path())
         .output()
         .expect("dump-replay runs");
     let stdout = String::from_utf8_lossy(&output.stdout);
     println!(
-        "$ dump-replay tests/fixtures/client_violation\n{stdout}exit status {:?}\n",
+        "$ dump-replay <a client's violation>\n{stdout}exit status {:?}\n",
         output.status.code()
     );
     assert_eq!(output.status.code(), Some(1));
@@ -163,14 +141,16 @@ fn dump_replay_names_the_clients_failing_message_and_the_property() {
 
 #[test]
 fn a_client_session_the_manifest_names_that_cannot_be_read_fails_the_stage() {
-    let events = format!("client/sessions/{CLIENT_AGENT}/events");
-    let checkpoint = format!("client/sessions/{CLIENT_AGENT}/checkpoint");
+    let dumped = support::client_violation();
+    let agent = dumped.agent();
+    let events = format!("client/sessions/{agent}/events");
+    let checkpoint = format!("client/sessions/{agent}/checkpoint");
     for (what, file, bytes) in [
         ("unreadable events", &events, Some(&b"\xff\xff\xff"[..])),
         ("a missing checkpoint", &checkpoint, None),
     ] {
         let scratch = tempfile::tempdir().unwrap();
-        copy_dir(&fixture("client_violation"), scratch.path());
+        copy_dir(dumped.path(), scratch.path());
         let path = scratch.path().join(file);
         match bytes {
             Some(bytes) => std::fs::write(&path, bytes).unwrap(),
@@ -184,7 +164,7 @@ fn a_client_session_the_manifest_names_that_cannot_be_read_fails_the_stage() {
         let Verdict::Unreadable(why) = &session.verdict else {
             panic!("{what}: {session}");
         };
-        assert!(why.contains(CLIENT_AGENT), "{why}");
+        assert!(why.contains(&agent), "{why}");
         assert!(session.verdict.failed());
 
         let output = Command::new(env!("CARGO_BIN_EXE_dump-replay"))
@@ -197,12 +177,13 @@ fn a_client_session_the_manifest_names_that_cannot_be_read_fails_the_stage() {
 
 #[test]
 fn dump_replay_prints_one_holding_line_per_stage() {
+    let dumped = support::healthy();
     let output = Command::new(env!("CARGO_BIN_EXE_dump-replay"))
-        .arg(fixture("healthy"))
+        .arg(dumped.path())
         .output()
         .expect("dump-replay runs");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    println!("$ dump-replay tests/fixtures/healthy\n{stdout}");
+    println!("$ dump-replay <a healthy dump>\n{stdout}");
     assert!(
         output.status.success(),
         "{}",
@@ -221,27 +202,17 @@ fn dump_replay_prints_one_holding_line_per_stage() {
 
 #[test]
 fn a_dump_the_core_asked_for_replays_to_its_failing_step_and_names_the_invariant() {
-    let dir = fixture("violation");
-    let manifest: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
-    let reason = manifest["reason"].as_str().unwrap();
-    assert!(
-        reason.starts_with("the daemon core: ")
-            && reason.contains(daemon_core::GENERATION_FELL.sentence),
-        "{reason}"
-    );
-    assert_eq!(manifest["automatic"], true);
-
-    let bundle = Bundle::open(&dir).expect("the fixture opens");
+    let dumped = support::core_violation();
+    let bundle = Bundle::open(dumped.path()).expect("the bundle opens");
     let failing = bundle
         .replay_core()
         .expect("the core replays")
         .expect("the replay fails where the live core did");
-    // The fourth input since the checkpoint is the second stream's
-    // Subscribe, the step the live core asked for the dump at.
+    // The second input since the checkpoint is the second stream's
+    // Subscribe, the step the live core would have asked for the dump at.
     let core = bundle.core.as_ref().unwrap();
-    let Some(daemon_core::Recorded::Input(input)) = core.inputs.get(3) else {
-        panic!("the ring's fourth line is an input");
+    let Some(daemon_core::Recorded::Input(input)) = core.inputs.get(1) else {
+        panic!("the ring's second line is an input");
     };
     assert!(
         matches!(
@@ -253,7 +224,7 @@ fn a_dump_the_core_asked_for_replays_to_its_failing_step_and_names_the_invariant
         ),
         "{input:?}"
     );
-    assert_eq!(failing.step, 4, "{failing}");
+    assert_eq!(failing.step, 2, "{failing}");
     assert_eq!(failing.property, daemon_core::GENERATION_FELL.sentence);
     assert!(
         failing.detail.contains("generation 1 after one under 2"),
@@ -271,13 +242,14 @@ fn a_dump_the_core_asked_for_replays_to_its_failing_step_and_names_the_invariant
 
 #[test]
 fn dump_replay_exits_non_zero_naming_the_step_and_the_property() {
+    let dumped = support::core_violation();
     let output = Command::new(env!("CARGO_BIN_EXE_dump-replay"))
-        .arg(fixture("violation"))
+        .arg(dumped.path())
         .output()
         .expect("dump-replay runs");
     let stdout = String::from_utf8_lossy(&output.stdout);
     println!(
-        "$ dump-replay tests/fixtures/violation\n{stdout}exit status {:?}\n",
+        "$ dump-replay <a core's violation>\n{stdout}exit status {:?}\n",
         output.status.code()
     );
     assert_eq!(output.status.code(), Some(1));
@@ -285,7 +257,7 @@ fn dump_replay_exits_non_zero_naming_the_step_and_the_property() {
         .lines()
         .find(|line| line.starts_with("daemon core"))
         .expect("a line for the core");
-    assert!(core.contains("FAILS") && core.contains("step 4"), "{core}");
+    assert!(core.contains("FAILS") && core.contains("step 2"), "{core}");
     assert!(
         core.contains(daemon_core::GENERATION_FELL.sentence),
         "{core}"
@@ -297,9 +269,8 @@ fn a_ring_missing_a_read_fails_the_reproduction_property() {
     // The ring loses the line saying how far the core's first ingest read
     // the journal: replayed, that step reads the journal all the same, and
     // the replay no longer reproduces the run it was recorded from.
-    let scratch = tempfile::tempdir().unwrap();
-    copy_dir(&fixture("healthy"), scratch.path());
-    let inputs = scratch.path().join("core/inputs");
+    let dumped = support::healthy();
+    let inputs = dumped.path().join("core/inputs");
     let ring = std::fs::read_to_string(&inputs).unwrap();
     let mut lines: Vec<&str> = ring.lines().collect();
     let at = lines
@@ -314,7 +285,7 @@ fn a_ring_missing_a_read_fails_the_reproduction_property() {
         .filter(|line| line.starts_with("{\"Input\""))
         .count();
 
-    let bundle = Bundle::open(scratch.path()).unwrap();
+    let bundle = Bundle::open(dumped.path()).unwrap();
     let failing = bundle
         .replay_core()
         .unwrap()
@@ -322,17 +293,4 @@ fn a_ring_missing_a_read_fails_the_reproduction_property() {
     println!("{failing}");
     assert_eq!(failing.property, models::single_daemon::REPRODUCES);
     assert_eq!(failing.step, step, "{failing}");
-}
-
-fn copy_dir(from: &Path, to: &Path) {
-    std::fs::create_dir_all(to).unwrap();
-    for entry in std::fs::read_dir(from).unwrap() {
-        let entry = entry.unwrap();
-        let target = to.join(entry.file_name());
-        if entry.file_type().unwrap().is_dir() {
-            copy_dir(&entry.path(), &target);
-        } else {
-            std::fs::copy(entry.path(), target).unwrap();
-        }
-    }
 }

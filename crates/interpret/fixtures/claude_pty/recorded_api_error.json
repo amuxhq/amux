@@ -1,5 +1,5 @@
 {
-  "about": "An API that cannot be reached: the retries reach only the screen, then the transcript records an error in place of an answer.",
+  "about": "A provider that cannot be reached, set through the agent's --settings: Claude retries, then writes an error in place of an answer.",
   "spec": {
     "created_at_ms": 0
   },
@@ -8,14 +8,13 @@
       "fact": {
         "channel": "agent",
         "json": {
-          "type": "launch",
-          "version": "2.1.312"
+          "type": "launch"
         }
       }
     }
   ],
   "recording": {
-    "path": "../../../claude-specs/fixtures/pty/api_error/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/pty/api_error/io.jsonl",
     "format": "claude_pty_io"
   }
 }

@@ -5,11 +5,7 @@ use std::process::Command;
 
 /// Resolve a session transcript under the current project, a sibling Git
 /// worktree, or an unambiguous project-directory fallback.
-pub fn find_session_file(
-    config_root: &Path,
-    working_dir: &Path,
-    session_id: &str,
-) -> Option<PathBuf> {
+fn find_session_file(config_root: &Path, working_dir: &Path, session_id: &str) -> Option<PathBuf> {
     if !valid_session_id(session_id) {
         return None;
     }

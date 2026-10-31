@@ -1,10 +1,10 @@
 {
-  "about": "A rejected credential: API retries then a failed turn, and the sign-in state.",
+  "about": "A rejected credential: the failed turn and the sign-in state.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/sdk/sign_in_problem/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/sdk/sign_in_problem/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

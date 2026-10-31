@@ -14,7 +14,6 @@ prost = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
-tracing = { workspace = true }
 ui-runtime = { workspace = true }
 ui-state = { workspace = true }
 ui-view = { workspace = true }

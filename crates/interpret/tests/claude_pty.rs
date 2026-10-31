@@ -1,5 +1,6 @@
-//! The Claude PTY interpreter against the recorded terminal sessions in
-//! claude-specs and authored facts for what no recording shows.
+//! The Claude PTY interpreter against the terminal sessions amux recorded
+//! live, two transcript captures and authored facts for what no recording
+//! shows.
 
 use std::path::{Path, PathBuf};
 
@@ -33,37 +34,37 @@ goldens! {
     plans_are_items_with_their_verdict => "plans",
     a_question_takes_a_reply_instead => "question_reply",
     a_question_of_several_can_be_skipped => "question_skip",
-    recorded_prompt => "recorded_prompt",
-    recorded_prompt_multiline => "recorded_prompt_multiline",
-    recorded_tools => "recorded_tools",
-    recorded_interrupt => "recorded_interrupt",
-    recorded_mode_cycle => "recorded_mode_cycle",
-    recorded_permission_allow_once => "recorded_permission_allow_once",
-    recorded_permission_allow_scoped => "recorded_permission_allow_scoped",
-    recorded_permission_deny_feedback => "recorded_permission_deny_feedback",
-    recorded_plan_approve => "recorded_plan_approve",
-    recorded_plan_auto => "recorded_plan_auto",
-    recorded_plan_request_changes => "recorded_plan_request_changes",
-    recorded_question_single => "recorded_question_single",
-    recorded_question_multi_other => "recorded_question_multi_other",
-    recorded_question_mixed => "recorded_question_mixed",
-    recorded_question_tabs => "recorded_question_tabs",
-    recorded_question_other_single => "recorded_question_other_single",
-    recorded_compact_relink => "recorded_compact_relink",
-    recorded_clear_relink => "recorded_clear_relink",
     recorded_task_tools => "recorded_task_tools",
-    recorded_socket_delivery => "recorded_socket_delivery",
-    recorded_background_shell => "recorded_background_shell",
-    recorded_file_changes_and_failure => "recorded_file_changes_and_failure",
-    recorded_image => "recorded_image",
-    recorded_question_cancelled => "recorded_question_cancelled",
+    recorded_text_turn => "recorded_text_turn",
+    recorded_permission_callback => "recorded_permission_callback",
+    recorded_interrupted => "recorded_interrupted",
+    recorded_resumed => "recorded_resumed",
+    recorded_live_plan => "recorded_live_plan",
+    recorded_live_questions => "recorded_live_questions",
+    recorded_multi_turn => "recorded_multi_turn",
+    recorded_compacted => "recorded_compacted",
+    recorded_cleared => "recorded_cleared",
+    recorded_configured_turn => "recorded_configured_turn",
+    recorded_question_asked => "recorded_question_asked",
     recorded_question_every_shape => "recorded_question_every_shape",
-    recorded_subagent => "recorded_subagent",
+    recorded_question_dismissed => "recorded_question_dismissed",
+    recorded_plan_reviewed => "recorded_plan_reviewed",
+    recorded_failing_command => "recorded_failing_command",
     recorded_task_list => "recorded_task_list",
-    recorded_thinking => "recorded_thinking",
-    recorded_steer_queued => "recorded_steer_queued",
-    recorded_api_error => "recorded_api_error",
+    recorded_background_shell => "recorded_background_shell",
+    recorded_subagent_task => "recorded_subagent_task",
+    recorded_image => "recorded_image",
     recorded_sign_in_problem => "recorded_sign_in_problem",
+    recorded_steer_folded => "recorded_steer_folded",
+    recorded_mode_cycle => "recorded_mode_cycle",
+    recorded_long_prompt => "recorded_long_prompt",
+    recorded_api_error => "recorded_api_error",
+    recorded_permission_scoped => "recorded_permission_scoped",
+    recorded_permission_denied => "recorded_permission_denied",
+    recorded_terminal_allow => "recorded_terminal_allow",
+    recorded_terminal_escape => "recorded_terminal_escape",
+    recorded_terminal_question => "recorded_terminal_question",
+    recorded_socket_delivery => "recorded_socket_delivery",
     calls_open_on_their_rows_and_hooks_make_none => "calls_open_on_their_rows",
     asks_open_on_the_hook_and_close_only_on_facts => "ask_rules",
     a_late_row_for_amuxs_own_prompt_leaves_the_ask_open => "late_prompt_row",
@@ -76,7 +77,6 @@ goldens! {
     background_subagent_answers_on_its_agent_row => "subagent_notification",
     boundaries_carry_the_provider_session_and_version => "boundaries",
     rows_no_recording_shows => "rows",
-    recorded_steer_send_now => "recorded_steer_send_now",
     a_tool_servers_form_or_link_is_answered_through_its_hook => "elicitation",
     replies_stream_as_claude_draws_them => "streaming",
     another_conversations_hooks_are_let_go => "switched_away_hooks",
@@ -84,9 +84,6 @@ goldens! {
     a_form_is_left_to_claudes_dialog_while_someone_watches_its_terminal => "form_left_to_terminal",
     a_refusal_claude_made_on_its_own_lands_on_the_call => "permission_denied",
     a_pasted_prompt_reads_as_what_was_sent => "pasted_prompt",
-    recorded_question_skip_reply => "recorded_question_skip_reply",
-    recorded_live_plan => "recorded_live_plan",
-    recorded_live_questions => "recorded_live_questions",
 }
 
 #[test]
@@ -116,7 +113,7 @@ fn agent_messages_leave_the_pending_set_when_claude_shows_them_to_the_model() {
         agent_id: b"recipient".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     for (id, text) in [
         ("env-idle", "A2A_SOCKET_IDLE_21240"),
         ("env-busy", "A2A_SOCKET_BUSY_21240"),
@@ -190,7 +187,7 @@ fn an_attachment_element_in_a_reply_becomes_an_item_attachment() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let mut item = None;
     for event in ClaudePty::recording("transcript_rows", format!("{row}\n").as_bytes()).unwrap() {
         let step = ClaudePty::step(&mut state, event).step;
@@ -226,7 +223,7 @@ fn a_queued_prompt_with_an_image_is_still_the_steer() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     // Up to Claude taking the steered prompt from its queue.
     let mut queued_row = None;
     for event in events {
@@ -286,9 +283,9 @@ fn a_queued_prompt_with_an_image_is_still_the_steer() {
     };
     assert_eq!(item.input_id, b"p1");
     assert_eq!(item.text, "[Image #1]\n\nUse the staging config.");
-    let body = wire::ClaudePtyItem::decode(item.body.as_slice()).unwrap();
+    let body = wire::ClaudeItem::decode(item.body.as_slice()).unwrap();
     assert!(
-        matches!(body.kind, Some(wire::claude_pty_item::Kind::Steer(_))),
+        matches!(body.kind, Some(wire::claude_item::Kind::Steer(_))),
         "{body:?}"
     );
     assert!(!steered(&state), "p1 left the queue");
@@ -302,7 +299,7 @@ fn the_job_list_empties_when_terminal_claude_exits() {
     use prost::Message as _;
     let jobs = |step: &wire::Step| {
         step.snapshot.as_ref().map(|snapshot| {
-            let body = wire::ClaudePtySnapshot::decode(&snapshot.body[..]).unwrap();
+            let body = wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap();
             let background = body.background_jobs.unwrap_or_default();
             (background.known, background.jobs.len())
         })
@@ -322,7 +319,7 @@ fn the_job_list_empties_when_terminal_claude_exits() {
         incarnation: spec.incarnation + 1,
         ..spec
     };
-    let (_, step) = ClaudePty::reincarnate(listed, &next, "test");
+    let (_, step) = ClaudePty::reincarnate(listed, &next);
     assert_eq!(
         (jobs(&exited.step), jobs(&step)),
         (Some((true, 0)), Some((true, 0))),
@@ -346,7 +343,7 @@ fn a_new_incarnation_holds_forms_whoever_watched_the_last() {
             payload: json.to_string().into_bytes(),
         })
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     ClaudePty::step(
         &mut state,
         fact(
@@ -359,7 +356,7 @@ fn a_new_incarnation_holds_forms_whoever_watched_the_last() {
         incarnation: spec.incarnation + 1,
         ..spec
     };
-    let (mut state, _) = ClaudePty::reincarnate(state, &next, "test");
+    let (mut state, _) = ClaudePty::reincarnate(state, &next);
     let mut effects = Vec::new();
     for event in [
         fact(
@@ -418,7 +415,7 @@ fn failed_report(id: &[u8]) -> Event {
 /// transcript shows the words alone.
 #[test]
 fn a_failed_report_is_worded_for_the_parents_provider() {
-    let (mut state, _) = ClaudePty::initial(&wire::AgentSpec::default(), "test");
+    let (mut state, _) = ClaudePty::initial(&wire::AgentSpec::default());
     let stepped = ClaudePty::step(&mut state, failed_report(b"env-failed"));
     let injected = stepped.effects.iter().find_map(|effect| match effect {
         Effect::Inject { text, .. } => Some(text.clone()),
@@ -449,10 +446,10 @@ fn plan_ask_on(version: &str, offered: Option<wire::Catalogue>) -> wire::PlanAsk
 fn plan_ask_launched(version: &str, launched: impl FnOnce(&mut wire::AgentSpec)) -> wire::PlanAsk {
     use prost::Message as _;
     let mut script =
-        interpret::fixture_script::<ClaudePty>(&fixtures().join("recorded_plan_auto.json"))
+        interpret::fixture_script::<ClaudePty>(&fixtures().join("recorded_plan_reviewed.json"))
             .unwrap();
     launched(&mut script.spec);
-    let (mut state, _) = ClaudePty::initial(&script.spec, &script.producer);
+    let (mut state, _) = ClaudePty::initial(&script.spec);
     for (_, event) in script.events {
         let Some(mut event) = event else { continue };
         if let Event::Fact(fact) = &mut event
@@ -463,7 +460,7 @@ fn plan_ask_launched(version: &str, launched: impl FnOnce(&mut wire::AgentSpec))
         }
         let stepped = ClaudePty::step(&mut state, event);
         let plan = stepped.step.snapshot.and_then(|snapshot| {
-            wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+            wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
                 .unwrap()
                 .asks
                 .into_iter()
@@ -607,7 +604,7 @@ fn a_parents_message_that_resumes_its_child_reaches_terminal_claude_labelled() {
         ..Default::default()
     };
     let labelled = "[message from agent lead]\nPick it up again.";
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let stepped = ClaudePty::step(
         &mut state,
         Event::Fact(Fact {
@@ -651,7 +648,7 @@ fn items_from_rows(rows: &[serde_json::Value]) -> Vec<wire::Item> {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let text: String = rows.iter().map(|row| format!("{row}\n")).collect();
     let mut items = Vec::new();
     for event in ClaudePty::recording("transcript_rows", text.as_bytes()).unwrap() {
@@ -763,7 +760,7 @@ fn a_model_switch_shows_before_the_next_turn() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let hook = |json: serde_json::Value| {
         Event::Fact(interpret::Fact {
             channel: interpret::Channel::Hook,
@@ -783,7 +780,7 @@ fn a_model_switch_shows_before_the_next_turn() {
         })),
     ] {
         if let Some(snapshot) = ClaudePty::step(&mut state, event).step.snapshot {
-            let body = wire::ClaudePtySnapshot::decode(snapshot.body.as_slice()).unwrap();
+            let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
             named = body.model_name.or(body.model).or(named);
         }
     }
@@ -824,7 +821,7 @@ fn a_background_subagents_ask_stays_open_past_the_main_turns_stop() {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let command = serde_json::json!({"command": "python3 -c 'import time; time.sleep(60)'", "description": "Sleep"});
     let mut last = None;
     let mut seen = Vec::new();
@@ -860,7 +857,7 @@ fn a_background_subagents_ask_stays_open_past_the_main_turns_stop() {
         ),
     ] {
         if let Some(snapshot) = ClaudePty::step(&mut state, event).step.snapshot {
-            let body = wire::ClaudePtySnapshot::decode(snapshot.body.as_slice()).unwrap();
+            let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
             last = Some((snapshot.phase(), body.asks.len()));
             seen.push(last.unwrap());
         }
@@ -898,12 +895,12 @@ fn prompt_input(id: &str, text: &str) -> Event {
     Event::Input(input)
 }
 
-fn decoded(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudePtySnapshot)> {
+fn decoded(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudeSnapshot)> {
     use prost::Message as _;
     stepped.step.snapshot.as_ref().map(|snapshot| {
         (
             snapshot.phase(),
-            wire::ClaudePtySnapshot::decode(snapshot.body.as_slice()).unwrap(),
+            wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap(),
         )
     })
 }
@@ -912,22 +909,22 @@ fn decoded(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudePty
 /// session s1 started: the state and the last snapshot it gave.
 fn started_claude() -> (
     interpret::claude_pty::State,
-    (wire::Phase, wire::ClaudePtySnapshot),
+    (wire::Phase, wire::ClaudeSnapshot),
 ) {
     let spec = wire::AgentSpec {
         agent_id: b"agent".to_vec(),
         incarnation: 1,
         ..Default::default()
     };
-    let (mut state, step) = ClaudePty::initial(&spec, "test");
+    let (mut state, step) = ClaudePty::initial(&spec);
     let mut last = step.snapshot.as_ref().map(|snapshot| {
         use prost::Message as _;
         (
             snapshot.phase(),
-            wire::ClaudePtySnapshot::decode(snapshot.body.as_slice()).unwrap(),
+            wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap(),
         )
     });
-    let launch = serde_json::json!({"type": "launch", "version": "2.1.296"});
+    let launch = serde_json::json!({"type": "launch"});
     for event in [
         Event::Fact(interpret::Fact {
             channel: interpret::Channel::Agent,
@@ -998,8 +995,8 @@ fn a_permission_amux_cycles_is_in_the_snapshot_at_once() {
         })),
         Event::Input(wire::Input::new(
             b"k1".to_vec(),
-            wire::ClaudePtyInput {
-                of: Some(wire::claude_pty_input::Of::CyclePermissionMode(
+            wire::AgentInput {
+                of: Some(wire::agent_input::Of::CyclePermissionMode(
                     wire::CyclePermissionMode {},
                 )),
             },
@@ -1203,8 +1200,8 @@ fn a_commands_time_starts_after_the_approval_it_waited_for() {
         .rev()
         .filter(|item| item.key == "toolu_curl")
         .find_map(
-            |item| match wire::ClaudePtyItem::decode(item.body.as_slice()).ok()?.kind {
-                Some(wire::claude_pty_item::Kind::Tool(tool)) => Some(tool),
+            |item| match wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind {
+                Some(wire::claude_item::Kind::Tool(tool)) => Some(tool),
                 _ => None,
             },
         )
@@ -1232,8 +1229,8 @@ fn claude_offering_auto() -> interpret::claude_pty::State {
         offered: Some(catalogue),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
-    let launch = serde_json::json!({"type": "launch", "version": "2.1.296"});
+    let (mut state, _) = ClaudePty::initial(&spec);
+    let launch = serde_json::json!({"type": "launch"});
     for event in [
         Event::Fact(interpret::Fact {
             channel: interpret::Channel::Agent,
@@ -1295,7 +1292,7 @@ fn a_permission_ask_offers_claudes_switch_to_auto_mode() {
     let modes: Vec<Option<String>> = permission
         .scopes
         .iter()
-        .map(|scope| scope.grant.as_ref().and_then(|grant| grant.mode.clone()))
+        .map(|grant| grant.mode.clone())
         .collect();
     assert_eq!(
         modes,
@@ -1384,8 +1381,8 @@ fn auto_mode_is_in_the_plan_switch_and_the_cycle_where_claude_offers_it() {
             &mut state,
             Event::Input(wire::Input::new(
                 format!("k{at}").into_bytes(),
-                wire::ClaudePtyInput {
-                    of: Some(wire::claude_pty_input::Of::CyclePermissionMode(
+                wire::AgentInput {
+                    of: Some(wire::agent_input::Of::CyclePermissionMode(
                         wire::CyclePermissionMode {},
                     )),
                 },
@@ -1434,8 +1431,8 @@ fn before_claude_names_its_model_the_launched_one_decides_auto_mode() {
         provider_args: vec!["--model".into(), "haiku".into()],
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
-    let launch = serde_json::json!({"type": "launch", "version": "2.1.296"});
+    let (mut state, _) = ClaudePty::initial(&spec);
+    let launch = serde_json::json!({"type": "launch"});
     ClaudePty::step(
         &mut state,
         Event::Fact(interpret::Fact {
@@ -1449,8 +1446,8 @@ fn before_claude_names_its_model_the_launched_one_decides_auto_mode() {
             &mut state,
             Event::Input(wire::Input::new(
                 format!("k{at}").into_bytes(),
-                wire::ClaudePtyInput {
-                    of: Some(wire::claude_pty_input::Of::CyclePermissionMode(
+                wire::AgentInput {
+                    of: Some(wire::agent_input::Of::CyclePermissionMode(
                         wire::CyclePermissionMode {},
                     )),
                 },
@@ -1542,7 +1539,7 @@ fn a_background_subagents_open_ask() -> interpret::claude_pty::State {
         agent_id: b"agent".to_vec(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let command = serde_json::json!({"command": "sleep 60", "description": "Sleep"});
     let agent = serde_json::json!({"description": "Sleep", "prompt": "Sleep.", "subagent_type": "general-purpose"});
     for event in [
@@ -1599,7 +1596,7 @@ fn a_background_subagents_ask_survives_every_end_of_the_main_threads_work() {
     use prost::Message as _;
     let open_asks = |stepped: &interpret::Stepped| {
         stepped.step.snapshot.as_ref().map(|snapshot| {
-            wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+            wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
                 .unwrap()
                 .asks
                 .len()
@@ -1653,10 +1650,8 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
     use prost::Message as _;
     let failed = |step: &wire::Step| {
         let snapshot = step.snapshot.as_ref().expect("a snapshot");
-        let body = wire::ClaudePtySnapshot::decode(&snapshot.body[..]).unwrap();
+        let body = wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap();
         body.servers
-            .unwrap_or_default()
-            .servers
             .iter()
             .any(|server| server.status == wire::ToolServerStatus::Failed as i32)
     };
@@ -1665,7 +1660,7 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
         incarnation: 1,
         ..Default::default()
     };
-    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let (mut state, _) = ClaudePty::initial(&spec);
     let withheld = ClaudePty::step(
         &mut state,
         Event::Fact(interpret::Fact {
@@ -1678,7 +1673,7 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
         incarnation: 2,
         ..spec
     };
-    let (_, step) = ClaudePty::reincarnate(state, &next, "test");
+    let (_, step) = ClaudePty::reincarnate(state, &next);
     assert!(!failed(&step), "the next incarnation does not");
 }
 

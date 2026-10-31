@@ -33,7 +33,7 @@ just perf --baseline             # record this machine's baseline after every bu
 just perf -- --only flood --baseline
 ```
 
-`just perf` builds the `perf` binary in release with the `bundled,perf` features and runs it; the binary refuses to
+`just perf` builds the `perf` binary in release with the `perf` feature and runs it; the binary refuses to
 run from a debug build. The binary accepts nothing but `--baseline` and `--only flood`.
 
 `just perf-profile 'System Trace' 15s` records the flood under Instruments on this Mac and stops it 15 s in, for
@@ -95,9 +95,8 @@ just suite flood-workload-smoke
 cargo nextest run -p qualification --features perf flood
 ```
 
-The same test file holds the served flood to the measured one: `journeys/topologies/flood.json` must equal the
-topology the perf lane builds, so `testnet serve journeys/topologies/flood.json` (see [TestNet](TESTNET.md)) hands a
-real client the flood the lane measures. `FLOOD_TOPOLOGY_UPDATE=1` rewrites the file after the workload changes.
+To hand a real client the flood the lane measures, write its topology and serve it (see [TestNet](TESTNET.md)):
+`target/debug/perf-topology flood target/flood.json`, then `testnet serve target/flood.json`.
 
 ## Budgets and baselines
 
@@ -118,7 +117,7 @@ perf/baselines/
   desktop/<hw.model>.json      e.g. desktop/Mac14,6.json
 ```
 
-A desktop baseline records its schema version, machine model, profile (`release`), features (`bundled,perf`),
+A desktop baseline records its schema version, machine model, profile (`release`), features (`perf`),
 reference state, and the median of every metric, `null` for ceiling-only ones. The enrolled machines are listed in
 `crates/qualification/src/perf/report.rs`: at present one, `pinned-mac`, model `Mac14,6`. A run on a machine not in
 the list is refused, and so is a baseline recorded on another model, profile, feature set or reference state, or

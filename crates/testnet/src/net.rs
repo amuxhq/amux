@@ -32,9 +32,8 @@ use wire::agent_service_server::AgentService as _;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
-    AgentRef, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, DeleteAgentRequest, Input, PromptInput, WithdrawQueued, claude_pty_input,
-    claude_sdk_input, codex_input, create_agent_request,
+    AgentInput, AgentRef, ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest,
+    DeleteAgentRequest, Input, PromptInput, WithdrawQueued, agent_input, create_agent_request,
 };
 
 use crate::binaries::Binaries;
@@ -1228,8 +1227,7 @@ impl Net {
 
     /// Sends the agent a prompt through its own host.
     pub async fn send(&self, name: &str, text: &str) -> Result<wire::SendInputResponse, NetError> {
-        let kind = self.agent(name)?.kind;
-        self.input(name, prompt(kind, Uuid::new_v4().as_bytes(), text))
+        self.input(name, prompt(Uuid::new_v4().as_bytes(), text))
             .await
     }
 
@@ -1563,10 +1561,11 @@ impl Net {
                 .fake(FakeKind::Codex)
                 .to_string_lossy()
                 .into_owned(),
-            step_budget: daemon_core::StepBudget::TEST,
-            // An agent's core gets the daemon's test budget, for the same
-            // reason: a loaded debug-build run stretches ordinary steps.
-            agent_step_budget_micros: daemon_core::StepBudget::TEST.micros,
+            // Untimed, daemon and agent cores alike: a loaded debug-build
+            // run stretches ordinary steps past any budget, and a dump for
+            // that overrun would land in `reports/` while a test reads it.
+            step_budget: daemon_core::StepBudget::UNLIMITED,
+            agent_step_budget_micros: daemon_core::StepBudget::UNLIMITED.micros,
             ..Launch::default()
         };
         let provider = agent.map_or(own.decl.provider, |(_, _, provider)| provider);
@@ -1613,12 +1612,12 @@ impl Net {
         if let Some(mib) = self.facts_ring_mib {
             launch.agent.facts_ring_mib = mib;
         }
-        launch.stop_deadline_ms = 15_000;
+        launch.core.stop_deadline_ms = 15_000;
         if !own.decl.repositories.is_empty() {
             launch.repository_roots = vec![own.dir.join(REPOSITORIES)];
         }
         if let Some(k) = own.decl.tail_rows {
-            launch.tail_rows = k;
+            launch.core.tail_rows = k;
         }
         if let Some(hook) = &self.launch_hook {
             hook(&host.name, &mut launch);
@@ -1995,7 +1994,7 @@ impl Net {
                     .front_door(host)
                     .await
                     .map_err(|error| error.to_string())?
-                    .list_profiles(wire::ListProfilesRequest {})
+                    .list_profiles(wire::Empty {})
                     .await
                     .map_err(|status| status.message().to_owned())?
                     .into_inner()
@@ -2027,10 +2026,10 @@ impl Net {
     /// it learn that at once, as the host where a purchase or a
     /// cancellation happened does: an in-process host asks for its
     /// entitlement over its relay link. A process host's daemon offers no
-    /// socket that asks it to, so its profile is paused, the relay token it
-    /// keeps between launches forgotten, and the profile resumed, which
-    /// dials the relay afresh for a credential of the new tier; its relay
-    /// link drops for that moment.
+    /// socket that asks it to, so its profile is signed out and in again,
+    /// which forgets the relay token it keeps between launches and dials
+    /// the relay afresh for a credential of the new tier; its relay link
+    /// drops for that moment.
     pub async fn set_tier(&mut self, account: &str, tier: TierDecl) -> Result<Ack, NetError> {
         self.relay()?.set_tier(account, tier.into());
         if let Some(declared) = self.topology.relay.as_mut() {
@@ -2058,7 +2057,7 @@ impl Net {
             let info = self
                 .front_door(&host)
                 .await?
-                .list_profiles(wire::ListProfilesRequest {})
+                .list_profiles(wire::Empty {})
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
                 .into_inner()
@@ -2068,7 +2067,7 @@ impl Net {
             // Only a host whose relay link is up has anything to learn now;
             // any other learns the tier when its link comes up.
             if !info.is_some_and(|info| {
-                info.account_subject == account && info.relay_connected().is_some()
+                info.account_name == account && info.relay_connected().is_some()
             }) {
                 continue;
             }
@@ -2081,23 +2080,12 @@ impl Net {
                         error,
                     })?;
             } else {
-                let mut admin = self.admin(&host).await?;
-                admin
-                    .pause_profile(wire::PauseProfileRequest {})
+                self.admin(&host)
+                    .await?
+                    .sign_out(wire::Empty {})
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
-                let kept = node::profile_dir(&self.host(&host)?.data_dir, profile)
-                    .join(node::RELAY_TOKEN_FILE);
-                match std::fs::remove_file(&kept) {
-                    Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                        return Err(NetError::Io(error));
-                    }
-                    _ => {}
-                }
-                admin
-                    .resume_profile(wire::ResumeProfileRequest {})
-                    .await
-                    .map_err(|status| NetError::Refused(Box::new(status)))?;
+                self.sign_in(&host, account).await?;
             }
             let what = format!("{host}'s relay link on {tier:?}");
             observe::until(&what, || async {
@@ -2105,7 +2093,7 @@ impl Net {
                     .front_door(&host)
                     .await
                     .map_err(|error| error.to_string())?
-                    .list_profiles(wire::ListProfilesRequest {})
+                    .list_profiles(wire::Empty {})
                     .await
                     .map_err(|status| status.message().to_owned())?
                     .into_inner()
@@ -2150,18 +2138,6 @@ impl Net {
             Some(SocketAddr::new(loopback(&self.hosts[host].decl), port)),
             self.client_ip,
         )?)
-    }
-
-    /// Binds `host`'s socket to IPv6 loopback alone from its next start,
-    /// so it reaches and is reached over IPv6 only. In-process hosts only.
-    pub fn bind_ipv6_only(&mut self, host: &str) -> Result<Ack, NetError> {
-        self.in_process(host, "binding IPv6 only")?;
-        self.hosts
-            .get_mut(host)
-            .ok_or_else(|| NetError::NoHost(host.to_owned()))?
-            .decl
-            .ipv6_only = true;
-        Ok(self.ack(format!("{host} binds IPv6 only from its next start")))
     }
 
     /// The SSH target that reaches `host`: give it to a peer as its way
@@ -2228,8 +2204,7 @@ impl Net {
         // machine probes its paths again from the new network.
         let told = edge.network_changed()?;
         Ok(self.ack(format!(
-            "{host} moved to another network, now at {to}; {} path machines told",
-            told.machines_told
+            "{host} moved to another network, now at {to}; {told} path machines told"
         )))
     }
 
@@ -2281,17 +2256,6 @@ impl Net {
         Ok(addr)
     }
 
-    /// What the gate in front of the relay does to each datagram from now
-    /// on: delay, loss, or neither.
-    pub fn set_relay_faults(&self, faults: Faults) -> Result<Ack, NetError> {
-        let gate = self.relay_gate.as_ref().ok_or_else(|| NetError::Host {
-            host: "relay".to_owned(),
-            error: "has no gate; ask for one first".to_owned(),
-        })?;
-        gate.set_faults(faults);
-        Ok(self.ack(format!("the relay's gate: {}", faults.describe())))
-    }
-
     /// Takes UDP away from the host's way to the relay, or gives it back:
     /// datagrams through its gate are dropped both ways while blocked.
     pub fn block_udp(&self, host: &str, blocked: bool) -> Result<Ack, NetError> {
@@ -2317,19 +2281,15 @@ impl Net {
                     peer: Some(wire::HostRef {
                         of: Some(wire::host_ref::Of::HostId(peer.as_bytes().to_vec())),
                     }),
-                    reason: "testnet".to_owned(),
                 })
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?;
             return Ok(self.ack(format!("{a} no longer trusts {b}")));
         }
         self.edge(a)?
-            .unpair(
-                wire::HostRef {
-                    of: Some(wire::host_ref::Of::HostId(peer.as_bytes().to_vec())),
-                },
-                "testnet".to_owned(),
-            )
+            .unpair(wire::HostRef {
+                of: Some(wire::host_ref::Of::HostId(peer.as_bytes().to_vec())),
+            })
             .await
             .map_err(|error| NetError::Host {
                 host: a.to_owned(),
@@ -2399,45 +2359,6 @@ impl Net {
     }
 
     // --- faults ------------------------------------------------------------
-
-    /// Makes `a` fail every channel to `b` before it opens, as when the
-    /// far end refuses each one, while the link between them and the
-    /// streams it already carries stay up until a call fails on it. `b`
-    /// then reads offline to `a`, as in production: `a` closes its own link
-    /// to `b`, or drops the relay's channel and keeps trying a fresh one.
-    /// `refuse: false` lifts it and has `a` try a channel at once; a link
-    /// between them in this process that a failed call closed is linked
-    /// again, as redialling would bring a real one back.
-    pub async fn refuse_calls(&mut self, a: &str, b: &str, refuse: bool) -> Result<Ack, NetError> {
-        self.in_process(a, "refusing calls")?;
-        let peer = self.host(b)?.host_id;
-        self.edge(a)?.refuse_calls(peer, refuse).await;
-        if !refuse {
-            self.redial(a, b).await?;
-        }
-        Ok(self.ack(format!(
-            "{a} {} calls to {b}",
-            if refuse { "refuses" } else { "makes" }
-        )))
-    }
-
-    /// Links `a` and `b` again in this process if a failed call closed
-    /// their link, as redialling brings a real one back, and returns once
-    /// it is up. Nothing happens to a link that is up or was severed.
-    pub async fn redial(&mut self, a: &str, b: &str) -> Result<Ack, NetError> {
-        if self
-            .links
-            .get(&link_key(a, b))
-            .is_some_and(|link| !link.severed && link.live.is_some())
-            && !self.link_up(a, b).await
-        {
-            self.links.get_mut(&link_key(a, b)).expect("the link").live = None;
-            self.wait_direct_gone(a, b).await?;
-            self.link_all()?;
-            self.wait_link(a, b, true).await?;
-        }
-        Ok(self.ack(format!("link {a} - {b} redialled")))
-    }
 
     /// Cuts the link between two hosts the way a dead connection goes: no
     /// LinkClose, the carrier just stops.
@@ -2902,7 +2823,7 @@ impl Net {
                 .sessions
                 .subscribe_session(wire::SubscribeSessionRequest {
                     agent_id: id.as_bytes().to_vec(),
-                    tail,
+                    from: Some(wire::subscribe_session_request::From::Tail(tail)),
                 })
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
@@ -2951,7 +2872,7 @@ impl Net {
                     why,
                 })?
                 .agents
-                .subscribe_inventory(wire::SubscribeInventoryRequest {})
+                .subscribe_inventory(wire::Empty {})
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
                 .into_inner();
@@ -3205,7 +3126,7 @@ impl Net {
                     .sessions
                     .subscribe_session(wire::SubscribeSessionRequest {
                         agent_id: agent.id.as_bytes().to_vec(),
-                        tail: 200,
+                        from: Some(wire::subscribe_session_request::From::Tail(200)),
                     }),
             )
             .await
@@ -3578,44 +3499,26 @@ pub fn submission(id: &[u8], text: &str) -> wire::PromptSubmission {
     }
 }
 
-pub fn prompt(kind: FakeKind, id: &[u8], text: &str) -> Input {
-    let prompt = PromptInput {
-        text: text.to_owned(),
-        attachments: Vec::new(),
-    };
+pub fn prompt(id: &[u8], text: &str) -> Input {
     Input::new(
         id.to_vec(),
-        match kind {
-            FakeKind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
-                of: Some(claude_pty_input::Of::Prompt(prompt)),
-            }),
-            FakeKind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
-                of: Some(claude_sdk_input::Of::Prompt(prompt)),
-            }),
-            FakeKind::Codex => wire::KindInput::Codex(CodexInput {
-                of: Some(codex_input::Of::Prompt(prompt)),
-            }),
+        AgentInput {
+            of: Some(agent_input::Of::Prompt(PromptInput {
+                text: text.to_owned(),
+                attachments: Vec::new(),
+            })),
         },
     )
 }
 
-/// Withdraws a queued prompt, in the kind's own input arm.
-pub fn withdraw(kind: FakeKind, id: &[u8], queued: &[u8]) -> Input {
-    let withdraw = WithdrawQueued {
-        queued_input_id: queued.to_vec(),
-    };
+/// Withdraws a queued prompt.
+pub fn withdraw(id: &[u8], queued: &[u8]) -> Input {
     Input::new(
         id.to_vec(),
-        match kind {
-            FakeKind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
-                of: Some(claude_pty_input::Of::Withdraw(withdraw)),
-            }),
-            FakeKind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
-                of: Some(claude_sdk_input::Of::Withdraw(withdraw)),
-            }),
-            FakeKind::Codex => wire::KindInput::Codex(CodexInput {
-                of: Some(codex_input::Of::Withdraw(withdraw)),
-            }),
+        AgentInput {
+            of: Some(agent_input::Of::Withdraw(WithdrawQueued {
+                queued_input_id: queued.to_vec(),
+            })),
         },
     )
 }

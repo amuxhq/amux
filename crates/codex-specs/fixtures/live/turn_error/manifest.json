@@ -1,0 +1,24 @@
+{
+  "spec": "turn_error",
+  "recorded": {
+    "provider": "codex",
+    "version": "0.166.0",
+    "model": "gpt-6.1-sol",
+    "at": "2026-10-31T11:58:08.457160Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:34e309cb21d49d6c2fc3c87d8cb7e02730fb040533cf605afc9c8b278d270051",
+    "spawn.jsonl": "sha256:4c5fcab8a128a4aa6482301bf17ae7a554e62438622bef5369e13c2c0232a8fe"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 41,
+    "personal_identifiers": 2
+  },
+  "session_ids": [
+    "01a191d1-a0a0-76c3-98b8-8c5f0762c878"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

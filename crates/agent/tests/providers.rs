@@ -266,8 +266,8 @@ async fn headless_claude_gets_a_persons_image_as_an_image_block() {
     };
     let input = wire::Input::new(
         b"p1".to_vec(),
-        wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: format!("What colour is {} here?", attachments::PLACEHOLDER),
                 attachments: vec![image.clone()],
             })),
@@ -392,8 +392,7 @@ async fn a_restart_from_the_checkpoint_re_emits_open_items_and_carries_keys_on()
     assert_eq!(agent.exit().await, ExitCause::Killed);
 }
 
-/// Terminal Claude: the agent reads the version the binary reports and
-/// records it on the boundary; the prompt is pasted into the terminal;
+/// Terminal Claude: the prompt is pasted into the terminal;
 /// hooks arrive through the hook command on private/hooks.sock and the
 /// transcript is followed from the path the session start names.
 // Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
@@ -422,11 +421,6 @@ fn a_terminal_claude_agent_types_its_prompt_and_hears_its_hooks() {
         let log = agent.log();
         assert!(log.has_text("hello from the terminal"));
         assert!(log.has_text("say hello"), "the typed prompt is reflected");
-        assert_eq!(
-            log.launches().first().map(String::as_str),
-            Some("STARTED 2.1.283"),
-            "the boundary records the version"
-        );
         daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
     });
@@ -802,11 +796,8 @@ fn terminal_claude_switches_to_auto_mode_from_the_permission_menu() {
             .items()
             .into_iter()
             .filter_map(|(_, item)| {
-                match wire::ClaudePtyItem::decode(item.body.as_slice())
-                    .ok()?
-                    .kind?
-                {
-                    wire::claude_pty_item::Kind::Tool(tool) => Some((item.key, tool)),
+                match wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+                    wire::claude_item::Kind::Tool(tool) => Some((item.key, tool)),
                     _ => None,
                 }
             })
@@ -882,11 +873,8 @@ fn terminal_claude_denies_on_the_menu_that_offers_auto_mode() {
             .items()
             .into_iter()
             .filter_map(|(_, item)| {
-                match wire::ClaudePtyItem::decode(item.body.as_slice())
-                    .ok()?
-                    .kind?
-                {
-                    wire::claude_pty_item::Kind::Tool(tool) => Some((item.key, tool)),
+                match wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+                    wire::claude_item::Kind::Tool(tool) => Some((item.key, tool)),
                     _ => None,
                 }
             })
@@ -1496,8 +1484,8 @@ async fn headless_claude_gets_an_image_block_typed_by_its_bytes_and_anything_els
     );
     let input = wire::Input::new(
         b"p1".to_vec(),
-        wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: format!("{0} and {0}", attachments::PLACEHOLDER),
                 attachments: vec![png, svg],
             })),
@@ -1560,14 +1548,14 @@ async fn one_job_stops(kind: Kind) {
     let input = match kind {
         Kind::Codex => wire::Input::new(
             b"s1".to_vec(),
-            wire::CodexInput {
-                of: Some(wire::codex_input::Of::StopJob(stop)),
+            wire::AgentInput {
+                of: Some(wire::agent_input::Of::StopJob(stop)),
             },
         ),
         _ => wire::Input::new(
             b"s1".to_vec(),
-            wire::ClaudeSdkInput {
-                of: Some(wire::claude_sdk_input::Of::StopJob(stop)),
+            wire::AgentInput {
+                of: Some(wire::agent_input::Of::StopJob(stop)),
             },
         ),
     };

@@ -39,12 +39,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 use app_embedded::{
-    EdgeOverrides, EmbeddedRuntime, PairRequest, Phone, ProfileEvent, ProfileId, ProfileView,
-    StartConfig, UsageEvent,
+    EdgeOverrides, EmbeddedRuntime, PairRequest, Phone, ProfileId, ProfileView, StartConfig,
+    UsageEvent,
 };
 use app_runtime::values::{
-    ActOutcome, AgentAct, ChatDelta, CommandOutcome, Draft, FleetDelta, Found, FrozenReview,
-    NewAgent,
+    AgentAct, ChatAct, ChatDelta, Draft, FleetDelta, Found, FrozenReview, NewAgent,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use model::{AgentKey, Key};
@@ -52,7 +51,7 @@ use node::SourcePolicy;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
-use ui_view::{Comparison, QuestionResponse, SettingChange};
+use ui_view::Comparison;
 
 // The tests drive real agent processes, which run on Unix.
 #[cfg(all(test, unix))]
@@ -385,23 +384,20 @@ pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxR
         open: Mutex::new(HashMap::new()),
         ring: Box::new(phone.bell()),
     });
+    // The watch begins before the list is first read, so no move falls
+    // between them.
+    let mut moves = phone
+        .embedded()
+        .watch_profiles()
+        .map_err(|error| error.to_string())?;
     // The list as the start left it waits for the first step, so the app
     // has it before anything else the runtime hands over.
     outbox.post_profiles(phone.embedded());
     let watching = phone.embedded().clone();
     let posting = outbox.clone();
     let watch = phone.handle().spawn(async move {
-        // A watch that falls behind ends; the list is read again from a
-        // fresh one, and handed to the app once it has caught up.
-        while let Ok(mut events) = watching.subscribe_profiles() {
-            let mut caught_up = false;
-            while let Some(event) = events.next().await {
-                caught_up |= event == ProfileEvent::CaughtUp;
-                if caught_up {
-                    posting.post_profiles(&watching);
-                }
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        while moves.moved().await.is_some() {
+            posting.post_profiles(&watching);
         }
     });
     Ok(Box::new(AmuxRuntime {
@@ -1439,15 +1435,13 @@ pub unsafe extern "C" fn amux_profile_dump(
 
 /// Writes a person's report around the dump at `dump_path` (empty when
 /// none was taken; a report's own directory to send it again), with its
-/// `report.json`, the frozen frame as PNG and the view-state trace (null
-/// when there is none), and sends it to the account
+/// `report.json` and the frozen frame as PNG, and sends it to the account
 /// the profile is signed in to. The ticket answers `{"Ok": ReportSent}` or
 /// `{"Err": ..}`.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`; `dump_path` and `header` are
-/// NUL-terminated strings or null; `frame` is null or `len` readable bytes;
-/// `trace` is null or a NUL-terminated string.
+/// NUL-terminated strings or null; `frame` is null or `len` readable bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_profile_submit_report(
     profile: *const AmuxProfile,
@@ -1455,7 +1449,6 @@ pub unsafe extern "C" fn amux_profile_submit_report(
     header: *const c_char,
     frame: *const u8,
     len: usize,
-    trace: *const c_char,
 ) -> u64 {
     guard(0, || {
         // SAFETY: the caller's contract.
@@ -1475,12 +1468,9 @@ pub unsafe extern "C" fn amux_profile_submit_report(
             // SAFETY: the caller's contract.
             unsafe { std::slice::from_raw_parts(frame, len) }.to_vec()
         };
-        // SAFETY: the caller's contract.
-        let trace = unsafe { text(trace) }.map(str::to_owned);
         let app = profile.app.clone();
-        profile.act(async move {
-            Answered::from(app.submit_report(dump_path, header, frame, trace).await)
-        })
+        profile
+            .act(async move { Answered::from(app.submit_report(dump_path, header, frame).await) })
     })
 }
 
@@ -1514,8 +1504,7 @@ pub unsafe extern "C" fn amux_profile_begin_pair(
 }
 
 /// Trusts the machine a pending pairing reached, named by its token as a
-/// JSON byte array; the ticket answers `{"Ok": {"host_id": [..], "name":
-/// ..}}` or `{"Err": ..}`.
+/// JSON byte array; the ticket answers `{"Ok": null}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// As for `amux_profile_begin_pair`.
@@ -1524,11 +1513,6 @@ pub unsafe extern "C" fn amux_profile_confirm_pair(
     profile: *const AmuxProfile,
     token: *const c_char,
 ) -> u64 {
-    #[derive(Serialize)]
-    struct Paired {
-        host_id: Vec<u8>,
-        name: String,
-    }
     guard(0, || {
         // SAFETY: the caller's contract.
         let Some(profile) = (unsafe { live_profile(profile) }) else {
@@ -1541,10 +1525,7 @@ pub unsafe extern "C" fn amux_profile_confirm_pair(
             let Some(token) = token else {
                 return Answered::Err("the token is not a byte array".into());
             };
-            Answered::from(embedded.confirm_pair(id, &token).await.map(|peer| Paired {
-                host_id: peer.host_id,
-                name: peer.name,
-            }))
+            Answered::from(embedded.confirm_pair(id, &token).await.map(drop))
         })
     })
 }
@@ -1615,23 +1596,6 @@ pub unsafe extern "C" fn amux_profile_roster(profile: *const AmuxProfile) -> u64
         };
         let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
         profile.act(async move { Answered::from(embedded.roster(id)) })
-    })
-}
-
-/// The account the profile is bound to; the ticket answers
-/// `{"Ok": AccountView}` or `{"Err": ..}`.
-///
-/// # Safety
-/// `profile` is from `amux_profile_open`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_profile_account(profile: *const AmuxProfile) -> u64 {
-    guard(0, || {
-        // SAFETY: the caller's contract.
-        let Some(profile) = (unsafe { live_profile(profile) }) else {
-            return 0;
-        };
-        let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
-        profile.act(async move { Answered::from(embedded.account(id)) })
     })
 }
 
@@ -2082,184 +2046,55 @@ where
     })
 }
 
-/// Sends a `Draft` as JSON; the ticket answers a `SendOutcome`.
+/// Starts a `ChatAct`, as JSON, on the chat; the ticket answers what the
+/// act says it answers.
 ///
 /// # Safety
-/// `chat` is from `amux_session_open`; `draft` is a NUL-terminated string.
+/// `chat` is from `amux_session_open`; `act` is a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_send(chat: *const AmuxChat, draft: *const c_char) -> u64 {
+pub unsafe extern "C" fn amux_session_act(chat: *const AmuxChat, act: *const c_char) -> u64 {
     // SAFETY: the caller's contract.
-    let draft: Option<Draft> = unsafe { parse(draft) };
+    let chat_act: Option<ChatAct> = unsafe { parse(act) };
     // SAFETY: the caller's contract.
     unsafe {
-        act(chat, |chat| async move {
-            match draft {
-                Some(draft) => Answered::Ok(chat.send(&draft).await),
-                None => Answered::Err("the draft is not a Draft".into()),
+        self::act(chat, |chat| async move {
+            match chat_act {
+                Some(chat_act) => acted(&chat, chat_act).await,
+                None => answer(Answered::<()>::Err("the act is not a ChatAct".into())),
             }
         })
     }
 }
 
-/// Runs a `Draft`, as JSON, that names a command the client handles itself
-/// (`/model`, `/effort`, `/rename`) or one the agent does not run; the
-/// ticket answers a `CommandOutcome`, whose `Send` says to send the draft as
-/// typed. A draft that does not parse answers `Acted(Failed)`.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`; `draft` is a NUL-terminated string.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_command(chat: *const AmuxChat, draft: *const c_char) -> u64 {
-    // SAFETY: the caller's contract.
-    let draft: Option<Draft> = unsafe { parse(draft) };
-    // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, |chat| async move {
-            match draft {
-                Some(draft) => chat.command(&draft).await,
-                None => {
-                    CommandOutcome::Acted(ActOutcome::Failed("the draft is not a Draft".into()))
-                }
-            }
-        })
+/// Runs an act on the chat and answers it as JSON.
+async fn acted(chat: &Chat, act: ChatAct) -> serde_json::Value {
+    match act {
+        ChatAct::Send(draft) => answer(Answered::Ok(chat.send(&draft).await)),
+        ChatAct::Command(draft) => answer(chat.command(&draft).await),
+        ChatAct::Answer { ask, choice, note } => {
+            answer(chat.answer_choice(&ask, choice as usize, &note).await)
+        }
+        ChatAct::AnswerForm { ask, values } => answer(chat.answer_form(&ask, &values).await),
+        ChatAct::AnswerQuestions { ask, responses } => {
+            answer(chat.answer_questions(&ask, &responses).await)
+        }
+        ChatAct::ReplyInstead { ask, reply, so_far } => {
+            answer(chat.reply_instead(&ask, &reply, &so_far).await)
+        }
+        ChatAct::ChangeSetting(change) => answer(chat.change_setting(&change).await),
+        ChatAct::Withdraw(id) => answer(chat.withdraw(&id).await),
+        ChatAct::SendNow(id) => answer(chat.send_now(&id).await),
+        ChatAct::Resend(id) => answer(chat.resend(&id).await),
+        ChatAct::Interrupt => answer(chat.interrupt().await),
+        ChatAct::StopJob(key) => answer(chat.stop_job(&key).await),
+        ChatAct::SwitchBack => answer(chat.switch_back().await),
+        ChatAct::Resume(draft) => answer(chat.resume_with(&draft).await),
+        ChatAct::PageOlder(n) => answer(chat.page_older(n).await),
     }
 }
 
-/// Answers the head ask, named by its key, with the choice at `index` on
-/// its card; `note` goes back with a choice that takes one. The ticket
-/// answers an `ActOutcome`.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`; the strings are NUL-terminated or
-/// null.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_answer(
-    chat: *const AmuxChat,
-    ask_key: *const c_char,
-    index: u32,
-    note: *const c_char,
-) -> u64 {
-    // SAFETY: the caller's contract.
-    let ask_key = unsafe { text(ask_key) }.unwrap_or_default().to_owned();
-    // SAFETY: the caller's contract.
-    let note = unsafe { text(note) }.unwrap_or_default().to_owned();
-    // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, move |chat| async move {
-            chat.answer_choice(&ask_key, index as usize, &note).await
-        })
-    }
-}
-
-/// Submits the head form ask with the person's values, a JSON array of
-/// `FormValue`, one per field in the form's order; the shared view checks
-/// and encodes them. The ticket answers an `ActOutcome`.
-///
-/// # Safety
-/// As for `amux_session_answer`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_answer_form(
-    chat: *const AmuxChat,
-    ask_key: *const c_char,
-    values: *const c_char,
-) -> u64 {
-    // SAFETY: the caller's contract.
-    let ask_key = unsafe { text(ask_key) }.unwrap_or_default().to_owned();
-    // SAFETY: the caller's contract.
-    let values: Option<Vec<ui_view::FormValue>> = unsafe { parse(values) };
-    // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, move |chat| async move {
-            match values {
-                Some(values) => chat.answer_form(&ask_key, &values).await,
-                None => ActOutcome::Failed("the values are not a list of FormValue".into()),
-            }
-        })
-    }
-}
-
-/// Answers the head question ask with one `QuestionResponse` per question, as a
-/// JSON array: the pick (no options and no text skips the question) and
-/// the person's note on it. The ticket answers an `ActOutcome`.
-///
-/// # Safety
-/// As for `amux_session_answer`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_answer_questions(
-    chat: *const AmuxChat,
-    ask_key: *const c_char,
-    responses: *const c_char,
-) -> u64 {
-    // SAFETY: the caller's contract.
-    let ask_key = unsafe { text(ask_key) }.unwrap_or_default().to_owned();
-    // SAFETY: the caller's contract.
-    let given: Option<Vec<QuestionResponse>> = unsafe { parse(responses) };
-    // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, move |chat| async move {
-            match given {
-                Some(given) => chat.answer_questions(&ask_key, &given).await,
-                None => {
-                    ActOutcome::Failed("the responses are not a list of QuestionResponse".into())
-                }
-            }
-        })
-    }
-}
-
-/// Replies to the head question ask in the person's own words instead of
-/// answering, with what they had answered so far as a JSON array of
-/// `QuestionResponse`, one per question. The ticket answers an `ActOutcome`.
-///
-/// # Safety
-/// As for `amux_session_answer`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_reply_instead(
-    chat: *const AmuxChat,
-    ask_key: *const c_char,
-    reply: *const c_char,
-    so_far: *const c_char,
-) -> u64 {
-    // SAFETY: the caller's contract.
-    let ask_key = unsafe { text(ask_key) }.unwrap_or_default().to_owned();
-    // SAFETY: the caller's contract.
-    let reply = unsafe { text(reply) }.unwrap_or_default().to_owned();
-    // SAFETY: the caller's contract.
-    let so_far: Option<Vec<QuestionResponse>> = unsafe { parse(so_far) };
-    // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, move |chat| async move {
-            match so_far {
-                Some(so_far) => chat.reply_instead(&ask_key, &reply, &so_far).await,
-                None => ActOutcome::Failed(
-                    "the answers so far are not a list of QuestionResponse".into(),
-                ),
-            }
-        })
-    }
-}
-
-/// Sends a pick from the settings view, a `SettingChange` as JSON. The
-/// ticket answers an `ActOutcome`.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`; `change` is a NUL-terminated string.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_change_setting(
-    chat: *const AmuxChat,
-    change: *const c_char,
-) -> u64 {
-    // SAFETY: the caller's contract.
-    let change: Option<SettingChange> = unsafe { parse(change) };
-    // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, move |chat| async move {
-            match change {
-                Some(change) => chat.change_setting(&change).await,
-                None => ActOutcome::Failed("the change is not a SettingChange".into()),
-            }
-        })
-    }
+fn answer(value: impl Serialize) -> serde_json::Value {
+    serde_json::to_value(value).unwrap_or_default()
 }
 
 /// An input id as a JSON byte array.
@@ -2269,54 +2104,6 @@ pub unsafe extern "C" fn amux_session_change_setting(
 unsafe fn input_id(id: *const c_char) -> Vec<u8> {
     // SAFETY: the caller's contract.
     unsafe { parse(id) }.unwrap_or_default()
-}
-
-/// Takes a queued prompt back out of the queue. The ticket answers an
-/// `ActOutcome`.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`; `input_id` is a NUL-terminated
-/// JSON byte array.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_withdraw(
-    chat: *const AmuxChat,
-    input_id: *const c_char,
-) -> u64 {
-    // SAFETY: the caller's contract.
-    let id = unsafe { self::input_id(input_id) };
-    // SAFETY: the caller's contract.
-    unsafe { act(chat, |chat| async move { chat.withdraw(&id).await }) }
-}
-
-/// Steers a queued prompt into the running turn.
-///
-/// # Safety
-/// As for `amux_session_withdraw`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_send_now(
-    chat: *const AmuxChat,
-    input_id: *const c_char,
-) -> u64 {
-    // SAFETY: the caller's contract.
-    let id = unsafe { self::input_id(input_id) };
-    // SAFETY: the caller's contract.
-    unsafe { act(chat, |chat| async move { chat.send_now(&id).await }) }
-}
-
-/// Sends a not-confirmed input again under a new id; the ticket answers a
-/// `SendOutcome`, or null JSON when the input is not held.
-///
-/// # Safety
-/// As for `amux_session_withdraw`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_resend(
-    chat: *const AmuxChat,
-    input_id: *const c_char,
-) -> u64 {
-    // SAFETY: the caller's contract.
-    let id = unsafe { self::input_id(input_id) };
-    // SAFETY: the caller's contract.
-    unsafe { act(chat, |chat| async move { chat.resend(&id).await }) }
 }
 
 /// A queued or sent prompt as the `Draft` it came from, its words and every
@@ -2348,72 +2135,6 @@ pub unsafe extern "C" fn amux_session_discard(chat: *const AmuxChat, input_id: *
     let id = unsafe { self::input_id(input_id) };
     // SAFETY: the caller's contract.
     let _ = unsafe { read(chat, |chat| chat.discard(&id)) };
-}
-
-/// Stops the agent's turn; the agent stays.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_interrupt(chat: *const AmuxChat) -> u64 {
-    // SAFETY: the caller's contract.
-    unsafe { act(chat, |chat| async move { chat.interrupt().await }) }
-}
-
-/// Stops one background job by the key its `JobStop` gives; the agent
-/// keeps running. The ticket answers an `ActOutcome`.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`; `key` is a NUL-terminated string.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_stop_job(chat: *const AmuxChat, key: *const c_char) -> u64 {
-    // SAFETY: the caller's contract.
-    let key = unsafe { text(key) }.unwrap_or_default().to_owned();
-    // SAFETY: the caller's contract.
-    unsafe { act(chat, |chat| async move { chat.stop_job(&key).await }) }
-}
-
-/// Takes terminal Claude's own view back to the agent's conversation
-/// after it switched to another. The ticket answers an `ActOutcome`.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_switch_back(chat: *const AmuxChat) -> u64 {
-    // SAFETY: the caller's contract.
-    unsafe { act(chat, |chat| async move { chat.switch_back().await }) }
-}
-
-/// The exited composer's one tap: resumes the agent with a `Draft` as its
-/// first prompt. The ticket answers an `ActOutcome`; on anything but Done
-/// the draft stays the composer's.
-///
-/// # Safety
-/// As for `amux_session_send`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_resume(chat: *const AmuxChat, draft: *const c_char) -> u64 {
-    // SAFETY: the caller's contract.
-    let draft: Option<Draft> = unsafe { parse(draft) };
-    // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, |chat| async move {
-            match draft {
-                Some(draft) => chat.resume_with(&draft).await,
-                None => ActOutcome::Failed("the draft is not a Draft".into()),
-            }
-        })
-    }
-}
-
-/// Asks for up to `n` rows older than the oldest held; the ticket answers a
-/// `PageOutcome`, and the new keys arrive below the oldest.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_page_older(chat: *const AmuxChat, n: u32) -> u64 {
-    // SAFETY: the caller's contract.
-    unsafe { act(chat, move |chat| async move { chat.page_older(n).await }) }
 }
 
 /// Fetches the files changed for `comparison` (a JSON `Comparison`), with

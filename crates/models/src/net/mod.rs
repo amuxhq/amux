@@ -66,7 +66,6 @@ pub struct AgentPlan {
 /// test kind speaks for: its first incarnation, its prompt queued.
 pub fn agent_spec(
     agent: AgentId,
-    host: HostId,
     cwd: &str,
     parent: Option<wire::AgentRef>,
     prompt: Option<&str>,
@@ -75,7 +74,6 @@ pub fn agent_spec(
 ) -> wire::AgentSpec {
     wire::AgentSpec {
         agent_id: agent.0.to_vec(),
-        profile_id: host.0.to_vec(),
         kind: wire::Kind::ClaudeSdk as i32,
         cwd: cwd.to_owned(),
         parent,
@@ -85,12 +83,13 @@ pub fn agent_spec(
             step_budget_micros: agent_core::StepBudget::UNLIMITED.micros,
             ..wire::EffectiveConfig::default()
         }),
-        daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
         created_at_ms: now_ms as i64,
         incarnation: 1,
         bootstrap: prompt.map(|text| wire::Bootstrap {
             of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
-                input_id: b"first".to_vec(),
+                // The id testnet's nets give a first prompt, which its
+                // stories tell apart from what an agent is sent after.
+                input_id: b"testnet-first".to_vec(),
                 prompt: Some(wire::PromptInput {
                     text: text.to_owned(),
                     attachments: Vec::new(),
@@ -115,16 +114,16 @@ pub fn create(name: &str, spec: wire::AgentSpec) -> ClientRequest {
     }))
 }
 
-/// A person's prompt to a headless Claude agent.
+/// A person's prompt.
 pub fn prompt(input_id: &[u8], text: &str) -> wire::Input {
     wire::Input::new(
         input_id.to_vec(),
-        wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: text.to_owned(),
                 attachments: Vec::new(),
             })),
-        }),
+        },
     )
 }
 
@@ -494,7 +493,6 @@ impl Machine for ComposedNet {
             net.add_agent(agent, &plan.name, &plan.script);
             let spec = agent_spec(
                 agent,
-                ids[plan.host],
                 "/work",
                 None,
                 plan.prompt.as_deref(),
@@ -644,10 +642,6 @@ impl Machine for ComposedNet {
             Property::always(
                 "no core asks for a dump: every daemon's and agent's own step checks hold",
                 |_, s: &State| !matches!(s.net.failure(), Some(Failure::Dump(_))),
-            ),
-            Property::always(
-                "every host's store keeps every invariant its core checks after a write",
-                |_, s: &State| !matches!(s.net.failure(), Some(Failure::Violation(_))),
             ),
             Property::always(
                 "the drivers never meet what no driver should",

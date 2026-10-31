@@ -43,7 +43,7 @@ use crate::door::Control;
 
 const APP: &str = "target/ios/DerivedData/Build/Products/Measured-iphonesimulator/Amux.app";
 const DEVICE_APP: &str = "target/ios/DerivedData/Build/Products/Measured-iphoneos/Amux.app";
-const TOPOLOGY_TOOL: &str = "target/debug/phone-topology";
+const TOPOLOGY_TOOL: &str = "target/debug/perf-topology";
 const OUTPUT: &str = "target/ios/perf";
 const BASELINES: &str = "perf/baselines/phone";
 
@@ -1809,12 +1809,13 @@ fn measure(
     std::fs::create_dir_all(&output).map_err(|error| error.to_string())?;
     let topology = output.join("topology.json");
     let generated = Command::new(root.join(TOPOLOGY_TOOL))
+        .arg("phone")
         .arg(&topology)
         .output()
-        .map_err(|error| format!("phone-topology: {error}"))?;
+        .map_err(|error| format!("perf-topology: {error}"))?;
     if !generated.status.success() {
         return Err(format!(
-            "phone-topology: {}",
+            "perf-topology: {}",
             String::from_utf8_lossy(&generated.stderr)
         ));
     }

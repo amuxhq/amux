@@ -43,7 +43,7 @@ fn put(agent: &SyntheticAgent, name: &str, bytes: &[u8]) -> PutBlobRequest {
 async fn put_blob_writes_the_agents_directory_and_get_blob_reads_it_back() {
     let install = Install::new();
     let agent = SyntheticAgent::new(&install, "photos", SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let daemon = install.start("boot-1", quiet_launch()).await;
     let runtime = runtime(&daemon, &install);
 
@@ -111,7 +111,7 @@ async fn put_blob_writes_the_agents_directory_and_get_blob_reads_it_back() {
 async fn get_blob_refuses_a_stored_blob_over_the_attachment_limit() {
     let install = Install::new();
     let agent = SyntheticAgent::new(&install, "dumps", SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let daemon = install.start("boot-1", quiet_launch()).await;
     let runtime = runtime(&daemon, &install);
     let blobs = agent.dir.join(agent_dir::BLOBS);
@@ -147,13 +147,9 @@ async fn get_blob_reads_a_replica_file_and_put_blob_refuses_a_replica() {
     runtime.edge().unwrap().trust(&peer_edge).await.unwrap();
     let (peer, agent) = (peer_edge.host_id(), Uuid::new_v4());
     let key = AgentKey::new(peer.as_bytes().to_vec(), agent.as_bytes().to_vec());
-    runtime
-        .write_store_beneath(move |store| {
-            store
-                .put_agent(&AgentRow::new(key, KIND, "/elsewhere"))
-                .unwrap()
-        })
-        .await
+    install
+        .store()
+        .put_agent(&AgentRow::new(key, KIND, "/elsewhere"))
         .unwrap();
 
     let bytes = b"fetched from the peer".to_vec();
@@ -198,7 +194,7 @@ async fn get_blob_reads_a_replica_file_and_put_blob_refuses_a_replica() {
 async fn a_failed_write_is_an_error_to_the_caller_and_leaves_nothing_behind() {
     let install = Install::new();
     let agent = SyntheticAgent::new(&install, "full", SEGMENTS);
-    agent.register_offline(&install);
+    agent.register(&install);
     let daemon = install.start("boot-1", quiet_launch()).await;
     let runtime = runtime(&daemon, &install);
 

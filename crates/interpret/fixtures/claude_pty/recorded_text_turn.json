@@ -1,0 +1,20 @@
+{
+  "about": "One prompt answered: the prompt, the reply drawn as Claude writes it and its row, and the turn's end.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "../../../claude-specs/fixtures/live/pty/text_turn/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

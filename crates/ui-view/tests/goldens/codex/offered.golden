@@ -1,7 +1,5 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 2 fact {"channel":"rpc","json":{"id":"agent-thread","result":{"approvalPolicy":"on-request","model":"gpt-6-astra","reasoningEffort":"medium","sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

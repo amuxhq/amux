@@ -6,8 +6,10 @@ amux has two rich clients, the terminal client ([TERMINAL.md](TERMINAL.md)) and 
 ([IOS.md](IOS.md)). Both are thin shells over one Rust library: a pure model of an open chat and of the fleet,
 a driver that owns the streams and does every piece of I/O, and a set of views that turn the model into plain
 content values. Each client composes those values in its own layout and owns only what is ephemeral: panes,
-scroll position, focus, drafts and which rows are expanded. A client hands its unsent drafts to its own machine's
-daemon (`UpdateDraft`, `GetDraft`) so a draft outlives the client; they never leave that machine. A deleted
+scroll position, focus, drafts and which rows are expanded. A client hands its unsent drafts to the fleet driver, which keeps them
+with its own machine's daemon (`UpdateDraft`, `GetDraft`) so a draft outlives the chat and the client; they never
+leave that machine. Saves to one agent go in order, the newest winning, and a chat reads its draft only after them,
+so one reopened at once finds what was left in it. A deleted
 agent's draft goes with it: the daemon forgets it when the agent is deleted (its children too) or removed by
 retention, here or on the host that ran it, and the terminal client saves nothing for a chat that closed because
 its agent was deleted.
@@ -33,7 +35,7 @@ Three rules shape the library:
 | [`ui-state`](../crates/ui-state/src/lib.rs) | `SessionState` (one open chat) and `FleetState` (the inventory), updated by messages. No I/O, no clock, no handles. |
 | [`ui-view`](../crates/ui-view/src/lib.rs) | Pure functions from the state to content values: chat rows, the ask card, the composer and overview, the settings view, fleet rows and cards, the review document. |
 | [`ui-runtime`](../crates/ui-runtime/src/lib.rs) | The drivers, `Session` and `Fleet`: subscribe, reconnect, page, send, fetch blobs, and keep a bounded trace for dumps. The fleet holds the one session each live agent has. The only place a chat does I/O. |
-| [`replay-support`](../crates/replay-support/src/lib.rs) | Replaying a dump bundle through the interpreter, the session state and the views, and replaying recorded provider traffic for the provider spec crates. |
+| [`replay-support`](../crates/replay-support/src/lib.rs) | Replaying a dump bundle through the interpreter, the session state and the views, and the recording manifests and capture plumbing the two probes share. |
 | [`redaction`](../crates/redaction/src/lib.rs) | The structural redactor for free text and JSON in reports, captures and specs. |
 
 The terminal client ([`tui`](../crates/tui/src/lib.rs)) and the phone's runtime
@@ -88,7 +90,7 @@ parts:
 - **The entry and host.** The agent's inventory row (lifecycle, phase, incarnation, exit cause and its detail)
   and its host's entry, both fed from the fleet.
 - **`AgentState`**, the newest snapshot decoded. [`body.rs`](../crates/ui-state/src/body.rs) is the thin
-  per-kind layer: `decode_snapshot` reads a `ClaudePtySnapshot`, `ClaudeSdkSnapshot` or `CodexSnapshot` into one
+  per-kind layer: `decode_snapshot` reads a `ClaudeSnapshot` (either Claude kind) or a `CodexSnapshot` into one
   shape (phase, queue, working-on, open asks, model and its display name, effort, mode, sandbox, the
   catalogue's hash, tasks, context, usage, tool servers, sign-in, background jobs, running calls). The offered
   models and commands come from the catalogue the snapshot names. The driver reads it as a blob, `GetBlob` with the
@@ -226,9 +228,12 @@ entry turns online again while the chat is current. Each one is `Sent` again fro
 update's `Outcome::resend`, and the driver sends it under its own id. One already reflected or queued is settled
 instead. Only prompts and answers are held: an interrupt, a withdraw, a send-now or a setting sent later would act
 on whatever the agent is doing then, so those are refused at once with the reason. Discarding a held input is its
-Cancel. Held inputs live as long as the client: when the client closes, a held prompt's words go back to its
-draft and a held answer is dropped. A rejection with the refusal `REFUSAL_EXITED` flips the composer to Resume for that
-incarnation, so a send that raced the exit keeps its draft.
+Cancel. Held inputs live as long as the client, so a held prompt's words are in the agent's kept draft from the
+moment it is held, ahead of what is typed, until it goes or is cancelled back into the composer: a client that
+closes, even killed, finds them in the draft when the chat opens again. A chat reopened while the prompt is still
+held reads only what was typed, the prompt showing held. A held answer is dropped with the client. The fleet driver
+keeps held prompts so for every client. A rejection with the refusal `REFUSAL_EXITED`
+flips the composer to Resume for that incarnation, so a send that raced the exit keeps its draft.
 
 ### The fleet state
 
@@ -353,7 +358,7 @@ directly (a name, a path, a count the state holds), but never works out a judgem
 | `chat_rows(state, range, opts)` | One `Row` per held item whose order is in `range`, widened to include any run that crosses either edge. The terminal's call, for what is on screen. |
 | `chat_rows_for(state, keys, opts)` | Rows for these keys, in order. The phone's call, for the cells an update changed. |
 | `ask_card(state)` | The head ask as an `AskCard`, with its count, or `None`. |
-| `answer_input(card, answer, note)`, `question_answer(card, responses)` | The input that answers the card in its kind's arm; a question's response carries its picks and its typed "Something else" words together. |
+| `answer_input(card, answer, note)`, `question_answer(responses)` | The input that answers the card under its ask key; a question's response carries its picks and its typed "Something else" words together. |
 | `form_problems(fields, values)`, `form_answer(card, values)` | A tool server's form, checked and encoded once for every client: given one `FormValue` per field (typed text, a toggle, a choice or picks by position), each field's `FieldProblem` (required and empty, not a number or not a whole one, out of the schema's range, too short or long, too few or many picked), or the Submit carrying the JSON object the schema describes. |
 | `composer(state, now_ms)`, `waiting(state)`, `switched_away(state)` | The composer mode, the activity line inside it, and whether terminal Claude's own view is on another conversation (prompts are refused until `Session::switch_back` takes it back); the waiting reason. |
 | `composer_tokens(draft, attachments)`, `segments(text, attachments)` | Text runs and attachment chips at their placeholder positions. |
@@ -432,7 +437,7 @@ if the runtime's source for that agent is current, or after the delta if it is c
 
 ### Sending
 
-`send_prompt` puts the text and attachments in the kind's prompt input (`ui_runtime::inputs`), gives it a fresh
+`send_prompt` puts the text and attachments in a prompt input (`ui_runtime::inputs`), gives it a fresh
 input id, applies `Msg::Send` so the optimistic row exists at once, and calls `SendInput`. The reply is the
 interpreter's verdict: accepted (possibly `queued`), or rejected with a reason. A prompt sent while a turn runs
 waits in the agent's queue, which every snapshot lists, so other clients see it too; `queue_rows` offers
@@ -627,8 +632,8 @@ session's window, with a row handed over for every changed key the host held and
   reproduces from the facts, a client bug from the slice. `Bundle::replay_all` (in `replay.rs`, and the
   `dump-replay` binary) runs all four stages, the daemon core's among them, with the properties judged at every
   step; see [Debugging](DEBUGGING.md#replaying-a-dump).
-- **Recorded provider traffic.** `ReplayTransport`, `strict_replay`, recording manifests and probes let the
-  provider spec crates (`claude-specs`, `codex-specs`) replay captured sessions byte for byte.
+- **Recorded provider traffic.** Recording manifests, sanitizing and the capture plumbing (`live`) let both
+  probes stand in for their provider in the live lane and join its captures to the corpus.
 
 [`redaction`](../crates/redaction/src/lib.rs) is the structural redactor for everything that is not a per-kind
 body: `redact_value` for JSON and `redact_text` for free text replace secrets, machine paths, emails and the local
@@ -640,10 +645,10 @@ only code that can decode them.
 
 | Where | What it holds | Run |
 |---|---|---|
-| `crates/ui-state/tests/spec/` | The session and fleet model: window rules, runs against `RunIndex::rebuild`, inputs and uncertainty, asks before CaughtUp, the activity line, opening, snapshots, the fleet, and properties: arrival-order independence, and catch-up plus live equal to uninterrupted delivery at every cut. | `just test-ui` |
+| `crates/ui-state/tests/spec/` | The session and fleet model: window rules, runs against `RunIndex::rebuild`, inputs and uncertainty, asks before CaughtUp, the activity line, opening, snapshots, the fleet, and properties: arrival-order independence, and catch-up plus live equal to uninterrupted delivery at every cut. | `just suite client-model-spec` |
 | `crates/ui-view/tests/` | View goldens replayed from every interpreter fixture of all three kinds (`goldens.rs`), authored goldens, row invariants over random windows (`views.rs`), and the interpreter accepting each card's answers (`answers.rs`). Rewrite goldens with `UI_VIEW_UPDATE_GOLDENS=1` and review the diff. | `just test-crate ui-view` |
 | `crates/ui-runtime/tests/` | The drivers against an in-memory runtime whose every answer and clock tick the test controls (opening, reconnect and re-tail, uncertain inputs, paging, blobs, traces and dump parts), and against a real daemon in process running an agent on a fake provider, through both clients. | `just test-crate ui-runtime` |
 | `crates/client/tests/seam.rs` | Both `Client` implementations answer alike against one real daemon. | `just test-crate client` |
-| `crates/replay-support/tests/` | Real dump bundles replayed through their four stages, and strict replay of recordings. | `just test-crate replay-support` |
+| `crates/replay-support/tests/` | Dump bundles a test net writes, replayed through their four stages and printed by the dump printer. | `just test-crate replay-support` |
 
 [TESTING.md](TESTING.md) places these in the suite catalogue.

@@ -1,34 +1,56 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 2 recorded 1: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue 8572d50d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=55 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue 8572d50d
-snapshot IDLE queue=[] working_on=- at=1793268126568 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 4 recorded 3: input stdin-2
-effect reply stdin-2 accepted
-effect user 73746469-6e2d-4200-8000-000000000000 "Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed."
-item boundary:1 boundary final at=1793268126571 text="" BOUNDARY_KIND_STARTED session=- version=-
-item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793268126571 text="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed."
-snapshot WORKING queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1793268126571 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 6 recorded 5: fact Stream type=system subtype=init uuid=89910ba2-fbf4-4d77-8322-a28ac1b8d567
-item boundary:1 boundary final at=1793268126614 text="" BOUNDARY_KIND_STARTED session=5806d754-dd36-44d4-b718-6c038487db92 version=2.1.312
-snapshot WORKING queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1793268126614 asks=[] session=5806d754-dd36-44d4-b718-6c038487db92 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 12 recorded 11: fact Stream type=assistant uuid=4b8f714f-e692-4b0d-b0a8-49c87defe1f2
-item msg_011CgWLSqqUudAXDnAfgAniS:0 thinking final at=1793268128372 text=""
-snapshot WORKING queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1793268128372 asks=[] session=5806d754-dd36-44d4-b718-6c038487db92 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23735/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 14 recorded 13: fact Stream type=assistant uuid=8a8653a8-a045-4b65-a5de-c317787c5b80
-item toolu_01Pu2LGmUtLtRuSFnt7kpBkg tool final at=1793268128646 text="" Bash TOOL_STATE_RUNNING input=shell:"ls does-not-exist"
-## 16 recorded 15: fact Stream type=rate_limit_event uuid=8ca703d7-6a18-4ead-8c53-e16b6f7254af
-snapshot WORKING queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1793268128674 asks=[] session=5806d754-dd36-44d4-b718-6c038487db92 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23735/? tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 18 recorded 17: fact Stream type=user uuid=ac04eff5-b91a-4a5a-bf28-591d30a3a936
-item toolu_01Pu2LGmUtLtRuSFnt7kpBkg tool final at=1793268128646 text="" Bash TOOL_STATE_FAILED ended=1793268128827 input=shell:"ls does-not-exist" out="Exit code 1\nls: does-not-exist: No such file or directory"
-## 20 recorded 19: fact Stream type=assistant uuid=3dfc02f2-a03d-429e-9483-7ec9f1cd20fb
-item msg_011CgWLSzRfVNCZt6VodnJLR:0 thinking final at=1793268129662 text=""
-snapshot WORKING queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1793268129662 asks=[] session=5806d754-dd36-44d4-b718-6c038487db92 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23984/? tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 22 recorded 21: fact Stream type=assistant uuid=74cff045-bc77-4bd8-b737-69bb4ec4e0a9
-item msg_011CgWLSzRfVNCZt6VodnJLR:1 message final at=1793268129908 text="Yes, the command failed. It exited with code 1 and returned the error: `ls: does-not-exist: No such file or directory`."
-## 24 recorded 23: fact Stream type=result subtype=success uuid=29bfdad3-2bb5-467d-952e-6635700deb53
-item turn:1 turn final at=1793268129930 text="" #1 TURN_OUTCOME_COMPLETED started=1793268126590
-snapshot IDLE queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1793268129930 asks=[] session=5806d754-dd36-44d4-b718-6c038487db92 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23984/200000 tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-turn_end 1 last=msg_011CgWLSzRfVNCZt6VodnJLR:1
+effect catalogue 08dc149d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=56 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 08dc149d
+snapshot IDLE queue=[] working_on=- at=1793423904268 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 4 recorded 3: input 0x198c87a8997e4b96b648292fa6fb670d
+effect reply 0x198c87a8997e4b96b648292fa6fb670d accepted
+effect user 198c87a8-997e-4b96-b648-292fa6fb670d "Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed."
+item boundary:1 boundary final at=1793423904382 text="" BOUNDARY_KIND_STARTED
+item 198c87a8-997e-4b96-b648-292fa6fb670d prompt final input=0x198c87a8997e4b96b648292fa6fb670d at=1793423904382 text="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed."
+snapshot WORKING queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1793423904382 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 6 recorded 5: fact Stream type=control_response
+snapshot WORKING queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1793423904764 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 12 recorded 11: fact Stream type=system subtype=init uuid=f308078b-5373-49f6-9198-095c1c6f8fce
+item boundary:1 boundary final at=1793423906490 text="" BOUNDARY_KIND_STARTED
+snapshot WORKING queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1793423906490 asks=[] session=22056a81-197b-4af7-a541-c766980f0268 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 14 recorded 13: fact Stream type=system subtype=status uuid=eae87e28-bb11-4262-9f37-da4523dc22f8
+item eae87e28-bb11-4262-9f37-da4523dc22f8 status final at=1793423906494 text="" SDK_STATUS_UNSPECIFIED requesting
+## 18 recorded 17: fact Stream type=stream_event uuid=146f4515-0177-498a-a003-0fb4e128bbeb
+snapshot WORKING queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1793423907399 asks=[] session=22056a81-197b-4af7-a541-c766980f0268 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20379/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 20 recorded 19: fact Stream type=stream_event uuid=14ba07a2-3b08-4dbb-b8fa-e15bc0ac5cb5
+item toolu_018f4THttdk9PUwCCSEpKacx tool final at=1793423907402 text="" Bash TOOL_STATE_RUNNING input=shell:""
+## 39 recorded 38: fact Stream type=assistant uuid=9b63a3f9-0667-43fe-881f-1d7ccb42c287
+item toolu_018f4THttdk9PUwCCSEpKacx tool final at=1793423907402 text="" Bash TOOL_STATE_RUNNING input=shell:"ls does-not-exist"
+## 47 recorded 46: fact Stream type=rate_limit_event uuid=0fea2ba0-b317-445f-a6a2-e9f6d09370d1
+snapshot WORKING queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1793423907845 asks=[] session=22056a81-197b-4af7-a541-c766980f0268 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20379/? tasks=? active=[] usage=ok 5h:19%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 49 recorded 48: fact Stream type=user uuid=c5c953db-cc6d-4d1c-8f44-02ba62059198
+item toolu_018f4THttdk9PUwCCSEpKacx tool final at=1793423907402 text="" Bash TOOL_STATE_FAILED ended=1793423910237 input=shell:"ls does-not-exist" out="Exit code 1\nls: does-not-exist: No such file or directory"
+## 51 recorded 50: fact Stream type=system subtype=status uuid=69fa2c69-2355-48c4-b089-af53bb993217
+item 69fa2c69-2355-48c4-b089-af53bb993217 status final at=1793423910250 text="" SDK_STATUS_UNSPECIFIED requesting
+## 53 recorded 52: fact Stream type=stream_event uuid=5d78c9f3-fc0e-432e-b32d-56033f38d6da
+snapshot WORKING queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1793423911031 asks=[] session=22056a81-197b-4af7-a541-c766980f0268 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20525/? tasks=? active=[] usage=ok 5h:19%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 55 recorded 54: fact Stream type=stream_event uuid=323cf5c6-1c39-41ce-8fca-de3dc8a81a90
+item msg_011CgZkSP8gzB2mYPrFBDnMr:0 message open at=1793423911032 text=""
+## 56 recorded 55: fact Stream type=stream_event uuid=5db3958e-f961-4cdb-beb9-b85fe486aa4f
+append msg_011CgZkSP8gzB2mYPrFBDnMr:0 "Yes, it"
+## 58 recorded 57: fact Stream type=stream_event uuid=b01efc8e-cc67-40c5-ab5b-1aa69fc93f4e
+append msg_011CgZkSP8gzB2mYPrFBDnMr:0 " failed. `ls does-"
+## 60 recorded 59: fact Stream type=stream_event uuid=c8eed9be-b725-49f9-8337-04e3299556ee
+append msg_011CgZkSP8gzB2mYPrFBDnMr:0 "not-exist` exited with"
+## 61 recorded 60: fact Stream type=stream_event uuid=d84bf8a7-c138-4faf-a2b2-7607df54c7b3
+append msg_011CgZkSP8gzB2mYPrFBDnMr:0 " code 1 and print"
+## 62 recorded 61: fact Stream type=stream_event uuid=4cdcbec8-04d3-4e88-be8f-b03e5e811072
+append msg_011CgZkSP8gzB2mYPrFBDnMr:0 "ed `ls: does-not"
+## 63 recorded 62: fact Stream type=stream_event uuid=edfa9917-6be5-4920-8223-6cb66385c0bc
+append msg_011CgZkSP8gzB2mYPrFBDnMr:0 "-exist: No such file or"
+## 65 recorded 64: fact Stream type=stream_event uuid=e4a3ee1b-1c7f-44ed-b678-e631ca1a2805
+append msg_011CgZkSP8gzB2mYPrFBDnMr:0 " directory`."
+## 67 recorded 66: fact Stream type=assistant uuid=b5cb58b4-e156-486d-82a6-ffaf5c752326
+item msg_011CgZkSP8gzB2mYPrFBDnMr:0 message final at=1793423911032 text="Yes, it failed. `ls does-not-exist` exited with code 1 and printed `ls: does-not-exist: No such file or directory`."
+## 74 recorded 73: fact Stream type=result subtype=success uuid=e6f5b9a6-1eb3-4350-b217-4d8364bbe2bd
+item turn:1 turn final at=1793423911186 text="" #1 TURN_OUTCOME_COMPLETED started=1793423906467
+snapshot IDLE queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1793423911186 asks=[] session=22056a81-197b-4af7-a541-c766980f0268 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20525/1000000 tasks=? active=[] usage=ok 5h:19%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 1 last=msg_011CgZkSP8gzB2mYPrFBDnMr:0

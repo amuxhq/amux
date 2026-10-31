@@ -1,14 +1,10 @@
 //! Authored records and a tape that applies messages and prints what the
 //! session looks like after each one.
 
-#![allow(dead_code)]
-
 use proptest::prelude::*;
 use proptest::test_runner::RngSeed;
 use prost::Message;
-use ui_state::{
-    Connection, InputOutcome, ItemClass, Msg, Outcome, RunIndex, SessionState, Transcript,
-};
+use ui_state::{InputOutcome, ItemClass, Msg, Outcome, RunIndex, SessionState, Transcript};
 use wire::{
     Agent, Ask, CodexAsk, Input, Item, Kind, Lifecycle, Phase, QueuedInput, SendInputResponse,
     SessionEvent, Snapshot, ToolClass, ToolState, session_event,
@@ -67,11 +63,10 @@ pub enum Body {
         max: u32,
     },
     Compacting,
-    Boundary,
 }
 
 pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
-    use wire::{claude_pty_item as pty, claude_sdk_item as sdk, codex_item as codex};
+    use wire::{claude_item as pty, claude_item as sdk, codex_item as codex};
     let class = |name: &str, explore: bool| {
         (match (explore, name) {
             (false, _) => ToolClass::Consequential,
@@ -112,9 +107,8 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
                 Body::Turn => pty::Kind::Turn(wire::Turn::default()),
                 Body::Retry { attempt, max } => pty::Kind::ApiError(retry(attempt, max)),
                 Body::Compacting => pty::Kind::Compaction(wire::Compaction::default()),
-                Body::Boundary => pty::Kind::Boundary(wire::Boundary::default()),
             };
-            wire::ClaudePtyItem { kind: Some(kind) }.encode_to_vec()
+            wire::ClaudeItem { kind: Some(kind) }.encode_to_vec()
         }
         Kind::ClaudeSdk => {
             let kind = match body.clone() {
@@ -133,9 +127,8 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
                     status: wire::SdkStatus::Compacting as i32,
                     word: "compacting".into(),
                 }),
-                Body::Boundary => sdk::Kind::Boundary(wire::Boundary::default()),
             };
-            wire::ClaudeSdkItem { kind: Some(kind) }.encode_to_vec()
+            wire::ClaudeItem { kind: Some(kind) }.encode_to_vec()
         }
         Kind::Codex => {
             let kind = match body.clone() {
@@ -170,7 +163,6 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
                 Body::Retry { attempt, max } => codex::Kind::Error(retry(attempt, max)),
                 // Codex has no compacting status item; a boundary stands in.
                 Body::Compacting => codex::Kind::Boundary(wire::Boundary::default()),
-                Body::Boundary => codex::Kind::Boundary(wire::Boundary::default()),
             };
             wire::CodexItem { kind: Some(kind) }.encode_to_vec()
         }
@@ -180,11 +172,9 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
 
 pub fn item(kind: Kind, order: u64, revision: u64, text: &str, body: Body) -> Item {
     Item {
-        agent_id: b"agent-1".to_vec(),
         key: format!("k{order}"),
         order,
         revision,
-        producer_version: "test".into(),
         text: text.into(),
         kind: kind as i32,
         body: encode(kind, &body),
@@ -288,7 +278,7 @@ pub fn ask(kind: Kind, key: &str) -> Vec<u8> {
 /// explicit unknown.
 pub fn snapshot_body(kind: Kind, asks: &[&str]) -> Vec<u8> {
     match kind {
-        Kind::ClaudePty => wire::ClaudePtySnapshot {
+        Kind::ClaudePty => wire::ClaudeSnapshot {
             asks: asks
                 .iter()
                 .map(|key| Ask::decode(&ask(kind, key)[..]).unwrap())
@@ -296,7 +286,7 @@ pub fn snapshot_body(kind: Kind, asks: &[&str]) -> Vec<u8> {
             ..Default::default()
         }
         .encode_to_vec(),
-        Kind::ClaudeSdk => wire::ClaudeSdkSnapshot {
+        Kind::ClaudeSdk => wire::ClaudeSnapshot {
             asks: asks
                 .iter()
                 .map(|key| Ask::decode(&ask(kind, key)[..]).unwrap())
@@ -324,7 +314,6 @@ pub fn snapshot(
     queue: &[(&[u8], bool)],
 ) -> Snapshot {
     Snapshot {
-        agent_id: b"agent-1".to_vec(),
         revision,
         queue: queue
             .iter()
@@ -358,7 +347,6 @@ pub fn ev_snapshot(snapshot: Snapshot) -> Msg {
 
 pub fn ev_append(key: &str, base: u64, revision: u64, text: &str) -> Msg {
     event(session_event::Of::Append(wire::Append {
-        agent_id: b"agent-1".to_vec(),
         key: key.into(),
         base_revision: base,
         revision,
@@ -368,10 +356,6 @@ pub fn ev_append(key: &str, base: u64, revision: u64, text: &str) -> Msg {
 
 pub fn caught_up(revision: u64) -> Msg {
     event(session_event::Of::CaughtUp(wire::CaughtUp { revision }))
-}
-
-pub fn opening(generation: u64) -> Msg {
-    event(session_event::Of::Opening(wire::Opening { generation }))
 }
 
 pub fn reset(generation: u64) -> Msg {
@@ -384,10 +368,6 @@ pub fn detached() -> Msg {
 
 pub fn lagged() -> Msg {
     event(session_event::Of::Lagged(wire::Lagged {}))
-}
-
-pub fn reconnecting() -> Msg {
-    Msg::Connection(Connection::Reconnecting)
 }
 
 /// A page requested now, under the state's current epoch.
@@ -403,68 +383,42 @@ pub fn apply_page(state: &mut SessionState, items: Vec<Item>, exhausted: bool) -
     )
 }
 
-pub fn prompt_input(kind: Kind, id: &[u8], text: &str) -> Input {
-    use wire::KindInput as Of;
-    let prompt = wire::PromptInput {
-        text: text.into(),
-        attachments: vec![],
-    };
-    let of = match kind {
-        Kind::ClaudePty => Of::ClaudePty(wire::ClaudePtyInput {
-            of: Some(wire::claude_pty_input::Of::Prompt(prompt)),
-        }),
-        Kind::ClaudeSdk => Of::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(prompt)),
-        }),
-        _ => Of::Codex(wire::CodexInput {
-            of: Some(wire::codex_input::Of::Prompt(prompt)),
-        }),
-    };
-    Input::new(id.to_vec(), of)
-}
-
-pub fn answer_input(kind: Kind, id: &[u8], ask_key: &str) -> Input {
-    use wire::KindInput as Of;
-    let answer = wire::ClaudeAnswer {
-        ask_key: ask_key.into(),
-        of: None,
-    };
-    let of = match kind {
-        Kind::ClaudePty => Of::ClaudePty(wire::ClaudePtyInput {
-            of: Some(wire::claude_pty_input::Of::Answer(answer)),
-        }),
-        Kind::ClaudeSdk => Of::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Answer(answer)),
-        }),
-        _ => Of::Codex(wire::CodexInput {
-            of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
-                ask_key: ask_key.into(),
-                of: Some(wire::codex_answer::Of::Approve(
-                    wire::Decision::Approve as i32,
-                )),
+pub fn prompt_input(id: &[u8], text: &str) -> Input {
+    Input::new(
+        id.to_vec(),
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
+                text: text.into(),
+                attachments: vec![],
             })),
-        }),
-    };
-    Input::new(id.to_vec(), of)
+        },
+    )
 }
 
-pub fn send_now_input(kind: Kind, id: &[u8], target: &[u8]) -> Input {
-    use wire::KindInput as Of;
-    let now = wire::SendQueuedNow {
-        queued_input_id: target.to_vec(),
-    };
-    let of = match kind {
-        Kind::ClaudePty => Of::ClaudePty(wire::ClaudePtyInput {
-            of: Some(wire::claude_pty_input::Of::SendNow(now)),
-        }),
-        Kind::ClaudeSdk => Of::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::SendNow(now)),
-        }),
-        _ => Of::Codex(wire::CodexInput {
-            of: Some(wire::codex_input::Of::SendNow(now)),
-        }),
-    };
-    Input::new(id.to_vec(), of)
+/// An answer to `ask_key`; Codex's carries an approval, as its asks take.
+pub fn answer_input(kind: Kind, id: &[u8], ask_key: &str) -> Input {
+    let of =
+        (kind == Kind::Codex).then_some(wire::answer::Of::Approve(wire::Decision::Approve as i32));
+    Input::new(
+        id.to_vec(),
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Answer(wire::Answer {
+                ask_key: ask_key.into(),
+                of,
+            })),
+        },
+    )
+}
+
+pub fn send_now_input(id: &[u8], target: &[u8]) -> Input {
+    Input::new(
+        id.to_vec(),
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::SendNow(wire::SendQueuedNow {
+                queued_input_id: target.to_vec(),
+            })),
+        },
+    )
 }
 
 pub fn accepted(queued: bool) -> InputOutcome {

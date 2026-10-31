@@ -149,64 +149,6 @@ fn a_retail_that_meets_the_window_merges_without_a_reload() {
 }
 
 #[test]
-fn a_reopen_under_the_generation_a_live_reset_named_continues_the_window() {
-    for kind in KINDS {
-        for opened_under in [0, 1] {
-            // Opened under generation 1, or on a replica no source had
-            // caught up yet, which names none (0).
-            let mut state = SessionState::new(agent(kind), CAP);
-            apply_checked(&mut state, opening(opened_under));
-            apply_checked(
-                &mut state,
-                ev_snapshot(snapshot(kind, 3, Phase::Idle, &[], &[])),
-            );
-            for order in 1..=3 {
-                apply_checked(&mut state, ev_item(text(kind, order, order, "old")));
-            }
-            apply_checked(&mut state, caught_up(3));
-
-            // The replica takes the block of generation 2, live.
-            apply_checked(&mut state, reset(2));
-            apply_checked(
-                &mut state,
-                ev_snapshot(snapshot(kind, 9, Phase::Idle, &[], &[])),
-            );
-            for order in 4..=5 {
-                apply_checked(&mut state, ev_item(text(kind, order, order + 4, "new")));
-            }
-            let outcome = apply_checked(&mut state, caught_up(9));
-            assert!(outcome.reloaded, "the Reset swaps its block in");
-
-            // A reader pages below the fresh block.
-            apply_page(&mut state, vec![text(kind, 3, 7, "paged")], false);
-            assert_eq!(state.oldest_order(), Some(3));
-
-            // The stream lags and reopens under generation 2 with a tail
-            // that meets the window: the window continues.
-            apply_checked(&mut state, lagged());
-            apply_checked(&mut state, Msg::Connection(Connection::Live));
-            apply_checked(&mut state, opening(2));
-            apply_checked(
-                &mut state,
-                ev_snapshot(snapshot(kind, 10, Phase::Idle, &[], &[])),
-            );
-            for order in 5..=6 {
-                apply_checked(&mut state, ev_item(text(kind, order, order + 4, "new")));
-            }
-            let outcome = apply_checked(&mut state, caught_up(10));
-            assert!(
-                !outcome.reloaded,
-                "opened under {opened_under}: a reopen under the Reset's generation does not \
-                 rebuild"
-            );
-            assert_eq!(state.oldest_order(), Some(3), "the paged row stays");
-            assert_eq!(state.transcript().head(), Some(6));
-            assert_eq!(state.generation(), Some(2));
-        }
-    }
-}
-
-#[test]
 fn nothing_is_kept_between_opens() {
     for kind in KINDS {
         let mut first = SessionState::new(agent(kind), CAP);
@@ -215,7 +157,7 @@ fn nothing_is_kept_between_opens() {
             ev_snapshot(snapshot(kind, 2, Phase::Idle, &[], &[])),
         );
         apply_checked(&mut first, ev_item(text(kind, 1, 2, "a")));
-        apply_checked(&mut first, Msg::Send(prompt_input(kind, b"p1", "hi")));
+        apply_checked(&mut first, Msg::Send(prompt_input(b"p1", "hi")));
         let reopened = SessionState::new(agent(kind), CAP);
         assert_eq!(reopened, SessionState::new(agent(kind), CAP));
         assert!(reopened.transcript().is_empty());

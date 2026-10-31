@@ -1,5 +1,5 @@
 {
-  "about": "The permission mode cycled in the terminal reaches the snapshot. The recording ends at the Stop hook, before the reply's own row, so the reply streamed through MessageDisplay is still open.",
+  "about": "The permission mode cycled from amux, then a turn in the mode it moved to.",
   "spec": {
     "created_at_ms": 0
   },
@@ -8,17 +8,13 @@
       "fact": {
         "channel": "agent",
         "json": {
-          "type": "launch",
-          "version": "2.1.312"
+          "type": "launch"
         }
       }
     }
   ],
   "recording": {
-    "path": "../../../claude-specs/fixtures/pty/mode_cycle/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/pty/mode_cycle/io.jsonl",
     "format": "claude_pty_io"
-  },
-  "end": {
-    "streams_may_remain": true
   }
 }

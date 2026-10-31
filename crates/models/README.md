@@ -20,40 +20,11 @@ to a failing state. It explores depth first, holding only each state's
 fingerprint and the path it is on; breadth first holds every frontier state with
 its path, and at nightly bounds the client model passed 53 GB that way on the
 enrolled Mac without finishing, where depth first finished in 175 s and peaked
-at 1.3 GB. `MODELS_SEARCH=breadth` (or `Bounds::breadth_first`) explores breadth
-first, to print the shortest path to a failure depth first found; a bounded
-depth always does, since depth first would skip a state first met past the
-bound. `walk(model, bounds, seed)` follows
+at 1.3 GB. A bounded depth explores breadth first, since depth first would
+skip a state first met past the bound, and so prints the shortest path to a
+failure. `walk(model, bounds, seed)` follows
 one schedule chosen by the seed: the same seed walks the same schedule on every
 run, so a failing walk is reproduced by its seed alone.
-
-## Faults
-
-What the world may do to a machine between its own actions is one
-vocabulary, `Fault`, shared by every model's environment and by the
-simulator: a message in flight lost, delayed or reordered, a host crashing,
-rebooting uncleanly or losing power, and the clock moving on. Each model
-offers the faults its slice of the world can suffer and says how each plays
-out on it; nothing else is simulated.
-
-## Parked properties
-
-When the checker finds a property failing and what to do about it is a
-decision still waiting, the property is parked rather than weakened: it
-keeps its sentence and predicate, and `.parked(Parked { since,
-counterexample, reason })` records when, the path that broke it and the
-decision it waits on. The checker reports a parked property with its reason
-instead of exploring it, so `just test` stays green meanwhile, and
-`just parked-check` lists every parked property and fails while any
-remains, so nothing lands with one.
-
-## Naming a property elsewhere
-
-`cargo run -p models --bin properties` lists every property of every model
-as JSON lines (machine, kind, sentence), each once. A `model` contract in
-`tests/contracts.toml` names a property by its machine and sentence, and
-`just contracts-check` fails when that list does not hold it, so rewording a
-sentence means updating its contract.
 
 ## Replication
 
@@ -247,7 +218,7 @@ bounded number of times so the machine settles, and its liveness is judged
 there.
 
 Two more worlds add what the peer and the relay say beside the probes,
-each on a smaller world so that it fits its budget. In the first, one of
+each on a smaller world so that it stays quick to explore. In the first, one of
 the link's packets arrives, on a path the machine sends on or on a byte
 stream it has not heard on, and a paired daemon's forwarding link comes up
 and goes, while the network stays put, the relay link stays up and the
@@ -255,7 +226,7 @@ local address keeps answering. In the second, an answer arrives for a path
 with no probe of it outstanding (late, duplicated, or from before the
 network changed; never on a path whose probe the machine still waits on,
 since the driver passes only the outstanding probe's answer), the relay
-refuses for no route, the rate limit or shutting down, the peer stops
+refuses for no route or the rate limit, the peer stops
 listing an address, and the peer lists an IPv6 address as near as its IPv4
 one, while the relay link stays up and the local address keeps answering.
 The properties read the world's own record of what the machine asked for
@@ -390,94 +361,19 @@ under three sets of faults. Walked one seeded delivery at a time, the same
 model is the testnet's simulated mode. The properties are in
 `src/net/mod.rs`, and the judging of a step in `src/net/env.rs`.
 
-## Cost, bounds and budget
+## Bounds
 
 A model explores real stores, so a state costs a store transaction or two
-rather than a few instructions, and its bounds are sized so a run fits the
-CI runner's time. Every model's test prints its measured cost as `states`,
-`seconds` and `states_per_second`. Every test asserts its budget on the
-state count, which the bounds decide and the machine does not: the count at
-the CI bounds with two percent over, since for some models it moves with the
-threads (the family model's by about 1.5%). A run past its count says the bounds have
-outgrown their place; a run that hangs is the test harness's bound to
-catch, not a verdict the model gives.
-
-| Model | CI bounds | States | 12 threads | 4 threads | Four-core runner | Budget | Nightly bounds | Nightly, 12 threads |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Replication | 2 keys, cap 1, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row, the opening replayed once | 157,789 | not measured | 50 s | none yet at these bounds (about 233 s projected); at 81,268 states, before the resumed link: 87, 102, 72, 103, 50 and 101 s | 480 s | 3 keys, cap 2, revisions up to 5, 3 in flight | 1,062 s (6,424,651 states, load 45 falling to 16) |
-| Single daemon, and its peer | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag; the peer: 2 frames, 1 checkpoint, 1 crash, power loss or reboot, 1 resumed link, 1 replay, its pin removed | 207,594 and 50,633 | 51 s and 16 s | 74 s and 21 s | 81, 161, 161, 77, 113 and 135 s for the journal; none yet for the peer (about 100 s projected) | 540 s for both | 2 crashes, power losses or reboots, 1 refused commit; the peer around the CI bounds' journal and subscriber | 557 s (2,018,569 states), load about 30; the peer past 4,000 s (not finished at 12 threads, load about 55) |
-| Family and deliveries | 1 turn end, 1 link down, 1 crash, 1 wait | 219,380 | 23 s | 47 s | 178 and 128 s (about 191 s projected); at 396,826 states with the parent's spontaneous exit: 161, 299, 222, 313, 310 and 155 s (the first at 391,552 states, before the first listing predated the parent) | 420 s | the parent's and the child's spontaneous exits, 2 links down, 2 waits | 757 s |
-| Presence and routing | 4 links or claims up, 3 down, 3 failed dials or refusals for no route, 2 plan changes, each heard by this daemon after the relay enforces it, 2 refusals for the plan in a row | 50,510 | 0.2 s | 0.2 s | none yet | 30 s | 5 up, 4 down, 3 plan changes | 0.4 s (216,602 states) |
-| Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,296,718 and 71,250 | 9 s | 18 s | 45, 28, 44, 29, 41 and 45 s for both | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
-| Supervisor update, both platforms' swaps | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 5,819,060 and 4,850,638 | 7 s | 8 s | 17, 27, 25, 27, 27 and 28 s for both | 60 s each | 3 releases, 2 failed starts, 6 timers firing | 124 s |
-| One open chat | 2 writes, 1 lag, 1 reset, 2 pages over a three-item opening, a tail of 2, pages of 1 | 1,217,819 | 10 s | 24 s | 51, 109, 116, 105, 105 and 107 s | 240 s | 3 writes | 343 s |
-| Path machine, in three worlds | 2 of the 3 addresses learned, 1 lost probe, 1 network change, 1 plan change, 2 ticks, 1 relay link drop, 1 silence of the local address; the same with no network change, relay link drop or silence, and 1 of the peer's packets arriving, a byte stream and 1 paired daemon's forwarding link; the first with no relay link drop or silence, and 1 answer with no probe outstanding, 1 refusal for another reason than the plan, 1 address forgotten and an IPv6 address | 12,929,251, 11,118,688 and 12,701,530 | 15 s, 14 s and 17 s | 30 s, 28 s and 34 s | none yet | 300 s, 300 s and 360 s | the first with all 3 addresses, 2 plan changes and 3 ticks; the second with a network change; the third with a relay link drop | the first not re-measured since it was 90,308,562 states in 405 s; the second 60,146,859 states in 89 s and the third 59,820,884 in 106 s (load about 13, about 19 GB each) |
-| Relay's forwarding, as the relay and as a daemon | 3 links connecting, 3 packets asked about, 1 plan change, 1 expiry; the daemon's links dialled by either end, and 1 restart of a host's process | 694,420 and 719,032 | 4 s and 4 s | 3 s and 3 s | none yet | 60 s each | the relay with 4 links; the daemon with 4 links | 41 s; the daemon's 18,625,784 states in 43 s (load about 13) |
-| Link socket, in six worlds | the laptop starting again once on its port or another, 1 probe from each host, 1 send on each link; the local network going; then on the laptop's port, 1 loss; 1 duplicate; the local network and then the relay link going; 1 tick past the unnamed senders' time, the relay heard or silent at the laptop | 3,531,706, 51, 248,321, 104,781, 38,389 and 145,457 | 7 s for the first, under 1 s for each other | 15 s for the first, under 2 s for each other | none yet | 60 s for all six | the relaunch on its port or another with 1 loss and 1 send on each link | 230 s (93,186,069 states, load about 12) |
-| Composed net: a reset while presence flips, lost messages, a person's calls through a crash | 1 sever and 1 unclean reboot; 1 reordering, 1 lost message and 1 advance; 1 kill, 1 prompt and 1 stop | 32,752, 9,935 and 202,965 | 27 s | 51 s | 151, 105, 204, 207, 139 and 180 s for all three | 420 s for all three | every fault but a kill, with 1 reordering; the calls through a crash with 1 lost message | 184 s |
-
-Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12
-cores), the family model's on 2026-10-20, the relay's forwarding on
-2026-10-21 and the path machine's and the relay daemon's on 2026-10-22 (the
-relay's first with the Mac busy, load about 20, the path machine's at load
-about 5 to 13;
-presence's again that day at load about 15, and presence, the single
-daemon's peer and replication again that night at load about 8, and the
-nightly bounds of presence, replication and the single daemon the next
-morning at load 16 to 56; the link socket's on 2026-10-29 at load about 20), with the
-development profile,
-which optimises SQLite, the store and the models; `MODELS_THREADS=4` gives
-the four-thread figure. The checker runs on every core the machine has; the
-verdict and the state count do not depend on the number of threads (the
-family model's and replication's counts aside, below), only which of several
+rather than a few instructions. Each model runs in CI as a job of its own on
+a four-core runner, under that job's time guard, and its CI bounds are sized
+to fit it; bounds that would not fit move to the model's nightly test, which
+runs daily in its own workflow and locally through `just models-nightly`.
+Every run prints how many states it explored and how long it took. The
+verdict does not depend on the number of threads, only which of several
 counterexamples is printed.
 
-The four-core runner column is each model's test binary's time at its CI
-bounds on CI's four-core Linux runner, measured by six CI runs
-of nearly the same tree, in October 2026; a binary holding two machines is timed
-for both. The runner's speed varies between runs by up to two and a half
-times: presence took 288 s in one run and 120 s in the next, the composed
-net 105 s in one and 204 s in the next.
-The family model's first two figures are from two earlier runs;
-its six runs at the bounds that included the parent's spontaneous exit
-spread twofold, and two passed 300 s, so the parent's spontaneous exit
-moved to the nightly bounds; the cut bounds took 0.61 of the time on the
-enrolled Mac, back to back, and the budget is sized to the slowest run
-scaled by that; the first two CI runs at the cut bounds took 178 s and 128 s. Its state count varies by under 1% from run to run
-(218,332 to 219,506 at these bounds), so one of its values is not yet
-printed the same way for the same state. Replication's count varies by a
-few dozen states on several threads (157,539 to 157,789 at these bounds) and
-not on one: a state keeps the cores' checkpoints the first path to reach it
-left, and which path is first depends on the threads. Presence's earlier figure
-is at bounds that allowed two refusals for the plan in a row: twice it passed
-600 s, so the CI bounds allow one and the second moved to the nightly bounds.
-Once the relay refused the host's packets and the plan reached this daemon
-after the relay, presence at two failures projected past the cap before any
-runner timed it, so the CI bounds allow one failure and the second is the
-nightly bounds' (which allow three). Presence's nightly bounds keep the CI
-bounds' links up and down: with a fourth up and a third down they explored
-30,391,426 states in 1,170 s on the Mac's twelve threads at load about 50,
-which projected past the nightly job's then 100 minutes on the runner, so the fourth
-up and the third down were cut. The nightly job's runner is projected from a
-twelve-thread Mac time by the slowest ratio of four threads to twelve in the
-table (2.4) and the runner's 4.7 on four: presence's 140 s comes to about
-1,600 s.
-The time budgets in the table size the bounds, not the tests.
-
-Each model runs in CI as a job of its own on that runner, and its bounds are
-sized to it: **a model's time budget is at least twice its measured time on
-the four-core runner at its CI bounds, rounded up to the next full minute,
-and no budget is above 600 s.** A model with no runner figure yet is sized from its
-four-thread Mac time times 4.7, the slowest runner-to-Mac ratio measured (the
-runner took 2.1 to 4.7 times the Mac's four-thread time; presence, at 339.9 s
-against 73 s on four of the Mac's threads at the same bounds, was the
-slowest), doubled and rounded up the same way, until a CI run measures it. A model whose doubled runner time would pass
-600 s has its CI bounds cut, and the bounds it loses move to its nightly
-test. The nightly bounds run daily in their own workflow, each model in a job
-of its own, and locally through `just models-nightly`.
-
 A walk is reproducible: one seed walks one schedule on every run, and
-another seed walks another (`one_seed_walks_one_replication_schedule`).
+another seed walks another (the switch's `one_seed_walks_one_schedule`).
 
 Run the models with `just test-crate models`, one with
 `just suite protocol-models <model>::` (each model is a module of the

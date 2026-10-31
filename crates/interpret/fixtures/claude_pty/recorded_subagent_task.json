@@ -1,0 +1,20 @@
+{
+  "about": "A task delegated to a subagent given at launch (--agents).",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "../../../claude-specs/fixtures/live/pty/subagent_task/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

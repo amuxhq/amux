@@ -1,0 +1,47 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"agent","json":{"type":"launch"}}
+effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue cd96cd29
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 3 recorded 1: fact Hook hook_event_name=SessionStart
+effect follow "<TRANSCRIPT_1>"
+item boundary:1 boundary final at=1793453286428 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1793453286428 asks=[] session=281a079a-a330-4817-8b4c-3028321fca36 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793453286965 asks=[] session=281a079a-a330-4817-8b4c-3028321fca36 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 13 recorded 11: fact Transcript type=user uuid=844c4a52-4583-45a3-ac0d-e20f60f4f598
+item 844c4a52-4583-45a3-ac0d-e20f60f4f598 prompt final at=1793453287127 text="Use the Bash tool to run exactly: printf denied > denied.txt. Then stop."
+snapshot WORKING queue=[] working_on=- at=1793453287127 asks=[] session=281a079a-a330-4817-8b4c-3028321fca36 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 38 recorded 36: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_0194mxpNygZJxCovWPkqucvj
+snapshot WORKING queue=[] working_on=- at=1793453287976 asks=[] session=281a079a-a330-4817-8b4c-3028321fca36 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_0194mxpNygZJxCovWPkqucvj Bash since=1793453287976
+## 40 recorded 38: fact Hook hook_event_name=PermissionRequest
+snapshot NEEDS_YOU queue=[] working_on=- at=1793453288024 asks=[ask:1->- permission:Bash/session <MACHINE_PATH> deny-can-stop] session=281a079a-a330-4817-8b4c-3028321fca36 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_0194mxpNygZJxCovWPkqucvj Bash since=1793453287976
+## 44 recorded 42: fact Transcript type=assistant uuid=138a7a7c-8329-4f55-82fb-05f113418310
+item toolu_0194mxpNygZJxCovWPkqucvj tool final at=1793453288162 text="" Bash TOOL_STATE_RUNNING input=shell:"printf denied > denied.txt"
+snapshot NEEDS_YOU queue=[] working_on=- at=1793453288127 asks=[ask:1->toolu_0194mxpNygZJxCovWPkqucvj permission:Bash/session <MACHINE_PATH> deny-can-stop] session=281a079a-a330-4817-8b4c-3028321fca36 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35599/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_0194mxpNygZJxCovWPkqucvj Bash since=1793453287976
+## 48 recorded 46: fact Transcript type=user uuid=85ee69cb-5779-40f4-951e-4c8c28434360
+item toolu_0194mxpNygZJxCovWPkqucvj tool final at=1793453288162 text="" Bash TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED note="Use a read-only command instead" elsewhere ended=1793453288255 input=shell:"printf denied > denied.txt" out="The user doesn't want to proceed with this tool use. The too…"
+snapshot WORKING queue=[] working_on=- at=1793453288129 asks=[] session=281a079a-a330-4817-8b4c-3028321fca36 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35599/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 60 recorded 58: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_013G77wfLGrC8pVcEgYow1jp
+snapshot WORKING queue=[] working_on=- at=1793453289721 asks=[] session=281a079a-a330-4817-8b4c-3028321fca36 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35599/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_013G77wfLGrC8pVcEgYow1jp Bash since=1793453289721
+## 62 recorded 60: fact Transcript type=assistant uuid=b6e5dcc7-2217-4237-b002-5e05f03afbd0
+item b6e5dcc7-2217-4237-b002-5e05f03afbd0 thinking final at=1793453289749 text=""
+snapshot WORKING queue=[] working_on=- at=1793453289878 asks=[] session=281a079a-a330-4817-8b4c-3028321fca36 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35801/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_013G77wfLGrC8pVcEgYow1jp Bash since=1793453289721
+## 64 recorded 62: fact Transcript type=assistant uuid=8f6a8759-f4d7-4360-87b2-9649adb51e99
+item toolu_013G77wfLGrC8pVcEgYow1jp tool final at=1793453289910 text="" Bash TOOL_STATE_RUNNING input=shell:"pwd"
+## 66 recorded 64: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_013G77wfLGrC8pVcEgYow1jp
+snapshot WORKING queue=[] working_on=- at=1793453289948 asks=[] session=281a079a-a330-4817-8b4c-3028321fca36 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35801/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 68 recorded 66: fact Transcript type=user uuid=2c5a7fdf-852f-4bf1-a106-11b8c6ce2cbe
+item toolu_013G77wfLGrC8pVcEgYow1jp tool final at=1793453289910 text="" Bash TOOL_STATE_SUCCEEDED started=1793453289910 ended=1793453290167 input=shell:"pwd" out="<MACHINE_PATH>"
+## 70 recorded 68: fact Hook hook_event_name=Stop
+snapshot WORKING queue=[] working_on=- at=1793453290908 asks=[] session=281a079a-a330-4817-8b4c-3028321fca36 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35801/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 71 recorded 69: fact Hook hook_event_name=MessageDisplay
+item stream:055eb7be-2af1-4eae-ae0c-ac9ba21f6af3 message open at=1793453290908 text="I didn't create `denied.txt`. The write command was rejected, and you asked for a read-only command instead. I ran `pwd`, which printed `<MACHINE_PATH>, and I've stopped there."
+## 75 recorded 73: fact Transcript type=assistant uuid=c8c6b9ab-7cb3-4c69-9219-83e7f85271c4
+item stream:055eb7be-2af1-4eae-ae0c-ac9ba21f6af3 message final at=1793453291062 text="I didn't create `denied.txt`. The write command was rejected, and you asked for a read-only command instead. I ran `pwd`, which printed `<MACHINE_PATH>, and I've stopped there."
+snapshot WORKING queue=[] working_on=- at=1793453290978 asks=[] session=281a079a-a330-4817-8b4c-3028321fca36 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36059/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 78 recorded 76: fact Transcript type=system subtype=turn_duration uuid=95597432-18ba-41bd-bff9-d62a381f6d35
+item turn:1 turn final at=1793453291126 text="" #1 TURN_OUTCOME_COMPLETED started=1793453287158
+snapshot IDLE queue=[] working_on=- at=1793453290979 asks=[] session=281a079a-a330-4817-8b4c-3028321fca36 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36059/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+turn_end 1 last=stream:055eb7be-2af1-4eae-ae0c-ac9ba21f6af3

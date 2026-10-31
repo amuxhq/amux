@@ -95,11 +95,11 @@ async fn hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tc
     net.advance(node::UDP_BLOCKED_MEMORY - Duration::from_millis(1))
         .unwrap();
     assert!(edge(&net, "phone").remembers_udp_blocked(RELAY_HOST).await);
-    reconnect(&net, "phone").await;
+    reconnect(&net, "phone", "ada").await;
     assert_eq!(carrier(&net, "phone"), Some(RelayCarrier::Tcp));
     net.advance(Duration::from_millis(1)).unwrap();
     assert!(!edge(&net, "phone").remembers_udp_blocked(RELAY_HOST).await);
-    reconnect(&net, "phone").await;
+    reconnect(&net, "phone", "ada").await;
     assert_eq!(carrier(&net, "phone"), Some(RelayCarrier::Quic));
     until_via(&net, "desk", "phone", LiveRoute::Relay).await;
     println!("memory held TCP-only until it expired; the next link rides QUIC");
@@ -144,14 +144,14 @@ async fn a_relay_link_whose_credential_lapses_at_the_relay_first_comes_back_on_a
     net.shutdown().await.unwrap();
 }
 
-/// Pauses and resumes the host's profile, which closes its relay link and
-/// dials a new one, and waits for the new one.
-async fn reconnect(net: &Net, host: &str) {
-    let mut admin = admin(net, host).await;
-    admin
-        .pause_profile(wire::PauseProfileRequest {})
+/// Signs the host's profile out of `account` and in again, which closes
+/// its relay link and dials a new one, and waits for the new one.
+async fn reconnect(net: &Net, host: &str, account: &str) {
+    admin(net, host)
         .await
-        .expect("the profile pauses");
+        .sign_out(wire::Empty {})
+        .await
+        .expect("the profile signs out");
     until(&format!("{host}'s relay link to close"), || async {
         match carrier(net, host) {
             None => Ok(()),
@@ -160,10 +160,7 @@ async fn reconnect(net: &Net, host: &str) {
     })
     .await
     .unwrap();
-    admin
-        .resume_profile(wire::ResumeProfileRequest {})
-        .await
-        .expect("the profile resumes");
+    net.sign_in(host, account).await.unwrap();
     until(&format!("{host}'s relay link to come back"), || async {
         carrier(net, host).map(|_| ()).ok_or("no carrier")
     })
@@ -462,7 +459,7 @@ async fn a_pairing_rerun_after_the_daemon_restarts_opens_a_fresh_window() {
     net.restart_daemon("desk").await.unwrap();
     let open = admin(&net, "desk")
         .await
-        .get_pairing_status(wire::GetPairingStatusRequest {})
+        .get_pairing_status(wire::Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -760,23 +757,22 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
     net.shutdown().await.unwrap();
 }
 
-/// The direct addresses `host` keeps for `peer`.
-fn stored_addrs(net: &Net, host: &str, peer: &str) -> Vec<String> {
+/// The direct addresses `host` keeps for `peer`, as its store holds them.
+async fn stored_addrs(net: &Net, host: &str, peer: &str) -> Vec<String> {
     let peer = host_id(net, peer);
-    edge(net, host)
-        .list_peers()
+    let hosts = net
+        .runtime(host)
         .unwrap()
-        .into_iter()
+        .read_store(|store| store.trusted_hosts())
+        .await
+        .unwrap()
+        .unwrap();
+    let direct = &hosts
+        .iter()
         .find(|entry| entry.host_id == peer.as_bytes())
         .expect("a paired host")
-        .reachabilities
-        .into_iter()
-        .filter_map(|reachability| match reachability.kind {
-            Some(wire::peer_reachability::Kind::Direct(direct)) => Some(direct.addrs),
-            _ => None,
-        })
-        .flatten()
-        .collect()
+        .direct;
+    serde_json::from_str(direct).expect("addresses as the daemon writes them")
 }
 
 /// Pairing with a host under an id this host already trusts replaces the
@@ -924,7 +920,7 @@ async fn discovery_advertises_a_listener_and_finds_a_paired_host_at_its_new_addr
     // The dialler stores an address once its link is established, just
     // after routing already names the link.
     until("the phone to store the desk's address", || async {
-        let stored = stored_addrs(&net, "phone", "desk");
+        let stored = stored_addrs(&net, "phone", "desk").await;
         (stored == vec![first.to_string()])
             .then_some(())
             .ok_or_else(|| format!("stored: {stored:?}"))
@@ -955,7 +951,7 @@ async fn discovery_advertises_a_listener_and_finds_a_paired_host_at_its_new_addr
         "the found address was dialled before the stale one timed out"
     );
     until("the phone to store the desk's new address", || async {
-        let stored = stored_addrs(&net, "phone", "desk");
+        let stored = stored_addrs(&net, "phone", "desk").await;
         (stored == vec![second.to_string()])
             .then_some(())
             .ok_or_else(|| format!("stored: {stored:?}"))
@@ -1107,7 +1103,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
             .await
             .unwrap()
             .agents
-            .subscribe_inventory(wire::SubscribeInventoryRequest {})
+            .subscribe_inventory(wire::Empty {})
             .await
             .unwrap()
             .into_inner();
@@ -1267,7 +1263,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         .expect_err("the desk's PIN window is still open");
     admin(&net, "desk")
         .await
-        .cancel_pairing(wire::CancelPairingRequest {})
+        .cancel_pairing(wire::Empty {})
         .await
         .unwrap();
     let qr = start_pairing(&net, "desk", qr_window()).await.unwrap();
@@ -1287,7 +1283,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     assert_eq!(across_qr.message(), across.message());
     admin(&net, "desk")
         .await
-        .cancel_pairing(wire::CancelPairingRequest {})
+        .cancel_pairing(wire::Empty {})
         .await
         .unwrap();
     let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
@@ -1408,7 +1404,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     let tunnel = edge(&net, "laptop").channel(desk).await.unwrap();
     let over_tunnel =
         wire::installation_service_client::InstallationServiceClient::new(tunnel.clone())
-            .list_profiles(wire::ListProfilesRequest {})
+            .list_profiles(wire::Empty {})
             .await
             .expect_err("no profile administration over a peer tunnel");
     assert_eq!(over_tunnel.code(), tonic::Code::Unimplemented);
@@ -1426,7 +1422,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     let on_socket = wire::installation_service_client::InstallationServiceClient::new(
         testnet::local_channel(&socket).await.unwrap(),
     )
-    .list_profiles(wire::ListProfilesRequest {})
+    .list_profiles(wire::Empty {})
     .await
     .expect_err("no installation administration on a profile's socket");
     assert_eq!(on_socket.code(), tonic::Code::Unimplemented);
@@ -1439,7 +1435,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         let mut client = wire::client_stubs(testnet::local_channel(socket).await.unwrap());
         let mut events = client
             .agents
-            .subscribe_inventory(wire::SubscribeInventoryRequest {})
+            .subscribe_inventory(wire::Empty {})
             .await
             .unwrap()
             .into_inner();
@@ -1469,56 +1465,6 @@ fn relay_host(name: &str, account: &str) -> testnet::HostDecl {
         router: Some(testnet::RouterKind::Strict),
         ..testnet::HostDecl::default()
     }
-}
-
-/// An account that lapses from Pro to Free stops being carried at once:
-/// the relay stops forwarding between the account's hosts and tells each
-/// end, so a host the relay alone reaches is away and nothing reaches it
-/// through the relay any more, even over a channel that was opened while
-/// the account was Pro. A host told the peer is away must not still be
-/// able to call it.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_lapsed_account_stops_carrying_calls_the_relay_carried_while_it_was_pro() {
-    let topology = Topology::new()
-        .relay(&["ada"])
-        .host_decl(relay_host("desk", "ada"))
-        .host_decl(relay_host("laptop", "ada"));
-    let mut net = Net::start(topology).await.unwrap();
-    // The desk, which makes every call here, trusts last. Trusting first,
-    // its first stream could reach the laptop before the laptop trusted it
-    // back, be refused, and leave the desk holding that refusal, which its
-    // own later trust clears and the laptop's does not.
-    net.trust("laptop", "desk").await.unwrap();
-    net.trust("desk", "laptop").await.unwrap();
-    let laptop = host_id(&net, "laptop");
-    until_via(&net, "desk", "laptop", LiveRoute::Relay).await;
-    peer_inventory_hosts(&edge(&net, "desk"), laptop)
-        .await
-        .expect("on Pro the relay carries the desk's call to the laptop");
-    println!("Pro: the desk calls the laptop through the relay");
-
-    // The subscription lapses. Both hosts learn it at once and their links
-    // reauthenticate as Free; the desk's client is told the laptop is away.
-    net.set_tier("ada", testnet::TierDecl::Free).await.unwrap();
-    assert_eq!(tier(&net, "desk"), Some(node::Tier::Free));
-    assert_eq!(tier(&net, "laptop"), Some(node::Tier::Free));
-    let mut fleet = net.observe_inventory("desk").await.unwrap();
-    row_until(
-        &mut fleet,
-        laptop,
-        "the laptop away on a free account",
-        |row| row.away(),
-    )
-    .await;
-    println!("Free: the desk's client shows the laptop away");
-
-    let call = peer_inventory_hosts(&edge(&net, "desk"), laptop).await;
-    assert!(
-        call.is_err(),
-        "a lapsed account's relay carries nothing, yet the desk's call reached the laptop: {call:?}"
-    );
-
-    net.shutdown().await.unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1671,7 +1617,7 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
         .await
         .unwrap()
         .agents
-        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .subscribe_inventory(wire::Empty {})
         .await
         .unwrap()
         .into_inner();
@@ -1761,9 +1707,9 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     answers.push((
         "Subscribe with a three-byte agent id",
         peer.sessions
-            .subscribe_session(wire::PeerSubscribeSessionRequest {
+            .subscribe_session(wire::SubscribeSessionRequest {
                 agent_id: short.clone(),
-                from: Some(wire::peer_subscribe_session_request::From::Tail(5)),
+                from: Some(wire::subscribe_session_request::From::Tail(5)),
             })
             .await
             .map(|_| ()),
@@ -1771,9 +1717,9 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     answers.push((
         "Subscribe to an agent the desk never had",
         peer.sessions
-            .subscribe_session(wire::PeerSubscribeSessionRequest {
+            .subscribe_session(wire::SubscribeSessionRequest {
                 agent_id: unknown.clone(),
-                from: Some(wire::peer_subscribe_session_request::From::Tail(5)),
+                from: Some(wire::subscribe_session_request::From::Tail(5)),
             })
             .await
             .map(|_| ()),
@@ -1819,9 +1765,7 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     answers.push((
         "SendMessage with no sender or recipient",
         peer.agents
-            .send_message(wire::PeerSendMessageRequest {
-                envelope: Some(wire::Envelope::default()),
-            })
+            .send_message(wire::Envelope::default())
             .await
             .map(|_| ()),
     ));
@@ -2034,7 +1978,7 @@ async fn bind(
 async fn profile_info(net: &Net, host: &str, profile: &[u8]) -> wire::Profile {
     door(net, host)
         .await
-        .list_profiles(wire::ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -2151,8 +2095,11 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     until("the work profile to need a sign-in", || async {
         let info = profile_info(&net, "desk", &work).await;
         matches!(
-            info.relay_state(),
-            Some(wire::relay_link::State::SignInAgain(_))
+            info.standing(),
+            Some(wire::cloud_standing::Standing::SignedIn(wire::RelayLink {
+                state: Some(wire::relay_link::State::SignInAgain(_)),
+                ..
+            }))
         )
         .then_some(())
         .ok_or_else(|| format!("cloud {:?}", info.cloud))
@@ -2167,55 +2114,13 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     );
     assert_eq!(net.relay().unwrap().links("ada").await, vec![(desk, 1)]);
 
-    // Pausing closes the cloud link only: the laptop's direct link stays.
-    // Resuming, twice over, brings back one link.
-    admin(&net, "desk")
-        .await
-        .pause_profile(wire::PauseProfileRequest {})
-        .await
-        .unwrap();
-    until("Ada's relay link to close", || async {
-        let links = net.relay().unwrap().links("ada").await;
-        links
-            .is_empty()
-            .then_some(())
-            .ok_or_else(|| format!("ada's links: {links:?}"))
-    })
-    .await
-    .unwrap();
-    assert_eq!(edge(&net, "desk").via(laptop).await, LiveRoute::Direct);
-    for _ in 0..2 {
-        admin(&net, "desk")
-            .await
-            .resume_profile(wire::ResumeProfileRequest {})
-            .await
-            .unwrap();
-    }
-    until("Ada's relay link to come back", || async {
-        let links = net.relay().unwrap().links("ada").await;
-        (links == vec![(desk, 1)])
-            .then_some(())
-            .ok_or_else(|| format!("ada's links: {links:?}"))
-    })
-    .await
-    .unwrap();
-    // Two resumes, one link; a window, since no outcome marks the second
-    // link that must not open.
-    holds_for(
-        "Ada's one relay link",
-        Duration::from_millis(500),
-        || async { net.relay().unwrap().links("ada").await == vec![(desk, 1)] },
-    )
-    .await
-    .unwrap();
-
     // Signing out forgets the cloud and keeps everything local: the agent,
     // the identity and the paired laptop. Signing in again finds the same
     // host.
     let key = edge(&net, "desk").public_key().to_vec();
     admin(&net, "desk")
         .await
-        .sign_out(wire::SignOutRequest {})
+        .sign_out(wire::Empty {})
         .await
         .unwrap();
     until("Ada's relay link to close", || async {
@@ -2245,13 +2150,6 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     // restart: a login naming no profile lands on it again.
     net.stop_daemon("desk").await.unwrap();
     net.restart_daemon("desk").await.unwrap();
-    // A watcher from here on sees everything that follows, in order.
-    let mut watch = door(&net, "desk")
-        .await
-        .subscribe_profiles(wire::SubscribeProfilesRequest {})
-        .await
-        .unwrap()
-        .into_inner();
     let again = door(&net, "desk")
         .await
         .bind_profile(wire::BindProfileRequest {
@@ -2376,25 +2274,6 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     );
     assert_eq!(edge(&net, "desk").via(laptop).await, LiveRoute::Direct);
 
-    // The watcher saw all of it, the deletion last.
-    let mut removed = None;
-    let mut upserts = 0;
-    let deadline = tokio::time::Instant::now() + testnet::PATIENCE;
-    while removed.is_none() {
-        let event = tokio::time::timeout_at(deadline, watch.message())
-            .await
-            .expect("the watcher to see the deletion")
-            .unwrap()
-            .unwrap();
-        match event.of {
-            Some(wire::profile_event::Of::Upserted(_)) => upserts += 1,
-            Some(wire::profile_event::Of::RemovedId(id)) => removed = Some(id),
-            _ => {}
-        }
-    }
-    assert_eq!(removed, Some(old));
-    println!("the watcher saw {upserts} changes, then the deletion");
-
     net.shutdown().await.unwrap();
 }
 
@@ -2459,7 +2338,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     .await;
     admin(&net, "desk")
         .await
-        .sign_out(wire::SignOutRequest {})
+        .sign_out(wire::Empty {})
         .await
         .unwrap();
     net.sever_link("desk", "laptop").unwrap();
@@ -2543,7 +2422,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     // opens no pairing window.
     let identity = admin(&net, "desk")
         .await
-        .get_device_identity(wire::GetDeviceIdentityRequest {})
+        .get_device_identity(wire::Empty {})
         .await
         .unwrap()
         .into_inner();
@@ -2963,8 +2842,8 @@ async fn a_host_notices_a_silently_dead_link_at_its_keepalive_and_idle_timeout()
 fn sdk_prompt(text: &str) -> wire::Input {
     wire::Input::new(
         uuid::Uuid::new_v4().as_bytes().to_vec(),
-        wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: text.to_owned(),
                 attachments: Vec::new(),
             })),

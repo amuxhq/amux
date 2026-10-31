@@ -681,63 +681,39 @@ fn picks(
     }
 }
 
-/// The input a pick sends, in the kind's arm; None where the view offers
-/// no such pick. The id is the sender's to fill.
+/// The input a pick sends; None where the view offers no such pick for the
+/// kind. The id is the sender's to fill.
 pub fn setting_input(kind: Kind, change: &SettingChange) -> Option<wire::Input> {
-    use wire::{
-        ClaudePtyInput, ClaudeSdkInput, CodexInput, CyclePermissionMode, KindInput, SetEffort,
-        SetMode, SetModel, SetPermission, claude_pty_input, claude_sdk_input, codex_input,
-    };
-    let model = |model: &String| SetModel {
-        model: Some(model.clone()),
-    };
-    let of = match (kind, change) {
-        (Kind::ClaudePty, SettingChange::CyclePermission) => KindInput::ClaudePty(ClaudePtyInput {
-            of: Some(claude_pty_input::Of::CyclePermissionMode(
-                CyclePermissionMode {},
-            )),
-        }),
-        (Kind::ClaudeSdk, SettingChange::Model(name)) => KindInput::ClaudeSdk(ClaudeSdkInput {
-            of: Some(claude_sdk_input::Of::Model(model(name))),
-        }),
-        (Kind::ClaudeSdk, SettingChange::Effort(effort)) => KindInput::ClaudeSdk(ClaudeSdkInput {
-            of: Some(claude_sdk_input::Of::Effort(SetEffort {
-                effort: Some(effort.clone()),
-            })),
-        }),
-        (Kind::ClaudeSdk, SettingChange::Permission(value)) if !value.is_empty() => {
-            KindInput::ClaudeSdk(ClaudeSdkInput {
-                of: Some(claude_sdk_input::Of::Permission(SetPermission {
-                    value: value.clone(),
-                })),
-            })
+    use wire::agent_input::Of;
+    use wire::{CyclePermissionMode, SetEffort, SetMode, SetModel, SetPermission};
+    let headless = matches!(kind, Kind::ClaudeSdk | Kind::Codex);
+    let of = match change {
+        SettingChange::CyclePermission if kind == Kind::ClaudePty => {
+            Of::CyclePermissionMode(CyclePermissionMode {})
         }
-        (Kind::Codex, SettingChange::Model(name)) => KindInput::Codex(CodexInput {
-            of: Some(codex_input::Of::Model(model(name))),
+        SettingChange::Model(name) if headless => Of::Model(SetModel {
+            model: Some(name.clone()),
         }),
-        (Kind::Codex, SettingChange::Effort(effort)) => KindInput::Codex(CodexInput {
-            of: Some(codex_input::Of::Effort(SetEffort {
-                effort: Some(effort.clone()),
-            })),
+        SettingChange::Effort(effort) if headless => Of::Effort(SetEffort {
+            effort: Some(effort.clone()),
         }),
         // Settings that match no named permission have no value to send.
-        (Kind::Codex, SettingChange::Permission(value)) if !value.is_empty() => {
-            KindInput::Codex(CodexInput {
-                of: Some(codex_input::Of::Permission(SetPermission {
-                    value: value.clone(),
-                })),
+        SettingChange::Permission(value) if headless && !value.is_empty() => {
+            Of::Permission(SetPermission {
+                value: value.clone(),
             })
         }
-        (Kind::Codex, SettingChange::Mode(value)) if !value.is_empty() => {
-            KindInput::Codex(CodexInput {
-                of: Some(codex_input::Of::Mode(SetMode {
-                    value: value.clone(),
-                })),
+        SettingChange::Mode(value) if kind == Kind::Codex && !value.is_empty() => {
+            Of::Mode(SetMode {
+                value: value.clone(),
             })
         }
         _ => return None,
     };
-    Some(wire::Input::new(Vec::new(), of))
+    Some(wire::Input::new(
+        Vec::new(),
+        wire::AgentInput { of: Some(of) },
+    ))
 }
 
 /// Whether a permission that names `models` (none: every model) is taken

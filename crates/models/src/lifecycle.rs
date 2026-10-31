@@ -36,7 +36,6 @@ type Kind = TestKind;
 const START_MS: u64 = 1_000;
 const GRACE_MS: u64 = 60_000;
 const DRAIN_MS: u64 = 30_000;
-const PRODUCER: &str = "0.0.0";
 /// The one-shot child's spawn prompt.
 const SPAWN: &[u8] = b"spawn";
 
@@ -364,7 +363,7 @@ impl AgentLifecycle {
     /// says it is ready.
     fn started(&self, state: &mut State, mut agent: Agent<Kind>, out: Vec<Output>) {
         state.ring = Ring {
-            checkpoint: agent.checkpoint().state,
+            checkpoint: agent.checkpoint(),
             entries: Vec::new(),
         };
         let mut fed = VecDeque::new();
@@ -533,8 +532,7 @@ impl Machine for AgentLifecycle {
             })),
         });
         let mut out = Vec::new();
-        let agent =
-            Agent::<Kind>::start(&self.spec(1, bootstrap), None, PRODUCER, START_MS, &mut out);
+        let agent = Agent::<Kind>::start(&self.spec(1, bootstrap), None, START_MS, &mut out);
         let mut state = State {
             agent: agent.value(),
             ring: Ring::default(),
@@ -598,7 +596,7 @@ impl Machine for AgentLifecycle {
         if *action == Action::Resume {
             let held = state.daemon.held.clone()?;
             let agent = Agent::<Kind>::from_value(&s.agent).expect("the value restores");
-            if interpret::encode_checkpoint(&s.ring.replayed()) != agent.checkpoint().state {
+            if interpret::encode_checkpoint(&s.ring.replayed()) != agent.checkpoint() {
                 state.seen.ring_diverged = true;
             }
             let resumed = Resumed {
@@ -617,8 +615,7 @@ impl Machine for AgentLifecycle {
             state.seen.exited = None;
             state.seen.resumed = true;
             let mut out = Vec::new();
-            let agent =
-                Agent::<Kind>::start(&spec, Some(resumed), PRODUCER, state.now_ms, &mut out);
+            let agent = Agent::<Kind>::start(&spec, Some(resumed), state.now_ms, &mut out);
             self.started(&mut state, agent, out);
             return Some(state);
         }

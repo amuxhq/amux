@@ -30,8 +30,6 @@ final class DoorHost {
     /// The appearance the driver asked for, worn over whatever the app or
     /// the phone would choose; nothing until it asks.
     private(set) var appearance: Appearance?
-    private(set) var design: Design = .app
-    private(set) var designVariant: DesignVariant = .production
     private(set) var typeSize: DynamicTypeSize = .large
     private(set) var reduceMotion = false
     private(set) var reduceTransparency = false
@@ -51,9 +49,6 @@ final class DoorHost {
     @ObservationIgnored private weak var delegate: AppDelegate?
     /// The background time asked for, while the driver hands over a push.
     @ObservationIgnored private var held: UIBackgroundTaskIdentifier = .invalid
-    /// Where the person went, and what they changed about how the app looks,
-    /// as a report's view-state recording carries it.
-    @ObservationIgnored private var events: [TraceEvent] = []
 
     func adopt(_ delegate: AppDelegate) {
         self.delegate = delegate
@@ -66,22 +61,6 @@ final class DoorHost {
     /// one, else the app's own choice. One preference for both, because the
     /// driven root's outranks the app's beneath it.
     var worn: Appearance? { appearance ?? composition?.appearance }
-
-    // MARK: - The report's recording
-
-    func arrived(at place: Place) {
-        guard events.last != .route(place) else { return }
-        events.append(.route(place))
-    }
-
-    func trace(route: String?) -> Result<String, PartAbsent> {
-        let account = composition?.accounts.selectedAccount
-        let now = Date()
-        let lines = events + [.account(account), .frozen(at: now, ordered: now)]
-        do { return .success(try Trace.lines(lines)) } catch {
-            return .failure(PartAbsent("the view-state recording could not be written"))
-        }
-    }
 
     // MARK: - Requests
 
@@ -105,26 +84,12 @@ final class DoorHost {
             return await signIn(user: user, relay: relay, token: token)
         case .awaitReconciled(let seconds):
             return await until(seconds, "the fleet to be read") { self.stores?.applied ?? 0 > 0 }
-        case .awaitOffline(let seconds):
-            return await until(seconds, "a host to go offline") {
-                self.stores?.hosts.hosts.contains { !$0.online } ?? false
-            }
-        case .runtimeLog(let bytes):
-            return .runtimeLog(composition?.runtime.logTail(bytes: bytes) ?? "")
         case .conversation(let agent): return reading(agent)
         case .signposts: return .signposts(Signposts.marks)
         case .condition: return .condition(DeviceCondition.now())
         case .measure(let seconds): return await measure(seconds)
         case .appearance(let appearance):
             await wear(appearance)
-            events.append(.appearance(appearance))
-            return .ack
-        case .designVariant(let name):
-            guard let variant = DesignVariant(name: name) else {
-                return .error("no design variant named \(name ?? "nil")")
-            }
-            designVariant = variant
-            design = variant.design
             return .ack
         case .dynamicType(let name):
             guard let size = DynamicTypeSize(doorName: name) else {
@@ -132,7 +97,6 @@ final class DoorHost {
             }
             typeSize = size
             DoorWindow.wear(size)
-            events.append(.dynamicType(name))
             return .ack
         case .assist(let motion, let transparency):
             reduceMotion = motion
@@ -186,10 +150,6 @@ final class DoorHost {
             else { return .error("nothing is running") }
             stores.hosts.sawLocalNetwork(seen)
             return .ack
-        case .revoke(let host):
-            guard let id = HostId(host) else { return .error("no host named \(host)") }
-            stores?.revoke(id)
-            return .ack
         case .awaitAgent(let agent, let seconds):
             return await until(seconds, "\(agent) in the fleet") {
                 self.stores?.fleet.rows.contains { $0.name == agent || "\($0.id)" == agent }
@@ -199,34 +159,9 @@ final class DoorHost {
         case .open(let screen, let subject): return open(screen, about: subject)
         case .attach(let agent, let kind, let name, let mime, let base64):
             guard let data = Data(base64Encoded: base64) else { return .error("not base64") }
-            return chatting(agent) { model in
-                model.attach(data, name: name, mime: mime, image: kind == "image")
-                return .ack
-            }
-        case .send(let agent, let text):
-            return chatting(agent) { model in
-                model.draft = text
-                guard model.canSend else {
-                    return .sendAttempt(delivered: false, reason: model.frame?.waiting.map { "\($0)" })
-                }
-                model.send()
-                return .sendAttempt(delivered: true, reason: nil)
-            }
-        case .awaitSendable(let agent, let seconds):
             guard let model = chat(agent) else { return .error("no agent named \(agent)") }
-            return await until(seconds, "\(agent) taking a message") {
-                model.frame?.caughtUp == true && model.frame?.composer.mode == .send
-            }
-        case .awaitReply(let agent, let saying, let seconds):
-            guard let model = chat(agent) else { return .error("no agent named \(agent)") }
-            return await until(seconds, "\(agent) saying \(saying)") {
-                model.ids.contains { id in
-                    guard case .prose(let text, _, _)? = model.cell(for: id).row?.kind else {
-                        return false
-                    }
-                    return ChatWords.text(of: text).contains(saying)
-                }
-            }
+            model.attach(data, name: name, mime: mime, image: kind == "image")
+            return .ack
         case .holdBackground: return holdBackground()
         case .awaitBackground(let seconds):
             return await until(seconds, "the app in the background") {
@@ -234,9 +169,6 @@ final class DoorHost {
                     && self.composition?.runtime.active == false
             }
         case .push(let path): return await push(from: path)
-        case .refreshEntitlement, .late, .restoreSession, .bridge, .setModel, .states,
-             .report, .move, .requestChanges, .watch, .sendDraft:
-            return .error("this build's door does not \(Self.verb(request))")
         }
     }
 
@@ -389,11 +321,6 @@ final class DoorHost {
         return try? stores.chat(row.id)
     }
 
-    private func chatting(_ agent: String, _ body: (ChatModel) -> DoorReply) -> DoorReply {
-        guard let model = chat(agent) else { return .error("no agent named \(agent)") }
-        return body(model)
-    }
-
     /// The chat the page on screen shows, if it shows one.
     private var shownChat: (agent: AgentKey, model: ChatModel)? {
         guard let stores, case .conversation(let agent)? = composition?.router.top,
@@ -491,7 +418,6 @@ final class DoorHost {
         case .signIn(.returning(let account)): "signIn hint \(account.email)"
         case .handOver(let id): "handOver \(id)"
         case .forgetSession(let id): "forgetSession \(id)"
-        case .account(let id): "account \(id)"
         case .entitlement(let id): "entitlement \(id)"
         case .recordPurchase(let id): "recordPurchase \(id)"
         case .requestDeletion(let id, let email): "requestDeletion \(id) as \(email)"
@@ -506,12 +432,6 @@ final class DoorHost {
         case .finish(let transaction): "finish \(transaction)"
         case .unfinished: "unfinished"
         }
-    }
-
-    private static func verb(_ request: DoorRequest) -> String {
-        let data = (try? JSONEncoder().encode(request)) ?? Data()
-        let fields = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        return (fields?["kind"] as? String) ?? "that"
     }
 
     private static func permission(_ named: String) -> LocalNetworkPermission? {
@@ -925,8 +845,8 @@ enum Launch {
     }
 }
 
-/// The root a debug build draws: the app, under the appearance, type size and
-/// design the door was asked for, reporting every element it declares.
+/// The root a debug build draws: the app, under the appearance and type size
+/// the door was asked for, reporting every element it declares.
 struct DrivenRoot<Content: View>: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @State private var host = DoorHost.shared
@@ -939,8 +859,6 @@ struct DrivenRoot<Content: View>: View {
     var body: some View {
         content
             .preferredColorScheme(host.worn?.colorScheme)
-            .environment(\.design, host.design)
-            .modifier(DesignVariantLayout(variant: host.designVariant))
             .dynamicTypeSize(host.typeSize)
             .transformEnvironment(\.reducesMotion) { $0 = $0 || host.reduceMotion }
             .transformEnvironment(\.reducesTransparency) { $0 = $0 || host.reduceTransparency }
@@ -1003,14 +921,6 @@ final class DoorCloud: CloudService, @unchecked Sendable {
         }
         await script.lend(from: lender)
         await served?.lend(from: lender)
-    }
-
-    func account(_ id: AccountId) async throws(CloudError) -> AccountFacts {
-        var facts = try await script.account(id)
-        if lock.withLock({ served }) != nil {
-            facts.entitlement = try await entitlement(id)
-        }
-        return facts
     }
 
     func entitlement(_ id: AccountId) async throws(CloudError) -> Entitlement {

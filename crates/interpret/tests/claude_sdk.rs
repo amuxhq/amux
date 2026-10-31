@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use interpret::claude_sdk::{CORRELATION, ClaudeSdk, Correlation, State, client_uuid};
+use interpret::claude_sdk::{ClaudeSdk, State, client_uuid};
 use interpret::{Channel, Effect, Event, Fact, Interpreter, run_golden};
 use serde_json::{Value, json};
 
@@ -46,30 +46,18 @@ goldens! {
     recorded_cleared => "recorded_cleared",
     recorded_compacted => "recorded_compacted",
     recorded_configured_turn => "recorded_configured_turn",
-    recorded_connected_mcp_servers => "recorded_connected_mcp_servers",
     recorded_controls => "recorded_controls",
-    recorded_effortful_turn => "recorded_effortful_turn",
+    recorded_effort => "recorded_effort",
     recorded_elicitation_accepted => "recorded_elicitation_accepted",
-    recorded_every_hook_event => "recorded_every_hook_event",
-    recorded_forked => "recorded_forked",
-    recorded_hook_lifecycle => "recorded_hook_lifecycle",
-    recorded_in_process_mcp => "recorded_in_process_mcp",
     recorded_interrupted => "recorded_interrupted",
-    recorded_introspection => "recorded_introspection",
-    recorded_max_budget => "recorded_max_budget",
-    recorded_max_turns => "recorded_max_turns",
     recorded_multi_turn => "recorded_multi_turn",
     recorded_permission_callback => "recorded_permission_callback",
     recorded_plan_reviewed => "recorded_plan_reviewed",
     recorded_question_asked => "recorded_question_asked",
     recorded_resumed => "recorded_resumed",
-    recorded_resumed_at => "recorded_resumed_at",
-    recorded_session_maintenance => "recorded_session_maintenance",
-    recorded_streamed_turn => "recorded_streamed_turn",
     recorded_subagent_task => "recorded_subagent_task",
     recorded_text_turn => "recorded_text_turn",
     recorded_background_shell => "recorded_background_shell",
-    recorded_client_id => "recorded_client_id",
     recorded_elicitation_declined => "recorded_elicitation_declined",
     recorded_elicitation_link_accepted => "recorded_elicitation_link_accepted",
     recorded_failed_tool_server => "recorded_failed_tool_server",
@@ -77,12 +65,10 @@ goldens! {
     recorded_image => "recorded_image",
     recorded_question_dismissed => "recorded_question_dismissed",
     recorded_question_every_shape => "recorded_question_every_shape",
-    recorded_side_channel => "recorded_side_channel",
     recorded_sign_in_problem => "recorded_sign_in_problem",
     recorded_task_list => "recorded_task_list",
     recorded_elicitation_cancelled => "recorded_elicitation_cancelled",
     recorded_steer_folded => "recorded_steer_folded",
-    recorded_steer_preempted => "recorded_steer_preempted",
     recorded_live_plan => "recorded_live_plan",
     recorded_live_questions => "recorded_live_questions",
     recorded_live_usage => "recorded_live_usage",
@@ -119,7 +105,7 @@ fn started() -> State {
         incarnation: 1,
         ..Default::default()
     };
-    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let (mut state, _) = ClaudeSdk::initial(&spec);
     ClaudeSdk::step(
         &mut state,
         stream(json!({"type": "system", "subtype": "init", "uuid": "i", "session_id": "s"})),
@@ -320,8 +306,7 @@ fn a_stop_after_a_message_handed_to_an_idle_claude_interrupts_its_turn() {
 /// lifecycle frames, and found messages written during a turn folding into
 /// it: reflections are matched by that id, not by arrival order.
 #[test]
-fn probe_decided_sdk_correlation() {
-    assert_eq!(CORRELATION, Correlation::ClientId);
+fn reflections_are_matched_by_the_messages_uuid_not_arrival_order() {
     let mut state = started();
     let mut uuids = Vec::new();
     for (envelope, text) in [(b"env-1", "first"), (b"env-2", "second")] {
@@ -362,8 +347,8 @@ fn probe_decided_sdk_correlation() {
     // item is keyed by it, the key Claude's own record uses.
     let prompt = Event::Input(wire::Input::new(
         b"prompt-1".to_vec(),
-        wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: "go".into(),
                 ..Default::default()
             })),
@@ -410,7 +395,7 @@ fn the_initialize_answer_lists_models_with_efforts_and_commands_with_sources() {
     let first = &snapshot.models[0];
     assert_eq!(first.value, "default");
     assert_eq!(first.display_name, "Default (recommended)");
-    assert!(first.description.starts_with("Opus 5.5"));
+    assert!(first.description.starts_with("Fable 5.1"));
     assert_eq!(first.efforts, ["low", "medium", "high", "xhigh", "max"]);
     let haiku = snapshot
         .models
@@ -495,10 +480,10 @@ fn attached_chart() -> (String, wire::Attachment) {
     (attachments::element(&attachment, Some(&path)), attachment)
 }
 
-fn sdk_input(id: &[u8], of: wire::claude_sdk_input::Of) -> Event {
+fn sdk_input(id: &[u8], of: wire::agent_input::Of) -> Event {
     Event::Input(wire::Input::new(
         id.to_vec(),
-        wire::ClaudeSdkInput { of: Some(of) },
+        wire::AgentInput { of: Some(of) },
     ))
 }
 
@@ -513,8 +498,8 @@ fn an_interrupt_before_claude_starts_leaves_the_queued_prompt_to_run() {
         incarnation: 1,
         ..Default::default()
     };
-    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let (mut state, _) = ClaudeSdk::initial(&spec);
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "Run the test suite and report.".into(),
         ..Default::default()
     });
@@ -529,7 +514,7 @@ fn an_interrupt_before_claude_starts_leaves_the_queued_prompt_to_run() {
     assert_eq!(snapshot.phase(), wire::Phase::Starting);
     assert_eq!(snapshot.queue.len(), 1);
 
-    let interrupt = wire::claude_sdk_input::Of::Interrupt(wire::Interrupt {});
+    let interrupt = wire::agent_input::Of::Interrupt(wire::Interrupt {});
     let stopped = ClaudeSdk::step(&mut state, sdk_input(b"stop", interrupt));
     assert!(
         stopped.effects.iter().any(|effect| matches!(
@@ -573,7 +558,7 @@ fn the_job_list_empties_when_headless_claude_exits() {
     use prost::Message as _;
     let jobs = |step: &wire::Step| {
         step.snapshot.as_ref().map(|snapshot| {
-            let body = wire::ClaudeSdkSnapshot::decode(&snapshot.body[..]).unwrap();
+            let body = wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap();
             let background = body.background_jobs.unwrap_or_default();
             (background.known, background.jobs.len())
         })
@@ -593,7 +578,7 @@ fn the_job_list_empties_when_headless_claude_exits() {
         incarnation: spec.incarnation + 1,
         ..spec
     };
-    let (_, step) = ClaudeSdk::reincarnate(listed, &next, "test");
+    let (_, step) = ClaudeSdk::reincarnate(listed, &next);
     assert_eq!(
         (jobs(&exited.step), jobs(&step)),
         (Some((true, 0)), Some((true, 0))),
@@ -614,7 +599,7 @@ fn only_a_blocked_path_beyond_the_agents_folder_is_outside_the_allowed_directori
         cwd: "/net/desk/work".to_owned(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let (mut state, _) = ClaudeSdk::initial(&spec);
     ClaudeSdk::step(
         &mut state,
         stream(json!({"type": "system", "subtype": "init", "uuid": "i", "session_id": "s"})),
@@ -630,7 +615,7 @@ fn only_a_blocked_path_beyond_the_agents_folder_is_outside_the_allowed_directori
             ),
         );
         let snapshot = stepped.step.snapshot.expect("the ask changes the snapshot");
-        let body = wire::ClaudeSdkSnapshot::decode(&snapshot.body[..]).unwrap();
+        let body = wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap();
         let ask = body
             .asks
             .iter()
@@ -748,7 +733,7 @@ fn permissions_launched_with(args: &[&str]) -> Vec<(String, Vec<String>, bool)> 
         provider_args: args.iter().map(|arg| (*arg).to_owned()).collect(),
         ..Default::default()
     };
-    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let (mut state, _) = ClaudeSdk::initial(&spec);
     let mut answer = initialized(&["compact"]);
     answer["response"]["response"]["models"] = json!([
         {"value": "opus", "displayName": "Opus", "description": "", "supportsAutoMode": true},
@@ -801,7 +786,7 @@ fn a_permission_claude_does_not_offer_is_refused() {
         &mut state,
         sdk_input(
             b"p1",
-            wire::claude_sdk_input::Of::Permission(wire::SetPermission {
+            wire::agent_input::Of::Permission(wire::SetPermission {
                 value: "bypassPermissions".into(),
             }),
         ),
@@ -818,7 +803,7 @@ fn a_permission_claude_does_not_offer_is_refused() {
         &mut state,
         sdk_input(
             b"p2",
-            wire::claude_sdk_input::Of::Permission(wire::SetPermission {
+            wire::agent_input::Of::Permission(wire::SetPermission {
                 value: "acceptEdits".into(),
             }),
         ),
@@ -846,7 +831,7 @@ fn a_permission_claude_does_not_offer_is_refused() {
 #[test]
 fn compacting_status_is_an_item() {
     use prost::Message as _;
-    use wire::claude_sdk_item::Kind;
+    use wire::claude_item::Kind;
 
     let replayed =
         interpret::replay::<ClaudeSdk>(&fixtures().join("recorded_compacted.json")).unwrap();
@@ -854,27 +839,31 @@ fn compacting_status_is_an_item() {
         .iter()
         .flat_map(|frame| &frame.step.items)
         .filter_map(|item| {
-            let kind = wire::ClaudeSdkItem::decode(item.body.as_slice())
-                .ok()?
-                .kind?;
-            matches!(kind, Kind::Status(_) | Kind::Compaction(_)).then(|| (item.key.clone(), kind))
+            let kind = wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind?;
+            // Claude's other statuses ("requesting") are items too.
+            let kept = match &kind {
+                Kind::Status(status) => status.status == wire::SdkStatus::Compacting as i32,
+                Kind::Compaction(_) => true,
+                _ => false,
+            };
+            kept.then(|| (item.key.clone(), kind))
         })
         .collect();
     assert_eq!(
         kinds,
         [
             (
-                "335a34cf-0794-4ca4-8a83-3fa3e1d49ae7".to_owned(),
+                "0f824bf4-6639-415d-bacc-1515a418fa59".to_owned(),
                 Kind::Status(wire::Status {
                     status: wire::SdkStatus::Compacting as i32,
                     word: "compacting".into(),
                 }),
             ),
             (
-                "be835eab-7b1e-4c04-927b-1f6e8dcdb955".to_owned(),
+                "343f2fc0-3b5d-49e9-af38-8578cd8d5255".to_owned(),
                 Kind::Compaction(wire::Compaction {
-                    tokens_before: Some(25_097),
-                    tokens_after: Some(4_034),
+                    tokens_before: Some(21_378),
+                    tokens_after: Some(4_266),
                     automatic: false,
                 }),
             ),
@@ -953,7 +942,7 @@ fn a_parents_message_that_resumes_its_child_reaches_claude_labelled() {
         }),
         ..Default::default()
     };
-    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let (mut state, _) = ClaudeSdk::initial(&spec);
     let stepped = ClaudeSdk::step(
         &mut state,
         stream(json!({"type": "system", "subtype": "init", "uuid": "i", "session_id": "s"})),
@@ -995,11 +984,9 @@ fn a_model_set_from_settings_is_not_a_slash_command_with_no_name() {
     let items = ClaudeSdk::step(&mut state, replay).step.items;
     let nameless: Vec<_> = items
         .iter()
-        .filter_map(|item| wire::ClaudeSdkItem::decode(item.body.as_slice()).ok())
+        .filter_map(|item| wire::ClaudeItem::decode(item.body.as_slice()).ok())
         .filter_map(|body| match body.kind {
-            Some(wire::claude_sdk_item::Kind::Slash(slash)) if slash.command.is_empty() => {
-                Some(slash)
-            }
+            Some(wire::claude_item::Kind::Slash(slash)) if slash.command.is_empty() => Some(slash),
             _ => None,
         })
         .collect();
@@ -1013,7 +1000,7 @@ fn a_model_set_from_settings_is_not_a_slash_command_with_no_name() {
 fn listed_jobs(stepped: &interpret::Stepped) -> Option<Vec<String>> {
     use prost::Message as _;
     stepped.step.snapshot.as_ref().map(|snapshot| {
-        wire::ClaudeSdkSnapshot::decode(&snapshot.body[..])
+        wire::ClaudeSnapshot::decode(&snapshot.body[..])
             .unwrap()
             .background_jobs
             .unwrap_or_default()
@@ -1113,11 +1100,11 @@ fn a_built_in_commands_synthetic_answer_is_its_output_not_a_reply() {
     let replies: Vec<String> = items
         .iter()
         .filter_map(|item| {
-            wire::ClaudeSdkItem::decode(item.body.as_slice())
+            wire::ClaudeItem::decode(item.body.as_slice())
                 .ok()
                 .map(|body| (item, body))
         })
-        .filter(|(_, body)| matches!(body.kind, Some(wire::claude_sdk_item::Kind::Message(_))))
+        .filter(|(_, body)| matches!(body.kind, Some(wire::claude_item::Kind::Message(_))))
         .map(|(item, _)| item.text.clone())
         .collect();
     assert!(
@@ -1159,7 +1146,7 @@ fn the_attach_tools_answer_is_an_attachment_not_its_element() {
         .iter()
         .filter_map(|item| {
             use prost::Message as _;
-            wire::ClaudeSdkItem::decode(item.body.as_slice())
+            wire::ClaudeItem::decode(item.body.as_slice())
                 .ok()
                 .map(|body| format!("{body:?}"))
         })
@@ -1223,8 +1210,8 @@ fn a_commands_time_starts_after_the_approval_it_waited_for() {
         .rev()
         .filter(|item| item.key == "t1")
         .find_map(
-            |item| match wire::ClaudeSdkItem::decode(item.body.as_slice()).ok()?.kind {
-                Some(wire::claude_sdk_item::Kind::Tool(tool)) => Some(tool),
+            |item| match wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind {
+                Some(wire::claude_item::Kind::Tool(tool)) => Some(tool),
                 _ => None,
             },
         )
@@ -1261,18 +1248,16 @@ fn auto_mode_names_each_model_by_alias_and_by_the_model_it_resolves_to() {
     assert_eq!(auto.models, ["haiku", "claude-haiku-5-5"]);
 }
 
-/// The session and kind of every boundary a step writes.
-fn boundaries(stepped: &interpret::Stepped) -> Vec<(String, wire::BoundaryKind, String)> {
+/// The kind of every boundary a step writes.
+fn boundaries(stepped: &interpret::Stepped) -> Vec<wire::BoundaryKind> {
     use prost::Message as _;
     stepped
         .step
         .items
         .iter()
         .filter_map(
-            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
-                wire::claude_sdk_item::Kind::Boundary(boundary) => {
-                    Some((item.key.clone(), boundary.kind(), boundary.provider_session))
-                }
+            |item| match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_item::Kind::Boundary(boundary) => Some(boundary.kind()),
                 _ => None,
             },
         )
@@ -1282,16 +1267,16 @@ fn boundaries(stepped: &interpret::Stepped) -> Vec<(String, wire::BoundaryKind, 
 fn snapshot_session(stepped: &interpret::Stepped) -> Option<String> {
     use prost::Message as _;
     stepped.step.snapshot.as_ref().and_then(|snapshot| {
-        wire::ClaudeSdkSnapshot::decode(&snapshot.body[..])
+        wire::ClaudeSnapshot::decode(&snapshot.body[..])
             .unwrap()
             .provider_session
     })
 }
 
 /// Claude's reset frame names an id it made up before it made the new
-/// session; the next init names the real one. That one is adopted, drawn
-/// on the cleared boundary and saved for the next incarnation, with no
-/// fork, whatever started the reset.
+/// session; the next init names the real one. That one is adopted behind
+/// a cleared boundary and saved for the next incarnation, with no fork,
+/// whatever started the reset.
 #[test]
 fn a_reset_adopts_and_saves_the_next_inits_session() {
     for trigger in ["clear", "plan_mode_exit", "fresh_session", "onboarding"] {
@@ -1312,28 +1297,20 @@ fn a_reset_adopts_and_saves_the_next_inits_session() {
         );
         for stepped in [&reset, &init] {
             assert!(
-                boundaries(stepped)
-                    .iter()
-                    .all(|(_, _, session)| session != "made-up")
-                    && snapshot_session(stepped).as_deref() != Some("made-up"),
+                snapshot_session(stepped).as_deref() != Some("made-up"),
                 "{trigger}: the made-up id is never used"
             );
             assert!(
-                boundaries(stepped)
-                    .iter()
-                    .all(|(_, kind, _)| *kind != wire::BoundaryKind::Forked),
+                !boundaries(stepped).contains(&wire::BoundaryKind::Forked),
                 "{trigger}: no fork"
             );
         }
-        let cleared: Vec<_> = boundaries(&reset)
-            .into_iter()
-            .chain(boundaries(&init))
-            .filter(|(_, kind, _)| *kind == wire::BoundaryKind::Cleared)
-            .collect();
-        assert_eq!(
-            cleared.last().map(|(_, _, session)| session.as_str()),
-            Some("s2"),
-            "{trigger}: the cleared boundary names the new session"
+        assert!(
+            boundaries(&reset)
+                .into_iter()
+                .chain(boundaries(&init))
+                .any(|kind| kind == wire::BoundaryKind::Cleared),
+            "{trigger}: a cleared boundary"
         );
         assert_eq!(snapshot_session(&init).as_deref(), Some("s2"), "{trigger}");
         assert!(
@@ -1377,12 +1354,12 @@ fn subagent_assistant(uuid: &str, content: Value) -> Event {
     }))
 }
 
-fn sdk_snapshot(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudeSdkSnapshot)> {
+fn sdk_snapshot(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudeSnapshot)> {
     use prost::Message as _;
     stepped.step.snapshot.as_ref().map(|snapshot| {
         (
             snapshot.phase(),
-            wire::ClaudeSdkSnapshot::decode(&snapshot.body[..]).unwrap(),
+            wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap(),
         )
     })
 }
@@ -1394,11 +1371,11 @@ fn item_kinds(stepped: &interpret::Stepped) -> Vec<(String, String, String)> {
         .items
         .iter()
         .map(|item| {
-            let kind = wire::ClaudeSdkItem::decode(&item.body[..])
+            let kind = wire::ClaudeItem::decode(&item.body[..])
                 .ok()
                 .and_then(|body| body.kind);
             let parent = match &kind {
-                Some(wire::claude_sdk_item::Kind::Tool(tool)) => tool.parent_key.clone(),
+                Some(wire::claude_item::Kind::Tool(tool)) => tool.parent_key.clone(),
                 _ => String::new(),
             };
             let name = kind
@@ -1479,7 +1456,7 @@ fn a_subagents_frames_leave_the_main_thread_alone() {
 #[test]
 fn a_subagents_interruption_does_not_mark_the_turn() {
     let mut state = idle_on_root();
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "go".into(),
         ..Default::default()
     });
@@ -1504,8 +1481,8 @@ fn a_subagents_interruption_does_not_mark_the_turn() {
         .items
         .iter()
         .filter_map(
-            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
-                wire::claude_sdk_item::Kind::Turn(turn) => Some(turn.outcome()),
+            |item| match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_item::Kind::Turn(turn) => Some(turn.outcome()),
                 _ => None,
             },
         )
@@ -1559,7 +1536,7 @@ fn a_prompt_goes_in_while_a_background_subagent_works() {
             json!([{"type": "tool_use", "id": "toolu_child", "name": "Bash", "input": {"command": "ls"}}]),
         ),
     );
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "meanwhile".into(),
         ..Default::default()
     });
@@ -1580,8 +1557,8 @@ fn tool_states(stepped: &interpret::Stepped) -> Vec<(String, wire::ToolState)> {
         .items
         .iter()
         .filter_map(
-            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
-                wire::claude_sdk_item::Kind::Tool(tool) => Some((item.key.clone(), tool.state())),
+            |item| match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_item::Kind::Tool(tool) => Some((item.key.clone(), tool.state())),
                 _ => None,
             },
         )
@@ -1594,7 +1571,7 @@ fn tool_states(stepped: &interpret::Stepped) -> Vec<(String, wire::ToolState)> {
 #[test]
 fn a_background_subagents_calls_and_asks_outlive_the_turn() {
     let mut state = idle_on_root();
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "count in the background".into(),
         ..Default::default()
     });
@@ -1699,8 +1676,8 @@ fn turn_outcomes(stepped: &interpret::Stepped) -> Vec<wire::TurnOutcome> {
         .items
         .iter()
         .filter_map(
-            |item| match wire::ClaudeSdkItem::decode(&item.body[..]).ok()?.kind? {
-                wire::claude_sdk_item::Kind::Turn(turn) => Some(turn.outcome()),
+            |item| match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_item::Kind::Turn(turn) => Some(turn.outcome()),
                 _ => None,
             },
         )
@@ -1724,7 +1701,7 @@ fn a_result_that_answers_none_of_amuxs_messages_leaves_the_persons_turn() {
         ),
     ] {
         let mut state = idle_on_root();
-        let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
             text: "go".into(),
             ..Default::default()
         });
@@ -1759,7 +1736,7 @@ fn a_result_that_answers_none_of_amuxs_messages_leaves_the_persons_turn() {
 #[test]
 fn a_task_notifications_result_naming_amuxs_message_ends_the_turn() {
     let mut state = idle_on_root();
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "go".into(),
         ..Default::default()
     });
@@ -1780,7 +1757,7 @@ fn a_task_notifications_result_naming_amuxs_message_ends_the_turn() {
 #[test]
 fn a_flagged_ask_offers_no_scope_and_says_it_defaults_to_no() {
     let mut state = idle_on_root();
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "clean".into(),
         ..Default::default()
     });
@@ -1830,7 +1807,7 @@ fn claudes_text_reaches_the_wire_without_terminal_codes() {
         format!("\u{1b}[31m{text}\u{1b}[0m\u{1b}]8;;https://x\u{7}link\u{1b}]8;;\u{7}\u{9b}1m")
     };
     let mut state = idle_on_root();
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "/cost".into(),
         ..Default::default()
     });
@@ -1901,14 +1878,14 @@ fn a_plan_approval_switches_to_never_ask_where_claude_offers_it() {
         provider_args: vec!["--allow-dangerously-skip-permissions".into()],
         ..Default::default()
     };
-    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let (mut state, _) = ClaudeSdk::initial(&spec);
     ClaudeSdk::step(
         &mut state,
         stream(
             json!({"type": "system", "subtype": "init", "uuid": "i", "session_id": "s", "model": "claude-root"}),
         ),
     );
-    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+    let prompt = wire::agent_input::Of::Prompt(wire::PromptInput {
         text: "plan it".into(),
         ..Default::default()
     });
@@ -1998,7 +1975,7 @@ fn a_stopped_job_reads_stopping_until_claude_says_it_ended() {
             ],
         })),
     );
-    let stop = |key: &str| wire::claude_sdk_input::Of::StopJob(wire::StopJob { key: key.into() });
+    let stop = |key: &str| wire::agent_input::Of::StopJob(wire::StopJob { key: key.into() });
     let stop_requests = |stepped: &interpret::Stepped| -> Vec<Value> {
         stepped
             .effects
@@ -2081,10 +2058,8 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
     use prost::Message as _;
     let failed = |step: &wire::Step| {
         let snapshot = step.snapshot.as_ref().expect("a snapshot");
-        let body = wire::ClaudeSdkSnapshot::decode(&snapshot.body[..]).unwrap();
+        let body = wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap();
         body.servers
-            .unwrap_or_default()
-            .servers
             .iter()
             .any(|server| server.status == wire::ToolServerStatus::Failed as i32)
     };
@@ -2093,7 +2068,7 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
         incarnation: 1,
         ..Default::default()
     };
-    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let (mut state, _) = ClaudeSdk::initial(&spec);
     let withheld = ClaudeSdk::step(
         &mut state,
         Event::Fact(interpret::Fact {
@@ -2106,6 +2081,6 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
         incarnation: 2,
         ..spec
     };
-    let (_, step) = ClaudeSdk::reincarnate(state, &next, "test");
+    let (_, step) = ClaudeSdk::reincarnate(state, &next);
     assert!(!failed(&step), "the next incarnation does not");
 }

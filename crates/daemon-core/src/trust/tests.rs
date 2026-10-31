@@ -10,10 +10,6 @@ use crate::{Input, StartOptions, StepBudget};
 const PEER: Uuid = Uuid::from_u128(2);
 const OTHER: Uuid = Uuid::from_u128(3);
 
-fn at(seconds: i64) -> DateTime<Utc> {
-    DateTime::<Utc>::from_timestamp(seconds, 0).unwrap()
-}
-
 fn addr(text: &str) -> SocketAddr {
     SocketAddr::from_str(text).unwrap()
 }
@@ -24,21 +20,21 @@ fn trust_store_pairing_upsert_inserts_and_deduplicates_reachability() {
     let target = "workstation".to_string();
     let ssh = Reachability::Ssh(target.clone());
 
-    let upsert = |store: &mut TrustStore, name: &str, reachability: Reachability, when| {
+    let upsert = |store: &mut TrustStore, name: &str, reachability: Reachability| {
         store
-            .upsert_paired_peer(PEER, vec![9; 32], name.to_string(), reachability, at(when))
+            .upsert_paired_peer(PEER, vec![9; 32], name.to_string(), reachability)
             .unwrap()
     };
     assert_eq!(
-        upsert(&mut store, "first", Reachability::Cloud, 200),
+        upsert(&mut store, "first", Reachability::Cloud),
         PairingUpdate::Inserted
     );
     assert_eq!(
-        upsert(&mut store, "renamed", Reachability::Cloud, 300),
+        upsert(&mut store, "renamed", Reachability::Cloud),
         PairingUpdate::Updated
     );
     assert_eq!(
-        upsert(&mut store, "renamed", ssh.clone(), 400),
+        upsert(&mut store, "renamed", ssh.clone()),
         PairingUpdate::Updated
     );
 
@@ -53,23 +49,11 @@ fn trust_store_pairing_upsert_inserts_and_deduplicates_reachability() {
 fn trust_store_pairing_rejects_duplicate_pubkey_for_different_host() {
     let mut store = TrustStore::default();
     store
-        .upsert_paired_peer(
-            PEER,
-            vec![9; 32],
-            "first".into(),
-            Reachability::Cloud,
-            at(200),
-        )
+        .upsert_paired_peer(PEER, vec![9; 32], "first".into(), Reachability::Cloud)
         .unwrap();
 
     assert_eq!(
-        store.upsert_paired_peer(
-            OTHER,
-            vec![9; 32],
-            "second".into(),
-            Reachability::Cloud,
-            at(300)
-        ),
+        store.upsert_paired_peer(OTHER, vec![9; 32], "second".into(), Reachability::Cloud),
         Err(TrustError::DuplicatePubkey(PEER))
     );
     assert!(store.entry(OTHER).is_none());
@@ -79,13 +63,7 @@ fn trust_store_pairing_rejects_duplicate_pubkey_for_different_host() {
 fn trust_store_pairing_upsert_requires_teardown_before_pubkey_replacement() {
     let mut store = TrustStore::default();
     store
-        .upsert_paired_peer(
-            PEER,
-            vec![7; 32],
-            "old".into(),
-            Reachability::Cloud,
-            at(200),
-        )
+        .upsert_paired_peer(PEER, vec![7; 32], "old".into(), Reachability::Cloud)
         .unwrap();
     let direct = Reachability::Direct {
         addrs: vec![addr("127.0.0.1:9000")],
@@ -93,7 +71,7 @@ fn trust_store_pairing_upsert_requires_teardown_before_pubkey_replacement() {
 
     assert_eq!(
         store
-            .upsert_paired_peer(PEER, vec![8; 32], "new".into(), direct.clone(), at(300))
+            .upsert_paired_peer(PEER, vec![8; 32], "new".into(), direct.clone())
             .unwrap(),
         PairingUpdate::PubkeyReplacementRequired
     );
@@ -107,13 +85,7 @@ fn trust_store_pairing_upsert_requires_teardown_before_pubkey_replacement() {
 
     assert_eq!(
         store
-            .replace_paired_peer_after_teardown(
-                PEER,
-                vec![8; 32],
-                "new".into(),
-                direct.clone(),
-                at(300)
-            )
+            .replace_paired_peer_after_teardown(PEER, vec![8; 32], "new".into(), direct.clone())
             .unwrap(),
         PairingUpdate::ReplacedPubkey
     );
@@ -131,7 +103,6 @@ fn a_full_entry() -> TrustEntry {
     TrustEntry {
         pubkey: vec![9; 32],
         name: "peer".to_string(),
-        paired_at: at(200),
         on_account: true,
         direct: vec![addr("192.0.2.7:7001"), addr("[::1]:4000")],
         ssh: Some("workstation".to_string()),
@@ -169,13 +140,7 @@ fn a_row_with_a_bad_key_is_left_out_and_the_rest_read() {
 fn trust_store_remembers_a_peers_signed_in_fact_and_platform() {
     let mut store = TrustStore::default();
     store
-        .upsert_paired_peer(
-            PEER,
-            vec![9; 32],
-            "peer".into(),
-            Reachability::Cloud,
-            at(200),
-        )
+        .upsert_paired_peer(PEER, vec![9; 32], "peer".into(), Reachability::Cloud)
         .unwrap();
 
     assert!(store.remember_signed_in(PEER, Some(false)));
@@ -490,7 +455,7 @@ fn a_replacement_under_way_survives_a_checkpoint() {
     );
     let checkpoint = daemon.checkpoint();
     let store = Sqlite::restore(&daemon.store().dump().unwrap()).unwrap();
-    let restored = Daemon::restore(checkpoint.clone(), store).expect("it restores");
+    let restored = Daemon::restore(&checkpoint, store, Default::default()).expect("it restores");
     assert_eq!(restored.checkpoint(), checkpoint);
     assert_eq!(restored.trust, daemon.trust);
     assert!(restored.trust().pubkey_for_host(PEER).is_none());

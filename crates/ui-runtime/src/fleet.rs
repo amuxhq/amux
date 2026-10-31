@@ -24,6 +24,7 @@ use wire::{
 };
 
 use crate::Backoff;
+use crate::drafts::Drafts;
 use crate::session::{Catalogues, Session};
 use crate::trace::{DriverEvent, DriverTrace, Ring, Structure as _, TraceEvent};
 
@@ -110,6 +111,8 @@ struct Inner {
     foreground: AtomicBool,
     /// Shared by every session, so a catalogue is fetched once per hash.
     catalogues: Arc<Catalogues>,
+    /// Each agent's draft saves, kept here so they outlive its chat.
+    drafts: Drafts,
     me: Weak<Inner>,
 }
 
@@ -217,6 +220,7 @@ impl Inner {
                     _ => {
                         if sessions.get(&key).is_some_and(|slot| slot.viewers == 0) {
                             sessions.remove(&key);
+                            self.drafts.session_gone(&key);
                         }
                     }
                 }
@@ -283,6 +287,13 @@ impl Inner {
             if let Some(fleet) = fleet.upgrade() {
                 fleet.model().changed.insert(woken.clone());
                 fleet.changed.send_replace(());
+            }
+        }));
+        let fleet = self.me.clone();
+        let holding = key.clone();
+        session.on_held(Box::new(move |held| {
+            if let Some(fleet) = fleet.upgrade() {
+                fleet.drafts.held(fleet.client.clone(), &holding, held);
             }
         }));
         // A chat opened out of the foreground (a notification bringing it
@@ -393,6 +404,7 @@ impl Fleet {
             sessions: Mutex::new(HashMap::new()),
             foreground: AtomicBool::new(true),
             catalogues: Arc::default(),
+            drafts: Drafts::default(),
             me: me.clone(),
         });
         let mut stream = inner.client.subscribe_inventory().await?;
@@ -508,6 +520,34 @@ impl Fleet {
         Ok(session)
     }
 
+    /// Keeps the composer's draft for an agent with this machine's daemon,
+    /// so it outlives the chat and the client; an empty one is kept too, so
+    /// the chat reopens empty. Saves to one agent go in order, and one
+    /// overtaken before it is sent is never sent. The words of each prompt
+    /// the agent's session holds for an unreachable host are kept ahead of
+    /// the composer's, from the moment it is held until it goes or is taken
+    /// back: a held prompt lives only as long as the client, and one killed
+    /// before the host is back finds the words in the draft.
+    pub fn keep_draft(&self, agent: &AgentKey, draft: wire::Draft) {
+        self.inner
+            .drafts
+            .keep(self.inner.client.clone(), agent, draft);
+    }
+
+    /// The draft this machine's daemon keeps for an agent, read after every
+    /// save to it asked for before; None when there is none, it is empty or
+    /// it cannot be read. While the agent's session holds prompts kept in
+    /// it, the composer's own words alone.
+    pub async fn kept_draft(&self, agent: &AgentKey) -> Option<wire::Draft> {
+        self.inner.drafts.kept(&*self.inner.client, agent).await
+    }
+
+    /// Resolves once every draft save asked for before has been handed to
+    /// the daemon: what a client waits on as it quits.
+    pub async fn drafts_kept(&self) {
+        self.inner.drafts.flushed(&*self.inner.client).await;
+    }
+
     /// A chat on the agent closed: the last one to close narrows its
     /// session to the fleet's few rows, or drops it if the agent is not
     /// live.
@@ -527,6 +567,7 @@ impl Fleet {
             }
             if !live {
                 sessions.remove(agent);
+                self.inner.drafts.session_gone(agent);
                 return;
             }
             slot.session.get().cloned()

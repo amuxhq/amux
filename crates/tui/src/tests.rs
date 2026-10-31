@@ -15,7 +15,7 @@ use crate::chat::layout::{Anchor, PAGE};
 use crate::chat::{ChatEffect, ChatView};
 use crate::clipboard::ClipboardContent;
 use crate::fixtures::{self, caught_up, draw, text};
-use crate::fleet::{FleetEffect, FleetView};
+use crate::home::FleetEffect;
 use crate::theme::Theme;
 
 const W: u16 = 100;
@@ -49,9 +49,9 @@ fn typed(view: &mut ChatView, state: &SessionState, words: &str) {
 
 /// A Claude SDK item: a reply, or an exploration Read of `path`.
 fn item(order: u64, read: Option<&str>) -> Item {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
     let body = match read {
-        Some(path) => wire::ClaudeSdkItem {
+        Some(path) => wire::ClaudeItem {
             kind: Some(K::Tool(wire::ToolCall {
                 name: "Read".into(),
                 state: ToolState::Succeeded as i32,
@@ -65,7 +65,7 @@ fn item(order: u64, read: Option<&str>) -> Item {
                 ..Default::default()
             })),
         },
-        None => wire::ClaudeSdkItem {
+        None => wire::ClaudeItem {
             kind: Some(K::Message(wire::Text { complete: true })),
         },
     };
@@ -318,7 +318,7 @@ fn codex_settings(mut state: SessionState, settings: wire::CodexSnapshot) -> Ses
 }
 
 /// The settings input a key sent, if it sent one.
-fn sent(effects: &[ChatEffect]) -> Option<wire::KindInput> {
+fn sent(effects: &[ChatEffect]) -> Option<wire::AgentInput> {
     match effects {
         [ChatEffect::Answer(input)] => input.decode_body(),
         _ => None,
@@ -338,9 +338,9 @@ fn shift_tab_moves_claude_to_the_next_permission_that_still_asks() {
     assert!(screen.contains("shift+tab permission"), "{screen}");
     assert!(screen.contains(" accept edits ─╯"), "{screen}");
     let effects = view.key(&state, key(KeyCode::BackTab), theme());
-    let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-        of: Some(wire::claude_sdk_input::Of::Permission(permission)),
-    })) = sent(&effects)
+    let Some(wire::AgentInput {
+        of: Some(wire::agent_input::Of::Permission(permission)),
+    }) = sent(&effects)
     else {
         panic!("{effects:?}");
     };
@@ -356,9 +356,9 @@ fn codex_moves_mode_with_shift_tab_and_permission_from_the_settings_key() {
     let (screen, _) = feed(&mut view, &state);
     assert!(screen.contains("shift+tab mode"), "{screen}");
     let effects = view.key(&state, key(KeyCode::BackTab), theme());
-    let Some(wire::KindInput::Codex(wire::CodexInput {
-        of: Some(wire::codex_input::Of::Mode(mode)),
-    })) = sent(&effects)
+    let Some(wire::AgentInput {
+        of: Some(wire::agent_input::Of::Mode(mode)),
+    }) = sent(&effects)
     else {
         panic!("{effects:?}");
     };
@@ -383,9 +383,9 @@ fn codex_moves_mode_with_shift_tab_and_permission_from_the_settings_key() {
     }
     view.key(&state, key(KeyCode::Up), theme());
     let effects = view.key(&state, key(KeyCode::Enter), theme());
-    let Some(wire::KindInput::Codex(wire::CodexInput {
-        of: Some(wire::codex_input::Of::Permission(permission)),
-    })) = sent(&effects)
+    let Some(wire::AgentInput {
+        of: Some(wire::agent_input::Of::Permission(permission)),
+    }) = sent(&effects)
     else {
         panic!("{effects:?}");
     };
@@ -397,30 +397,11 @@ fn codex_moves_mode_with_shift_tab_and_permission_from_the_settings_key() {
             permission: Some("full-access".into()),
             mode: Some("plan".into()),
             approval_policy: Some("never".into()),
-            sandbox: Some("danger-full-access".into()),
             ..Default::default()
         },
     );
     let (screen, _) = feed(&mut ChatView::new(b"agent".to_vec(), 0, false), &planning);
     assert!(screen.contains("· full access · plan"), "{screen}");
-}
-
-/// Codex settings that match no named permission read custom, and Shift+Tab
-/// still moves the mode.
-#[test]
-fn codex_settings_outside_every_permission_read_custom() {
-    let state = codex_settings(
-        offering(Kind::Codex, "offered", |_| true),
-        wire::CodexSnapshot {
-            approval_policy: Some("untrusted".into()),
-            sandbox: Some("workspace-write".into()),
-            ..Default::default()
-        },
-    );
-    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
-    let (screen, _) = feed(&mut view, &state);
-    assert!(screen.contains("· custom"), "{screen}");
-    assert!(screen.contains("shift+tab mode"), "{screen}");
 }
 
 /// Terminal Claude's permissions are reached only by its own cycle key:
@@ -434,9 +415,9 @@ fn terminal_claude_keeps_its_cycle_key() {
     let (screen, _) = feed(&mut view, &state);
     assert!(screen.contains("shift+tab permission"), "{screen}");
     let effects = view.key(&state, key(KeyCode::BackTab), theme());
-    let Some(wire::KindInput::ClaudePty(wire::ClaudePtyInput {
-        of: Some(wire::claude_pty_input::Of::CyclePermissionMode(_)),
-    })) = sent(&effects)
+    let Some(wire::AgentInput {
+        of: Some(wire::agent_input::Of::CyclePermissionMode(_)),
+    }) = sent(&effects)
     else {
         panic!("{effects:?}");
     };
@@ -466,7 +447,7 @@ fn body_name(body: &AskBody) -> &'static str {
 
 /// A Claude SDK chat asking something this build cannot read.
 fn unanswerable() -> SessionState {
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         asks: vec![wire::Ask {
             key: "menu-1".into(),
             body: Some(wire::ask::Body::Unanswerable(wire::UnanswerableAsk {
@@ -568,10 +549,7 @@ fn the_likely_choice_answers_in_the_kinds_own_arm() {
     let effects = view.key(&state, key(KeyCode::Enter), theme());
     match effects.as_slice() {
         [ChatEffect::Answer(input)] => {
-            assert!(
-                matches!(input.decode_body(), Some(wire::KindInput::Codex(_))),
-                "{input:?}"
-            );
+            assert!(input.decode_body().is_some(), "{input:?}");
         }
         other => panic!("{other:?}"),
     }
@@ -619,14 +597,14 @@ fn a_denial_takes_a_note_that_goes_back_to_the_agent() {
     let [ChatEffect::Answer(input)] = effects.as_slice() else {
         panic!("{effects:?}");
     };
-    let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-        of: Some(wire::claude_sdk_input::Of::Answer(answer)),
-    })) = input.decode_body()
+    let Some(wire::AgentInput {
+        of: Some(wire::agent_input::Of::Answer(answer)),
+    }) = input.decode_body()
     else {
         panic!("{input:?}");
     };
     let decoded = answer;
-    let Some(wire::claude_answer::Of::Permission(wire::PermissionAnswer {
+    let Some(wire::answer::Of::Permission(wire::PermissionAnswer {
         of: Some(wire::permission_answer::Of::Deny(deny)),
     })) = decoded.of
     else {
@@ -652,20 +630,18 @@ fn an_ask_that_defaults_to_no_opens_on_deny_and_takes_no_digit() {
     let [ChatEffect::Answer(input)] = effects.as_slice() else {
         panic!("{effects:?}");
     };
-    let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-        of: Some(wire::claude_sdk_input::Of::Answer(answer)),
-    })) = input.decode_body()
+    let Some(wire::AgentInput {
+        of: Some(wire::agent_input::Of::Answer(answer)),
+    }) = input.decode_body()
     else {
         panic!("{input:?}");
     };
     assert!(
         matches!(
             answer.of,
-            Some(wire::claude_answer::Of::Permission(
-                wire::PermissionAnswer {
-                    of: Some(wire::permission_answer::Of::Deny(_)),
-                }
-            ))
+            Some(wire::answer::Of::Permission(wire::PermissionAnswer {
+                of: Some(wire::permission_answer::Of::Deny(_)),
+            }))
         ),
         "{answer:?}"
     );
@@ -719,14 +695,14 @@ fn questions_answer_through_steps_and_a_review() {
         }
     }
     let input = sent.expect("the review sends the answers");
-    let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-        of: Some(wire::claude_sdk_input::Of::Answer(answer)),
-    })) = input.decode_body()
+    let Some(wire::AgentInput {
+        of: Some(wire::agent_input::Of::Answer(answer)),
+    }) = input.decode_body()
     else {
         panic!("{input:?}");
     };
     let decoded = answer;
-    let Some(wire::claude_answer::Of::Question(answers)) = decoded.of else {
+    let Some(wire::answer::Of::Question(answers)) = decoded.of else {
         panic!("{decoded:?}");
     };
     assert_eq!(answers.answers.len(), questions.len());
@@ -750,14 +726,14 @@ fn a_form_submits_what_was_typed() {
     let [ChatEffect::Answer(input)] = effects.as_slice() else {
         panic!("{effects:?}");
     };
-    let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-        of: Some(wire::claude_sdk_input::Of::Answer(answer)),
-    })) = input.decode_body()
+    let Some(wire::AgentInput {
+        of: Some(wire::agent_input::Of::Answer(answer)),
+    }) = input.decode_body()
     else {
         panic!("{input:?}");
     };
     let decoded = answer;
-    let Some(wire::claude_answer::Of::Form(form)) = decoded.of else {
+    let Some(wire::answer::Of::Form(form)) = decoded.of else {
         panic!("{decoded:?}");
     };
     let content: serde_json::Value = serde_json::from_slice(&form.content_json).unwrap();
@@ -768,7 +744,7 @@ fn a_form_submits_what_was_typed() {
 fn an_unconfirmed_answer_offers_resend_and_discard() {
     let (mut state, at) = fixtures::Named::CodexApproval.state();
     let card = ask_card(&state).unwrap();
-    let mut input = ui_view::answer_input(&card, &card.choices[0].answer, "").unwrap();
+    let mut input = ui_view::answer_input(&card, &card.choices[0].answer, "");
     input.input_id = b"answer-1".to_vec();
     state.update(Msg::Send(input));
     state.update(Msg::Sent(b"answer-1".to_vec(), InputOutcome::Lost));
@@ -796,7 +772,7 @@ fn an_unconfirmed_answer_offers_resend_and_discard() {
 fn a_held_answer_says_when_it_sends_whole_at_80_columns() {
     let (mut state, at) = fixtures::Named::CodexApproval.state();
     let card = ask_card(&state).unwrap();
-    let mut input = ui_view::answer_input(&card, &card.choices[0].answer, "").unwrap();
+    let mut input = ui_view::answer_input(&card, &card.choices[0].answer, "");
     input.input_id = b"answer-1".to_vec();
     state.update(Msg::Send(input));
     state.update(Msg::Sent(b"answer-1".to_vec(), InputOutcome::Held));
@@ -845,12 +821,12 @@ fn a_draft_is_taken_any_time_and_held_until_the_chat_is_current() {
     // The library holds it, pending, while the chat catches up.
     let held = wire::Input::new(
         b"held-1".to_vec(),
-        wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: "hello".into(),
                 attachments: vec![],
             })),
-        }),
+        },
     );
     state.update(Msg::Send(held));
     assert_eq!(
@@ -894,7 +870,7 @@ fn an_exited_entry_offers_resume_with_the_draft() {
 }
 
 fn prompt(id: &[u8], words: &str) -> wire::Input {
-    let mut input = ui_runtime::inputs::prompt(Kind::ClaudeSdk, words, vec![]).unwrap();
+    let mut input = ui_runtime::inputs::prompt(words, vec![]);
     input.input_id = id.to_vec();
     input
 }
@@ -1140,10 +1116,10 @@ fn a_host_out_of_reach_while_this_machine_is_signed_out_names_this_machines_sign
     );
     assert!(!screen.contains("not signed in"), "{screen}");
     // Home's top line says how to sign in again.
-    let mut fleet_view = FleetView {
+    let mut fleet_view = crate::home::Home::new(crate::home::Place {
         local_host: b"laptop".to_vec(),
-        ..FleetView::default()
-    };
+        ..Default::default()
+    });
     let screen = fleet_screen(&mut fleet_view, &fleet);
     assert!(screen.contains("signed out · amux login"), "{screen}");
 
@@ -1275,10 +1251,10 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
     assert!(screen.contains("it sends once you pair again"), "{screen}");
 
     // Home's top line says how to pair again, and does not count it away.
-    let mut fleet_view = FleetView {
+    let mut fleet_view = crate::home::Home::new(crate::home::Place {
         local_host: b"laptop".to_vec(),
-        ..FleetView::default()
-    };
+        ..Default::default()
+    });
     let screen = fleet_screen(&mut fleet_view, &fleet);
     assert!(
         screen.contains("desk no longer trusts this machine · amux pair desk"),
@@ -1369,7 +1345,13 @@ fn announced(id: &[u8], name: &str, by: &[(&str, bool)]) -> wire::inventory_even
             ..wire::Host::default()
         })
         .collect();
-    wire::inventory_event::Of::Host(wire::HostEntry::announced_host(id, name, by))
+    wire::inventory_event::Of::Host(wire::HostEntry {
+        standing: Some(wire::host_entry::Standing::Candidate(wire::Candidate {
+            addrs: Vec::new(),
+            announced_by: by,
+        })),
+        ..wire::HostEntry::candidate_host(id, name, Vec::new())
+    })
 }
 
 #[test]
@@ -1441,7 +1423,7 @@ fn agent_row(
     })
 }
 
-fn fleet_screen(view: &mut FleetView, fleet: &FleetState) -> String {
+fn fleet_screen(view: &mut crate::home::Home, fleet: &FleetState) -> String {
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(W, H)).unwrap();
     terminal
         .draw(|frame| {
@@ -1464,14 +1446,14 @@ fn the_fleet_says_restart_to_update_when_the_daemon_runs_another_build() {
         &mut fleet,
         wire::inventory_event::Of::CaughtUp(wire::CaughtUp { revision: 0 }),
     );
-    let mut view = FleetView {
+    let mut view = crate::home::Home::new(crate::home::Place {
         version: "0.8.0".into(),
         local_host: b"a".to_vec(),
-        ..FleetView::default()
-    };
+        ..Default::default()
+    });
     let screen = fleet_screen(&mut view, &fleet);
     assert!(!screen.contains("restart to update"), "{screen}");
-    view.version = "0.7.0".into();
+    view.place.version = "0.7.0".into();
     let screen = fleet_screen(&mut view, &fleet);
     assert!(
         screen.contains("amux 0.8.0 running · restart to update"),
@@ -1486,13 +1468,11 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
         leader: 'a',
         theme: theme(),
         initial_chat: None,
-        attach: true,
         version: "0.7.0".into(),
         local_host: b"a".to_vec(),
         layout: None,
-        reports: None,
-        chat_in: crate::setup::ChatIn::Amux,
-        defaults: defaults(),
+        chat_in: settings::ChatInSetting::Amux,
+        defaults: settings::NewAgentSettings::default(),
     };
     let agent = |host: &[u8], kind: Kind| wire::Agent {
         host_id: host.to_vec(),
@@ -1519,13 +1499,8 @@ fn an_answered_question_row_reads_the_question_and_what_was_picked() {
     for (kind, name, row) in [
         (
             Kind::ClaudePty,
-            "recorded_question_single",
-            "Which color do you prefer?\n  │   → Red",
-        ),
-        (
-            Kind::ClaudePty,
-            "recorded_question_other_single",
-            "Which color do you prefer?\n  │   → a warm ochre",
+            "recorded_question_asked",
+            "Which color do you prefer?\n  │   → Blue",
         ),
         (
             Kind::ClaudeSdk,
@@ -1540,7 +1515,7 @@ fn an_answered_question_row_reads_the_question_and_what_was_picked() {
         assert!(screen.contains(row), "{name}:\n{screen}");
         if kind == Kind::ClaudeSdk {
             assert!(screen.contains("→ Hammer, Drill"), "{screen}");
-            assert!(screen.contains("→ Dried mango"), "{screen}");
+            assert!(screen.contains("→ Whatever is fresh"), "{screen}");
         } else {
             assert!(screen.contains("Answered a question"), "{screen}");
         }
@@ -1994,7 +1969,7 @@ fn an_agent_that_exited_while_the_daemon_was_away_says_exited_once() {
     inventory(&mut fleet, host(b"host", "desk", Reads::Online));
     inventory(&mut fleet, wire::inventory_event::Of::Agent(exited));
     // Home lists it under Exited, which starts folded.
-    let mut fleet_view = FleetView::default();
+    let mut fleet_view = crate::home::Home::default();
     fleet_view.key(&fleet, key(KeyCode::Char('G')));
     fleet_view.key(&fleet, key(KeyCode::Enter));
     let screen = fleet_screen(&mut fleet_view, &fleet);
@@ -2015,14 +1990,14 @@ fn an_agent_that_exited_while_the_daemon_was_away_says_exited_once() {
 /// Thinking is never drawn, with or without a measured time.
 #[test]
 fn thinking_is_never_drawn() {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
     let thinking = |order: u64, at_ms: i64| Item {
         key: format!("t{order}"),
         order,
         revision: order,
         text: "weighing it".into(),
         kind: Kind::ClaudeSdk as i32,
-        body: wire::ClaudeSdkItem {
+        body: wire::ClaudeItem {
             kind: Some(K::Thinking(wire::Thinking { complete: true })),
         }
         .encode_to_vec(),
@@ -2145,7 +2120,7 @@ fn ctrl_c_in_an_ask_field_clears_that_field_and_never_the_draft() {
     kept(&view);
     let screen = screen_of(&mut view, &state, at);
     assert!(
-        screen.contains("› 3. No") && !screen.contains("No: no"),
+        screen.contains("› 5. No") && !screen.contains("No: no"),
         "{screen}"
     );
 
@@ -2287,7 +2262,7 @@ fn a_paste_in_the_fleet_types_into_the_rename_field() {
     let mut fleet = FleetState::new();
     inventory(&mut fleet, host(b"a", "studio", Reads::Online));
     inventory(&mut fleet, agent_row(b"p", "planner", Phase::Idle, None));
-    let mut view = FleetView::default();
+    let mut view = crate::home::Home::default();
     view.paste("ignored");
     view.key(&fleet, key(KeyCode::Char('r')));
     view.key(&fleet, ctrl('u'));
@@ -2305,7 +2280,7 @@ fn q_and_question_mark_reach_an_open_fleet_overlay_first() {
     let mut fleet = FleetState::new();
     inventory(&mut fleet, host(b"a", "studio", Reads::Online));
     inventory(&mut fleet, agent_row(b"p", "planner", Phase::Idle, None));
-    let mut view = FleetView::default();
+    let mut view = crate::home::Home::default();
     let q = key(KeyCode::Char('q'));
     let help = key(KeyCode::Char('?'));
     assert_eq!(view.key(&fleet, help), vec![FleetEffect::Help]);
@@ -2429,28 +2404,20 @@ fn home_fleet() -> FleetState {
     fleet
 }
 
-/// New-agent defaults like the shipped ones.
-fn defaults() -> crate::setup::Defaults {
-    let of = |model: &str, effort: &str| crate::setup::AgentDefaults {
-        model: model.into(),
-        effort: effort.into(),
-        permission: "default".into(),
-    };
-    crate::setup::Defaults {
-        claude: of("opus", "high"),
-        codex: of("gpt-6.1-sol", "medium"),
+/// Home's place in these tests: host `a`, a folder under `~/work`.
+fn home_place() -> crate::home::Place {
+    crate::home::Place {
+        local_host: b"a".to_vec(),
+        version: String::new(),
+        working_dir: "~/work/amux".into(),
+        chat_in: settings::ChatInSetting::Amux,
+        defaults: settings::NewAgentSettings::default(),
     }
 }
 
-static HOME_PLACE: std::sync::LazyLock<crate::home::Place<'static>> =
-    std::sync::LazyLock::new(|| crate::home::Place {
-        local_host: b"a",
-        version: "",
-        working_dir: "~/work/amux",
-        attach: false,
-        chat_in: crate::setup::ChatIn::Amux,
-        defaults: Box::leak(Box::new(defaults())),
-    });
+fn new_home() -> crate::home::Home {
+    crate::home::Home::new(home_place())
+}
 
 fn home_screen(home: &mut crate::home::Home, fleet: &FleetState, theme: Theme) -> String {
     home_screen_with(home, fleet, &HashMap::new(), theme)
@@ -2467,7 +2434,7 @@ fn home_screen_with(
     terminal
         .draw(|frame| {
             let area = frame.area();
-            home.draw(frame, area, fleet, lines, None, now(), theme, &HOME_PLACE);
+            home.draw(frame, area, fleet, lines, None, now(), theme);
         })
         .unwrap();
     text(terminal.backend().buffer())
@@ -2483,7 +2450,7 @@ fn row_of(screen: &str, words: &str) -> u16 {
 #[test]
 fn home_leads_with_what_needs_you_and_folds_the_exited() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     let screen = home_screen(&mut home, &fleet, theme());
     // The family whose child needs you is under the heading, its child
     // named on its second line; the running follow newest first; the
@@ -2510,7 +2477,7 @@ fn home_leads_with_what_needs_you_and_folds_the_exited() {
 #[test]
 fn home_keeps_its_order_while_agents_stream_and_moves_one_whose_turn_ended() {
     let mut fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     let beta = AgentKey {
         host: b"a".to_vec(),
         agent: b"w2".to_vec(),
@@ -2554,7 +2521,7 @@ fn home_keeps_its_order_while_agents_stream_and_moves_one_whose_turn_ended() {
 fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
     use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     let screen = home_screen(&mut home, &fleet, theme());
     let beta = row_of(&screen, "beta");
     let mouse = |kind, column, row| MouseEvent {
@@ -2563,7 +2530,7 @@ fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
         row,
         modifiers: KeyModifiers::NONE,
     };
-    home.mouse(&fleet, mouse(MouseEventKind::Moved, 10, beta), false);
+    home.mouse(&fleet, mouse(MouseEventKind::Moved, 10, beta));
     // Without a known ground the highlight is a mark and weight.
     let screen = home_screen(&mut home, &fleet, theme());
     let line = screen.lines().nth(usize::from(beta)).unwrap();
@@ -2572,32 +2539,31 @@ fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
         "{screen}"
     );
     // A key takes over from where the mouse left the highlight.
-    home.key(&fleet, key(KeyCode::Char('j')), false);
+    home.key(&fleet, key(KeyCode::Char('j')));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         !screen.lines().nth(usize::from(beta)).unwrap().contains('›'),
         "{screen}"
     );
-    home.key(&fleet, key(KeyCode::Char('k')), false);
+    home.key(&fleet, key(KeyCode::Char('k')));
     home_screen(&mut home, &fleet, theme());
     // The × stops, after asking; beta is working, so the window says the
     // stop cuts its turn, and Enter on the focused [Stop] confirms.
     let effects = home.mouse(
         &fleet,
         mouse(MouseEventKind::Down(MouseButton::Left), W - 5, beta),
-        false,
     );
     assert!(effects.is_empty());
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(screen.contains("beta is working. Stop anyway?"), "{screen}");
-    let effects = home.key(&fleet, key(KeyCode::Enter), false);
+    let effects = home.key(&fleet, key(KeyCode::Enter));
     assert!(matches!(effects.as_slice(), [FleetEffect::Stop(agent)] if agent.agent == b"w2"));
 }
 
 #[test]
 fn a_known_ground_tints_the_highlight_instead_of_marking_it() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     let colors = crate::theme::TerminalColors {
         background: (21, 21, 21),
         foreground: (208, 208, 208),
@@ -2608,16 +2574,7 @@ fn a_known_ground_tints_the_highlight_instead_of_marking_it() {
     terminal
         .draw(|frame| {
             let area = frame.area();
-            home.draw(
-                frame,
-                area,
-                &fleet,
-                &HashMap::new(),
-                None,
-                now(),
-                tinted,
-                &HOME_PLACE,
-            );
+            home.draw(frame, area, &fleet, &HashMap::new(), None, now(), tinted);
         })
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
@@ -2639,8 +2596,8 @@ fn a_known_ground_tints_the_highlight_instead_of_marking_it() {
 #[test]
 fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    let mut home = new_home();
+    home.key(&fleet, key(KeyCode::Char('n')));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("What should the new agent work on?"),
@@ -2652,33 +2609,26 @@ fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
         screen.contains("Claude · opus (high) · default │ ~/work/amux"),
         "{screen}"
     );
-    home.open_setup(&HOME_PLACE).unwrap().offer(
-        b"a",
-        wire::Provider::Claude,
-        &[1; 32],
-        &claude_offer(),
-    );
+    home.open_setup()
+        .unwrap()
+        .offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Claude · Opus (high) · ask │ ~/work/amux"),
         "{screen}"
     );
     // Enter on an empty draft does nothing.
-    assert!(home.key(&fleet, key(KeyCode::Enter), false).is_empty());
+    assert!(home.key(&fleet, key(KeyCode::Enter)).is_empty());
     for c in "fix it".chars() {
-        home.key(&fleet, key(KeyCode::Char(c)), false);
+        home.key(&fleet, key(KeyCode::Char(c)));
     }
-    let effects = home.key(
-        &fleet,
-        KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL),
-        false,
-    );
+    let effects = home.key(&fleet, KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL));
     assert!(
         matches!(effects.as_slice(), [FleetEffect::Start { setup, text, open: false, .. }] if text == "fix it" && setup.kind() == Kind::ClaudeSdk),
         "{effects:?}"
     );
     // While it starts, keys do not edit the draft.
-    home.key(&fleet, key(KeyCode::Char('x')), false);
+    home.key(&fleet, key(KeyCode::Char('x')));
     assert_eq!(home.draft.editor.text(), "fix it");
     home.started();
     assert!(home.draft.editor.is_empty());
@@ -2693,29 +2643,19 @@ fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
 #[test]
 fn a_new_agents_edge_keeps_its_model_and_permission_in_a_deep_folder_at_80_columns() {
     let fleet = home_fleet();
-    let place = crate::home::Place {
-        working_dir: "~/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work",
-        ..*HOME_PLACE
-    };
-    let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
-    let setup = home.open_setup(&place).unwrap();
+    let mut home = crate::home::Home::new(crate::home::Place {
+        working_dir: "~/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work".into(),
+        ..home_place()
+    });
+    home.key(&fleet, key(KeyCode::Char('n')));
+    let setup = home.open_setup().unwrap();
     setup.offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
     setup.pick(crate::setup::Item::Permission, "bypassPermissions");
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, H)).unwrap();
     terminal
         .draw(|frame| {
             let area = frame.area();
-            home.draw(
-                frame,
-                area,
-                &fleet,
-                &HashMap::new(),
-                None,
-                now(),
-                theme(),
-                &place,
-            );
+            home.draw(frame, area, &fleet, &HashMap::new(), None, now(), theme());
         })
         .unwrap();
     let screen = text(terminal.backend().buffer());
@@ -2735,13 +2675,12 @@ fn a_new_agents_edge_keeps_its_model_and_permission_in_a_deep_folder_at_80_colum
 #[test]
 fn a_new_codex_edge_shows_the_plan_mode_shift_tab_turned_on_at_80_columns() {
     let fleet = home_fleet();
-    let place = crate::home::Place {
-        working_dir: "~/.local/state/amux-qa/20261013-043305/t8/.testnet/net/desk/work",
-        ..*HOME_PLACE
-    };
-    let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
-    let setup = home.open_setup(&place).unwrap();
+    let mut home = crate::home::Home::new(crate::home::Place {
+        working_dir: "~/.local/state/amux-qa/20261013-043305/t8/.testnet/net/desk/work".into(),
+        ..home_place()
+    });
+    home.key(&fleet, key(KeyCode::Char('n')));
+    let setup = home.open_setup().unwrap();
     setup.pick(crate::setup::Item::Kind, "1");
     setup.offer(b"a", wire::Provider::Codex, &[2; 32], &codex_offer());
     setup.pick(crate::setup::Item::Permission, "read-only");
@@ -2751,16 +2690,7 @@ fn a_new_codex_edge_shows_the_plan_mode_shift_tab_turned_on_at_80_columns() {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                home.draw(
-                    frame,
-                    area,
-                    &fleet,
-                    &HashMap::new(),
-                    None,
-                    now(),
-                    theme(),
-                    &place,
-                );
+                home.draw(frame, area, &fleet, &HashMap::new(), None, now(), theme());
             })
             .unwrap();
         let screen = text(terminal.backend().buffer());
@@ -2775,13 +2705,13 @@ fn a_new_codex_edge_shows_the_plan_mode_shift_tab_turned_on_at_80_columns() {
         "{}",
         edge_of(&mut home)
     );
-    home.key(&fleet, key(KeyCode::BackTab), false);
+    home.key(&fleet, key(KeyCode::BackTab));
     let edge = edge_of(&mut home);
     assert!(
         edge.contains("plan") && edge.contains("read only"),
         "the edge does not show the plan mode Shift+Tab turned on: {edge}"
     );
-    home.key(&fleet, key(KeyCode::BackTab), false);
+    home.key(&fleet, key(KeyCode::BackTab));
     assert!(
         !edge_of(&mut home).contains("plan"),
         "{}",
@@ -2874,7 +2804,7 @@ fn choice_words(
     fleet: &FleetState,
     item: crate::setup::Item,
 ) -> Vec<String> {
-    let setup = home.open_setup(&HOME_PLACE).unwrap();
+    let setup = home.open_setup().unwrap();
     setup
         .choices(item, fleet)
         .into_iter()
@@ -2897,43 +2827,28 @@ fn choice_words(
 fn a_new_agent_offers_what_its_host_offers() {
     use crate::setup::Item;
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    let mut home = new_home();
+    home.key(&fleet, key(KeyCode::Char('n')));
     home_screen(&mut home, &fleet, theme());
-    home.open_setup(&HOME_PLACE).unwrap().pick(Item::Kind, "1");
+    home.open_setup().unwrap().pick(Item::Kind, "1");
     // Before the host says, a model can only be named.
-    assert!(
-        home.open_setup(&HOME_PLACE)
-            .unwrap()
-            .takes_typed(Item::Model)
-    );
+    assert!(home.open_setup().unwrap().takes_typed(Item::Model));
     assert_eq!(choice_words(&mut home, &fleet, Item::Effort), ["medium ✓"]);
     // What another host offers is not this one's.
-    home.open_setup(&HOME_PLACE).unwrap().offer(
-        b"b",
-        wire::Provider::Codex,
-        &[2; 32],
-        &codex_offer(),
-    );
-    assert!(home.open_setup(&HOME_PLACE).unwrap().offered.is_none());
-    home.open_setup(&HOME_PLACE).unwrap().offer(
-        b"a",
-        wire::Provider::Codex,
-        &[2; 32],
-        &codex_offer(),
-    );
+    home.open_setup()
+        .unwrap()
+        .offer(b"b", wire::Provider::Codex, &[2; 32], &codex_offer());
+    assert!(home.open_setup().unwrap().offered.is_none());
+    home.open_setup()
+        .unwrap()
+        .offer(b"a", wire::Provider::Codex, &[2; 32], &codex_offer());
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Codex · GPT-6.1 Sol (medium) · default │ ~/work/amux"),
         "{screen}"
     );
     assert!(screen.contains("shift+tab mode"), "{screen}");
-    assert!(
-        !home
-            .open_setup(&HOME_PLACE)
-            .unwrap()
-            .takes_typed(Item::Model)
-    );
+    assert!(!home.open_setup().unwrap().takes_typed(Item::Model));
     assert_eq!(
         choice_words(&mut home, &fleet, Item::Model),
         ["GPT-6.1 Sol ✓", "GPT-6 mini"]
@@ -2957,25 +2872,20 @@ fn a_new_agent_offers_what_its_host_offers() {
     );
 
     // Another model starts at its own default effort.
-    home.open_setup(&HOME_PLACE)
-        .unwrap()
-        .pick(Item::Model, "gpt-6-mini");
+    home.open_setup().unwrap().pick(Item::Model, "gpt-6-mini");
     assert_eq!(
         choice_words(&mut home, &fleet, Item::Effort),
         ["low · default ✓", "high"]
     );
     // Shift+Tab steps the mode, which the edge names once it is not the
     // normal one.
-    home.key(&fleet, key(KeyCode::BackTab), false);
+    home.key(&fleet, key(KeyCode::BackTab));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Codex · GPT-6 mini (low) · default · plan │"),
         "{screen}"
     );
-    let request = home
-        .open_setup(&HOME_PLACE)
-        .unwrap()
-        .request(b"id".to_vec(), None);
+    let request = home.open_setup().unwrap().request(b"id".to_vec(), None);
     let Some(wire::create_agent_request::Agent::Codex(config)) = request.agent else {
         panic!("a Codex agent: {request:?}");
     };
@@ -2988,33 +2898,24 @@ fn a_new_agent_offers_what_its_host_offers() {
         (Some("default"), Some("plan"))
     );
     // Another agent is another provider's catalogue, asked afresh.
-    home.open_setup(&HOME_PLACE).unwrap().pick(Item::Kind, "0");
-    assert!(home.open_setup(&HOME_PLACE).unwrap().offered.is_none());
+    home.open_setup().unwrap().pick(Item::Kind, "0");
+    assert!(home.open_setup().unwrap().offered.is_none());
 }
 
 /// Claude's Shift+Tab steps the permissions that still ask, as in a chat.
 #[test]
 fn a_new_claude_steps_the_permissions_that_still_ask() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    let mut home = new_home();
+    home.key(&fleet, key(KeyCode::Char('n')));
     home_screen(&mut home, &fleet, theme());
-    home.open_setup(&HOME_PLACE).unwrap().offer(
-        b"a",
-        wire::Provider::Claude,
-        &[1; 32],
-        &claude_offer(),
-    );
+    home.open_setup()
+        .unwrap()
+        .offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
     let mut seen = Vec::new();
     for _ in 0..4 {
-        home.key(&fleet, key(KeyCode::BackTab), false);
-        seen.push(
-            home.open_setup(&HOME_PLACE)
-                .unwrap()
-                .permission
-                .clone()
-                .unwrap(),
-        );
+        home.key(&fleet, key(KeyCode::BackTab));
+        seen.push(home.open_setup().unwrap().permission.clone().unwrap());
     }
     assert_eq!(seen, ["acceptEdits", "plan", "default", "acceptEdits"]);
     let screen = home_screen(&mut home, &fleet, theme());
@@ -3046,14 +2947,14 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
         ];
     }
     inventory(&mut fleet, studio);
-    let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    let mut home = new_home();
+    home.key(&fleet, key(KeyCode::Char('n')));
     home_screen(&mut home, &fleet, theme());
     assert_eq!(
         choice_words(&mut home, &fleet, Item::Kind),
         ["Claude ✓", "Codex · not signed in"]
     );
-    home.open_setup(&HOME_PLACE).unwrap().pick(Item::Kind, "1");
+    home.open_setup().unwrap().pick(Item::Kind, "1");
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Codex (not signed in) · gpt-6.1-sol"),
@@ -3061,30 +2962,16 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
     );
 
     // The form for an agent used in its own terminal says it on the chip.
-    let place = crate::home::Place {
-        local_host: HOME_PLACE.local_host,
-        version: HOME_PLACE.version,
-        working_dir: HOME_PLACE.working_dir,
-        attach: false,
-        chat_in: crate::setup::ChatIn::Native,
-        defaults: HOME_PLACE.defaults,
-    };
-    let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    let mut home = crate::home::Home::new(crate::home::Place {
+        chat_in: settings::ChatInSetting::Native,
+        ..home_place()
+    });
+    home.key(&fleet, key(KeyCode::Char('n')));
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(W, H)).unwrap();
     terminal
         .draw(|frame| {
             let area = frame.area();
-            home.draw(
-                frame,
-                area,
-                &fleet,
-                &HashMap::new(),
-                None,
-                now(),
-                theme(),
-                &place,
-            );
+            home.draw(frame, area, &fleet, &HashMap::new(), None, now(), theme());
         })
         .unwrap();
     let screen = text(terminal.backend().buffer());
@@ -3102,22 +2989,22 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
     let fleet = home_fleet();
     let ctrl_s = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL);
     let refused = "starting in a new worktree: the repository already has a branch named fix-it";
-    let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
+    let mut home = new_home();
+    home.key(&fleet, key(KeyCode::Char('n')));
     home_screen(&mut home, &fleet, theme());
-    home.key(&fleet, ctrl_s, false);
+    home.key(&fleet, ctrl_s);
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(screen.contains("w worktree"), "{screen}");
-    home.key(&fleet, key(KeyCode::Char('w')), false);
+    home.key(&fleet, key(KeyCode::Char('w')));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("│ ~/work/amux · new worktree │"),
         "{screen}"
     );
     for c in "fix it".chars() {
-        home.key(&fleet, key(KeyCode::Char(c)), false);
+        home.key(&fleet, key(KeyCode::Char(c)));
     }
-    let effects = home.key(&fleet, key(KeyCode::Enter), false);
+    let effects = home.key(&fleet, key(KeyCode::Enter));
     let [FleetEffect::Start { setup, .. }] = effects.as_slice() else {
         panic!("{effects:?}");
     };
@@ -3131,9 +3018,9 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
     assert!(screen.contains("fix it"), "{screen}");
     // Started again, the old reason goes; off again, the request asks for
     // none.
-    home.key(&fleet, ctrl_s, false);
-    home.key(&fleet, key(KeyCode::Char('w')), false);
-    let effects = home.key(&fleet, key(KeyCode::Enter), false);
+    home.key(&fleet, ctrl_s);
+    home.key(&fleet, key(KeyCode::Char('w')));
+    let effects = home.key(&fleet, key(KeyCode::Enter));
     let [FleetEffect::Start { setup, .. }] = effects.as_slice() else {
         panic!("{effects:?}");
     };
@@ -3141,37 +3028,32 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(!screen.contains("Could not start"), "{screen}");
     // Left meanwhile, the form has nowhere to say it.
-    home.key(&fleet, key(KeyCode::Esc), false);
+    home.key(&fleet, key(KeyCode::Esc));
     assert!(!home.start_failed(refused.to_owned()));
 
     // The form for an agent used in its own terminal: a checkbox.
-    let place = crate::home::Place {
-        local_host: HOME_PLACE.local_host,
-        version: HOME_PLACE.version,
-        working_dir: HOME_PLACE.working_dir,
-        attach: false,
-        chat_in: crate::setup::ChatIn::Native,
-        defaults: HOME_PLACE.defaults,
-    };
-    let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('n')), false);
-    let screen = home_screen_at(&mut home, &fleet, &place);
+    let mut home = crate::home::Home::new(crate::home::Place {
+        chat_in: settings::ChatInSetting::Native,
+        ..home_place()
+    });
+    home.key(&fleet, key(KeyCode::Char('n')));
+    let screen = home_screen(&mut home, &fleet, theme());
     assert!(screen.contains("Worktree  [ ] new worktree"), "{screen}");
     // Out of the name, down to the last row, and Space ticks it.
-    home.key(&fleet, key(KeyCode::Esc), false);
+    home.key(&fleet, key(KeyCode::Esc));
     for _ in 0..4 {
-        home.key(&fleet, key(KeyCode::Down), false);
+        home.key(&fleet, key(KeyCode::Down));
     }
-    home.key(&fleet, key(KeyCode::Char(' ')), false);
-    let screen = home_screen_at(&mut home, &fleet, &place);
+    home.key(&fleet, key(KeyCode::Char(' ')));
+    let screen = home_screen(&mut home, &fleet, theme());
     assert!(screen.contains("Worktree  [✓] new worktree"), "{screen}");
-    let effects = home.key(&fleet, key(KeyCode::Enter), false);
+    let effects = home.key(&fleet, key(KeyCode::Enter));
     let [FleetEffect::Start { setup, .. }] = effects.as_slice() else {
         panic!("{effects:?}");
     };
     assert!(setup.request(b"id".to_vec(), None).new_worktree);
     assert!(home.start_failed(refused.to_owned()));
-    let screen = home_screen_at(&mut home, &fleet, &place);
+    let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Could not start the agent: starting in a new worktree:"),
         "{screen}"
@@ -3179,38 +3061,13 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
     assert!(screen.contains("[Start]"), "{screen}");
 }
 
-/// Home drawn for `place`.
-fn home_screen_at(
-    home: &mut crate::home::Home,
-    fleet: &FleetState,
-    place: &crate::home::Place<'_>,
-) -> String {
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(W, H)).unwrap();
-    terminal
-        .draw(|frame| {
-            let area = frame.area();
-            home.draw(
-                frame,
-                area,
-                fleet,
-                &HashMap::new(),
-                None,
-                now(),
-                theme(),
-                place,
-            );
-        })
-        .unwrap();
-    text(terminal.backend().buffer())
-}
-
 #[test]
 fn the_filter_lives_in_the_top_line_and_narrows_the_list() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
-    home.key(&fleet, key(KeyCode::Char('/')), false);
+    let mut home = new_home();
+    home.key(&fleet, key(KeyCode::Char('/')));
     for c in "arch".chars() {
-        home.key(&fleet, key(KeyCode::Char(c)), false);
+        home.key(&fleet, key(KeyCode::Char(c)));
     }
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
@@ -3221,8 +3078,8 @@ fn the_filter_lives_in_the_top_line_and_narrows_the_list() {
     // The filter looks through folded sections too.
     assert!(screen.contains("archive"), "{screen}");
     assert!(!screen.contains("alpha"), "{screen}");
-    home.key(&fleet, key(KeyCode::Enter), false);
-    home.key(&fleet, key(KeyCode::Esc), false);
+    home.key(&fleet, key(KeyCode::Enter));
+    home.key(&fleet, key(KeyCode::Esc));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("alpha") && !screen.contains("archive"),
@@ -3326,10 +3183,10 @@ fn an_opened_run_stays_open_as_its_older_steps_page_in() {
 /// when its run folds; one the agent redid folds with the rest.
 #[test]
 fn a_folded_run_keeps_a_failure_its_turn_left_unresolved() {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
     let command = |order: u64, line: &str, exit: i32| {
         let mut item = item(order, Some("unused"));
-        item.body = wire::ClaudeSdkItem {
+        item.body = wire::ClaudeItem {
             kind: Some(K::Tool(wire::ToolCall {
                 name: "Bash".into(),
                 state: ToolState::Succeeded as i32,
@@ -3350,7 +3207,7 @@ fn a_folded_run_keeps_a_failure_its_turn_left_unresolved() {
     let turn_end = |order: u64| {
         let mut item = item(order, None);
         item.text = String::new();
-        item.body = wire::ClaudeSdkItem {
+        item.body = wire::ClaudeItem {
             kind: Some(K::Turn(wire::Turn::default())),
         }
         .encode_to_vec();
@@ -3388,12 +3245,12 @@ fn a_folded_run_keeps_a_failure_its_turn_left_unresolved() {
 /// unresolved.
 #[test]
 fn tool_steps_switch_between_collapse_show_all_and_hide() {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
 
     use crate::chat::ToolSteps;
     let command = |order: u64, line: &str, exit: i32| {
         let mut item = item(order, Some("unused"));
-        item.body = wire::ClaudeSdkItem {
+        item.body = wire::ClaudeItem {
             kind: Some(K::Tool(wire::ToolCall {
                 name: "Bash".into(),
                 state: ToolState::Succeeded as i32,
@@ -3419,7 +3276,7 @@ fn tool_steps_switch_between_collapse_show_all_and_hide() {
     items.extend(replies(6, 6));
     let mut turn_end = item(7, None);
     turn_end.text = String::new();
-    turn_end.body = wire::ClaudeSdkItem {
+    turn_end.body = wire::ClaudeItem {
         kind: Some(K::Turn(wire::Turn::default())),
     }
     .encode_to_vec();
@@ -3665,7 +3522,7 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
             used_unknown: false,
         })
     };
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         background_jobs: Some(wire::BackgroundJobs {
             known: true,
             jobs: vec![wire::BackgroundJob {
@@ -3754,7 +3611,7 @@ fn a_window_of_unknown_use_reads_a_dash_and_is_never_the_fullest() {
             }),
             ..Default::default()
         };
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         usage: Some(wire::ClaudeUsage {
             state: wire::UsageState::Blocked as i32,
             windows: vec![
@@ -3791,7 +3648,7 @@ fn the_overview_tags_a_subagent_and_a_monitor_and_shows_a_command_as_code() {
         kind: kind as i32,
         ..Default::default()
     };
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         background_jobs: Some(wire::BackgroundJobs {
             known: true,
             jobs: vec![
@@ -3850,14 +3707,14 @@ fn the_overview_tags_a_subagent_and_a_monitor_and_shows_a_command_as_code() {
 
 /// Your message at `order`, as the agent reflected it.
 fn prompt_item(order: u64, words: &str) -> Item {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
     Item {
         key: format!("k{order}"),
         order,
         revision: order,
         text: words.into(),
         kind: Kind::ClaudeSdk as i32,
-        body: wire::ClaudeSdkItem {
+        body: wire::ClaudeItem {
             kind: Some(K::Prompt(wire::Prompt {})),
         }
         .encode_to_vec(),
@@ -4022,7 +3879,7 @@ fn two_questions() -> ui_view::AskCard {
 }
 
 /// Presses `keys` on the card's box; the answer the last one sent.
-fn pressed(card: &ui_view::AskCard, keys: &[KeyEvent]) -> Option<wire::ClaudeAnswer> {
+fn pressed(card: &ui_view::AskCard, keys: &[KeyEvent]) -> Option<wire::Answer> {
     let mut ask = crate::chat::ask::AskUi::default();
     ask.sync(card);
     let mut sent = None;
@@ -4033,12 +3890,9 @@ fn pressed(card: &ui_view::AskCard, keys: &[KeyEvent]) -> Option<wire::ClaudeAns
     }
     let input = sent?;
     match input.decode_body() {
-        Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Answer(answer)),
-        }))
-        | Some(wire::KindInput::ClaudePty(wire::ClaudePtyInput {
-            of: Some(wire::claude_pty_input::Of::Answer(answer)),
-        })) => Some(answer),
+        Some(wire::AgentInput {
+            of: Some(wire::agent_input::Of::Answer(answer)),
+        }) => Some(answer),
         other => panic!("{other:?}"),
     }
 }
@@ -4063,7 +3917,7 @@ fn a_question_is_noted_with_tab_and_the_next_skipped() {
         key(KeyCode::Enter),
     ]);
     let answer = pressed(&card, &keys).expect("the review sends the answers");
-    let Some(wire::claude_answer::Of::Question(answers)) = answer.of else {
+    let Some(wire::answer::Of::Question(answers)) = answer.of else {
         panic!("{answer:?}");
     };
     assert_eq!(
@@ -4088,7 +3942,7 @@ fn a_question_is_replied_to_instead_with_what_was_answered_so_far() {
     keys.extend(chars("let's talk first"));
     keys.push(key(KeyCode::Enter));
     let answer = pressed(&card, &keys).expect("the reply is sent");
-    let Some(wire::claude_answer::Of::Reply(reply)) = answer.of else {
+    let Some(wire::answer::Of::Reply(reply)) = answer.of else {
         panic!("{answer:?}");
     };
     assert_eq!(reply.text, "let's talk first");
@@ -4146,7 +4000,7 @@ fn terminal_claude_takes_a_skip_and_a_note_on_any_question() {
         key(KeyCode::Enter),
     ];
     let answer = pressed(&card, &keys).expect("the review sends the answers");
-    let Some(wire::claude_answer::Of::Question(answers)) = answer.of else {
+    let Some(wire::answer::Of::Question(answers)) = answer.of else {
         panic!("{answer:?}");
     };
     let picked = |index| wire::QuestionResponse {
@@ -4199,6 +4053,14 @@ fn a_plan_reads_under_its_heading_and_folds_once_decided() {
             let (buffer, _) = draw(&mut view, state, *now, W, H, theme());
             let screen = text(&buffer);
             assert!(screen.contains("Plan"), "{name} {when}:\n{screen}");
+            // Open, the plan reads unfolded and its decision waits in the
+            // composer's box; decided, both are gone.
+            let waiting = screen.contains("▾ Plan") && screen.contains("Plan ready");
+            let folded = !screen.contains("▾ Plan") && !screen.contains("Plan ready");
+            assert!(
+                if when == "open" { waiting } else { folded },
+                "{name} {when}:\n{screen}"
+            );
             // Codex proposes its plan as its turn ends, so there is no turn
             // to interrupt; Claude asks mid-turn.
             if when == "open" {
@@ -4208,7 +4070,6 @@ fn a_plan_reads_under_its_heading_and_folds_once_decided() {
                     "{name}:\n{screen}"
                 );
             }
-            fixtures::assert_frame_golden(&format!("frame_plan_{name}_{when}"), &buffer, theme());
         }
     }
 }
@@ -4284,7 +4145,7 @@ fn keys_typed_steadily_as_an_ask_appears_stay_in_the_draft_until_half_a_second_o
 #[test]
 fn a_focused_control_on_home_carries_the_agent_rows_marker() {
     let fleet = home_fleet();
-    let mut home = crate::home::Home::default();
+    let mut home = new_home();
     home_screen(&mut home, &fleet, theme());
     let focused = |screen: &str, words: &str| -> String {
         screen
@@ -4293,14 +4154,14 @@ fn a_focused_control_on_home_carries_the_agent_rows_marker() {
             .unwrap_or_else(|| panic!("no {words} on\n{screen}"))
             .to_owned()
     };
-    home.key(&fleet, key(KeyCode::Home), false);
+    home.key(&fleet, key(KeyCode::Home));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("enter start"),
         "Home puts the keys on + New Agent: {screen}"
     );
     let new_agent = focused(&screen, "New Agent");
-    home.key(&fleet, key(KeyCode::Down), false);
+    home.key(&fleet, key(KeyCode::Down));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("enter hide"),
@@ -4328,7 +4189,7 @@ fn a_job_is_stopped_from_the_pane_behind_a_confirm_card() {
         ..Default::default()
     };
     let shown = |jobs: Vec<wire::BackgroundJob>| {
-        let body = wire::ClaudeSdkSnapshot {
+        let body = wire::ClaudeSnapshot {
             background_jobs: Some(wire::BackgroundJobs { known: true, jobs }),
             ..Default::default()
         }

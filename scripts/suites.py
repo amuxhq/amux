@@ -65,16 +65,12 @@ def selection(suite: dict[str, Any]) -> list[str]:
     features differently and rebuilds much of the graph beside it. A
     feature only the suite needs is added to that scope."""
     selectors = suite.get("cargo", [])
-    features = {"bundled"} | {
+    features = {
         f"{selector['package']}/{feature}"
         for selector in selectors
         for feature in selector.get("features", [])
-        if feature != "bundled"
     }
-    return [
-        "--workspace",
-        "--features",
-        ",".join(sorted(features)),
-        "-E",
-        " | ".join(filterset(selector) for selector in selectors),
-    ]
+    scope = ["--workspace"]
+    if features:
+        scope += ["--features", ",".join(sorted(features))]
+    return scope + ["-E", " | ".join(filterset(selector) for selector in selectors)]

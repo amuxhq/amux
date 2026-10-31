@@ -1,0 +1,37 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 13 recorded 11: fact Transcript type=user uuid=340c9d8d-c711-4a18-a07f-d97ee9a26441
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 41 recorded 39: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01Deb4FKBuR8mXnD7YHFojnR
+  composer Send activity=Some(Running { key: "toolu_01Deb4FKBuR8mXnD7YHFojnR" }) queue=[] underway=[] refused=[]
+## 43 recorded 41: fact Hook hook_event_name=PermissionRequest
+  ask ask:1 -> "" 1/1 Open
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
+    body Command { command: "printf escaped > escaped.txt", cwd: "", reason: "", description: "Write the word escaped to escaped.txt" }
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 48 recorded 46: fact Transcript type=assistant uuid=a77e04d0-fd1a-4ca5-989b-8b0db1949716
+  ask ask:1 -> "toolu_01Deb4FKBuR8mXnD7YHFojnR" 1/1 Open
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
+    body Command { command: "printf escaped > escaped.txt", cwd: "", reason: "", description: "Write the word escaped to escaped.txt" }
+## 50 recorded 48: fact Transcript type=user uuid=815df227-6641-4182-bf92-f9cb455626f6
+  ask none
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 54 recorded 52: fact Transcript type=user uuid=548df660-149d-4387-9f45-5f07e31de412
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 340c9d8d-c711-4a18-a07f-d97ee9a26441 Prompt { text: [Text("Use the Bash tool to run exactly: printf escaped > escaped.txt. Then reply with the single word done.")], steered: false }
+     3 toolu_01Deb4FKBuR8mXnD7YHFojnR Command { command: "printf escaped > escaped.txt", state: Denied, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed."], more_lines: 0, output_trimmed: false,…
+     4 turn:1 Stopped
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 35611, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

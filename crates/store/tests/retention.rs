@@ -3,10 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use store::{
-    Absorb, AgentKey, AgentRow, BlobLru, CommitClock, ITEM_OVERHEAD_BYTES, KIND_BYTES, PageEnd,
-    Sqlite, Sweep, SweepStep,
-};
+use store::{Absorb, AgentKey, AgentRow, BlobLru, CommitClock, PageEnd, Sqlite, Sweep, SweepStep};
 use wire::{Item, Lifecycle, Phase, Snapshot, Step, TurnEnd};
 
 const OWN: &[u8] = b"own-host";
@@ -15,9 +12,10 @@ const CLOCK: CommitClock = CommitClock {
     now_ms: 0,
     notify_delay_ms: 0,
 };
-/// Text bytes per row; each row then costs ROW bytes.
+/// Text bytes per row; each row then costs ROW bytes: a two-byte key, the
+/// text, and the store's fixed 4 bytes for the kind and 48 a row.
 const TEXT: usize = 1000;
-const ROW: u64 = 2 + TEXT as u64 + KIND_BYTES + ITEM_OVERHEAD_BYTES;
+const ROW: u64 = 2 + TEXT as u64 + 4 + 48;
 
 fn own(name: &str) -> AgentKey {
     AgentKey::new(OWN, name.as_bytes())

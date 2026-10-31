@@ -22,7 +22,6 @@ sha2.workspace = true
 store.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
 ui-state.workspace = true
 ui-view.workspace = true
 unicode-width = "0.2"
@@ -32,3 +31,10 @@ zstd.workspace = true
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
+
+[dev-dependencies]
+tokio.workspace = true
+postcard.workspace = true
+provider-fakes.workspace = true
+testnet.workspace = true
+uuid.workspace = true

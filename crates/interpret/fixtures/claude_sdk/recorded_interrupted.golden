@@ -1,28 +1,33 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 2 recorded 1: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue 8572d50d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=55 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue 8572d50d
-snapshot IDLE queue=[] working_on=- at=1793268118340 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 4 recorded 3: input stdin-2
-effect reply stdin-2 accepted
-effect user 73746469-6e2d-4200-8000-000000000000 "Count slowly from one to two hundred, one number per line."
-item boundary:1 boundary final at=1793268118342 text="" BOUNDARY_KIND_STARTED session=- version=-
-item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793268118342 text="Count slowly from one to two hundred, one number per line."
-snapshot WORKING queue=[] working_on="Count slowly from one to two hundred, one number per line." at=1793268118342 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 6 recorded 5: fact Stream type=system subtype=init uuid=bacd229e-ecac-41c8-a9b7-c64ae5c42086
-item boundary:1 boundary final at=1793268118422 text="" BOUNDARY_KIND_STARTED session=4f6988c8-d67e-4499-8d64-968c772c53ae version=2.1.312
-snapshot WORKING queue=[] working_on="Count slowly from one to two hundred, one number per line." at=1793268118422 asks=[] session=4f6988c8-d67e-4499-8d64-968c772c53ae model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 12 recorded 11: fact Stream type=assistant uuid=e590215b-d92b-484f-a11b-05de8d987f4d
-item msg_011CgWLSEcfqLZLux1B6WWjd:0 thinking final at=1793268119950 text=""
-snapshot WORKING queue=[] working_on="Count slowly from one to two hundred, one number per line." at=1793268119950 asks=[] session=4f6988c8-d67e-4499-8d64-968c772c53ae model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23729/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 14 recorded 13: input stdin-3
+effect catalogue 08dc149d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=56 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 08dc149d
+snapshot IDLE queue=[] working_on=- at=1793424943669 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 4 recorded 3: fact Stream type=control_response
+snapshot IDLE queue=[] working_on=- at=1793424943681 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 6 recorded 5: input 0xa2aa07cb349f4b1b8c0560b020327e48
+effect reply 0xa2aa07cb349f4b1b8c0560b020327e48 accepted
+effect user a2aa07cb-349f-4b1b-8c05-60b020327e48 "Count from 1 to 1000, one number per line, in plain text."
+item boundary:1 boundary final at=1793424943749 text="" BOUNDARY_KIND_STARTED
+item a2aa07cb-349f-4b1b-8c05-60b020327e48 prompt final input=0xa2aa07cb349f4b1b8c0560b020327e48 at=1793424943749 text="Count from 1 to 1000, one number per line, in plain text."
+snapshot WORKING queue=[] working_on="Count from 1 to 1000, one number per line, in plain text." at=1793424943749 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 12 recorded 11: fact Stream type=system subtype=init uuid=3f47e2cb-0318-4057-aec0-a251dfb5400b
+item boundary:1 boundary final at=1793424943774 text="" BOUNDARY_KIND_STARTED
+snapshot WORKING queue=[] working_on="Count from 1 to 1000, one number per line, in plain text." at=1793424943774 asks=[] session=49e8a3ea-97db-40a6-82cc-43040746fd33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 14 recorded 13: fact Stream type=system subtype=status uuid=d662e63d-b773-4b32-bbe9-3646a4f17497
+item d662e63d-b773-4b32-bbe9-3646a4f17497 status final at=1793424943776 text="" SDK_STATUS_UNSPECIFIED requesting
+## 17 recorded 16: fact Stream type=stream_event uuid=473073c9-1124-44fd-ba86-8dad859e1110
+snapshot WORKING queue=[] working_on="Count from 1 to 1000, one number per line, in plain text." at=1793424944838 asks=[] session=49e8a3ea-97db-40a6-82cc-43040746fd33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20368/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 18 recorded 17: fact Stream type=stream_event uuid=33a3ecff-3b91-4793-bf76-8fa2a235c3ec
+item msg_011CgZmkagb7rZ4MepkBHZSx:0 thinking open at=1793424944838 text=""
+## 20 recorded 19: input stdin-4
 effect write "{\"request\":{\"subtype\":\"interrupt\"},\"request_id\":\"amux-2\",\"type\":\"control_request\"}"
-effect reply stdin-3 accepted
-## 18 recorded 17: fact Stream type=assistant uuid=fb877ff8-5f6f-4cec-ace2-fe416cb3664b
-item msg_011CgWLSEcfqLZLux1B6WWjd:1 message final at=1793268119959 text="1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11"
-## 22 recorded 21: fact Stream type=result subtype=error_during_execution uuid=77126197-ba7f-4efa-90bb-444f4799e72d
-item turn:1 turn final at=1793268119964 text="" #1 TURN_OUTCOME_INTERRUPTED started=1793268118395
-snapshot IDLE queue=[] working_on="Count slowly from one to two hundred, one number per line." at=1793268119964 asks=[] session=4f6988c8-d67e-4499-8d64-968c772c53ae model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23729/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-turn_end 1 last=msg_011CgWLSEcfqLZLux1B6WWjd:1
+effect reply stdin-4 accepted
+## 25 recorded 24: fact Stream type=stream_event uuid=ab72889e-a1fe-461d-843a-e9fc053bbd0d
+item msg_011CgZmkagb7rZ4MepkBHZSx:0 thinking final at=1793424944838 text=""
+## 29 recorded 28: fact Stream type=result subtype=error_during_execution uuid=47eb7df5-c7a8-4be7-9a9a-f2e036ce735d
+item turn:1 turn final at=1793424944885 text="" #1 TURN_OUTCOME_INTERRUPTED started=1793424943760
+snapshot IDLE queue=[] working_on="Count from 1 to 1000, one number per line, in plain text." at=1793424944885 asks=[] session=49e8a3ea-97db-40a6-82cc-43040746fd33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20368/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 1 last=-

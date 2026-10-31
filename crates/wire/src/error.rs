@@ -2,14 +2,13 @@
 //!
 //! The code is gRPC's own. What the code alone does not say rides in the
 //! details as Any: a `google.rpc.ErrorInfo` naming one of amux's
-//! [`ErrorReason`]s, and the typed details that sit beside the types they
-//! name (`AmbiguousAgentName`, `AmbiguousHostName`, `ProtocolVersionMismatch`).
+//! [`ErrorReason`]s.
 
 use crate::ErrorReason;
 use crate::rpc::{Code, ErrorInfo, Status};
 
 /// The domain of every `ErrorInfo` amux writes.
-pub const DOMAIN: &str = "amux.sh";
+const DOMAIN: &str = "amux.sh";
 
 const REASON_PREFIX: &str = "ERROR_REASON_";
 
@@ -27,7 +26,7 @@ impl Status {
     pub fn because(reason: ErrorReason, message: impl Into<String>) -> Status {
         let code = match reason {
             ErrorReason::Unspecified => Code::Unknown,
-            ErrorReason::HostUnreachable => Code::FailedPrecondition,
+            ErrorReason::HostUnreachable | ErrorReason::VersionMismatch => Code::FailedPrecondition,
             ErrorReason::PaymentRequired => Code::PermissionDenied,
         };
         let info = ErrorInfo {
@@ -38,7 +37,11 @@ impl Status {
             domain: DOMAIN.to_owned(),
             metadata: Default::default(),
         };
-        Status::new(code, message).with_detail(&info)
+        let mut status = Status::new(code, message);
+        status
+            .details
+            .push(prost_types::Any::from_msg(&info).expect("a message encodes into a Vec"));
+        status
     }
 
     /// The code, or UNKNOWN for a number this build does not know.
@@ -55,13 +58,6 @@ impl Status {
         ErrorReason::from_str_name(&format!("{REASON_PREFIX}{}", info.reason))
     }
 
-    /// Adds `detail`, packed as Any.
-    pub fn with_detail<M: prost::Name>(mut self, detail: &M) -> Status {
-        self.details
-            .push(prost_types::Any::from_msg(detail).expect("a message encodes into a Vec"));
-        self
-    }
-
     /// The first detail of type `M`.
     pub fn detail<M: prost::Name + Default>(&self) -> Option<M> {
         self.details
@@ -74,7 +70,6 @@ impl Status {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::AmbiguousHostName;
 
     #[test]
     fn a_reason_rides_as_error_info_on_its_code() {
@@ -91,16 +86,5 @@ mod tests {
             "type.googleapis.com/google.rpc.ErrorInfo"
         );
         assert_eq!(Status::new(Code::NotFound, "no such agent").reason(), None);
-    }
-
-    #[test]
-    fn a_typed_detail_is_found_by_its_type() {
-        let detail = AmbiguousHostName {
-            name: "desk".to_owned(),
-            candidates: Vec::new(),
-        };
-        let status = Status::new(Code::FailedPrecondition, "two desks").with_detail(&detail);
-        assert_eq!(status.detail::<AmbiguousHostName>(), Some(detail));
-        assert_eq!(status.detail::<ErrorInfo>(), None);
     }
 }

@@ -25,15 +25,14 @@ Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
 
 | Job | Runner | Runs |
 | --- | --- | --- |
-| Check and Clippy | `ubuntu-latest` | `just check`, `just lint` |
+| Check and Clippy | `ubuntu-latest` | `just lint` |
 | Format | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30` |
 | Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat` |
 | Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --no-fail-fast --exclude models` |
-| Simulated stories, doctests and contracts | `ubuntu-latest` | `just sim`, `just contracts-check`, `just doctest`: what reads the same on every platform, run once |
+| Simulated stories and doctests | `ubuntu-latest` | `just sim`, `just doctest`: what reads the same on every platform, run once |
 | Models | `ubuntu-latest`, one job per protocol model | `just test-crate models` filtered to one model's module of the integration test binary: one model at its CI bounds |
 | Build | `ubuntu-latest`, `macos-latest`, `windows-latest` | `just release-check` |
 | Terminal journeys | `ubuntu-latest`, `macos-latest` | Installs `tmux`, then `just journey terminal all`: every terminal story in the manifest |
-| Embedded client | `ubuntu-latest` | `just embedded-check`, `just embedded-test` |
 | Pointer checks over the C ABI | `ubuntu-latest` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why |
 | Sanitizers | `ubuntu-latest`, one job for each of `address` and `thread` | `just sanitize <kind>`: the tests that reach unsafe code and C, built on the pinned nightly with the standard library under the sanitizer; `address` fails on an out-of-bounds access, a use after free or a double free, `thread` on a data race |
 | iOS target check | `macos-latest` | `just mobile-check` |
@@ -48,7 +47,7 @@ PTYs or sockets are compiled out there. Among them are the tests that host
 terminal Claude: the agent's terminal cases (in its `attach`, `dump`,
 `providers`, `tools` and `lifecycle` suites), provider-fakes' `pty` suite,
 the terminal modules of its `conformance` and `scripted` suites, and the
-terminal client's served `frames` suite, whose hosts run terminal Claude. Windows does not host
+terminal client's `served` suite, whose hosts run terminal Claude. Windows does not host
 terminal Claude in this build (see
 [Windows, as a stated cost](ARCHITECTURE.md#windows-as-a-stated-cost)), so
 the Windows job runs the agent's test of that refusal instead, and every
@@ -56,12 +55,6 @@ headless Claude and Codex test as everywhere. On Linux and macOS the same run is
 system lane as well: the built `amux` binary's suites (`process`,
 `supervise_cli`, `overlap`, `attach` and the rest), node's `supervisor` suite
 and the `survive-daemon` system journey are ordinary test suites.
-`contracts-check` runs on Linux after `just sim` has built what the
-workspace test run builds: the contracts name Unix-only tests, which Windows
-does not build, and the one test of a macOS facility is built on every Unix
-and ignored off macOS, so the listing names it there too. It lists the
-binaries of that build (the same Cargo arguments), so it compiles nothing
-more.
 
 The terminal journeys are `reach-host`,
 `conversation-decision-claude-pty`, `conversation-decision-claude-sdk`,
@@ -127,17 +120,9 @@ on the runner's four cores. `just tests-check` fails when a model is missing
 from the job's matrix. Linux minutes cost a public repository nothing, and each job
 stays far inside the run's wall time, which the iOS gate sets.
 
-A model's bounds are sized to that runner; its test asserts the state count
-those bounds explore, not the time (a run that hangs is the job guard's).
-A CI run
-measured the models there at their CI bounds: the runner took 2.1 to 4.2 times
-the enrolled Mac's four-thread time, and replication, the model heaviest on
-the store, was the slowest (274 s against 66 s); a later run measured presence
-at 4.7 times (339.9 s against 73 s). So a model's budget is at least twice its
-runner time, rounded up to a whole minute, and no budget is above 600 s; a
-model whose doubled runner time would pass that has its CI bounds cut; a model
-not yet measured there is sized from its four-thread Mac time times 4.7. The models' README records each model's times. The job
-guard is 25 minutes.
+A model's bounds are sized to that runner: a run that outgrows them is
+caught by the job guard, 25 minutes, and bounds that would not fit move to the
+model's nightly test.
 
 The Models at nightly bounds workflow runs each model's ignored nightly
 test, the same matrix, daily and by hand; `just models-nightly` runs the
@@ -155,10 +140,9 @@ the real net under `just test` in each Test job, then on the simulated net
 under `just sim` in the Linux job beside them, every core in one process, a
 few seeds per story. A failing seed is printed with the
 `just sim --seed N <story>` that reruns it. The
-nightly workflow's seeds job runs `just nightly --seeds 2000 --bounds none`:
-2000 seeds per story and a report of every failing seed, without the models,
-which its matrix already checks. Locally, `just nightly --seeds N` walks the
-seeds and then runs `just models-nightly`.
+nightly workflow's seeds job walks 2000 seeds per story the same way
+(`just sim --seeds 2000`, under a bound of its own); the models are its
+matrix's.
 
 ### The iOS gate
 
@@ -187,10 +171,9 @@ half of the phone's verification that building the app can settle.
 
 `just ios gate` runs, in order and stopping at the first failure,
 `just ios` `lint`, `script-tests`, `graph-check`, `rust`, `simulator golden`,
-`test-build`, `component-snapshots --skip-build`, `loopback-smoke` and
-`unit --skip-build`. The simulator boots while `test-build` compiles the app
-and every unit and component suite once, for any simulator, and the gate
-waits for both before the suites run what was built. `mobile-check` is left
+`test-build`, `component-snapshots --skip-build` and `unit --skip-build`. The
+simulator boots while `test-build` compiles the app and every unit and
+component suite once, for any simulator, and the gate waits for both before the suites run what was built. `mobile-check` is left
 to the iOS target check, which runs it on every push. The only pictures it
 compares are the component snapshots, drawn in-process and flat, so it
 answers the same on any machine. The component snapshot batch runs under its own bound, sized by the rule above
@@ -247,7 +230,7 @@ journey or baseline that does not exist.
 | Lane | What it holds | Where it runs |
 | --- | --- | --- |
 | `fast` | Offline, credential-free tests with no wall-time settling: unit tests, spec suites, adapter replays, store and effect integration, renderer goldens | `just test` on every push, on all three platforms |
-| `system` | Real processes and transports with bounded deadlines: the built `amux` binary and its supervisor, the phone bridge on a simulator, the store on iOS | The desktop suites in `just test` on every push (Unix runners); `ios loopback-smoke` in the iOS gate; `test-store-ios` in `just ios captures` |
+| `system` | Real processes and transports with bounded deadlines: the built `amux` binary and its supervisor, the store on iOS | The desktop suites in `just test` on every push (Unix runners); `test-store-ios` in `just ios captures` |
 | `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `just script-tests` on every push; `ios script-tests` and `ios lint` in the iOS gate; `ios scope-audit` before every app release |
 | `journey` | Complete client stories through the shared manifest, and the phone's accessibility sweep | The terminal journeys job and the system journey inside `just test` on every push; phone journeys and the accessibility sweep in iOS captures run by hand |
 | `qualification` | Real providers, real cloud accounts and measured performance | Never on an ordinary push: `just live`, `just perf` and the `just ios qa-*` recipes by hand, on machines that have the credentials or hardware; `just ios perf` by hand on the enrolled Mac, last in `just ios verify` |
@@ -275,10 +258,8 @@ stopping at the first failure:
 | `docs-check` | Every link, image and heading anchor under `docs/` resolves, every figure is referenced and standalone, and `docs/README.md` lists every page once ([`scripts/docs-check.py`](../scripts/docs-check.py)) |
 | `tests-check` | The suite catalogue names only things that exist |
 | `test` | Every workspace test, under nextest |
-| `contracts-check` | Every design contract in [`tests/contracts.toml`](../tests/contracts.toml) names at least one test, and every test and model property it names exists |
 | `doctest` | Documentation tests |
 | `release-check` | The shipping binary builds and passes the release policy check |
-| `embedded-check`, `embedded-test` | The provider-free client graph and the embedded owner and client boundary |
 | `mobile-check` | The provider-free graph for iOS devices and simulators |
 
 The terminal journeys are in `ci.yml` but not in `just ci`, and neither is the iOS gate.
@@ -337,7 +318,7 @@ or the whole workspace, as the Windows test job compiles it:
 CC_x86_64_pc_windows_msvc=/tmp/winstub/cc \
 CXX_x86_64_pc_windows_msvc=/tmp/winstub/cc \
 AR_x86_64_pc_windows_msvc=/tmp/winstub/ar \
-cargo check --locked --workspace --all-targets --features bundled \
+cargo check --locked --workspace --all-targets \
   --target x86_64-pc-windows-msvc --keep-going
 ```
 

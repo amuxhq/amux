@@ -1,0 +1,41 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 13 recorded 11: fact Transcript type=user uuid=724c96f8-7f43-4196-bb9a-ad73fbc675ec
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 42 recorded 40: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_0114UaPgea2NVsciuNrx2WbU
+  composer Send activity=Some(Running { key: "toolu_0114UaPgea2NVsciuNrx2WbU" }) queue=[] underway=[] refused=[]
+## 56 recorded 54: fact Transcript type=user uuid=e4ac6193-7b1e-4716-840c-6ed05bad3ae3
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 68 recorded 66: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01T5ttnKnFBMN8hbJGd6HqMb
+  composer Send activity=Some(Running { key: "toolu_01T5ttnKnFBMN8hbJGd6HqMb" }) queue=[] underway=[] refused=[]
+## 76 recorded 74: fact Transcript type=user uuid=e4f45e57-40eb-441d-bfcf-fab08ba4d68f
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 87 recorded 85: fact Transcript type=system subtype=turn_duration uuid=bf593b1d-9904-462f-9a52-3dc2f2bd95d5
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 93 recorded 91: fact Transcript type=user uuid=7bd5e562-dc5b-4e64-b0b5-296b8d5c5d6a
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 105 recorded 103: fact Transcript type=system subtype=turn_duration uuid=3db9c7e6-c688-41e7-939d-5b551857e4e2
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 724c96f8-7f43-4196-bb9a-ad73fbc675ec Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly DONE plus any extra words the user asked for.")], steered: false }
+     3 toolu_0114UaPgea2NVsciuNrx2WbU Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15303) } run[toolu_0114UaPgea2NVsciuNrx2WbU..toolu_0114UaPgea2NVsciuNrx2WbU x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0,…
+     4 0a18d26c-96b8-4a19-affb-bbe635d6b4f3 Prompt { text: [Text("Also append the word BANANA.")], steered: true }
+     5 toolu_01T5ttnKnFBMN8hbJGd6HqMb Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5142) } run[toolu_01T5ttnKnFBMN8hbJGd6HqMb..toolu_01T5ttnKnFBMN8hbJGd6HqMb x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
+     6 stream:18653f27-4494-4bc6-9ea9-0a69498ef676 Prose { text: [Text("DONE BANANA")], streaming: false, working_note: false }
+     7 turn:1 TurnEnd { duration_ms: Some(22930), failed: false }
+     8 7bd5e562-dc5b-4e64-b0b5-296b8d5c5d6a Prompt { text: [Text("Then reply with exactly LATER.")], steered: false }
+     9 stream:d593a1c4-0275-414d-b04b-9dbf69f6a050 Prose { text: [Text("LATER")], streaming: false, working_note: false }
+    10 turn:2 TurnEnd { duration_ms: Some(910), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 36083, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

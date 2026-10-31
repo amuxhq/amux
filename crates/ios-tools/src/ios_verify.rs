@@ -39,7 +39,6 @@ const GATE: &[&str] = &[
     "ios simulator golden",
     "ios test-build",
     "ios component-snapshots --skip-build",
-    "ios loopback-smoke",
     "ios unit --skip-build",
 ];
 
@@ -473,7 +472,6 @@ mod tests {
             "ios verify",
             "ios qa-cloud-signin",
             "ios qa-sandbox-purchase",
-            "ios qa-live-journey",
             "ios release",
         ] {
             assert!(!all_recipes().contains(&excluded));

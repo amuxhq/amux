@@ -43,7 +43,7 @@ use daemon_core::payload::{
 };
 use daemon_core::trust::TrustStore;
 use daemon_core::{
-    AgentId, CallId, Daemon, FromShell, HostId, Input, LinkId, Output, Route, Settings, Standing,
+    AgentId, CallId, Daemon, HostId, Input, LinkId, Output, Route, Settings, Standing,
     StartOptions, StepBudget, TimerId,
 };
 use prost::Message as _;
@@ -52,11 +52,9 @@ use wire::{Item, Phase, SessionEvent, Snapshot, Step, session_event};
 
 use crate::held::{Held, Slot};
 use crate::single_daemon::{EARLY_AFTER_ACCEPT, REPLAY_CHANGES_NOTHING};
-use crate::{Fault, Host, Machine, MsgIndex, Property};
+use crate::{Machine, Property};
 
 const ORIGIN: HostId = HostId(*b"origin-host-0000");
-/// The origin, as the fault vocabulary names hosts.
-const ORIGIN_HOST: Host = Host(0);
 const REPLICA: HostId = HostId(*b"replica-host-000");
 const AGENT: AgentId = AgentId(*b"agent-0000000000");
 /// The replica's link to the origin.
@@ -98,9 +96,6 @@ pub struct Replication {
     pub losses: u8,
     /// How many times the replica's early data is replayed.
     pub replays: u8,
-    /// Adds the deliberately wrong promise that the block stays empty, to
-    /// show what a failure prints.
-    pub wrong: bool,
 }
 
 impl Replication {
@@ -115,7 +110,6 @@ impl Replication {
             in_flight: 2,
             losses: 1,
             replays: 1,
-            wrong: false,
         }
     }
 
@@ -320,12 +314,15 @@ pub enum Action {
     Answer,
     /// The stream delivers its next message to the replica's core.
     Deliver,
-    /// The world's doing: the origin reboots uncleanly, losing its newest
-    /// commit and coming back under the next generation to mint those
-    /// revisions again; the stream dies at a message, which goes with
-    /// everything behind it; or the replica's opening arrives again,
-    /// replayed on a connection of its own.
-    Fault(Fault),
+    /// The origin reboots uncleanly, losing its newest commit and coming
+    /// back under the next generation to mint those revisions again.
+    RebootUnclean,
+    /// The stream dies at the message at this place in flight, which goes
+    /// with everything behind it.
+    Lose(usize),
+    /// The replica's opening arrives again, replayed on a connection of its
+    /// own.
+    Duplicate,
     /// A client fetches below the replica's block: the replica's core asks
     /// the origin's for the page, which answers it at once.
     AskPage,
@@ -449,7 +446,7 @@ impl Machine for Replication {
             out.push(Action::Trim);
         }
         if s.generation < self.generations {
-            out.push(Action::Fault(Fault::RebootUnclean(ORIGIN_HOST)));
+            out.push(Action::RebootUnclean);
         }
         if s.timer {
             out.push(Action::Open);
@@ -463,14 +460,12 @@ impl Machine for Replication {
                     out.push(Action::Deliver);
                 }
                 if s.lost < self.losses {
-                    out.extend(
-                        (0..queue.len()).map(|index| Action::Fault(Fault::Lose(MsgIndex(index)))),
-                    );
+                    out.extend((0..queue.len()).map(Action::Lose));
                 }
             }
         }
         if s.replays < self.replays && matches!(s.link, Link::Asked { .. }) {
-            out.push(Action::Fault(Fault::Duplicate(MsgIndex(0))));
+            out.push(Action::Duplicate);
         }
         match s.page {
             // A page asked for rides the link too, held until the origin
@@ -499,7 +494,7 @@ impl Machine for Replication {
     }
 
     fn properties(&self) -> Vec<Property<Self>> {
-        let mut properties: Vec<Property<Self>> = vec![
+        let properties: Vec<Property<Self>> = vec![
             Property::always("the store never refuses a write", |_, s: &State| {
                 s.refused.is_none()
             }),
@@ -557,12 +552,6 @@ impl Machine for Replication {
                 |model: &Self, s: &State| model.quiet(s) && s.current(),
             ),
         ];
-        if self.wrong {
-            properties.push(Property::always(
-                "the block is never non-empty",
-                |_, s: &State| s.view(|_, replica| replica.block(&agent()).unwrap().is_empty()),
-            ));
-        }
         properties
     }
 }
@@ -607,7 +596,7 @@ impl Transition<'_> {
                 let pool = origin.pool_bytes(true)?;
                 origin.sweep_own(pool.saturating_sub(1), 1, 1).map(|_| ())
             })?,
-            Action::Fault(Fault::RebootUnclean(_)) => {
+            Action::RebootUnclean => {
                 if let Some(durable) = self.next.durable.take() {
                     self.next.origin.store = durable;
                 }
@@ -651,13 +640,13 @@ impl Transition<'_> {
                 });
             }
             Action::Resumed => self.resumed(),
-            Action::Fault(Fault::Duplicate(_)) => self.replay(),
+            Action::Duplicate => self.replay(),
             Action::Answer => {
                 let Link::Asked { call, request } = &self.next.link else {
                     unreachable!("answered without an ask")
                 };
                 let call = *call;
-                let request = wire::PeerSubscribeSessionRequest::decode(request.as_slice())
+                let request = wire::SubscribeSessionRequest::decode(request.as_slice())
                     .expect("a request decodes");
                 self.next.link = Link::Open {
                     call,
@@ -693,7 +682,7 @@ impl Transition<'_> {
                     });
                 }
             }
-            Action::Fault(Fault::Lose(MsgIndex(index))) => {
+            Action::Lose(index) => {
                 let Link::Open {
                     call, queue, live, ..
                 } = &mut self.next.link
@@ -707,7 +696,6 @@ impl Transition<'_> {
                 // The origin's driver finds the stream gone.
                 self.origin(Input::CallCancelled { call });
             }
-            Action::Fault(fault) => unreachable!("replication never offers {fault:?}"),
             Action::AskPage => self.ask_page(),
             Action::PageArrives => {
                 let (call, page) = self.next.page.take().expect("a page in flight");
@@ -749,10 +737,10 @@ impl Transition<'_> {
                 store::Record::Append(append) => session_event::Of::Append(append),
                 store::Record::Snapshot(snapshot) => session_event::Of::Snapshot(snapshot),
             };
-            let answered = self.origin(Input::FromShell(FromShell::Session {
+            let answered = self.origin(Input::ShellSession {
                 agent: agent(),
                 event: Arc::new(SessionEvent { of: Some(of) }),
-            }));
+            });
             self.carry(answered);
         }
         Ok(())
@@ -907,8 +895,8 @@ impl Transition<'_> {
         let Link::Asked { request, .. } = &self.next.link else {
             unreachable!("only an opening in flight is replayed")
         };
-        let request = wire::PeerSubscribeSessionRequest::decode(request.as_slice())
-            .expect("a request decodes");
+        let request =
+            wire::SubscribeSessionRequest::decode(request.as_slice()).expect("a request decodes");
         self.next.replays += 1;
         let before = (
             self.next.origin.store.clone(),

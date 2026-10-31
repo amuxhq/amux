@@ -26,7 +26,6 @@ pub async fn init(
     config: &InstallationConfig,
     config_path: Option<&Path>,
     login_item: Option<bool>,
-    dry_run: bool,
 ) -> Result<()> {
     if !config.supervisor {
         println!(
@@ -71,13 +70,6 @@ pub async fn init(
             .with_context(|| format!("creating {}", parent.display()))?;
     }
     std::fs::write(&file, text).with_context(|| format!("writing {}", file.display()))?;
-    if dry_run {
-        println!("Wrote {}. Would run:", file.display());
-        for command in &commands {
-            println!("  {}", command.join(" "));
-        }
-        return Ok(());
-    }
     // The login item's supervisor must own the install: stop one started by
     // hand first. Agents keep running and the new daemon picks them up.
     if running_supervisor(&config.root)?.is_some() {
@@ -247,7 +239,7 @@ pub async fn update(config: &InstallationConfig, retry: bool) -> Result<()> {
     while Instant::now() < deadline {
         let running = match connect::front_door_now(config).await {
             Some(door) => connect::installation(door)
-                .get_installation(wire::GetInstallationRequest {})
+                .get_installation(wire::Empty {})
                 .await
                 .ok()
                 .map(|info| info.into_inner().version),

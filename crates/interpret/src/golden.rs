@@ -39,7 +39,7 @@
 //! yields the same items and final snapshot as the uninterrupted run, and a
 //! resume re-emits only known keys at their current content.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -47,9 +47,9 @@ use prost::Message as _;
 use serde::Deserialize;
 use serde_json::Value;
 use wire::{
-    AgentSpec, ClaudeAnswer, CodexAnswer, Envelope, Input, Item, Phase, PromptInput,
-    SendInputResponse, SendQueuedNow, Sender, Snapshot, Step, WithdrawQueued, claude_answer,
-    claude_pty_input, claude_sdk_input, codex_input, send_input_response, sender,
+    AgentSpec, Answer, Envelope, Input, Item, Phase, PromptInput, SendInputResponse, SendQueuedNow,
+    Sender, SessionEvent, Snapshot, Step, WithdrawQueued, agent_input, answer, send_input_response,
+    sender, session_event,
 };
 
 use crate::serde_pb::{from_hex, to_hex};
@@ -165,7 +165,6 @@ struct FixtureSpec {
     #[serde(default)]
     parent: bool,
     initial_prompt: Option<String>,
-    producer_version: Option<String>,
     /// The provider arguments the daemon resolved, as a recording's spawn
     /// passed them.
     #[serde(default)]
@@ -280,6 +279,54 @@ impl GoldenReport {
     }
 }
 
+/// Commits interpreter steps the way the owning daemon does: an order once
+/// per new key, a revision per record: what a replay's steps read as in a
+/// client's session.
+#[derive(Clone, Default)]
+pub struct Committer {
+    pub revision: u64,
+    next_order: u64,
+    orders: HashMap<String, u64>,
+    revisions: HashMap<String, u64>,
+}
+
+impl Committer {
+    pub fn commit(&mut self, step: &Step) -> Vec<SessionEvent> {
+        let event = |of| SessionEvent { of: Some(of) };
+        let mut out = Vec::new();
+        for item in &step.items {
+            self.revision += 1;
+            let order = *self.orders.entry(item.key.clone()).or_insert_with(|| {
+                self.next_order += 1;
+                self.next_order
+            });
+            self.revisions.insert(item.key.clone(), self.revision);
+            let mut item = item.clone();
+            item.order = order;
+            item.revision = self.revision;
+            out.push(event(session_event::Of::Item(item)));
+        }
+        for append in &step.appends {
+            self.revision += 1;
+            let base = self
+                .revisions
+                .insert(append.key.clone(), self.revision)
+                .unwrap_or(0);
+            let mut append = append.clone();
+            append.base_revision = base;
+            append.revision = self.revision;
+            out.push(event(session_event::Of::Append(append)));
+        }
+        if let Some(snapshot) = &step.snapshot {
+            self.revision += 1;
+            let mut snapshot = snapshot.clone();
+            snapshot.revision = self.revision;
+            out.push(event(session_event::Of::Snapshot(snapshot)));
+        }
+        out
+    }
+}
+
 /// One fixture event as the interpreter answered it: the input it carried,
 /// if any, the step it emitted and the verdicts it replied.
 #[derive(Clone, Debug)]
@@ -302,8 +349,7 @@ pub fn replay<I: Interpreter>(fixture: &Path) -> Result<Vec<Replayed>, String> {
         serde_json::from_str(&text).map_err(|error| format!("parse fixture: {error}"))?;
     let script = script::<I>(fixture, &parsed)?;
     let spec = spec::<I>(&parsed.spec);
-    let producer = parsed.spec.producer_version.as_deref().unwrap_or("test");
-    let frames = execute::<I>(&spec, producer, &script, None)?;
+    let frames = execute::<I>(&spec, &script, None)?;
     let mut inputs = script.iter().filter_map(|scripted| match &scripted.action {
         Action::Event(Event::Input(input)) => Some((scripted.label.as_str(), input.clone())),
         _ => None,
@@ -352,7 +398,6 @@ pub fn replay<I: Interpreter>(fixture: &Path) -> Result<Vec<Replayed>, String> {
 /// one themselves.
 pub struct FixtureScript {
     pub spec: AgentSpec,
-    pub producer: String,
     /// Each event with its label, in order; `None` is a checkpoint the
     /// fixture takes there.
     pub events: Vec<(String, Option<Event>)>,
@@ -376,11 +421,6 @@ pub fn fixture_script<I: Interpreter>(fixture: &Path) -> Result<FixtureScript, S
         .collect();
     Ok(FixtureScript {
         spec: spec::<I>(&parsed.spec),
-        producer: parsed
-            .spec
-            .producer_version
-            .clone()
-            .unwrap_or_else(|| "test".into()),
         events,
     })
 }
@@ -394,7 +434,7 @@ pub fn run_until<I: Interpreter>(
     until: impl Fn(&Step) -> bool,
 ) -> Result<Option<(I::State, AgentSpec)>, String> {
     let script = fixture_script::<I>(fixture)?;
-    let (mut state, _) = I::initial(&script.spec, &script.producer);
+    let (mut state, _) = I::initial(&script.spec);
     for (_, event) in script.events {
         let Some(event) = event else {
             continue;
@@ -422,7 +462,6 @@ pub fn run_golden<I: Interpreter>(fixture: &Path) -> GoldenReport {
         Err(error) => return GoldenReport::fail(fixture, error),
     };
     let spec = spec::<I>(&parsed.spec);
-    let producer = parsed.spec.producer_version.as_deref().unwrap_or("test");
 
     let mut report = GoldenReport {
         fixture: fixture.to_owned(),
@@ -433,7 +472,7 @@ pub fn run_golden<I: Interpreter>(fixture: &Path) -> GoldenReport {
         failures: Vec::new(),
     };
 
-    let frames = match execute::<I>(&spec, producer, &script, None) {
+    let frames = match execute::<I>(&spec, &script, None) {
         Ok(frames) => frames,
         Err(error) => return GoldenReport::fail(fixture, error),
     };
@@ -450,7 +489,7 @@ pub fn run_golden<I: Interpreter>(fixture: &Path) -> GoldenReport {
     // The checkpoint property, at every prefix.
     let whole = merge(&frames);
     for at in 0..=script.len() {
-        match execute::<I>(&spec, producer, &script, Some(at)) {
+        match execute::<I>(&spec, &script, Some(at)) {
             Ok(resumed) => {
                 if let Some(problem) = check_resumes(&resumed).into_iter().next() {
                     report
@@ -770,7 +809,7 @@ fn withdraw(target: &str) -> WithdrawQueued {
     }
 }
 
-fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
+fn claude_answer(ask: &str, answer: &Value) -> Option<Answer> {
     let text = |value: &Value, key: &str| {
         value
             .get(key)
@@ -779,7 +818,7 @@ fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
             .to_owned()
     };
     let of = if let Some(allow) = answer.get("allow") {
-        claude_answer::Of::Permission(wire::PermissionAnswer {
+        answer::Of::Permission(wire::PermissionAnswer {
             of: Some(wire::permission_answer::Of::Allow(wire::PermissionAllow {
                 scope: allow
                     .get("scope")
@@ -788,7 +827,7 @@ fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
             })),
         })
     } else if let Some(deny) = answer.get("deny") {
-        claude_answer::Of::Permission(wire::PermissionAnswer {
+        answer::Of::Permission(wire::PermissionAnswer {
             of: Some(wire::permission_answer::Of::Deny(wire::PermissionDeny {
                 note: text(deny, "note"),
                 stop: deny.get("stop").and_then(Value::as_bool).unwrap_or(false),
@@ -800,7 +839,7 @@ fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
             .get("switching")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        claude_answer::Of::Plan(wire::PlanAnswer {
+        answer::Of::Plan(wire::PlanAnswer {
             choice: if switching {
                 wire::PlanChoice::StartSwitching
             } else {
@@ -809,18 +848,18 @@ fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
             note: None,
         })
     } else if answer.get("selected").is_some() {
-        claude_answer::Of::Question(question_answer(answer))
+        answer::Of::Question(question_answer(answer))
     } else if let Some(reply) = answer.get("reply") {
-        claude_answer::Of::Reply(reply_instead(reply))
+        answer::Of::Reply(reply_instead(reply))
     } else if let Some(link) = answer.get("link") {
-        claude_answer::Of::Link(wire::LinkAnswer {
+        answer::Of::Link(wire::LinkAnswer {
             action: wire::FormAction::from_str_name(&format!(
                 "FORM_ACTION_{}",
                 text(link, "action").to_uppercase()
             ))? as i32,
         })
     } else if let Some(form) = answer.get("form") {
-        claude_answer::Of::Form(wire::FormAnswer {
+        answer::Of::Form(wire::FormAnswer {
             action: wire::FormAction::from_str_name(&format!(
                 "FORM_ACTION_{}",
                 text(form, "action").to_uppercase()
@@ -832,12 +871,12 @@ fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
         })
     } else {
         let send_back = answer.get("send_back")?;
-        claude_answer::Of::Plan(wire::PlanAnswer {
+        answer::Of::Plan(wire::PlanAnswer {
             choice: wire::PlanChoice::KeepPlanning as i32,
             note: Some(text(send_back, "note")).filter(|note| !note.is_empty()),
         })
     };
-    Some(ClaudeAnswer {
+    Some(Answer {
         ask_key: ask.to_owned(),
         of: Some(of),
     })
@@ -845,7 +884,7 @@ fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
 
 /// The shared fixture vocabulary as a Claude PTY input.
 pub fn claude_pty_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
-    use claude_pty_input::Of;
+    use agent_input::Of;
     let of = match input {
         FixtureInput::Prompt { text } => Of::Prompt(prompt(text)),
         FixtureInput::Withdraw { target } => Of::Withdraw(withdraw(target)),
@@ -862,12 +901,12 @@ pub fn claude_pty_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input
         | FixtureInput::Mode { .. }
         | FixtureInput::Effort { .. } => return None,
     };
-    Some(Input::new(input_id, wire::ClaudePtyInput { of: Some(of) }))
+    Some(Input::new(input_id, wire::AgentInput { of: Some(of) }))
 }
 
 /// The shared fixture vocabulary as a Claude SDK input.
 pub fn claude_sdk_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
-    use claude_sdk_input::Of;
+    use agent_input::Of;
     let of = match input {
         FixtureInput::Prompt { text } => Of::Prompt(prompt(text)),
         FixtureInput::Withdraw { target } => Of::Withdraw(withdraw(target)),
@@ -888,12 +927,12 @@ pub fn claude_sdk_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input
         | FixtureInput::Mode { .. }
         | FixtureInput::Raw { .. } => return None,
     };
-    Some(Input::new(input_id, wire::ClaudeSdkInput { of: Some(of) }))
+    Some(Input::new(input_id, wire::AgentInput { of: Some(of) }))
 }
 
 /// The shared fixture vocabulary as a Codex input.
 pub fn codex_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
-    use codex_input::Of;
+    use agent_input::Of;
     let of = match input {
         FixtureInput::Prompt { text } => Of::Prompt(prompt(text)),
         FixtureInput::Withdraw { target } => Of::Withdraw(withdraw(target)),
@@ -916,7 +955,7 @@ pub fn codex_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
         | FixtureInput::CyclePermissionMode {}
         | FixtureInput::Raw { .. } => return None,
     };
-    Some(Input::new(input_id, wire::CodexInput { of: Some(of) }))
+    Some(Input::new(input_id, wire::AgentInput { of: Some(of) }))
 }
 
 /// One response per question: an option index, a list of indices for a
@@ -984,8 +1023,8 @@ fn reply_instead(reply: &Value) -> wire::ReplyInstead {
     }
 }
 
-fn codex_answer(ask: &str, answer: &Value) -> Option<CodexAnswer> {
-    use wire::codex_answer::Of;
+fn codex_answer(ask: &str, answer: &Value) -> Option<Answer> {
+    use wire::answer::Of;
     let action = |value: &Value| {
         wire::FormAction::from_str_name(&format!(
             "FORM_ACTION_{}",
@@ -1056,7 +1095,7 @@ fn codex_answer(ask: &str, answer: &Value) -> Option<CodexAnswer> {
                 .unwrap_or(false),
         })
     };
-    Some(CodexAnswer {
+    Some(Answer {
         ask_key: ask.to_owned(),
         of: Some(of),
     })
@@ -1066,11 +1105,10 @@ fn codex_answer(ask: &str, answer: &Value) -> Option<CodexAnswer> {
 /// and resumed before event `checkpoint_at`, as a restart would.
 fn execute<I: Interpreter>(
     spec: &AgentSpec,
-    producer: &str,
     script: &[Scripted],
     checkpoint_at: Option<usize>,
 ) -> Result<Vec<Frame>, String> {
-    let (mut state, first) = I::initial(spec, producer);
+    let (mut state, first) = I::initial(spec);
     let mut frames = vec![Frame {
         label: "initial".into(),
         step: first,

@@ -21,11 +21,8 @@ use super::link_log::{EarlyData, LinkEvent, LinkTransition};
 use super::{QuicCarrier, read_message, write_message};
 use crate::net_error::{self, status as protocol_status};
 use crate::routing::{
-    ConnectHandshake, ConnectHandshakeEvent, Host, LinkAdmission, LinkCloseRequest, LinkId,
-    LinkProperties, LinkRegistry, LinkRole, LiveLocalHost, Registration, RuntimeInstance,
-    core_host, host_from_wire, host_to_wire, inbound_host_from_wire, neighbor_down_from_wire,
-    neighbor_up_from_wire, protocol_error_hello_ack, protocol_error_link_close,
-    validate_remote_host,
+    Host, LinkAdmission, LinkCloseRequest, LinkId, LinkProperties, LinkRegistry, LinkRole,
+    LiveLocalHost, Registration, RuntimeInstance, core_host, host_from_wire, host_to_wire,
 };
 use crate::{Clock, HostId};
 
@@ -57,11 +54,6 @@ pub struct AuthenticatedLinkUser {
 pub trait LinkTokenAuthenticator: Send + Sync + 'static {
     async fn authenticate_token(&self, token: &str)
     -> Result<AuthenticatedLinkUser, tonic::Status>;
-}
-
-#[tonic::async_trait]
-pub(crate) trait AuthenticatedLinkContextProvider: Send + Sync + 'static {
-    async fn context_for(&self, user: &AuthenticatedLinkUser) -> LinkCtx;
 }
 
 #[tonic::async_trait]
@@ -195,10 +187,10 @@ impl LinkConnectorAuth {
         }
     }
 
-    async fn refresh(&mut self) -> Result<(wire::pb::Message, crate::Tier), tonic::Status> {
+    async fn refresh(&mut self) -> Result<(wire::Message, crate::Tier), tonic::Status> {
         let token = self.refresher.refresh_routing_token().await?;
-        let message = wire::pb::Message {
-            body: Some(wire::pb::message::Body::Reauth(wire::pb::Reauth {
+        let message = wire::Message {
+            body: Some(wire::message::Body::Reauth(wire::Reauth {
                 auth_token: token.token.clone(),
             })),
         };
@@ -237,7 +229,9 @@ pub struct LinkCtx {
     link_role: LinkRole,
     acceptor_session: Option<LinkAuthSession>,
     authenticator: Option<Arc<dyn LinkTokenAuthenticator>>,
-    authenticated_context_provider: Option<Arc<dyn AuthenticatedLinkContextProvider>>,
+    /// On a relay: the accounts whose registry a link joins once its
+    /// token names its account.
+    accounts: Option<Arc<crate::edge::Accounts>>,
     clock: Arc<dyn Clock>,
     connector_auth: Option<LinkConnectorAuth>,
     established_tx: Option<Arc<StdRwLock<Option<EstablishmentSender>>>>,
@@ -261,17 +255,11 @@ struct Resumed {
     handshaken: watch::Receiver<bool>,
 }
 
-pub(crate) type LinkConnectorCtx = LinkCtx;
 type ConnectorTask = tokio::task::JoinHandle<Result<(), tonic::Status>>;
 type EstablishmentSender = oneshot::Sender<Result<Host, tonic::Status>>;
 pub(crate) type EstablishmentReceiver = oneshot::Receiver<Result<Host, tonic::Status>>;
 
 impl LinkCtx {
-    #[cfg(test)]
-    pub fn new(local_host: Host, links: Arc<LinkRegistry>) -> Self {
-        Self::new_live(LiveLocalHost::new(local_host), links)
-    }
-
     pub(crate) fn new_live(local_host: LiveLocalHost, links: Arc<LinkRegistry>) -> Self {
         Self {
             local_host,
@@ -283,7 +271,7 @@ impl LinkCtx {
             link_role: LinkRole::Peer,
             acceptor_session: None,
             authenticator: None,
-            authenticated_context_provider: None,
+            accounts: None,
             clock: Arc::new(SystemClock),
             connector_auth: None,
             established_tx: None,
@@ -303,10 +291,10 @@ impl LinkCtx {
     }
 
     /// Hands a control frame from the peer to the core.
-    fn report_frame(&self, link: LinkId, body: wire::pb::message::Body) {
+    fn report_frame(&self, link: LinkId, body: wire::message::Body) {
         self.report(daemon_core::Input::LinkControl {
             link: link.core(),
-            frame: wire::pb::Message { body: Some(body) },
+            frame: wire::Message { body: Some(body) },
         });
     }
 
@@ -326,11 +314,6 @@ impl LinkCtx {
     /// `handshaken` turns true once the connection's handshake is over.
     pub(crate) fn with_resumed(mut self, key: Vec<u8>, handshaken: watch::Receiver<bool>) -> Self {
         self.resumed = Some(Resumed { key, handshaken });
-        self
-    }
-
-    pub fn with_link_role(mut self, role: LinkRole) -> Self {
-        self.link_role = role;
         self
     }
 
@@ -379,6 +362,18 @@ impl LinkCtx {
         }
     }
 
+    /// Presents `auth` to the relay this connector dials, refreshing it
+    /// when `refresh_rx` asks.
+    pub(crate) fn with_connector_auth(
+        mut self,
+        auth: LinkConnectorAuth,
+        refresh_rx: Option<LinkConnectorRefreshReceiver>,
+    ) -> Self {
+        self.connector_auth = Some(auth);
+        self.refresh_rx = refresh_rx;
+        self
+    }
+
     pub(crate) fn with_shutdown(mut self, shutdown_rx: watch::Receiver<bool>) -> Self {
         self.shutdown_rx = Some(shutdown_rx);
         self
@@ -398,11 +393,9 @@ impl LinkCtx {
         self
     }
 
-    pub(crate) fn with_authenticated_context_provider(
-        mut self,
-        provider: Arc<dyn AuthenticatedLinkContextProvider>,
-    ) -> Self {
-        self.authenticated_context_provider = Some(provider);
+    /// A relay's link, which joins the account its token names.
+    pub(crate) fn joining(mut self, accounts: Arc<crate::edge::Accounts>) -> Self {
+        self.accounts = Some(accounts);
         self
     }
 
@@ -413,14 +406,10 @@ impl LinkCtx {
     }
 }
 
-/// Runs one complete link for either side of a QUIC connection.
-pub async fn run_link(
-    mut ctx: LinkCtx,
-    carrier: Arc<QuicCarrier>,
-    role: crate::routing::ConnectRole,
-) -> Result<(), LinkError> {
+/// Runs one complete link for either side of a QUIC connection: the side
+/// that dialled says Hello, the side that accepted answers it.
+pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(), LinkError> {
     let (mut sink, mut source) = carrier.control();
-    let mut handshake = ConnectHandshake::new(role);
     // A host lists where it can be reached to its peers, and to the relay
     // nothing: punching needs only what the relay sees.
     let mut addresses = ctx
@@ -435,160 +424,145 @@ pub async fn run_link(
     // The peer's hello or its answer to ours, as the core is told it.
     let peer_frame;
     let mut held_ack = None;
-    let ((peer_host, peer_instance), peer_neighbors, snapshot) = match role {
-        crate::routing::ConnectRole::Connector => {
-            // A dial to the relay wrote its Hello itself, as it started.
-            let opened = carrier.take_opened();
-            let wrote = opened.is_some();
-            let snapshot = match opened {
-                Some(neighbors) => neighbors,
-                None => neighbor_snapshot(&ctx, carrier.as_ref()).await,
-            };
-            let answered = async {
-                if !wrote {
-                    write_message(&mut sink, &connector_hello(&ctx, &snapshot, &own)).await?;
-                }
-                tracing::debug!(path = %carrier.path_stats(), "sent Hello");
-                let first = read_first(&mut source, "HelloAck").await?;
-                tracing::debug!(path = %carrier.path_stats(), "received the first message after Hello");
-                if let Some(wire::pb::message::Body::LinkClose(close)) = first.body.as_ref() {
-                    let status = link_close_status(close).unwrap_or_else(|| {
-                        // The host refused the identity a resumed handshake's
-                        // ticket named: it no longer trusts this one.
-                        if close.reason == wire::pb::LinkCloseReason::UserRevoked as i32 {
-                            return super::ChannelError::Revoked.status();
-                        }
-                        tonic::Status::unavailable("link closed during authentication")
-                    });
-                    return Err(status.into());
-                }
-                let frame = first.body.clone();
-                match handshake.receive(first) {
-                    Ok(ConnectHandshakeEvent::Accepted(accepted)) => {
-                        let (peer, neighbors, runtime_instance) =
-                            accept_peer_hello_ack(&ctx, accepted).map_err(protocol_status)?;
-                        Ok((frame, (peer, runtime_instance), neighbors))
-                    }
-                    Ok(ConnectHandshakeEvent::Rejected(error)) => {
-                        Err(protocol_status(error).into())
-                    }
-                    Ok(_) => Err(tonic::Status::invalid_argument("expected HelloAck").into()),
-                    Err(error) => Err(tonic::Status::invalid_argument(error.to_string()).into()),
-                }
-            };
-            match answered.await {
-                Ok((frame, peer, neighbors)) => {
-                    peer_frame = frame;
-                    (peer, neighbors, snapshot)
-                }
-                // A host that no longer trusts this one can say so by its
-                // connection's end rather than a LinkClose: refusing this
-                // host's certificate after a handshake that seemed done (as
-                // TLS 1.3 lets a server), or closing a resumed link whose
-                // close outran its LinkClose. Either way the end carries the
-                // revocation, and every dial reads it here.
-                Err(_)
-                    if carrier.close_reason() == Some(wire::pb::LinkCloseReason::UserRevoked) =>
-                {
-                    return Err(super::ChannelError::Revoked.status().into());
-                }
-                Err(error) => return Err(error),
+    let dialled = !carrier.accepted();
+    let ((peer_host, peer_instance), peer_neighbors, snapshot) = if dialled {
+        // A dial to the relay wrote its Hello itself, as it started.
+        let opened = carrier.take_opened();
+        let wrote = opened.is_some();
+        let snapshot = match opened {
+            Some(neighbors) => neighbors,
+            None => neighbor_snapshot(&ctx, carrier.as_ref()).await,
+        };
+        let answered = async {
+            if !wrote {
+                write_message(&mut sink, &connector_hello(&ctx, &snapshot, &own)).await?;
             }
-        }
-        crate::routing::ConnectRole::Acceptor => {
-            let first =
-                match tokio::time::timeout(LINK_CONNECT_HELLO_TIMEOUT, read_message(&mut source))
-                    .await
-                {
-                    Ok(Ok(Some(first))) => first,
-                    Ok(Ok(None)) => return Ok(()),
-                    Ok(Err(error)) => {
-                        write_message(&mut sink, &protocol_error_link_close(error.to_string()))
-                            .await?;
-                        carrier.close(wire::pb::LinkCloseReason::ProtocolError);
-                        return Ok(());
+            tracing::debug!(path = %carrier.path_stats(), "sent Hello");
+            let first = read_first(&mut source, "HelloAck").await?;
+            tracing::debug!(path = %carrier.path_stats(), "received the first message after Hello");
+            if let Some(wire::message::Body::LinkClose(close)) = first.body.as_ref() {
+                let status = link_close_status(close).unwrap_or_else(|| {
+                    // The host refused the identity a resumed handshake's
+                    // ticket named: it no longer trusts this one.
+                    if close.reason == wire::LinkCloseReason::UserRevoked as i32 {
+                        return super::ChannelError::Revoked.status();
                     }
-                    Err(_) => {
-                        carrier.close(wire::pb::LinkCloseReason::ProtocolError);
-                        return Ok(());
-                    }
-                };
-            let hello = match handshake.receive(first) {
-                Ok(ConnectHandshakeEvent::Hello(hello)) => {
-                    // The core records its inputs on the drive, so the
-                    // credential stays here.
-                    peer_frame = Some(wire::pb::message::Body::Hello(wire::pb::Hello {
-                        auth_token: None,
-                        ..hello.clone()
-                    }));
-                    hello
+                    tonic::Status::unavailable("link closed during authentication")
+                });
+                return Err(status.into());
+            }
+            let frame = first.body.clone();
+            match first.body {
+                Some(wire::message::Body::HelloAck(wire::HelloAck {
+                    outcome: Some(wire::hello_ack::Outcome::Accepted(accepted)),
+                })) => {
+                    let (peer, neighbors, runtime_instance) =
+                        accept_peer_hello(&ctx, accepted, ctx.expected_peer)
+                            .map_err(protocol_status)?;
+                    Ok((frame, (peer, runtime_instance), neighbors))
                 }
-                Ok(_) => {
-                    write_message(
-                        &mut sink,
-                        &protocol_error_hello_ack("unexpected message while awaiting Hello"),
+                Some(wire::message::Body::HelloAck(wire::HelloAck {
+                    outcome: Some(wire::hello_ack::Outcome::Error(error)),
+                })) => Err(protocol_status(error).into()),
+                Some(wire::message::Body::HelloAck(wire::HelloAck { outcome: None })) => {
+                    Err(tonic::Status::invalid_argument(
+                        "hello_ack is missing an accepted/error outcome",
                     )
-                    .await?;
-                    carrier.close(wire::pb::LinkCloseReason::ProtocolError);
-                    return Ok(());
+                    .into())
                 }
-                Err(error) => {
-                    write_message(&mut sink, &protocol_error_hello_ack(error.to_string())).await?;
-                    carrier.close(wire::pb::LinkCloseReason::ProtocolError);
-                    return Ok(());
-                }
-            };
-            let mut session = match authenticate_hello(&ctx, &hello).await {
-                Ok(session) => session,
-                Err(status) => {
-                    tracing::warn!(%status, "the link's hello was refused");
-                    write_message(&mut sink, &auth_expired_link_close()).await?;
-                    carrier.close(wire::pb::LinkCloseReason::AuthExpired);
-                    return Ok(());
-                }
-            };
-            if let (Some(provider), Some(authenticated)) =
-                (ctx.authenticated_context_provider.clone(), session.as_ref())
-            {
-                let user = authenticated.user();
-                let authenticator = authenticated.authenticator.clone();
-                let observes = ctx.observes.take();
-                let refund = ctx.refund.take();
-                ctx = provider.context_for(&user).await;
-                ctx.observes = observes;
-                ctx.refund = refund;
-                session = Some(LinkAuthSession::new(user, authenticator));
+                _ => Err(tonic::Status::invalid_argument("expected hello_ack").into()),
             }
-            let snapshot = neighbor_snapshot(&ctx, carrier.as_ref()).await;
-            let peer = match accept_peer_hello(&ctx, hello, session.as_ref()) {
-                Ok(peer) => peer,
-                Err(error) => {
-                    write_message(&mut sink, &error_hello_ack(error)).await?;
-                    carrier.close(wire::pb::LinkCloseReason::ProtocolError);
-                    return Ok(());
-                }
-            };
-            tracing::debug!(
-                peer = %peer.0.id,
-                runtime_instance = ?peer.2,
-                "accepted a link from a peer"
-            );
-            observed = ctx.observed(carrier.as_ref(), session.as_ref());
-            let ack = accepted_hello_ack(&ctx, &snapshot, peer.0.id, &own, observed);
-            // A resumed link's answer waits for the core to take the
-            // identity its ticket names.
-            if ctx.resumed.is_some() {
-                held_ack = Some(ack);
-            } else {
-                ctx.refund();
-                write_message(&mut sink, &ack).await?;
-                handshake
-                    .acceptor_ack_sent()
-                    .map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;
+        };
+        match answered.await {
+            Ok((frame, peer, neighbors)) => {
+                peer_frame = frame;
+                (peer, neighbors, snapshot)
             }
-            ctx.acceptor_session = session;
-            ((peer.0, peer.2), peer.1, snapshot)
+            // A host that no longer trusts this one can say so by its
+            // connection's end rather than a LinkClose: refusing this
+            // host's certificate after a handshake that seemed done (as
+            // TLS 1.3 lets a server), or closing a resumed link whose
+            // close outran its LinkClose. Either way the end carries the
+            // revocation, and every dial reads it here.
+            Err(_) if carrier.close_reason() == Some(wire::LinkCloseReason::UserRevoked) => {
+                return Err(super::ChannelError::Revoked.status().into());
+            }
+            Err(error) => return Err(error),
         }
+    } else {
+        let first =
+            match tokio::time::timeout(LINK_CONNECT_HELLO_TIMEOUT, read_message(&mut source)).await
+            {
+                Ok(Ok(Some(first))) => first,
+                Ok(Ok(None)) => return Ok(()),
+                Ok(Err(error)) => {
+                    write_message(&mut sink, &protocol_error_link_close(error.to_string())).await?;
+                    carrier.close(wire::LinkCloseReason::ProtocolError);
+                    return Ok(());
+                }
+                Err(_) => {
+                    carrier.close(wire::LinkCloseReason::ProtocolError);
+                    return Ok(());
+                }
+            };
+        let Some(wire::message::Body::Hello(hello)) = first.body else {
+            write_message(&mut sink, &protocol_error_hello_ack("expected hello")).await?;
+            carrier.close(wire::LinkCloseReason::ProtocolError);
+            return Ok(());
+        };
+        // The core records its inputs on the drive, so the credential
+        // stays here.
+        peer_frame = Some(wire::message::Body::Hello(wire::Hello {
+            auth_token: None,
+            ..hello.clone()
+        }));
+        let session = match authenticate_hello(&ctx, &hello).await {
+            Ok(session) => session,
+            Err(status) => {
+                tracing::warn!(%status, "the link's hello was refused");
+                write_message(&mut sink, &auth_expired_link_close()).await?;
+                carrier.close(wire::LinkCloseReason::AuthExpired);
+                return Ok(());
+            }
+        };
+        if hello.protocol_version != PROTOCOL_VERSION {
+            let reason = wire::LinkCloseReason::VersionMismatch;
+            write_message(&mut sink, &link_close(reason)).await?;
+            carrier.close(reason);
+            return Ok(());
+        }
+        if let (Some(accounts), Some(session)) = (ctx.accounts.clone(), session.as_ref()) {
+            let (links, incoming) = accounts.account(session.user().user_id).await;
+            ctx.links = links;
+            ctx.incoming_streams_tx = Some(incoming);
+            ctx.link_role = LinkRole::CloudRelay;
+        }
+        let snapshot = neighbor_snapshot(&ctx, carrier.as_ref()).await;
+        let peer = match accept_peer_hello(&ctx, hello, ctx.authenticated_peer) {
+            Ok(peer) => peer,
+            Err(error) => {
+                write_message(&mut sink, &error_hello_ack(error)).await?;
+                carrier.close(wire::LinkCloseReason::ProtocolError);
+                return Ok(());
+            }
+        };
+        tracing::debug!(
+            peer = %peer.0.id,
+            runtime_instance = ?peer.2,
+            "accepted a link from a peer"
+        );
+        observed = ctx.observed(carrier.as_ref(), session.as_ref());
+        let ack = accepted_hello_ack(&ctx, &snapshot, peer.0.id, &own, observed);
+        // A resumed link's answer waits for the core to take the
+        // identity its ticket names.
+        if ctx.resumed.is_some() {
+            held_ack = Some(ack);
+        } else {
+            ctx.refund();
+            write_message(&mut sink, &ack).await?;
+        }
+        ctx.acceptor_session = session;
+        ((peer.0, peer.2), peer.1, snapshot)
     };
 
     run_established(
@@ -596,8 +570,14 @@ pub async fn run_link(
         carrier,
         sink,
         source,
-        (handshake, held_ack),
-        (peer_host, peer_instance, peer_neighbors, role, peer_frame),
+        held_ack,
+        (
+            peer_host,
+            peer_instance,
+            peer_neighbors,
+            dialled,
+            peer_frame,
+        ),
         Told {
             neighbors: snapshot.into_iter().map(|host| host.id).collect(),
             addresses,
@@ -632,9 +612,9 @@ async fn addresses_changed(
     addresses.borrow_and_update().clone()
 }
 
-fn addresses_message(own: &crate::routing::OwnAddresses) -> wire::pb::Message {
-    wire::pb::Message {
-        body: Some(wire::pb::message::Body::Addresses(wire::pb::Addresses {
+fn addresses_message(own: &crate::routing::OwnAddresses) -> wire::Message {
+    wire::Message {
+        body: Some(wire::message::Body::Addresses(wire::Addresses {
             addrs: own.listed.iter().map(ToString::to_string).collect(),
             public_addr: own.public.map(|addr| addr.to_string()),
         })),
@@ -653,7 +633,7 @@ async fn neighbor_snapshot(ctx: &LinkCtx, carrier: &QuicCarrier) -> Vec<Host> {
 async fn read_first(
     source: &mut super::ControlSource,
     expected: &'static str,
-) -> Result<wire::pb::Message, LinkError> {
+) -> Result<wire::Message, LinkError> {
     match read_message(source).await? {
         Some(message) => Ok(message),
         None => Err(tonic::Status::unavailable(format!("link closed before {expected}")).into()),
@@ -662,7 +642,7 @@ async fn read_first(
 
 async fn authenticate_hello(
     ctx: &LinkCtx,
-    hello: &wire::pb::Hello,
+    hello: &wire::Hello,
 ) -> Result<Option<LinkAuthSession>, tonic::Status> {
     let Some(authenticator) = &ctx.authenticator else {
         return Ok(ctx.acceptor_session.clone());
@@ -681,18 +661,17 @@ async fn run_established(
     carrier: Arc<QuicCarrier>,
     mut sink: super::ControlSink,
     mut source: super::ControlSource,
-    (mut handshake, held_ack): (ConnectHandshake, Option<wire::pb::Message>),
+    held_ack: Option<wire::Message>,
     peer: (
         Host,
         RuntimeInstance,
         Vec<Host>,
-        crate::routing::ConnectRole,
-        Option<wire::pb::message::Body>,
+        bool,
+        Option<wire::message::Body>,
     ),
     mut told: Told,
 ) -> Result<(), LinkError> {
-    debug_assert!(held_ack.is_some() || handshake.is_established());
-    let (peer_host, peer_instance, _neighbors, connect_role, peer_frame) = peer;
+    let (peer_host, peer_instance, _neighbors, dialled, peer_frame) = peer;
     if ctx
         .shutdown_rx
         .as_ref()
@@ -700,7 +679,7 @@ async fn run_established(
     {
         let status = tonic::Status::unavailable("link connector is shutting down");
         signal_establishment(ctx.take_established_tx(), Err(clone_status(&status)));
-        carrier.close(wire::pb::LinkCloseReason::UserShutdown);
+        carrier.close(wire::LinkCloseReason::UserShutdown);
         return Err(status.into());
     }
     let link = LinkId::new(peer_host.id);
@@ -736,11 +715,7 @@ async fn run_established(
                 runtime_instance: peer_instance,
                 direct_order: (link_role == LinkRole::Peer && carrier_tag == CarrierKind::Direct)
                     .then(|| {
-                        crate::routing::direct_order(
-                            ctx.local_host.id(),
-                            peer_host.id,
-                            connect_role,
-                        )
+                        crate::routing::direct_order(ctx.local_host.id(), peer_host.id, dialled)
                     }),
             },
             &told.neighbors,
@@ -753,7 +728,7 @@ async fn run_established(
     }) = registration
     else {
         signal_establishment(ctx.take_established_tx(), Ok(peer_host));
-        carrier.close(wire::pb::LinkCloseReason::UserShutdown);
+        carrier.close(wire::LinkCloseReason::UserShutdown);
         return Ok(());
     };
     let registered = Registered {
@@ -797,22 +772,14 @@ async fn run_established(
                 if let Some(resumed) = &ctx.resumed {
                     let _ = resumed.handshaken.clone().wait_for(|over| *over).await;
                 }
-                let _ = write_message(
-                    &mut sink,
-                    &link_close(wire::pb::LinkCloseReason::UserRevoked),
-                )
-                .await;
-                registered
-                    .leave(wire::pb::LinkCloseReason::UserRevoked)
-                    .await;
-                carrier.close(wire::pb::LinkCloseReason::UserRevoked);
+                let _ =
+                    write_message(&mut sink, &link_close(wire::LinkCloseReason::UserRevoked)).await;
+                registered.leave(wire::LinkCloseReason::UserRevoked).await;
+                carrier.close(wire::LinkCloseReason::UserRevoked);
                 return Ok(());
             }
             ctx.refund();
             write_message(&mut sink, &ack).await?;
-            handshake
-                .acceptor_ack_sent()
-                .map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;
         }
     }
     let logged = LinkEvent {
@@ -837,7 +804,7 @@ async fn run_established(
     let mut acceptor_auth = ctx.acceptor_session.clone();
     let mut connector_auth = ctx.connector_auth.clone();
     let mut shutdown_rx = ctx.shutdown_rx.clone();
-    let mut close_reason = wire::pb::LinkCloseReason::Unspecified;
+    let mut close_reason = wire::LinkCloseReason::Unspecified;
     let mut close_status = None;
     let observing = ctx.observes.is_some();
     let mut observe = tokio::time::interval(OBSERVE_EVERY);
@@ -855,33 +822,25 @@ async fn run_established(
                     Ok(None) => break,
                     Err(error) => {
                         let _ = out_tx.send(protocol_error_link_close(error.to_string())).await;
-                        close_reason = wire::pb::LinkCloseReason::ProtocolError;
+                        close_reason = wire::LinkCloseReason::ProtocolError;
                         break;
                     }
                 };
-                match handshake.receive(message) {
-                    Ok(ConnectHandshakeEvent::PostHandshake(body)) => {
-                        match handle_control_body(&ctx, link, body, acceptor_auth.as_mut()).await {
-                            ControlAction::Continue => {}
-                            ControlAction::Close(reason, status) => {
-                                close_reason = reason;
-                                close_status = status;
-                                break;
-                            }
-                            ControlAction::ReplyAndClose(message, reason) => {
-                                let _ = out_tx.send(*message).await;
-                                close_reason = reason;
-                                break;
-                            }
-                        }
+                let Some(body) = message.body else {
+                    let _ = out_tx.send(protocol_error_link_close("message body is missing")).await;
+                    close_reason = wire::LinkCloseReason::ProtocolError;
+                    break;
+                };
+                match handle_control_body(&ctx, link, body, acceptor_auth.as_mut()).await {
+                    ControlAction::Continue => {}
+                    ControlAction::Close(reason, status) => {
+                        close_reason = reason;
+                        close_status = status;
+                        break;
                     }
-                    Ok(ConnectHandshakeEvent::Unknown) => {
-                        tracing::debug!(?link, "ignored a control message this build does not know");
-                    }
-                    Ok(_) => unreachable!("handshake cannot repeat after establishment"),
-                    Err(error) => {
-                        let _ = out_tx.send(protocol_error_link_close(error.to_string())).await;
-                        close_reason = wire::pb::LinkCloseReason::ProtocolError;
+                    ControlAction::ReplyAndClose(message, reason) => {
+                        let _ = out_tx.send(*message).await;
+                        close_reason = reason;
                         break;
                     }
                 }
@@ -895,9 +854,9 @@ async fn run_established(
             _ = observe.tick(), if observing => {
                 match ctx.observed(carrier.as_ref(), acceptor_auth.as_ref()) {
                     Some(seen) if told.observed != Some(seen) => {
-                        let message = wire::pb::Message {
-                            body: Some(wire::pb::message::Body::ObservedAddress(
-                                wire::pb::ObservedAddress { addr: seen.to_string() },
+                        let message = wire::Message {
+                            body: Some(wire::message::Body::ObservedAddress(
+                                wire::ObservedAddress { addr: seen.to_string() },
                             )),
                         };
                         if let Err(error) = write_message(&mut sink, &message).await {
@@ -922,7 +881,7 @@ async fn run_established(
             stream = carrier.accept_stream() => {
                 let Some(stream) = stream else {
                     if let Some((reason, status)) =
-                        last_word(&ctx, link, &mut handshake, &mut source).await
+                        last_word(&ctx, link, &mut source).await
                     {
                         close_reason = reason;
                         close_status = status;
@@ -937,7 +896,7 @@ async fn run_established(
                 // before the link itself goes.
                 ctx.links.expire(&link).await;
                 let _ = write_message(&mut sink, &auth_expired_link_close()).await;
-                close_reason = wire::pb::LinkCloseReason::AuthExpired;
+                close_reason = wire::LinkCloseReason::AuthExpired;
                 break;
             }
             request = receive_refresh_request(ctx.refresh_rx.as_ref()), if connector_auth.is_some() => {
@@ -977,8 +936,8 @@ async fn run_established(
                     Some(LinkCloseRequest::ForwarderGone) => tonic::Status::unavailable("the link to the forwarder carrying it went"),
                     Some(LinkCloseRequest::PeerRevoked) => tonic::Status::permission_denied("the peer no longer trusts this host"),
                     Some(LinkCloseRequest::Revoked) => {
-                        let _ = write_message(&mut sink, &link_close(wire::pb::LinkCloseReason::UserRevoked)).await;
-                        close_reason = wire::pb::LinkCloseReason::UserRevoked;
+                        let _ = write_message(&mut sink, &link_close(wire::LinkCloseReason::UserRevoked)).await;
+                        close_reason = wire::LinkCloseReason::UserRevoked;
                         tonic::Status::permission_denied("peer trust was revoked")
                     }
                     None => tonic::Status::unavailable("link closed"),
@@ -986,15 +945,15 @@ async fn run_established(
                 break;
             }
             _ = wait_for_connector_shutdown(&mut shutdown_rx) => {
-                let message = link_close(wire::pb::LinkCloseReason::UserShutdown);
+                let message = link_close(wire::LinkCloseReason::UserShutdown);
                 let _ = write_message(&mut sink, &message).await;
-                close_reason = wire::pb::LinkCloseReason::UserShutdown;
+                close_reason = wire::LinkCloseReason::UserShutdown;
                 break;
             }
             reason = carrier.closed() => {
                 close_reason = reason;
                 if let Some((reason, status)) =
-                    last_word(&ctx, link, &mut handshake, &mut source).await
+                    last_word(&ctx, link, &mut source).await
                 {
                     close_reason = reason;
                     close_status = status;
@@ -1008,7 +967,7 @@ async fn run_established(
     // its close message was read first, the connection's end was seen
     // first, or the control stream simply ended with it. This side has not
     // closed the carrier yet, so any reason it gives is the peer's.
-    if carrier.close_reason() == Some(wire::pb::LinkCloseReason::UserRevoked) {
+    if carrier.close_reason() == Some(wire::LinkCloseReason::UserRevoked) {
         peer_revoked(&ctx, link, peer_host.id).await;
     }
     // Drain control messages already queued before closing, most importantly
@@ -1037,13 +996,10 @@ async fn run_established(
 async fn last_word(
     ctx: &LinkCtx,
     link: LinkId,
-    handshake: &mut ConnectHandshake,
     source: &mut super::ControlSource,
-) -> Option<(wire::pb::LinkCloseReason, Option<tonic::Status>)> {
+) -> Option<(wire::LinkCloseReason, Option<tonic::Status>)> {
     while let Ok(Some(message)) = read_message(source).await {
-        if let Ok(ConnectHandshakeEvent::PostHandshake(
-            body @ wire::pb::message::Body::LinkClose(_),
-        )) = handshake.receive(message)
+        if let Some(body @ wire::message::Body::LinkClose(_)) = message.body
             && let ControlAction::Close(reason, status) =
                 handle_control_body(ctx, link, body, None).await
         {
@@ -1075,48 +1031,30 @@ fn spawn_inbound_dispatch(ctx: LinkCtx, peer: HostId, mut stream: super::ByteStr
 
 enum ControlAction {
     Continue,
-    Close(wire::pb::LinkCloseReason, Option<tonic::Status>),
+    Close(wire::LinkCloseReason, Option<tonic::Status>),
     /// Boxed: the control message dwarfs every other variant, and this one
     /// is the rare terminal path.
-    ReplyAndClose(Box<wire::pb::Message>, wire::pb::LinkCloseReason),
+    ReplyAndClose(Box<wire::Message>, wire::LinkCloseReason),
 }
 
 async fn handle_control_body(
     ctx: &LinkCtx,
     link: LinkId,
-    body: wire::pb::message::Body,
+    body: wire::message::Body,
     acceptor_auth: Option<&mut LinkAuthSession>,
 ) -> ControlAction {
     match body {
-        wire::pb::message::Body::NeighborUp(event) => match neighbor_up_from_wire(event.clone()) {
-            Ok(_) => {
-                ctx.report_frame(link, wire::pb::message::Body::NeighborUp(event));
-                ControlAction::Continue
-            }
-            Err(error) => ControlAction::ReplyAndClose(
-                Box::new(protocol_error_link_close(error.to_string())),
-                wire::pb::LinkCloseReason::ProtocolError,
-            ),
-        },
-        wire::pb::message::Body::NeighborDown(event) => {
-            match neighbor_down_from_wire(event.clone()) {
-                Ok(_) => {
-                    ctx.report_frame(link, wire::pb::message::Body::NeighborDown(event));
-                    ControlAction::Continue
-                }
-                Err(error) => ControlAction::ReplyAndClose(
-                    Box::new(protocol_error_link_close(error.to_string())),
-                    wire::pb::LinkCloseReason::ProtocolError,
-                ),
-            }
+        body @ (wire::message::Body::NeighborUp(_) | wire::message::Body::NeighborDown(_)) => {
+            ctx.report_frame(link, body);
+            ControlAction::Continue
         }
-        wire::pb::message::Body::Reauth(reauth) => {
+        wire::message::Body::Reauth(reauth) => {
             let Some(auth) = acceptor_auth else {
                 return ControlAction::ReplyAndClose(
                     Box::new(protocol_error_link_close(
                         "reauth received on unauthenticated link",
                     )),
-                    wire::pb::LinkCloseReason::ProtocolError,
+                    wire::LinkCloseReason::ProtocolError,
                 );
             };
             match auth
@@ -1139,7 +1077,7 @@ async fn handle_control_body(
                         );
                         ControlAction::ReplyAndClose(
                             Box::new(auth_expired_link_close()),
-                            wire::pb::LinkCloseReason::AuthExpired,
+                            wire::LinkCloseReason::AuthExpired,
                         )
                     }
                 },
@@ -1147,78 +1085,74 @@ async fn handle_control_body(
                     tracing::warn!(%status, "the link's reauthentication was refused");
                     ControlAction::ReplyAndClose(
                         Box::new(auth_expired_link_close()),
-                        wire::pb::LinkCloseReason::AuthExpired,
+                        wire::LinkCloseReason::AuthExpired,
                     )
                 }
             }
         }
-        wire::pb::message::Body::LinkClose(close) => {
-            let reason = wire::pb::LinkCloseReason::try_from(close.reason)
-                .unwrap_or(wire::pb::LinkCloseReason::Unspecified);
-            if reason == wire::pb::LinkCloseReason::UserRevoked {
+        wire::message::Body::LinkClose(close) => {
+            let reason = wire::LinkCloseReason::try_from(close.reason)
+                .unwrap_or(wire::LinkCloseReason::Unspecified);
+            if reason == wire::LinkCloseReason::UserRevoked {
                 peer_revoked(ctx, link, link.peer()).await;
             }
             ControlAction::Close(reason, link_close_status(&close))
         }
         // The relay saw another link of this account present a paid plan:
         // the core refreshes this link's credential as its timer would.
-        body @ wire::pb::message::Body::RefreshCredential(_) => {
+        body @ wire::message::Body::RefreshCredential(_) => {
             ctx.report_frame(link, body);
             ControlAction::Continue
         }
         // The links the forwarder no longer carries go before the core
         // hears why, so it reads the host by the refusal and not by a
         // link that merely went.
-        wire::pb::message::Body::ForwardRefused(refused) => {
+        wire::message::Body::ForwardRefused(refused) => {
             if let Ok(host) = HostId::from_slice(&refused.dst) {
-                let reason = wire::pb::ForwardRefusal::try_from(refused.reason)
-                    .unwrap_or(wire::pb::ForwardRefusal::Unspecified);
+                let reason = wire::ForwardRefusal::try_from(refused.reason)
+                    .unwrap_or(wire::ForwardRefusal::Unspecified);
                 ctx.links.close_forwarded(host, link.core(), reason).await;
                 if let Some(paths) = ctx.links.paths() {
-                    paths.forward_refused(host, link.core(), super::paths::refusal(reason));
+                    paths.forward_refused(host, link.core(), reason);
                 }
             }
-            ctx.report_frame(link, wire::pb::message::Body::ForwardRefused(refused));
+            ctx.report_frame(link, wire::message::Body::ForwardRefused(refused));
             ControlAction::Continue
         }
         // The core keeps what a peer lists and what the relay sees.
-        body @ (wire::pb::message::Body::Addresses(_)
-        | wire::pb::message::Body::ObservedAddress(_)) => {
+        body @ (wire::message::Body::Addresses(_) | wire::message::Body::ObservedAddress(_)) => {
             ctx.report_frame(link, body);
             ControlAction::Continue
         }
-        wire::pb::message::Body::Hello(_) | wire::pb::message::Body::HelloAck(_) => {
-            unreachable!("repeated handshake message is rejected by ConnectHandshake")
+        // The handshake is one exchange; a repeat is a protocol error.
+        wire::message::Body::Hello(_) | wire::message::Body::HelloAck(_) => {
+            ControlAction::ReplyAndClose(
+                Box::new(protocol_error_link_close("illegal post-handshake message")),
+                wire::LinkCloseReason::ProtocolError,
+            )
         }
     }
 }
 
+/// The peer a handshake's Hello names, with its neighbors and runtime
+/// instance. `expected` is the peer the carrier already proved or the dial
+/// was made to, when there is one.
 fn accept_peer_hello(
     ctx: &LinkCtx,
-    hello: wire::pb::Hello,
-    _auth_session: Option<&LinkAuthSession>,
-) -> Result<(Host, Vec<Host>, RuntimeInstance), wire::pb::Error> {
-    if !hello
-        .supported_protocol_versions
-        .contains(&PROTOCOL_VERSION)
-    {
-        return Err(net_error::version_mismatch(
-            vec![PROTOCOL_VERSION],
-            hello.supported_protocol_versions,
-        ));
-    }
+    hello: wire::Hello,
+    expected: Option<HostId>,
+) -> Result<(Host, Vec<Host>, RuntimeInstance), wire::Error> {
     let host = hello
         .host
         .ok_or_else(|| "Hello.host is required".to_string())
         .and_then(|host| host_from_wire(host).map_err(|error| error.to_string()))
         .map_err(invalid_argument_error)?;
-    validate_remote_host(&host).map_err(invalid_argument_error)?;
-    if let Some(authenticated_peer) = ctx.authenticated_peer
-        && host.id != authenticated_peer
+    if let Some(expected) = expected
+        && host.id != expected
     {
         return Err(invalid_argument_error(format!(
-            "Hello.host_id {} does not match carrier peer {}",
-            host.id, authenticated_peer
+            "Hello.host_id {} does not match expected peer {}",
+            host.id, expected
         )));
     }
     if host.id == ctx.local_host.id() {
@@ -1236,44 +1170,6 @@ fn accept_peer_hello(
     ))
 }
 
-fn accept_peer_hello_ack(
-    ctx: &LinkCtx,
-    accepted: wire::pb::HelloAccepted,
-) -> Result<(Host, Vec<Host>, RuntimeInstance), wire::pb::Error> {
-    if accepted.protocol_version != PROTOCOL_VERSION {
-        return Err(net_error::version_mismatch(
-            vec![PROTOCOL_VERSION],
-            vec![accepted.protocol_version],
-        ));
-    }
-    let host = accepted
-        .host
-        .ok_or_else(|| "HelloAccepted.host is required".to_string())
-        .and_then(|host| host_from_wire(host).map_err(|error| error.to_string()))
-        .map_err(invalid_argument_error)?;
-    validate_remote_host(&host).map_err(invalid_argument_error)?;
-    if let Some(expected_peer) = ctx.expected_peer
-        && host.id != expected_peer
-    {
-        return Err(invalid_argument_error(format!(
-            "HelloAccepted.host_id {} does not match expected peer {}",
-            host.id, expected_peer
-        )));
-    }
-    if host.id == ctx.local_host.id() {
-        return Err(host_id_collision_error(
-            "peer host_id matches local host_id",
-        ));
-    }
-    let runtime_instance = RuntimeInstance::from_wire(&accepted.runtime_instance_id)
-        .map_err(invalid_argument_error)?;
-    Ok((
-        host,
-        neighbors_from_wire(accepted.neighbors)?,
-        runtime_instance,
-    ))
-}
-
 /// What a host's link to the relay opens with, for its dial to write the
 /// moment it starts: the Hello presenting `token`, listing no addresses
 /// (punching needs only what the relay sees), and the neighbors it lists.
@@ -1283,14 +1179,28 @@ pub(crate) async fn relay_opening(
     forwarding: Option<super::quic::EarlyForwarding>,
 ) -> super::quic::Opening {
     let neighbors = ctx.links.neighbor_snapshot().await;
-    let mut hello = connector_hello(ctx, &neighbors, &crate::routing::OwnAddresses::default());
-    if let Some(wire::pb::message::Body::Hello(opening)) = hello.body.as_mut() {
-        opening.auth_token = Some(token.to_owned());
-    }
+    let mut hello = own_hello(ctx, &neighbors, &crate::routing::OwnAddresses::default());
+    hello.auth_token = Some(token.to_owned());
     super::quic::Opening {
-        hello,
+        hello: wire::Message {
+            body: Some(wire::message::Body::Hello(hello)),
+        },
         neighbors,
         forwarding,
+    }
+}
+
+/// This host's Hello, listing `neighbors` and the addresses in `own`.
+fn own_hello(ctx: &LinkCtx, neighbors: &[Host], own: &crate::routing::OwnAddresses) -> wire::Hello {
+    wire::Hello {
+        protocol_version: PROTOCOL_VERSION,
+        host: Some(host_to_wire(&ctx.local_host.snapshot())),
+        neighbors: neighbors.iter().map(host_to_wire).collect(),
+        auth_token: None,
+        runtime_instance_id: ctx.local_host.runtime_instance().to_wire(),
+        addrs: own.listed.iter().map(ToString::to_string).collect(),
+        public_addr: own.public.map(|addr| addr.to_string()),
+        observed_addr: None,
     }
 }
 
@@ -1298,20 +1208,14 @@ fn connector_hello(
     ctx: &LinkCtx,
     snapshot: &[Host],
     own: &crate::routing::OwnAddresses,
-) -> wire::pb::Message {
-    wire::pb::Message {
-        body: Some(wire::pb::message::Body::Hello(wire::pb::Hello {
-            supported_protocol_versions: vec![PROTOCOL_VERSION],
-            host: Some(host_to_wire(&ctx.local_host.snapshot())),
-            neighbors: snapshot.iter().map(host_to_wire).collect(),
-            auth_token: ctx
-                .connector_auth
-                .as_ref()
-                .map(|auth| auth.token.token.clone()),
-            runtime_instance_id: ctx.local_host.runtime_instance().to_wire(),
-            addrs: own.listed.iter().map(ToString::to_string).collect(),
-            public_addr: own.public.map(|addr| addr.to_string()),
-        })),
+) -> wire::Message {
+    let mut hello = own_hello(ctx, snapshot, own);
+    hello.auth_token = ctx
+        .connector_auth
+        .as_ref()
+        .map(|auth| auth.token.token.clone());
+    wire::Message {
+        body: Some(wire::message::Body::Hello(hello)),
     }
 }
 
@@ -1321,60 +1225,50 @@ fn accepted_hello_ack(
     peer: HostId,
     own: &crate::routing::OwnAddresses,
     observed: Option<std::net::SocketAddr>,
-) -> wire::pb::Message {
-    wire::pb::Message {
-        body: Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
-            outcome: Some(wire::pb::hello_ack::Outcome::Accepted(
-                wire::pb::HelloAccepted {
-                    protocol_version: PROTOCOL_VERSION,
-                    host: Some(host_to_wire(&ctx.local_host.snapshot())),
-                    neighbors: snapshot
-                        .iter()
-                        .filter(|host| host.id != peer)
-                        .map(host_to_wire)
-                        .collect(),
-                    runtime_instance_id: ctx.local_host.runtime_instance().to_wire(),
-                    addrs: own.listed.iter().map(ToString::to_string).collect(),
-                    observed_addr: observed.map(|addr| addr.to_string()),
-                    public_addr: own.public.map(|addr| addr.to_string()),
-                },
-            )),
+) -> wire::Message {
+    let neighbors = snapshot
+        .iter()
+        .filter(|host| host.id != peer)
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut hello = own_hello(ctx, &neighbors, own);
+    hello.observed_addr = observed.map(|addr| addr.to_string());
+    wire::Message {
+        body: Some(wire::message::Body::HelloAck(wire::HelloAck {
+            outcome: Some(wire::hello_ack::Outcome::Accepted(hello)),
         })),
     }
 }
 
-fn neighbors_from_wire(neighbors: Vec<wire::pb::Host>) -> Result<Vec<Host>, wire::pb::Error> {
+fn neighbors_from_wire(neighbors: Vec<wire::Host>) -> Result<Vec<Host>, wire::Error> {
     neighbors
         .into_iter()
-        .map(|host| {
-            inbound_host_from_wire(host, "handshake neighbor")
-                .map_err(|error| invalid_argument_error(error.to_string()))
-        })
+        .map(|host| host_from_wire(host).map_err(invalid_argument_error))
         .collect()
 }
 
-fn error_hello_ack(error: wire::pb::Error) -> wire::pb::Message {
-    wire::pb::Message {
-        body: Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
-            outcome: Some(wire::pb::hello_ack::Outcome::Error(error)),
+fn error_hello_ack(error: wire::Error) -> wire::Message {
+    wire::Message {
+        body: Some(wire::message::Body::HelloAck(wire::HelloAck {
+            outcome: Some(wire::hello_ack::Outcome::Error(error)),
         })),
     }
 }
 
-fn invalid_argument_error(message: impl Into<String>) -> wire::pb::Error {
+fn invalid_argument_error(message: impl Into<String>) -> wire::Error {
     net_error::invalid_argument(message)
 }
 
-fn host_id_collision_error(message: impl Into<String>) -> wire::pb::Error {
+fn host_id_collision_error(message: impl Into<String>) -> wire::Error {
     net_error::error(wire::ErrorCode::AlreadyExists, message)
 }
 
-fn auth_expired_link_close() -> wire::pb::Message {
-    wire::pb::Message {
-        body: Some(wire::pb::message::Body::LinkClose(wire::pb::LinkClose {
-            reason: wire::pb::LinkCloseReason::AuthExpired as i32,
-            error: Some(wire::pb::Error {
-                code: wire::pb::ErrorCode::Unauthenticated as i32,
+fn auth_expired_link_close() -> wire::Message {
+    wire::Message {
+        body: Some(wire::message::Body::LinkClose(wire::LinkClose {
+            reason: wire::LinkCloseReason::AuthExpired as i32,
+            error: Some(wire::Error {
+                code: wire::ErrorCode::Unauthenticated as i32,
                 message: "link authorization expired".to_string(),
                 details: Vec::new(),
             }),
@@ -1382,23 +1276,23 @@ fn auth_expired_link_close() -> wire::pb::Message {
     }
 }
 
-fn link_close(reason: wire::pb::LinkCloseReason) -> wire::pb::Message {
-    wire::pb::Message {
-        body: Some(wire::pb::message::Body::LinkClose(wire::pb::LinkClose {
+fn link_close(reason: wire::LinkCloseReason) -> wire::Message {
+    wire::Message {
+        body: Some(wire::message::Body::LinkClose(wire::LinkClose {
             reason: reason as i32,
             error: None,
         })),
     }
 }
 
-fn link_close_status(close: &wire::pb::LinkClose) -> Option<tonic::Status> {
-    let reason = wire::pb::LinkCloseReason::try_from(close.reason)
-        .unwrap_or(wire::pb::LinkCloseReason::Unspecified);
+fn link_close_status(close: &wire::LinkClose) -> Option<tonic::Status> {
+    let reason =
+        wire::LinkCloseReason::try_from(close.reason).unwrap_or(wire::LinkCloseReason::Unspecified);
     if let Some(error) = close.error.clone() {
         return Some(protocol_status(error));
     }
-    (reason == wire::pb::LinkCloseReason::VersionMismatch)
-        .then(|| tonic::Status::failed_precondition("the other machine needs updating"))
+    (reason == wire::LinkCloseReason::VersionMismatch)
+        .then(|| protocol_status(net_error::version_mismatch()))
 }
 
 /// A refresh refused for want of payment is the plan's word, not a fault.
@@ -1428,7 +1322,7 @@ struct Registered {
 }
 
 impl Registered {
-    async fn leave(mut self, reason: wire::pb::LinkCloseReason) {
+    async fn leave(mut self, reason: wire::LinkCloseReason) {
         if let Some(links) = self.links.take() {
             leave(&links, self.link, reason).await;
         }
@@ -1443,12 +1337,12 @@ impl Drop for Registered {
         };
         let link = self.link;
         runtime.spawn(async move {
-            leave(&links, link, wire::pb::LinkCloseReason::Unspecified).await;
+            leave(&links, link, wire::LinkCloseReason::Unspecified).await;
         });
     }
 }
 
-async fn leave(links: &LinkRegistry, link: LinkId, reason: wire::pb::LinkCloseReason) {
+async fn leave(links: &LinkRegistry, link: LinkId, reason: wire::LinkCloseReason) {
     if let Some(core) = links.core() {
         core.report(daemon_core::Input::LinkDown {
             link: link.core(),
@@ -1508,48 +1402,17 @@ fn signal_establishment(sender: Option<EstablishmentSender>, result: Result<Host
     }
 }
 
-pub fn spawn_connector_with_establishment(
-    ctx: LinkConnectorCtx,
+/// Runs the dialling side of a link over `carrier`, answering once the
+/// link is established or has failed to be.
+pub(crate) fn spawn_connector(
+    mut ctx: LinkCtx,
     carrier: Arc<QuicCarrier>,
-) -> (ConnectorTask, EstablishmentReceiver) {
-    spawn_connector(ctx, carrier, None, None, None)
-}
-
-pub(crate) fn spawn_connector_with_establishment_and_shutdown(
-    ctx: LinkConnectorCtx,
-    carrier: Arc<QuicCarrier>,
-    shutdown_rx: watch::Receiver<bool>,
-) -> (ConnectorTask, EstablishmentReceiver) {
-    spawn_connector(ctx, carrier, None, Some(shutdown_rx), None)
-}
-
-pub(crate) fn spawn_connector_with_auth_establishment_and_shutdown(
-    ctx: LinkConnectorCtx,
-    carrier: Arc<QuicCarrier>,
-    auth: LinkConnectorAuth,
-    shutdown_rx: watch::Receiver<bool>,
-    refresh_rx: Option<LinkConnectorRefreshReceiver>,
-) -> (ConnectorTask, EstablishmentReceiver) {
-    spawn_connector(ctx, carrier, Some(auth), Some(shutdown_rx), refresh_rx)
-}
-
-fn spawn_connector(
-    mut ctx: LinkConnectorCtx,
-    carrier: Arc<QuicCarrier>,
-    auth: Option<LinkConnectorAuth>,
-    shutdown_rx: Option<watch::Receiver<bool>>,
-    refresh_rx: Option<LinkConnectorRefreshReceiver>,
 ) -> (ConnectorTask, EstablishmentReceiver) {
     let (established_tx, established_rx) = oneshot::channel();
     let established = Arc::new(StdRwLock::new(Some(established_tx)));
-    ctx.connector_auth = auth;
     ctx.established_tx = Some(established.clone());
-    ctx.shutdown_rx = shutdown_rx;
-    ctx.refresh_rx = refresh_rx;
     let task = tokio::spawn(async move {
-        let result = run_link(ctx, carrier, crate::routing::ConnectRole::Connector)
-            .await
-            .map_err(link_error_status);
+        let result = run_link(ctx, carrier).await.map_err(link_error_status);
         if let Some(sender) = established
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -1573,6 +1436,33 @@ fn link_error_status(error: LinkError) -> tonic::Status {
     }
 }
 
+/// A Hello refused as malformed.
+fn protocol_error_hello_ack(message: impl Into<String>) -> wire::Message {
+    wire::Message {
+        body: Some(wire::message::Body::HelloAck(wire::HelloAck {
+            outcome: Some(wire::hello_ack::Outcome::Error(protocol_error(message))),
+        })),
+    }
+}
+
+/// A link closed for a message the protocol does not allow.
+fn protocol_error_link_close(message: impl Into<String>) -> wire::Message {
+    wire::Message {
+        body: Some(wire::message::Body::LinkClose(wire::LinkClose {
+            reason: wire::LinkCloseReason::ProtocolError as i32,
+            error: Some(protocol_error(message)),
+        })),
+    }
+}
+
+fn protocol_error(message: impl Into<String>) -> wire::Error {
+    wire::Error {
+        code: wire::ErrorCode::InvalidArgument as i32,
+        message: message.into(),
+        details: Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1590,6 +1480,15 @@ mod tests {
         ) -> Result<AuthenticatedLinkUser, tonic::Status> {
             Ok(self.0.clone())
         }
+    }
+
+    /// Whether the registry holds a link to `peer`.
+    async fn linked(links: &LinkRegistry, peer: HostId) -> bool {
+        links
+            .links_per_peer()
+            .await
+            .iter()
+            .any(|(host, _)| *host == peer)
     }
 
     fn host(id: u128) -> Host {
@@ -1623,15 +1522,16 @@ mod tests {
     async fn send_hello(sink: &mut ControlSink, peer: &Host, auth_token: Option<&str>) {
         write_message(
             sink,
-            &wire::pb::Message {
-                body: Some(wire::pb::message::Body::Hello(wire::pb::Hello {
-                    supported_protocol_versions: vec![PROTOCOL_VERSION],
+            &wire::Message {
+                body: Some(wire::message::Body::Hello(wire::Hello {
+                    protocol_version: PROTOCOL_VERSION,
                     host: Some(host_to_wire(peer)),
                     neighbors: Vec::new(),
                     auth_token: auth_token.map(str::to_string),
                     runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
                     addrs: Vec::new(),
                     public_addr: None,
+                    observed_addr: None,
                 })),
             },
         )
@@ -1643,22 +1543,22 @@ mod tests {
         let ack = read_message(source).await.unwrap().unwrap();
         assert!(matches!(
             ack.body,
-            Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
-                outcome: Some(wire::pb::hello_ack::Outcome::Accepted(_)),
+            Some(wire::message::Body::HelloAck(wire::HelloAck {
+                outcome: Some(wire::hello_ack::Outcome::Accepted(_)),
             }))
         ));
     }
 
     async fn expect_link_close(
         source: &mut ControlSource,
-        expected: wire::pb::LinkCloseReason,
-    ) -> wire::pb::LinkClose {
+        expected: wire::LinkCloseReason,
+    ) -> wire::LinkClose {
         let message = read_message(source).await.unwrap().unwrap();
-        let Some(wire::pb::message::Body::LinkClose(close)) = message.body else {
+        let Some(wire::message::Body::LinkClose(close)) = message.body else {
             panic!("expected LinkClose, got {message:?}");
         };
         assert_eq!(
-            wire::pb::LinkCloseReason::try_from(close.reason).unwrap(),
+            wire::LinkCloseReason::try_from(close.reason).unwrap(),
             expected
         );
         close
@@ -1748,28 +1648,29 @@ mod tests {
             let from = server.address_of(connection.remote_address());
             QuicCarrier::from_accepted(connection).with_path(PathKind::of_addr(from))
         };
-        let dial = QuicCarrier::connect_direct(
+        let dial = QuicCarrier::first_flight(
             &client,
-            server.local_addr().unwrap(),
+            vec![crate::link::socket::Path::Direct(
+                server.local_addr().unwrap(),
+            )],
+            false,
             &dialler,
             trust_for(&listener),
             listener.host_id,
+            Duration::from_secs(5),
         );
         let (accepted, dialled) = tokio::join!(accept, dial);
         let dialled = dialled.unwrap();
 
         let (local, peer) = (host_for(&listener), host_for(&dialler));
         let links = Arc::new(LinkRegistry::new(local.id));
-        let ctx = LinkCtx::new(local.clone(), links.clone()).with_authenticated_peer(peer.id);
-        let task = tokio::spawn(run_link(
-            ctx,
-            Arc::new(accepted),
-            crate::routing::ConnectRole::Acceptor,
-        ));
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local.clone()), links.clone())
+            .with_authenticated_peer(peer.id);
+        let task = tokio::spawn(run_link(ctx, Arc::new(accepted)));
         let (mut sink, mut source) = dialled.control();
         send_hello(&mut sink, &peer, None).await;
         expect_accepted(&mut source).await;
-        dialled.close(wire::pb::LinkCloseReason::UserShutdown);
+        dialled.close(wire::LinkCloseReason::UserShutdown);
         let _ = task.await.unwrap();
 
         let up = LinkEvent {
@@ -1816,24 +1717,25 @@ mod tests {
             let from = server.address_of(connection.remote_address());
             QuicCarrier::from_accepted(connection).with_path(PathKind::of_addr(from))
         };
-        let dial = QuicCarrier::connect_direct(
+        let dial = QuicCarrier::first_flight(
             &client,
-            server.local_addr().unwrap(),
+            vec![crate::link::socket::Path::Direct(
+                server.local_addr().unwrap(),
+            )],
+            false,
             &dialler,
             trust_for(&listener),
             listener.host_id,
+            Duration::from_secs(5),
         );
         let (accepted, dialled) = tokio::join!(accept, dial);
         let dialled = dialled.unwrap();
 
         let (local, peer) = (host_for(&listener), host_for(&dialler));
         let links = Arc::new(LinkRegistry::new(local.id));
-        let ctx = LinkCtx::new(local.clone(), links.clone()).with_authenticated_peer(peer.id);
-        let task = tokio::spawn(run_link(
-            ctx,
-            Arc::new(accepted),
-            crate::routing::ConnectRole::Acceptor,
-        ));
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local.clone()), links.clone())
+            .with_authenticated_peer(peer.id);
+        let task = tokio::spawn(run_link(ctx, Arc::new(accepted)));
         let (mut sink, mut source) = dialled.control();
         send_hello(&mut sink, &peer, None).await;
         expect_accepted(&mut source).await;
@@ -1864,7 +1766,6 @@ mod tests {
                 peer.public_key().to_vec(),
                 "peer".to_string(),
                 None,
-                chrono::Utc::now(),
             )
             .unwrap();
         Arc::new(std::sync::RwLock::new(trust))
@@ -1881,32 +1782,28 @@ mod tests {
             crate::Tier::Free,
         );
         let (connector_carrier, acceptor_carrier) = carrier_pair().await;
-        let ctx = LinkCtx::new(local, links.clone())
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local), links.clone())
             .with_authenticated_peer(peer.id)
             .with_token_authenticator(Arc::new(FixedAuthenticator(user)));
-        let task = tokio::spawn(run_link(
-            ctx,
-            acceptor_carrier.clone(),
-            crate::routing::ConnectRole::Acceptor,
-        ));
+        let task = tokio::spawn(run_link(ctx, acceptor_carrier.clone()));
         let (mut sink, mut source) = connector_carrier.control();
 
         send_hello(&mut sink, &peer, Some("initial-token")).await;
         expect_accepted(&mut source).await;
-        assert!(links.link_to_peer(peer.id).await.is_some());
+        assert!(linked(&links, peer.id).await);
 
         tokio::time::advance(Duration::from_secs(61)).await;
-        let close = expect_link_close(&mut source, wire::pb::LinkCloseReason::AuthExpired).await;
+        let close = expect_link_close(&mut source, wire::LinkCloseReason::AuthExpired).await;
         assert_eq!(
             close.error.as_ref().map(|error| error.code),
-            Some(wire::pb::ErrorCode::Unauthenticated as i32)
+            Some(wire::ErrorCode::Unauthenticated as i32)
         );
         assert_eq!(
             acceptor_carrier.closed().await,
-            wire::pb::LinkCloseReason::AuthExpired
+            wire::LinkCloseReason::AuthExpired
         );
         task.await.unwrap().unwrap();
-        assert!(links.link_to_peer(peer.id).await.is_none());
+        assert!(!linked(&links, peer.id).await);
     }
 
     #[tokio::test]
@@ -1927,21 +1824,18 @@ mod tests {
         let session = LinkAuthSession::new(initial, FixedAuthenticator(other_user));
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = carrier_pair().await;
-        let mut ctx = LinkCtx::new(local, links).with_authenticated_peer(peer.id);
+        let mut ctx =
+            LinkCtx::new_live(LiveLocalHost::new(local), links).with_authenticated_peer(peer.id);
         ctx.acceptor_session = Some(session.clone());
-        let task = tokio::spawn(run_link(
-            ctx,
-            acceptor_carrier.clone(),
-            crate::routing::ConnectRole::Acceptor,
-        ));
+        let task = tokio::spawn(run_link(ctx, acceptor_carrier.clone()));
         let (mut sink, mut source) = connector_carrier.control();
 
         send_hello(&mut sink, &peer, None).await;
         expect_accepted(&mut source).await;
         write_message(
             &mut sink,
-            &wire::pb::Message {
-                body: Some(wire::pb::message::Body::Reauth(wire::pb::Reauth {
+            &wire::Message {
+                body: Some(wire::message::Body::Reauth(wire::Reauth {
                     auth_token: "another-user-token".to_string(),
                 })),
             },
@@ -1949,12 +1843,12 @@ mod tests {
         .await
         .unwrap();
 
-        expect_link_close(&mut source, wire::pb::LinkCloseReason::AuthExpired).await;
+        expect_link_close(&mut source, wire::LinkCloseReason::AuthExpired).await;
         assert_eq!(session.tier(), crate::Tier::Free);
         assert_eq!(session.user().user_id, user_id);
         assert_eq!(
             acceptor_carrier.closed().await,
-            wire::pb::LinkCloseReason::AuthExpired
+            wire::LinkCloseReason::AuthExpired
         );
         task.await.unwrap().unwrap();
     }
@@ -1965,44 +1859,39 @@ mod tests {
         let peer = host(2);
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = carrier_pair().await;
-        let ctx = LinkCtx::new(local, links.clone()).with_authenticated_peer(peer.id);
-        let task = tokio::spawn(run_link(
-            ctx,
-            acceptor_carrier.clone(),
-            crate::routing::ConnectRole::Acceptor,
-        ));
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local), links.clone())
+            .with_authenticated_peer(peer.id);
+        let task = tokio::spawn(run_link(ctx, acceptor_carrier.clone()));
         let (mut sink, mut source) = connector_carrier.control();
 
         write_message(
             &mut sink,
-            &wire::pb::Message {
-                body: Some(wire::pb::message::Body::Hello(wire::pb::Hello {
-                    supported_protocol_versions: vec![PROTOCOL_VERSION + 1],
+            &wire::Message {
+                body: Some(wire::message::Body::Hello(wire::Hello {
+                    protocol_version: PROTOCOL_VERSION + 1,
                     host: Some(host_to_wire(&peer)),
                     neighbors: Vec::new(),
                     auth_token: None,
                     runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
                     addrs: Vec::new(),
                     public_addr: None,
+                    observed_addr: None,
                 })),
             },
         )
         .await
         .unwrap();
-        let ack = read_message(&mut source).await.unwrap().unwrap();
-        let Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
-            outcome: Some(wire::pb::hello_ack::Outcome::Error(error)),
-        })) = ack.body
-        else {
-            panic!("expected rejected HelloAck, got {ack:?}");
-        };
-        assert!(net_error::is_version_mismatch(&error), "{error:?}");
+        let close = expect_link_close(&mut source, wire::LinkCloseReason::VersionMismatch).await;
+        assert_eq!(
+            link_close_status(&close).map(|status| status.message().to_owned()),
+            Some("the other machine needs updating".to_owned())
+        );
         assert_eq!(
             acceptor_carrier.closed().await,
-            wire::pb::LinkCloseReason::ProtocolError
+            wire::LinkCloseReason::VersionMismatch
         );
         task.await.unwrap().unwrap();
-        assert!(links.link_to_peer(peer.id).await.is_none());
+        assert!(!linked(&links, peer.id).await);
     }
 
     #[tokio::test(start_paused = true)]
@@ -2011,24 +1900,21 @@ mod tests {
         let peer = host(2);
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = carrier_pair().await;
-        let ctx = LinkCtx::new(local, links.clone()).with_authenticated_peer(peer.id);
-        let task = tokio::spawn(run_link(
-            ctx,
-            acceptor_carrier.clone(),
-            crate::routing::ConnectRole::Acceptor,
-        ));
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local), links.clone())
+            .with_authenticated_peer(peer.id);
+        let task = tokio::spawn(run_link(ctx, acceptor_carrier.clone()));
         let (_sink, _source) = connector_carrier.control();
 
         tokio::task::yield_now().await;
-        assert!(links.link_to_peer(peer.id).await.is_none());
+        assert!(!linked(&links, peer.id).await);
         tokio::time::advance(LINK_CONNECT_HELLO_TIMEOUT + Duration::from_millis(1)).await;
 
         assert_eq!(
             acceptor_carrier.closed().await,
-            wire::pb::LinkCloseReason::ProtocolError
+            wire::LinkCloseReason::ProtocolError
         );
         task.await.unwrap().unwrap();
-        assert!(links.link_to_peer(peer.id).await.is_none());
+        assert!(!linked(&links, peer.id).await);
     }
 
     /// What a link tells its peer of where this host can be reached.
@@ -2048,15 +1934,11 @@ mod tests {
             let links = Arc::new(LinkRegistry::new(local.id()));
             let (connector_carrier, acceptor_carrier) = carrier_pair().await;
             let ctx = LinkCtx::new_live(local.clone(), links).with_authenticated_peer(peer.id);
-            let task = tokio::spawn(run_link(
-                ctx,
-                acceptor_carrier.clone(),
-                crate::routing::ConnectRole::Acceptor,
-            ));
+            let task = tokio::spawn(run_link(ctx, acceptor_carrier.clone()));
             let (mut sink, mut source) = connector_carrier.control();
             send_hello(&mut sink, &peer, None).await;
-            let Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
-                outcome: Some(wire::pb::hello_ack::Outcome::Accepted(accepted)),
+            let Some(wire::message::Body::HelloAck(wire::HelloAck {
+                outcome: Some(wire::hello_ack::Outcome::Accepted(accepted)),
             })) = read_message(&mut source).await.unwrap().unwrap().body
             else {
                 panic!("the host accepts its peer");
@@ -2066,7 +1948,7 @@ mod tests {
             local.clear_public();
             let next = tokio::time::timeout(Duration::from_secs(5), async {
                 loop {
-                    if let Some(wire::pb::message::Body::Addresses(addresses)) =
+                    if let Some(wire::message::Body::Addresses(addresses)) =
                         read_message(&mut source).await.unwrap().unwrap().body
                     {
                         return addresses;
@@ -2090,7 +1972,7 @@ mod tests {
                     .is_err(),
                 "nothing more is sent"
             );
-            connector_carrier.close(wire::pb::LinkCloseReason::UserShutdown);
+            connector_carrier.close(wire::LinkCloseReason::UserShutdown);
             let _ = task.await;
         }
 
@@ -2106,15 +1988,11 @@ mod tests {
             let links = Arc::new(LinkRegistry::new(local.id()));
             let (connector_carrier, acceptor_carrier) = carrier_pair().await;
             let ctx = LinkCtx::new_live(local.clone(), links).with_authenticated_peer(peer.id);
-            let task = tokio::spawn(run_link(
-                ctx,
-                acceptor_carrier.clone(),
-                crate::routing::ConnectRole::Acceptor,
-            ));
+            let task = tokio::spawn(run_link(ctx, acceptor_carrier.clone()));
             let (mut sink, mut source) = connector_carrier.control();
             send_hello(&mut sink, &peer, None).await;
-            let Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
-                outcome: Some(wire::pb::hello_ack::Outcome::Accepted(accepted)),
+            let Some(wire::message::Body::HelloAck(wire::HelloAck {
+                outcome: Some(wire::hello_ack::Outcome::Accepted(accepted)),
             })) = read_message(&mut source).await.unwrap().unwrap().body
             else {
                 panic!("the host accepts its peer");
@@ -2128,7 +2006,7 @@ mod tests {
             local.set_public(public);
             let next = tokio::time::timeout(Duration::from_secs(5), async {
                 loop {
-                    if let Some(wire::pb::message::Body::Addresses(addresses)) =
+                    if let Some(wire::message::Body::Addresses(addresses)) =
                         read_message(&mut source).await.unwrap().unwrap().body
                     {
                         return addresses;
@@ -2149,7 +2027,7 @@ mod tests {
                     .is_err(),
                 "nothing more is sent"
             );
-            connector_carrier.close(wire::pb::LinkCloseReason::UserShutdown);
+            connector_carrier.close(wire::LinkCloseReason::UserShutdown);
             let _ = task.await;
         }
     }

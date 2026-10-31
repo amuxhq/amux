@@ -11,9 +11,7 @@
 //! transcript and payloads handed to the hook commands `--settings` names
 //! (only the hook events the corpus records). A prompt submitted while a
 //! turn runs is queued and folded into that turn at its next tool
-//! boundary; Ctrl+X Ctrl+S sends it now: the running call moves to the
-//! background and the message joins the turn at once. A turn the user cuts
-//! short runs no Stop hook. An ask runs its PermissionRequest hook while
+//! boundary. A turn the user cuts short runs no Stop hook. An ask runs its PermissionRequest hook while
 //! its menu shows, and takes whichever answer comes first: the hook's
 //! decision or the menu's keys. A tool server's form runs its Elicitation
 //! hook and shows nothing until the hook returns; Escape cancels it and the
@@ -70,7 +68,6 @@ enum Key {
     Down,
     Up,
     ShiftTab,
-    SendNow,
 }
 
 enum In {
@@ -211,8 +208,6 @@ fn decode(bytes: &mut Vec<u8>) -> Vec<Key> {
             [b'\r', ..] | [b'\n', ..] => (Some(Key::Enter), 1),
             [b'\t', ..] => (Some(Key::Tab), 1),
             [b' ', ..] => (Some(Key::Space), 1),
-            [0x18, 0x13, ..] => (Some(Key::SendNow), 2),
-            [0x18] => break,
             _ => {
                 let text = String::from_utf8_lossy(rest);
                 match text.chars().next() {
@@ -312,8 +307,6 @@ enum Cut {
 /// How a held call ended.
 enum Held {
     Ran,
-    /// Ctrl+X Ctrl+S moved it to the background.
-    Backgrounded,
     Interrupted,
 }
 
@@ -337,8 +330,6 @@ struct Engine {
     queue: VecDeque<Queued>,
     busy: bool,
     cut: Option<Cut>,
-    /// Ctrl+X Ctrl+S asked for the first queued prompt to run now.
-    send_now: bool,
     /// The decision of the hook an open ask waits on, which came before
     /// any key answered its menu.
     decided: Option<Value>,
@@ -355,8 +346,8 @@ struct Engine {
     prompts: u64,
     turns: u64,
     last_text: String,
-    /// The session has started: the first prompt arrived.
-    started: bool,
+    /// The session's first rows are written: the first prompt arrived.
+    begun: bool,
     offers_auto_mode: bool,
     untrusted_folder: bool,
     /// File tools change the files they name.
@@ -406,7 +397,6 @@ impl Engine {
             queue: VecDeque::new(),
             busy: false,
             cut: None,
-            send_now: false,
             decided: None,
             parent: None,
             prompt_id: uuid(),
@@ -416,7 +406,7 @@ impl Engine {
             prompts: 0,
             turns: 0,
             last_text: String::new(),
-            started: false,
+            begun: false,
         }
     }
 
@@ -454,14 +444,10 @@ impl Engine {
             let _ = stdout.write_all(BRACKETED_PASTE_ON);
             let _ = stdout.flush();
         }
-        if self.untrusted_folder {
-            if !self.trust_folder().await {
-                return 1;
-            }
-            // Trusted, Claude starts its session at once, as 2.1.283 does,
-            // rather than at the first prompt.
-            self.session_start();
+        if self.untrusted_folder && !self.trust_folder().await {
+            return 1;
         }
+        self.session_start();
         self.screen("Claude Code (scripted)");
         for input in kept {
             self.handle(input);
@@ -470,7 +456,7 @@ impl Engine {
             if !self.busy
                 && let Some(next) = self.queue.pop_front()
             {
-                self.session_start();
+                self.begin();
                 if next.text.trim() == "/clear" {
                     self.clear();
                     continue;
@@ -488,12 +474,10 @@ impl Engine {
         }
     }
 
-    /// Claude starts its session, runs the SessionStart hooks and writes
-    /// its first rows only when the first prompt arrives.
+    /// Claude runs the SessionStart hooks at launch (Claude 2.1.316), but
+    /// writes the session's first rows only when the first prompt arrives:
+    /// a session stopped before then has no transcript to resume.
     fn session_start(&mut self) {
-        if std::mem::replace(&mut self.started, true) {
-            return;
-        }
         let source = if self.args.resume.is_some() {
             "resume"
         } else {
@@ -504,6 +488,12 @@ impl Engine {
             "model": self.model,
             "source": source,
         }));
+    }
+
+    fn begin(&mut self) {
+        if std::mem::replace(&mut self.begun, true) {
+            return;
+        }
         self.row(json!({
             "type": "permission-mode",
             "permissionMode": self.mode,
@@ -606,11 +596,6 @@ impl Engine {
                         "sessionId": self.session,
                     });
                     self.row(row);
-                }
-                Key::SendNow => {
-                    if self.busy && !self.queue.is_empty() {
-                        self.send_now = true;
-                    }
                 }
                 Key::Tab | Key::Down | Key::Up => {}
             },
@@ -749,6 +734,19 @@ impl Engine {
         if matches!(event, "SessionEnd") {
             payload["prompt_id"] = json!(self.prompt_id);
         }
+        // The effort the running model works at, on the hooks of a turn's
+        // work (Claude 2.1.316).
+        if matches!(
+            event,
+            "PreToolUse"
+                | "PermissionRequest"
+                | "PostToolUse"
+                | "PostToolUseFailure"
+                | "Stop"
+                | "SubagentStop"
+        ) {
+            payload["effort"] = json!({"level": "medium"});
+        }
         if matches!(
             event,
             "SessionStart"
@@ -805,7 +803,6 @@ impl Engine {
         let started = std::time::Instant::now();
         self.busy = true;
         self.cut = None;
-        self.send_now = false;
         self.prompt_id = uuid();
         self.turn_id = uuid();
         self.turns += 1;
@@ -824,9 +821,6 @@ impl Engine {
             self.drain();
             if self.cut.is_some() {
                 break None;
-            }
-            if self.send_now {
-                self.run_now();
             }
             let Some(step) = crate::script::next_step(&mut self.steps) else {
                 break None;
@@ -867,7 +861,6 @@ impl Engine {
                             self.finish_tool(&id, &name, &input, &tool, outcome);
                             self.attach(absorbed);
                         }
-                        Held::Backgrounded => self.background(&id),
                         Held::Interrupted => {
                             self.abandon(&id, &name, &input, &tool);
                             self.interruption_row("[Request interrupted by user for tool use]");
@@ -978,7 +971,9 @@ impl Engine {
                 "type": "message",
                 "usage": usage,
             },
-            "perTurnEffort": null,
+            "advisorModel": "claude-opus-5-5",
+            "effort": "medium",
+            "perTurnEffort": "medium",
             "requestId": request,
             "requestRef": format!("{request}-ref"),
             "requestedModel": self.model,
@@ -1197,63 +1192,10 @@ impl Engine {
             if self.cut == Some(Cut::Interrupted) {
                 return Held::Interrupted;
             }
-            if self.send_now {
-                return Held::Backgrounded;
-            }
             if !running || self.closed {
                 return Held::Ran;
             }
             self.pump().await;
-        }
-    }
-
-    /// Ctrl+X Ctrl+S while a call runs: Claude moves the call to the
-    /// background, answers it with a note saying so, and the queued prompt
-    /// joins the running turn. No PostToolUse hook runs for the call.
-    fn background(&mut self, id: &str) {
-        let task = self.ids.next("bg");
-        let output = format!("{}/.tasks/{task}.output", self.cwd);
-        self.dequeue();
-        self.result_row(
-            id,
-            json!(format!(
-                "Command was moved to the background (ID: {task}) so that a message that arrived while it was running can reach you; it was not interrupted. Output is being written to: {output} You will be notified when it completes. To check interim output, use Read on that file path."
-            )),
-            false,
-            json!({
-                "backgroundTaskId": task,
-                "backgroundedToDeliverMessage": true,
-                "interrupted": false,
-                "isImage": false,
-                "noOutputExpected": false,
-                "stderr": "",
-                "stdout": "",
-            }),
-        );
-        self.join_now();
-    }
-
-    /// Ctrl+X Ctrl+S between calls: the queued prompt joins the running
-    /// turn at once.
-    fn run_now(&mut self) {
-        self.dequeue();
-        self.join_now();
-    }
-
-    fn dequeue(&mut self) {
-        let row = json!({
-            "type": "queue-operation",
-            "operation": "dequeue",
-            "sessionId": self.session,
-            "timestamp": timestamp(),
-        });
-        self.row(row);
-    }
-
-    fn join_now(&mut self) {
-        self.send_now = false;
-        if let Some(queued) = self.queue.pop_front() {
-            self.user_row(&queued, "queued");
         }
     }
 
@@ -1322,6 +1264,8 @@ impl Engine {
                     "tool_input": input,
                     "tool_name": name,
                 }));
+                // Claude 2.1.316 writes the call's row while its menu shows.
+                self.call_row(request, message, &id, &name, &input);
                 let (menu, no) = if self.offers_auto_mode {
                     (
                         "Do you want to proceed?\n1. Yes\n2. Yes, and don't ask again\n3. Yes, and switch to auto mode\n4. No\nEsc to cancel",
@@ -1339,10 +1283,7 @@ impl Engine {
                     match self.menu_key().await {
                         None => match self.decided.take() {
                             Some(decided) => break Decision::of(&decided["decision"]),
-                            None => {
-                                self.call_row(request, message, &id, &name, &input);
-                                return self.abandon(&id, &name, &input, &tool);
-                            }
+                            None => return self.abandon(&id, &name, &input, &tool),
                         },
                         Some(Key::Escape) => break Decision::no(),
                         Some(Key::Char(c)) if c == no => break Decision::no(),
@@ -1351,7 +1292,6 @@ impl Engine {
                         Some(_) => {}
                     }
                 };
-                self.call_row(request, message, &id, &name, &input);
                 match decision {
                     Decision::Allow { mode } => {
                         if let Some(mode) = mode {
@@ -1747,7 +1687,7 @@ mod tests {
 
     #[test]
     fn keys_decode_as_claudes_own_menus_take_them() {
-        let mut bytes = b"\x1b[200~hi there\x1b[201~\r1\x1b\x1b[B \t\x1b[Z\x18\x13x".to_vec();
+        let mut bytes = b"\x1b[200~hi there\x1b[201~\r1\x1b\x1b[B \t\x1b[Zx".to_vec();
         assert_eq!(
             decode(&mut bytes),
             [
@@ -1759,7 +1699,6 @@ mod tests {
                 Key::Space,
                 Key::Tab,
                 Key::ShiftTab,
-                Key::SendNow,
                 Key::Char('x'),
             ]
         );

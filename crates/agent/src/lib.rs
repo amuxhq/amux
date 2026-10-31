@@ -43,7 +43,7 @@ use interpret::codex::Codex;
 pub use crate::dir::{BLOBS, CTL_SOCK, HOOKS_SOCK, JOURNAL, LOCK, PRIVATE, PTY, PTY_SOCK};
 pub use crate::dump::DUMP_ERRORS;
 pub use crate::tools::{
-    NOT_RUNNING, RETRY_WINDOW, TOOLS_SOCK, ToolsConfig, ToolsError, serve_tools, serve_tools_on,
+    NOT_RUNNING, RETRY_WINDOW, TOOLS_SOCK, ToolsError, serve_tools, serve_tools_on,
 };
 
 /// The version this agent reports in its Hello and stamps on what it writes.

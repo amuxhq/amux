@@ -24,25 +24,23 @@ use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ui_state::{
-    ActivityKind, Composer, InputState, InputWhat, Key, PhaseView, Refusal, RefusalReason,
-    SessionState, Waiting,
+    ActivityKind, Composer, InputState, InputWhat, Key, PhaseView, Refusal, SessionState, Waiting,
 };
 pub use ui_view::Comparison;
 use ui_view::{
-    AskBody, AskCard, CardState, Changeable, ChatOptions, ClientCommand, ExitCause, FamilyHeader,
-    Offline, Reach, RowKind, Slash, ToolRows, ask_card, chat_rows_for, composer, overview,
-    queue_rows,
+    AskBody, AskCard, CardState, Changeable, ClientCommand, ExitCause, FamilyHeader, Offline,
+    Reach, RowKind, Slash, ToolRows, ask_card, chat_rows_for, composer, overview, queue_rows,
 };
 use wire::{Attachment, attachment};
 
 use self::ask::{AskAction, AskUi};
-use self::composer::{COMPOSER_LINES, QueueEntry, edge_row, editor_lines, placeholder};
+use self::composer::{COMPOSER_LINES, QueueEntry, edge_row, editor_lines};
 use self::feed::FeedHit;
 pub use self::layout::ToolSteps;
 use self::layout::{Anchor, Frame, Laid, Toggle};
 use self::review::{ReviewAction, ReviewPage};
 use crate::clipboard::ClipboardContent;
-use crate::editor::{Edit, Editor};
+use crate::editor::Editor;
 use crate::text::{self, push};
 use crate::theme::Theme;
 use crate::wheel::Direction;
@@ -202,15 +200,6 @@ struct QueuedSpot {
     controls: Vec<(u16, u16)>,
 }
 
-/// When this client's prompt was first drawn on its way, and where: in the
-/// feed (the agent was idle) or in the queue block (it was busy). A prompt
-/// that loses its connection stays where it was until catching up.
-#[derive(Clone, Copy, Debug)]
-struct Sending {
-    at_ms: i64,
-    in_feed: bool,
-}
-
 /// Where the composer's words were drawn, for a click to place the cursor:
 /// the screen cell of the first wrapped line's first column, how many
 /// wrapped lines show, how many are scrolled off above, and the width the
@@ -357,16 +346,15 @@ pub struct ChatView {
     /// The mode on the composer's edge.
     mode_spot: Option<(u16, (u16, u16))>,
     composer_spot: Option<ComposerSpot>,
-    /// The old design's tray rows by screen row.
-    tray_spots: Vec<(u16, usize)>,
     /// Queued prompts above the composer: their rows and their controls.
     queued_spots: Vec<QueuedSpot>,
     /// The queued prompt under the pointer.
     queued_hover: Option<usize>,
     /// The first queued prompt shown, when more wait than show.
     queued_from: usize,
-    /// This client's prompts on their way, as first drawn.
-    sending: HashMap<Vec<u8>, Sending>,
+    /// When each of this client's prompts on their way was first drawn,
+    /// for the clock a pending prompt in the feed shows.
+    sending: HashMap<Vec<u8>, i64>,
     /// Rejected prompts whose words have gone back to the composer.
     rejected_seen: HashSet<Vec<u8>>,
     /// Why the last prompt was not sent, on the composer's edge until the
@@ -458,7 +446,6 @@ impl ChatView {
             jump_spot: None,
             mode_spot: None,
             composer_spot: None,
-            tray_spots: Vec::new(),
             queued_spots: Vec::new(),
             queued_hover: None,
             queued_from: 0,
@@ -520,8 +507,7 @@ impl ChatView {
             .into_iter()
             .map(QueueEntry::Queued)
             .collect();
-        let underway = ui_view::prompts_underway(state, |id| self.in_feed(state, id));
-        for prompt in underway {
+        for prompt in ui_view::prompts_underway(state) {
             if prompt.lands != ui_view::Lands::Queue {
                 continue;
             }
@@ -545,18 +531,10 @@ impl ChatView {
         entries
     }
 
-    /// Whether this client's prompt draws in the feed rather than the queue
-    /// block: where it was first drawn, or, not drawn yet, where it would
-    /// be now.
-    fn in_feed(&self, state: &SessionState, id: &[u8]) -> bool {
-        self.sending
-            .get(id)
-            .map_or_else(|| ui_view::sends_to_feed(state), |sending| sending.in_feed)
-    }
-
-    /// Notes this client's prompts as the frame first sees them: where a
-    /// prompt on its way draws, and, for one the agent refused, its words
-    /// back in the composer (after any draft) and why on the box's edge.
+    /// Notes this client's prompts as the frame first sees them: when a
+    /// prompt on its way was first drawn, and, for one the agent refused,
+    /// its words back in the composer (after any draft) and why on the
+    /// box's edge.
     fn note_sent(&mut self, state: &SessionState, now_ms: i64) {
         for refused in ui_view::refused_prompts(state) {
             if !self.rejected_seen.insert(refused.input_id.clone()) {
@@ -572,7 +550,6 @@ impl ChatView {
             }
             self.not_sent = Some(format!("not sent: {}", refusal_words(&refused.reason)));
         }
-        let to_feed = ui_view::sends_to_feed(state);
         for sent in state.inputs().iter() {
             if !matches!(sent.what, InputWhat::Prompt { .. }) {
                 continue;
@@ -582,11 +559,7 @@ impl ChatView {
                 | InputState::Queued
                 | InputState::Uncertain
                 | InputState::Held => {
-                    self.sending.entry(sent.id.clone()).or_insert(Sending {
-                        at_ms: now_ms,
-                        in_feed: to_feed
-                            && !matches!(sent.state, InputState::Queued | InputState::Held),
-                    });
+                    self.sending.entry(sent.id.clone()).or_insert(now_ms);
                 }
                 InputState::Rejected(_) | InputState::Settled => {}
             }
@@ -776,7 +749,7 @@ impl ChatView {
             if !self.arm_ask(&card, now_ms, quiet_since) {
                 // Words typed as the ask appears are still the draft's; Enter
                 // neither sends the draft nor answers what was not read.
-                if key.code != KeyCode::Enter && self.editor.key(key) == Edit::Changed {
+                if key.code != KeyCode::Enter && self.editor.key(key) {
                     self.not_sent = None;
                 }
                 return vec![];
@@ -901,7 +874,7 @@ impl ChatView {
                 vec![]
             }
             _ => {
-                if self.editor.key(key) == Edit::Changed {
+                if self.editor.key(key) {
                     self.focus = None;
                     // Editing answers why the last one was not sent.
                     self.not_sent = None;
@@ -936,7 +909,7 @@ impl ChatView {
                             .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
                     {
                         self.tray = None;
-                        if self.editor.key(key) == Edit::Changed {
+                        if self.editor.key(key) {
                             self.not_sent = None;
                         }
                         None
@@ -1570,10 +1543,6 @@ impl ChatView {
                         KeyModifiers::SHIFT,
                     ))];
                 }
-                if let Some((_, i)) = self.tray_spots.iter().find(|(row, _)| *row == y) {
-                    self.tray = Some(*i);
-                    return vec![];
-                }
                 // A queued prompt's controls act; a click elsewhere on it
                 // highlights it.
                 if let Some(spot) = self.queued_spots.iter().find(|spot| spot.row == y).cloned() {
@@ -2122,7 +2091,7 @@ impl ChatView {
 
         let overview = self.overview(state);
         let sign_in = ui_view::sign_in(state);
-        let edge_words = EdgeWords::of(&ui_view::controls(state));
+        let summary = ui_view::controls(state);
         let items = pane::Contents {
             overview: &overview,
             folded: &self.pane_folds,
@@ -2171,20 +2140,20 @@ impl ChatView {
         // with it: a prompt on its way while the agent was idle, then what
         // the agent is doing, where "Worked 6m" stands once the turn ends.
         let mut tail: Vec<Line<'static>> = Vec::new();
-        for prompt in ui_view::prompts_underway(state, |id| self.in_feed(state, id)) {
+        for prompt in ui_view::prompts_underway(state) {
             if prompt.lands != ui_view::Lands::Feed {
                 continue;
             }
             let ui_view::Underway::Sending { waiting } = prompt.underway else {
                 continue;
             };
-            let Some(seen) = self.sending.get(&prompt.input_id) else {
+            let Some(&at_ms) = self.sending.get(&prompt.input_id) else {
                 continue;
             };
             let when = if waiting {
                 format!("waiting for {host}…")
             } else {
-                feed::clock(seen.at_ms)
+                feed::clock(at_ms)
             };
             tail.extend(feed::pending_prompt(&prompt.text, &when, feed_width, theme));
         }
@@ -2330,11 +2299,8 @@ impl ChatView {
                                 takes_keys: bool| {
             // Kept from sending, or exited, the box's edge says why; the
             // empty field still invites the draft.
-            let invite = match state.composer() {
-                Composer::Holds(_) | Composer::Resume => format!("Message {name}"),
-                composer => placeholder(&composer, &name, &host, self.reach),
-            };
-            let boxed = boxed_composer(editor, &invite, &edge_words, !pane_keys, width, theme);
+            let invite = format!("Message {name}");
+            let boxed = boxed_composer(editor, &invite, &summary, !pane_keys, width, theme);
             if takes_keys {
                 *cursor = Some((bottom.len() + boxed.cursor.0, boxed.cursor.1));
             }
@@ -2348,19 +2314,28 @@ impl ChatView {
                     &self.pane_focus,
                     Some(pane::PaneItem::Job(job)) if pane::stop_key(job).is_some()
                 );
-                if stoppable {
-                    "j/k move · enter open · x stop · esc back · ctrl+o close".to_owned()
+                Hint::Keys(if stoppable {
+                    keys(&[
+                        ("j/k", "move"),
+                        ("enter", "open"),
+                        ("x", "stop"),
+                        ("esc", "back"),
+                        ("ctrl+o", "close"),
+                    ])
                 } else {
-                    "j/k move · enter open · esc back · ctrl+o close".to_owned()
-                }
+                    keys(&[
+                        ("j/k", "move"),
+                        ("enter", "open"),
+                        ("esc", "back"),
+                        ("ctrl+o", "close"),
+                    ])
+                })
             } else {
-                turn_hint_words(state, &self.editor, self.reach, self.leader)
+                turn_hint(state, &self.editor, self.reach, self.leader)
             }
         };
-        let mut hint: Result<Line<'static>, String> = match &footer {
-            Some(footer) => Ok(footer.clone()),
-            None => Ok(Line::default()),
-        };
+        // The app's footer, when it has one, takes the line over.
+        let mut hint;
         // Where the plain composer's box starts, to mark its top edge.
         let mut plain_box: Option<usize> = None;
         // A permission ask takes over the composer's box: its edge in the
@@ -2374,7 +2349,7 @@ impl ChatView {
                 self.ask.set_room(usize::from(area.height), self.attach);
                 let drawn = self.ask.box_lines(card, inner, theme);
                 let (lines, mode, _) =
-                    framed(drawn.lines, theme.attention(), &edge_words, width, theme);
+                    framed(drawn.lines, theme.attention(), &summary, width, theme);
                 let at = bottom.len();
                 if let Some((row, col)) = drawn.cursor {
                     cursor = Some((at + 1 + row, MARGIN + 2 + col));
@@ -2384,44 +2359,38 @@ impl ChatView {
                 }
                 ask_box = Some((at, drawn.spots));
                 bottom.extend(lines);
-                if footer.is_none()
-                    && let Some(words) = self.ask.question_hint(card, self.leader)
-                {
-                    hint = Err(words);
-                } else if footer.is_none() {
-                    let stop = if card.stops_turn {
-                        "ctrl+x interrupt · "
-                    } else {
-                        ""
-                    };
-                    hint = Err(if self.ask.in_box_note(card) {
-                        if card.stops_turn {
-                            "enter send · esc clear · ctrl+x interrupt".to_owned()
-                        } else {
-                            "enter send · esc clear".to_owned()
-                        }
-                    } else if !matches!(card.state, CardState::Open | CardState::Rejected(_)) {
-                        format!("{stop}ctrl+{} more", self.leader)
-                    } else if self.ask.on_noted_deny(card) {
-                        format!("enter choose · tab note · {stop}ctrl+{} more", self.leader)
-                    } else {
-                        format!("enter choose · {stop}ctrl+{} more", self.leader)
-                    });
-                }
+                let stop: &[(&str, &str)] = if card.stops_turn {
+                    &[("ctrl+x", "interrupt")]
+                } else {
+                    &[]
+                };
+                let more = format!("ctrl+{}", self.leader);
+                let more = &[(more.as_str(), "more")];
+                hint = Hint::Keys(match self.ask.question_hint(card, self.leader) {
+                    Some(question) => question,
+                    None if self.ask.in_box_note(card) => {
+                        keys(&[&[("enter", "send"), ("esc", "clear")], stop].concat())
+                    }
+                    None if !matches!(card.state, CardState::Open | CardState::Rejected(_)) => {
+                        keys(&[stop, more].concat())
+                    }
+                    None if self.ask.on_noted_deny(card) => {
+                        keys(&[&[("enter", "choose"), ("tab", "note")], stop, more].concat())
+                    }
+                    None => keys(&[&[("enter", "choose")], stop, more].concat()),
+                });
             }
             // The agent's account needs signing in: the box says how, as an
             // ask would, and keeps the draft for afterwards. An ask the
             // agent exited with leaves the composer to say it exited.
             _ if let Some(sign_in) = &sign_in => {
                 let (lines, mode) =
-                    sign_in_box(state.kind(), &host, sign_in, &edge_words, width, theme);
+                    sign_in_box(state.kind(), &host, sign_in, &summary, width, theme);
                 if let Some(cols) = mode {
                     ask_mode = Some((bottom.len() + lines.len() - 1, cols));
                 }
                 bottom.extend(lines);
-                if footer.is_none() {
-                    hint = Err(format!("ctrl+{} more", self.leader));
-                }
+                hint = Hint::Keys(keys(&[(&format!("ctrl+{}", self.leader), "more")]));
             }
             _ => {
                 plain_box = Some(bottom.len());
@@ -2431,39 +2400,39 @@ impl ChatView {
                     &self.editor,
                     self.tray.is_none() && self.picker.is_none(),
                 );
-                if footer.is_none() {
-                    hint = Err(match self.tray.and_then(|i| entries.get(i)) {
-                        Some(entry) => entry.hint().to_owned(),
-                        None => legend(),
-                    });
-                }
+                hint = match self.tray.and_then(|i| entries.get(i)) {
+                    Some(entry) => Hint::Keys(keys(entry.hint())),
+                    None => legend(),
+                };
             }
         }
         // Ctrl+S: its legend, at once; a picker: its keys.
-        if footer.is_none() {
-            if let Some(picker) = &self.picker {
-                hint = Err(picker.hint());
+        if let Some(picker) = &self.picker {
+            hint = Hint::Keys(keys(&picker.hints()));
+            if footer.is_none() {
                 cursor = None;
-            } else if self.setting_prefix {
-                let view = ui_view::settings(state);
-                let mut pairs = Vec::new();
-                for (setting, pair) in [
-                    (&view.changeable.model, "m model"),
-                    (&view.changeable.effort, "e effort"),
-                    (&view.changeable.permission, "p permission"),
-                ] {
-                    if *setting == Changeable::Pick {
-                        pairs.push(pair);
-                    }
-                }
-                hint = Err(if pairs.is_empty() {
-                    crate::words::by_typing_words(&view.changeable.model, &view.changeable.effort)
-                        .unwrap_or_else(|| "Nothing here can change from amux".to_owned())
-                } else {
-                    pairs.push("esc back");
-                    pairs.join(" · ")
-                });
             }
+        } else if self.setting_prefix {
+            let view = ui_view::settings(state);
+            let mut pairs = Vec::new();
+            for (setting, pair) in [
+                (&view.changeable.model, ("m", "model")),
+                (&view.changeable.effort, ("e", "effort")),
+                (&view.changeable.permission, ("p", "permission")),
+            ] {
+                if *setting == Changeable::Pick {
+                    pairs.push(pair);
+                }
+            }
+            hint = if pairs.is_empty() {
+                Hint::Sentence(
+                    crate::words::by_typing_words(&view.changeable.model, &view.changeable.effort)
+                        .unwrap_or_else(|| "Nothing here can change from amux".to_owned()),
+                )
+            } else {
+                pairs.push(("esc", "back"));
+                Hint::Keys(keys(&pairs))
+            };
         }
         // The plain composer's top edge says what stands in the way of
         // sending, most pressing first: the last prompt refused (error
@@ -2488,9 +2457,9 @@ impl ChatView {
         }
         // A blank line lets the composer's box breathe above the keys.
         bottom.push(Line::default());
-        let (hint, hint_keys) = match hint {
-            Ok(line) => (line, Vec::new()),
-            Err(words) => keys_line(&words, width, theme),
+        let (hint, hint_keys) = match footer {
+            Some(footer) => (footer, Vec::new()),
+            None => hint_line(&hint, width, theme),
         };
         let hint_row = bottom.len();
         bottom.push(hint);
@@ -2620,7 +2589,6 @@ impl ChatView {
                 )
             })
             .collect();
-        self.tray_spots.clear();
         self.queued_spots = queued_at
             .into_iter()
             .map(|(at, index, drawn)| QueuedSpot {
@@ -2961,9 +2929,9 @@ impl ChatView {
         }
         if let Some(context) = ui_view::context(state) {
             gap(&mut right);
-            let used = tokens_short(context.used_tokens);
+            let used = text::tokens(context.used_tokens);
             let words = match context.window_tokens {
-                Some(window) => format!("{used} / {}", tokens_short(window)),
+                Some(window) => format!("{used} / {}", text::tokens(window)),
                 None => used,
             };
             let style = if context.near_full {
@@ -3075,22 +3043,6 @@ fn diff_words(state: &SessionState, comparison: Comparison) -> String {
     words
 }
 
-/// "41K", "1.2M": a token count at a glance.
-fn tokens_short(count: u64) -> String {
-    match count {
-        0..1_000 => count.to_string(),
-        1_000..1_000_000 => format!("{}K", (count + 500) / 1_000),
-        _ => {
-            let tenths = (count + 50_000) / 100_000;
-            if tenths.is_multiple_of(10) {
-                format!("{}M", tenths / 10)
-            } else {
-                format!("{}.{}M", tenths / 10, tenths % 10)
-            }
-        }
-    }
-}
-
 /// Where the chat stands, only when that is a problem the person should
 /// see: the host away, reconnecting, catching up, a rebuilt history on its
 /// way, or the agent exited. Working, idle and needs-you show in the feed.
@@ -3100,19 +3052,36 @@ fn problem_words(
     host: &str,
     theme: Theme,
 ) -> Option<(String, ratatui::style::Style)> {
-    let (words, style) = state_words(state, reach, host, theme);
-    match (state.composer(), state.phase()) {
-        (_, PhaseView::Exited { .. }) | (Composer::Holds(_), _) => Some((
-            words,
-            if style == theme.muted() {
-                theme.faint()
-            } else {
-                style
-            },
-        )),
-        _ if state.reset_pending() => Some((words, theme.faint())),
-        _ => None,
-    }
+    let away_words = || {
+        let host = if host.is_empty() { "host" } else { host };
+        match reach {
+            Reach::Offline(Offline::SignedOut) => {
+                format!("{host} away · this machine is signed out")
+            }
+            Reach::Offline(Offline::Revoked) => format!("{host} no longer trusts this machine"),
+            Reach::Away => format!("{host} away · {FREE_PLAN_AWAY}"),
+            Reach::Online(_) | Reach::Offline(Offline::Plain) => {
+                format!("{host} away · not current")
+            }
+        }
+    };
+    Some(match (state.composer(), state.phase()) {
+        // Resuming asks the host, so why it is away matters more than why
+        // the agent ended.
+        (_, PhaseView::Exited { cause }) if !reach.online() => {
+            let ended = match cause {
+                ExitCause::Finished => "finished",
+                ExitCause::Ended | ExitCause::Failed(_) => "exited",
+            };
+            (format!("{ended} · {}", away_words()), theme.warning())
+        }
+        (_, PhaseView::Exited { cause }) => (exit_words(&cause), theme.faint()),
+        (Composer::Holds(Waiting::Detached), _) => (away_words(), theme.warning()),
+        (Composer::Holds(Waiting::Reconnecting), _) => ("reconnecting".to_owned(), theme.warning()),
+        (Composer::Holds(Waiting::CatchingUp), _) => ("catching up".to_owned(), theme.faint()),
+        _ if state.reset_pending() => ("refreshing".to_owned(), theme.faint()),
+        _ => return None,
+    })
 }
 
 /// Why a setting cannot change from here, as a notice: how it does
@@ -3158,20 +3127,21 @@ fn ends_with_exit(state: &SessionState) -> bool {
     let Some(held) = transcript.head().and_then(|head| transcript.at(head)) else {
         return false;
     };
-    let everything = ChatOptions {
-        tools: ToolRows::ShowAll,
-    };
-    chat_rows_for(state, std::slice::from_ref(&held.item.key), &everything)
-        .last()
-        .is_some_and(|row| {
-            matches!(
-                row.kind,
-                RowKind::Boundary {
-                    kind: wire::BoundaryKind::Exited,
-                    ..
-                }
-            )
-        })
+    chat_rows_for(
+        state,
+        std::slice::from_ref(&held.item.key),
+        ToolRows::ShowAll,
+    )
+    .last()
+    .is_some_and(|row| {
+        matches!(
+            row.kind,
+            RowKind::Boundary {
+                kind: wire::BoundaryKind::Exited,
+                ..
+            }
+        )
+    })
 }
 
 /// The sign-in box in the composer's place, framed with the composer's
@@ -3180,14 +3150,14 @@ fn sign_in_box(
     kind: wire::Kind,
     host: &str,
     sign_in: &ui_view::SignInView,
-    edge_words: &EdgeWords,
+    controls: &ui_view::ControlsSummary,
     width: usize,
     theme: Theme,
 ) -> (Vec<Line<'static>>, Option<(usize, usize)>) {
     const MARGIN: usize = 2;
     let inner = width.saturating_sub(2 * MARGIN + 4).max(1);
     let body = sign_in_lines(kind, host, sign_in, inner, theme);
-    let (lines, mode, _) = framed(body, theme.attention(), edge_words, width, theme);
+    let (lines, mode, _) = framed(body, theme.attention(), controls, width, theme);
     (lines, mode)
 }
 
@@ -3202,10 +3172,9 @@ pub(crate) fn sign_in_composer_lines(
     width: usize,
     theme: Theme,
 ) -> Vec<Line<'static>> {
-    let edge = EdgeWords {
+    let edge = ui_view::ControlsSummary {
         model: Some(model.to_owned()),
-        effort: None,
-        controls: None,
+        ..Default::default()
     };
     sign_in_box(kind, host, sign_in, &edge, width, theme).0
 }
@@ -3354,15 +3323,8 @@ pub(crate) fn composer_lines(
     width: usize,
     theme: Theme,
 ) -> Vec<Line<'static>> {
-    let invite = match composer {
-        Composer::Holds(_) | Composer::Resume => format!("Message {name}"),
-        composer => placeholder(composer, name, host, reach),
-    };
-    let edge = EdgeWords {
-        model: None,
-        effort: None,
-        controls: None,
-    };
+    let invite = format!("Message {name}");
+    let edge = ui_view::ControlsSummary::default();
     let mut lines = boxed_composer(editor, &invite, &edge, true, width, theme).lines;
     if let Some((words, ink)) = edge_title(None, false, composer, host, reach, None, theme)
         && let Some(top) = lines.first_mut()
@@ -3379,18 +3341,18 @@ pub(crate) fn refusal_words(refusal: &Refusal) -> String {
         return detail.clone();
     }
     match refusal.reason {
-        RefusalReason::Exited => "it had exited",
-        RefusalReason::Exiting => "it was exiting",
-        RefusalReason::Draining => "its host is shutting down",
-        RefusalReason::HostUnreachable => "its host can't be reached",
-        RefusalReason::Unsupported => "this agent can't take it",
-        RefusalReason::ClosedAsk => "the ask had already closed",
-        RefusalReason::NotQueued => "it was no longer queued",
-        RefusalReason::ConversationElsewhere => {
+        wire::Refusal::Exited => "it had exited",
+        wire::Refusal::Exiting => "it was exiting",
+        wire::Refusal::Draining => "its host is shutting down",
+        wire::Refusal::HostUnreachable => "its host can't be reached",
+        wire::Refusal::Unsupported => "this agent can't take it",
+        wire::Refusal::ClosedAsk => "the ask had already closed",
+        wire::Refusal::NotQueued => "it was no longer queued",
+        wire::Refusal::ConversationElsewhere => {
             "Claude's own view switched to another conversation"
         }
-        RefusalReason::TooLong => "it is longer than the agent takes",
-        RefusalReason::Unspecified => "it was refused",
+        wire::Refusal::TooLong => "it is longer than the agent takes",
+        wire::Refusal::Unspecified => "it was refused",
     }
     .to_owned()
 }
@@ -3430,22 +3392,6 @@ fn quiet_activity(activity: &ui_state::Activity, width: usize, theme: Theme) -> 
 
 /// What the composer's bottom edge says, in the words a person reads: the
 /// model by its name, its effort, and the permission and mode.
-struct EdgeWords {
-    model: Option<String>,
-    effort: Option<String>,
-    controls: Option<String>,
-}
-
-impl EdgeWords {
-    fn of(controls: &ui_view::ControlsSummary) -> EdgeWords {
-        EdgeWords {
-            model: controls.model.clone(),
-            effort: controls.effort.clone(),
-            controls: crate::words::control_words(controls),
-        }
-    }
-}
-
 /// The composer in its box, as drawn: its lines, the cursor's (line,
 /// column), the mode's columns on the bottom edge, where the draft's words
 /// start, how many wrapped lines are scrolled off above, and the width the
@@ -3466,7 +3412,7 @@ struct Boxed {
 fn boxed_composer(
     editor: &Editor,
     placeholder: &str,
-    edge_words: &EdgeWords,
+    controls: &ui_view::ControlsSummary,
     focused: bool,
     width: usize,
     theme: Theme,
@@ -3489,7 +3435,7 @@ fn boxed_composer(
         theme.hairline()
     };
     let body = body.into_iter().skip(skip).take(COMPOSER_LINES).collect();
-    let (lines, mode, label) = framed(body, edge, edge_words, width, theme);
+    let (lines, mode, label) = framed(body, edge, controls, width, theme);
     Boxed {
         lines,
         cursor: (1 + row - skip, MARGIN + 2 + col),
@@ -3529,7 +3475,7 @@ fn marked_edge_in(
 fn framed(
     body: Vec<Line<'static>>,
     edge: ratatui::style::Style,
-    edge_words: &EdgeWords,
+    controls: &ui_view::ControlsSummary,
     width: usize,
     theme: Theme,
 ) -> (Vec<Line<'static>>, Option<(usize, usize)>, Option<usize>) {
@@ -3554,7 +3500,7 @@ fn framed(
     // click) changes, in the reading ink; normal ones are left unsaid.
     let known = |fact: &Option<String>| fact.clone().filter(|fact| !fact.is_empty());
     let mut label: Vec<Span<'static>> = Vec::new();
-    match (known(&edge_words.model), known(&edge_words.effort)) {
+    match (known(&controls.model), known(&controls.effort)) {
         (Some(model), Some(effort)) => {
             label.push(Span::styled(format!("{model} ({effort})"), theme.faint()))
         }
@@ -3562,7 +3508,7 @@ fn framed(
         (None, Some(effort)) => label.push(Span::styled(format!("({effort})"), theme.faint())),
         (None, None) => {}
     }
-    let mode_words = known(&edge_words.controls);
+    let mode_words = crate::words::control_words(controls).filter(|words| !words.is_empty());
     if let Some(mode) = &mode_words {
         if !label.is_empty() {
             label.push(Span::styled(" · ", theme.faint()));
@@ -3600,86 +3546,90 @@ fn framed(
 /// The keys under the composer, by what is happening, few enough to read
 /// at a glance and always ending with the way to more (the leader's
 /// panel). What everyone knows (Enter sends, pasting attaches) is not
-/// said; Enter is named only when it does something else. Words that are
-/// not a legend start with a capital and read as a sentence.
-fn turn_hint_words(state: &SessionState, editor: &Editor, reach: Reach, leader: char) -> String {
+/// said; Enter is named only when it does something else.
+fn turn_hint(state: &SessionState, editor: &Editor, reach: Reach, leader: char) -> Hint {
     let working = state.phase() == PhaseView::Working;
     let shift_tab = next_control(&ui_view::settings(state)).map(|change| match change {
-        ui_view::SettingChange::Mode(_) => "shift+tab mode",
-        _ => "shift+tab permission",
+        ui_view::SettingChange::Mode(_) => ("shift+tab", "mode"),
+        _ => ("shift+tab", "permission"),
     });
-    let more = format!("ctrl+{leader} more");
-    let mut pairs: Vec<String> = Vec::new();
+    let more = format!("ctrl+{leader}");
+    let mut pairs = Vec::new();
+    // A send now is held, shown pending with Cancel, and goes by itself.
+    let holds = |when| Hint::Keys(keys(&[("enter", when)]));
     match state.composer() {
         Composer::Send => {
             if working {
-                pairs.push("enter queue".into());
-                pairs.push("ctrl+x interrupt".into());
+                pairs.push(("enter", "queue"));
+                pairs.push(("ctrl+x", "interrupt"));
             } else if !editor.is_empty() && !crate::terminal::shift_enter_reported() {
                 // Shift+Enter is the newline everyone expects; where the
                 // terminal cannot tell it from Enter, say the key that works.
-                pairs.push("ctrl+j newline".into());
+                pairs.push(("ctrl+j", "newline"));
             }
-            if let Some(words) = shift_tab {
-                pairs.push(words.into());
-            }
+            pairs.extend(shift_tab);
         }
-        Composer::Resume => pairs.push("enter resume".into()),
-        // A send now is held, shown pending with Cancel, and goes by itself.
+        Composer::Resume => pairs.push(("enter", "resume")),
         Composer::Holds(Waiting::Detached) if reach == Reach::Offline(Offline::SignedOut) => {
-            return "enter holds it · it sends once this machine signs in".to_owned();
+            return holds("holds it · it sends once this machine signs in");
         }
         Composer::Holds(Waiting::Detached) if reach == Reach::Offline(Offline::Revoked) => {
-            return "enter holds it · it sends once you pair again".to_owned();
+            return holds("holds it · it sends once you pair again");
         }
         Composer::Holds(Waiting::Detached) => {
-            return "enter holds it · it sends when the host is back".to_owned();
+            return holds("holds it · it sends when the host is back");
         }
         Composer::Holds(Waiting::Reconnecting) => {
-            return "enter holds it · it sends once amux is back".to_owned();
+            return holds("holds it · it sends once amux is back");
         }
         Composer::Holds(Waiting::CatchingUp) => {
-            return "enter holds it · it sends once caught up".to_owned();
+            return holds("holds it · it sends once caught up");
         }
     }
-    pairs.push(more);
-    pairs.join(" · ")
+    pairs.push((&more, "more"));
+    Hint::Keys(keys(&pairs))
+}
+
+/// A key legend as (key, action) pairs, most needed first.
+pub(crate) type Keys = Vec<(String, String)>;
+
+pub(crate) fn keys(pairs: &[(&str, &str)]) -> Keys {
+    pairs
+        .iter()
+        .map(|(key, action)| ((*key).to_owned(), (*action).to_owned()))
+        .collect()
+}
+
+/// What the line under the composer says: a key legend, or words that are
+/// not one.
+enum Hint {
+    Keys(Keys),
+    Sentence(String),
 }
 
 /// Where each drawn key pair sits on its line, and the key it presses.
 type KeySpots = Vec<((usize, usize), KeyEvent)>;
 
-/// A key legend in home's style: each key bright and bold, its action
-/// faint, three blanks apart, whole pairs or none. Words that are not a
-/// legend (they start with a capital) read as one faint sentence. Returns
-/// the line and, for each pair drawn, its columns and the key it stands
-/// for, so a click can press it.
-fn keys_line(words: &str, width: usize, theme: Theme) -> (Line<'static>, KeySpots) {
+/// The hint line in home's style (see [`text::push_hints`]); a sentence
+/// reads faint. Returns the line and, for each pair drawn that names a
+/// key, its columns and the key, so a click can press it.
+fn hint_line(hint: &Hint, width: usize, theme: Theme) -> (Line<'static>, KeySpots) {
     let mut line = Line::from(Span::raw("  "));
-    let mut spots = Vec::new();
-    if words.chars().next().is_some_and(char::is_uppercase) {
-        push(&mut line, words, theme.faint(), width);
-        return (line, spots);
-    }
-    let room = width.saturating_sub(2);
-    for (i, pair) in words.split(" · ").enumerate() {
-        let gap = if i > 0 { 3 } else { 0 };
-        if text::line_width(&line) + gap + text::str_width(pair) > room {
-            break;
+    let pairs = match hint {
+        Hint::Sentence(words) => {
+            push(&mut line, words, theme.faint(), width);
+            return (line, Vec::new());
         }
-        if i > 0 {
-            push(&mut line, "   ", theme.faint(), room);
-        }
-        let from = text::line_width(&line);
-        let (key, action) = split_key(pair);
-        push(&mut line, key.clone(), theme.emphasis(), room);
-        if !action.is_empty() {
-            push(&mut line, format!(" {action}"), theme.faint(), room);
-        }
-        if let Some(event) = key_event(&key) {
-            spots.push(((from, text::line_width(&line)), event));
-        }
-    }
+        Hint::Keys(pairs) => pairs,
+    };
+    let borrowed: Vec<(&str, &str)> = pairs
+        .iter()
+        .map(|(key, action)| (key.as_str(), action.as_str()))
+        .collect();
+    let spots = text::push_hints(&mut line, &borrowed, width.saturating_sub(2), theme)
+        .into_iter()
+        .filter_map(|(at, columns)| Some((columns, key_event(borrowed[at].0)?)))
+        .collect();
     (line, spots)
 }
 
@@ -3703,14 +3653,6 @@ fn key_event(key: &str) -> Option<KeyEvent> {
         _ => return None,
     };
     Some(KeyEvent::new(code, modifiers))
-}
-
-/// "enter send now" → ("enter", "send now"); "ctrl+x interrupt" → ("ctrl+x", "interrupt").
-fn split_key(pair: &str) -> (String, String) {
-    match pair.split_once(' ') {
-        Some((key, action)) => (key.to_owned(), action.to_owned()),
-        None => (pair.to_owned(), String::new()),
-    }
 }
 
 /// The prompt to pin under the header, and its key: the prompt of the turn
@@ -3761,14 +3703,7 @@ fn pinned(
     {
         return None;
     }
-    let row = chat_rows_for(
-        state,
-        std::slice::from_ref(&key),
-        &ChatOptions {
-            tools: ToolRows::ShowAll,
-        },
-    )
-    .pop()?;
+    let row = chat_rows_for(state, std::slice::from_ref(&key), ToolRows::ShowAll).pop()?;
     let next = owners
         .iter()
         .enumerate()
@@ -3898,49 +3833,6 @@ fn mime_of(name: &str) -> &'static str {
         "txt" | "md" | "log" => "text/plain",
         "json" => "application/json",
         _ => "application/octet-stream",
-    }
-}
-
-/// The one word, or few, for where the chat stands: needs you, working,
-/// idle, exited with its cause, or why it cannot be current.
-fn state_words(
-    state: &SessionState,
-    reach: Reach,
-    host: &str,
-    theme: Theme,
-) -> (String, ratatui::style::Style) {
-    let away_words = || {
-        let host = if host.is_empty() { "host" } else { host };
-        match reach {
-            Reach::Offline(Offline::SignedOut) => {
-                format!("{host} away · this machine is signed out")
-            }
-            Reach::Offline(Offline::Revoked) => format!("{host} no longer trusts this machine"),
-            Reach::Away => format!("{host} away · {FREE_PLAN_AWAY}"),
-            Reach::Online(_) | Reach::Offline(Offline::Plain) => {
-                format!("{host} away · not current")
-            }
-        }
-    };
-    match (state.composer(), state.phase()) {
-        // Resuming asks the host, so why it is away matters more than why
-        // the agent ended.
-        (_, PhaseView::Exited { cause }) if !reach.online() => {
-            let ended = match cause {
-                ExitCause::Finished => "finished",
-                ExitCause::Ended | ExitCause::Failed(_) => "exited",
-            };
-            (format!("{ended} · {}", away_words()), theme.warning())
-        }
-        (_, PhaseView::Exited { cause }) => (exit_words(&cause), theme.muted()),
-        (Composer::Holds(Waiting::Detached), _) => (away_words(), theme.warning()),
-        (Composer::Holds(Waiting::Reconnecting), _) => ("reconnecting".to_owned(), theme.warning()),
-        (Composer::Holds(Waiting::CatchingUp), _) => ("catching up".to_owned(), theme.muted()),
-        (_, _) if state.reset_pending() => ("refreshing".to_owned(), theme.muted()),
-        (_, PhaseView::NeedsYou) => ("needs you".to_owned(), theme.attention()),
-        (_, PhaseView::Working) => ("working".to_owned(), theme.muted()),
-        (_, PhaseView::Idle) => ("idle".to_owned(), theme.muted()),
-        (_, PhaseView::Starting) => ("starting".to_owned(), theme.muted()),
     }
 }
 

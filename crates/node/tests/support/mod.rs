@@ -9,11 +9,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use node::{Daemon, Launch, ProfileId, ProfileRuntime, StartOptions};
-pub use patience::{PATIENCE, Stuck, holds_for, until};
+pub use patience::{PATIENCE, holds_for, until};
 use provider_fakes::script::{SCRIPT_ENV, Script, Step};
 use wire::{
-    AgentRef, ClaudeSdkInput, CreateAgentRequest, Input, Kind, PromptInput, PromptSubmission,
-    claude_sdk_input,
+    AgentInput, AgentRef, CreateAgentRequest, Input, Kind, PromptInput, PromptSubmission,
+    agent_input,
 };
 
 /// The amux binary and the fake providers.
@@ -70,10 +70,11 @@ impl Install {
             install_path: binary("amux"),
             claude_command: binary("fake-claude-sdk").to_string_lossy().into_owned(),
             codex_command: binary("fake-codex").to_string_lossy().into_owned(),
-            step_budget: daemon_core::StepBudget::TEST,
-            // An agent's core gets the daemon's test budget, for the same
-            // reason: a loaded debug-build run stretches ordinary steps.
-            agent_step_budget_micros: daemon_core::StepBudget::TEST.micros,
+            // Untimed, daemon and agent cores alike: a loaded debug-build
+            // run stretches ordinary steps past any budget, and a dump for
+            // that overrun would land in `reports/` while a test reads it.
+            step_budget: daemon_core::StepBudget::UNLIMITED,
+            agent_step_budget_micros: daemon_core::StepBudget::UNLIMITED.micros,
             ..Launch::default()
         };
         launch
@@ -91,7 +92,7 @@ impl Install {
         // that an agent a failed test leaves behind goes away on its own.
         launch.agent.grace_secs = 20;
         launch.agent.drain_secs = 5;
-        launch.stop_deadline_ms = 15_000;
+        launch.core.stop_deadline_ms = 15_000;
         launch
     }
 
@@ -125,10 +126,14 @@ impl Install {
         self.profile_dir().join(node::AGENTS).join(id.to_string())
     }
 
-    /// The profile store, opened beside the daemon's own connection.
-    fn store(&self) -> store::Sqlite {
-        store::Sqlite::open(&self.profile_dir().join(node::STORE), [0; 16])
-            .expect("the profile store opens")
+    /// The profile store, opened beside the daemon's own connection: a
+    /// test sets up what no input produces by writing through it.
+    pub fn store(&self) -> store::Sqlite {
+        store::Sqlite::open(
+            &self.profile_dir().join(node::STORE),
+            self.profile.as_bytes().to_vec(),
+        )
+        .expect("the profile store opens")
     }
 
     /// The row this profile keeps for the paired `peer`, when it has one.
@@ -252,8 +257,8 @@ pub fn submission(id: &[u8], text: &str) -> PromptSubmission {
 pub fn sdk_prompt(id: &[u8], text: &str) -> Input {
     Input::new(
         id.to_vec(),
-        ClaudeSdkInput {
-            of: Some(claude_sdk_input::Of::Prompt(PromptInput {
+        AgentInput {
+            of: Some(agent_input::Of::Prompt(PromptInput {
                 text: text.to_owned(),
                 attachments: Vec::new(),
             })),
@@ -293,6 +298,22 @@ pub async fn local_channel(path: &Path) -> tonic::transport::Channel {
 }
 
 /// Kills every agent the runtime is running, so none outlives its test.
+/// Waits until calls from `edge` to `host` have a route, or `patience`
+/// passes.
+pub async fn wait_for_route(
+    edge: &node::Edge,
+    host: node::HostId,
+    patience: std::time::Duration,
+) -> bool {
+    tokio::time::timeout(patience, async {
+        while edge.via(host).await == node::harness::LiveRoute::Offline {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .is_ok()
+}
+
 pub async fn kill_all(runtime: &ProfileRuntime) {
     for id in runtime.live() {
         let _ = runtime.kill_agent(id).await;

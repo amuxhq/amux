@@ -14,8 +14,8 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, Ask, ClaudeSdkItem, ClaudeSdkSnapshot, Envelope, Input, PermissionAsk, Refusal,
-    Step, ToolCall, ToolState, Turn, TurnOutcome, claude_sdk_input, claude_sdk_item,
+    AgentSpec, Ask, ClaudeItem, ClaudeSnapshot, Envelope, Input, PermissionAsk, Refusal, Step,
+    ToolCall, ToolState, Turn, TurnOutcome, agent_input, claude_item,
 };
 
 use crate::{
@@ -39,10 +39,10 @@ pub struct State<const FORGET: bool> {
 
 impl<const FORGET: bool> State<FORGET> {
     fn body(&self) -> Vec<u8> {
-        ClaudeSdkSnapshot {
+        ClaudeSnapshot {
             asks: self.shared.asks().open_asks().to_vec(),
             model: self.model.clone(),
-            ..unknown::claude_sdk()
+            ..unknown::claude()
         }
         .encode_to_vec()
     }
@@ -59,8 +59,8 @@ impl<const FORGET: bool> Checkpoint for State<FORGET> {
     }
 }
 
-fn body(kind: claude_sdk_item::Kind) -> Vec<u8> {
-    ClaudeSdkItem { kind: Some(kind) }.encode_to_vec()
+fn body(kind: claude_item::Kind) -> Vec<u8> {
+    ClaudeItem { kind: Some(kind) }.encode_to_vec()
 }
 
 fn text_of(value: &Value, key: &str) -> String {
@@ -100,7 +100,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
                         key: id,
                         text: text_of(&value, "text"),
                         input_id,
-                        body: body(claude_sdk_item::Kind::Prompt(wire::Prompt {})),
+                        body: body(claude_item::Kind::Prompt(wire::Prompt {})),
                         complete: true,
                         ..Default::default()
                     },
@@ -114,9 +114,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
                         ItemDraft {
                             key: id,
                             text: delta,
-                            body: body(claude_sdk_item::Kind::Message(wire::Text {
-                                complete: false,
-                            })),
+                            body: body(claude_item::Kind::Message(wire::Text { complete: false })),
                             ..Default::default()
                         },
                     );
@@ -132,9 +130,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
                     ItemDraft {
                         key: id.clone(),
                         text,
-                        body: body(claude_sdk_item::Kind::Message(wire::Text {
-                            complete: true,
-                        })),
+                        body: body(claude_item::Kind::Message(wire::Text { complete: true })),
                         complete: true,
                         ..Default::default()
                     },
@@ -156,7 +152,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
                     emit,
                     ItemDraft {
                         key: id,
-                        body: body(claude_sdk_item::Kind::Tool(ToolCall {
+                        body: body(claude_item::Kind::Tool(ToolCall {
                             input: Some(crate::claude_common::tool_input(
                                 &name, &server, &input, "",
                             )),
@@ -177,7 +173,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
                     emit,
                     ItemDraft {
                         key: id,
-                        body: body(claude_sdk_item::Kind::Tool(ToolCall {
+                        body: body(claude_item::Kind::Tool(ToolCall {
                             name,
                             state: ToolState::Succeeded as i32,
                             outcome_text: text_of(&value, "output"),
@@ -215,7 +211,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
                         emit,
                         ItemDraft {
                             key: format!("turn:{}", turn.id),
-                            body: body(claude_sdk_item::Kind::Turn(Turn {
+                            body: body(claude_item::Kind::Turn(Turn {
                                 turn_id: turn.id,
                                 outcome: outcome as i32,
                                 started_at_ms: turn.started_at_ms,
@@ -249,7 +245,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
                 key: agent_message_key(&envelope.id),
                 text: crate::shared::words(&envelope),
                 input_id: envelope.id.clone(),
-                body: body(claude_sdk_item::Kind::AgentMessage(agent_message_body(
+                body: body(claude_item::Kind::AgentMessage(agent_message_body(
                     &envelope,
                 ))),
                 complete: true,
@@ -263,25 +259,25 @@ impl<const FORGET: bool> TestKind<FORGET> {
         let shared = &mut state.shared;
         let id = input.input_id.clone();
         let arm = match input.decode_body() {
-            Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput { of: Some(arm) })) => arm,
+            Some(wire::AgentInput { of: Some(arm) }) => arm,
             _ => return shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
-            claude_sdk_input::Of::Prompt(prompt) => {
+            agent_input::Of::Prompt(prompt) => {
                 if let Some(entry) = shared.admit_prompt(emit, &id, prompt, human()) {
                     emit.effect(write(&entry.text));
                 }
             }
-            claude_sdk_input::Of::Withdraw(withdraw) => {
+            agent_input::Of::Withdraw(withdraw) => {
                 shared.withdraw(emit, &id, &withdraw.queued_input_id)
             }
-            claude_sdk_input::Of::Interrupt(_) => {
+            agent_input::Of::Interrupt(_) => {
                 if shared.is_busy() {
                     emit.effect(Effect::ProviderWrite(br#"{"type":"interrupt"}"#.to_vec()));
                 }
                 shared.accept(emit, &id, false);
             }
-            claude_sdk_input::Of::Answer(answer) => {
+            agent_input::Of::Answer(answer) => {
                 if let Some(ask) = shared.answer(emit, &id, &answer.ask_key) {
                     emit.effect(Effect::ProviderWrite(
                         format!(r#"{{"type":"answer","ask":"{}"}}"#, ask.key).into_bytes(),
@@ -304,9 +300,9 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
     type State = State<FORGET>;
     const KIND: wire::Kind = wire::Kind::Unspecified;
 
-    fn initial(spec: &AgentSpec, producer_version: &str) -> (Self::State, Step) {
+    fn initial(spec: &AgentSpec) -> (Self::State, Step) {
         let mut state = State {
-            shared: Shared::new(spec, Self::KIND, producer_version),
+            shared: Shared::new(spec, Self::KIND),
             model: None,
             tools: BTreeMap::new(),
             interrupted: false,
@@ -315,12 +311,8 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
         (state, step)
     }
 
-    fn reincarnate(
-        mut state: Self::State,
-        spec: &AgentSpec,
-        producer_version: &str,
-    ) -> (Self::State, Step) {
-        state.shared.reincarnate(spec, producer_version);
+    fn reincarnate(mut state: Self::State, spec: &AgentSpec) -> (Self::State, Step) {
+        state.shared.reincarnate(spec);
         state.resume()
     }
 
@@ -378,15 +370,15 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
     }
 
     fn unknown_snapshot() -> Vec<u8> {
-        unknown::claude_sdk().encode_to_vec()
+        unknown::claude().encode_to_vec()
     }
 
     fn describe_item(body: &[u8]) -> ItemView {
-        let item = ClaudeSdkItem::decode(body).unwrap_or_default();
+        let item = ClaudeItem::decode(body).unwrap_or_default();
         let (arm, complete, text) = match item.kind {
-            Some(claude_sdk_item::Kind::Prompt(_)) => ("prompt", true, String::new()),
-            Some(claude_sdk_item::Kind::Message(text)) => ("message", text.complete, String::new()),
-            Some(claude_sdk_item::Kind::Tool(tool)) => (
+            Some(claude_item::Kind::Prompt(_)) => ("prompt", true, String::new()),
+            Some(claude_item::Kind::Message(text)) => ("message", text.complete, String::new()),
+            Some(claude_item::Kind::Tool(tool)) => (
                 "tool",
                 true,
                 format!(
@@ -395,12 +387,12 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
                     ToolState::try_from(tool.state).map_or("?", |state| state.as_str_name())
                 ),
             ),
-            Some(claude_sdk_item::Kind::Turn(turn)) => (
+            Some(claude_item::Kind::Turn(turn)) => (
                 "turn",
                 true,
                 format!("#{} started={}", turn.turn_id, turn.started_at_ms),
             ),
-            Some(claude_sdk_item::Kind::AgentMessage(_)) => ("agent_message", true, String::new()),
+            Some(claude_item::Kind::AgentMessage(_)) => ("agent_message", true, String::new()),
             other => ("other", true, format!("{other:?}")),
         };
         ItemView {
@@ -411,7 +403,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
     }
 
     fn describe_snapshot(body: &[u8]) -> SnapshotView {
-        let snapshot = ClaudeSdkSnapshot::decode(body).unwrap_or_default();
+        let snapshot = ClaudeSnapshot::decode(body).unwrap_or_default();
         SnapshotView {
             asks: snapshot
                 .asks
@@ -560,7 +552,7 @@ mod tests {
             }
         }
 
-        fn item(key: &str, kind: claude_sdk_item::Kind) -> Item {
+        fn item(key: &str, kind: claude_item::Kind) -> Item {
             Item {
                 key: key.into(),
                 kind: wire::Kind::Unspecified as i32,
@@ -570,7 +562,7 @@ mod tests {
         }
 
         fn streaming(key: &str, complete: bool) -> Item {
-            item(key, claude_sdk_item::Kind::Message(wire::Text { complete }))
+            item(key, claude_item::Kind::Message(wire::Text { complete }))
         }
 
         fn append(key: &str) -> Append {
@@ -606,9 +598,9 @@ mod tests {
         fn the_first_frame_must_be_a_starting_snapshot_at_its_unknowns() {
             assert!(check(&[Step::default()])[0].contains("not a Snapshot"));
             let mut known = first();
-            known.snapshot.as_mut().unwrap().body = ClaudeSdkSnapshot {
+            known.snapshot.as_mut().unwrap().body = ClaudeSnapshot {
                 model: Some("opus".into()),
-                ..unknown::claude_sdk()
+                ..unknown::claude()
             }
             .encode_to_vec();
             assert!(check(&[known])[0].contains("not every field at its unknown"));
@@ -631,7 +623,7 @@ mod tests {
                     ..Default::default()
                 },
                 Step {
-                    items: vec![item("k", claude_sdk_item::Kind::Prompt(wire::Prompt {}))],
+                    items: vec![item("k", claude_item::Kind::Prompt(wire::Prompt {}))],
                     ..Default::default()
                 },
             ];
@@ -678,13 +670,13 @@ mod tests {
         #[test]
         fn every_open_ask_has_an_item() {
             let snapshot = Snapshot {
-                body: ClaudeSdkSnapshot {
+                body: ClaudeSnapshot {
                     asks: vec![Ask {
                         key: "ask".into(),
                         item_key: "tool-1".into(),
                         ..Default::default()
                     }],
-                    ..unknown::claude_sdk()
+                    ..unknown::claude()
                 }
                 .encode_to_vec(),
                 phase: Phase::NeedsYou as i32,

@@ -11,7 +11,6 @@ pub mod app;
 pub mod chat;
 pub mod clipboard;
 pub mod editor;
-pub mod fleet;
 pub mod highlight;
 pub mod home;
 mod hosts;
@@ -35,13 +34,7 @@ mod fixtures;
 #[cfg(test)]
 mod tests;
 
-pub use app::{App, Flow, Tone, TuiConfig};
+pub use app::{App, TuiConfig};
 pub use run::{AttachFn, AttachReturn, run};
-pub use terminal::{
-    RESTORE_BYTES, TerminalGuard, install_panic_hook, query_terminal_colors, write_enter_chrome,
-    write_osc52, write_restore,
-};
-pub use theme::{
-    ColorMode, ColorPreference, TerminalColors, Theme, ThemeError, ThemeFile, ThemeName, Token,
-    Tokens, Variant, detect_color_mode, nearest_ansi, parse_theme_file, theme_from_file,
-};
+pub use terminal::{RESTORE_BYTES, TerminalGuard, query_terminal_colors};
+pub use theme::{ColorMode, TerminalColors, Theme, detect_color_mode};

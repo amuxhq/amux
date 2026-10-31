@@ -13,10 +13,9 @@
 //! A scenario's recording is the spawns started in its own project folder:
 //! `target/live/recordings/<kind>/<scenario>/` gets their `io.jsonl` and
 //! `spawn.jsonl` and a `fixture.json` that replays them through the
-//! interpreter. A passing one joins the live captures beside the spec
-//! corpus through the probe's sanitizing `join` command (`claude-probe join`,
-//! `codex-probe join`); the recordings here are unsanitized and never
-//! committed.
+//! interpreter. A passing one joins its provider's corpus through the
+//! probe's sanitizing `join` command (`claude-probe join`, `codex-probe
+//! join`); the recordings here are unsanitized and never committed.
 
 use std::collections::BTreeSet;
 use std::ffi::OsString;
@@ -137,9 +136,14 @@ impl Capture {
         }
         let mut io = String::new();
         for line in read_lines(&self.dir.join("io.jsonl")) {
-            if line["process"]
-                .as_str()
-                .is_some_and(|process| processes.contains(process))
+            // Another client on Codex's socket (its own app, in attach) is
+            // recorded beside amux's; amux's interpreter reads only its own
+            // connection, as the corpus holds it.
+            let other_client = self.kind == Kind::Codex && line["transport_id"] != "amux";
+            if !other_client
+                && line["process"]
+                    .as_str()
+                    .is_some_and(|process| processes.contains(process))
             {
                 io.push_str(&format!("{line}\n"));
             }

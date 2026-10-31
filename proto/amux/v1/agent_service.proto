@@ -14,16 +14,22 @@ import "amux/v1/session_service.proto";
 //
 // Served on a profile's socket. On an agent's tools socket the caller is the
 // agent: it may message other agents, and every other call that changes an
-// agent is refused there.
+// agent is refused there. On a link stream whose handshake presented a
+// pinned key the caller is that paired daemon: replication is a daemon being
+// a client of its peer. There it is answered only for this host's own
+// agents and never passed on, so no two hosts can bounce a call between
+// them: the inventory stream carries this host's entry and agents, every
+// call that names an agent refuses one owned elsewhere with NOT_FOUND, and
+// ResolveAgent is refused, as a paired daemon resolves names itself.
 
 service AgentService {
-  rpc SubscribeInventory(SubscribeInventoryRequest) returns (stream InventoryEvent);
-  // Fleet-wide name to row: NOT_FOUND, or AmbiguousAgentName with the
-  // candidates. Every other call takes an agent id.
+  rpc SubscribeInventory(Empty) returns (stream InventoryEvent);
+  // Fleet-wide name to row: NOT_FOUND, or FAILED_PRECONDITION when the name
+  // is ambiguous. Every other call takes an agent id.
   rpc ResolveAgent(ResolveAgentRequest) returns (Agent);
   rpc CreateAgent(CreateAgentRequest) returns (Agent);
   rpc RenameAgent(RenameAgentRequest) returns (Agent);
-  rpc StopAgent(StopAgentRequest) returns (StopAgentResponse);
+  rpc StopAgent(StopAgentRequest) returns (Empty);
   // Spawn the directory again.
   rpc ResumeAgent(ResumeAgentRequest) returns (Agent);
   // Removes the agent for good, stopping it first when it is live. Its
@@ -31,7 +37,14 @@ service AgentService {
   rpc DeleteAgent(DeleteAgentRequest) returns (Empty);
   // Also called by the tool server with the agent's identity. The daemon
   // stamps the sender from the caller and never from the request.
-  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  // A message to an agent. `id` is the caller's, so the recipient's daemon
+  // can dedupe a resend against the recipient's items; the tool server
+  // mints one per send. Who it is from is the caller, never the request: a
+  // person on a client socket, or the agent whose tools socket made the
+  // call; a paired daemon's envelope comes stamped by its host. A child's
+  // reports to its parent are the daemon's own and a client cannot submit
+  // one.
+  rpc SendMessage(Envelope) returns (SendMessageResponse);
   // The only put: written into that agent's directory.
   rpc PutBlob(PutBlobRequest) returns (BlobRef);
   rpc GetBlob(GetBlobRequest) returns (GetBlobResponse);
@@ -42,8 +55,6 @@ service AgentService {
   rpc GetCatalogue(GetCatalogueRequest) returns (GetCatalogueResponse);
   rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
 }
-
-message SubscribeInventoryRequest {}
 
 message ResolveAgentRequest {
   string name = 1;
@@ -89,8 +100,6 @@ message StopAgentRequest {
   bytes agent_id = 1;
 }
 
-message StopAgentResponse {}
-
 // The composer of an exited chat sends its draft through initial_prompt.
 message ResumeAgentRequest {
   bytes agent_id = 1;
@@ -99,18 +108,6 @@ message ResumeAgentRequest {
 
 message DeleteAgentRequest {
   bytes agent_id = 1;
-}
-
-// A message to an agent. `id` is the caller's, so the recipient's daemon
-// can dedupe a resend against the recipient's items; the tool server mints
-// one per send. Who it is from is the caller: a person on a client socket,
-// or the agent whose tools socket made the call. A child's reports to its
-// parent are the daemon's own and cannot be submitted.
-message SendMessageRequest {
-  bytes id = 1;
-  AgentRef to = 2;
-  optional bytes context = 3;
-  MessageBody body = 4;
 }
 
 message SendMessageResponse {

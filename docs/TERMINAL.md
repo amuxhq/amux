@@ -185,13 +185,14 @@ busy agent at once in the queue. A prompt sent while the chat is not current (th
 this machine's daemon reconnecting) is held: it shows pending in the queue, `sends when desk is back`, with
 `[Cancel]`, and goes by itself under its own id once the host can be reached. A draft left in a
 chat for home or another chat waits in its composer until the chat opens again; one cleared before leaving stays
-cleared, even before this machine's daemon has forgotten its copy, and quitting waits until it has. A prompt the agent
+cleared, as the chat reopens only once this machine's daemon has its copy, and quitting waits for it too. A prompt the agent
 refuses, an exited agent's included, comes back into the composer with the reason, worded from the typed reason
 the view hands over, the same as the phone's; one whose connection dropped before a reply waits in the
 queue as `may not have arrived`, to resend or discard, and nothing is resent by itself. A prompt held while its
-host is away is in the draft this machine's daemon keeps from the moment it is held; one held for a chat that is not
-open goes back to that chat's draft if its resend is refused or its agent exits first, and comes back into the
-composer when the chat opens.
+host is away is in the draft this machine's daemon keeps from the moment it is held, ahead of what is typed, so a
+terminal killed before the host is back finds its words in the composer when the chat opens again; a chat reopened
+while it is still held opens with only what was typed, and the words leave the draft once the prompt goes or is
+cancelled back into the composer.
 
 Scrolled back, a control floats at the bottom centre of the feed, `↓ Jump to Bottom  ctrl+end`, or `↓ 3 new` when
 rows arrived meanwhile; clicking it or Ctrl+End returns to the newest. Because the client reads the mouse, the
@@ -318,7 +319,7 @@ so one file serves an older or newer amux; a known key with a bad value is still
 
 ```toml
 [ui]
-theme = "terminal"    # terminal, dark, light, or a path to a base16 or base24 YAML theme file
+theme = "terminal"    # terminal, dark or light
 color = "auto"        # auto, truecolor or ansi
 chat_in = "amux"      # amux, or native: chat in each agent's own interface, Claude Code's or Codex's
 
@@ -337,9 +338,8 @@ permission = "default"
 ```
 
 `theme = "terminal"` asks the terminal for its own colours at startup and derives the palette from them, falling back
-to the shipped dark palette when the terminal does not answer. A theme file's path is resolved beside the config
-file (YAML, as base16 and base24 schemes are published, with the colours under `palette:` or at the top level); its `tokens:` may name any semantic token directly (`attention: "#5f87d7"`). `color = "auto"` reads `COLORTERM`
-and `TERM` to choose truecolor or ANSI, and `NO_COLOR` turns colour off.
+to the shipped dark palette when the terminal does not answer; `dark` and `light` pick a shipped palette. `color =
+"auto"` reads `COLORTERM` and `TERM` to choose truecolor or ANSI, and `NO_COLOR` turns colour off.
 
 ## Keys
 
@@ -529,8 +529,8 @@ these; the entries amux and service managers run are hidden from it and listed a
 | `amux server stop` | Stops amux cleanly, the supervisor first where one runs; agents keep running. |
 
 Hidden flags serve tests and demos: the global `--config <path>` (or `AMUX_CONFIG`) names another config file;
-`amux pair --qr --print-link` also prints the QR code's link, to paste into a simulator; `amux pair --link` pairs
-from an `amux://pair` link; `amux pair --demo --pin <digits> --for <duration>` holds a PIN you choose open for an
+`amux pair --qr --print-link` also prints the QR code's link, to paste into a simulator;
+`amux pair --demo --pin <digits> --for <duration>` holds a PIN you choose open for an
 unattended demo (`30d`, `12h`, `45m`; at most 90 days) and returns at once, and `amux pair --cancel` closes it;
 `amux login --cloud-url` signs in to another account service.
 
@@ -555,9 +555,9 @@ only with all of its callers:
 | What | Where | Run |
 |---|---|---|
 | Behaviour: keys, effects, layout, paging, asks, the queue, home, the review page | `crates/tui/src/tests.rs` | `just test-tui` |
-| Component goldens in light and dark: every row kind as the feed draws it, each ask in its box, the queue, the composer's states and the row above it, the sign-in box, the review page | `crates/tui/tests/golden.rs`, `crates/tui/tests/golden/` | `just test-tui`; rewrite with `UPDATE_GOLDENS=1 just test-tui` |
-| Whole frames from served hosts: home at several widths and with every standing, the hosts window, chats mid-call, an ask this client cannot answer, and a chat through a rewind | `crates/tui/tests/frames.rs` | `just test-tui` |
-| PNG renderings of the components | [`crates/shot`](../crates/shot/README.md) | `just shot -- render vocabulary --out DIR` |
+| Component goldens, text and style classes: every row kind as the feed draws it, each ask in its box, the queue, the composer's states and the row above it, the sign-in box, the review page | `crates/tui/tests/golden.rs`, `crates/tui/tests/golden/` | `just test-tui`; rewrite with `UPDATE_GOLDENS=1 just test-tui` |
+| Against served hosts: drafts across leaving a chat and the client closing, chats on agents a far host deleted or stopped linking | `crates/tui/tests/served.rs` | `just test-tui` |
+| PNG renderings of the components | [`crates/shot`](../crates/shot/README.md) | `just shot -- render --out DIR` |
 | The storybook: exactly the terminal stories of `tests/stories.json`, in its order, each drawing at every size in both palettes | `crates/shot/src/stories.rs` | `just test-crate shot` |
 | Raw attach, the CLI and the binary against real daemons | `crates/amux/tests/` | `just test-crate amux` |
 | Journeys through the real terminal client: deciding asks and plans, the queue, sending, the composer's states, starting and managing agents, attachments and review, reaching hosts, recovering, reporting a problem | `journeys/`, `crates/testnet/src/journey` | `just journey terminal <name>` |

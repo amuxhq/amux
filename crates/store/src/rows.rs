@@ -23,13 +23,13 @@ const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent_host
     descendants";
 
 const ITEM_COLUMNS: &str =
-    "key, position, revision, at_ms, producer_version, input_id, text, kind, attachments, body";
+    "key, position, revision, at_ms, input_id, text, kind, attachments, body";
 
-/// `crate::item_bytes`, in SQL: byte lengths, not character counts, and the
-/// same fixed allowances.
+/// What one held row costs against a retention budget: the byte lengths
+/// (not character counts) of its variable fields, 4 bytes for its kind and
+/// a fixed 48 for the other integers and the index entries beside them.
 const ITEM_BYTES: &str = "(length(CAST(key AS BLOB)) + length(CAST(text AS BLOB)) + length(body) \
-    + IFNULL(length(attachments), 0) + IFNULL(length(input_id), 0) \
-    + length(CAST(producer_version AS BLOB)) + 4 + 48)";
+    + IFNULL(length(attachments), 0) + IFNULL(length(input_id), 0) + 4 + 48)";
 
 /// The columns the registry owns: what an own row's daemon or a replica's
 /// inventory says about the agent itself.
@@ -189,22 +189,20 @@ fn finish_agent((mut row, snapshot, git): RawAgent) -> Result<AgentRow, StoreErr
     Ok(row)
 }
 
-fn item_row(row: &Row<'_>, agent: &AgentKey) -> rusqlite::Result<(Item, Option<Vec<u8>>)> {
+fn item_row(row: &Row<'_>) -> rusqlite::Result<(Item, Option<Vec<u8>>)> {
     Ok((
         Item {
-            agent_id: agent.agent.clone(),
             key: row.get(0)?,
             order: row.get::<_, i64>(1)? as u64,
             revision: row.get::<_, i64>(2)? as u64,
             at_ms: row.get(3)?,
-            producer_version: row.get(4)?,
-            input_id: row.get::<_, Option<Vec<u8>>>(5)?.unwrap_or_default(),
-            text: row.get(6)?,
-            kind: row.get(7)?,
+            input_id: row.get::<_, Option<Vec<u8>>>(4)?.unwrap_or_default(),
+            text: row.get(5)?,
+            kind: row.get(6)?,
             attachments: Vec::new(),
-            body: row.get(9)?,
+            body: row.get(8)?,
         },
-        row.get(8)?,
+        row.get(7)?,
     ))
 }
 
@@ -439,7 +437,7 @@ impl Rows<'_> {
         let mut all: Vec<&dyn rusqlite::ToSql> = vec![&agent.host, &agent.agent];
         all.extend_from_slice(params);
         let rows = statement
-            .query_map(all.as_slice(), |row| item_row(row, agent))?
+            .query_map(all.as_slice(), item_row)?
             .collect::<Result<Vec<_>, _>>()?;
         rows.into_iter().map(finish_item).collect()
     }
@@ -496,11 +494,10 @@ impl Rows<'_> {
             .conn
             .prepare_cached(&format!(
                 "INSERT INTO items (origin_host, agent_id, {ITEM_COLUMNS}) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
                  ON CONFLICT (origin_host, agent_id, key) DO UPDATE SET \
                  revision = excluded.revision, at_ms = excluded.at_ms, \
-                 producer_version = excluded.producer_version, input_id = excluded.input_id, \
-                 text = excluded.text, kind = excluded.kind, \
+                 input_id = excluded.input_id, text = excluded.text, kind = excluded.kind, \
                  attachments = excluded.attachments, body = excluded.body \
                  RETURNING position"
             ))?
@@ -518,11 +515,11 @@ impl Rows<'_> {
             .conn
             .prepare_cached(&format!(
                 "INSERT INTO items (origin_host, agent_id, {ITEM_COLUMNS}) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
                  ON CONFLICT (origin_host, agent_id, key) DO UPDATE SET \
                  position = excluded.position, revision = excluded.revision, \
-                 at_ms = excluded.at_ms, producer_version = excluded.producer_version, \
-                 input_id = excluded.input_id, text = excluded.text, kind = excluded.kind, \
+                 at_ms = excluded.at_ms, input_id = excluded.input_id, \
+                 text = excluded.text, kind = excluded.kind, \
                  attachments = excluded.attachments, body = excluded.body \
                  WHERE excluded.revision > items.revision"
             ))?
@@ -566,8 +563,8 @@ impl Rows<'_> {
         self.conn
             .prepare_cached(
                 "INSERT INTO items (origin_host, agent_id, key, position, revision, at_ms, \
-                 producer_version, text, kind, body) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, 0, '', ?6, 0, x'') \
+                 text, kind, body) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, 0, x'') \
                  ON CONFLICT (origin_host, agent_id, key) DO UPDATE SET \
                  text = items.text || excluded.text, revision = excluded.revision",
             )?
@@ -628,9 +625,6 @@ impl Rows<'_> {
             End::TurnEnded(turn) => (Some(turn.text.clone()), None, Some(turn.outcome), turn.last),
             End::Exited(exited) => (None, exited.ended.clone(), None, false),
         };
-        // An upsert naming its columns, never a replace: a replace rewrites
-        // the whole row, so a binary older than a migration that added a
-        // column would reset that column on every write.
         self.conn
             .prepare_cached(
                 "INSERT INTO deliveries (child_id, incarnation, turn_id, parent_incarnation, \
@@ -685,7 +679,6 @@ impl Rows<'_> {
     }
 
     pub(crate) fn put_notification(&self, notification: &Notification) -> Result<(), StoreError> {
-        // An upsert, for the reason `put_delivery` gives.
         self.conn
             .prepare_cached(
                 "INSERT INTO notifications (agent_id, revision, due_at_ms, name, working_on, \
@@ -737,8 +730,8 @@ impl Rows<'_> {
 
     pub(crate) fn trusted_hosts(&self) -> Result<Vec<TrustedHost>, StoreError> {
         let mut read = self.conn.prepare_cached(
-            "SELECT host_id, pubkey, name, paired_at_ms, on_account, signed_in, platform, ssh, \
-             direct, listed FROM trusted_hosts ORDER BY host_id",
+            "SELECT host_id, pubkey, name, on_account, signed_in, platform, ssh, direct, listed \
+             FROM trusted_hosts ORDER BY host_id",
         )?;
         let hosts = read
             .query_map([], |row| {
@@ -746,13 +739,12 @@ impl Rows<'_> {
                     host_id: row.get(0)?,
                     pubkey: row.get(1)?,
                     name: row.get(2)?,
-                    paired_at_ms: row.get(3)?,
-                    on_account: row.get(4)?,
-                    signed_in: row.get(5)?,
-                    platform: row.get(6)?,
-                    ssh: row.get(7)?,
-                    direct: row.get(8)?,
-                    listed: row.get(9)?,
+                    on_account: row.get(3)?,
+                    signed_in: row.get(4)?,
+                    platform: row.get(5)?,
+                    ssh: row.get(6)?,
+                    direct: row.get(7)?,
+                    listed: row.get(8)?,
                 })
             })?
             .collect::<Result<_, _>>()?;
@@ -761,19 +753,17 @@ impl Rows<'_> {
 
     pub(crate) fn put_trusted_host(&self, host: &TrustedHost) -> Result<(), StoreError> {
         self.conn.execute(
-            "INSERT INTO trusted_hosts (host_id, pubkey, name, paired_at_ms, on_account, \
+            "INSERT INTO trusted_hosts (host_id, pubkey, name, on_account, \
              signed_in, platform, ssh, direct, listed) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
              ON CONFLICT (host_id) DO UPDATE SET pubkey = excluded.pubkey, \
-             name = excluded.name, paired_at_ms = excluded.paired_at_ms, \
-             on_account = excluded.on_account, signed_in = excluded.signed_in, \
+             name = excluded.name, on_account = excluded.on_account, signed_in = excluded.signed_in, \
              platform = excluded.platform, ssh = excluded.ssh, direct = excluded.direct, \
              listed = excluded.listed",
             params![
                 host.host_id,
                 host.pubkey,
                 host.name,
-                host.paired_at_ms,
                 host.on_account,
                 host.signed_in,
                 host.platform,
@@ -873,7 +863,7 @@ impl Rows<'_> {
         Ok(())
     }
 
-    /// The bytes own rows (or replica rows) hold, by [`crate::item_bytes`].
+    /// The bytes own rows (or replica rows) hold, by [`ITEM_BYTES`].
     pub(crate) fn pool_bytes(&self, own: bool) -> Result<u64, StoreError> {
         let bytes: i64 = self
             .conn
@@ -884,7 +874,7 @@ impl Rows<'_> {
         Ok(bytes as u64)
     }
 
-    /// The agent's held rows: their total [`crate::item_bytes`] and count.
+    /// The agent's held rows: their total [`ITEM_BYTES`] and count.
     pub(crate) fn agent_bytes(&self, agent: &AgentKey) -> Result<(u64, u64), StoreError> {
         let (bytes, rows): (i64, i64) = self
             .conn
@@ -898,7 +888,7 @@ impl Rows<'_> {
         Ok((bytes as u64, rows as u64))
     }
 
-    /// The oldest held rows' positions and [`crate::item_bytes`], oldest
+    /// The oldest held rows' positions and [`ITEM_BYTES`], oldest
     /// first.
     pub(crate) fn oldest_items(
         &self,
@@ -939,7 +929,7 @@ impl Rows<'_> {
     }
 }
 
-/// An item's twelve column values, in `ITEM_COLUMNS` order after its agent.
+/// An item's eleven column values, in `ITEM_COLUMNS` order after its agent.
 fn item_params<'a>(
     agent: &'a AgentKey,
     item: &'a Item,
@@ -952,7 +942,6 @@ fn item_params<'a>(
         Box::new(signed(position)),
         Box::new(signed(item.revision)),
         Box::new(item.at_ms),
-        Box::new(&item.producer_version),
         Box::new((!item.input_id.is_empty()).then_some(&item.input_id)),
         Box::new(&item.text),
         Box::new(item.kind),

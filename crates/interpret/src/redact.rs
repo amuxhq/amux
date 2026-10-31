@@ -23,7 +23,7 @@ use std::sync::OnceLock;
 use prost::{Message, Name};
 use prost_types::field_descriptor_proto::Type;
 use prost_types::{DescriptorProto, FileDescriptorSet};
-use redaction::{Redaction, RedactionSummary, SECRET_PLACEHOLDER};
+use redaction::{Redaction, RedactionSummary, SECRET_PLACEHOLDER, normalized_key};
 use serde_json::Value;
 use wire::Kind;
 
@@ -36,7 +36,7 @@ use crate::{
 
 /// What a session or thread id becomes: this prefix, eight hex digits of a
 /// hash of the id, and `>`.
-pub const SESSION_PLACEHOLDER_PREFIX: &str = "<SESSION-";
+const SESSION_PLACEHOLDER_PREFIX: &str = "<SESSION-";
 
 /// The rules every target is redacted under: this machine's home, user
 /// and host names on top of the shared ones, read once.
@@ -53,8 +53,6 @@ pub fn redact(kind: Kind, target: RedactTarget) -> RedactTarget {
         Kind::ClaudeSdk => ClaudeSdk::redact(target),
         Kind::Codex => Codex::redact(target),
         Kind::Unspecified => match target {
-            RedactTarget::ItemBody(_) => RedactTarget::ItemBody(Vec::new()),
-            RedactTarget::SnapshotBody(_) => RedactTarget::SnapshotBody(Vec::new()),
             RedactTarget::Input(_) => RedactTarget::Input(Vec::new()),
             RedactTarget::AgentMessage(envelope) => {
                 ClaudeSdk::redact(RedactTarget::AgentMessage(envelope))
@@ -93,27 +91,17 @@ pub fn redact_message(name: &str, bytes: &[u8]) -> Vec<u8> {
     Scrubber::default().twice(|s| s.message(&name, bytes))
 }
 
-/// The per-kind redactor: `Item` and `Snapshot` bodies of this kind, the
-/// input body a person's input carries for it, and the state its checkpoint
-/// holds.
-pub(crate) fn redact_kind<ItemBody: Name, SnapshotBody: Name, InputBody: Name, S: Checkpoint>(
+/// The per-kind redactor: `Item` and `Snapshot` bodies of this kind, and the
+/// state its checkpoint holds.
+pub(crate) fn redact_kind<ItemBody: Name, SnapshotBody: Name, S: Checkpoint>(
     target: RedactTarget,
 ) -> RedactTarget {
     let mut scrubber = Scrubber {
         item_body: type_name::<ItemBody>(),
         snapshot_body: type_name::<SnapshotBody>(),
-        input_body: type_name::<InputBody>(),
         ..Scrubber::default()
     };
     match target {
-        RedactTarget::ItemBody(body) => {
-            let name = scrubber.item_body.clone();
-            RedactTarget::ItemBody(scrubber.twice(|s| s.message(&name, &body)))
-        }
-        RedactTarget::SnapshotBody(body) => {
-            let name = scrubber.snapshot_body.clone();
-            RedactTarget::SnapshotBody(scrubber.twice(|s| s.message(&name, &body)))
-        }
         RedactTarget::Input(input) => {
             let name = type_name::<wire::Input>();
             RedactTarget::Input(scrubber.twice(|s| s.message(&name, &input)))
@@ -188,7 +176,6 @@ fn empty_hex(value: &mut Value) {
 pub(crate) struct Scrubber {
     item_body: String,
     snapshot_body: String,
-    input_body: String,
     sessions: BTreeSet<String>,
     learning: bool,
 }
@@ -270,7 +257,7 @@ impl Scrubber {
                 // the names stay, every value goes.
                 if message.ends_with("EnvEntry") && field.name == "value" {
                     SECRET_PLACEHOLDER.as_bytes().to_vec()
-                } else if is_session_key(&normalized(&field.name)) {
+                } else if is_session_key(&normalized_key(&field.name)) {
                     self.session(&text).into_bytes()
                 } else {
                     self.string(&text).into_bytes()
@@ -287,8 +274,7 @@ impl Scrubber {
                     self.message(&name, payload)
                 }
                 (".amux.v1.Input", "body") => {
-                    let name = self.input_body.clone();
-                    self.message(&name, payload)
+                    self.message(&type_name::<wire::AgentInput>(), payload)
                 }
                 (_, name) if name.ends_with("_json") => self.json_bytes(payload),
                 (_, name) if is_id_field(name) => payload.to_vec(),
@@ -326,7 +312,7 @@ impl Scrubber {
             Value::Object(map) => {
                 let entries = std::mem::take(map);
                 for (key, mut value) in entries {
-                    let norm = normalized(&key);
+                    let norm = normalized_key(&key);
                     if is_env_key(&norm) {
                         blank_env(&mut value);
                     } else if is_session_key(&norm) && value.is_string() {
@@ -390,13 +376,6 @@ fn session_placeholder(id: &str) -> String {
         (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193)
     });
     format!("{SESSION_PLACEHOLDER_PREFIX}{hash:08x}>")
-}
-
-fn normalized(key: &str) -> String {
-    key.chars()
-        .filter(char::is_ascii_alphanumeric)
-        .flat_map(char::to_lowercase)
-        .collect()
 }
 
 fn is_session_key(norm: &str) -> bool {

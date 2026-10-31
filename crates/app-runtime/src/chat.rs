@@ -2,18 +2,16 @@
 //! the fleet and widened while the chat is open, its changes gathered for
 //! the host's next turn, and the views the host asks for by row key.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
-use client::Client;
 use model::AgentKey;
-use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use ui_runtime::{Fleet, InputError, PageError, Session};
-use ui_state::{InputOutcome, InputState, Key, Refusal, RefusalReason, SessionState};
+use ui_state::{InputOutcome, InputState, Key, Refusal, SessionState};
 use ui_view::{
-    AskCard, ChatOptions, Comparison, FormValue, Overview, QuestionResponse, Row, SettingChange,
-    SettingsView, ToolRows,
+    AskCard, Comparison, FormValue, Overview, QuestionResponse, Row, SettingChange, SettingsView,
+    ToolRows,
 };
 use wire::{BlobRef, send_input_response};
 
@@ -38,17 +36,12 @@ pub struct Chat {
     clock: Arc<dyn client::Clock>,
     /// The changed files the overview last fetched.
     changed_files: Mutex<Option<wire::Diff>>,
-    /// Where each of this client's prompts was first drawn: true at the
-    /// feed's end. A prompt stays where it was first drawn until it lands.
-    first_drawn: Mutex<HashMap<Vec<u8>, bool>>,
     /// The runs the reader opened, each held by one of its steps: rows
     /// fold every other run to its newest step.
     open_runs: Mutex<HashSet<Key>>,
     /// The draft this device's daemon kept for the agent when the chat
     /// opened.
     kept: Option<Draft>,
-    /// The draft as it last stood, for the saver to hand the daemon.
-    draft: watch::Sender<Option<wire::Draft>>,
     /// What the host was last handed; None until its model opens on the
     /// chat, and no delta is computed before.
     sent: Mutex<Option<Sent>>,
@@ -63,7 +56,6 @@ impl Chat {
         fleet: Weak<Fleet>,
         wake: WakeFn,
         clock: Arc<dyn client::Clock>,
-        client: Arc<dyn Client>,
         kept: Option<Draft>,
     ) -> Arc<Chat> {
         // Subscribed here, the receiver has seen the opening: its rows are
@@ -71,8 +63,6 @@ impl Chat {
         // that lands before the watcher first runs, so the watcher must not
         // mark the channel seen itself.
         let mut changed = session.changed();
-        let (draft, saving) = watch::channel(None);
-        tokio::spawn(save_drafts(client, agent.agent.clone(), saving));
         let chat = Arc::new(Chat {
             id,
             agent,
@@ -82,10 +72,8 @@ impl Chat {
             watcher: OnceLock::new(),
             clock,
             changed_files: Mutex::new(None),
-            first_drawn: Mutex::new(HashMap::new()),
             open_runs: Mutex::new(HashSet::new()),
             kept,
-            draft,
             sent: Mutex::new(None),
         });
         // Spawned once the chat exists, so every change it sees finds the
@@ -129,8 +117,9 @@ impl Chat {
     /// in order, and one overtaken before it is sent is never sent.
     pub fn keep_draft(&self, draft: &Draft) {
         let (text, attachments) = draft.to_prompt();
-        self.draft
-            .send_replace(Some(wire::Draft { text, attachments }));
+        if let Some(fleet) = self.fleet.upgrade() {
+            fleet.keep_draft(&self.agent, wire::Draft { text, attachments });
+        }
     }
 
     /// Where the reader is: at the newest row, or in history.
@@ -142,10 +131,11 @@ impl Chat {
     /// folded to its newest step unless the reader opened it.
     pub fn rows_for(&self, keys: &[Key]) -> Vec<Row> {
         let open = self.open_runs.lock().unwrap();
-        let opts = ChatOptions {
-            tools: ToolRows::Collapse { open: &open },
-        };
-        ui_view::chat_rows_for(&self.session.state(), keys, &opts)
+        ui_view::chat_rows_for(
+            &self.session.state(),
+            keys,
+            ToolRows::Collapse { open: &open },
+        )
     }
 
     /// Opens or closes the run `member` belongs to; the next delta carries
@@ -205,9 +195,7 @@ impl Chat {
     pub fn frame(&self) -> ChatFrame {
         let ended = self.session.ended().map(|error| error.to_string());
         let state = self.session.state();
-        let mut first_drawn = self.first_drawn.lock().unwrap();
-        note_drawn(&state, &mut first_drawn);
-        frame(&state, self.clock.now_ms(), ended, &first_drawn)
+        frame(&state, self.clock.now_ms(), ended)
     }
 
     /// The chat whole, for the host's model opening on it: every key, the
@@ -250,15 +238,8 @@ impl Chat {
             ui_view::keep_open_runs(&state, &mut open);
         }
         let (keys, wanted) = sent.keys_moved(state.transcript(), reloaded, changed);
-        let opts = ChatOptions {
-            tools: ToolRows::Collapse { open: &open },
-        };
-        let rows = ui_view::chat_rows_for(&state, &wanted, &opts);
-        let frame = {
-            let mut first_drawn = self.first_drawn.lock().unwrap();
-            note_drawn(&state, &mut first_drawn);
-            frame(&state, self.clock.now_ms(), ended, &first_drawn)
-        };
+        let rows = ui_view::chat_rows_for(&state, &wanted, ToolRows::Collapse { open: &open });
+        let frame = frame(&state, self.clock.now_ms(), ended);
         ChatDelta {
             chat: self.id,
             keys,
@@ -388,7 +369,7 @@ impl Chat {
             let Some(card) = self.card_for(ask_key) else {
                 return moved_on();
             };
-            let answer = ui_view::question_answer(&card, given);
+            let answer = ui_view::question_answer(given);
             ui_view::answer_input(&card, &answer, "")
         };
         self.answer(input).await
@@ -406,7 +387,7 @@ impl Chat {
             let Some(card) = self.card_for(ask_key) else {
                 return moved_on();
             };
-            let answer = ui_view::reply_answer(&card, text, so_far);
+            let answer = ui_view::reply_answer(text, so_far);
             ui_view::answer_input(&card, &answer, "")
         };
         self.answer(input).await
@@ -416,11 +397,8 @@ impl Chat {
         self.ask_card().filter(|card| card.key == ask_key)
     }
 
-    async fn answer(&self, input: Option<wire::Input>) -> ActOutcome {
-        match input {
-            Some(input) => acted(self.session.answer(input).await),
-            None => ActOutcome::Rejected(Refusal::of(RefusalReason::Unsupported)),
-        }
+    async fn answer(&self, input: wire::Input) -> ActOutcome {
+        acted(self.session.answer(input).await)
     }
 
     /// Sends a pick from the settings view; the frame shows the new value
@@ -429,7 +407,7 @@ impl Chat {
         let kind = self.session.state().kind();
         match ui_view::setting_input(kind, change) {
             Some(input) => acted(self.session.answer(input).await),
-            None => ActOutcome::Rejected(Refusal::of(RefusalReason::Unsupported)),
+            None => ActOutcome::Rejected(Refusal::of(wire::Refusal::Unsupported)),
         }
     }
 
@@ -473,15 +451,7 @@ impl Chat {
     /// Sends a not-confirmed input again under a new id, forgetting the
     /// old one.
     pub async fn resend(&self, input_id: &[u8]) -> Option<SendOutcome> {
-        let mut input = self
-            .session
-            .state()
-            .inputs()
-            .get(input_id)
-            .map(|sent| sent.input.clone())?;
-        self.session.discard(input_id);
-        input.input_id.clear();
-        let sent = self.session.send(input).await;
+        let sent = self.session.resend(input_id).await?;
         let state = self
             .session
             .state()
@@ -556,53 +526,7 @@ impl Drop for Chat {
     }
 }
 
-/// Hands the daemon each draft the chat keeps, newest last, until the chat
-/// is gone and its last draft saved. A save that fails loses only what the
-/// phone still shows.
-async fn save_drafts(
-    client: Arc<dyn Client>,
-    agent_id: Vec<u8>,
-    mut drafts: watch::Receiver<Option<wire::Draft>>,
-) {
-    while drafts.changed().await.is_ok() {
-        let Some(draft) = drafts.borrow_and_update().clone() else {
-            continue;
-        };
-        let request = wire::UpdateDraftRequest {
-            agent_id: agent_id.clone(),
-            draft: Some(draft),
-        };
-        if let Err(error) = client.update_draft(request).await {
-            tracing::warn!(%error, "cannot keep the draft");
-        }
-    }
-}
-
-/// Notes where each prompt on its way is drawn as a frame first sees it,
-/// and forgets the ones no longer on their way.
-pub(crate) fn note_drawn(state: &SessionState, first_drawn: &mut HashMap<Vec<u8>, bool>) {
-    let to_feed = ui_view::sends_to_feed(state);
-    let mut underway = HashSet::new();
-    for sent in state.inputs().iter() {
-        if matches!(
-            sent.state,
-            InputState::Sent | InputState::Queued | InputState::Uncertain
-        ) {
-            underway.insert(sent.id.clone());
-            first_drawn
-                .entry(sent.id.clone())
-                .or_insert(to_feed && sent.state != InputState::Queued);
-        }
-    }
-    first_drawn.retain(|id, _| underway.contains(id));
-}
-
-pub(crate) fn frame(
-    state: &SessionState,
-    now_ms: i64,
-    ended: Option<String>,
-    first_drawn: &HashMap<Vec<u8>, bool>,
-) -> ChatFrame {
+pub(crate) fn frame(state: &SessionState, now_ms: i64, ended: Option<String>) -> ChatFrame {
     let agent = state.agent();
     ChatFrame {
         agent: ui_state::agent_key(agent),
@@ -610,7 +534,6 @@ pub(crate) fn frame(
         kind: state.kind(),
         phase: state.phase(),
         composer: ui_view::composer(state, now_ms),
-        waiting: ui_view::waiting(state),
         controls: ui_view::controls(state),
         git: agent.git.clone(),
         context: ui_view::context(state),
@@ -620,9 +543,7 @@ pub(crate) fn frame(
         has_older: state.transcript().has_older(),
         arrivals_held: state.arrivals_held(),
         queue: ui_view::queue_rows(state),
-        underway: ui_view::prompts_underway(state, |id| {
-            first_drawn.get(id).copied().unwrap_or(false)
-        }),
+        underway: ui_view::prompts_underway(state),
         refused: ui_view::refused_prompts(state),
         ask_input: ui_view::ask_card(state)
             .and_then(|card| state.answering(&card.key).map(|sent| sent.id.clone())),
@@ -658,73 +579,5 @@ fn acted(result: Result<(), InputError>) -> ActOutcome {
 
 /// The ask the person answered is no longer the one waiting: it closed.
 fn moved_on() -> ActOutcome {
-    ActOutcome::Rejected(Refusal::of(RefusalReason::ClosedAsk))
-}
-
-#[cfg(test)]
-mod tests {
-    use ui_state::Msg;
-    use wire::{Kind, Phase, SessionEvent, session_event};
-
-    use super::*;
-
-    fn snapshot(phase: Phase) -> Msg {
-        Msg::Event(SessionEvent {
-            of: Some(session_event::Of::Snapshot(wire::Snapshot {
-                kind: Kind::Codex as i32,
-                phase: phase as i32,
-                ..wire::Snapshot::default()
-            })),
-        })
-    }
-
-    fn prompt(id: &[u8]) -> Msg {
-        Msg::Send(wire::Input::new(
-            id.to_vec(),
-            wire::CodexInput {
-                of: Some(wire::codex_input::Of::Prompt(wire::PromptInput {
-                    text: "go".into(),
-                    attachments: vec![],
-                })),
-            },
-        ))
-    }
-
-    /// A prompt sent to an idle agent is drawn at the feed's end and stays
-    /// there once the agent starts work; one sent while it works waits in
-    /// the queue.
-    #[test]
-    fn a_prompt_stays_where_it_was_first_drawn() {
-        let agent = wire::Agent {
-            agent_id: b"agent".to_vec(),
-            host_id: b"host".to_vec(),
-            kind: Kind::Codex as i32,
-            lifecycle: wire::Lifecycle::Live as i32,
-            incarnation: 1,
-            ..wire::Agent::default()
-        };
-        let mut state = SessionState::new(agent, 50);
-        state.update(snapshot(Phase::Idle));
-        state.update(Msg::Event(SessionEvent {
-            of: Some(session_event::Of::CaughtUp(wire::CaughtUp { revision: 0 })),
-        }));
-        let mut first_drawn = HashMap::new();
-        state.update(prompt(b"p1"));
-        note_drawn(&state, &mut first_drawn);
-        state.update(snapshot(Phase::Working));
-        state.update(prompt(b"p2"));
-        note_drawn(&state, &mut first_drawn);
-        let lands: Vec<(Vec<u8>, ui_view::Lands)> = frame(&state, 0, None, &first_drawn)
-            .underway
-            .into_iter()
-            .map(|prompt| (prompt.input_id, prompt.lands))
-            .collect();
-        assert_eq!(
-            lands,
-            vec![
-                (b"p1".to_vec(), ui_view::Lands::Feed),
-                (b"p2".to_vec(), ui_view::Lands::Queue),
-            ]
-        );
-    }
+    ActOutcome::Rejected(Refusal::of(wire::Refusal::ClosedAsk))
 }

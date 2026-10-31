@@ -2,31 +2,23 @@
 //! on stdout and amux's input on stdin.
 //!
 //! [`decode`] reads a line Claude printed and [`encode`] writes one amux
-//! sends; [`decode_input`] and [`encode_output`] are the other two
-//! directions, for the fakes and the recording checks. Decoding keeps what
-//! it does not know (a frame type, a content block, a stream event, an enum
-//! spelling, a field) so encoding writes the same JSON back; [`strict`]
+//! sends; [`decode_input`] reads amux's lines back, for the fakes and the
+//! recording readers. Decoding keeps what it does not know (a frame type, a
+//! content block, a stream event, an enum spelling, a field); [`strict`]
 //! refuses a line with any of those, which is how the recording checks
 //! catch drift.
 
 pub mod control;
-mod error;
 pub mod init;
 pub mod message;
-pub mod options;
 pub mod types;
 
 pub use control::{
-    BackgroundTaskSummary, ControlCancelRequest, ControlRequest, ControlRequestBody,
-    ControlResponse, FlagSettings, InterruptResult, McpPermissionMode,
-    McpPermissionModeOverrideResult, McpServerStatus, McpSetServersResult, McpStatusResult,
-    PluginInfo, ReloadPluginsResult, ReloadSkillsResult, RewindFilesResult,
-    SetPermissionModeResult, SettingsResult,
+    ControlCancelRequest, ControlRequest, ControlRequestBody, ControlResponse, ElicitationResult,
+    FlagSettings, InterruptResult, SetPermissionModeResult, SettingsResult,
 };
-pub use error::ProtocolError;
 pub use init::InitializationResult;
 pub use message::*;
-pub use options::*;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};
@@ -69,8 +61,6 @@ pub struct UserInput {
     /// The sender's id for the message; Claude hands it back on the echo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uuid: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub priority: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -139,25 +129,8 @@ pub fn encode(input: &Input) -> Vec<u8> {
     }
 }
 
-/// One line as Claude would print it, for the fakes.
-pub fn encode_output(output: &Output) -> Vec<u8> {
-    match output {
-        Output::Message(message) => {
-            serde_json::to_vec(&to_value(message)).expect("a JSON object serializes")
-        }
-        Output::ControlRequest(request) => framed("control_request", request),
-        Output::ControlCancelRequest(cancel) => framed("control_cancel_request", cancel),
-        Output::ControlResponse(response) => framed("control_response", response),
-        Output::Unknown(unknown) => unknown.raw.get().as_bytes().to_vec(),
-    }
-}
-
-fn to_value(value: &impl Serialize) -> Value {
-    serde_json::to_value(value).expect("protocol types serialize")
-}
-
 fn framed(kind: &str, payload: &impl Serialize) -> Vec<u8> {
-    let mut object = match to_value(payload) {
+    let mut object = match serde_json::to_value(payload).expect("protocol types serialize") {
         Value::Object(object) => object,
         _ => unreachable!("frames are objects"),
     };

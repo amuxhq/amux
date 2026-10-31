@@ -394,7 +394,6 @@ impl ProfileRuntime {
             "agents": agents,
             "client": { "sessions": sessions },
             "core": core.map(|core| serde_json::json!({
-                "schema": core.schema,
                 "inputs": core.inputs,
                 "reads": core.reads,
             })),
@@ -685,9 +684,7 @@ fn scope_name(scope: DumpScope) -> &'static str {
 
 fn redacted(kind: Kind, target: RedactTarget) -> Vec<u8> {
     match interpret::redact(kind, target) {
-        RedactTarget::ItemBody(bytes)
-        | RedactTarget::SnapshotBody(bytes)
-        | RedactTarget::Input(bytes)
+        RedactTarget::Input(bytes)
         | RedactTarget::AgentMessage(bytes)
         | RedactTarget::Checkpoint(bytes)
         | RedactTarget::Spec(bytes)
@@ -768,7 +765,6 @@ fn fitted(kind: Kind, step: &Step, len: usize) -> Vec<u8> {
 
 /// What the core's part of a bundle holds, for the manifest.
 struct CoreDumped {
-    schema: u32,
     /// Inputs, and lines saying what an ingest read.
     inputs: usize,
     reads: usize,
@@ -780,8 +776,7 @@ struct CoreDumped {
 /// checkpoint and ring lines redacted as the core's values, the store copy
 /// at `scratch` redacted in place and moved in.
 fn write_core(captured: &Captured, scratch: &Path, out: &Path) -> Result<CoreDumped, String> {
-    let checkpoint = daemon_core::Checkpoint::from_bytes(&captured.checkpoint)
-        .and_then(|checkpoint| checkpoint.redacted(&Redact))
+    let checkpoint = daemon_core::redact::checkpoint(&captured.checkpoint, &Redact)
         .map_err(|error| format!("the checkpoint: {error}"))?;
     let cursors = store::redact::redact_file(scratch, &Redact)
         .map_err(|error| format!("redacting the store: {error}"))?;
@@ -806,12 +801,11 @@ fn write_core(captured: &Captured, scratch: &Path, out: &Path) -> Result<CoreDum
     let write = |name: &str, bytes: &[u8]| {
         std::fs::write(out.join(name), bytes).map_err(|error| format!("writing {name}: {error}"))
     };
-    write(CORE_CHECKPOINT, &checkpoint.to_bytes())?;
+    write(CORE_CHECKPOINT, &checkpoint)?;
     write(CORE_INPUTS, &lines)?;
     std::fs::copy(scratch, out.join(CORE_STORE))
         .map_err(|error| format!("writing {CORE_STORE}: {error}"))?;
     Ok(CoreDumped {
-        schema: checkpoint.schema,
         inputs,
         reads,
         cursors: cursors

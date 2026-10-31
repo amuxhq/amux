@@ -1,5 +1,5 @@
 {
-  "about": "An API key the API rejects: Claude asks whether to use the key from the environment, retries, then answers with the authentication error.",
+  "about": "A rejected credential from a key helper set through the agent's --settings: Claude writes the error in place of an answer.",
   "spec": {
     "created_at_ms": 0
   },
@@ -8,14 +8,13 @@
       "fact": {
         "channel": "agent",
         "json": {
-          "type": "launch",
-          "version": "2.1.312"
+          "type": "launch"
         }
       }
     }
   ],
   "recording": {
-    "path": "../../../claude-specs/fixtures/pty/sign_in_problem/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/pty/sign_in_problem/io.jsonl",
     "format": "claude_pty_io"
   }
 }

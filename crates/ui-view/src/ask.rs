@@ -5,7 +5,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ui_state::{InputState, OpenAsk, Refusal, SessionState};
-use wire::{ClaudeAnswer, CodexAnswer, Decision as CodexDecision, ask, claude_answer, codex_ask};
+pub use wire::Answer;
+use wire::{Decision as CodexDecision, answer, ask, codex_ask};
 
 use crate::form::{FormField, form_fields};
 use crate::rows::{
@@ -219,16 +220,6 @@ pub enum Scope {
     Other(String),
 }
 
-/// The answer body a choice sends; [`answer_input`] puts it in an input.
-/// It stays on this side of the phone bridge: the phone names a choice by
-/// its position and the answer is rebuilt here. Its ask key is filled in
-/// from the card when it is sent.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Answer {
-    Claude(ClaudeAnswer),
-    Codex(CodexAnswer),
-}
-
 /// The head ask, or None when nothing is open or, before CaughtUp, when the
 /// entry does not say needs_you.
 pub fn ask_card(state: &SessionState) -> Option<AskCard> {
@@ -301,18 +292,11 @@ fn provider_dialog(ask: &OpenAsk) -> bool {
 
 fn choice(outcome: ChoiceOutcome, answer: Answer) -> Choice {
     // Only Claude's deny and plan send-back carry a note back to the agent.
-    let takes_note = match &answer {
-        Answer::Claude(ClaudeAnswer { of: Some(of), .. }) => match of {
-            claude_answer::Of::Permission(permission) => {
-                matches!(permission.of, Some(wire::permission_answer::Of::Deny(_)))
-            }
-            claude_answer::Of::Plan(plan) => plan.choice() == wire::PlanChoice::KeepPlanning,
-            _ => false,
-        },
-        Answer::Codex(CodexAnswer {
-            of: Some(wire::codex_answer::Of::Plan(plan)),
-            ..
-        }) => plan.choice() == wire::PlanChoice::KeepPlanning,
+    let takes_note = match &answer.of {
+        Some(answer::Of::Permission(permission)) => {
+            matches!(permission.of, Some(wire::permission_answer::Of::Deny(_)))
+        }
+        Some(answer::Of::Plan(plan)) => plan.choice() == wire::PlanChoice::KeepPlanning,
         _ => false,
     };
     Choice {
@@ -323,15 +307,18 @@ fn choice(outcome: ChoiceOutcome, answer: Answer) -> Choice {
     }
 }
 
-fn claude_answer(of: claude_answer::Of) -> Answer {
-    Answer::Claude(ClaudeAnswer {
+/// The answer body a choice sends; [`answer_input`] puts it in an input
+/// under the card's ask key. It stays on this side of the phone bridge: the
+/// phone names a choice by its position and the answer is rebuilt here.
+fn answer_of(of: answer::Of) -> Answer {
+    Answer {
         of: Some(of),
         ..Default::default()
-    })
+    }
 }
 
 fn permission(of: wire::permission_answer::Of) -> Answer {
-    claude_answer(claude_answer::Of::Permission(wire::PermissionAnswer {
+    answer_of(answer::Of::Permission(wire::PermissionAnswer {
         of: Some(of),
     }))
 }
@@ -349,8 +336,7 @@ fn claude(
                 ChoiceOutcome::AllowOnce,
                 permission(P::Allow(wire::PermissionAllow { scope: None })),
             )];
-            for scope in &p.scopes {
-                let grant = scope.grant.clone().unwrap_or_default();
+            for (index, grant) in p.scopes.iter().enumerate() {
                 let mode = grant.mode.clone().unwrap_or_default();
                 choices.push(choice(
                     ChoiceOutcome::AllowAlways {
@@ -362,10 +348,10 @@ fn claude(
                             .map(|permission| permission.display_name.clone())
                             .unwrap_or_default(),
                         mode,
-                        scope: scope_of(&grant),
+                        scope: scope_of(grant),
                     },
                     permission(P::Allow(wire::PermissionAllow {
-                        scope: Some(scope.index),
+                        scope: Some(index as u32),
                     })),
                 ));
             }
@@ -390,11 +376,11 @@ fn claude(
             vec![],
         ),
         Some(ask::Body::Plan(plan)) => plan_card(state, &ask.item_key, plan, |plan| {
-            claude_answer(claude_answer::Of::Plan(plan))
+            answer_of(answer::Of::Plan(plan))
         }),
         Some(ask::Body::Form(form)) => {
             let action = |action: wire::FormAction| {
-                claude_answer(claude_answer::Of::Form(wire::FormAnswer {
+                answer_of(answer::Of::Form(wire::FormAnswer {
                     action: action as i32,
                     content_json: vec![],
                 }))
@@ -409,7 +395,7 @@ fn claude(
         }
         Some(ask::Body::Link(link)) => {
             let action = |action: wire::FormAction| {
-                claude_answer(claude_answer::Of::Link(wire::LinkAnswer {
+                answer_of(answer::Of::Link(wire::LinkAnswer {
                     action: action as i32,
                 }))
             };
@@ -687,8 +673,7 @@ fn plan_card(
         .map(|held| {
             let writing = matches!(
                 &held.body,
-                ui_state::ItemBody::ClaudePty(wire::claude_pty_item::Kind::Plan(plan))
-                | ui_state::ItemBody::ClaudeSdk(wire::claude_sdk_item::Kind::Plan(plan))
+                ui_state::ItemBody::Claude(wire::claude_item::Kind::Plan(plan))
                 | ui_state::ItemBody::Codex(wire::codex_item::Kind::Plan(plan))
                     if !plan.complete
             );
@@ -747,23 +732,14 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
                 };
                 Some(choice(
                     outcome,
-                    Answer::Codex(CodexAnswer {
-                        of: Some(wire::codex_answer::Of::Approve(*decision as i32)),
-                        ..Default::default()
-                    }),
+                    answer_of(answer::Of::Approve(*decision as i32)),
                 ))
             })
             .collect::<Vec<_>>()
     };
-    let codex_answer = |of: wire::codex_answer::Of| {
-        Answer::Codex(CodexAnswer {
-            of: Some(of),
-            ..Default::default()
-        })
-    };
     let (body, mut choices) = match &ask.body {
         Some(codex_ask::Body::Plan(plan)) => plan_card(state, &ask.item_key, plan, |plan| {
-            codex_answer(wire::codex_answer::Of::Plan(plan))
+            answer_of(wire::answer::Of::Plan(plan))
         }),
         Some(codex_ask::Body::Command(c)) => (
             AskBody::Command {
@@ -829,7 +805,7 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
         ),
         Some(codex_ask::Body::McpForm(form)) => {
             let action = |action: wire::FormAction| {
-                codex_answer(wire::codex_answer::Of::Form(wire::FormAnswer {
+                answer_of(wire::answer::Of::Form(wire::FormAnswer {
                     action: action as i32,
                     content_json: vec![],
                 }))
@@ -844,7 +820,7 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
         }
         Some(codex_ask::Body::McpLink(link)) => {
             let action = |action: wire::FormAction| {
-                codex_answer(wire::codex_answer::Of::Link(wire::LinkAnswer {
+                answer_of(wire::answer::Of::Link(wire::LinkAnswer {
                     action: action as i32,
                 }))
             };
@@ -858,7 +834,7 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
         }
         Some(codex_ask::Body::Access(grant)) => {
             let answer = |for_session: bool, all: bool| {
-                codex_answer(wire::codex_answer::Of::Grant(wire::GrantAnswer {
+                answer_of(wire::answer::Of::Grant(wire::GrantAnswer {
                     read: if all { grant.read.clone() } else { vec![] },
                     write: if all { grant.write.clone() } else { vec![] },
                     network: all && grant.network,
@@ -932,75 +908,39 @@ fn responses(given: &[QuestionResponse]) -> Vec<wire::QuestionResponse> {
 }
 
 /// The answer to a question ask: one response per question, in order.
-pub fn question_answer(card: &AskCard, given: &[QuestionResponse]) -> Answer {
+pub fn question_answer(given: &[QuestionResponse]) -> Answer {
     let answers = wire::QuestionAnswer {
         answers: responses(given),
     };
-    match card.kind {
-        wire::Kind::Codex => Answer::Codex(CodexAnswer {
-            of: Some(wire::codex_answer::Of::Question(answers)),
-            ..Default::default()
-        }),
-        _ => Answer::Claude(ClaudeAnswer {
-            of: Some(claude_answer::Of::Question(answers)),
-            ..Default::default()
-        }),
-    }
+    answer_of(answer::Of::Question(answers))
 }
 
 /// The person's own words instead of answering a question ask, with what
 /// they had answered so far: one response per question, a skip where
 /// nothing was.
-pub fn reply_answer(card: &AskCard, text: &str, so_far: &[QuestionResponse]) -> Answer {
+pub fn reply_answer(text: &str, so_far: &[QuestionResponse]) -> Answer {
     let reply = wire::ReplyInstead {
         text: text.to_owned(),
         answers_so_far: responses(so_far),
     };
-    match card.kind {
-        wire::Kind::Codex => Answer::Codex(CodexAnswer {
-            of: Some(wire::codex_answer::Of::Reply(reply)),
-            ..Default::default()
-        }),
-        _ => Answer::Claude(ClaudeAnswer {
-            of: Some(claude_answer::Of::Reply(reply)),
-            ..Default::default()
-        }),
-    }
+    answer_of(answer::Of::Reply(reply))
 }
 
-/// The input that sends `answer` to the card's ask, in the card's kind's
-/// arm, under the ask's key. `note` goes back to the agent with a choice
-/// that takes one; other answers ignore it. The input has no id: the
-/// session gives it a fresh one when it sends it. None when the kind does
-/// not take this answer.
-pub fn answer_input(card: &AskCard, answer: &Answer, note: &str) -> Option<wire::Input> {
-    use wire::{KindInput, claude_pty_input, claude_sdk_input, codex_input};
-    let input = match (card.kind, with_note(answer, note)) {
-        (wire::Kind::ClaudePty, Answer::Claude(answer)) => {
-            KindInput::ClaudePty(wire::ClaudePtyInput {
-                of: Some(claude_pty_input::Of::Answer(ClaudeAnswer {
-                    ask_key: card.key.clone(),
-                    ..answer
-                })),
-            })
-        }
-        (wire::Kind::ClaudeSdk, Answer::Claude(answer)) => {
-            KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-                of: Some(claude_sdk_input::Of::Answer(ClaudeAnswer {
-                    ask_key: card.key.clone(),
-                    ..answer
-                })),
-            })
-        }
-        (wire::Kind::Codex, Answer::Codex(answer)) => KindInput::Codex(wire::CodexInput {
-            of: Some(codex_input::Of::Answer(CodexAnswer {
-                ask_key: card.key.clone(),
-                ..answer
-            })),
-        }),
-        _ => return None,
+/// The input that sends `answer` to the card's ask, under the ask's key.
+/// `note` goes back to the agent with a choice that takes one; other answers
+/// ignore it. The input has no id: the session gives it a fresh one when it
+/// sends it.
+pub fn answer_input(card: &AskCard, answer: &Answer, note: &str) -> wire::Input {
+    let answer = Answer {
+        ask_key: card.key.clone(),
+        ..with_note(answer, note)
     };
-    Some(wire::Input::new(Vec::new(), input))
+    wire::Input::new(
+        Vec::new(),
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Answer(answer)),
+        },
+    )
 }
 
 /// The answer with the person's note in the place its kind carries one.
@@ -1009,20 +949,13 @@ fn with_note(answer: &Answer, note: &str) -> Answer {
     if note.is_empty() {
         return answer;
     }
-    match &mut answer {
-        Answer::Claude(ClaudeAnswer { of: Some(of), .. }) => match of {
-            claude_answer::Of::Permission(wire::PermissionAnswer {
-                of: Some(wire::permission_answer::Of::Deny(deny)),
-            }) => deny.note = note.to_owned(),
-            claude_answer::Of::Plan(plan) if plan.choice() == wire::PlanChoice::KeepPlanning => {
-                plan.note = Some(note.to_owned())
-            }
-            _ => {}
-        },
-        Answer::Codex(CodexAnswer {
-            of: Some(wire::codex_answer::Of::Plan(plan)),
-            ..
-        }) if plan.choice() == wire::PlanChoice::KeepPlanning => plan.note = Some(note.to_owned()),
+    match &mut answer.of {
+        Some(answer::Of::Permission(wire::PermissionAnswer {
+            of: Some(wire::permission_answer::Of::Deny(deny)),
+        })) => deny.note = note.to_owned(),
+        Some(answer::Of::Plan(plan)) if plan.choice() == wire::PlanChoice::KeepPlanning => {
+            plan.note = Some(note.to_owned())
+        }
         _ => {}
     }
     answer

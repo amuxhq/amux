@@ -1,5 +1,5 @@
 {
-  "about": "The task tools: created, updated and completed tasks become the snapshot task list, not rows. The recording ends at the Stop hook, before the reply's own row, so the reply streamed through MessageDisplay is still open.",
+  "about": "The task tools: three tasks created and one worked through make the agent's task list.",
   "spec": {
     "created_at_ms": 0
   },
@@ -8,17 +8,13 @@
       "fact": {
         "channel": "agent",
         "json": {
-          "type": "launch",
-          "version": "2.1.312"
+          "type": "launch"
         }
       }
     }
   ],
   "recording": {
-    "path": "../../../claude-specs/fixtures/pty/task_list/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/pty/task_list/io.jsonl",
     "format": "claude_pty_io"
-  },
-  "end": {
-    "streams_may_remain": true
   }
 }

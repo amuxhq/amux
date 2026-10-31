@@ -6,9 +6,9 @@
 //! Every user message the interpreter hands to Claude carries a uuid made
 //! from its input or envelope id. Claude echoes it on the message's replay,
 //! on its `command_lifecycle` frames and as its transcript row's uuid, so a
-//! reflection is matched to what was sent by id ([`CORRELATION`]); several
-//! messages written while a turn runs fold into that turn, so arrival order
-//! would mismatch them.
+//! reflection is matched to what was sent by id; several messages written
+//! while a turn runs fold into that turn, so arrival order would mismatch
+//! them (Claude 2.1.282, probed).
 //!
 //! What the agent offers comes from Claude, never from a client catalogue:
 //! the answer to the agent process's `initialize` request lists the models
@@ -32,40 +32,24 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, Ask, AskClosed, Attachment, ClaudeAnswer, ClaudeSdkItem, ClaudeSdkSnapshot,
-    ClaudeUsage, ContextMeter, ContextShare, DecisionOutcome, Envelope, Input, KindInput,
-    OfferedCommand, OfferedModel, Refusal, SignIn, Step, ToolCall, ToolDecision, ToolServerHealth,
-    ToolState, claude_answer, claude_sdk_input, claude_sdk_item, tool_decision,
+    AgentSpec, Ask, AskClosed, ClaudeSnapshot, ClaudeUsage, DecisionOutcome, Envelope, Input,
+    OfferedCommand, OfferedModel, Refusal, SignIn, Step, ToolServer, agent_input, answer,
+    claude_item,
 };
 
-use crate::claude_answers::{self, Answer, AnswerShape, Decided, REJECTED, ToolDecisionState};
+use crate::claude_answers::{self, Answer, AnswerShape, Decided};
 use crate::claude_common::{
-    FileStep, Jobs, Task, Verdict, describe_asks, describe_claude_usage, describe_tasks,
-    describe_tool, file_step, launch_arg, or_dash, plan_item, question_item, task_list, tool_input,
+    Jobs, Task, Verdict, agent_message_item, boundary_item, context_meter, item_body, launch_arg,
+    task_list,
 };
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
-    RedactTarget, SendOutcome, Shared, SnapshotView, Stepped, agent_message_body,
-    agent_message_key, ask_item, claude_sdk_input, human, is_send_tool, sent_message, serde_pb,
+    RedactTarget, Shared, SnapshotView, Stepped, ask_item, claude_sdk_input, human, serde_pb,
     unknown,
 };
 
 /// The interpreter for kind `claude_sdk`.
 pub struct ClaudeSdk;
-
-/// How a reflection is matched to the input it reflects.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Correlation {
-    /// By the uuid the interpreter put on the message.
-    ClientId,
-    /// By arrival order, one message per turn.
-    Fifo,
-}
-
-/// Decided by probing Claude 2.1.282: the uuid on a stdin user message is
-/// echoed exactly, and messages written during a turn fold into it, so
-/// arrival order cannot be trusted.
-pub const CORRELATION: Correlation = Correlation::ClientId;
 
 /// The uuid a user message for this input or envelope id carries. Claude
 /// wants a well-formed uuid, so the id's first sixteen bytes (zero padded)
@@ -98,44 +82,15 @@ struct Client {
     message: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-struct Tool {
-    at_ms: i64,
-    name: String,
-    server: String,
-    input: String,
-    state: i32,
-    outcome_text: String,
-    outcome_json: String,
-    class: i32,
-    background: bool,
-    decision: Option<ToolDecisionState>,
-    ended_at_ms: Option<i64>,
-    /// When the call began running: the moment it was allowed, when it
-    /// waited for the person's approval.
-    #[serde(default)]
-    started_at_ms: Option<i64>,
-    parent_key: String,
-    hidden: bool,
+type Tool = crate::claude_common::Tool<Call>;
+
+/// What the stream says of a call beside what is drawn.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+struct Call {
     /// The task this call started and Claude reports on: a subagent, or a
     /// shell in the background. The call stays open until the task ends,
     /// since its own result only says the task was launched.
     task: Option<TaskProgress>,
-    /// Images the tool read, by the blobs that hold them.
-    #[serde(with = "serde_pb::msgs")]
-    images: Vec<Attachment>,
-    /// What amux's attach tool attached, from the element it answered.
-    #[serde(default, with = "serde_pb::msgs")]
-    attached: Vec<Attachment>,
-    /// An ExitPlanMode call is drawn as its plan, with this verdict.
-    plan: Option<Verdict>,
-    /// An AskUserQuestion call is drawn as its question, closed with this
-    /// record once decided.
-    question: bool,
-    #[serde(with = "serde_pb::opt_msg")]
-    asked: Option<AskClosed>,
-    #[serde(with = "serde_pb::item_body")]
-    emitted: Vec<u8>,
 }
 
 /// What answering an ask needs beyond the wire Ask.
@@ -147,7 +102,6 @@ struct AskMeta {
     suggestions: Vec<String>,
     shape: AnswerShape,
     /// The subagent that asked; None for the main thread.
-    #[serde(default)]
     agent: Option<String>,
 }
 
@@ -196,7 +150,6 @@ pub struct State {
     shared: Shared<wire::Ask>,
     incarnation: u32,
     session: Option<String>,
-    version: Option<String>,
     model: Option<String>,
     /// The offered model amux last chose, which names the running one
     /// while it stands for it.
@@ -210,7 +163,6 @@ pub struct State {
     never_ask: bool,
     /// The folder Claude was launched in, which it may work in without
     /// being granted it.
-    #[serde(default)]
     cwd: String,
     /// The models the initialize response offers and the commands Claude
     /// last listed: the catalogue.
@@ -223,7 +175,6 @@ pub struct State {
     clients: BTreeMap<String, Client>,
     /// The uuids of the messages amux handed Claude that no result has
     /// answered yet.
-    #[serde(default)]
     unanswered: BTreeSet<String>,
     /// The message being streamed, and its open blocks by index.
     stream: Option<String>,
@@ -248,34 +199,26 @@ pub struct State {
     active_tasks: BTreeMap<String, TaskState>,
     context_tokens: Option<u64>,
     context_window: Option<u64>,
-    context_breakdown: Vec<(String, u64)>,
     #[serde(with = "serde_pb::opt_msg")]
     usage: Option<ClaudeUsage>,
-    #[serde(with = "serde_pb::opt_msg")]
-    servers: Option<ToolServerHealth>,
+    #[serde(with = "serde_pb::msgs")]
+    servers: Vec<ToolServer>,
     /// Launched without amux's tool server, by organization policy.
-    #[serde(default)]
     tools_withheld: bool,
     #[serde(with = "serde_pb::opt_msg")]
     sign_in: Option<SignIn>,
     /// Claude's background jobs; the shared part publishes them.
     jobs: Jobs,
     /// Tasks Claude marks ambient, its own work rather than the person's.
-    #[serde(default)]
     ambient: std::collections::BTreeSet<String>,
     /// The newest slash command sent, which a local command's output
     /// belongs to; taken by that output.
     slash: Option<String>,
     /// A built-in command's answer drawn before Claude named its command:
     /// its key and text, for the command's replay to name it.
-    #[serde(default)]
     synthetic: Option<(String, String)>,
     /// An interrupt was sent in the running turn.
     interrupted: bool,
-}
-
-fn item_body(kind: claude_sdk_item::Kind) -> Vec<u8> {
-    ClaudeSdkItem { kind: Some(kind) }.encode_to_vec()
 }
 
 /// A line for Claude's stdin.
@@ -304,12 +247,11 @@ impl State {
         &self.shared
     }
 
-    fn new(spec: &AgentSpec, producer_version: &str) -> Self {
+    fn new(spec: &AgentSpec) -> Self {
         Self {
-            shared: Shared::new(spec, ClaudeSdk::KIND, producer_version),
+            shared: Shared::new(spec, ClaudeSdk::KIND),
             incarnation: spec.incarnation,
             session: None,
-            version: None,
             model: None,
             chosen_model: launch_arg(&spec.provider_args, "--model"),
             // The launch argument until Claude says what it applied.
@@ -338,9 +280,8 @@ impl State {
             active_tasks: BTreeMap::new(),
             context_tokens: None,
             context_window: None,
-            context_breakdown: Vec::new(),
             usage: None,
-            servers: None,
+            servers: Vec::new(),
             tools_withheld: false,
             sign_in: None,
             jobs: Jobs::default(),
@@ -376,26 +317,10 @@ impl State {
     }
 
     fn body(&self) -> Vec<u8> {
-        let context = match self.context_tokens {
-            None => unknown::context_meter(),
-            Some(used_tokens) => ContextMeter {
-                known: true,
-                used_tokens,
-                window_tokens: self.context_window,
-                breakdown: self
-                    .context_breakdown
-                    .iter()
-                    .map(|(category, tokens)| ContextShare {
-                        category: category.clone(),
-                        tokens: *tokens,
-                    })
-                    .collect(),
-            },
-        };
-        ClaudeSdkSnapshot {
+        ClaudeSnapshot {
             asks: self.shared.asks().open_asks().to_vec(),
             tasks: Some(task_list(&self.tasks)),
-            context: Some(context),
+            context: Some(context_meter(self.context_tokens, self.context_window)),
             model: self.model.clone(),
             model_name: crate::shared::model_name(
                 self.model.as_deref(),
@@ -412,20 +337,16 @@ impl State {
                 .map(|(id, task)| task.to_wire(id))
                 .collect(),
             usage: Some(self.usage.clone().unwrap_or_else(unknown::claude_usage)),
-            servers: Some({
-                let servers = self
-                    .servers
-                    .clone()
-                    .unwrap_or_else(unknown::tool_server_health);
-                if self.tools_withheld {
-                    crate::claude_common::amux_tools_withheld(servers)
-                } else {
-                    servers
-                }
-            }),
+            servers: if self.tools_withheld {
+                crate::claude_common::amux_tools_withheld(self.servers.clone())
+            } else {
+                self.servers.clone()
+            },
             sign_in: Some(self.sign_in.clone().unwrap_or_else(unknown::sign_in)),
             background_jobs: Some(self.shared.jobs()),
             provider_session: self.session.clone(),
+            running_calls: Vec::new(),
+            switched_away: None,
         }
         .encode_to_vec()
     }
@@ -452,8 +373,8 @@ impl State {
         if self.shared.message_repeated(emit, &envelope.id) {
             return;
         }
-        let attachments = crate::shared::attachments(&envelope).to_vec();
         self.shared.message_accepted(&envelope.id);
+        let item = agent_message_item(&envelope);
         self.clients.insert(
             client_uuid(&envelope.id),
             Client {
@@ -466,50 +387,33 @@ impl State {
         emit.effect(Effect::Inject {
             id: envelope.id.clone(),
             text: crate::shared::carried(&envelope),
-            attachments: attachments.clone(),
+            attachments: item.attachments.clone(),
             via: Carrier::Stdin,
         });
-        self.shared.item(
-            emit,
-            ItemDraft {
-                key: agent_message_key(&envelope.id),
-                text: crate::shared::words(&envelope),
-                attachments,
-                input_id: envelope.id.clone(),
-                body: item_body(claude_sdk_item::Kind::AgentMessage(agent_message_body(
-                    &envelope,
-                ))),
-                complete: true,
-                ..Default::default()
-            },
-        );
+        self.shared.item(emit, item);
         self.shared.accept(emit, &envelope.id, true);
     }
 
     fn input(&mut self, emit: &mut Emit, input: Input) {
         let id = input.input_id.clone();
-        // Another kind's input, or an arm a newer client sends that this
-        // version cannot read.
+        // An arm a newer client sends that this version cannot read.
         let arm = match input.decode_body() {
-            Some(KindInput::ClaudeSdk(wire::ClaudeSdkInput { of: Some(arm) })) => arm,
+            Some(wire::AgentInput { of: Some(arm) }) => arm,
             _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
-            claude_sdk_input::Of::Prompt(prompt) => {
+            agent_input::Of::Prompt(prompt) => {
                 self.dismiss_plan(emit);
                 if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, human()) {
                     self.submit(emit, entry);
                 }
             }
-            claude_sdk_input::Of::Withdraw(withdraw) => {
+            agent_input::Of::Withdraw(withdraw) => {
                 self.shared.withdraw(emit, &id, &withdraw.queued_input_id)
             }
-            // A message at the default priority joins the running turn at
-            // its next tool boundary. Priority "now" is not steering: it
-            // abandons the rest of the turn.
             // The job reads stopping until Claude says it ended, as a task
             // notification or a list without it.
-            claude_sdk_input::Of::StopJob(stop) => {
+            agent_input::Of::StopJob(stop) => {
                 let Some(jobs) = self.jobs.stop_sent(&stop.key) else {
                     return self.shared.reject(emit, &id, Refusal::Unsupported);
                 };
@@ -524,7 +428,7 @@ impl State {
                 );
                 self.shared.accept(emit, &id, false);
             }
-            claude_sdk_input::Of::SendNow(send) => {
+            agent_input::Of::SendNow(send) => {
                 let running = self.shared.is_busy();
                 if let Some(entry) = self
                     .shared
@@ -547,11 +451,11 @@ impl State {
                     });
                 }
             }
-            claude_sdk_input::Of::Interrupt(_) => {
+            agent_input::Of::Interrupt(_) => {
                 self.interrupt(emit);
                 self.shared.accept(emit, &id, false);
             }
-            claude_sdk_input::Of::Clear(_) => {
+            agent_input::Of::Clear(_) => {
                 let entry = wire::QueuedInput {
                     input_id: id.clone(),
                     text: "/clear".into(),
@@ -565,7 +469,7 @@ impl State {
                     self.submit(emit, entry);
                 }
             }
-            claude_sdk_input::Of::Permission(permission) => {
+            agent_input::Of::Permission(permission) => {
                 let offered = self
                     .permissions()
                     .iter()
@@ -586,7 +490,7 @@ impl State {
                 );
                 self.shared.accept(emit, &id, false);
             }
-            claude_sdk_input::Of::Model(model) => {
+            agent_input::Of::Model(model) => {
                 let body = ControlRequestBody::SetModel(SetModelRequest {
                     model: model.model.clone(),
                     extensions: Default::default(),
@@ -594,7 +498,7 @@ impl State {
                 self.control_request(emit, Request::Model(model.model), body);
                 self.shared.accept(emit, &id, false);
             }
-            claude_sdk_input::Of::Effort(effort) => {
+            agent_input::Of::Effort(effort) => {
                 self.control_request(
                     emit,
                     Request::Effort(effort.effort.clone()),
@@ -608,7 +512,11 @@ impl State {
                 );
                 self.shared.accept(emit, &id, false);
             }
-            claude_sdk_input::Of::Answer(answer) => self.answer(emit, &id, answer),
+            agent_input::Of::Answer(answer) => self.answer(emit, &id, answer),
+            // Codex's collaboration mode, and terminal Claude's keystrokes.
+            agent_input::Of::Mode(_)
+            | agent_input::Of::CyclePermissionMode(_)
+            | agent_input::Of::SwitchBack(_) => self.shared.reject(emit, &id, Refusal::Unsupported),
         }
     }
 
@@ -644,13 +552,14 @@ impl State {
             return;
         };
         self.interrupted = true;
-        let result = PermissionResult::Deny {
-            message: REJECTED.to_owned(),
-            interrupt: Some(true),
-            tool_use_id: None,
-        };
         let verdict = Verdict::of(wire::PlanVerdict::Dismissed);
-        self.close_plan(emit, &key, &tool_use_id, result, verdict);
+        self.close_plan(
+            emit,
+            &key,
+            &tool_use_id,
+            claude_answers::plan_dismissed(),
+            verdict,
+        );
     }
 
     /// The person moved the agent out of plan while its plan waited: the
@@ -720,7 +629,7 @@ impl State {
                 text: entry.text,
                 attachments: entry.attachments,
                 input_id: entry.input_id,
-                body: item_body(claude_sdk_item::Kind::Prompt(wire::Prompt {})),
+                body: item_body(claude_item::Kind::Prompt(wire::Prompt {})),
                 complete: true,
                 ..Default::default()
             },
@@ -729,7 +638,7 @@ impl State {
 
     /// An answer through amux: checked against the ask, then sent as the
     /// control response. The ask closes with the outcome it carries.
-    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: ClaudeAnswer) {
+    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: wire::Answer) {
         let key = answer.ask_key;
         if self.shared.asks().get(&key).is_none() {
             self.shared.answer(emit, id, &key);
@@ -737,7 +646,7 @@ impl State {
         }
         let parsed = answer.of;
         let closed = match &parsed {
-            Some(claude_answer::Of::Form(form)) => {
+            Some(answer::Of::Form(form)) => {
                 let schema = match self
                     .shared
                     .asks()
@@ -749,7 +658,7 @@ impl State {
                 };
                 Some(ask_item::form_sent(form, schema))
             }
-            Some(claude_answer::Of::Link(link)) => Some(ask_item::link_answered(link.action)),
+            Some(answer::Of::Link(link)) => Some(ask_item::link_answered(link.action)),
             _ => None,
         };
         let asked = match self
@@ -806,7 +715,7 @@ impl State {
             emit,
             ItemDraft {
                 key: ask.item_key.clone(),
-                body: item_body(claude_sdk_item::Kind::Ask(item)),
+                body: item_body(claude_item::Kind::Ask(item)),
                 at_ms: Some(ask.opened_at_ms),
                 complete: true,
                 ..Default::default()
@@ -859,6 +768,7 @@ impl State {
     fn under_running_task(&self, id: &str) -> bool {
         self.call_and_parents(id).iter().any(|id| {
             self.tools[*id]
+                .of
                 .task
                 .as_ref()
                 .is_some_and(|task| !task.finished)
@@ -953,7 +863,7 @@ impl State {
                     if decision.outcome == DecisionOutcome::Allowed as i32 {
                         tool.started_at_ms.get_or_insert(self.shared.now_ms());
                     }
-                    tool.decision = Some(decision)
+                    tool.decision = Some(decision.to_wire())
                 }
                 Decided::Plan(verdict) => tool.plan = Some(verdict),
                 Decided::Question(closed) => tool.asked = Some(closed),
@@ -966,134 +876,17 @@ impl State {
         let Some(tool) = self.tools.get_mut(id) else {
             return;
         };
-        if tool.hidden {
-            return;
-        }
-        if tool.question {
-            let Some(item) = question_item(&tool.input, tool.asked.clone()) else {
-                return;
-            };
-            let body = item_body(claude_sdk_item::Kind::Ask(item));
-            if body == tool.emitted {
-                return;
-            }
-            tool.emitted = body.clone();
-            let at_ms = tool.at_ms;
-            return self.shared.item(
-                emit,
-                ItemDraft {
-                    key: id.to_owned(),
-                    body,
-                    at_ms: Some(at_ms),
-                    complete: true,
-                    ..Default::default()
-                },
-            );
-        }
-        if let Some(verdict) = &tool.plan {
-            let Some((text, plan)) = plan_item(&tool.input, verdict) else {
-                return;
-            };
-            let body = item_body(claude_sdk_item::Kind::Plan(plan));
-            if body == tool.emitted {
-                return;
-            }
-            tool.emitted = body.clone();
-            let at_ms = tool.at_ms;
-            return self.shared.item(
-                emit,
-                ItemDraft {
-                    key: id.to_owned(),
-                    text,
-                    body,
-                    at_ms: Some(at_ms),
-                    complete: true,
-                    ..Default::default()
-                },
-            );
-        }
-        if is_send_tool(&tool.server, &tool.name) {
-            let (text, message) = sent_message(
-                tool.input.as_bytes(),
-                SendOutcome::of(
-                    wire::ToolState::try_from(tool.state).unwrap_or_default(),
-                    &tool.outcome_text,
-                ),
-            );
-            let body = item_body(claude_sdk_item::Kind::AgentMessage(message));
-            if body == tool.emitted {
-                return;
-            }
-            tool.emitted = body.clone();
-            let at_ms = tool.at_ms;
-            // The message's files go as attachments, not their elements.
-            let (text, attachments) = crate::shared::parse_reply(text);
-            return self.shared.item(
-                emit,
-                ItemDraft {
-                    key: id.to_owned(),
-                    text,
-                    attachments,
-                    body,
-                    at_ms: Some(at_ms),
-                    complete: true,
-                    ..Default::default()
-                },
-            );
-        }
-        let step = if tool.state == ToolState::Succeeded as i32 {
-            file_step(&tool.name, &tool.server, &tool.outcome_json)
-        } else {
-            FileStep::default()
-        };
-        let input = serde_json::from_str(&tool.input).unwrap_or(Value::Null);
-        let body = item_body(claude_sdk_item::Kind::Tool(ToolCall {
-            name: tool.name.clone(),
-            input: Some(tool_input(&tool.name, &tool.server, &input, "")),
-            state: tool.state,
-            outcome_text: tool.outcome_text.clone(),
-            attachments: tool.images.clone(),
-            class: tool.class,
-            decision: tool.decision.as_ref().map(|decision| ToolDecision {
-                outcome: decision.outcome,
-                note: decision.note.clone(),
-                elsewhere: false,
-                granted: decision.grant.clone().map(tool_decision::Granted::Claude),
-            }),
-            background: tool.background,
-            parent_key: tool.parent_key.clone(),
-            subagent: tool.task.as_ref().filter(|task| task.subagent).map(|task| {
-                wire::SubagentProgress {
-                    tool_count: task.tool_count,
-                    last_tool: task.last_tool.clone(),
-                    finished: task.finished,
-                }
-            }),
-            server: tool.server.clone(),
-            exit_code: None,
-            ended_at_ms: tool.ended_at_ms,
-            created: step.created,
-            line: step.line,
-            started_at_ms: tool.started_at_ms,
-            patch: step.patch,
-        }));
-        if body == tool.emitted {
-            return;
-        }
-        tool.emitted = body.clone();
-        let at_ms = tool.at_ms;
-        let attachments = tool.attached.clone();
-        self.shared.item(
-            emit,
-            ItemDraft {
-                key: id.to_owned(),
-                body,
-                attachments,
-                at_ms: Some(at_ms),
-                complete: true,
-                ..Default::default()
-            },
-        );
+        let subagent = tool
+            .of
+            .task
+            .as_ref()
+            .filter(|task| task.subagent)
+            .map(|task| wire::SubagentProgress {
+                tool_count: task.tool_count,
+                last_tool: task.last_tool.clone(),
+                finished: task.finished,
+            });
+        tool.emit(&mut self.shared, emit, id, subagent);
     }
 
     /// The boundary the next init makes when it is known before that init
@@ -1132,21 +925,7 @@ impl State {
         kind: wire::BoundaryKind,
         exit: wire::IncarnationEnd,
     ) {
-        self.shared.item(
-            emit,
-            ItemDraft {
-                key,
-                body: item_body(claude_sdk_item::Kind::Boundary(wire::Boundary {
-                    kind: kind as i32,
-                    provider_session: self.session.clone().unwrap_or_default(),
-                    provider_version: self.version.clone().unwrap_or_default(),
-                    cause: exit.cause,
-                    cause_detail: exit.detail,
-                })),
-                complete: true,
-                ..Default::default()
-            },
-        );
+        self.shared.item(emit, boundary_item(key, kind, exit));
     }
 }
 
@@ -1175,14 +954,14 @@ impl Interpreter for ClaudeSdk {
     type State = State;
     const KIND: wire::Kind = wire::Kind::ClaudeSdk;
 
-    fn initial(spec: &AgentSpec, producer_version: &str) -> (State, Step) {
-        let mut state = State::new(spec, producer_version);
+    fn initial(spec: &AgentSpec) -> (State, Step) {
+        let mut state = State::new(spec);
         let step = state.shared.initial_step(Self::unknown_snapshot());
         (state, step)
     }
 
-    fn reincarnate(mut state: State, spec: &AgentSpec, producer_version: &str) -> (State, Step) {
-        state.shared.reincarnate(spec, producer_version);
+    fn reincarnate(mut state: State, spec: &AgentSpec) -> (State, Step) {
+        state.shared.reincarnate(spec);
         state.jobs.clear();
         // A new process: its first init is the incarnation's boundary.
         state.incarnation = spec.incarnation;
@@ -1230,12 +1009,7 @@ impl Interpreter for ClaudeSdk {
     }
 
     fn redact(target: RedactTarget) -> RedactTarget {
-        crate::redact::redact_kind::<
-            wire::ClaudeSdkItem,
-            wire::ClaudeSdkSnapshot,
-            wire::ClaudeSdkInput,
-            State,
-        >(target)
+        crate::redact::redact_kind::<wire::ClaudeItem, wire::ClaudeSnapshot, State>(target)
     }
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {
@@ -1247,15 +1021,15 @@ impl Interpreter for ClaudeSdk {
     }
 
     fn unknown_snapshot() -> Vec<u8> {
-        unknown::claude_sdk().encode_to_vec()
+        unknown::claude().encode_to_vec()
     }
 
     fn describe_item(body: &[u8]) -> ItemView {
-        describe_item(body)
+        crate::claude_common::describe_item(body)
     }
 
     fn describe_snapshot(body: &[u8]) -> SnapshotView {
-        describe_snapshot(body)
+        crate::claude_common::describe_snapshot(body)
     }
 
     fn fixture_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
@@ -1264,198 +1038,5 @@ impl Interpreter for ClaudeSdk {
 
     fn recording(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
         recording::read(format, bytes)
-    }
-}
-
-fn describe_item(body: &[u8]) -> ItemView {
-    use claude_sdk_item::Kind;
-    let item = ClaudeSdkItem::decode(body).unwrap_or_default();
-    let (arm, complete, text) = match item.kind {
-        None => ("none", true, String::new()),
-        Some(Kind::Prompt(_)) => ("prompt", true, String::new()),
-        Some(Kind::Steer(_)) => ("steer", true, String::new()),
-        Some(Kind::Message(text)) => ("message", text.complete, String::new()),
-        Some(Kind::Thinking(thinking)) => ("thinking", thinking.complete, String::new()),
-        Some(Kind::Tool(tool)) => ("tool", true, describe_tool(&tool)),
-        Some(Kind::Ask(item)) => ("ask", true, ask_item::describe(&item)),
-        Some(Kind::Plan(plan)) => ("plan", plan.complete, crate::shared::describe_plan(&plan)),
-        Some(Kind::Task(task)) => (
-            "task",
-            true,
-            format!(
-                "{} {} {} tools={} last={} tokens={}",
-                task.task_id,
-                wire::TaskState::try_from(task.state).map_or("?", |state| state.as_str_name()),
-                Value::String(task.description),
-                task.tool_count,
-                or_dash(&task.last_tool),
-                task.tokens,
-            ),
-        ),
-        Some(Kind::Turn(turn)) => (
-            "turn",
-            true,
-            format!(
-                "#{} {} started={}",
-                turn.turn_id,
-                wire::TurnOutcome::try_from(turn.outcome)
-                    .map_or("?", |outcome| outcome.as_str_name()),
-                turn.started_at_ms,
-            ),
-        ),
-        Some(Kind::Status(status)) => (
-            "status",
-            true,
-            format!(
-                "{} {}",
-                wire::SdkStatus::try_from(status.status).map_or("?", |status| status.as_str_name()),
-                status.word
-            ),
-        ),
-        Some(Kind::Boundary(boundary)) => (
-            "boundary",
-            true,
-            format!(
-                "{} session={} version={}{}",
-                wire::BoundaryKind::try_from(boundary.kind).map_or("?", |kind| kind.as_str_name()),
-                or_dash(&boundary.provider_session),
-                or_dash(&boundary.provider_version),
-                crate::claude_common::describe_cause(&boundary)
-            ),
-        ),
-        Some(Kind::AgentMessage(message)) => (
-            "agent_message",
-            true,
-            crate::shared::describe_agent_message(&message),
-        ),
-        Some(Kind::ApiError(error)) => (
-            "api_error",
-            true,
-            format!(
-                "{} {} retry={} {}/{}{}",
-                error.error_kind,
-                Value::String(error.message),
-                error.will_retry,
-                error.attempt,
-                error.max_attempts,
-                error
-                    .retry_at_ms
-                    .map_or(String::new(), |at| format!(" at={at}"))
-            ),
-        ),
-        Some(Kind::Slash(slash)) => (
-            "slash",
-            true,
-            format!("{} args={}", slash.command, Value::String(slash.args)),
-        ),
-        Some(Kind::Unrecognized(unrecognized)) => (
-            "unrecognized",
-            true,
-            format!(
-                "{} {}",
-                unrecognized.fact_type,
-                Value::String(unrecognized.summary)
-            ),
-        ),
-        Some(Kind::ModelSwitch(switch)) => (
-            "model_switch",
-            true,
-            format!(
-                "{} -> {} {}",
-                switch.from,
-                switch.to,
-                Value::String(switch.reason)
-            ),
-        ),
-        Some(Kind::Compaction(compaction)) => (
-            "compaction",
-            true,
-            format!(
-                "{}→{}{}",
-                compaction
-                    .tokens_before
-                    .map_or("?".to_owned(), |tokens| tokens.to_string()),
-                compaction
-                    .tokens_after
-                    .map_or("?".to_owned(), |tokens| tokens.to_string()),
-                if compaction.automatic { " auto" } else { "" }
-            ),
-        ),
-    };
-    ItemView {
-        arm: arm.into(),
-        complete,
-        text,
-    }
-}
-
-fn describe_snapshot(body: &[u8]) -> SnapshotView {
-    let snapshot = ClaudeSdkSnapshot::decode(body).unwrap_or_default();
-    let context = snapshot.context.unwrap_or_default();
-    let usage = snapshot.usage.unwrap_or_default();
-    let servers = snapshot.servers.unwrap_or_default();
-    let sign_in = snapshot.sign_in.unwrap_or_default();
-    SnapshotView {
-        asks: snapshot
-            .asks
-            .iter()
-            .map(|ask| (ask.key.clone(), ask.item_key.clone()))
-            .collect(),
-        text: format!(
-            "asks=[{}] session={} model={} model_name={} effort={} mode={} context={} tasks={} active=[{}] usage={} servers={} sign_in={} background={}",
-            describe_asks(&snapshot.asks),
-            snapshot.provider_session.as_deref().unwrap_or("?"),
-            snapshot.model.as_deref().unwrap_or("?"),
-            crate::claude_common::describe_model_name(snapshot.model_name.as_deref()),
-            snapshot.effort.as_deref().unwrap_or("?"),
-            snapshot.permission.as_deref().unwrap_or("?"),
-            if context.known {
-                format!(
-                    "{}/{}{}",
-                    context.used_tokens,
-                    context
-                        .window_tokens
-                        .map_or("?".to_owned(), |window| window.to_string()),
-                    if context.breakdown.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" ({} categories)", context.breakdown.len())
-                    }
-                )
-            } else {
-                "?".into()
-            },
-            describe_tasks(&snapshot.tasks.unwrap_or_default()),
-            snapshot
-                .active_tasks
-                .iter()
-                .map(|task| task.task_id.clone())
-                .collect::<Vec<_>>()
-                .join(","),
-            describe_claude_usage(&usage),
-            match wire::HealthState::try_from(servers.state).unwrap_or_default() {
-                wire::HealthState::Unknown => "?".to_owned(),
-                state => format!(
-                    "{}[{}]",
-                    state.as_str_name(),
-                    servers
-                        .servers
-                        .iter()
-                        .map(|server| format!(
-                            "{}:{}",
-                            server.name,
-                            wire::ToolServerStatus::try_from(server.status)
-                                .map_or("?", |status| status.as_str_name())
-                        ))
-                        .collect::<Vec<_>>()
-                        .join(",")
-                ),
-            },
-            match wire::SignInState::try_from(sign_in.state).unwrap_or_default() {
-                wire::SignInState::Unknown => "?".to_owned(),
-                state => format!("{} {}", state.as_str_name(), or_dash(&sign_in.account)),
-            },
-            crate::shared::describe_jobs(snapshot.background_jobs.as_ref())
-        ),
     }
 }

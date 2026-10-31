@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use wire::peer_subscribe_session_request;
+use wire::subscribe_session_request;
 
 use crate::ids::{CallId, HostId};
 use crate::io::Output;
@@ -134,8 +134,8 @@ impl Pending {
 }
 
 impl Daemon {
-    /// A paired host's call. Only reads are answered here so far; the
-    /// shell serves the rest until what they write moves into the core.
+    /// A paired host's call. Only reads are answered here; the shell
+    /// forwards the rest.
     pub(crate) fn peer_call(
         &mut self,
         from: HostId,
@@ -147,12 +147,12 @@ impl Daemon {
         let answered = match request {
             PeerRequest::SubscribeSession(request) => {
                 let from = match request.from {
-                    Some(peer_subscribe_session_request::From::After(after)) => Opening::After {
+                    Some(subscribe_session_request::From::After(after)) => Opening::After {
                         revision: after.revision,
                         cap: after.cap,
                         generation: after.generation,
                     },
-                    Some(peer_subscribe_session_request::From::Tail(tail)) => Opening::Tail(tail),
+                    Some(subscribe_session_request::From::Tail(tail)) => Opening::Tail(tail),
                     None => Opening::Tail(0),
                 };
                 self.own(&request.agent_id)
@@ -265,7 +265,7 @@ mod tests {
 
     use super::*;
     use crate::payload::{CarrierKind, ClientRequest, PeerFailure, PeerReply};
-    use crate::{Checkpoint, Input, LinkId, StartOptions};
+    use crate::{Input, LinkId, StartOptions};
 
     const OWN: [u8; 16] = *b"own-host-0000000";
     const PEER: [u8; 16] = *b"far-host-0000000";
@@ -328,8 +328,8 @@ mod tests {
 
         // The pending set is the core's state: a core restored from its
         // checkpoint answers the call when the reply comes.
-        let checkpoint = Checkpoint::from_bytes(&daemon.checkpoint().to_bytes()).unwrap();
-        let mut restored = Daemon::restore(checkpoint, store()).expect("it restores");
+        let mut restored = Daemon::restore(&daemon.checkpoint(), store(), Default::default())
+            .expect("it restores");
         assert_eq!(restored.pending.peer_calls(), 1);
         let answer = Input::PeerAnswer {
             call: *made,

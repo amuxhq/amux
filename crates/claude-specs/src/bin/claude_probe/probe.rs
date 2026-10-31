@@ -1,412 +1,40 @@
 use std::collections::BTreeMap;
-use std::io::{self, BufRead, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use chrono::Utc;
-use claude_specs::specs::{SpecSource, execute, fixtures_root, pty_registry, sdk_registry};
 use redaction::Redaction;
-use replay_support::{
-    Manifest, ProbeAttempt, ProbeRun, SourceKind, SpecEntry, append_verification, load_recording,
-    migrate_legacy_manifest, probe, registry_rows, sanitize,
-};
+use replay_support::live::{self, Captured, owner_home};
 use semver::Version;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
-use uuid::Uuid;
 
 #[tokio::main]
 pub(super) async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if std::env::args().nth(1).as_deref() == Some("__pty-hook") {
-        return forward_pty_hook();
-    }
     #[cfg(unix)]
     if std::env::args().nth(1).as_deref() == Some(super::capture::HOOK) {
         let mut command = std::env::args().skip(2);
         let program = command.next().ok_or("a wrapped hook names its command")?;
         return super::capture::hook(&program, &command.collect::<Vec<_>>());
     }
-    if std::env::current_exe()?
-        .file_stem()
-        .is_some_and(|name| name == claude_specs::specs::channels::PEER_MESSAGE_HELPER)
-    {
-        return post_peer_message().await;
-    }
-    if std::env::var_os("CLAUDE_SPEC_MCP_SERVER").is_some()
-        || std::env::current_exe()?
-            .file_stem()
-            .is_some_and(|name| name == "spec-mcp-server")
-    {
-        run_spec_mcp_server();
+    // The tool server the live lane's form scenarios hand Claude; it runs
+    // under the capture proxy's environment, so it is told apart first.
+    if std::env::args().nth(1).as_deref() == Some("__tool-server") {
+        live::serve_ask_tool("spec-external");
         return Ok(());
     }
     if std::env::var_os("CLAUDE_CAPTURE_PROXY").is_some() {
         return run_capture_proxy().await;
     }
-    if let (Some(entry), Some(out)) = (
-        std::env::var_os("CLAUDE_PROBE_CAPTURE_ENTRY"),
-        std::env::var_os("CLAUDE_PROBE_CAPTURE_OUT"),
-    ) {
-        let entry = find_entry(entry.to_str().ok_or("capture entry is not UTF-8")?)?;
-        let capture = capture_direct(entry).await?;
-        let out = PathBuf::from(out);
-        std::fs::create_dir_all(&out)?;
-        write_events(&out.join("io.jsonl"), &capture.events)?;
-        std::fs::write(out.join("spawn.jsonl"), &capture.spawn)?;
-        std::fs::write(
-            out.join("capture.json"),
-            serde_json::to_vec(&CaptureMetadata::from(&capture))?,
-        )?;
-        return Ok(());
-    }
-
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.as_slice() {
-        [command, rest @ ..] if command == "list" => list(rest),
-        [command, rest @ ..] if command == "record" => record_command(rest).await,
-        [command, rest @ ..] if command == "probe" => probe_command(rest).await,
         [command, capture, name] if command == "join" => join(Path::new(capture), name),
         _ => Err(usage().into()),
     }
 }
 
 fn usage() -> &'static str {
-    "usage: claude-probe list [--sdk|--pty] | record (--sdk|--pty) <spec>... | probe [--sdk] [--pty] [--out <dir>] | join <capture dir> <name>"
-}
-
-fn list(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let sdk = args.is_empty() || args.iter().any(|arg| arg == "--sdk");
-    let pty = args.is_empty() || args.iter().any(|arg| arg == "--pty");
-    if args.iter().any(|arg| arg != "--sdk" && arg != "--pty") {
-        return Err(usage().into());
-    }
-    if sdk {
-        list_registry("sdk", &fixtures_root(), sdk_registry())?;
-    }
-    if pty && claude_specs::specs::pty::fixtures_root().exists() {
-        list_registry(
-            "pty",
-            &claude_specs::specs::pty::fixtures_root(),
-            pty_registry(),
-        )?;
-    } else if pty {
-        for entry in pty_registry() {
-            println!(
-                "driver=pty spec={} recording={} recorded=pending verified=[]",
-                entry.name, entry.recording
-            );
-        }
-    }
-    Ok(())
-}
-
-fn list_registry(
-    driver: &str,
-    root: &Path,
-    registry: &[SpecEntry],
-) -> Result<(), Box<dyn std::error::Error>> {
-    for row in registry_rows(root, registry)? {
-        let ledger = row
-            .verified
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-        println!(
-            "driver={driver} spec={} recording={} recorded={} verified=[{}]",
-            row.spec, row.recording, row.recorded, ledger
-        );
-    }
-    Ok(())
-}
-
-async fn record_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let (driver, names) = parse_record_names(args)?;
-    if names.is_empty() {
-        return Err(usage().into());
-    }
-    for name in names {
-        match driver {
-            "sdk" => {
-                let entry = find_entry(name)?;
-                record_one(entry, &fixtures_root()).await?;
-                println!("driver=sdk spec={} outcome=recorded", entry.name);
-            }
-            "pty" => {
-                let entry = find_pty_entry(name)?;
-                record_pty_one(entry).await?;
-                println!("driver=pty spec={} outcome=recorded", entry.name);
-            }
-            _ => unreachable!(),
-        }
-    }
-    Ok(())
-}
-
-async fn probe_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let mut sdk = false;
-    let mut pty = false;
-    let mut out = None;
-    let mut index = 0;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--sdk" => sdk = true,
-            "--pty" => pty = true,
-            "--out" if index + 1 < args.len() => {
-                index += 1;
-                out = Some(PathBuf::from(&args[index]));
-            }
-            _ => return Err(usage().into()),
-        }
-        index += 1;
-    }
-    if !sdk && !pty {
-        return Err("probe requires --sdk, --pty, or both".into());
-    }
-    let out = out.unwrap_or_else(default_probe_dir);
-    if sdk && pty {
-        run_probe(out.join("sdk")).await?;
-        run_pty_probe(out.join("pty")).await
-    } else if sdk {
-        run_probe(out).await
-    } else {
-        run_pty_probe(out).await
-    }
-}
-
-fn parse_record_names(args: &[String]) -> Result<(&str, Vec<&str>), Box<dyn std::error::Error>> {
-    let mut driver = None;
-    let mut names = Vec::new();
-    for arg in args {
-        if arg == "--sdk" || arg == "--pty" {
-            let selected = arg.trim_start_matches('-');
-            if driver.replace(selected).is_some() {
-                return Err("record accepts exactly one of --sdk or --pty".into());
-            }
-        } else if arg.starts_with('-') {
-            return Err(usage().into());
-        } else {
-            names.push(arg.as_str());
-        }
-    }
-    Ok((driver.ok_or("record requires --sdk or --pty")?, names))
-}
-
-fn find_entry(name: &str) -> Result<SpecEntry, Box<dyn std::error::Error>> {
-    sdk_registry()
-        .iter()
-        .copied()
-        .find(|entry| entry.name == name || entry.recording == name)
-        .ok_or_else(|| format!("unknown Claude SDK specification {name}").into())
-}
-
-fn find_pty_entry(name: &str) -> Result<SpecEntry, Box<dyn std::error::Error>> {
-    pty_registry()
-        .iter()
-        .copied()
-        .find(|entry| entry.name == name || entry.recording == name)
-        .ok_or_else(|| format!("unknown Claude PTY specification {name}").into())
-}
-
-async fn run_probe(out: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    let binary = claude_binary();
-    let version = claude::version::probe_version(&binary).await?.0;
-    let fixtures = Arc::new(fixtures_root());
-    let live_fixtures = Arc::clone(&fixtures);
-    let pass_fixtures = Arc::clone(&fixtures);
-    let record_fixtures = Arc::clone(&fixtures);
-    let mut run = ProbeRun {
-        run_id: Uuid::new_v4().to_string(),
-        provider: "claude".to_string(),
-        version,
-        dir: out,
-        results: Vec::new(),
-    };
-    println!("provider=claude version={} driver=sdk", run.version);
-
-    let (probe_path, drift_path) = probe(
-        &mut run,
-        sdk_registry(),
-        move |entry| {
-            let fixtures = Arc::clone(&live_fixtures);
-            async move {
-                let recording =
-                    load_recording(&fixtures.join(entry.recording)).map_err(io::Error::other)?;
-                match capture(entry).await {
-                    Ok(capture) => Ok(ProbeAttempt {
-                        claim: Ok(()),
-                        recorded: recording.manifest.observed,
-                        live: replay_support::observe(&capture.events),
-                        raw_payloads: 0,
-                    }),
-                    Err(error) => Ok(ProbeAttempt {
-                        claim: Err(error.to_string()),
-                        recorded: recording.manifest.observed,
-                        live: replay_support::Observed::default(),
-                        raw_payloads: 0,
-                    }),
-                }
-            }
-        },
-        move |entry, verification| {
-            let fixtures = Arc::clone(&pass_fixtures);
-            async move {
-                append_verification(&fixtures.join(entry.recording), verification)
-                    .map_err(io::Error::other)
-            }
-        },
-        move |entry| {
-            let fixtures = Arc::clone(&record_fixtures);
-            async move {
-                record_one(entry, &fixtures)
-                    .await
-                    .map_err(|error| io::Error::other(error.to_string()))
-            }
-        },
-    )
-    .await?;
-
-    for result in &run.results {
-        println!(
-            "driver=sdk spec={} outcome={:?}",
-            result.spec, result.outcome
-        );
-    }
-    println!("probe={}", probe_path.display());
-    println!("drift={}", drift_path.display());
-    println!("keymap=not-verified reason=sdk-only-probe");
-    Ok(())
-}
-
-struct PtyCapture {
-    report: claude_specs::specs::pty::RunReport,
-    spawn: Vec<u8>,
-    scratch: PathBuf,
-}
-
-async fn capture_pty(entry: SpecEntry) -> Result<PtyCapture, Box<dyn std::error::Error>> {
-    let scratch = tempfile::Builder::new()
-        .prefix("claude-pty-spec-")
-        .tempdir_in("/tmp")?;
-    let work = scratch.path().join("work");
-    std::fs::create_dir_all(&work)?;
-    std::fs::write(work.join("config.txt"), "VALUE=1\n")?;
-    std::fs::write(work.join("README.md"), "CURRENT\n")?;
-    std::fs::write(work.join("square.png"), claude_specs::specs::SQUARE_PNG)?;
-    let hook_command = vec![
-        std::env::current_exe()?.display().to_string(),
-        "__pty-hook".to_owned(),
-    ];
-    let managed = claude::launch::ManagedSettings {
-        hook_command: hook_command.clone(),
-        ..Default::default()
-    };
-    let launch = claude::launch::Launch {
-        binary: claude_binary(),
-        cwd: work,
-        args: Vec::new(),
-        session_id: Uuid::new_v4(),
-        resume: false,
-        settings: claude::launch::merged_settings(None, &managed),
-        hook_command,
-        mcp_servers: Vec::new(),
-        env_scrub: claude::launch::CHILD_SESSION_ENV_SCRUB,
-    };
-    let mut spawn_launch = launch.clone();
-    claude_specs::specs::pty::prepare_launch(&entry, &mut spawn_launch)?;
-    let spawn = serde_json::to_vec(&serde_json::json!({
-        "transport_id": "pty",
-        "argv": claude::launch::pty_spawn_args(&spawn_launch),
-    }))?;
-    let report = claude_specs::specs::pty::run(
-        &entry,
-        claude_specs::specs::pty::Source::Live {
-            launch,
-            keymaps: claude_specs::terminal::keymap::KeymapSources::default(),
-            size: pty_host::PtySize {
-                rows: 40,
-                cols: 120,
-            },
-        },
-    )
-    .await?;
-    Ok(PtyCapture {
-        report,
-        spawn,
-        scratch: scratch.path().to_path_buf(),
-    })
-}
-
-async fn record_pty_one(entry: SpecEntry) -> Result<(), Box<dyn std::error::Error>> {
-    let mut capture = capture_pty(entry).await?;
-    let run_id = Uuid::new_v4().to_string();
-    stabilize_pty_transcript_paths(&mut capture.report.io)?;
-    claude_specs::scrub::transcript(&mut capture.report.io)?;
-    let redaction = sanitize(
-        &mut capture.report.io,
-        &Redaction {
-            home: owner_home(),
-            extra_paths: vec![capture.scratch.clone()],
-            secret_env: secret_values(),
-            hostname: None,
-            user: None,
-            extra_personal_identifiers: Vec::new(),
-            personal_identifier_keys: Vec::new(),
-        },
-    );
-    let root = claude_specs::specs::pty::fixtures_root();
-    std::fs::create_dir_all(&root)?;
-    let stage = root.join(format!(".{}.{}", entry.recording, Uuid::new_v4()));
-    std::fs::create_dir_all(&stage)?;
-    write_events(&stage.join("io.jsonl"), &capture.report.io)?;
-    let mut spawn = capture.spawn;
-    spawn.push(b'\n');
-    let spawn = sanitize_json_lines(&spawn, &capture.scratch)?;
-    std::fs::write(stage.join("spawn.jsonl"), spawn)?;
-    let legacy = serde_json::json!({
-        "schema_version": 1,
-        "spec": entry.name,
-        "claude_code_version": capture.report.provider_version.to_string(),
-        "model": capture.report.model,
-        "recorded_at": Utc::now().to_rfc3339(),
-        "session_ids": [capture.report.session_id],
-    });
-    let mut manifest = migrate_legacy_manifest(&legacy, "claude", &stage)?;
-    manifest.recorded.source_kind = SourceKind::LiveCapture;
-    manifest.observed = replay_support::observe(&capture.report.io);
-    manifest.redaction = redaction;
-    manifest
-        .provider_extra
-        .insert("run_id".to_owned(), run_id.clone().into());
-    write_manifest(&stage.join("manifest.json"), &manifest)?;
-
-    let recording = load_recording(&stage)?;
-    let replay =
-        replay_support::strict_replay(&recording, replay_support::ReplayOptions::default());
-    claude_specs::specs::pty::run(
-        &entry,
-        claude_specs::specs::pty::Source::Recorded {
-            replay,
-            manifest: Box::new(recording.manifest),
-            keymaps: claude_specs::terminal::keymap::KeymapSources::default(),
-        },
-    )
-    .await?;
-
-    let destination = root.join(entry.recording);
-    if destination.exists() {
-        std::fs::remove_dir_all(&destination)?;
-    }
-    std::fs::rename(&stage, &destination)?;
-    claude_specs::specs::probe::append_recorded_pty(
-        &root,
-        &claude_specs::specs::pty::baked_keymap_path(),
-        entry,
-        capture.report.provider_version,
-        run_id,
-    )?;
-    Ok(())
+    "usage: claude-probe join <capture dir> <name>"
 }
 
 /// A `get_settings` answer repeats the recording machine's whole settings
@@ -457,271 +85,7 @@ fn stabilize_pty_transcript_paths(events: &mut [replay_support::IoEvent]) -> io:
     Ok(())
 }
 
-async fn run_pty_probe(out: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    let version = claude::version::probe_version(&claude_binary()).await?.0;
-    let fixtures = Arc::new(claude_specs::specs::pty::fixtures_root());
-    let live_fixtures = Arc::clone(&fixtures);
-    let pass_fixtures = Arc::clone(&fixtures);
-    let keymap = Arc::new(claude_specs::specs::pty::baked_keymap_path());
-    let pass_keymap = Arc::clone(&keymap);
-    let mut run = ProbeRun {
-        run_id: Uuid::new_v4().to_string(),
-        provider: "claude".to_owned(),
-        version,
-        dir: out,
-        results: Vec::new(),
-    };
-    println!("provider=claude version={} driver=pty", run.version);
-    let (probe_path, drift_path) = probe(
-        &mut run,
-        pty_registry(),
-        move |entry| {
-            let fixtures = Arc::clone(&live_fixtures);
-            async move {
-                let recording =
-                    load_recording(&fixtures.join(entry.recording)).map_err(io::Error::other)?;
-                match capture_pty(entry).await {
-                    Ok(capture) => Ok(ProbeAttempt {
-                        claim: Ok(()),
-                        recorded: recording.manifest.observed,
-                        live: replay_support::observe(&capture.report.io),
-                        raw_payloads: 0,
-                    }),
-                    Err(error) => Ok(ProbeAttempt {
-                        claim: Err(error.to_string()),
-                        recorded: recording.manifest.observed,
-                        live: replay_support::Observed::default(),
-                        raw_payloads: 0,
-                    }),
-                }
-            }
-        },
-        move |entry, verification| {
-            let fixtures = Arc::clone(&pass_fixtures);
-            let keymap = Arc::clone(&pass_keymap);
-            async move {
-                claude_specs::specs::probe::append_pty_verification(
-                    &fixtures,
-                    &keymap,
-                    entry,
-                    verification,
-                )
-            }
-        },
-        move |entry| async move {
-            record_pty_one(entry)
-                .await
-                .map_err(|error| io::Error::other(error.to_string()))
-        },
-    )
-    .await?;
-    for result in &run.results {
-        println!(
-            "driver=pty spec={} outcome={:?}",
-            result.spec, result.outcome
-        );
-    }
-    println!("probe={}", probe_path.display());
-    println!("drift={}", drift_path.display());
-    println!("keymap={}", keymap.display());
-    Ok(())
-}
-
-fn forward_pty_hook() -> Result<(), Box<dyn std::error::Error>> {
-    let socket = std::env::var_os("CLAUDE_HOOK_SOCKET")
-        .map(PathBuf::from)
-        .ok_or("CLAUDE_HOOK_SOCKET is not set")?;
-    let mut payload = Vec::new();
-    std::io::Read::read_to_end(&mut std::io::stdin(), &mut payload)?;
-    let debug = std::env::var_os("CLAUDE_PTY_HOOK_DEBUG");
-    if let Some(path) = &debug {
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
-        file.write_all(&payload)?;
-        file.write_all(b"\n")?;
-    }
-    let result = claude::hooks::forward(&payload, &socket);
-    if let Some(path) = debug {
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
-        writeln!(
-            file,
-            "{}",
-            serde_json::json!({
-                "debug_socket": socket,
-                "debug_socket_exists": socket.exists(),
-                "debug_forward_error": result.as_ref().err().map(ToString::to_string),
-            })
-        )?;
-    }
-    result?;
-    Ok(())
-}
-
-struct Capture {
-    report: claude_specs::specs::RunReport,
-    version: Version,
-    events: Vec<replay_support::IoEvent>,
-    spawn: Vec<u8>,
-    scratch: PathBuf,
-}
-
-#[derive(serde::Deserialize, serde::Serialize)]
-struct CaptureMetadata {
-    version: Version,
-    model: String,
-    session_ids: Vec<String>,
-    scratch: PathBuf,
-}
-
-impl From<&Capture> for CaptureMetadata {
-    fn from(capture: &Capture) -> Self {
-        Self {
-            version: capture.version.clone(),
-            model: capture.report.model.clone(),
-            session_ids: capture.report.session_ids.clone(),
-            scratch: capture.scratch.clone(),
-        }
-    }
-}
-
-async fn capture(entry: SpecEntry) -> Result<Capture, Box<dyn std::error::Error>> {
-    let isolated = tempfile::Builder::new()
-        .prefix("claude-sdk-capture-result-")
-        .tempdir()?;
-    let status = tokio::process::Command::new(std::env::current_exe()?)
-        .env("CLAUDE_PROBE_CAPTURE_ENTRY", entry.name)
-        .env("CLAUDE_PROBE_CAPTURE_OUT", isolated.path())
-        .status()
-        .await?;
-    if !status.success() {
-        return Err(format!("live capture subprocess exited with {status}").into());
-    }
-    let metadata: CaptureMetadata =
-        serde_json::from_slice(&std::fs::read(isolated.path().join("capture.json"))?)?;
-    Ok(Capture {
-        report: claude_specs::specs::RunReport {
-            provider_version: None,
-            model: metadata.model,
-            session_ids: metadata.session_ids,
-        },
-        version: metadata.version,
-        events: replay_support::load_script(isolated.path().join("io.jsonl")),
-        spawn: std::fs::read(isolated.path().join("spawn.jsonl"))?,
-        scratch: metadata.scratch,
-    })
-}
-
-async fn capture_direct(entry: SpecEntry) -> Result<Capture, Box<dyn std::error::Error>> {
-    let binary = claude_binary();
-    let version = claude::version::probe_version(&binary).await?.0;
-    let scratch = tempfile::Builder::new()
-        .prefix("claude-sdk-spec-")
-        .tempdir()?;
-    let work = scratch.path().join("work");
-    let capture_dir = scratch.path().join("capture");
-    let helpers = scratch.path().join("bin");
-    std::fs::create_dir_all(&work)?;
-    std::fs::create_dir_all(&capture_dir)?;
-    std::fs::create_dir_all(&helpers)?;
-    install_mcp_helper(&helpers)?;
-    std::fs::write(work.join("config.txt"), "VALUE=1\n")?;
-    std::fs::write(work.join("README.md"), "CURRENT\n")?;
-    std::fs::write(work.join("square.png"), claude_specs::specs::SQUARE_PNG)?;
-
-    let old_path = std::env::var_os("PATH");
-    let mut paths = vec![helpers];
-    paths.extend(std::env::split_paths(
-        old_path.as_deref().unwrap_or_default(),
-    ));
-    let helper_path = std::env::join_paths(paths)?;
-    let proxy = std::env::current_exe()?;
-    // Capture is deliberately serial: these variables are inherited by the
-    // one specification's subprocesses and restored before the next starts.
-    unsafe {
-        std::env::set_var("PATH", &helper_path);
-        std::env::set_var("CLAUDE_CAPTURE_PROXY", "1");
-        std::env::set_var("CLAUDE_CAPTURE_DIR", &capture_dir);
-        std::env::set_var("CLAUDE_REAL_PATH", &binary);
-    }
-    let outcome = execute(
-        &entry,
-        SpecSource::Live {
-            binary: proxy,
-            cwd: work,
-            environment: None,
-        },
-    )
-    .await;
-    unsafe {
-        std::env::remove_var("CLAUDE_CAPTURE_PROXY");
-        std::env::remove_var("CLAUDE_CAPTURE_DIR");
-        std::env::remove_var("CLAUDE_REAL_PATH");
-        match old_path {
-            Some(path) => std::env::set_var("PATH", path),
-            None => std::env::remove_var("PATH"),
-        }
-    }
-    let report = outcome?;
-    let events = replay_support::load_script(capture_dir.join("io.jsonl"));
-    let spawn = std::fs::read(capture_dir.join("spawn.jsonl"))?;
-    Ok(Capture {
-        report,
-        version,
-        events,
-        spawn,
-        scratch: scratch.path().to_path_buf(),
-    })
-}
-
-async fn record_one(entry: SpecEntry, root: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let mut capture = capture(entry).await?;
-    scrub_settings(&mut capture.events)?;
-    let redaction = sanitize(
-        &mut capture.events,
-        &Redaction {
-            home: owner_home(),
-            extra_paths: vec![capture.scratch.clone()],
-            secret_env: secret_values(),
-            hostname: None,
-            user: None,
-            extra_personal_identifiers: Vec::new(),
-            personal_identifier_keys: Vec::new(),
-        },
-    );
-    let stage = root.join(format!(".{}.{}", entry.recording, Uuid::new_v4()));
-    std::fs::create_dir_all(&stage)?;
-    write_events(&stage.join("io.jsonl"), &capture.events)?;
-    let sanitized_spawn = sanitize_json_lines(&capture.spawn, &capture.scratch)?;
-    std::fs::write(stage.join("spawn.jsonl"), sanitized_spawn)?;
-
-    let legacy = serde_json::json!({
-        "schema_version": 1,
-        "spec": entry.name,
-        "claude_code_version": capture.version.to_string(),
-        "model": capture.report.model,
-        "recorded_at": Utc::now().to_rfc3339(),
-        "session_ids": capture.report.session_ids,
-    });
-    let mut manifest = migrate_legacy_manifest(&legacy, "claude", &stage)?;
-    manifest.recorded.source_kind = SourceKind::LiveCapture;
-    manifest.observed = replay_support::observe(&capture.events);
-    manifest.redaction = redaction;
-    write_manifest(&stage.join("manifest.json"), &manifest)?;
-
-    let destination = root.join(entry.recording);
-    if destination.exists() {
-        std::fs::remove_dir_all(&destination)?;
-    }
-    std::fs::rename(stage, destination)?;
-    Ok(())
-}
-
-/// Join one live qualification capture to the unregistered live corpus as
+/// Join one live qualification capture to the live corpus as
 /// `fixtures/live/{sdk,pty}/<name>`. The capture is a folder the live lane
 /// wrote: one provider process's `io.jsonl` and `spawn.jsonl`, and the
 /// `fixture.json` that names its format. It is sanitized as a recording is,
@@ -739,12 +103,14 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
             return Err(format!("{}: not a Claude capture ({other:?})", capture.display()).into());
         }
     };
-    let mut spawns = std::fs::read_to_string(capture.join("spawn.jsonl"))?
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(serde_json::from_str::<serde_json::Value>)
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut events = replay_support::load_script(capture.join("io.jsonl"));
+    let (mut spawns, mut events) = live::read_capture(capture)?;
+    // A session whose every request failed writes no row naming its model:
+    // the one it was launched on stands in.
+    let launched = spawns.iter().find_map(|row| {
+        let argv = row["argv"].as_array()?;
+        let at = argv.iter().position(|arg| arg == "--model")?;
+        argv.get(at + 1)?.as_str().map(str::to_owned)
+    });
     if pty {
         // A terminal capture is the terminal session. The headless Claude
         // the agent asks for the host's catalogue runs beside it under its
@@ -773,98 +139,41 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
     let rules = Redaction {
         home: owner_home(),
-        extra_paths: live_scratch(&spawns),
-        secret_env: secret_values(),
+        extra_paths: live::live_scratch(&spawns),
+        secret_env: live::secret_values(SECRETS),
         hostname: None,
         user: None,
         extra_personal_identifiers: Vec::new(),
         personal_identifier_keys: Vec::new(),
     };
-    let mut redaction = sanitize(&mut events, &rules);
-    let facts = captured_facts(&events, pty)?;
-
-    let root = claude_specs::specs::live_fixtures_root().join(if pty { "pty" } else { "sdk" });
-    std::fs::create_dir_all(&root)?;
-    let stage = root.join(format!(".{name}.{}", Uuid::new_v4()));
-    std::fs::create_dir_all(&stage)?;
-    write_events(&stage.join("io.jsonl"), &events)?;
-    let mut spawn = String::new();
-    for mut row in spawns {
-        let mut kept = serde_json::Map::new();
-        // A terminal process's channels are all `pty`; a stdio process is
-        // named by its transport.
-        kept.insert(
-            "transport_id".into(),
-            if pty {
-                "pty".into()
-            } else {
-                row["transport_id"].take()
-            },
-        );
-        kept.insert("argv".into(), row["argv"].take());
-        kept.insert("cwd".into(), row["cwd"].take());
-        let mut row = serde_json::Value::Object(kept);
-        redaction::redact_value(&mut row, &rules, &mut redaction);
-        spawn.push_str(&serde_json::to_string(&row)?);
-        spawn.push('\n');
-    }
-    std::fs::write(stage.join("spawn.jsonl"), spawn)?;
-    let legacy = serde_json::json!({
-        "schema_version": 1,
-        "spec": name,
-        "claude_code_version": facts.version.to_string(),
-        "model": facts.model,
-        "recorded_at": Utc::now().to_rfc3339(),
-        "session_ids": facts.session_ids,
-    });
-    let mut manifest = migrate_legacy_manifest(&legacy, "claude", &stage)?;
-    manifest.recorded.source_kind = SourceKind::LiveCapture;
-    manifest.observed = replay_support::observe(&events);
-    manifest.redaction = redaction;
-    manifest.provider_extra.insert(
-        "driven_by".to_owned(),
-        "amux's interpreter, in the live qualification lane".into(),
-    );
-    if facts.models.len() > 1 {
-        manifest
-            .provider_extra
-            .insert("models".to_owned(), facts.models.clone().into());
-    }
-    write_manifest(&stage.join("manifest.json"), &manifest)?;
-    load_recording(&stage)?;
-
-    let destination = root.join(name);
-    if destination.exists() {
-        std::fs::remove_dir_all(&destination)?;
-    }
-    std::fs::rename(&stage, &destination)?;
+    // A terminal process's channels are all `pty`; a stdio process is
+    // named by its transport.
+    let spawns = spawns
+        .into_iter()
+        .map(|mut row| {
+            serde_json::json!({
+                "transport_id": if pty { "pty".into() } else { row["transport_id"].take() },
+                "argv": row["argv"].take(),
+                "cwd": row["cwd"].take(),
+            })
+        })
+        .collect();
+    let root = claude_specs::live_fixtures_root().join(if pty { "pty" } else { "sdk" });
+    let destination = live::join(&root, name, "claude", events, spawns, &rules, |events| {
+        let facts = captured_facts(events, pty, launched)?;
+        let mut extra = serde_json::Map::new();
+        if facts.models.len() > 1 {
+            extra.insert("models".to_owned(), facts.models.into());
+        }
+        Ok(Captured {
+            version: facts.version,
+            model: facts.model,
+            session_ids: facts.session_ids,
+            extra,
+        })
+    })?;
     println!("joined {} as {}", capture.display(), destination.display());
     Ok(())
-}
-
-/// The scratch installation a live capture ran in: the folder under the
-/// temporary directory that holds each process's working directory, in both
-/// of the spellings macOS gives it, and this machine's temporary directory,
-/// where the lane keeps its sockets.
-fn live_scratch(spawns: &[serde_json::Value]) -> Vec<PathBuf> {
-    let mut paths = vec![std::env::temp_dir()];
-    for spawn in spawns {
-        let Some(cwd) = spawn["cwd"].as_str() else {
-            continue;
-        };
-        let cwd = Path::new(cwd);
-        let Some(root) = cwd.ancestors().find(|dir| {
-            dir.parent().is_some_and(|parent| {
-                parent == Path::new("/tmp") || parent == Path::new("/private/tmp")
-            })
-        }) else {
-            continue;
-        };
-        let tail = root.strip_prefix("/private").unwrap_or(root);
-        paths.push(tail.to_path_buf());
-        paths.push(Path::new("/private").join(tail.strip_prefix("/").unwrap_or(tail)));
-    }
-    paths
 }
 
 struct CapturedFacts {
@@ -880,6 +189,7 @@ struct CapturedFacts {
 fn captured_facts(
     events: &[replay_support::IoEvent],
     pty: bool,
+    launched: Option<String>,
 ) -> Result<CapturedFacts, Box<dyn std::error::Error>> {
     let mut version = None;
     let mut models = BTreeMap::<String, usize>::new();
@@ -928,6 +238,7 @@ fn captured_facts(
         .iter()
         .max_by_key(|(_, rows)| **rows)
         .map(|(model, _)| model.clone())
+        .or(launched)
         .ok_or("the capture shows no model")?;
     Ok(CapturedFacts {
         version: Version::parse(&version.ok_or("the capture shows no Claude version")?)?,
@@ -935,77 +246,6 @@ fn captured_facts(
         models: models.into_keys().collect(),
         session_ids,
     })
-}
-
-fn write_events(path: &Path, events: &[replay_support::IoEvent]) -> io::Result<()> {
-    let mut output = String::new();
-    for event in events {
-        let mut row = serde_json::json!({
-            "us": event.us,
-            "dir": match event.direction {
-                replay_support::IoDirection::Write => "stdin",
-                replay_support::IoDirection::Read => "stdout",
-            },
-            "line": event.line,
-        });
-        if let Some(transport_id) = &event.transport_id {
-            row["transport_id"] = serde_json::Value::String(transport_id.clone());
-        }
-        if let Some(session_id) = &event.session_id {
-            row["session_id"] = serde_json::Value::String(session_id.clone());
-        }
-        output.push_str(&serde_json::to_string(&row).map_err(io::Error::other)?);
-        output.push('\n');
-    }
-    std::fs::write(path, output)
-}
-
-fn write_manifest(path: &Path, manifest: &Manifest) -> io::Result<()> {
-    let mut bytes = serde_json::to_vec_pretty(manifest).map_err(io::Error::other)?;
-    bytes.push(b'\n');
-    std::fs::write(path, bytes)
-}
-
-fn sanitize_json_lines(bytes: &[u8], scratch: &Path) -> io::Result<Vec<u8>> {
-    let text = std::str::from_utf8(bytes).map_err(io::Error::other)?;
-    let home = owner_home().to_string_lossy().into_owned();
-    let scratch = scratch.to_string_lossy().into_owned();
-    let secrets = secret_values();
-    let mut output = String::new();
-    for line in text.lines() {
-        let mut value: serde_json::Value = serde_json::from_str(line).map_err(io::Error::other)?;
-        redact_value(&mut value, &home, &scratch, &secrets);
-        output.push_str(&serde_json::to_string(&value).map_err(io::Error::other)?);
-        output.push('\n');
-    }
-    Ok(output.into_bytes())
-}
-
-fn redact_value(value: &mut serde_json::Value, home: &str, scratch: &str, secrets: &[String]) {
-    match value {
-        serde_json::Value::String(text) => {
-            *text = text.replace(scratch, "<MACHINE_PATH>");
-            if !home.is_empty() {
-                *text = text.replace(home, "<HOME>");
-            }
-            for secret in secrets {
-                if !secret.is_empty() {
-                    *text = text.replace(secret, "<REDACTED>");
-                }
-            }
-        }
-        serde_json::Value::Array(values) => {
-            for value in values {
-                redact_value(value, home, scratch, secrets);
-            }
-        }
-        serde_json::Value::Object(values) => {
-            for value in values.values_mut() {
-                redact_value(value, home, scratch, secrets);
-            }
-        }
-        _ => {}
-    }
 }
 
 async fn run_capture_proxy() -> Result<(), Box<dyn std::error::Error>> {
@@ -1162,175 +402,5 @@ fn append_json(path: &Path, value: &serde_json::Value) -> io::Result<()> {
     writeln!(file, "{value}")
 }
 
-fn install_mcp_helper(dir: &Path) -> io::Result<()> {
-    for name in [
-        "spec-mcp-server",
-        claude_specs::specs::channels::PEER_MESSAGE_HELPER,
-    ] {
-        let destination = dir.join(name);
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(std::env::current_exe()?, destination)?;
-        #[cfg(not(unix))]
-        std::fs::copy(std::env::current_exe()?, destination)?;
-    }
-    Ok(())
-}
-
-/// Run as a Claude hook: post the first argument through the messaging
-/// socket Claude handed the hook, as another program would.
-async fn post_peer_message() -> Result<(), Box<dyn std::error::Error>> {
-    let text = std::env::args()
-        .nth(1)
-        .ok_or("usage: spec-peer-message <text>")?;
-    let socket = std::env::var_os("CLAUDE_CODE_MESSAGING_SOCKET")
-        .ok_or("the hook has no CLAUDE_CODE_MESSAGING_SOCKET")?;
-    let token = std::env::var("CLAUDE_CODE_MESSAGING_TOKEN")?;
-    let mut messaging =
-        claude::messaging::MessagingSocket::connect(Path::new(&socket), &token).await?;
-    messaging.send(&text).await?;
-    Ok(())
-}
-
-fn run_spec_mcp_server() {
-    const PROTOCOL_VERSION: &str = "2025-11-25";
-    const TOOL: &str = "ask_the_operator";
-    let stdin = std::io::stdin();
-    let mut lines = stdin.lock().lines();
-    let mut stdout = std::io::stdout();
-    let mut outgoing_id = 1000i64;
-    while let Some(Ok(line)) = lines.next() {
-        let Ok(message) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
-            continue;
-        };
-        let method = message.get("method").and_then(serde_json::Value::as_str);
-        let id = message.get("id").cloned();
-        let result = match (method, &id) {
-            (Some(_), None) => continue,
-            (Some("initialize"), Some(_)) => serde_json::json!({
-                "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": "spec-external", "version": "1.0.0"},
-            }),
-            (Some("tools/list"), Some(_)) => serde_json::json!({
-                "tools": [{
-                    "name": TOOL,
-                    "description": "Ask the operator to confirm a word, then return it.",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {"word": {"type": "string"}},
-                        "required": ["word"],
-                    },
-                }],
-            }),
-            (Some("tools/call"), Some(_)) => {
-                let word = message
-                    .pointer("/params/arguments/word")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("nothing")
-                    .to_owned();
-                outgoing_id += 1;
-                let answer = elicit(&mut stdout, &mut lines, outgoing_id, &word);
-                serde_json::json!({"content": [{"type": "text", "text": answer}]})
-            }
-            _ => {
-                respond(
-                    &mut stdout,
-                    serde_json::json!({
-                        "jsonrpc": "2.0", "id": id,
-                        "error": {"code": -32601, "message": "method not found"},
-                    }),
-                );
-                continue;
-            }
-        };
-        respond(
-            &mut stdout,
-            serde_json::json!({"jsonrpc": "2.0", "id": id, "result": result}),
-        );
-    }
-}
-
-fn elicit(
-    stdout: &mut std::io::Stdout,
-    lines: &mut std::io::Lines<std::io::StdinLock<'_>>,
-    id: i64,
-    word: &str,
-) -> String {
-    // The word LINK asks for the link form of elicitation: the person is
-    // sent to a page instead of filling in fields.
-    let params = if word == "LINK" {
-        serde_json::json!({
-            "mode": "url",
-            "message": "Open the page to confirm.",
-            "url": "https://example.com/confirm",
-            "elicitationId": "spec-link",
-        })
-    } else {
-        serde_json::json!({
-            "message": format!("Confirm the word {word}."),
-            "requestedSchema": {
-                "type": "object",
-                "properties": {"confirmed": {"type": "string"}},
-                "required": ["confirmed"],
-            },
-        })
-    };
-    respond(
-        stdout,
-        serde_json::json!({
-            "jsonrpc": "2.0", "id": id, "method": "elicitation/create",
-            "params": params,
-        }),
-    );
-    while let Some(Ok(line)) = lines.next() {
-        let Ok(message) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
-            continue;
-        };
-        if message.get("id").and_then(serde_json::Value::as_i64) != Some(id) {
-            continue;
-        }
-        return match message
-            .pointer("/result/action")
-            .and_then(serde_json::Value::as_str)
-        {
-            Some("accept") => message
-                .pointer("/result/content/confirmed")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or(word)
-                .to_owned(),
-            Some(other) => format!("elicitation {other}"),
-            None => format!("elicitation failed: {}", message["error"]),
-        };
-    }
-    "elicitation abandoned".to_owned()
-}
-
-fn respond(stdout: &mut std::io::Stdout, message: serde_json::Value) {
-    let _ = writeln!(stdout, "{message}");
-    let _ = stdout.flush();
-}
-
-fn claude_binary() -> PathBuf {
-    std::env::var_os("CLAUDE_REAL_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("claude"))
-}
-
-fn owner_home() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_default()
-}
-
-fn secret_values() -> Vec<String> {
-    ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]
-        .into_iter()
-        .filter_map(|name| std::env::var(name).ok())
-        .collect()
-}
-
-fn default_probe_dir() -> PathBuf {
-    Path::new("target")
-        .join("claude-probe")
-        .join(Uuid::new_v4().to_string())
-}
+/// The variables holding the credentials a recording redacts.
+const SECRETS: &[&str] = &["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"];

@@ -66,7 +66,7 @@ id = "C7"
 item = "File edit"
 claude_pty = { mark = "full", carriers = ["item:tool"], golden = [" tool final ", "\" Edit TOOL_STATE_SUCCEEDED"] }
 claude_sdk = { mark = "full", carriers = ["item:tool"], golden = [" tool final ", "\" Edit TOOL_STATE_SUCCEEDED"] }
-codex = { mark = "partial", carriers = ["item:work.file_change", "item:turn_diff"], golden = [" work final ", " file_change "] }
+codex = { mark = "partial", carriers = ["item:work.file_change"], golden = [" work final ", " file_change "] }
 
 [[row]]
 id = "C8"
@@ -166,14 +166,14 @@ codex = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TU
 [[row]]
 id = "C21"
 item = "Stopped"
-claude_pty = { mark = "full", carriers = ["item:interruption", "item:turn"], golden = [" interruption final "] }
+claude_pty = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_INTERRUPTED"] }
 claude_sdk = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_INTERRUPTED"] }
 codex = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_INTERRUPTED"] }
 
 [[row]]
 id = "C22"
 item = "Compaction"
-claude_pty = { mark = "full", carriers = ["item:compaction", "item:compact_summary"], golden = [" compaction final "] }
+claude_pty = { mark = "full", carriers = ["item:compaction"], golden = [" compaction final "] }
 claude_sdk = { mark = "full", carriers = ["item:compaction"], golden = [" compaction final "] }
 codex = { mark = "partial", carriers = ["item:boundary"], golden = [" boundary ", "BOUNDARY_KIND_COMPACTED"] }
 
@@ -221,7 +221,7 @@ id = "C28"
 item = "Model, effort, mode"
 claude_pty = { mark = "partial", carriers = ["snapshot:model", "snapshot:model_name", "snapshot:permission"], golden = ["snapshot ", " mode=", "!mode=?", "!model_name=?"] }
 claude_sdk = { mark = "full", carriers = ["snapshot:model", "snapshot:model_name", "snapshot:effort", "snapshot:permission"], golden = ["snapshot ", " effort=", "!effort=?", "!model_name=?"] }
-codex = { mark = "full", carriers = ["snapshot:model", "snapshot:model_name", "snapshot:effort", "snapshot:approval_policy", "snapshot:sandbox"], golden = ["snapshot ", " effort=", "!effort=?", "!model_name=?"] }
+codex = { mark = "full", carriers = ["snapshot:model", "snapshot:model_name", "snapshot:effort", "snapshot:approval_policy"], golden = ["snapshot ", " effort=", "!effort=?", "!model_name=?"] }
 
 [[row]]
 id = "C29"
@@ -235,7 +235,7 @@ id = "C30"
 item = "Tool server health"
 claude_pty = { mark = "none" }
 claude_sdk = { mark = "full", carriers = ["snapshot:servers"], golden = ["snapshot ", " servers=", "!servers=?"] }
-codex = { mark = "full", carriers = ["snapshot:servers", "item:mcp_startup"], golden = ["snapshot ", " servers=", "!servers=?"] }
+codex = { mark = "full", carriers = ["snapshot:servers"], golden = ["snapshot ", " servers=", "!servers=?"] }
 
 [[row]]
 id = "C31"

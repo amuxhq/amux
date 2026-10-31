@@ -8,16 +8,11 @@
 //! The payloads themselves are [`claude_protocol::hooks::Payload`].
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
-use claude_protocol::hooks;
-use claude_protocol::hooks::Payload;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::mpsc;
-use uuid::Uuid;
 
-const FORWARD_ENVELOPE_FIELD: &str = "amux_hook_forward_v1";
+const FORWARD_ENVELOPE_FIELD: &str = "amux_hook_forward";
 
 /// The hook events whose payload the agent answers: Claude waits on the
 /// hook command for its decision.
@@ -47,17 +42,13 @@ impl std::fmt::Debug for MessagingCredentials {
 pub enum ForwardedError {
     #[error("forwarded hook bytes are not valid JSON: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("forwarded hook payload: {0}")]
-    Payload(#[from] claude_protocol::DecodeError),
     #[error("forwarded hook envelope omitted `{0}`")]
     Missing(&'static str),
-    #[error("forwarded hook envelope field `{0}` had the wrong shape")]
-    Invalid(&'static str),
 }
 
 /// The variables Claude sets on a hook command for its messaging socket.
-pub const MESSAGING_SOCKET_ENV: &str = "CLAUDE_CODE_MESSAGING_SOCKET";
-pub const MESSAGING_TOKEN_ENV: &str = "CLAUDE_CODE_MESSAGING_TOKEN";
+const MESSAGING_SOCKET_ENV: &str = "CLAUDE_CODE_MESSAGING_SOCKET";
+const MESSAGING_TOKEN_ENV: &str = "CLAUDE_CODE_MESSAGING_TOKEN";
 
 /// Splits a forwarded connection's bytes into the hook payload Claude wrote
 /// and the messaging credentials the forwarder added, if any. A payload
@@ -69,12 +60,9 @@ pub fn unwrap_forwarded(
     let Some(envelope) = raw.get(FORWARD_ENVELOPE_FIELD) else {
         return Ok((bytes.to_vec(), None));
     };
-    if envelope.get("version").and_then(Value::as_u64) != Some(1) {
-        return Err(ForwardedError::Invalid("amux_hook_forward_v1.version"));
-    }
     let payload = envelope
         .get("payload")
-        .ok_or(ForwardedError::Missing("amux_hook_forward_v1.payload"))?;
+        .ok_or(ForwardedError::Missing("amux_hook_forward.payload"))?;
     let messaging = envelope
         .get("messaging")
         .cloned()
@@ -83,95 +71,10 @@ pub fn unwrap_forwarded(
     Ok((serde_json::to_vec(payload)?, messaging))
 }
 
-/// The hook payload in a forwarded connection's bytes, without the
-/// messaging credentials the forwarder may have added.
-fn parse_forwarded(bytes: &[u8]) -> Result<Payload, ForwardedError> {
-    let (payload, _messaging) = unwrap_forwarded(bytes)?;
-    Ok(hooks::decode(&payload)?)
-}
-
-/// A per-session Unix socket receiving forwarded hook stdin.
-pub struct HookReceiver {
-    pub path: PathBuf,
-    payloads: Mutex<Option<mpsc::Receiver<Payload>>>,
-    task: tokio::task::JoinHandle<()>,
-}
-
-impl HookReceiver {
-    #[cfg(unix)]
-    pub fn bind_sync(dir: &Path) -> Result<Self, std::io::Error> {
-        use tokio::io::AsyncReadExt;
-        use tokio::net::UnixListener;
-
-        std::fs::create_dir_all(dir)?;
-        let nonce = Uuid::new_v4().simple().to_string();
-        let path = dir.join(format!("h-{}.sock", &nonce[..12]));
-        let listener = std::os::unix::net::UnixListener::bind(&path)?;
-        listener.set_nonblocking(true)?;
-        let listener = UnixListener::from_std(listener)?;
-        let (tx, rx) = mpsc::channel(64);
-        let task = tokio::spawn(async move {
-            loop {
-                let Ok((mut stream, _)) = listener.accept().await else {
-                    break;
-                };
-                let mut bytes = Vec::new();
-                if stream.read_to_end(&mut bytes).await.is_ok()
-                    && let Ok(payload) = parse_forwarded(&bytes)
-                    && tx.send(payload).await.is_err()
-                {
-                    break;
-                }
-            }
-        });
-        Ok(Self {
-            path,
-            payloads: Mutex::new(Some(rx)),
-            task,
-        })
-    }
-
-    #[cfg(not(unix))]
-    pub fn bind_sync(_dir: &Path) -> Result<Self, std::io::Error> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "Claude hook sockets require Unix",
-        ))
-    }
-
-    #[cfg(unix)]
-    pub async fn bind(dir: &Path) -> Result<Self, std::io::Error> {
-        Self::bind_sync(dir)
-    }
-
-    #[cfg(not(unix))]
-    pub async fn bind(_dir: &Path) -> Result<Self, std::io::Error> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "Claude hook sockets require Unix",
-        ))
-    }
-
-    pub fn payloads(&self) -> mpsc::Receiver<Payload> {
-        self.payloads
-            .lock()
-            .expect("hook receiver mutex poisoned")
-            .take()
-            .expect("hook payload stream already taken")
-    }
-}
-
-impl Drop for HookReceiver {
-    fn drop(&mut self) {
-        self.task.abort();
-        let _ = std::fs::remove_file(&self.path);
-    }
-}
-
 /// Forward hook stdin to a session socket and wait for what the agent
 /// answers, which is empty unless it decides the hook.
 #[cfg(unix)]
-pub fn forward(stdin: &[u8], socket: &Path) -> Result<Vec<u8>, std::io::Error> {
+fn forward(stdin: &[u8], socket: &Path) -> Result<Vec<u8>, std::io::Error> {
     use std::io::{Read, Write};
     let mut stream = std::os::unix::net::UnixStream::connect(socket)?;
     stream.write_all(stdin)?;
@@ -195,7 +98,6 @@ pub fn forward_with_messaging(
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
     let envelope = serde_json::json!({
         FORWARD_ENVELOPE_FIELD: {
-            "version": 1,
             "payload": payload,
             "messaging": messaging,
         }
@@ -237,7 +139,7 @@ pub fn forward_from_env(stdin: &[u8], socket: &Path) -> Result<Vec<u8>, std::io:
 }
 
 #[cfg(not(unix))]
-pub fn forward(_stdin: &[u8], _socket: &Path) -> Result<Vec<u8>, std::io::Error> {
+fn forward(_stdin: &[u8], _socket: &Path) -> Result<Vec<u8>, std::io::Error> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
         "Claude hook sockets require Unix",
@@ -246,6 +148,8 @@ pub fn forward(_stdin: &[u8], _socket: &Path) -> Result<Vec<u8>, std::io::Error>
 
 #[cfg(all(test, unix))]
 mod tests {
+    use claude_protocol::hooks::{self, Payload};
+
     use super::*;
 
     fn session_start() -> Vec<u8> {
@@ -259,35 +163,37 @@ mod tests {
         .unwrap()
     }
 
-    #[tokio::test]
-    async fn receiver_keeps_messaging_credentials_out_of_the_payload() {
+    #[test]
+    fn forwarded_messaging_credentials_stay_out_of_the_payload() {
+        use std::io::Read as _;
+
         let dir = tempfile::Builder::new()
             .prefix("ch")
             .tempdir_in("/tmp")
             .unwrap();
-        let receiver = HookReceiver::bind(dir.path()).await.unwrap();
-        let mut payloads = receiver.payloads();
+        let path = dir.path().join("h.sock");
+        let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
         let messaging = MessagingCredentials {
             socket_path: PathBuf::from("/runtime/claude.sock"),
             token: "secret".to_string(),
         };
+        // The forward waits for the receiving end to close the connection.
+        let forwarded =
+            std::thread::spawn(move || forward_with_messaging(&session_start(), &path, &messaging));
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut bytes = Vec::new();
+        stream.read_to_end(&mut bytes).unwrap();
+        drop(stream);
 
-        // The forward waits for the receiver to close the connection, which
-        // runs on this test's one thread.
-        let path = receiver.path.clone();
-        let forwarded = tokio::task::spawn_blocking(move || {
-            forward_with_messaging(&session_start(), &path, &messaging)
-        });
-        let received = tokio::time::timeout(std::time::Duration::from_secs(1), payloads.recv())
-            .await
-            .unwrap()
-            .unwrap();
-
-        assert!(matches!(received, Payload::SessionStart(_)));
-        let encoded = String::from_utf8(hooks::encode(&received)).unwrap();
-        assert!(!encoded.contains(FORWARD_ENVELOPE_FIELD));
-        assert!(!encoded.contains("secret"));
-        assert!(!format!("{received:?}").contains("secret"));
-        assert_eq!(forwarded.await.unwrap().unwrap(), Vec::<u8>::new());
+        let (payload, credentials) = unwrap_forwarded(&bytes).unwrap();
+        assert!(matches!(
+            hooks::decode(&payload).unwrap(),
+            Payload::SessionStart(_)
+        ));
+        assert_eq!(credentials.unwrap().token, "secret");
+        let unwrapped = String::from_utf8(payload).unwrap();
+        assert!(!unwrapped.contains(FORWARD_ENVELOPE_FIELD));
+        assert!(!unwrapped.contains("secret"));
+        assert_eq!(forwarded.join().unwrap().unwrap(), Vec::<u8>::new());
     }
 }

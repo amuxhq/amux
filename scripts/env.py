@@ -49,7 +49,7 @@ def build(phone: bool) -> None:
     say("building the binaries")
     subprocess.run(
         [str(ROOT / "scripts/bounded"), "1800", "cargo", "build", "--locked",
-         "-p", "amux", "-p", "provider-fakes", "-p", "testnet", "--bins", "--features", "amux/bundled"],
+         "-p", "amux", "-p", "provider-fakes", "-p", "testnet", "--bins"],
         cwd=ROOT, check=True,
     )
     if phone:

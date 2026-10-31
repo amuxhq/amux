@@ -303,10 +303,6 @@ impl UdpGate {
     pub fn faults(&self) -> Faults {
         *self.shared.faults.lock().unwrap()
     }
-
-    pub fn is_blocked(&self) -> bool {
-        self.shared.blocked.load(Ordering::SeqCst)
-    }
 }
 
 /// One sender through the gate: the queue carrying its datagrams on, and

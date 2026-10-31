@@ -277,11 +277,6 @@ fn a_host_is_in_one_attempt_at_a_time() {
         dials(&step(&mut daemon, Input::Wanted { host: DESK })),
         Vec::new()
     );
-    assert_eq!(
-        dials(&step(&mut daemon, Input::TryAgain { host: DESK })),
-        Vec::new(),
-        "nothing new to dial"
-    );
 
     // A path the attempt was not given: the attempt gives way to one on
     // every path at once.
@@ -383,25 +378,6 @@ fn a_new_path_a_claim_or_a_call_wanting_the_host_ends_the_pause() {
             .paths
             .contains(&DialPath::Through(LinkId(1)))
     );
-}
-
-#[test]
-fn a_host_that_refused_this_one_as_revoked_is_not_dialled_until_that_clears() {
-    let mut daemon = daemon(trusting());
-    let (attempt, _) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);
-    let out = ended(&mut daemon, DESK, attempt, AttemptOutcome::Revoked);
-    assert_eq!(armed(&out, TimerId::Retry(DESK)), None);
-    assert!(daemon.routing.catalogue.revoked(DESK));
-    assert_eq!(
-        dials(&found(&mut daemon, DESK, &["192.168.1.5:7000"])),
-        Vec::new()
-    );
-    assert_eq!(
-        dials(&step(&mut daemon, Input::Wanted { host: DESK })),
-        Vec::new()
-    );
-    up(&mut daemon, 1, LAPTOP, CarrierKind::Direct);
-    assert_eq!(dials(&claims(&mut daemon, 1, &[DESK])), Vec::new());
 }
 
 #[test]
@@ -1196,4 +1172,52 @@ fn a_network_change_never_overrides_sign_out_or_a_final_relay_refusal() {
         assert!(step(&mut daemon, Input::NetworkChanged).is_empty());
         assert_eq!(daemon.relay_reach().attempt(), None);
     }
+}
+
+
+/// A phone signed in before it pairs: the relay claims the desk while the
+/// phone does not trust it yet, and says nothing more of it once the
+/// pairing on the same network lands. The relay reaching the desk is kept
+/// all the same, so the next launch's first flight goes through the relay
+/// too, and the relay link coming up during that flight adds no path: the
+/// flight is not redialled, which would spend the ticket it resumed with.
+#[test]
+fn a_host_the_relay_claimed_before_it_was_paired_is_first_flown_through_the_relay() {
+    let mut daemon = daemon(TrustStore::default());
+    up(&mut daemon, 1, RELAY, CarrierKind::Relay);
+    claims(&mut daemon, 1, &[DESK]);
+    step(
+        &mut daemon,
+        Input::ChangeTrust(crate::trust::TrustChange::Pair {
+            host: Uuid::from_bytes(DESK.0),
+            pubkey: vec![7; 32],
+            name: "desk".into(),
+            reachability: Some(crate::trust::Reachability::Direct {
+                addrs: vec![addr("10.0.0.1:7000")],
+            }),
+        }),
+    );
+
+    // Relaunched: the same store, no link up yet.
+    let mut daemon = Daemon::new(
+        daemon.into_store(),
+        StartOptions {
+            budget: StepBudget::UNLIMITED,
+            ..StartOptions::default()
+        },
+    );
+    step(&mut daemon, Input::Started);
+    let (attempt, plan) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);
+    assert_eq!(
+        plan,
+        Plan {
+            paths: vec![DialPath::Direct(addr("10.0.0.1:7000"))],
+            through_relay: true,
+        }
+    );
+
+    let mut out = up(&mut daemon, 1, RELAY, CarrierKind::Relay);
+    out.extend(claims(&mut daemon, 1, &[DESK]));
+    assert!(dials(&out).is_empty(), "{out:?}");
+    assert_eq!(daemon.reach().attempt(DESK), Some(attempt));
 }

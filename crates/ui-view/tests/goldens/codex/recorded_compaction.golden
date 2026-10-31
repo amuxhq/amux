@@ -1,52 +1,63 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 8 recorded 7: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"nev…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 11 recorded 10: input stdin-4
-  row    2 prompt:737464696e2d34 Prompt { text: [Text("Reply with exactly CODEX_SPEC_BEFORE_COMPACT and nothing else.")], steered: false }
+## 22 recorded 21: input 0x806d3aa66cd540099f63c391f52d932d
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 27 recorded 26: fact Rpc method=item/started
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [], streaming: true, working_note: false }
-## 29 recorded 28: fact Rpc method=item/agentMessage/delta
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODE")], streaming: true, working_note: false }
-## 31 recorded 30: fact Rpc method=item/agentMessage/delta
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX")], streaming: true, working_note: false }
-## 33 recorded 32: fact Rpc method=item/agentMessage/delta
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC")], streaming: true, working_note: false }
-## 35 recorded 34: fact Rpc method=item/agentMessage/delta
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC_BE")], streaming: true, working_note: false }
-## 37 recorded 36: fact Rpc method=item/agentMessage/delta
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC_BEFORE")], streaming: true, working_note: false }
-## 39 recorded 38: fact Rpc method=item/agentMessage/delta
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC_BEFORE_COM")], streaming: true, working_note: false }
-## 41 recorded 40: fact Rpc method=item/agentMessage/delta
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC_BEFORE_COMPACT")], streaming: true, working_note: false }
-## 43 recorded 42: fact Rpc method=item/completed
-  row    3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC_BEFORE_COMPACT")], streaming: false, working_note: false }
-## 49 recorded 48: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(4065), failed: false }
+## 52 recorded 51: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
-## 51 recorded 50: input stdin-5
-  row    5 prompt:737464696e2d35 Prompt { text: [Text("/compact")], steered: false }
+## 54 recorded 53: input stdin-9
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 63 recorded 62: fact Rpc method=item/completed
-  row    6 boundary:2 Boundary { kind: Compacted, cause: "" }
-## 67 recorded 66: fact Rpc method=turn/completed
-  row    7 turn:2 TurnEnd { duration_ms: Some(2991), failed: false }
+## 70 recorded 69: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 prompt:737464696e2d34 Prompt { text: [Text("Reply with exactly CODEX_SPEC_BEFORE_COMPACT and nothing else.")], steered: false }
-     3 msg_05a870aea1db9da3016ab72946e3c887d2a8b811fa7bb04434 Prose { text: [Text("CODEX_SPEC_BEFORE_COMPACT")], streaming: false, working_note: false }
-     4 turn:1 TurnEnd { duration_ms: Some(4065), failed: false }
-     5 prompt:737464696e2d35 Prompt { text: [Text("/compact")], steered: false }
-     6 boundary:2 Boundary { kind: Compacted, cause: "" }
-     7 turn:2 TurnEnd { duration_ms: Some(2991), failed: false }
+     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     3 prompt:806d3aa66cd540099f63c391f52d932d Prompt { text: [Text("Reply with exactly BEFORE_COMPACT and nothing else.")], steered: false }
+     4 msg_097a236f309f4f96016ae5d76f0b8c8191882580a718cded14 Prose { text: [Text("BEFORE_COMPACT")], streaming: false, working_note: false }
+     5 turn:1 TurnEnd { duration_ms: Some(5050), failed: false }
+     6 prompt:737464696e2d39 Prompt { text: [Text("/compact")], steered: false }
+     7 boundary:3 Boundary { kind: Compacted, cause: "" }
+     8 turn:2 TurnEnd { duration_ms: Some(5487), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 4567, window_tokens: Some(258400), percent: Some(1), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 20080, window_tokens: Some(475000), percent: Some(4), near_full: false }) sign-in None
 == settings
-  model* unlisted gpt-5.6-luna "GPT-5.6 Luna" efforts=[]
-  permission* unlisted custom "" "" unsettable
-  changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  model* gpt-6.1-sol "GPT-6.1-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-astra "GPT-6-Astra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6.1-terra "GPT-6.1 Terra" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-sol "GPT-6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6-luna "GPT-6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  model  gpt-5.6-sol "GPT-5.6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-5.6-terra "GPT-5.6-Terra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-5.6-luna "GPT-5.6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  effort* low (default)
+  effort  medium
+  effort  high
+  effort  xhigh
+  effort  max
+  effort  ultra
+  permission* "read-only" "Read only"
+  permission  "default" "Default" normal
+  permission  "auto" "Auto"
+  permission  "full-access" "Full access" never_asks
+  mode  "default" "Default" normal
+  mode  "plan" "Plan"
+  changes: model Pick · effort Pick · permission Pick · mode Pick
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
-  controls: model=Some("GPT-5.6 Luna") effort=None permission=None mode=None
+  command /compact source="codex" hint="" "Summarize the conversation to free up context"
+  command /clear source="codex" hint="" "Start a new conversation"
+  command /review source="codex" hint="[instructions]" "Review the uncommitted changes, or what the instructions say"
+  command /init source="codex" hint="" "Write an AGENTS.md with instructions for Codex"
+  command /plan source="codex" hint="[prompt]" "Switch to plan mode"
+  command /autopilot source="user" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested."
+  command /delegate source="user" hint="" "Resolve or diagnose agent staffing by mapping a requested role and effort through the operator-owned roster to a mind and dispatch specification. Use when an agent or driver will dispatch work, or when a binding cannot launch. Do not use merely because ordinary work is being discussed or performed locally."
+  command /frontend-design source="user" hint="" "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.…
+  command /gardening source="user" hint="" "Review and improve an operator's Linear backlog with them. Use when the operator asks to garden, clean up, shape, deduplicate, or reassess tracked work. Do not invoke merely because Linear is available or ordinary work reveals a possible follow-up."
+  command /handoff source="user" hint="" "Independently verify and present finished work when an ordinary diff and focused checks are not enough to judge it, including third-party branches or pull requests. Use compact proof for easily judged behavior and a decision page for consequential or difficult work. Do not invoke at project start or impose a page on ordinary small changes."
+  command /intake source="user" hint="" "Align and confirm a durable acceptance contract for consequential work that must cross contexts. Use after the operator commits to work when several requirements, boundaries, or success demonstrations remain unsettled. Skip for exploration, one or two locally resolvable questions, and already-confirmed requirements."
+  command /imagegen source="system" hint="" "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the …
+  command /openai-docs source="system" hint="" "Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge—including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex—and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not u…
+  command /review-agent source="system" hint="" "Perform a read-only, defect-first review of a specified code change and return every actionable finding. Use when another agent delegates review of uncommitted changes, a base-branch diff, a commit, or custom review instructions."
+  command /skill-creator source="system" hint="" "Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources."
+  command /skill-installer source="system" hint="" "Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos)."
+  controls: model=Some("GPT-6.1-Sol") effort=Some("low") permission=Some("read-only") mode=None

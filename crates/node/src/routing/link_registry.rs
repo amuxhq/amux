@@ -16,7 +16,6 @@ use std::sync::Arc;
 
 use daemon_core::payload::CarrierKind;
 use tokio::sync::{Notify, RwLock, mpsc};
-use wire::pb;
 
 use crate::driver::CoreLinks;
 use crate::link::QuicCarrier;
@@ -24,11 +23,10 @@ use crate::link::link_log::PathKind;
 use crate::link::paths::PathDriver;
 use crate::link::relaying::Relaying;
 use crate::routing::types::{LinkId, core_host, host_from_core};
-use crate::routing::wire::{neighbor_down_message, neighbor_up_message};
-use crate::routing::{ConnectRole, Host, RuntimeInstance};
+use crate::routing::{Host, RuntimeInstance, host_to_wire};
 use crate::{HostId, Tier};
 
-pub(crate) type LinkOutputTx = mpsc::Sender<pb::Message>;
+pub(crate) type LinkOutputTx = mpsc::Sender<wire::Message>;
 
 impl LinkRegistry {
     /// The registry of a host whose own id is `own`: a daemon's links are
@@ -112,8 +110,8 @@ pub struct LinkRegistry {
     relaying: Arc<Relaying>,
     /// The account these links are on, as the forwarding core knows it.
     user: relay_core::UserId,
-    refusals: tokio::sync::broadcast::Sender<(HostId, pb::ForwardRefusal)>,
-    last_refusals: std::sync::Mutex<HashMap<HostId, pb::ForwardRefusal>>,
+    refusals: tokio::sync::broadcast::Sender<(HostId, wire::ForwardRefusal)>,
+    last_refusals: std::sync::Mutex<HashMap<HostId, wire::ForwardRefusal>>,
     /// The profile's path machines, told of every peer link that comes up
     /// or goes on the profile's socket.
     paths: std::sync::OnceLock<std::sync::Weak<PathDriver>>,
@@ -155,14 +153,10 @@ pub(crate) struct LinkProperties {
 /// core's to decide.
 pub(crate) type DirectLinkOrder = relay_core::DialOrder;
 
-/// The order of a direct link `local` holds to `peer`, in the role it
-/// played opening it.
-pub(crate) fn direct_order(local: HostId, peer: HostId, role: ConnectRole) -> DirectLinkOrder {
-    relay_core::DialOrder::for_hosts(
-        core_host(local),
-        core_host(peer),
-        role == ConnectRole::Connector,
-    )
+/// The order of a direct link `local` holds to `peer`, by whether `local`
+/// dialled it.
+pub(crate) fn direct_order(local: HostId, peer: HostId, dialled: bool) -> DirectLinkOrder {
+    relay_core::DialOrder::for_hosts(core_host(local), core_host(peer), dialled)
 }
 
 #[derive(Clone)]
@@ -178,7 +172,7 @@ struct LinkWriter {
 }
 
 /// A local request for the link's connect task to close the link. Distinct
-/// from the wire `pb::LinkCloseReason`, which names why a *peer* closed it.
+/// from the wire `wire::LinkCloseReason`, which names why a *peer* closed it.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) enum LinkCloseRequest {
     OutgoingQueueFull,
@@ -209,85 +203,8 @@ impl LinkRegistry {
     /// Registers a live link and runs the adjacency discipline atomically:
     /// other links learn `NeighborUp(peer)` if this is the first link to the
     /// peer, and this link receives the diff between `advertised_snapshot`
-    /// (the neighbor set its handshake carried) and the current one.
-    #[cfg(test)]
-    pub(crate) async fn register(
-        &self,
-        link: LinkId,
-        host: Host,
-        outgoing_tx: LinkOutputTx,
-        role: LinkRole,
-        advertised_snapshot: &[HostId],
-    ) -> mpsc::Receiver<LinkCloseRequest> {
-        self.register_with_details(
-            link,
-            host,
-            outgoing_tx,
-            LinkProperties {
-                role,
-                admission: LinkAdmission::PinnedKey,
-                carrier: CarrierKind::Direct,
-                runtime_instance: crate::routing::RuntimeInstance::random(),
-                direct_order: None,
-            },
-            advertised_snapshot,
-            None,
-        )
-        .await
-        .expect("test registration has no ordered direct duplicate")
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn register_with_admission(
-        &self,
-        link: LinkId,
-        host: Host,
-        outgoing_tx: LinkOutputTx,
-        role: LinkRole,
-        admission: LinkAdmission,
-        advertised_snapshot: &[HostId],
-    ) -> mpsc::Receiver<LinkCloseRequest> {
-        self.register_with_details(
-            link,
-            host,
-            outgoing_tx,
-            LinkProperties {
-                role,
-                admission,
-                carrier: CarrierKind::Direct,
-                runtime_instance: crate::routing::RuntimeInstance::random(),
-                direct_order: None,
-            },
-            advertised_snapshot,
-            None,
-        )
-        .await
-        .expect("test registration has no ordered direct duplicate")
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn register_with_details(
-        &self,
-        link: LinkId,
-        host: Host,
-        outgoing_tx: LinkOutputTx,
-        properties: LinkProperties,
-        advertised_snapshot: &[HostId],
-        native_carrier: Option<Arc<QuicCarrier>>,
-    ) -> Option<mpsc::Receiver<LinkCloseRequest>> {
-        self.register_displacing(
-            link,
-            host,
-            outgoing_tx,
-            properties,
-            advertised_snapshot,
-            native_carrier,
-        )
-        .await
-        .map(|registration| registration.close_rx)
-    }
-
-    /// Registers a link and names the direct links it superseded, or refuses
+    /// (the neighbor set its handshake carried) and the current one. It
+    /// names the direct links it superseded, or refuses
     /// it where the same runtime instance of the peer already holds a direct link
     /// that wins against it.
     pub(crate) async fn register_displacing(
@@ -544,7 +461,7 @@ impl LinkRegistry {
         &self,
         host: HostId,
         through: daemon_core::LinkId,
-        reason: pb::ForwardRefusal,
+        reason: wire::ForwardRefusal,
     ) {
         self.last_refusals
             .lock()
@@ -569,7 +486,7 @@ impl LinkRegistry {
     /// to it through one comes up. A forwarder repeats a refusal only every
     /// few seconds, so a dial in between hears nothing and this is what it
     /// was refused for.
-    pub(crate) fn last_refusal(&self, host: HostId) -> Option<pb::ForwardRefusal> {
+    pub(crate) fn last_refusal(&self, host: HostId) -> Option<wire::ForwardRefusal> {
         self.last_refusals
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -580,7 +497,7 @@ impl LinkRegistry {
     /// The refusals forwarders send from now on, by the host refused.
     pub(crate) fn forward_refusals(
         &self,
-    ) -> tokio::sync::broadcast::Receiver<(HostId, pb::ForwardRefusal)> {
+    ) -> tokio::sync::broadcast::Receiver<(HostId, wire::ForwardRefusal)> {
         self.refusals.subscribe()
     }
 
@@ -738,19 +655,7 @@ impl LinkRegistry {
         }
     }
 
-    /// A writer for any live link to `peer` — the forwarding rule's "do I
-    /// have a direct link to dst" lookup.
-    pub async fn link_to_peer(&self, peer: HostId) -> Option<(LinkId, LinkOutputTx)> {
-        self.state
-            .read()
-            .await
-            .writers
-            .iter()
-            .find(|(_, writer)| writer.host.id == peer)
-            .map(|(link, writer)| (*link, writer.tx.clone()))
-    }
-
-    pub(crate) async fn send_link_close_to_all(&self, reason: pb::LinkCloseReason) {
+    pub(crate) async fn send_link_close_to_all(&self, reason: wire::LinkCloseReason) {
         let outgoing = {
             let state = self.state.read().await;
             state
@@ -810,7 +715,7 @@ fn send_to(
     state: &LinkRegistryState,
     new: Option<&NewLink<'_>>,
     to: daemon_core::LinkId,
-    message: pb::Message,
+    message: wire::Message,
 ) {
     match new {
         Some(new) if new.link == to => {
@@ -824,10 +729,10 @@ fn send_to(
     }
 }
 
-fn refresh_credential_message() -> pb::Message {
-    pb::Message {
-        body: Some(pb::message::Body::RefreshCredential(
-            pb::RefreshCredential {},
+fn refresh_credential_message() -> wire::Message {
+    wire::Message {
+        body: Some(wire::message::Body::RefreshCredential(
+            wire::RefreshCredential {},
         )),
     }
 }
@@ -846,7 +751,7 @@ impl LinkRegistryState {
 fn try_send_or_request_close(
     tx: &LinkOutputTx,
     close_tx: &mpsc::Sender<LinkCloseRequest>,
-    message: pb::Message,
+    message: wire::Message,
 ) {
     match tx.try_send(message) {
         Ok(()) => {}
@@ -858,16 +763,16 @@ fn try_send_or_request_close(
     }
 }
 
-fn link_close_message(reason: pb::LinkCloseReason) -> pb::Message {
-    pb::Message {
-        body: Some(pb::message::Body::LinkClose(pb::LinkClose {
+fn link_close_message(reason: wire::LinkCloseReason) -> wire::Message {
+    wire::Message {
+        body: Some(wire::message::Body::LinkClose(wire::LinkClose {
             reason: reason as i32,
             error: None,
         })),
     }
 }
 
-fn try_send_or_spawn(tx: LinkOutputTx, message: pb::Message) {
+fn try_send_or_spawn(tx: LinkOutputTx, message: wire::Message) {
     match tx.try_send(message) {
         Ok(()) => {}
         Err(mpsc::error::TrySendError::Full(message)) => {
@@ -876,6 +781,23 @@ fn try_send_or_spawn(tx: LinkOutputTx, message: pb::Message) {
             });
         }
         Err(mpsc::error::TrySendError::Closed(_)) => {}
+    }
+}
+
+/// A claim of a direct link to `host`: adjacency is all a link advertises.
+fn neighbor_up_message(host: &Host) -> wire::Message {
+    wire::Message {
+        body: Some(wire::message::Body::NeighborUp(wire::NeighborUp {
+            host: Some(host_to_wire(host)),
+        })),
+    }
+}
+
+fn neighbor_down_message(host_id: HostId) -> wire::Message {
+    wire::Message {
+        body: Some(wire::message::Body::NeighborDown(wire::NeighborDown {
+            host_id: host_id.as_bytes().to_vec(),
+        })),
     }
 }
 
@@ -921,6 +843,31 @@ mod tests {
         }
     }
 
+    /// A direct link a peer was pinned for, ordered against no other.
+    fn direct_peer() -> LinkProperties {
+        LinkProperties {
+            role: LinkRole::Peer,
+            admission: LinkAdmission::PinnedKey,
+            carrier: CarrierKind::Direct,
+            runtime_instance: RuntimeInstance::random(),
+            direct_order: None,
+        }
+    }
+
+    /// Registers a direct link to `host`, as its handshake would.
+    async fn register(
+        registry: &LinkRegistry,
+        link: LinkId,
+        host: Host,
+        tx: LinkOutputTx,
+    ) -> mpsc::Receiver<LinkCloseRequest> {
+        registry
+            .register_displacing(link, host, tx, direct_peer(), &[], None)
+            .await
+            .expect("a lone link is usable")
+            .close_rx
+    }
+
     /// A link to a host carried through a forwarder: one end of a QUIC
     /// pair, marked as carried through `through`.
     async fn carried_through(through: LinkId) -> Arc<QuicCarrier> {
@@ -950,7 +897,7 @@ mod tests {
             let (tx, _) = mpsc::channel(8);
             closes.push(
                 registry
-                    .register_with_details(
+                    .register_displacing(
                         link(3, instance),
                         phone.clone(),
                         tx,
@@ -959,7 +906,8 @@ mod tests {
                         Some(carried_through(through).await),
                     )
                     .await
-                    .expect("a forwarded link is usable"),
+                    .expect("a forwarded link is usable")
+                    .close_rx,
             );
         }
         let mut via_daemon = closes.pop().unwrap();
@@ -975,7 +923,11 @@ mod tests {
         });
         tokio::time::timeout(
             Duration::from_secs(10),
-            registry.close_forwarded(phone.id, relay.core(), pb::ForwardRefusal::PaymentRequired),
+            registry.close_forwarded(
+                phone.id,
+                relay.core(),
+                wire::ForwardRefusal::PaymentRequired,
+            ),
         )
         .await
         .expect("the link through the relay closes");
@@ -1006,7 +958,7 @@ mod tests {
             let (tx, _) = mpsc::channel(8);
             closes.push(
                 registry
-                    .register_with_details(
+                    .register_displacing(
                         link(3, instance),
                         phone.clone(),
                         tx,
@@ -1015,7 +967,8 @@ mod tests {
                         Some(carried_through(link(1, instance)).await),
                     )
                     .await
-                    .expect("a forwarded link is usable"),
+                    .expect("a forwarded link is usable")
+                    .close_rx,
             );
         }
         let mut newer = closes.pop().unwrap();
@@ -1061,7 +1014,7 @@ mod tests {
             let dead = link(2, 1);
             let (dead_tx, _) = mpsc::channel(8);
             let mut dead_close = registry
-                .register_with_details(
+                .register_displacing(
                     dead,
                     peer.clone(),
                     dead_tx,
@@ -1070,7 +1023,8 @@ mod tests {
                     None,
                 )
                 .await
-                .expect("a lone link is usable");
+                .expect("a lone link is usable")
+                .close_rx;
 
             let (restarted_tx, _) = mpsc::channel(8);
             let _registration = registry
@@ -1097,7 +1051,7 @@ mod tests {
             let life = RuntimeInstance::random();
             let (first_tx, _) = mpsc::channel(8);
             registry
-                .register_with_details(
+                .register_displacing(
                     link(2, 1),
                     peer.clone(),
                     first_tx,
@@ -1111,7 +1065,7 @@ mod tests {
             let (second_tx, _) = mpsc::channel(8);
             assert!(
                 registry
-                    .register_with_details(
+                    .register_displacing(
                         link(2, 2),
                         peer.clone(),
                         second_tx,
@@ -1133,15 +1087,9 @@ mod tests {
         let (first_tx, _first_rx) = mpsc::channel(8);
         let (second_tx, _second_rx) = mpsc::channel(8);
         let (other_tx, _other_rx) = mpsc::channel(8);
-        registry
-            .register(link(2, 1), host(2), first_tx, LinkRole::Peer, &[])
-            .await;
-        registry
-            .register(link(2, 2), host(2), second_tx, LinkRole::Peer, &[])
-            .await;
-        registry
-            .register(link(3, 1), host(3), other_tx, LinkRole::Peer, &[])
-            .await;
+        register(&registry, link(2, 1), host(2), first_tx).await;
+        register(&registry, link(2, 2), host(2), second_tx).await;
+        register(&registry, link(3, 1), host(3), other_tx).await;
 
         let snapshot = registry.neighbor_snapshot().await;
         assert_eq!(
@@ -1154,15 +1102,11 @@ mod tests {
     async fn full_outgoing_queue_requests_link_close() {
         let registry = LinkRegistry::new(HostId::nil());
         let (full_tx, _full_rx) = mpsc::channel(1);
-        full_tx.try_send(pb::Message { body: None }).unwrap();
-        let mut close_rx = registry
-            .register(link(1, 1), host(1), full_tx, LinkRole::Peer, &[])
-            .await;
+        full_tx.try_send(wire::Message { body: None }).unwrap();
+        let mut close_rx = register(&registry, link(1, 1), host(1), full_tx).await;
 
         let (new_tx, _new_rx) = mpsc::channel(8);
-        registry
-            .register(link(2, 1), host(2), new_tx, LinkRole::Peer, &[])
-            .await;
+        register(&registry, link(2, 1), host(2), new_tx).await;
 
         assert_eq!(
             close_rx.recv().await,
@@ -1174,14 +1118,12 @@ mod tests {
     async fn link_close_notification_is_best_effort_for_full_link_queues() {
         let registry = LinkRegistry::new(HostId::nil());
         let (tx, _rx) = mpsc::channel(1);
-        tx.try_send(pb::Message { body: None }).unwrap();
-        registry
-            .register(link(1, 1), host(1), tx, LinkRole::Peer, &[])
-            .await;
+        tx.try_send(wire::Message { body: None }).unwrap();
+        register(&registry, link(1, 1), host(1), tx).await;
 
         tokio::time::timeout(
             Duration::from_millis(50),
-            registry.send_link_close_to_all(pb::LinkCloseReason::UserShutdown),
+            registry.send_link_close_to_all(wire::LinkCloseReason::UserShutdown),
         )
         .await
         .expect("link close send must not wait on a full queue");
@@ -1191,21 +1133,19 @@ mod tests {
     async fn send_link_close_to_all_sends_typed_reason() {
         let registry = LinkRegistry::new(HostId::nil());
         let (tx, mut rx) = mpsc::channel(8);
-        registry
-            .register(link(99, 1), host(99), tx, LinkRole::Peer, &[])
-            .await;
+        register(&registry, link(99, 1), host(99), tx).await;
 
         registry
-            .send_link_close_to_all(pb::LinkCloseReason::UserShutdown)
+            .send_link_close_to_all(wire::LinkCloseReason::UserShutdown)
             .await;
 
-        let Some(pb::Message {
-            body: Some(pb::message::Body::LinkClose(close)),
+        let Some(wire::Message {
+            body: Some(wire::message::Body::LinkClose(close)),
         }) = rx.recv().await
         else {
             panic!("expected LinkClose message");
         };
-        assert_eq!(close.reason, pb::LinkCloseReason::UserShutdown as i32);
+        assert_eq!(close.reason, wire::LinkCloseReason::UserShutdown as i32);
         assert!(close.error.is_none());
     }
 
@@ -1216,19 +1156,22 @@ mod tests {
         let pinned = link(2, 1);
         let (cloud_tx, _cloud_rx) = mpsc::channel(8);
         registry
-            .register_with_admission(
+            .register_displacing(
                 cloud,
                 host(1),
                 cloud_tx,
-                LinkRole::CloudRelay,
-                LinkAdmission::CloudToken { tier: Tier::Free },
+                LinkProperties {
+                    role: LinkRole::CloudRelay,
+                    admission: LinkAdmission::CloudToken { tier: Tier::Free },
+                    ..direct_peer()
+                },
                 &[],
+                None,
             )
-            .await;
+            .await
+            .expect("a lone link is usable");
         let (pinned_tx, _pinned_rx) = mpsc::channel(8);
-        registry
-            .register(pinned, host(2), pinned_tx, LinkRole::Peer, &[])
-            .await;
+        register(&registry, pinned, host(2), pinned_tx).await;
 
         registry.update_cloud_tier(&cloud, Tier::Pro).await;
         registry.update_cloud_tier(&pinned, Tier::Free).await;

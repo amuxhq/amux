@@ -22,9 +22,9 @@ pub fn corpus(kind: Kind) -> &'static Corpus {
     static CODEX: OnceLock<Corpus> = OnceLock::new();
     static PTY: OnceLock<Corpus> = OnceLock::new();
     let (cell, root) = match kind {
-        Kind::ClaudeSdk => (&SDK, "../claude-specs/fixtures/sdk"),
-        Kind::Codex => (&CODEX, "../codex-specs/fixtures/runtime"),
-        Kind::ClaudePty => (&PTY, "../claude-specs/fixtures/pty"),
+        Kind::ClaudeSdk => (&SDK, "../claude-specs/fixtures/live/sdk"),
+        Kind::Codex => (&CODEX, "../codex-specs/fixtures/live"),
+        Kind::ClaudePty => (&PTY, "../claude-specs/fixtures/live/pty"),
     };
     cell.get_or_init(|| {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(root);

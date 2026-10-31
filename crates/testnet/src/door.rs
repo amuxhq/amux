@@ -7,9 +7,6 @@
 //! published, as one JSON line on the binary's standard output. A driver
 //! then sends [`Control`] requests, one JSON value per line, and reads one
 //! [`Reply`] line per request, in order.
-//!
-//! Every verb is a net capability or a declared composition of two; the
-//! map is [`CAPABILITIES`], and a test holds every verb to it.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -27,7 +24,6 @@ use uuid::Uuid;
 use crate::gate::Faults;
 use crate::net::{ClockMode, JournalCut, Net, NetError, NetOptions};
 use crate::observe;
-use crate::router::RouterKind;
 use crate::topology::{AccountDecl, AgentDecl, FakeKind, HostDecl, Provider, TierDecl, Topology};
 
 /// A request to the door.
@@ -49,15 +45,6 @@ pub enum Control {
     Trust {
         a: String,
         b: String,
-    },
-    Untrust {
-        a: String,
-        b: String,
-    },
-    RefuseCalls {
-        a: String,
-        b: String,
-        refuse: bool,
     },
     SetTier {
         account: String,
@@ -83,9 +70,6 @@ pub enum Control {
         host: String,
         #[serde(default)]
         cuts: Vec<JournalCut>,
-    },
-    Advance {
-        ms: u64,
     },
     Spawn {
         agent: Box<AgentDecl>,
@@ -146,19 +130,6 @@ pub enum Control {
         #[serde(default)]
         dir: Option<PathBuf>,
     },
-    /// What that gate does to every datagram from now on.
-    RelayFaults {
-        #[serde(default)]
-        delay_ms: u64,
-        #[serde(default)]
-        loss_percent: u32,
-        #[serde(default)]
-        jitter_ms: u64,
-        #[serde(default)]
-        reorder_percent: u32,
-        #[serde(default)]
-        rate_bytes_per_sec: u64,
-    },
     /// Makes a host's network, or the relay's, bad: every gate its
     /// datagrams cross.
     NetFaults {
@@ -178,31 +149,6 @@ pub enum Control {
     BlockUdp {
         host: String,
         blocked: bool,
-    },
-    /// Puts an imitated router in front of a host's link socket, now and
-    /// on every start after.
-    SetRouter {
-        host: String,
-        kind: RouterKind,
-    },
-    /// Moves a host onto another network: its link socket rebinds and its
-    /// links migrate.
-    ChangeNetwork {
-        host: String,
-    },
-    /// Binds a host to IPv6 loopback alone from its next start.
-    BindIpv6Only {
-        host: String,
-    },
-    /// The path carrying a host's link to a peer, by the host's link log;
-    /// null while the link is down.
-    CarryingPath {
-        host: String,
-        peer: String,
-    },
-    /// Every line the host has written to the link log, oldest first.
-    LinkLog {
-        host: String,
     },
     /// Severs a link and restores it on a period until stopped.
     Flap {
@@ -280,131 +226,6 @@ pub enum Control {
     Shutdown,
 }
 
-/// Door verb to the harness capability it runs. A verb that composes two
-/// capabilities, or adds an effect at the process boundary, says so.
-pub const CAPABILITIES: &[(&str, &str)] = &[
-    ("Sever", "Net::sever_link"),
-    ("Restore", "Net::restore_link"),
-    ("Link", "Net::link_up"),
-    ("Trust", "Net::trust"),
-    ("Untrust", "Net::untrust"),
-    ("RefuseCalls", "Net::refuse_calls"),
-    ("SetTier", "Net::set_tier"),
-    ("SignIn", "Net::sign_in"),
-    ("KillDaemon", "Net::kill_daemon"),
-    ("StopDaemon", "Net::stop_daemon"),
-    (
-        "RestartDaemon",
-        "Net::kill_daemon when running + Net::restart_daemon",
-    ),
-    ("Checkpoint", "Net::checkpoint_host"),
-    ("Rewind", "Net::rewind_host"),
-    ("Advance", "Net::advance"),
-    ("Spawn", "Net::spawn"),
-    ("Resume", "Net::resume"),
-    ("Send", "Net::send"),
-    ("Stop", "Net::stop"),
-    ("Freeze", "Net::freeze"),
-    ("Thaw", "Net::thaw"),
-    ("OpenGate", "Net::open_gate"),
-    ("LanGate", "Net::lan_gate"),
-    ("LanFaults", "Net::set_lan_faults"),
-    ("RelayGate", "Net::relay_gate"),
-    ("RelayFaults", "Net::set_relay_faults"),
-    ("RefuseReports", "Relay::refuse_reports"),
-    ("Reports", "Relay::reports"),
-    ("NetFaults", "Net::set_net_faults"),
-    ("BlockUdp", "Net::block_udp"),
-    ("SetRouter", "Net::set_router"),
-    ("ChangeNetwork", "Net::change_network"),
-    ("BindIpv6Only", "Net::bind_ipv6_only"),
-    ("CarryingPath", "Net::carrying_path"),
-    ("LinkLog", "Net::link_log"),
-    ("Flap", "Net::sever_link + Net::restore_link on a period"),
-    ("FlapStop", "Net::restore_link for each flapping link"),
-    ("PairGate", "Net::pair_gate"),
-    ("AddHost", "Net::add_host"),
-    ("RemoveHost", "Net::remove_host"),
-    ("AddLink", "Net::add_link"),
-    ("RemoveLink", "Net::remove_link"),
-    ("AddAccount", "Net::add_account"),
-    (
-        "Settle",
-        "Net::input_settled when an input is named + Net::settle_within",
-    ),
-    ("Release", "Net::publish_release"),
-    ("Status", "Net::topology + Net::host"),
-    (
-        "Inventory",
-        "Net::observe_inventory + observe_until(CaughtUp)",
-    ),
-    ("Block", "Net::assert_block_invariant"),
-    (
-        "Chat",
-        "Net::observe or Net::observe_id + observe_until(CaughtUp)",
-    ),
-    ("ProviderInput", "Net::provider_input"),
-    ("Shutdown", "Net::shutdown + closes the control socket"),
-];
-
-impl Control {
-    /// The verb's name, as it is spelled on the wire and in [`CAPABILITIES`].
-    pub fn verb(&self) -> &'static str {
-        match self {
-            Self::Sever { .. } => "Sever",
-            Self::Restore { .. } => "Restore",
-            Self::Link { .. } => "Link",
-            Self::Trust { .. } => "Trust",
-            Self::Untrust { .. } => "Untrust",
-            Self::RefuseCalls { .. } => "RefuseCalls",
-            Self::SetTier { .. } => "SetTier",
-            Self::SignIn { .. } => "SignIn",
-            Self::KillDaemon { .. } => "KillDaemon",
-            Self::StopDaemon { .. } => "StopDaemon",
-            Self::RestartDaemon { .. } => "RestartDaemon",
-            Self::Checkpoint { .. } => "Checkpoint",
-            Self::Rewind { .. } => "Rewind",
-            Self::Advance { .. } => "Advance",
-            Self::Spawn { .. } => "Spawn",
-            Self::Resume { .. } => "Resume",
-            Self::Send { .. } => "Send",
-            Self::Stop { .. } => "Stop",
-            Self::Freeze { .. } => "Freeze",
-            Self::Thaw { .. } => "Thaw",
-            Self::OpenGate { .. } => "OpenGate",
-            Self::LanGate { .. } => "LanGate",
-            Self::LanFaults { .. } => "LanFaults",
-            Self::RelayGate {} => "RelayGate",
-            Self::RelayFaults { .. } => "RelayFaults",
-            Self::RefuseReports { .. } => "RefuseReports",
-            Self::Reports { .. } => "Reports",
-            Self::NetFaults { .. } => "NetFaults",
-            Self::BlockUdp { .. } => "BlockUdp",
-            Self::SetRouter { .. } => "SetRouter",
-            Self::ChangeNetwork { .. } => "ChangeNetwork",
-            Self::BindIpv6Only { .. } => "BindIpv6Only",
-            Self::CarryingPath { .. } => "CarryingPath",
-            Self::LinkLog { .. } => "LinkLog",
-            Self::Flap { .. } => "Flap",
-            Self::FlapStop {} => "FlapStop",
-            Self::PairGate { .. } => "PairGate",
-            Self::AddHost { .. } => "AddHost",
-            Self::RemoveHost { .. } => "RemoveHost",
-            Self::AddLink { .. } => "AddLink",
-            Self::RemoveLink { .. } => "RemoveLink",
-            Self::AddAccount { .. } => "AddAccount",
-            Self::Settle { .. } => "Settle",
-            Self::Release { .. } => "Release",
-            Self::Status {} => "Status",
-            Self::Inventory { .. } => "Inventory",
-            Self::Block { .. } => "Block",
-            Self::Chat { .. } => "Chat",
-            Self::ProviderInput { .. } => "ProviderInput",
-            Self::Shutdown => "Shutdown",
-        }
-    }
-}
-
 /// One reply line: the verb's result or a typed error.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -420,7 +241,7 @@ pub enum Reply {
 pub enum ErrorKind {
     /// The request did not parse or named nothing the net has.
     Invalid,
-    /// The net refused: a host down or running, no checkpoint, wall time.
+    /// The net refused: a host down or running, no checkpoint.
     Refused,
     /// An observation did not see its consequence in time.
     Stuck,
@@ -817,14 +638,12 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
     Ok(match control {
         Control::Sever { a, b } => value(net.sever_link(&a, &b)?),
         Control::Restore { a, b } => value(net.restore_link(&a, &b).await?),
-        Control::RefuseCalls { a, b, refuse } => value(net.refuse_calls(&a, &b, refuse).await?),
         Control::Link { a, b } => {
             net.host(&a)?;
             net.host(&b)?;
             json!({ "up": net.link_up(&a, &b).await })
         }
         Control::Trust { a, b } => value(net.trust(&a, &b).await?),
-        Control::Untrust { a, b } => value(net.untrust(&a, &b).await?),
         Control::SetTier { account, tier } => value(net.set_tier(&account, tier).await?),
         Control::SignIn { host, account } => value(net.sign_in(&host, &account).await?),
         Control::KillDaemon { host } => value(net.kill_daemon(&host).await?),
@@ -837,7 +656,6 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
         }
         Control::Checkpoint { host } => value(net.checkpoint_host(&host).await?),
         Control::Rewind { host, cuts } => value(net.rewind_host(&host, &cuts).await?),
-        Control::Advance { ms } => value(net.advance(Duration::from_millis(ms))?),
         Control::Spawn { agent } => {
             let spawned = net.spawn(*agent).await?;
             json!({ "id": Uuid::from_slice(&spawned.agent_id).unwrap_or_default() })
@@ -847,10 +665,9 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
             json!({ "incarnation": resumed.incarnation })
         }
         Control::Send { agent, text } => {
-            let kind = net.agent(&agent)?.kind;
             let id = Uuid::new_v4();
             let verdict = net
-                .input(&agent, crate::net::prompt(kind, id.as_bytes(), &text))
+                .input(&agent, crate::net::prompt(id.as_bytes(), &text))
                 .await?;
             json!({ "verdict": format!("{:?}", verdict.of), "input_id": hex(id.as_bytes()) })
         }
@@ -905,19 +722,6 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
             }
             json!({ "reports": listed })
         }
-        Control::RelayFaults {
-            delay_ms,
-            loss_percent,
-            jitter_ms,
-            reorder_percent,
-            rate_bytes_per_sec,
-        } => value(net.set_relay_faults(faults(
-            delay_ms,
-            loss_percent,
-            jitter_ms,
-            reorder_percent,
-            rate_bytes_per_sec,
-        ))?),
         Control::NetFaults {
             target,
             delay_ms,
@@ -936,27 +740,6 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
             ),
         )?),
         Control::BlockUdp { host, blocked } => value(net.block_udp(&host, blocked)?),
-        Control::SetRouter { host, kind } => value(net.set_router(&host, kind)?),
-        Control::ChangeNetwork { host } => value(net.change_network(&host)?),
-        Control::BindIpv6Only { host } => value(net.bind_ipv6_only(&host)?),
-        Control::CarryingPath { host, peer } => json!({
-            "path": net.carrying_path(&host, &peer)?.map(|path| path.to_string()),
-        }),
-        Control::LinkLog { host } => Value::Array(
-            net.link_log(&host)?
-                .iter()
-                .map(|event| {
-                    json!({
-                        "peer": event.peer,
-                        "event": event.event.to_string(),
-                        "path": event.path.to_string(),
-                        "resumed": event.resumed,
-                        "early_data": event.early_data.to_string(),
-                        "first_packet_to_catch_up_ms": event.first_packet_to_catch_up_ms,
-                    })
-                })
-                .collect(),
-        ),
         Control::Flap { .. } | Control::FlapStop {} => {
             unreachable!("the connection handles flaps")
         }
@@ -1112,8 +895,9 @@ fn running_model(snapshot: &wire::Snapshot) -> Option<String> {
     use prost::Message;
     let body = snapshot.body.as_slice();
     match wire::Kind::try_from(snapshot.kind).ok()? {
-        wire::Kind::ClaudeSdk => wire::ClaudeSdkSnapshot::decode(body).ok()?.model,
-        wire::Kind::ClaudePty => wire::ClaudePtySnapshot::decode(body).ok()?.model,
+        wire::Kind::ClaudeSdk | wire::Kind::ClaudePty => {
+            wire::ClaudeSnapshot::decode(body).ok()?.model
+        }
         wire::Kind::Codex => wire::CodexSnapshot::decode(body).ok()?.model,
         wire::Kind::Unspecified => None,
     }
@@ -1127,10 +911,10 @@ fn item_body(item: &wire::Item) -> String {
     let body = item.body.as_slice();
     let text = match wire::Kind::try_from(item.kind) {
         Ok(wire::Kind::ClaudeSdk) => {
-            wire::ClaudeSdkItem::decode(body).map(|item| format!("{:?}", item.kind))
+            wire::ClaudeItem::decode(body).map(|item| format!("{:?}", item.kind))
         }
         Ok(wire::Kind::ClaudePty) => {
-            wire::ClaudePtyItem::decode(body).map(|item| format!("{:?}", item.kind))
+            wire::ClaudeItem::decode(body).map(|item| format!("{:?}", item.kind))
         }
         Ok(wire::Kind::Codex) => {
             wire::CodexItem::decode(body).map(|item| format!("{:?}", item.kind))
@@ -1146,10 +930,10 @@ fn pending_asks(snapshot: &wire::Snapshot) -> Vec<String> {
     use prost::Message;
     let body = snapshot.body.as_slice();
     let asks: Vec<String> = match wire::Kind::try_from(snapshot.kind) {
-        Ok(wire::Kind::ClaudeSdk) => wire::ClaudeSdkSnapshot::decode(body)
+        Ok(wire::Kind::ClaudeSdk) => wire::ClaudeSnapshot::decode(body)
             .map(|snapshot| snapshot.asks.iter().map(|ask| format!("{ask:?}")).collect())
             .unwrap_or_default(),
-        Ok(wire::Kind::ClaudePty) => wire::ClaudePtySnapshot::decode(body)
+        Ok(wire::Kind::ClaudePty) => wire::ClaudeSnapshot::decode(body)
             .map(|snapshot| snapshot.asks.iter().map(|ask| format!("{ask:?}")).collect())
             .unwrap_or_default(),
         Ok(wire::Kind::Codex) => wire::CodexSnapshot::decode(body)

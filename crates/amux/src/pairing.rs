@@ -16,7 +16,7 @@ use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
     BeginPairRequest, BindProfileRequest, Empty, HostEntry, HostRef, PairingIdentity,
     PairingWindow, PendingPair, RouteKind, StartPairingRequest, TrustSshPeerRequest, UnpairRequest,
-    begin_pair_request, host_ref, pairing_window, peer_reachability, start_pairing_request,
+    begin_pair_request, pairing_window, start_pairing_request,
 };
 
 type Door = InstallationServiceClient<Channel>;
@@ -117,7 +117,7 @@ pub async fn wait(mut admin: Admin, qr: bool, link: bool) -> Result<()> {
             () = &mut ended => return cancel(admin).await,
             () = tokio::time::sleep(PAIRING_POLL) => {
                 let status = admin
-                    .get_pairing_status(wire::GetPairingStatusRequest {})
+                    .get_pairing_status(wire::Empty {})
                     .await
                     .map_err(plain)?
                     .into_inner();
@@ -332,10 +332,7 @@ fn terminal_qr(payload: &str) -> Result<String> {
 
 /// Closes this host's pairing mode.
 pub async fn cancel(mut admin: Admin) -> Result<()> {
-    admin
-        .cancel_pairing(wire::CancelPairingRequest {})
-        .await
-        .map_err(plain)?;
+    admin.cancel_pairing(wire::Empty {}).await.map_err(plain)?;
     // The terminal may be gone (SIGHUP): saying so must not fail the close.
     let _ = writeln!(std::io::stdout(), "Pairing mode closed.");
     Ok(())
@@ -382,20 +379,6 @@ pub async fn pair(
     .await
 }
 
-/// Pairs with the host whose QR code's link this is.
-pub async fn pair_with_link(admin: Admin, link: &str) -> Result<()> {
-    let invitation = node::parse_pair_link(link).context("the pairing link")?;
-    confirm(
-        admin,
-        BeginPairRequest {
-            host_id: invitation.host_id.as_bytes().to_vec(),
-            secret: Some(begin_pair_request::Secret::QrSecret(invitation.secret)),
-            addrs: invitation.addrs.iter().map(ToString::to_string).collect(),
-        },
-    )
-    .await
-}
-
 fn candidate<'a>(hosts: &'a [HostEntry], name: &str) -> Result<&'a HostEntry> {
     let found = hosts
         .iter()
@@ -418,21 +401,17 @@ fn candidate<'a>(hosts: &'a [HostEntry], name: &str) -> Result<&'a HostEntry> {
 }
 
 async fn confirm(mut admin: Admin, pairing: BeginPairRequest) -> Result<()> {
-    let secret = match pairing.secret {
-        Some(begin_pair_request::Secret::QrSecret(_)) => "pairing link",
-        _ => "PIN",
-    };
     let pending = admin
         .begin_pair(pairing)
         .await
-        .map_err(|status| refused(status, secret))?
+        .map_err(refused)?
         .into_inner();
     let peer = admin
         .confirm_pair(wire::ConfirmPairRequest {
             token: pending.token.clone(),
         })
         .await
-        .map_err(|status| refused(status, secret))?
+        .map_err(refused)?
         .into_inner();
     println!("{}", paired(&peer, &pending));
     Ok(())
@@ -441,17 +420,17 @@ async fn confirm(mut admin: Admin, pairing: BeginPairRequest) -> Result<()> {
 /// A pairing's refusal in words. A wrong secret and a closed pairing
 /// window read the same on the wire, so a guesser learns nothing, and so
 /// the words name both.
-fn refused(status: tonic::Status, secret: &str) -> anyhow::Error {
+fn refused(status: tonic::Status) -> anyhow::Error {
     if status.code() == tonic::Code::PermissionDenied && status.message() == "PAIRING_LOCKED" {
         return anyhow!(
-            "the other host closed its pairing window after too many wrong {secret}s; \
-             run `amux pair` there again for a new {secret}"
+            "the other host closed its pairing window after too many wrong PINs; \
+             run `amux pair` there again for a new PIN"
         );
     }
     if status.code() == tonic::Code::PermissionDenied && status.message() == "INVALID_PIN" {
         return anyhow!(
-            "the {secret} did not match, or the other host's pairing window has closed; \
-             check the {secret} it shows and try again"
+            "the PIN did not match, or the other host's pairing window has closed; \
+             check the PIN it shows and try again"
         );
     }
     if client::RpcError::from(status.clone()).reason() == Some(wire::ErrorReason::PaymentRequired) {
@@ -516,7 +495,7 @@ fn profile_dir(profile: &wire::Profile) -> Result<PathBuf> {
 async fn own_identity(admin: &Admin) -> Result<PairingIdentity> {
     let own = admin
         .clone()
-        .get_device_identity(wire::GetDeviceIdentityRequest {})
+        .get_device_identity(wire::Empty {})
         .await
         .map_err(plain)?
         .into_inner();
@@ -589,7 +568,7 @@ pub async fn relay(profile: &wire::Profile) -> Result<()> {
 /// announced by the relay or a paired host.
 pub async fn hosts(mut admin: Admin, client: &mut wire::ClientStubs, free: bool) -> Result<()> {
     let trusted = admin
-        .list_peers(wire::ListPeersRequest {})
+        .list_peers(wire::Empty {})
         .await
         .map_err(plain)?
         .into_inner()
@@ -642,10 +621,7 @@ fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry], free: bool) -> String
             },
             None => "not listed",
         };
-        let ssh = peer.reachabilities.iter().find_map(|way| match &way.kind {
-            Some(peer_reachability::Kind::SshTarget(target)) => Some(target.target.clone()),
-            _ => None,
-        });
+        let ssh = peer.ssh_target.as_ref().map(|target| target.target.clone());
         rows.push([
             peer.name.clone(),
             host(&peer.host_id),
@@ -716,19 +692,22 @@ fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry], free: bool) -> String
 
 /// Stops trusting a paired host, asking first unless forced.
 pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
-    let reference = HostRef {
-        of: Some(match Uuid::parse_str(peer) {
-            Ok(id) => host_ref::Of::HostId(id.as_bytes().to_vec()),
-            Err(_) => host_ref::Of::Name(peer.to_owned()),
-        }),
-    };
-    let entry = admin
-        .get_peer(wire::GetPeerRequest {
-            peer: Some(reference.clone()),
-        })
+    let id = Uuid::parse_str(peer).ok();
+    let peers = admin
+        .list_peers(wire::Empty {})
         .await
         .map_err(plain)?
-        .into_inner();
+        .into_inner()
+        .peers;
+    let mut named = peers.into_iter().filter(|entry| match id {
+        Some(id) => entry.host_id == id.as_bytes(),
+        None => entry.name == peer,
+    });
+    let entry = match (named.next(), named.next()) {
+        (Some(entry), None) => entry,
+        (None, _) => bail!("{peer} is not a paired host"),
+        (Some(_), Some(_)) => bail!("more than one paired host is called {peer}; name it by id"),
+    };
     if !force {
         if !std::io::stdin().is_terminal() {
             bail!("unpairing asks first; pass --force to unpair without asking");
@@ -745,8 +724,7 @@ pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
     }
     let removed = admin
         .unpair(UnpairRequest {
-            peer: Some(reference),
-            reason: "user".to_owned(),
+            peer: Some(HostRef::id(entry.host_id.clone())),
         })
         .await
         .map_err(plain)?
@@ -801,10 +779,7 @@ pub async fn login(mut door: Door, profile: Option<&wire::Profile>, cloud_url: &
 
 /// Signs a profile out; its agents and paired hosts stay.
 pub async fn logout(mut admin: Admin, profile: &wire::Profile) -> Result<()> {
-    admin
-        .sign_out(wire::SignOutRequest {})
-        .await
-        .map_err(plain)?;
+    admin.sign_out(wire::Empty {}).await.map_err(plain)?;
     println!(
         "Signed {} out; its agents and paired hosts stay.",
         profile.label
@@ -818,7 +793,7 @@ mod tests {
 
     #[test]
     fn a_wrong_pin_is_refused_in_words() {
-        let refusal = refused(tonic::Status::permission_denied("INVALID_PIN"), "PIN").to_string();
+        let refusal = refused(tonic::Status::permission_denied("INVALID_PIN")).to_string();
         assert_eq!(
             refusal,
             "the PIN did not match, or the other host's pairing window has closed; \
@@ -826,14 +801,14 @@ mod tests {
         );
         assert!(!refusal.contains("INVALID_PIN"));
         // Locked out after too many wrong PINs: said so, with the way on.
-        let locked = refused(tonic::Status::permission_denied("PAIRING_LOCKED"), "PIN").to_string();
+        let locked = refused(tonic::Status::permission_denied("PAIRING_LOCKED")).to_string();
         assert!(
             locked.contains("too many wrong PINs") && locked.contains("amux pair"),
             "{locked}"
         );
         // Any other refusal reads as it did.
         assert_eq!(
-            refused(tonic::Status::permission_denied("not allowed"), "PIN").to_string(),
+            refused(tonic::Status::permission_denied("not allowed")).to_string(),
             "not allowed"
         );
     }
@@ -1005,11 +980,22 @@ mod tests {
         }
     }
 
+    /// A host nobody paired that the neighbors `by` say they reach.
+    fn announced(name: &str, by: Vec<wire::Host>) -> HostEntry {
+        HostEntry {
+            standing: Some(wire::host_entry::Standing::Candidate(wire::Candidate {
+                addrs: Vec::new(),
+                announced_by: by,
+            })),
+            ..HostEntry::candidate_host(vec![3; 16], name, Vec::new())
+        }
+    }
+
     /// A host only the relay announces pairs on Pro; on the free plan the
     /// table says Pro is what pairs it, and where to get it.
     #[test]
     fn a_host_only_the_relay_announces_names_pro_on_the_free_plan() {
-        let nova = HostEntry::announced_host(vec![3; 16], "nova", vec![neighbor("s1", true)]);
+        let nova = announced("nova", vec![neighbor("s1", true)]);
         let pro = peer_table(&[], std::slice::from_ref(&nova), false);
         let row = pro.lines().nth(1).unwrap();
         assert!(row.contains("on your account, through the relay"), "{pro}");
@@ -1027,11 +1013,7 @@ mod tests {
     /// the table names it and the command, never Pro.
     #[test]
     fn a_host_a_paired_host_announces_pairs_through_it_on_any_plan() {
-        let nas = HostEntry::announced_host(
-            vec![3; 16],
-            "nas",
-            vec![neighbor("studio", false), neighbor("s1", true)],
-        );
+        let nas = announced("nas", vec![neighbor("studio", false), neighbor("s1", true)]);
         let table = peer_table(&[], &[nas], true);
         let row = table.lines().nth(1).unwrap();
         assert!(row.contains("through studio"), "{table}");

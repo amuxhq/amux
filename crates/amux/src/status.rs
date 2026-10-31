@@ -18,7 +18,7 @@ pub async fn run(config_path: Option<&Path>) -> Result<bool> {
     let door = connect::front_door_now(&config).await;
     let daemon = match &door {
         Some(door) => connect::installation(door.clone())
-            .get_installation(wire::GetInstallationRequest {})
+            .get_installation(wire::Empty {})
             .await
             .ok()
             .map(|installation| installation.into_inner().version),
@@ -65,8 +65,8 @@ pub async fn run(config_path: Option<&Path>) -> Result<bool> {
     if let Some(door) = door
         && daemon.is_some()
     {
-        let profiles = connect::profiles(door)
-            .list_profiles(wire::ListProfilesRequest {})
+        let profiles = connect::installation(door)
+            .list_profiles(wire::Empty {})
             .await
             .map_err(crate::plain)?
             .into_inner()
@@ -130,7 +130,6 @@ fn account(profile: &wire::Profile) -> String {
             "not signed in; `amux login` reaches your hosts through the relay".to_owned()
         }
         Some(Standing::SignedOut(_)) => format!("signed out of {who}"),
-        Some(Standing::Paused(_)) => format!("signed in as {who}, relay paused"),
         Some(Standing::SignedIn(link)) => {
             let relay = match link.state.as_ref() {
                 Some(State::Connected(_)) => "relay connected",

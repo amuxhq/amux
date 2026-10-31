@@ -112,11 +112,6 @@ impl DeviceIdentity {
     }
 
     #[cfg(test)]
-    pub fn private_key_pkcs8(&self) -> &[u8] {
-        &self.private_key_pkcs8
-    }
-
-    #[cfg(test)]
     pub(crate) fn for_test(host_id: HostId) -> Self {
         Self::generated(host_id).unwrap()
     }
@@ -323,17 +318,6 @@ pub fn quic_endpoint_config() -> quinn::EndpointConfig {
     config
 }
 
-/// A QUIC endpoint on a UDP socket of its own at `bind`.
-pub fn quic_endpoint(
-    server: Option<quinn::ServerConfig>,
-    bind: std::net::SocketAddr,
-) -> std::io::Result<quinn::Endpoint> {
-    let socket = std::net::UdpSocket::bind(bind)?;
-    let runtime = quinn::default_runtime()
-        .ok_or_else(|| std::io::Error::other("no async runtime for a QUIC endpoint"))?;
-    quinn::Endpoint::new(quic_endpoint_config(), server, socket, runtime)
-}
-
 pub(crate) fn host_id_for_certificate(
     trust_store: &TrustStore,
     cert: &CertificateDer<'_>,
@@ -527,38 +511,6 @@ impl ServerCertVerifier for PinnedServerCertVerifier {
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
         self.supported_algs.supported_schemes()
-    }
-}
-
-/// The identity of a profile whose directory is `data_dir`, under an id
-/// derived from the directory: the same on every load, another for every
-/// other directory.
-#[cfg(test)]
-fn identity_in(data_dir: &Path) -> Result<DeviceIdentity, IdentityError> {
-    let host = HostId::new_v5(
-        &uuid::Uuid::NAMESPACE_OID,
-        data_dir.to_string_lossy().as_bytes(),
-    );
-    load_or_create_device_identity_in(data_dir, host)
-}
-
-#[cfg(all(test, unix))]
-fn ensure_device_files_in(data_dir: &Path) -> Result<DeviceIdentity, IdentityError> {
-    identity_in(data_dir)
-}
-
-#[cfg(all(test, unix))]
-fn data_dir_mode_ready(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        let Ok(metadata) = fs::metadata(path) else {
-            return false;
-        };
-        metadata.permissions().mode() & 0o777 == 0o700
-    }
-    #[cfg(not(unix))]
-    {
-        path.is_dir()
     }
 }
 
@@ -758,7 +710,6 @@ mod tests {
     use std::sync::{Arc, Barrier};
     use std::time::Duration;
 
-    use chrono::{DateTime, Utc};
     use daemon_core::trust::PairingUpdate;
     use rustls::pki_types::{CertificateDer, UnixTime};
     use tempfile::TempDir;
@@ -777,7 +728,6 @@ mod tests {
             TrustEntry {
                 pubkey: pubkey.to_vec(),
                 name: "peer".to_string(),
-                paired_at: DateTime::<Utc>::from_timestamp(200, 0).unwrap(),
                 on_account: true,
                 direct: Vec::new(),
                 ssh: None,
@@ -789,6 +739,17 @@ mod tests {
         store
     }
 
+    /// The identity of a profile whose directory is `data_dir`, under an id
+    /// derived from the directory: the same on every load, another for every
+    /// other directory.
+    fn identity_in(data_dir: &Path) -> Result<DeviceIdentity, IdentityError> {
+        let host = HostId::new_v5(
+            &uuid::Uuid::NAMESPACE_OID,
+            data_dir.to_string_lossy().as_bytes(),
+        );
+        load_or_create_device_identity_in(data_dir, host)
+    }
+
     #[test]
     fn device_identity_is_created_and_reused() {
         let dir = temp_data_dir();
@@ -798,10 +759,10 @@ mod tests {
 
         assert_eq!(first.host_id, second.host_id);
         assert_eq!(first.public_key(), second.public_key());
-        assert_eq!(first.private_key_pkcs8(), second.private_key_pkcs8());
+        assert_eq!(first.private_key_pkcs8, second.private_key_pkcs8);
         assert!(
             first
-                .private_key_pkcs8()
+                .private_key_pkcs8
                 .starts_with(&ED25519_PKCS8_V1_PREFIX)
         );
 
@@ -864,7 +825,6 @@ mod tests {
                 peer.public_key().to_vec(),
                 "peer".to_string(),
                 Reachability::Cloud,
-                DateTime::<Utc>::from_timestamp(200, 0).unwrap(),
             )
             .unwrap();
 
@@ -911,7 +871,6 @@ mod tests {
                 peer.public_key().to_vec(),
                 "peer".to_string(),
                 Reachability::Cloud,
-                DateTime::<Utc>::from_timestamp(200, 0).unwrap(),
             )
             .unwrap();
         verifier
@@ -926,8 +885,7 @@ mod tests {
                     peer.host_id,
                     rotated_peer.public_key().to_vec(),
                     "peer-rotated".to_string(),
-                    Reachability::Cloud,
-                    DateTime::<Utc>::from_timestamp(300, 0).unwrap(),
+                    Reachability::Cloud
                 )
                 .unwrap(),
             PairingUpdate::PubkeyReplacementRequired
@@ -951,7 +909,6 @@ mod tests {
                 rotated_peer.public_key().to_vec(),
                 "peer-rotated".to_string(),
                 Reachability::Cloud,
-                DateTime::<Utc>::from_timestamp(300, 0).unwrap(),
             )
             .unwrap();
         assert!(
@@ -999,15 +956,12 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn readiness_requires_private_data_dir_mode() {
+    fn loading_the_identity_makes_its_directory_private_again() {
         let dir = temp_data_dir();
-        ensure_device_files_in(dir.path()).unwrap();
+        identity_in(dir.path()).unwrap();
         fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
 
-        assert!(!data_dir_mode_ready(dir.path()));
-
-        ensure_device_files_in(dir.path()).unwrap();
-        assert!(data_dir_mode_ready(dir.path()));
+        identity_in(dir.path()).unwrap();
         assert_eq!(
             fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
             0o700

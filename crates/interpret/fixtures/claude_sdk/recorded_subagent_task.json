@@ -4,7 +4,7 @@
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/sdk/subagent_task/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/sdk/subagent_task/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

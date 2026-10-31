@@ -118,11 +118,7 @@ impl Pair {
         desk_edge.trust(&laptop_edge).await.unwrap();
         laptop_edge.trust(&desk_edge).await.unwrap();
         let link = laptop_edge.link_in_process(&desk_edge).unwrap();
-        assert!(
-            laptop_edge
-                .wait_for_route(desk_runtime.host(), PATIENCE)
-                .await
-        );
+        assert!(wait_for_route(&laptop_edge, desk_runtime.host(), PATIENCE).await);
         let subscription = until("the laptop to list the desk's agent", || {
             laptop_runtime.subscribe_session(agent.id.as_bytes(), 10)
         })
@@ -173,7 +169,7 @@ impl Pair {
 fn desk_agent() -> (Install, SyntheticAgent) {
     let desk = Install::new();
     let agent = SyntheticAgent::new(&desk, "coder", SEGMENTS);
-    agent.register_offline(&desk);
+    agent.register(&desk);
     (desk, agent)
 }
 

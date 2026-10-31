@@ -1,5 +1,5 @@
 {
-  "about": "A live run at Claude Code 2.1.292, driven by amux: a plan for a one-line change, approved from amux: the plan reads approved and the change is made.",
+  "about": "A plan for a one-line change, approved from amux: the plan reads approved and the change is made.",
   "spec": {
     "created_at_ms": 0
   },
@@ -8,8 +8,7 @@
       "fact": {
         "channel": "agent",
         "json": {
-          "type": "launch",
-          "version": "2.1.312"
+          "type": "launch"
         }
       }
     }

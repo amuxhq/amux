@@ -1,65 +1,50 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Call the mcp__external__ask_the_operator tool with word set to PELICAN, then reply with exactly what it returned.")], steered: false }
+## 6 recorded 5: input 0xb742743f04094471a489c5afda64769e
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=e6724a78-b717-415a-b99f-cea73fa2d11b
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 8 recorded 7: fact Stream type=assistant uuid=04330547-5b1f-4e55-a07f-ca17aea5046b
-  row    3 msg_011CgWLKjp93LSSZX6heC7NJ:0 Thinking { text: "", open: false, duration_ms: Some(2593) }
-## 10 recorded 9: fact Stream type=assistant uuid=cc881d41-b35c-4c96-ba66-b126e9f60cdc
-  row    4 toolu_01Jdhy6PQEi7bHuPFnDqbES6 ToolCall { server: "external", tool: "ask_the_operator", fact: "PELICAN", state: Running, result: "" } run[toolu_01Jdhy6PQEi7bHuPFnDqbES6..toolu_01Jdhy6PQEi7bHuPFnDqbES6 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
-  composer Send activity=Some(Running { key: "toolu_01Jdhy6PQEi7bHuPFnDqbES6" }) queue=[] underway=[] refused=[]
-## 12 recorded 11: fact Stream type=control_request
-  ask 1586b742-c204-4c1e-add2-ed9a69c36c8a -> "toolu_01Jdhy6PQEi7bHuPFnDqbES6" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["mcp__external__ask_the_operator"], directories: [], mode: "", mode_name: "", scope: Project }, Deny { stops: false }+note, DenyAndStop+note
-    body Tool { server: "external", tool: "ask_the_operator", arguments: "{\n  \"word\": \"PELICAN\"\n}" }
-  composer Send activity=None queue=[] underway=[] refused=[]
-## 13 recorded 12: input stdin-3
-  row    4 toolu_01Jdhy6PQEi7bHuPFnDqbES6 ToolCall { server: "external", tool: "ask_the_operator", fact: "PELICAN", state: Running, result: "" } run[toolu_01Jdhy6PQEi7bHuPFnDqbES6..toolu_01Jdhy6PQEi7bHuPFnDqbES6 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false }
-  ask none
-  composer Send activity=Some(Running { key: "toolu_01Jdhy6PQEi7bHuPFnDqbES6" }) queue=[] underway=[] refused=[]
-## 17 recorded 16: fact Stream type=control_request
-  row    4 toolu_01Jdhy6PQEi7bHuPFnDqbES6 ToolCall { server: "external", tool: "ask_the_operator", fact: "PELICAN", state: Running, result: "" } run[toolu_01Jdhy6PQEi7bHuPFnDqbES6..toolu_01Jdhy6PQEi7bHuPFnDqbES6 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false }
-  row    5 ask:61ed2a88-a5ee-43ae-b983-ea391abfc8ea Ask(Form { server: "external", message: "Confirm the word PELICAN.", fields: [], resolution: Open }) attention
-  ask 61ed2a88-a5ee-43ae-b983-ea391abfc8ea -> "ask:61ed2a88-a5ee-43ae-b983-ea391abfc8ea" 1/1 Open
+## 18 recorded 17: fact Stream type=stream_event uuid=0d4c5bc5-16ce-4aa0-a867-301b14308123
+  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
+## 27 recorded 26: fact Stream type=assistant uuid=b2c0ceeb-0a17-43ea-b692-38b2b7fd80d2
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 30 recorded 29: fact Stream type=stream_event uuid=505ae2d0-9085-4dfd-9eaf-bb70642f88b0
+  composer Send activity=Some(Running { key: "toolu_01CbaWDAuMPFJfgysPp443hc" }) queue=[] underway=[] refused=[]
+## 42 recorded 41: fact Stream type=user uuid=cd62be6a-1670-4ee4-92f2-bb9dc49c30a5
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 52 recorded 51: fact Stream type=stream_event uuid=5eb6cadd-2051-4d36-8099-5ce7da1499a2
+  composer Send activity=Some(Running { key: "toolu_016pZBLH3jCUq3rgKZxAArtR" }) queue=[] underway=[] refused=[]
+## 65 recorded 64: fact Stream type=control_request
+  ask bc321f69-9489-4958-86d8-efb7f385aa6e -> "ask:bc321f69-9489-4958-86d8-efb7f385aa6e" 1/1 Open
     choices Submit*, Decline
-    body Form { server: "external", message: "Confirm the word PELICAN.", fields: [FormField { name: "confirmed", title: "confirmed", description: "", required: true, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
+    body Form { server: "external", message: "Confirm the word ALBATROSS.", fields: [FormField { name: "confirmed", title: "confirmed", description: "", required: true, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 18 recorded 17: input stdin-4
-  row    5 ask:61ed2a88-a5ee-43ae-b983-ea391abfc8ea Ask(Form { server: "external", message: "Confirm the word PELICAN.", fields: [], resolution: Declined })
+## 70 recorded 69: input stdin-4
   ask none
-  composer Send activity=Some(Running { key: "toolu_01Jdhy6PQEi7bHuPFnDqbES6" }) queue=[] underway=[] refused=[]
-## 20 recorded 19: fact Stream type=user uuid=f86aeb45-5bde-4ba3-9953-acda03acf08f
-  row    4 toolu_01Jdhy6PQEi7bHuPFnDqbES6 ToolCall { server: "external", tool: "ask_the_operator", fact: "PELICAN", state: Succeeded, result: "elicitation decline" } run[toolu_01Jdhy6PQEi7bHuPFnDqbES6..toolu_01Jdhy6PQEi7bHuPFnDqbES6 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: f…
+  composer Send activity=Some(Running { key: "toolu_016pZBLH3jCUq3rgKZxAArtR" }) queue=[] underway=[] refused=[]
+## 73 recorded 72: fact Stream type=user uuid=89123ea0-4217-43f3-936e-8ed8e77d5bc3
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 22 recorded 21: fact Stream type=assistant uuid=9ceb81d2-87d1-431b-99f5-a93ee45e62c5
-  row    6 msg_011CgWLKvYoDN1mewVrqcHFY:0 Thinking { text: "", open: false, duration_ms: Some(1127) }
-## 24 recorded 23: fact Stream type=assistant uuid=124225cf-9184-4a4d-b7b3-2c562c8f4b1e
-  row    7 msg_011CgWLKvYoDN1mewVrqcHFY:1 Prose { text: [Text("elicitation decline")], streaming: false, working_note: false }
-## 26 recorded 25: fact Stream type=result subtype=success uuid=1de0cb17-421d-4ea4-9ebd-b691a39e1d9b
-  row    4 toolu_01Jdhy6PQEi7bHuPFnDqbES6 ToolCall { server: "external", tool: "ask_the_operator", fact: "PELICAN", state: Succeeded, result: "elicitation decline" } run[toolu_01Jdhy6PQEi7bHuPFnDqbES6..toolu_01Jdhy6PQEi7bHuPFnDqbES6 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: f…
-  row    8 turn:1 TurnEnd { duration_ms: Some(3936), failed: false }
+## 87 recorded 86: fact Stream type=result subtype=success uuid=d2823d1a-dd2a-4bb2-b0c1-adeb2218d816
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Call the mcp__external__ask_the_operator tool with word set to PELICAN, then reply with exactly what it returned.")], steered: false }
-     3 msg_011CgWLKjp93LSSZX6heC7NJ:0 Thinking { text: "", open: false, duration_ms: Some(2593) }
-     4 toolu_01Jdhy6PQEi7bHuPFnDqbES6 ToolCall { server: "external", tool: "ask_the_operator", fact: "PELICAN", state: Succeeded, result: "elicitation decline" } run[toolu_01Jdhy6PQEi7bHuPFnDqbES6..toolu_01Jdhy6PQEi7bHuPFnDqbES6 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: f…
-     5 ask:61ed2a88-a5ee-43ae-b983-ea391abfc8ea Ask(Form { server: "external", message: "Confirm the word PELICAN.", fields: [], resolution: Declined })
-     6 msg_011CgWLKvYoDN1mewVrqcHFY:0 Thinking { text: "", open: false, duration_ms: Some(1127) }
-     7 msg_011CgWLKvYoDN1mewVrqcHFY:1 Prose { text: [Text("elicitation decline")], streaming: false, working_note: false }
-     8 turn:1 TurnEnd { duration_ms: Some(3936), failed: false }
+     2 b742743f-0409-4471-a489-c5afda64769e Prompt { text: [Text("Call the mcp__external__ask_the_operator tool with word set to ALBATROSS, then reply with exactly what it returned.")], steered: false }
+     3 d21effe9-696e-4625-9c50-0dc564aac513 Hidden collapsed
+     4 msg_011CgZkQk9gNRy6sAGU1v6Kx:0 Thinking { text: "", open: false, duration_ms: Some(919) }
+     5 toolu_01CbaWDAuMPFJfgysPp443hc Explore { verb: Search, subject: "select:mcp__external__ask_the_operator", state: Succeeded, result: "" } run[toolu_01CbaWDAuMPFJfgysPp443hc..toolu_016pZBLH3jCUq3rgKZxAArtR x2 recent=1] collapsed
+     6 66b27f65-c7af-4991-a540-c2c5d3ef4fac Hidden run[toolu_01CbaWDAuMPFJfgysPp443hc..toolu_016pZBLH3jCUq3rgKZxAArtR x2] collapsed
+     7 toolu_016pZBLH3jCUq3rgKZxAArtR ToolCall { server: "external", tool: "ask_the_operator", fact: "ALBATROSS", state: Succeeded, result: "elicitation decline" } run[toolu_01CbaWDAuMPFJfgysPp443hc..toolu_016pZBLH3jCUq3rgKZxAArtR x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 1 }]
+     8 ask:bc321f69-9489-4958-86d8-efb7f385aa6e Ask(Form { server: "external", message: "Confirm the word ALBATROSS.", fields: [], resolution: Declined })
+     9 3cd4c9db-9cd2-45f3-8df6-c926d2becda4 Hidden collapsed
+    10 msg_011CgZkQv9Sg8WFQWrmoLWAA:0 Prose { text: [Text("elicitation decline")], streaming: false, working_note: false }
+    11 turn:1 TurnEnd { duration_ms: Some(3302), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 23974, window_tokens: Some(200000), percent: Some(11), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 20805, window_tokens: Some(1000000), percent: Some(2), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]
   model  opus "Opus 5.5" efforts=[low,medium,high,xhigh,max]
   model  fable "Fable 5.1" efforts=[low,medium,high,xhigh,max]
   model  sonnet "Sonnet 5.5" efforts=[low,medium,high,xhigh,max]
-  model  haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
-  model* claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
+  model* haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
+  model  claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
   model  claude-sonnet-5 "Sonnet 5" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-5 "Opus 5" efforts=[low,medium,high,xhigh,max]
   model  claude-fable-5 "Fable 5" efforts=[low,medium,high,xhigh,max]
@@ -67,12 +52,18 @@
   model  claude-opus-4-7 "Opus 4.7" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-4-6 "Opus 4.6" efforts=[low,medium,high,max]
   model  claude-sonnet-4-6 "Sonnet 4.6" efforts=[low,medium,high,max]
+  effort  low
+  effort  medium
+  effort* high
+  effort  xhigh
+  effort  max
   permission* "default" "Ask" normal
   permission  "acceptEdits" "Accept edits"
   permission  "plan" "Plan"
-  permission  "auto" "Auto" unsettable
-  changes: model Pick · effort NotOffered · permission Pick · mode NotOffered
+  permission  "auto" "Auto"
+  changes: model Pick · effort Pick · permission Pick · mode NotOffered
   command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
   command /deep-research source="" hint="" "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)"
   command /design source="" hint="consent | revoke" "Grant or revoke Claude agent access to your Design projects"
@@ -87,6 +78,7 @@
   command /fewer-permission-prompts source="" hint="" "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts."
   command /loop source="" hint="[interval] [prompt]" "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace."
   command /schedule source="" hint="" "Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule."
+  command /send-to-project source="" hint="[\"project name\" or id] [message]" "Send this session's work to a Claude Project"
   command /claude-api source="" hint="" "Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration.\nTRIGGER — read BEFORE opening the target file; don't skip because it \"looks like a one-liner\" — whenever: the prompt names Claude/Anthropic in any form (Claude, Anthropic, Fable, Opus, Sonnet, Haiku, `anthropic`, `@anthropic-ai`, `claude-*`, `us…
   command /workflow-authoring source="" hint="" "Reference for writing a Workflow tool script (script API and gotchas, resume, quality patterns, worked examples). Load before authoring a script for a workflow the user already opted into; it does not itself authorize running one."
   command /run source="" hint="" "Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library)."
@@ -106,7 +98,7 @@
   command /workflow-launch-exec source="" hint="" "Execute a server-launched workflow handoff (workflow_launch event sessions only)"
   command /reload-plugins source="" hint="[--force]" "Activate pending plugin changes in the current session"
   command /reload-skills source="" hint="" "Pick up skills added or changed on disk during this session"
-  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~15-25 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
+  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~5-15 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
   command /security-review source="" hint="" "Complete a security review of the pending changes on the current branch"
   command /usage-credits source="" hint="" "Configure usage credits or request them from your admin when you hit a limit"
   command /extra-usage source="" hint="" "Renamed to /usage-credits"
@@ -119,4 +111,4 @@
   command /design-revoke source="" hint="" "Revoke Claude agent access to your Design projects"
   command /list-agents source="" hint="" "List subagents, teammates, and other Claude sessions you can message"
   command /team-onboarding source="" hint="" "Help teammates ramp on Claude Code with a guide from your usage"
-  controls: model=Some("Haiku 4.5") effort=None permission=None mode=None
+  controls: model=Some("Haiku 5.5") effort=Some("high") permission=None mode=None

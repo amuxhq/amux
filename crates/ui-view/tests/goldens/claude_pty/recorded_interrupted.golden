@@ -1,0 +1,27 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 12 recorded 10: fact Transcript type=user uuid=e6ebcddd-54ab-46e2-b820-e76dc427e567
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 36 recorded 34: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01HLFK8EUYZ9NnLWz12cAGd5
+  composer Send activity=Some(Running { key: "toolu_01HLFK8EUYZ9NnLWz12cAGd5" }) queue=[] underway=[] refused=[]
+## 41 recorded 39: fact Transcript type=user uuid=18afa0e8-dc2d-47f2-8a1d-06516b555cc7
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 45 recorded 43: fact Transcript type=user uuid=022da76d-9726-4484-8e5c-31063e59d249
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 e6ebcddd-54ab-46e2-b820-e76dc427e567 Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import select; select.select([], [], [], 30)'; printf SHOULD_NOT_FINISH. Do not do anything else.")], steered: false }
+     3 toolu_01HLFK8EUYZ9NnLWz12cAGd5 Command { command: "python3 -c 'import select; select.select([], [], [], 30)'; printf SHOULD_NOT_FINISH", state: Cancelled, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell yo…
+     4 turn:1 Stopped
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 35634, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

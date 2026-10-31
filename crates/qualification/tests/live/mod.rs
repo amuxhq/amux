@@ -9,7 +9,10 @@
 //! instead (asks.rs); usage windows read, and what the agent and the host
 //! offer (offers.rs). Codex adds a permission change, a mode change and
 //! attach: its own app co-driving the agent beside amux's client, captured
-//! terminal by terminal (attach.rs). A scenario asserts protocol structure
+//! terminal by terminal (attach.rs). Each kind's corpus scenarios follow
+//! (corpus.rs for both Claude kinds, codex_corpus.rs), and terminal Claude
+//! adds its own (pty.rs) and asks answered in its own attached terminal
+//! (terminal.rs). A scenario asserts protocol structure
 //! and real effects, never generated prose: the item classes, asks,
 //! decisions, phase changes and turn ends the interpreter records have the
 //! shape it records for the matching probe recording, replayed from the
@@ -28,7 +31,11 @@
 mod asks;
 mod attach;
 mod capture;
+mod codex_corpus;
+mod corpus;
 mod offers;
+mod pty;
+mod terminal;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
@@ -44,10 +51,9 @@ use tonic::transport::{Channel, Endpoint};
 use ui_state::{AgentState, ItemBody, OpenAsk};
 use wire::installation_service_client::InstallationServiceClient;
 use wire::{
-    ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, Input, Item, Kind, Phase, SendInputRequest, Snapshot,
-    SubscribeSessionRequest, claude_answer, claude_pty_input, claude_sdk_input, codex_input,
-    permission_answer, send_input_response, session_event,
+    AgentInput, Answer, CodexCreateConfig, CreateAgentRequest, Input, Item, Kind, Phase,
+    SendInputRequest, Snapshot, SubscribeSessionRequest, agent_input, answer, permission_answer,
+    send_input_response, session_event,
 };
 
 /// Claude runs on its cheapest model; the lane judges structure, not wit.
@@ -85,10 +91,59 @@ pub enum Scenario {
     Permission,
     Mode,
     Attach,
+    MultiTurn,
+    Compacted,
+    Cleared,
+    Controls,
+    Effort,
+    ConfiguredTurn,
+    QuestionAsked,
+    QuestionEveryShape,
+    QuestionDismissed,
+    PlanReviewed,
+    ElicitationAccepted,
+    ElicitationDeclined,
+    ElicitationCancelled,
+    ElicitationLinkAccepted,
+    FailedToolServer,
+    FailingCommand,
+    TaskList,
+    BackgroundShell,
+    SubagentTask,
+    Image,
+    SignInProblem,
+    SteerFolded,
+    ApprovalDeny,
+    InjectIdle,
+    InjectDrain,
+    TwoAssistantMessages,
+    ReasoningSummary,
+    Exploring,
+    FileChanges,
+    FileMoved,
+    Compaction,
+    TurnError,
+    TurnRetries,
+    SignedOut,
+    WebSearch,
+    Subagent,
+    BackgroundTerminal,
+    ToolServerForm,
+    AccessGrant,
+    AutomaticReview,
+    ApprovalScopes,
+    ModeCycle,
+    LongPrompt,
+    ApiError,
+    PermissionScoped,
+    PermissionDenied,
+    TerminalAllow,
+    TerminalEscape,
+    TerminalQuestion,
 }
 
 /// Every scenario, in the order a run takes them.
-pub const SCENARIOS: [Scenario; 13] = [
+pub const SCENARIOS: [Scenario; 62] = [
     Scenario::Initialize,
     Scenario::Respond,
     Scenario::Decide,
@@ -102,6 +157,55 @@ pub const SCENARIOS: [Scenario; 13] = [
     Scenario::Permission,
     Scenario::Mode,
     Scenario::Attach,
+    Scenario::MultiTurn,
+    Scenario::Compacted,
+    Scenario::Cleared,
+    Scenario::Controls,
+    Scenario::Effort,
+    Scenario::ConfiguredTurn,
+    Scenario::QuestionAsked,
+    Scenario::QuestionEveryShape,
+    Scenario::QuestionDismissed,
+    Scenario::PlanReviewed,
+    Scenario::ElicitationAccepted,
+    Scenario::ElicitationDeclined,
+    Scenario::ElicitationCancelled,
+    Scenario::ElicitationLinkAccepted,
+    Scenario::FailedToolServer,
+    Scenario::FailingCommand,
+    Scenario::TaskList,
+    Scenario::BackgroundShell,
+    Scenario::SubagentTask,
+    Scenario::Image,
+    Scenario::SignInProblem,
+    Scenario::SteerFolded,
+    Scenario::ApprovalDeny,
+    Scenario::InjectIdle,
+    Scenario::InjectDrain,
+    Scenario::TwoAssistantMessages,
+    Scenario::ReasoningSummary,
+    Scenario::Exploring,
+    Scenario::FileChanges,
+    Scenario::FileMoved,
+    Scenario::Compaction,
+    Scenario::TurnError,
+    Scenario::TurnRetries,
+    Scenario::SignedOut,
+    Scenario::WebSearch,
+    Scenario::Subagent,
+    Scenario::BackgroundTerminal,
+    Scenario::ToolServerForm,
+    Scenario::AccessGrant,
+    Scenario::AutomaticReview,
+    Scenario::ApprovalScopes,
+    Scenario::ModeCycle,
+    Scenario::LongPrompt,
+    Scenario::ApiError,
+    Scenario::PermissionScoped,
+    Scenario::PermissionDenied,
+    Scenario::TerminalAllow,
+    Scenario::TerminalEscape,
+    Scenario::TerminalQuestion,
 ];
 
 impl Scenario {
@@ -120,17 +224,137 @@ impl Scenario {
             Scenario::Permission => "permission",
             Scenario::Mode => "mode",
             Scenario::Attach => "attach",
+            Scenario::MultiTurn => "multi_turn",
+            Scenario::Compacted => "compacted",
+            Scenario::Cleared => "cleared",
+            Scenario::Controls => "controls",
+            Scenario::Effort => "effort",
+            Scenario::ConfiguredTurn => "configured_turn",
+            Scenario::QuestionAsked => "question_asked",
+            Scenario::QuestionEveryShape => "question_every_shape",
+            Scenario::QuestionDismissed => "question_dismissed",
+            Scenario::PlanReviewed => "plan_reviewed",
+            Scenario::ElicitationAccepted => "elicitation_accepted",
+            Scenario::ElicitationDeclined => "elicitation_declined",
+            Scenario::ElicitationCancelled => "elicitation_cancelled",
+            Scenario::ElicitationLinkAccepted => "elicitation_link_accepted",
+            Scenario::FailedToolServer => "failed_tool_server",
+            Scenario::FailingCommand => "failing_command",
+            Scenario::TaskList => "task_list",
+            Scenario::BackgroundShell => "background_shell",
+            Scenario::SubagentTask => "subagent_task",
+            Scenario::Image => "image",
+            Scenario::SignInProblem => "sign_in_problem",
+            Scenario::SteerFolded => "steer_folded",
+            Scenario::ApprovalDeny => "approval_deny",
+            Scenario::InjectIdle => "inject_idle",
+            Scenario::InjectDrain => "inject_drain",
+            Scenario::TwoAssistantMessages => "two_assistant_messages",
+            Scenario::ReasoningSummary => "reasoning_summary",
+            Scenario::Exploring => "exploring",
+            Scenario::FileChanges => "file_changes",
+            Scenario::FileMoved => "file_moved",
+            Scenario::Compaction => "compaction",
+            Scenario::TurnError => "turn_error",
+            Scenario::TurnRetries => "turn_retries",
+            Scenario::SignedOut => "signed_out",
+            Scenario::WebSearch => "web_search",
+            Scenario::Subagent => "subagent",
+            Scenario::BackgroundTerminal => "background_terminal",
+            Scenario::ToolServerForm => "tool_server_form",
+            Scenario::AccessGrant => "access_grant",
+            Scenario::AutomaticReview => "automatic_review",
+            Scenario::ApprovalScopes => "approval_scopes",
+            Scenario::ModeCycle => "mode_cycle",
+            Scenario::LongPrompt => "long_prompt",
+            Scenario::ApiError => "api_error",
+            Scenario::PermissionScoped => "permission_scoped",
+            Scenario::PermissionDenied => "permission_denied",
+            Scenario::TerminalAllow => "terminal_allow",
+            Scenario::TerminalEscape => "terminal_escape",
+            Scenario::TerminalQuestion => "terminal_question",
         }
     }
 
+    /// The scenario's agent's name: agent names take hyphens, not
+    /// underscores.
+    fn agent(self) -> String {
+        self.name().replace('_', "-")
+    }
+
     /// Whether `kind` has what the scenario exercises: terminal Claude
-    /// reports no usage; only Codex has amux-set permissions and modes and
-    /// an app of its own to attach.
+    /// reports no usage or tool-server health and takes no permission,
+    /// model or effort from amux, and its capture cannot show how amux
+    /// answered a tool server's form on its hook (authored fixtures cover
+    /// that); only Codex has amux-set permissions and modes and an app of
+    /// its own to attach; the rest record each kind's corpus (corpus.rs for
+    /// both Claude kinds, pty.rs and terminal.rs for terminal Claude alone,
+    /// codex_corpus.rs for Codex), a failing command, an image and a
+    /// message sent into the running turn on every kind.
     fn applies(self, kind: Kind) -> bool {
         match self {
+            Scenario::Initialize
+            | Scenario::Respond
+            | Scenario::Decide
+            | Scenario::Interrupt
+            | Scenario::Resume
+            | Scenario::Plan
+            | Scenario::Questions
+            | Scenario::Catalogue
+            | Scenario::HostCatalogue
+            | Scenario::FailingCommand
+            | Scenario::Image
+            | Scenario::SteerFolded => true,
             Scenario::Usage => kind != Kind::ClaudePty,
-            Scenario::Permission | Scenario::Mode | Scenario::Attach => kind == Kind::Codex,
-            _ => true,
+            Scenario::Controls
+            | Scenario::Effort
+            | Scenario::ElicitationAccepted
+            | Scenario::ElicitationDeclined
+            | Scenario::ElicitationCancelled
+            | Scenario::ElicitationLinkAccepted
+            | Scenario::FailedToolServer => kind == Kind::ClaudeSdk,
+            Scenario::MultiTurn
+            | Scenario::Compacted
+            | Scenario::Cleared
+            | Scenario::ConfiguredTurn
+            | Scenario::QuestionAsked
+            | Scenario::QuestionEveryShape
+            | Scenario::QuestionDismissed
+            | Scenario::PlanReviewed
+            | Scenario::TaskList
+            | Scenario::BackgroundShell
+            | Scenario::SubagentTask
+            | Scenario::SignInProblem => kind != Kind::Codex,
+            Scenario::ModeCycle
+            | Scenario::LongPrompt
+            | Scenario::ApiError
+            | Scenario::PermissionScoped
+            | Scenario::PermissionDenied
+            | Scenario::TerminalAllow
+            | Scenario::TerminalEscape
+            | Scenario::TerminalQuestion => kind == Kind::ClaudePty,
+            Scenario::Permission
+            | Scenario::Mode
+            | Scenario::Attach
+            | Scenario::ApprovalDeny
+            | Scenario::InjectIdle
+            | Scenario::InjectDrain
+            | Scenario::TwoAssistantMessages
+            | Scenario::ReasoningSummary
+            | Scenario::Exploring
+            | Scenario::FileChanges
+            | Scenario::FileMoved
+            | Scenario::Compaction
+            | Scenario::TurnError
+            | Scenario::TurnRetries
+            | Scenario::SignedOut
+            | Scenario::WebSearch
+            | Scenario::Subagent
+            | Scenario::BackgroundTerminal
+            | Scenario::ToolServerForm
+            | Scenario::AccessGrant
+            | Scenario::AutomaticReview
+            | Scenario::ApprovalScopes => kind == Kind::Codex,
         }
     }
 }
@@ -395,8 +619,8 @@ impl fmt::Display for Version {
     }
 }
 
-/// The newest provider version the scenarios' recordings were recorded or
-/// verified against: a provider older than that is not what they describe.
+/// The newest provider version the scenarios' recordings were recorded
+/// against: a provider older than that is not what they describe.
 struct Corpus {
     version: Version,
     recordings: Vec<String>,
@@ -430,11 +654,8 @@ fn corpus(driver: &Driver, scenarios: &[Scenario]) -> Corpus {
         let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&manifest) else {
             continue;
         };
-        let verified = manifest["verified"].as_array().cloned().unwrap_or_default();
-        for seen in std::iter::once(&manifest["recorded"]).chain(&verified) {
-            if let Some(seen) = seen["version"].as_str() {
-                version = version.max(Version::parse(seen));
-            }
+        if let Some(seen) = manifest["recorded"]["version"].as_str() {
+            version = version.max(Version::parse(seen));
         }
     }
     Corpus {
@@ -464,6 +685,9 @@ struct Install {
     replay: fn(&Path) -> Result<Vec<Replayed>, String>,
     model: Mutex<Option<String>>,
     capture: capture::Capture,
+    /// Codex's scratch home, holding the operator's login (codex_corpus.rs
+    /// writes a config into it for a scenario's start).
+    codex_home: Option<PathBuf>,
     /// Each scenario's agent, as it was created.
     agents: Mutex<Vec<(Scenario, Vec<u8>)>>,
 }
@@ -508,8 +732,12 @@ impl Install {
                 .iter()
                 .map(|(key, value)| ((*key).to_owned(), (*value).into())),
         );
-        if driver.kind == Kind::Codex {
-            env.push(("CODEX_HOME".into(), seed_codex_home(&path)?.into()));
+        let codex_home = match driver.kind {
+            Kind::Codex => Some(seed_codex_home(&path)?),
+            _ => None,
+        };
+        if let Some(home) = &codex_home {
+            env.push(("CODEX_HOME".into(), home.clone().into()));
         }
         let (capture, proxied) =
             capture::Capture::install(&path, driver.kind, driver.tag(), driver.command)?;
@@ -532,7 +760,7 @@ impl Install {
         .await
         .ok_or("its front door never answered")?;
         let profile = InstallationServiceClient::new(door)
-            .list_profiles(wire::ListProfilesRequest {})
+            .list_profiles(wire::Empty {})
             .await
             .map_err(|status| status.to_string())?
             .into_inner()
@@ -566,6 +794,7 @@ impl Install {
             replay: driver.replay,
             model: Mutex::new(None),
             capture,
+            codex_home,
             agents: Mutex::new(Vec::new()),
         })
     }
@@ -573,12 +802,12 @@ impl Install {
     /// Kills every agent and stops the daemon, so nothing outlives the run.
     async fn shutdown(&self) {
         if let Ok(listing) = self.amux(&["ls"]).await {
-            for name in SCENARIOS.map(Scenario::name) {
+            for name in SCENARIOS.map(Scenario::agent) {
                 if listing
                     .lines()
-                    .any(|line| line.split_whitespace().next() == Some(name))
+                    .any(|line| line.split_whitespace().next() == Some(name.as_str()))
                 {
-                    let _ = self.amux(&["stop", name]).await;
+                    let _ = self.amux(&["stop", &name]).await;
                 }
             }
         }
@@ -629,6 +858,17 @@ impl Install {
     /// `amux new` with more of the provider's own arguments. Claude runs in
     /// a terminal for its own interface and headless for amux's.
     async fn create_with(&self, scenario: Scenario, extra: &[&str]) -> Result<Vec<u8>, String> {
+        self.create_as(scenario, CLAUDE_MODEL, &[], extra).await
+    }
+
+    /// `amux new` on a Claude `model`, with more of amux's own `options`.
+    async fn create_as(
+        &self,
+        scenario: Scenario,
+        model: &str,
+        options: &[&str],
+        extra: &[&str],
+    ) -> Result<Vec<u8>, String> {
         let cwd = self.project(scenario)?.to_string_lossy().into_owned();
         let agent: &[&str] = match self.kind {
             Kind::ClaudePty => &["claude", "--in", "native"],
@@ -637,14 +877,16 @@ impl Install {
         };
         let mut args = vec!["new"];
         args.extend(agent);
-        args.extend(["--name", scenario.name(), "--cwd", cwd.as_str()]);
+        let name = scenario.agent();
+        args.extend(["--name", name.as_str(), "--cwd", cwd.as_str()]);
+        args.extend(options);
         if self.kind != Kind::Codex {
             // Only amux's own tool server and no settings but the
             // project's (it has none): the operator's MCP servers and
             // permission rules stay out of the run.
             args.extend([
                 "--model",
-                CLAUDE_MODEL,
+                model,
                 "--",
                 "--setting-sources",
                 "project",
@@ -657,9 +899,10 @@ impl Install {
             args.extend(["--allowedTools", "Bash"]);
         }
         // Terminal Claude takes the operator's default permission mode even
-        // with only project settings, and an `auto` default runs the decide
-        // recording's command without asking.
-        if self.kind == Kind::ClaudePty && scenario == Scenario::Decide {
+        // with only project settings, and an `auto` default runs commands
+        // without asking: a scenario starts in the default one unless it
+        // names its own.
+        if self.kind == Kind::ClaudePty && !extra.contains(&"--permission-mode") {
             args.extend(["--permission-mode", "default"]);
         }
         args.extend(extra);
@@ -733,7 +976,7 @@ impl Install {
             .clone()
             .create_agent(CreateAgentRequest {
                 agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-                name: Some(scenario.name().to_owned()),
+                name: Some(scenario.agent()),
                 cwd: self.project(scenario)?.to_string_lossy().into_owned(),
                 agent: Some(wire::create_agent_request::Agent::Codex(config)),
                 ..CreateAgentRequest::default()
@@ -758,7 +1001,7 @@ impl Install {
                     let stream = client
                         .subscribe_session(SubscribeSessionRequest {
                             agent_id: agent.clone(),
-                            tail: 1000,
+                            from: Some(wire::subscribe_session_request::From::Tail(1000)),
                         })
                         .await;
                     if let Ok(stream) = stream {
@@ -821,11 +1064,13 @@ impl Install {
     }
 
     async fn send(&self, scenario: Scenario, text: &str) -> Result<(), String> {
-        self.amux(&["send", scenario.name(), text]).await.map(drop)
+        self.amux(&["send", &scenario.agent(), text])
+            .await
+            .map(drop)
     }
 
     /// Sends an input the CLI has no verb for, as the apps send it.
-    async fn input(&self, agent: &[u8], of: wire::KindInput) -> Result<(), String> {
+    async fn input(&self, agent: &[u8], of: wire::AgentInput) -> Result<(), String> {
         let response = self
             .client
             .sessions
@@ -848,22 +1093,22 @@ impl Install {
         }
     }
 
-    fn interrupt(&self) -> wire::KindInput {
+    fn interrupt(&self) -> wire::AgentInput {
         match self.kind {
-            Kind::Codex => wire::KindInput::Codex(CodexInput {
-                of: Some(codex_input::Of::Interrupt(wire::Interrupt {})),
-            }),
-            Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
-                of: Some(claude_sdk_input::Of::Interrupt(wire::Interrupt {})),
-            }),
-            _ => wire::KindInput::ClaudePty(ClaudePtyInput {
-                of: Some(claude_pty_input::Of::Interrupt(wire::Interrupt {})),
-            }),
+            Kind::Codex => AgentInput {
+                of: Some(agent_input::Of::Interrupt(wire::Interrupt {})),
+            },
+            Kind::ClaudeSdk => AgentInput {
+                of: Some(agent_input::Of::Interrupt(wire::Interrupt {})),
+            },
+            _ => AgentInput {
+                of: Some(agent_input::Of::Interrupt(wire::Interrupt {})),
+            },
         }
     }
 
     /// Allows an open ask once, the way the apps' primary choice does.
-    fn allow(&self, ask: &OpenAsk) -> Result<wire::KindInput, String> {
+    fn allow(&self, ask: &OpenAsk) -> Result<wire::AgentInput, String> {
         match ask {
             OpenAsk::Claude(ask) => {
                 if !matches!(ask.body, Some(wire::ask::Body::Permission(_))) {
@@ -872,21 +1117,21 @@ impl Install {
                         ask_token(&OpenAsk::Claude(ask.clone()))
                     ));
                 }
-                let answer = ClaudeAnswer {
+                let answer = Answer {
                     ask_key: ask.key.clone(),
-                    of: Some(claude_answer::Of::Permission(wire::PermissionAnswer {
+                    of: Some(answer::Of::Permission(wire::PermissionAnswer {
                         of: Some(permission_answer::Of::Allow(wire::PermissionAllow {
                             scope: None,
                         })),
                     })),
                 };
                 Ok(match self.kind {
-                    Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
-                        of: Some(claude_sdk_input::Of::Answer(answer)),
-                    }),
-                    _ => wire::KindInput::ClaudePty(ClaudePtyInput {
-                        of: Some(claude_pty_input::Of::Answer(answer)),
-                    }),
+                    Kind::ClaudeSdk => AgentInput {
+                        of: Some(agent_input::Of::Answer(answer)),
+                    },
+                    _ => AgentInput {
+                        of: Some(agent_input::Of::Answer(answer)),
+                    },
                 })
             }
             OpenAsk::Codex(ask) => {
@@ -899,14 +1144,12 @@ impl Install {
                         ask_token(&OpenAsk::Codex(ask.clone()))
                     ));
                 }
-                Ok(wire::KindInput::Codex(CodexInput {
-                    of: Some(codex_input::Of::Answer(wire::CodexAnswer {
+                Ok(AgentInput {
+                    of: Some(agent_input::Of::Answer(wire::Answer {
                         ask_key: ask.key.clone(),
-                        of: Some(wire::codex_answer::Of::Approve(
-                            wire::Decision::Approve as i32,
-                        )),
+                        of: Some(wire::answer::Of::Approve(wire::Decision::Approve as i32)),
                     })),
-                }))
+                })
             }
         }
     }
@@ -926,6 +1169,60 @@ impl Install {
             Scenario::Permission => self.permission().await,
             Scenario::Mode => self.mode().await,
             Scenario::Attach => self.attach().await,
+            Scenario::MultiTurn => self.multi_turn().await,
+            Scenario::Compacted => self.compacted().await,
+            Scenario::Cleared => self.cleared().await,
+            Scenario::Controls => self.controls().await,
+            Scenario::Effort => self.effort().await,
+            Scenario::ConfiguredTurn => self.configured_turn().await,
+            Scenario::QuestionAsked => self.question_asked().await,
+            Scenario::QuestionEveryShape => self.question_every_shape().await,
+            Scenario::QuestionDismissed => self.question_dismissed().await,
+            Scenario::PlanReviewed => self.plan_reviewed().await,
+            Scenario::ElicitationAccepted => self.elicitation_accepted().await,
+            Scenario::ElicitationDeclined => self.elicitation_declined().await,
+            Scenario::ElicitationCancelled => self.elicitation_cancelled().await,
+            Scenario::ElicitationLinkAccepted => self.elicitation_link_accepted().await,
+            Scenario::FailedToolServer => self.failed_tool_server().await,
+            Scenario::FailingCommand if self.kind == Kind::Codex => {
+                self.codex_failing_command().await
+            }
+            Scenario::FailingCommand => self.failing_command().await,
+            Scenario::TaskList => self.task_list().await,
+            Scenario::BackgroundShell => self.background_shell().await,
+            Scenario::SubagentTask => self.subagent_task().await,
+            Scenario::Image if self.kind == Kind::Codex => self.codex_image().await,
+            Scenario::Image => self.image().await,
+            Scenario::SignInProblem => self.sign_in_problem().await,
+            Scenario::SteerFolded if self.kind == Kind::Codex => self.codex_steer_folded().await,
+            Scenario::SteerFolded => self.steer_folded().await,
+            Scenario::ApprovalDeny => self.approval_deny().await,
+            Scenario::InjectIdle => self.inject_idle().await,
+            Scenario::InjectDrain => self.inject_drain().await,
+            Scenario::TwoAssistantMessages => self.two_assistant_messages().await,
+            Scenario::ReasoningSummary => self.reasoning_summary().await,
+            Scenario::Exploring => self.exploring().await,
+            Scenario::FileChanges => self.file_changes().await,
+            Scenario::FileMoved => self.file_moved().await,
+            Scenario::Compaction => self.compaction().await,
+            Scenario::TurnError => self.turn_error().await,
+            Scenario::TurnRetries => self.turn_retries().await,
+            Scenario::SignedOut => self.signed_out().await,
+            Scenario::WebSearch => self.web_search().await,
+            Scenario::Subagent => self.subagent().await,
+            Scenario::BackgroundTerminal => self.background_terminal().await,
+            Scenario::ToolServerForm => self.tool_server_form().await,
+            Scenario::AccessGrant => self.access_grant().await,
+            Scenario::AutomaticReview => self.automatic_review().await,
+            Scenario::ApprovalScopes => self.approval_scopes().await,
+            Scenario::ModeCycle => self.mode_cycle().await,
+            Scenario::LongPrompt => self.long_prompt().await,
+            Scenario::ApiError => self.api_error().await,
+            Scenario::PermissionScoped => self.permission_scoped().await,
+            Scenario::PermissionDenied => self.permission_denied().await,
+            Scenario::TerminalAllow => self.terminal_allow().await,
+            Scenario::TerminalEscape => self.terminal_escape().await,
+            Scenario::TerminalQuestion => self.terminal_question().await,
         }
     }
 
@@ -1139,14 +1436,8 @@ impl Install {
             .filter_map(|item| boundary(self.kind, item))
             .filter(|boundary| boundary.kind() == wire::BoundaryKind::Resumed)
             .collect();
-        let Some(boundary) = resumed.first() else {
+        if resumed.is_empty() {
             return Err("the new incarnation has no resume boundary".into());
-        };
-        if !boundary.provider_session.is_empty() && boundary.provider_session != session {
-            return Err(format!(
-                "resumed into session {} instead of {session}",
-                boundary.provider_session
-            ));
         }
         let now = live.state(self.kind).provider_session;
         if now.as_deref() != Some(session.as_str()) {
@@ -1274,13 +1565,21 @@ impl Log {
             .unwrap_or_default()
     }
 
-    /// Something of the provider's own follows the prompt.
+    /// Something of the provider's own follows the prompt: more than the
+    /// status headless Claude reports as it sends each request.
     fn under_way(&self, kind: Kind) -> bool {
         let items = self.ordered();
         items
             .iter()
             .position(|item| item_token(kind, item).as_deref() == Some("prompt"))
-            .is_some_and(|at| items.len() > at + 1)
+            .is_some_and(|at| {
+                items[at + 1..].iter().any(|item| {
+                    !matches!(
+                        ItemBody::decode(kind, &item.body),
+                        ItemBody::Claude(wire::claude_item::Kind::Status(_))
+                    )
+                })
+            })
     }
 
     /// The items after the first `mark` in order, and the snapshots since
@@ -1369,9 +1668,11 @@ struct Shape {
 
 impl Shape {
     /// Terminal Claude's capture carries none of amux's keys, so its replay
-    /// reads idle from the interruption that cancels the last question until
-    /// the row of the reply amux typed in its place; the session, which typed
-    /// the reply the moment the interruption landed, reads working throughout.
+    /// cannot tell a question amux replied to instead from one dismissed:
+    /// it reads the last question dismissed, and idle from the interruption
+    /// that cancels it until the row of the reply amux typed in its place;
+    /// the session, which typed the reply the moment the interruption
+    /// landed, reads it replied and working throughout.
     fn reply_typed_at_once(&mut self) {
         if let Some(at) = self
             .phases
@@ -1380,6 +1681,41 @@ impl Shape {
             && self.phases[at + 1..].starts_with(&[Phase::Working, Phase::Idle, Phase::Working])
         {
             self.phases.drain(at + 2..at + 4);
+        }
+        if let Some(last) = self
+            .items
+            .iter_mut()
+            .rev()
+            .find(|item| item.starts_with("ask "))
+            && last == "ask dismissed"
+        {
+            *last = "ask replied".into();
+        }
+    }
+
+    /// A command amux typed into terminal Claude that Claude runs on its
+    /// own, as `/compact` is, writes no prompt row: its replay stays idle
+    /// where the session, which sent it, reads working until it is done.
+    fn command_typed_unseen(&mut self) {
+        if self
+            .phases
+            .ends_with(&[Phase::Idle, Phase::Working, Phase::Idle])
+        {
+            self.phases.truncate(self.phases.len() - 2);
+        }
+    }
+
+    /// A prompt queued behind a turn starts the moment that turn ends. Its
+    /// recording carries the prompt as a line written after the turn's
+    /// result, so the replay reads idle in between, which a session never
+    /// shows for longer than the step that ended the turn.
+    fn queued_ran_at_once(&mut self) {
+        if let Some(at) = self
+            .phases
+            .windows(3)
+            .position(|window| window == [Phase::Working, Phase::Idle, Phase::Working])
+        {
+            self.phases.drain(at + 1..at + 3);
         }
     }
 }
@@ -1418,8 +1754,7 @@ fn expect_outcome(outcome: wire::TurnOutcome, want: wire::TurnOutcome) -> Result
 }
 
 fn item_token(kind: Kind, item: &Item) -> Option<String> {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     if let Some(boundary) = boundary(kind, item) {
         return Some(format!(
@@ -1452,29 +1787,24 @@ fn item_token(kind: Kind, item: &Item) -> Option<String> {
         format!("ask {outcome}")
     };
     match ItemBody::decode(kind, &item.body) {
-        ItemBody::ClaudePty(body) => match body {
-            Pty::Prompt(_) => Some("prompt".into()),
-            Pty::Steer(_) => Some("steer".into()),
-            Pty::Tool(call) => Some(tool(call.state, call.decision.as_ref())),
-            Pty::ApiError(_) => Some("error".into()),
-            Pty::AgentMessage(_) => Some("agent message".into()),
-            Pty::Plan(plan) => Some(plan_token(&plan)),
-            _ => None,
-        },
-        ItemBody::ClaudeSdk(body) => match body {
-            Sdk::Prompt(_) => Some("prompt".into()),
-            Sdk::Steer(_) => Some("steer".into()),
-            Sdk::Tool(call) => Some(tool(call.state, call.decision.as_ref())),
-            Sdk::ApiError(_) => Some("error".into()),
-            Sdk::AgentMessage(_) => Some("agent message".into()),
-            Sdk::Ask(item) => Some(ask(&item)),
-            Sdk::Plan(plan) => Some(plan_token(&plan)),
+        ItemBody::Claude(body) => match body {
+            Claude::Prompt(_) => Some("prompt".into()),
+            Claude::Steer(_) => Some("steer".into()),
+            Claude::Tool(call) => Some(tool(call.state, call.decision.as_ref())),
+            Claude::ApiError(_) => Some("error".into()),
+            Claude::AgentMessage(_) => Some("agent message".into()),
+            Claude::Ask(item) => Some(ask(&item)),
+            Claude::Plan(plan) => Some(plan_token(&plan)),
             _ => None,
         },
         ItemBody::Codex(body) => match body {
             Codex::Prompt(_) => Some("prompt".into()),
             Codex::Steer(_) => Some("steer".into()),
             Codex::Work(work) => Some(tool(work.state, work.decision.as_ref())),
+            // Codex answers amux's read of a fresh thread's history with a
+            // deprecation notice whenever it gets to it, before or after the
+            // first prompt; it says nothing about what the scenario did.
+            Codex::Error(error) if error.error_kind == "deprecationNotice" => None,
             Codex::Error(_) => Some("error".into()),
             Codex::AgentMessage(_) => Some("agent message".into()),
             Codex::Ask(item) => Some(ask(&item)),
@@ -1493,25 +1823,20 @@ fn plan_token(plan: &wire::Plan) -> String {
 }
 
 fn boundary(kind: Kind, item: &Item) -> Option<wire::Boundary> {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     match ItemBody::decode(kind, &item.body) {
-        ItemBody::ClaudePty(Pty::Boundary(boundary))
-        | ItemBody::ClaudeSdk(Sdk::Boundary(boundary))
+        ItemBody::Claude(Claude::Boundary(boundary))
         | ItemBody::Codex(Codex::Boundary(boundary)) => Some(boundary),
         _ => None,
     }
 }
 
 fn turn(kind: Kind, item: &Item) -> Option<wire::Turn> {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     match ItemBody::decode(kind, &item.body) {
-        ItemBody::ClaudePty(Pty::Turn(turn))
-        | ItemBody::ClaudeSdk(Sdk::Turn(turn))
-        | ItemBody::Codex(Codex::Turn(turn)) => Some(turn),
+        ItemBody::Claude(Claude::Turn(turn)) | ItemBody::Codex(Codex::Turn(turn)) => Some(turn),
         _ => None,
     }
 }
@@ -1554,11 +1879,10 @@ fn known(state: &AgentState) -> BTreeSet<&'static str> {
         ("permission", state.permission.is_some()),
         ("mode", state.mode.is_some()),
         ("approval_policy", state.approval_policy.is_some()),
-        ("sandbox", state.sandbox.is_some()),
         ("session", state.provider_session.is_some()),
         ("context", state.context.known),
         ("usage", state.usage.state() != wire::UsageState::Unknown),
-        ("servers", state.servers.state != 0),
+        ("servers", !state.servers.is_empty()),
         ("sign_in", state.sign_in.state != 0),
     ]
     .into_iter()

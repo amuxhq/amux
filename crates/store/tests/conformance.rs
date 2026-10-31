@@ -1,8 +1,8 @@
 //! The store's reader and writer suite, against a temp-file SQLite store.
 
 use store::{
-    Absorb, AgentKey, AgentRow, CommitClock, Cut, Delivery, Marker, PageEnd, Record, SourceEvent,
-    Sqlite, StoreError,
+    Absorb, AgentKey, AgentRow, CommitClock, Cut, Delivery, Marker, PageEnd, Record, Sqlite,
+    StoreError,
 };
 use wire::{Append, Item, Phase, Snapshot, Step, TurnEnd};
 
@@ -28,7 +28,6 @@ fn item(key: &str, text: &str) -> Item {
         kind: wire::Kind::ClaudeSdk as i32,
         body: vec![1, 2, 3],
         at_ms: 5,
-        producer_version: "1.0.0".into(),
         ..Default::default()
     }
 }
@@ -36,7 +35,6 @@ fn item(key: &str, text: &str) -> Item {
 /// An item as an origin sends it: order and revision assigned.
 fn origin_item(key: &str, order: u64, revision: u64, text: &str) -> Item {
     Item {
-        agent_id: b"remote".to_vec(),
         order,
         revision,
         ..item(key, text)
@@ -190,7 +188,6 @@ fn commit_assigns_revisions_per_record_and_orders_once_per_key() {
     let stored = store.get(&agent, "m1").unwrap().unwrap();
     assert_eq!((stored.order, stored.revision), (1, 3));
     assert_eq!(stored.text, "one, revised");
-    assert_eq!(stored.agent_id, b"a");
     assert_eq!(stored.body, vec![1, 2, 3]);
     assert_eq!(store.agent(&agent).unwrap().unwrap().next_revision, 7);
 }
@@ -224,19 +221,16 @@ fn appends_extend_text_and_carry_their_base() {
         ..Default::default()
     };
     let committed = store.commit(&agent, &[(2, step)], CLOCK).unwrap();
-    assert_eq!(committed.skipped_appends, 1);
     assert_eq!(
         committed.records,
         vec![
             Record::Append(Append {
-                agent_id: b"a".to_vec(),
                 key: "msg".into(),
                 base_revision: 1,
                 revision: 2,
                 text: "lo w".into(),
             }),
             Record::Append(Append {
-                agent_id: b"a".to_vec(),
                 key: "msg".into(),
                 base_revision: 2,
                 revision: 3,
@@ -281,7 +275,6 @@ fn snapshots_copy_their_envelope_onto_the_row() {
         panic!("{:?}", committed.records)
     };
     assert_eq!(snap.revision, 2);
-    assert_eq!(snap.agent_id, b"a");
     let row = store.agent(&agent).unwrap().unwrap();
     assert_eq!(row.phase, Phase::Working as i32);
     assert_eq!(row.working_on.as_deref(), Some("fixing the build"));
@@ -759,7 +752,7 @@ fn a_delta_joins_above_and_only_live_records_move_the_cursor() {
         .absorb(
             &agent,
             Absorb::Delta {
-                events: vec![SourceEvent::Item(origin_item("k2", 2, 12, "two"))],
+                events: vec![Record::Item(origin_item("k2", 2, 12, "two"))],
                 live: false,
             },
         )
@@ -773,9 +766,8 @@ fn a_delta_joins_above_and_only_live_records_move_the_cursor() {
             &agent,
             Absorb::Delta {
                 events: vec![
-                    SourceEvent::Item(origin_item("k3", 3, 13, "Hel")),
-                    SourceEvent::Append(Append {
-                        agent_id: b"remote".to_vec(),
+                    Record::Item(origin_item("k3", 3, 13, "Hel")),
+                    Record::Append(Append {
                         key: "k3".into(),
                         base_revision: 13,
                         revision: 14,
@@ -783,14 +775,13 @@ fn a_delta_joins_above_and_only_live_records_move_the_cursor() {
                     }),
                     // A base the replica does not hold is left for the full
                     // item every stream ends with.
-                    SourceEvent::Append(Append {
-                        agent_id: b"remote".to_vec(),
+                    Record::Append(Append {
                         key: "k3".into(),
                         base_revision: 99,
                         revision: 100,
                         text: "??".into(),
                     }),
-                    SourceEvent::Snapshot(Snapshot {
+                    Record::Snapshot(Snapshot {
                         revision: 15,
                         ..snapshot(Phase::NeedsYou, Some("asking"), 70)
                     }),
@@ -834,7 +825,7 @@ fn an_older_snapshot_never_overwrites_a_newer_envelope() {
         .absorb(
             &agent,
             Absorb::Delta {
-                events: vec![SourceEvent::Snapshot(Snapshot {
+                events: vec![Record::Snapshot(Snapshot {
                     revision: 29,
                     ..snapshot(Phase::Working, Some("older"), 1)
                 })],
@@ -859,7 +850,7 @@ fn a_replica_without_a_block_serves_nothing() {
         .absorb(
             &agent,
             Absorb::Delta {
-                events: vec![SourceEvent::Item(origin_item("k1", 1, 1, ""))],
+                events: vec![Record::Item(origin_item("k1", 1, 1, ""))],
                 live: false,
             },
         )
@@ -1085,37 +1076,5 @@ fn an_inventory_put_keeps_a_replicas_last_activity() {
     assert_eq!(
         (row.phase, row.phase_since_ms),
         (Phase::Working as i32, Some(4_500))
-    );
-}
-
-/// Retention's byte count in SQL and `item_bytes` agree on every row,
-/// whatever its kind, text, attachments and input id.
-#[test]
-fn item_bytes_agrees_with_the_stores_count() {
-    let agent = own("a");
-    let mut store = with_agent(fresh(), &agent);
-    let mut odd = item("é-key", "non-ascii text: ünïcödé");
-    odd.kind = 99;
-    odd.input_id = b"input".to_vec();
-    odd.attachments = vec![wire::Attachment {
-        of: Some(wire::attachment::Of::Image(wire::BlobRef {
-            hash: vec![7; 32],
-            name: "shot.png".into(),
-            mime: "image/png".into(),
-            size: 12,
-        })),
-    }];
-    store
-        .commit(
-            &agent,
-            &[(1, items_step(&[item("plain", "x"), odd]))],
-            CLOCK,
-        )
-        .unwrap();
-    let held = store.page(&agent, None, 10).unwrap().items;
-    assert_eq!(held.len(), 2);
-    assert_eq!(
-        store.pool_bytes(true).unwrap(),
-        held.iter().map(store::item_bytes).sum::<u64>()
     );
 }

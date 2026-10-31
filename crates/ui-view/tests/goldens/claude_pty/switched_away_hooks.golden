@@ -1,7 +1,5 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 2 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"SessionStart","model":"claude-opus-5-5","permission_mode":"default","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

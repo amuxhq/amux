@@ -1,8 +1,9 @@
 # Vendored googleapis protos
 
-`rpc/status.proto`, `rpc/code.proto` and `rpc/error_details.proto` are copied
-unchanged from [googleapis](https://github.com/googleapis/googleapis) at commit
-`7721fc7742901980ae9b622bf546b72d5c81f65f`. amux's errors are `google.rpc.Status`
+`rpc/status.proto` and `rpc/code.proto` are copied unchanged from
+[googleapis](https://github.com/googleapis/googleapis) at commit
+`7721fc7742901980ae9b622bf546b72d5c81f65f`; `rpc/error_details.proto` is the
+same file cut down to `ErrorInfo`, the one detail amux sends. amux's errors are `google.rpc.Status`
 values, as gRPC's richer error model carries them, with `google.rpc.ErrorInfo`
 naming amux's own reasons.
 

@@ -135,15 +135,13 @@ impl AppRuntime {
             cap: DEFAULT_CAP.max(tail),
         };
         let session = self.fleet.open(agent, window).await?;
-        // A draft that cannot be read is one the person never sees again,
-        // not a chat that cannot open.
+        // Read after this agent's earlier saves, so a chat reopened at once
+        // finds what was left in it. A draft that cannot be read is one the
+        // person never sees again, not a chat that cannot open.
         let kept = self
-            .client
-            .get_draft(wire::GetDraftRequest {
-                agent_id: agent.agent.clone(),
-            })
+            .fleet
+            .kept_draft(agent)
             .await
-            .ok()
             .map(|draft| Draft::kept(&draft))
             .filter(|draft| !draft.parts.is_empty());
         let id = self.next_chat.fetch_add(1, Ordering::Relaxed);
@@ -155,7 +153,6 @@ impl AppRuntime {
             Arc::downgrade(&self.fleet),
             Arc::new(move || wake(Wake::Chat(id))),
             self.clock.clone(),
-            self.client.clone(),
             kept,
         );
         Ok(chat)
@@ -364,7 +361,6 @@ impl AppRuntime {
         let directory = |entry: ProjectEntry| Directory {
             path: entry.path,
             name: entry.name,
-            last_used_ms: entry.last_used_ms,
         };
         Ok(Directories {
             recent: listed.recent.into_iter().map(directory).collect(),
@@ -439,7 +435,6 @@ impl AppRuntime {
         dump_path: String,
         header: Vec<u8>,
         frame_png: Vec<u8>,
-        trace: Option<String>,
     ) -> Result<values::ReportSent, RpcError> {
         let file = |name: &str, contents: Vec<u8>| wire::DumpFile {
             name: name.to_owned(),
@@ -448,9 +443,6 @@ impl AppRuntime {
         let mut files = vec![file("report.json", header)];
         if !frame_png.is_empty() {
             files.push(file("frame.png", frame_png));
-        }
-        if let Some(trace) = trace {
-            files.push(file("trace.jsonl", trace.into_bytes()));
         }
         let sent = self
             .client

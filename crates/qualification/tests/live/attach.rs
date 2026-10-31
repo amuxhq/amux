@@ -25,11 +25,11 @@ use super::{Install, Log, Scenario, Verdict, item_token};
 const ROWS: u16 = 40;
 const COLS: u16 = 120;
 /// The leader key, then detach.
-const DETACH: &[u8] = b"\x01d";
+pub(super) const DETACH: &[u8] = b"\x01d";
 /// The leader key, then the fleet.
 const FLEET: &[u8] = b"\x01s";
 /// How long a terminal may take to draw what a step waits for.
-const DRAW: Duration = Duration::from_secs(60);
+pub(super) const DRAW: Duration = Duration::from_secs(60);
 
 /// The prompt typed into Codex's app: a command the read-only sandbox
 /// makes Codex ask about, told so, or the model may answer without trying.
@@ -61,7 +61,7 @@ pub fn write_verdict(verdict: &Verdict) {
 
 /// One real terminal: the program in it, everything it wrote, timed, and
 /// the screen a terminal would show.
-struct Screen {
+pub(super) struct Screen {
     name: &'static str,
     process: PtyProcess,
     output: tokio::sync::mpsc::Receiver<bytes::Bytes>,
@@ -73,7 +73,7 @@ struct Screen {
 }
 
 impl Screen {
-    fn open(
+    pub(super) fn open(
         name: &'static str,
         dir: &Path,
         install: &Install,
@@ -128,11 +128,11 @@ impl Screen {
         })
     }
 
-    fn contents(&self) -> String {
+    pub(super) fn contents(&self) -> String {
         self.parser.screen().contents()
     }
 
-    fn shows(&self, text: &str) -> bool {
+    pub(super) fn shows(&self, text: &str) -> bool {
         self.contents().contains(text)
     }
 
@@ -155,7 +155,7 @@ impl Screen {
     /// terminal answers: the cursor position, the device attributes and
     /// the default colours. The keyboard-protocol query goes unanswered,
     /// as a terminal without it leaves it.
-    async fn pump(&mut self, clock: Instant) -> Result<(), String> {
+    pub(super) async fn pump(&mut self, clock: Instant) -> Result<(), String> {
         loop {
             let bytes = match self.output.try_recv() {
                 Ok(bytes) => bytes,
@@ -197,7 +197,7 @@ impl Screen {
         }
     }
 
-    async fn type_keys(&mut self, clock: Instant, keys: &[u8]) -> Result<(), String> {
+    pub(super) async fn type_keys(&mut self, clock: Instant, keys: &[u8]) -> Result<(), String> {
         let line = serde_json::json!([
             clock.elapsed().as_secs_f64(),
             "i",
@@ -212,7 +212,7 @@ impl Screen {
     }
 
     /// Waits for the program to exit and says whether it exited cleanly.
-    async fn exits(&mut self, clock: Instant) -> Result<bool, String> {
+    pub(super) async fn exits(&mut self, clock: Instant) -> Result<bool, String> {
         let deadline = tokio::time::Instant::now() + DRAW;
         loop {
             let _ = self.pump(clock).await;
@@ -427,7 +427,7 @@ impl Install {
             "app",
             &dir,
             self,
-            &["attach", name],
+            &["attach", name, "--in", "native"],
             &project,
         )?);
         // The app is ready for a prompt once its composer is drawn and it
@@ -509,7 +509,7 @@ impl Install {
             return Err(format!("amux's chat holds prompts {sent:?}, not the one"));
         }
         super::judge(
-            &self.recorded(scenario)?.shape(Kind::Codex),
+            &self.captured(scenario)?.shape(Kind::Codex),
             &live.shape(Kind::Codex),
         )?;
 

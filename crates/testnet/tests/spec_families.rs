@@ -13,7 +13,6 @@
 
 use std::sync::Arc;
 
-use node::SourceVerdict;
 use prost::Message as _;
 use provider_fakes::script::{Ask, Question, Script, Step};
 use store::AgentRow;
@@ -24,8 +23,7 @@ use uuid::Uuid;
 use wire::agent_service_server::AgentService as _;
 use wire::session_service_server::SessionService as _;
 use wire::{
-    AgentRef, AmbiguousHostName, ClaudeSdkInput, CreateAgentRequest, InventoryEvent, Kind,
-    Lifecycle, Phase, claude_sdk_input, inventory_event,
+    AgentInput, AgentRef, CreateAgentRequest, InventoryEvent, Kind, Lifecycle, Phase, agent_input,
 };
 
 fn text(text: &str) -> Step {
@@ -71,23 +69,24 @@ fn question() -> Step {
 }
 
 /// A message as an agent's tool server submits it.
-fn message(id: &[u8], to: &AgentRef, text: &str) -> wire::SendMessageRequest {
-    wire::SendMessageRequest {
+fn message(id: &[u8], to: &AgentRef, text: &str) -> wire::Envelope {
+    wire::Envelope {
         id: id.to_vec(),
         to: Some(to.clone()),
         context: None,
-        body: Some(wire::MessageBody {
+        from: None,
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
             text: text.into(),
             attachments: Vec::new(),
-        }),
+        })),
     }
 }
 
 fn interrupt() -> wire::Input {
     wire::Input::new(
         Uuid::new_v4().as_bytes().to_vec(),
-        ClaudeSdkInput {
-            of: Some(claude_sdk_input::Of::Interrupt(wire::Interrupt {})),
+        AgentInput {
+            of: Some(agent_input::Of::Interrupt(wire::Interrupt {})),
         },
     )
 }
@@ -214,7 +213,7 @@ async fn open_ask(net: &Net, agent: &str) -> String {
         .await
         .unwrap();
     let snapshot = cut.snapshot.expect("a snapshot");
-    let body = wire::ClaudeSdkSnapshot::decode(snapshot.body.as_slice()).unwrap();
+    let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
     body.asks.first().expect("an open ask").key.clone()
 }
 
@@ -292,17 +291,8 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
         .unwrap_err();
     assert_eq!(refused.code(), Code::FailedPrecondition);
     let error = wire_error(&refused);
-    let ambiguous = error
-        .detail::<AmbiguousHostName>()
-        .expect("the candidates ride the error");
-    let mut candidates: Vec<&str> = ambiguous
-        .candidates
-        .iter()
-        .map(|host| host.name())
-        .collect();
-    candidates.sort_unstable();
-    assert_eq!(candidates, ["BOX", "box"]);
-    println!("spawn on \"Box\": ambiguous between {candidates:?}");
+    assert_eq!(error.message, "2 trusted hosts answer to Box");
+    println!("spawn on \"Box\": FAILED_PRECONDITION ({})", error.message);
 
     let spawned = net
         .spawn_child("lead", child("helper", "box", says("Suite green.")))
@@ -559,130 +549,6 @@ async fn unpairing_the_parents_host_leaves_the_child_and_drops_its_owed_report()
     );
     assert!(received(&net, "lead").await.is_empty());
     println!("unpaired: the report is dropped and scout is kept");
-    net.shutdown().await.unwrap();
-}
-
-/// The row's incarnation rides the wire. A parent resumed where the
-/// child's host has not seen it yet still shows the incarnation the row
-/// is for there, so the child's host sends it; the parent's host, which
-/// knows better, answers NOT_FOUND, and the row is dropped unsent.
-///
-/// Stopping the parent stops the child too, mid-turn: its turn is
-/// cancelled and it exits, or its deadline kills it first. Either way the
-/// child's last word is a row for the parent's stopped incarnation,
-/// Finished or Failed, and that row is the one refused.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_row_for_a_parent_resumed_out_of_sight_is_refused_where_the_parent_lives() {
-    let mut net = Net::start(
-        Topology::new()
-            .host("desk")
-            .host("server")
-            .link("desk", "server")
-            .agent(lead()),
-    )
-    .await
-    .unwrap();
-    net.spawn_child(
-        "lead",
-        child(
-            "helper",
-            "server",
-            vec![waits("finish"), text("Suite green."), Step::TurnEnd],
-        ),
-    )
-    .await
-    .unwrap();
-    until("server to hold lead's replica", || {
-        let net = &net;
-        async move { row(net, "server", "lead").await.map(|_| ()).ok_or("no row") }
-    })
-    .await
-    .unwrap();
-
-    // From here server's follower holds every change to lead it hears of.
-    let lead = net.agent("lead").unwrap().id;
-    let (release, released) = tokio::sync::watch::channel(false);
-    let (heard, mut hearing) = tokio::sync::mpsc::unbounded_channel();
-    net.runtime("server")
-        .unwrap()
-        .set_inventory_hook(Some(Arc::new(move |_, event: &InventoryEvent| {
-            let about_lead = matches!(
-                &event.of,
-                Some(inventory_event::Of::Agent(agent)) if agent.agent_id == lead.as_bytes()
-            );
-            if !about_lead {
-                return SourceVerdict::Keep;
-            }
-            let _ = heard.send(());
-            let mut released = released.clone();
-            SourceVerdict::Hold(Box::pin(async move {
-                let _ = released.wait_for(|released| *released).await;
-            }))
-        })));
-    net.runtime("desk").unwrap().stop(lead).await.unwrap();
-    net.resume("lead", None).await.unwrap();
-    hearing.recv().await.expect("server hears lead stop");
-    let seen = row(&net, "server", "lead").await.unwrap();
-    assert_eq!(
-        (seen.incarnation, seen.lifecycle),
-        (1, Lifecycle::Live as i32)
-    );
-    assert_eq!(row(&net, "desk", "lead").await.unwrap().incarnation, 2);
-    println!("lead resumed on desk as incarnation 2; server still shows incarnation 1, live");
-
-    net.open_gate("finish").unwrap();
-    let helper = net.agent("helper").unwrap().key();
-    until(
-        "helper, stopped with lead, to have exited and been ingested",
-        || {
-            let net = &net;
-            let helper = helper.clone();
-            async move {
-                let end = net
-                    .journal_end("helper")
-                    .map_err(|error| error.to_string())?;
-                let row = net
-                    .runtime("server")
-                    .unwrap()
-                    .read_store(move |store| store.agent(&helper).unwrap().unwrap())
-                    .await
-                    .unwrap();
-                (row.lifecycle == Lifecycle::Exited as i32 && row.ingest_cursor >= end)
-                    .then_some(())
-                    .ok_or_else(|| {
-                        format!(
-                            "lifecycle {:?}, cursor {} of {end}",
-                            Lifecycle::try_from(row.lifecycle),
-                            row.ingest_cursor
-                        )
-                    })
-            }
-        },
-    )
-    .await
-    .unwrap();
-    // The family rule may end helper while lead is between its stop and its
-    // resume; desk then turns the row away as for a stopped parent and it
-    // waits for the outbox's next pass. Server cannot hear the resume that
-    // would wake it (its follower is held), so the pass is run here.
-    until("the row to be settled", || {
-        let net = &net;
-        async move {
-            net.runtime("server").unwrap().drain_deliveries().await;
-            let rows = outbox(net, "server").await;
-            (rows == 0)
-                .then_some(())
-                .ok_or_else(|| format!("{rows} outbox rows"))
-        }
-    })
-    .await
-    .unwrap();
-    assert!(received(&net, "lead").await.is_empty());
-    assert_eq!(taken(&net, "lead", "Suite green.").await, 0);
-    println!(
-        "helper stops with lead; server sends its row for incarnation 1; desk refuses it and it is dropped"
-    );
-    release.send_replace(true);
     net.shutdown().await.unwrap();
 }
 
@@ -1238,7 +1104,7 @@ async fn the_agent_row_counts_live_descendants_and_background_jobs() {
             let jobs = cut
                 .snapshot
                 .map(|snapshot| {
-                    wire::ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
+                    wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
                         .unwrap()
                         .background_jobs
                         .map(|jobs| jobs.jobs.len())

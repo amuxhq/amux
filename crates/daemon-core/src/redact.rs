@@ -19,8 +19,8 @@ use serde::ser::{
 };
 pub use store::redact::Redactor;
 
+use crate::RestoreError;
 use crate::io::{Input, Recorded};
-use crate::{Checkpoint, RestoreError};
 
 /// What the next string written is, when it is not free text.
 #[derive(Clone, Copy)]
@@ -50,17 +50,11 @@ pub(crate) fn write_opaque<S: Serializer>(
     written
 }
 
-impl Checkpoint {
-    /// This checkpoint with its state redacted; one under another layout,
-    /// or one that does not decode, is refused.
-    pub fn redacted(&self, redactor: &dyn Redactor) -> Result<Checkpoint, RestoreError> {
-        let parts = crate::checkpoint_parts(self)?;
-        Ok(Checkpoint {
-            schema: self.schema,
-            state: postcard::to_allocvec(&Redacting::value(&parts, redactor))
-                .map_err(|error| RestoreError::Corrupt(error.to_string()))?,
-        })
-    }
+/// A [checkpoint](crate::Daemon::checkpoint) with its state redacted; one
+/// that does not decode is refused.
+pub fn checkpoint(checkpoint: &[u8], redactor: &dyn Redactor) -> Result<Vec<u8>, RestoreError> {
+    let parts = crate::checkpoint_parts(checkpoint)?;
+    postcard::to_allocvec(&Redacting::value(&parts, redactor)).map_err(RestoreError::of)
 }
 
 impl Input {
@@ -522,7 +516,7 @@ mod tests {
         let mut daemon = Daemon::new(
             store,
             StartOptions {
-                agents: PathBuf::from("/home/PLANTED/agents"),
+                replicas: PathBuf::from("/home/PLANTED/replicas"),
                 ..StartOptions::default()
             },
         );
@@ -531,19 +525,20 @@ mod tests {
             &mut Vec::new(),
         );
         let checkpoint = daemon.checkpoint();
-        assert!(holds(&checkpoint.state));
+        assert!(holds(&checkpoint));
 
         let redactor = Swap::default();
-        let redacted = checkpoint.redacted(&redactor).expect("it redacts");
-        assert!(!holds(&redacted.state), "the planted word is gone");
+        let redacted = super::checkpoint(&checkpoint, &redactor).expect("it redacts");
+        assert!(!holds(&redacted), "the planted word is gone");
         assert!(
             redactor.names.borrow().contains("amux.v1.HostEntry"),
             "the host's entry went through as its message: {:?}",
             redactor.names.borrow()
         );
         let store = Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens");
-        let restored = Daemon::restore(redacted, store).expect("the redacted checkpoint restores");
-        let again = restored.checkpoint().state;
+        let restored = Daemon::restore(&redacted, store, PathBuf::new())
+            .expect("the redacted checkpoint restores");
+        let again = restored.checkpoint();
         let kept = hex(&own("the desk REMOVED").encode_to_vec());
         assert!(
             again

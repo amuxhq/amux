@@ -200,7 +200,7 @@ addresses change. See [embedding](EMBEDDED.md).
 |---|---|---|
 | CLI and terminal client | the front door (`amux.sock` in the per-user runtime directory), then the profile's `profiles/<id>/sock` | `InstallationService` on the front door; `AgentService`, `SessionService` and `ProfileAdminService` on the profile socket |
 | phone UI | in process, through [`client::InProcess`](../crates/client/src/lib.rs) | the same `AgentService` and `SessionService` calls |
-| paired daemon | a link stream, after a pinned mutual-TLS handshake | `PeerAgentService` and `PeerSessionService`, the same calls answered only for this host's own agents |
+| paired daemon | a link stream, after a pinned mutual-TLS handshake | `AgentService` and `SessionService`, answered only for this host's own agents |
 | an agent's tool server | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | `AgentService` and `SessionService`; the socket it arrived on is the caller's identity |
 
 The daemon dials in the other direction exactly once per agent: it connects
@@ -430,18 +430,17 @@ time:
 2. Read `generation`. If the boot id changed and the last run did not shut
    down cleanly, bump the counter. Rewrite the file with this boot's id and
    the clean flag cleared, durably, before anything is served.
-3. List the profiles directory. For each profile, open its store and apply pending
-   migrations (forward-only, and additive from the first release on), then
-   look at every
+3. List the profiles directory. For each profile, open its store (creating
+   it when there is none), then look at every
    `agents/<id>/` without writing: try the lock, dial the live ones, read
    their Hello.
 4. **Activate.** Under a supervisor this is one exchange on the pipe it
    handed down: write `prepared`, wait for `go`. Without a supervisor, go
-   at once. Everything before this point is read-only apart from the
-   migration and the generation file, which is what makes rolling back to
-   the previous binary safe. A store written before the release schema is
-   not migrated: its file is named in the error, left as it is, and the
-   daemon does not start.
+   at once. Everything before this point is read-only apart from creating
+   a store that did not exist and the generation file, which is what makes
+   rolling back to the previous binary safe. A store of another schema
+   version is not opened: its file is named in the error, left as it is,
+   and the daemon does not start.
 5. Finish the sweep: resume ingest from each stored cursor, and mark
    exited, with the cause "while the daemon was away", every agent whose
    process is gone.
@@ -583,9 +582,8 @@ nicer in several places, and Windows pays for each:
 ![The wire crate is the only thing every side shares. interpret reads provider events on the agent side, one module per kind; the UI lib never links a store.](figures/crate-layers.svg)
 
 Every workspace member, grouped by layer. The figure draws `codex` beside
-`claude` under the agent; in the code the agent process speaks Codex's app
-server itself, and the `codex` crate is used only by the Codex protocol
-checks.
+`claude` under the agent: it starts Codex's app server and carries its
+bytes, and the agent process speaks the protocol itself.
 
 **Shared values** — no dependencies on other layers.
 
@@ -613,7 +611,7 @@ checks.
 | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | Claude Code's headless stream, transcript rows and hook payloads as types, with a tolerant decoder. See [provider crates](PROVIDER_CRATES.md). |
 | [`codex-protocol`](../crates/codex-protocol/src/lib.rs) | Codex's app-server messages as types, with a tolerant decoder. |
 | [`claude`](../crates/claude/src/lib.rs) | Claude Code integration: launch, hooks, transcript reading, messaging and version probing. |
-| [`codex`](../crates/codex/src/lib.rs) | Starting Codex's app server and a client of it, used by the Codex protocol checks. |
+| [`codex`](../crates/codex/src/lib.rs) | Starting Codex's app server on a socket other clients can join, and carrying its messages as bytes. |
 | [`pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal process hosting. |
 
 **The daemon.**
@@ -663,13 +661,13 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`testnet`](../crates/testnet/src/lib.rs) | The many-daemons harness: topologies of production runtimes in one process, faults and observations. See [testnet](TESTNET.md). |
 | [`provider-fakes`](../crates/provider-fakes/src/lib.rs) | Scripted stand-ins for the Claude and Codex binaries, playing authored scripts or recordings. |
 | [`qualification`](../crates/qualification/src/lib.rs) | Environment-dependent checks: live providers and performance baselines on enrolled machines. |
-| [`claude-specs`](../crates/claude-specs/src/lib.rs), [`codex-specs`](../crates/codex-specs/src/lib.rs) | Recorded protocol corpora for each provider, and the probes that record them. |
-| [`models`](../crates/models/README.md) | The protocol's promises as properties, explored by a checker over the real code; one fault vocabulary for every model's environment. |
+| [`claude-specs`](../crates/claude-specs/src/lib.rs), [`codex-specs`](../crates/codex-specs/src/bin/codex_probe/main.rs) | Recorded protocol corpora for each provider, and the probes that record them. |
+| [`models`](../crates/models/README.md) | The protocol's promises as properties, explored by a checker over the real code. |
 | [`replay-support`](../crates/replay-support/src/lib.rs) | Replays a debug bundle through its four stages with the protocol's properties judged at every step, and manages provider recordings for the capture tools. |
 | [`fake-amux`](../crates/fake-amux/src/main.rs) | A stand-in `amux` binary running the real supervisor over a scripted daemon. |
 | [`shot`](../crates/shot/README.md) | Deterministic PNG renderings of the terminal client's named states, and its storybook of whole screens. |
-| [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen, the protocol compatibility check, re-stamping, releases. |
-| [`ios-tools`](../crates/ios-tools/src/main.rs) | The phone's developer tools: iOS verification, Swift type generation, the screenshot comparator and the door client. |
+| [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen, the protocol compatibility check, releases. |
+| [`ios-tools`](../crates/ios-tools/src/main.rs) | The phone's developer tools: iOS verification, Swift type generation and the screenshot comparator. |
 
 ## The dependency policy
 
@@ -706,7 +704,7 @@ The allowed sets encode the layering above:
 
 | Crate | May depend on | Why |
 |---|---|---|
-| `wire`, `model`, `settings`, `redaction`, `log-file`, `release`, `version-stamp`, `analytics`, `git-facts`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code |
+| `wire`, `settings`, `redaction`, `log-file`, `release`, `version-stamp`, `analytics`, `git-facts`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code |
 | `journal`, `store`, `agent-dir`, `attachments` | `wire` | |
 | `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
 | `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `redaction`, `wire` | the pure step and its body redactor |
@@ -720,20 +718,20 @@ The allowed sets encode the layering above:
 | `agent` | `agent-core`, `agent-dir`, `attachments`, `claude`, `claude-protocol`, `codex`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `log-file`, `pty-host`, `wire` | the agent core's driver, and the only production crate that reads a provider |
 | `node` | `agent-dir`, `analytics`, `core-ring`, `daemon-core`, `git-facts`, `interpret`, `journal`, `log-file`, `path-core`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `version-stamp`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the dump's per-kind redactor |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
-| `ui-state` → `model`, `wire`; `ui-view` → `attachments`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library |
+| `model` → `wire`; `ui-state` → `model`, `wire`; `ui-view` → `attachments`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library |
 | `tui` | `attachments`, `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
 | `app-runtime` | `client`, `model`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | the phone's chats with no `node` |
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` | the daemon in the phone's process |
 | `app-ffi` | `app-embedded`, `app-runtime`, `client`, `model`, `node`, `ui-view` | the C ABI over both |
-| `amux` | `agent`, `agent-dir`, `analytics`, `claude`, `client`, `log-file`, `node`, `settings`, `store`, `tui`, `wire` | the one binary |
+| `amux` | `agent`, `agent-dir`, `analytics`, `claude`, `client`, `log-file`, `node`, `settings`, `tui`, `wire` | the one binary |
 | `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `socket-core`, `store`, `supervisor-core`, `ui-state`, `wire` | the properties, explored over the real cores, store and session state |
 | `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `redaction`, `store`, `ui-state`, `ui-view`, `wire` | replays the four stages, judging the models' properties; a debugging tool nothing that ships links |
-| `xtask` | `release`, `version-stamp` | signs releases |
+| `xtask` | `release` | signs releases |
 | `ios-tools` | `app-runtime`, `model`, `ui-view`, `wire` | generates the Swift mirrors |
 
 The phone bridge (`app-embedded`, `app-ffi`) links `node` on purpose: it
-hosts the runtime in process. `just embedded-check` and `just mobile-check`
-build that provider-free graph for the host and for iOS.
+hosts the runtime in process. `just mobile-check` checks
+that provider-free graph for iOS.
 
 ### The rustls patch
 

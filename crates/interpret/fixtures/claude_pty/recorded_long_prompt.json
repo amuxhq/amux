@@ -1,0 +1,20 @@
+{
+  "about": "A prompt of many lines, far past the length Claude collapses a paste at: its row reads as sent.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "../../../claude-specs/fixtures/live/pty/long_prompt/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

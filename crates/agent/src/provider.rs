@@ -19,6 +19,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
+use base64::Engine as _;
 use claude_protocol::stream as claude_stream;
 use codex_protocol::client::{
     Capabilities, ClientInfo, InitializeParams, InjectedContent, InjectedItem, ThreadResumeParams,
@@ -98,8 +99,6 @@ async fn persist(events: &mpsc::Sender<ProviderEvent>, path: &Path, bytes: impl 
 pub enum ProviderError {
     #[error("starting {command}: {source}")]
     Spawn { command: String, source: io::Error },
-    #[error("agents of kind {0} cannot be hosted yet")]
-    Unhosted(i32),
     /// Terminal Claude is hosted on Unix only: ConPTY re-renders the child's
     /// output in its own escape sequences, and Claude's messaging socket and
     /// the fake's raw console mode are Unix-only. docs/ARCHITECTURE.md
@@ -161,7 +160,7 @@ impl Provider {
             Ok(wire::Kind::ClaudeSdk) => Self::spawn_sdk(spec, dir, events).await,
             Ok(wire::Kind::ClaudePty) => Self::spawn_terminal(spec, dir, events).await,
             Ok(wire::Kind::Codex) => Self::spawn_codex(spec, dir, events).await,
-            Ok(wire::Kind::Unspecified) | Err(_) => Err(ProviderError::Unhosted(spec.kind)),
+            Ok(wire::Kind::Unspecified) | Err(_) => unreachable!("run refuses any other kind"),
         }
     }
 
@@ -559,20 +558,16 @@ impl Provider {
         let (session, resume) = claude_session(spec, dir)?;
         // A version that cannot be read starts anyway: a wrapper or an odd
         // banner is likelier than an old Claude.
-        let version = match claude::version::probe_version(Path::new(&spec.provider_command)).await
-        {
-            Ok(version) if version.0 < claude::version::MIN_TERMINAL => {
+        match claude::version::probe_version(Path::new(&spec.provider_command)).await {
+            Ok(version) if version < claude::version::MIN_TERMINAL => {
                 return Err(ProviderError::ClaudeTooOld {
                     found: version.to_string(),
                 });
             }
-            Ok(version) => version.to_string(),
-            Err(error) => {
-                eprintln!("amux agent: reading the Claude version: {error}");
-                String::new()
-            }
-        };
-        let launch = interpret::claude_pty::launch_fact(&version);
+            Ok(_) => {}
+            Err(error) => eprintln!("amux agent: reading the Claude version: {error}"),
+        }
+        let launch = interpret::claude_pty::launch_fact();
         let _ = events
             .send(ProviderEvent::Fact(Fact {
                 channel: Channel::Agent,
@@ -832,7 +827,7 @@ impl Provider {
                         source: ImageSource {
                             r#type: ImageSourceType::Base64,
                             media_type: media_type.to_owned(),
-                            data: base64(&bytes),
+                            data: base64::engine::general_purpose::STANDARD.encode(&bytes),
                             extensions: Default::default(),
                         },
                         extensions: Default::default(),
@@ -897,7 +892,6 @@ impl Provider {
             parent_tool_use_id: None,
             session_id: self.session.clone(),
             uuid: Some(uuid.to_owned()),
-            priority: None,
             extensions: Default::default(),
         });
         self.write_line(&claude_stream::encode(&line)).await
@@ -1304,9 +1298,8 @@ fn claude_launch(
             .map(|_| format!("mcp__{}__*", interpret::AMUX_TOOL_SERVER))
             .chain([format!("Read(/{}/**)", rule_path(&dir.join(dir::BLOBS)))])
             .collect(),
-        ..Default::default()
     };
-    let settings = claude::launch::merged_settings(user, &managed).into_value();
+    let settings = claude::launch::merged_settings(user, &managed);
     Ok((args, settings.to_string(), withheld))
 }
 
@@ -1573,25 +1566,6 @@ fn environment(command: &mut tokio::process::Command, spec: &AgentSpec) {
     command.envs(&spec.provider_env);
 }
 
-/// Standard base64 with padding, as Claude's image blocks carry bytes.
-fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let word = chunk.iter().enumerate().fold(0u32, |word, (index, byte)| {
-            word | u32::from(*byte) << (16 - 8 * index)
-        });
-        for index in 0..4 {
-            if index <= chunk.len() {
-                encoded.push(ALPHABET[(word >> (18 - 6 * index) & 63) as usize] as char);
-            } else {
-                encoded.push('=');
-            }
-        }
-    }
-    encoded
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -1804,14 +1778,5 @@ mod tests {
                 "/d/agents/a/blobs"
             );
         }
-    }
-
-    #[test]
-    fn base64_pads_as_the_standard_does() {
-        assert_eq!(super::base64(b""), "");
-        assert_eq!(super::base64(b"f"), "Zg==");
-        assert_eq!(super::base64(b"fo"), "Zm8=");
-        assert_eq!(super::base64(b"foo"), "Zm9v");
-        assert_eq!(super::base64(b"foob"), "Zm9vYg==");
     }
 }

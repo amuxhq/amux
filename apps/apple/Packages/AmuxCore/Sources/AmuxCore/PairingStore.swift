@@ -90,11 +90,12 @@ public final class PairingStore {
         }
     }
 
-    /// What confirming came to.
-    public func paired(_ result: Result<Paired, RuntimeFailure>, attempt: Int) {
+    /// What confirming came to: the name of the machine now trusted, or
+    /// why it is not.
+    public func paired(_ result: Result<String, RuntimeFailure>, attempt: Int) {
         guard attempt == self.attempt else { return }
         switch result {
-        case .success(let paired): phase = .trusted(paired.name)
+        case .success(let name): phase = .trusted(name)
         case .failure(let why):
             refusal = why.description
             digits = ""

@@ -71,16 +71,10 @@ pub struct Report {
 }
 
 impl Report {
-    pub fn new(frozen: Buffer, theme: Theme, dump: Dump) -> Report {
-        Report {
-            dump: Some(dump),
-            ..Report::without_dump(frozen, theme)
-        }
-    }
-
-    /// A report with no dump on its way, for drawing one where no profile
-    /// runs (the storybook); saving it records that no dump was started.
-    pub fn without_dump(frozen: Buffer, theme: Theme) -> Report {
+    /// A report over the frozen screen, with the dump started for it; with
+    /// none on its way (no profile runs), saving it records that no dump
+    /// was started.
+    pub fn new(frozen: Buffer, theme: Theme, dump: Option<Dump>) -> Report {
         Report {
             frozen,
             theme,
@@ -90,7 +84,7 @@ impl Report {
             note: Editor::default(),
             marking: None,
             mark_note: Editor::default(),
-            dump: None,
+            dump,
         }
     }
 

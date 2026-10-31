@@ -54,7 +54,7 @@ impl Run {
 
     fn resume(spec: &AgentSpec, resumed: Option<Resumed<<Kind as Interpreter>::State>>) -> Self {
         let mut out = Vec::new();
-        let agent = Agent::<Kind>::start(spec, resumed, "0.0.0", 1_000, &mut out);
+        let agent = Agent::<Kind>::start(spec, resumed, 1_000, &mut out);
         Self {
             agent,
             now_ms: 1_000,
@@ -182,34 +182,6 @@ fn one_shot_working() -> Run {
     run
 }
 
-/// A step is timed against the spec's budget: any step takes longer than
-/// nothing, given a clock fine enough, so under a budget of one
-/// microsecond (zero is the agent's own) a step is soon measured over it.
-#[test]
-fn a_step_over_its_budget_asks_for_a_dump() {
-    let mut over = spec(false, None);
-    over.config.as_mut().unwrap().step_budget_micros = 1;
-    let mut run = Run::start(&over);
-    run.on(Input::DaemonDials { connection: DAEMON });
-    let mut out = Vec::new();
-    while out.is_empty() {
-        out = dumps(&run.fact(json!({"type": "ready"})))
-            .into_iter()
-            .cloned()
-            .collect();
-    }
-    assert!(
-        out.iter().all(|reason| matches!(
-            reason,
-            DumpReason::OverBudget {
-                micros,
-                budget: StepBudget { micros: 1 }
-            } if *micros > 1
-        )),
-        "{out:?}"
-    );
-}
-
 /// A spec that names no budget runs under the agent's own.
 #[test]
 fn a_spec_without_a_budget_runs_under_the_agents_own() {
@@ -320,13 +292,13 @@ fn frames_from_a_replaced_connection_are_ignored() {
     let out = run.frame(ctl_frame::Of::Stop(wire::Stop { kill: true }));
     assert_eq!(exit_of(&out), None);
     run.on(Input::DaemonGone { connection: DAEMON });
-    assert_eq!(run.agent.connection, Some(ConnId(2)));
+    assert_eq!(run.agent.life.connection, Some(ConnId(2)));
 }
 
 #[test]
 fn a_drain_deadline_armed_while_running_is_a_violation() {
     let mut run = Run::start(&spec(false, None));
-    run.agent.ask = Some(OpenAsk { until: 0 });
+    run.agent.life.ask = Some(OpenAsk { until: 0 });
     let mut out = Vec::new();
     run.agent
         .step(Input::DaemonDials { connection: DAEMON }, &mut out);
@@ -347,7 +319,7 @@ fn an_input_taken_while_still_queued_is_a_violation() {
     run.fact(json!({"type": "ready"}));
     run.prompt("p1", "hello");
     // The journal's queue still names the prompt the provider records next.
-    run.agent.pending.queued.insert(b"p1".to_vec());
+    run.agent.life.pending.queued.insert(b"p1".to_vec());
     let out = run.reflect("p1");
     assert!(
         matches!(dumps(&out).as_slice(), [DumpReason::Violation(violation)]
@@ -388,17 +360,4 @@ fn an_agent_restored_from_its_value_steps_as_the_original_does() {
     restored.step(input, &mut again);
     assert_eq!(again, original);
     assert_eq!(restored.value(), run.agent.value());
-}
-
-#[test]
-fn a_checkpoint_under_another_layout_is_refused() {
-    let mut checkpoint = Run::start(&spec(false, None)).agent.checkpoint();
-    checkpoint.schema += 1;
-    assert_eq!(
-        checkpoint.interpreter::<Kind>().err(),
-        Some(RestoreError::Schema {
-            found: CHECKPOINT_SCHEMA + 1,
-            expected: CHECKPOINT_SCHEMA,
-        })
-    );
 }

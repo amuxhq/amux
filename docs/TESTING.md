@@ -2,8 +2,8 @@
 
 *For developers adding a test, running one, or deciding where a new one belongs.*
 
-This page is an index. The suites themselves are listed in `tests/catalog.toml`; the promises they hold are
-listed in `tests/contracts.toml`; `just --list` is the command surface. The multi-host harness has its own page,
+This page is an index. The suites themselves are listed in `tests/catalog.toml`; `just --list` is the command
+surface. The multi-host harness has its own page,
 [TestNet](TESTNET.md), measured performance has [Performance](PERFORMANCE.md), the phone's snapshots
 and journeys are described in [the iPhone app](IOS.md), and adversarial testing by agents has
 [QA](QA.md).
@@ -32,7 +32,7 @@ Each catalogued suite names one boundary.
 | Boundary | What it proves | Main homes |
 | --- | --- | --- |
 | Interpreter | Each provider event yields one step: keyed items, appends and a snapshot, with no hidden IO or clock; checkpoints resume from any prefix. | `crates/interpret/tests`, `crates/attachments` |
-| Provider adapter | Real provider bytes and hooks reach the interpreter, commands produce the right provider writes, and recordings replay strictly. Terminal Claude's cases run on Unix only: Windows does not host it (see [Windows, as a stated cost](ARCHITECTURE.md#windows-as-a-stated-cost)). | `crates/agent/tests`, `crates/claude-specs`, `crates/codex-specs`, `crates/provider-fakes`, `crates/replay-support` |
+| Provider adapter | Real provider bytes and hooks reach the interpreter, commands produce the right provider writes, and captures join the corpus sanitized and inventoried. Terminal Claude's cases run on Unix only: Windows does not host it (see [Windows, as a stated cost](ARCHITECTURE.md#windows-as-a-stated-cost)). | `crates/agent/tests`, `crates/claude-specs`, `crates/provider-fakes`, `crates/replay-support` |
 | Single daemon | Ingest commits a step's items, snapshot and cursor together, assigns revisions, pages and subscribes without loss, and reclaims only what was ingested. | `crates/journal`, `crates/store`, `crates/node/tests` |
 | Many daemons | Discovery, trust, routing, relay, replication, inventory, families and blobs hold across production runtimes under faults. | `crates/testnet/tests` |
 | Client model | `update(state, msg)` gives the same state under any arrival order; inputs reach a settled, rejected or uncertain state. | `crates/ui-state/tests/spec` |
@@ -58,19 +58,16 @@ client model, and the composed net of several daemons and their agents; a lamp a
 itself). A machine holds real state, calls the real cores, store and session model on small instances, and lists
 the faults its environment may inject. A checker explores every state the machine reaches within its bounds and judges every
 property in each: an always must hold everywhere, a sometimes must be reached, an eventually must hold on every
-path that ends. A failure prints a path to the state that broke it; `MODELS_SEARCH=breadth` explores breadth first
-instead, slower and far hungrier, and prints the shortest.
+path that ends. A failure prints a path to the state that broke it.
 
 ```sh
-just test-crate models                     # every machine at its CI bounds, within its state count
+just test-crate models                     # every machine at its CI bounds
 just suite protocol-models family::        # one machine
 just models-nightly [machine..]            # the larger nightly bounds, one machine after another
-cargo run -p models --bin properties       # every property's sentence, by machine
 ```
 
-Each machine's CI bounds are sized to finish within a stated time on a four-core runner, its test asserts the
-state count those bounds explore rather than the time, and its nightly bounds
-explore more keys, faults and steps. The Model boundary owns rules; the other boundaries own what the cores do not
+Each machine's CI bounds are sized to finish within its CI job's time guard on a four-core runner, and its
+nightly bounds explore more keys, faults and steps. The Model boundary owns rules; the other boundaries own what the cores do not
 decide: a driver's sockets and deadlines, a real process, a provider's bytes, what a screen draws. A test that
 restates a rule a property holds is a second copy of the rule, so it goes.
 
@@ -105,7 +102,7 @@ A lane says when and where a suite runs.
 | Lane | What it holds | Where it runs |
 | --- | --- | --- |
 | fast | Offline, credential-free, deterministic suites: most of the table above. | `just test` on every push, on Linux, macOS and Windows; `just ios gate` for the phone when a push touches it |
-| system | Real processes, PTYs, sockets and the supervisor, with bounded deadlines. | Also `just test`, since they are ordinary Cargo targets; the phone's loopback smoke runs in `just ios gate`, the store on the simulator in `just ios captures` |
+| system | Real processes, PTYs, sockets and the supervisor, with bounded deadlines. | Also `just test`, since they are ordinary Cargo targets; the store on the simulator in `just ios captures` |
 | journey | Both clients driving complete stories against a served network. | Terminal journeys on every push (Linux and macOS); phone journeys and the accessibility audit in `just ios captures`, by hand |
 | tool | The repository's own machinery: scripts, source policy, CI command surface, the shipping-scope audit. | Beside the fast lane |
 | qualification | Live providers, measured performance, production cloud and purchases. | Only on request, on enrolled machines; results are `pass`, `fail`, `unavailable` or `not_run` |
@@ -134,13 +131,13 @@ whose stories run in both modes say so in the catalogue's `modes`.
 just sim                         # every simulated story, a few seeds each
 just sim --seeds 300 <name>      # 300 seeds of each story whose test name contains <name>
 just sim --seed 17 <name>        # exactly the failing seed, as a failure prints it
-just nightly --seeds 2000        # thousands of seeds per story, then the models at nightly bounds, as a report
+just sim --seeds 2000            # thousands of seeds per story, as the nightly workflow walks them
 ```
 
 Under `cargo nextest run` the same switch is the environment: `TESTNET_MODE=simulated`, with `TESTNET_SEEDS=N` or
 `TESTNET_SEED=N`.
 
-## The catalogue and the contracts
+## The catalogue
 
 `tests/catalog.toml` lists every suite once: its contract in a sentence, paths, focused recipe, boundary, oracle,
 what is real and what is substituted, its time requirement (`none`, `driven` or `real`), required capabilities,
@@ -157,22 +154,6 @@ just tests-list    # print the catalogue: suite, boundary, lane, time, recipe
 just tests-check   # fail on a missing recipe, target, module, feature, journey or baseline,
                    # or on a test target or suite module the catalogue does not list
 ```
-
-`tests/contracts.toml` lists every promise the design makes that a test must hold, grouped by source (a worked
-failure, an invariant, a suite contract, or a model property), each with the tests that hold it. A test is named as
-`<package>/<target>::<test path>` for Cargo (`<target>` is `lib`, `bin:<name>`, or `integration`, whose test paths
-start with the suite's module, as in `node/integration::supervisor::<test>`),
-`swift:<Target>/<Class>/<method>` for XCTest, or `journey:<client>/<story>` for a story in
-`journeys/manifest.json`. A model property is named by its crate, machine and sentence, which must be one the
-crate's `properties` binary lists (`cargo run -p models --bin properties`), with the checker test that explores
-it and the real-mode stories that demonstrate it.
-
-```sh
-just contracts-check                      # fail when a contract names no test, a test or a property that does not exist
-just contracts-check --table coverage.md  # also write the contract-to-test table as Markdown
-```
-
-Renaming a test means updating its contract entry; CI runs both checks.
 
 ## Running tests
 
@@ -193,8 +174,8 @@ just test                                  # every ordinary workspace target
 just suite many-daemon-protocol-spec       # one suite of tests/catalog.toml, on `just test`'s build
 just suite link-stories relaunch           # the same, then a test-name filter
 just test-crate interpret -- codex::       # one crate, then nextest arguments
-just test-store                            # the store's reader and writer suite, retention and SQLite file
-just test-ui                               # the client model spec
+just suite sqlite-store-contract           # the store's reader and writer suite, retention and SQLite file
+just suite client-model-spec               # the client model spec
 just test-tui                              # terminal presentation and goldens
 just offline-test                          # workspace tests with isolated config and no network (Linux, sudo)
 just journey terminal reach-host           # one terminal journey
@@ -221,7 +202,7 @@ rather than with the CPU. To see what the net's in-process hosts did in a failin
 (`RUST_LOG=warn,daemon_core=debug,node=info`): their tracing goes to the test's standard error, which nextest shows
 for a test that failed. Hosts the net runs as processes do not inherit it; their daemon logs are theirs.
 
-`just coverage` writes `tests/coverage.md`: line coverage per crate and the commit it measured. Each crate's lines
+`just coverage` writes `target/coverage/coverage.md`: line coverage per crate and the commit it measured. Each crate's lines
 count whichever tests ran them, so a core's figure includes what the models and the testnet reach. It is a reading
 aid for judging which tests earn their keep, not a gate. The recipe's comment names the coverage tool and the
 toolchain component it needs.
@@ -229,7 +210,7 @@ toolchain component it needs.
 `just fuzz-smoke` fuzzes the code that reads bytes amux did not write: the tolerant Claude and Codex decoders, the
 journal's frame decoder and its reader over segments cut anywhere, and redaction of JSON values and free text. The
 targets live in `fuzz/`, a workspace of their own built on the pinned nightly with debug assertions on. Each starts
-from seeds cut from the recorded provider captures and journal fixtures and runs for 30 seconds (`--seconds N`;
+from seeds cut from the recorded provider captures and a real agent's journal and runs for 30 seconds (`--seconds N`;
 target names narrow the run); its corpus and any crashing input stay under `target/fuzz/`, and a crash prints the
 command that replays it. The recipe's comment names the tool it needs installed.
 
@@ -262,16 +243,15 @@ passes by timing out. An absence is shown by draining to a declared boundary or 
 never by one empty poll.
 
 A daemon core reports a step that runs past its budget with a dump. Test installations (node's test support and
-testnet's real hosts) run under `StepBudget::TEST`, one second, not the daemon's 100 ms: debug builds on a loaded
-four-core CI runner take 118 to 143 ms for such steps, and a dump for that overrun would land in `reports/` while
-a test may be reading it. Tests see the tripwire only where they set a budget themselves (node's dump tests set 0 µs;
-a testnet `NetOptions.launch` hook may set any), and `just perf` judges the real daemon at its own budget. A test
-that lists every bundle under `reports/` runs the cores it does not mean to dump under `StepBudget::UNLIMITED`: a
-loaded run can stretch a step past even one second. A test
-installation's teardown prints any over-budget dump and fails only on a broken invariant's. The agents those
-installations start get the same one second (`Launch.agent_step_budget_micros`) for the same reason, and the
-supervisor tests' stand-in binary gives its supervisor one too; the models and the simulated net run every core
-under `StepBudget::UNLIMITED`, so a verdict is a function of its inputs alone.
+testnet's real hosts) run their daemon and agent cores under `StepBudget::UNLIMITED`
+(`Launch.step_budget` and `Launch.agent_step_budget_micros`): debug builds on a loaded four-core CI runner take
+118 to 143 ms for steps the daemon allows 100 ms, and a dump for that overrun would land in `reports/` while a
+test may be reading it; a step genuinely stuck shows as the test's own timeout. Tests see the tripwire only where
+they set a budget themselves (node's dump tests set 0 µs; a testnet `NetOptions.launch` hook may set any), and
+`just perf` judges the real daemon at its own budget. A test installation's teardown prints any over-budget dump
+and fails only on a broken invariant's. The supervisor tests' stand-in binary gives its supervisor one second;
+the models and the simulated net run every core under `StepBudget::UNLIMITED`, so a verdict is a function of
+its inputs alone.
 
 ## Fixtures and goldens
 
@@ -280,20 +260,15 @@ production code, and small authored scenarios. Ordinary runs compare and never r
 
 | Fixture | Where | Updated by |
 | --- | --- | --- |
-| Terminal Claude (played back on Unix only) and headless Claude recordings | `crates/claude-specs/fixtures/pty`, `crates/claude-specs/fixtures/sdk` | `claude-probe record (--sdk\|--pty) <spec>` |
-| Codex recordings | `crates/codex-specs/fixtures/runtime` | `codex-probe record <spec>` |
-| Live-run captures: sessions amux's own interpreter drove on the installed provider, which no spec produced or replays | `crates/claude-specs/fixtures/live/{sdk,pty}`, `crates/codex-specs/fixtures/live` | `just live <kind>`, then `claude-probe join` or `codex-probe join` from `target/live/recordings/<kind>/<scenario>`; see each README |
+| Live-run captures: sessions amux's own agent drove on the installed provider; `sdk` is the whole headless Claude corpus, `pty` the whole terminal Claude corpus (played back on Unix only) and `codex-specs/fixtures/live` the whole Codex corpus | `crates/claude-specs/fixtures/live/{sdk,pty}`, `crates/codex-specs/fixtures/live` | `just live <kind>`, then `claude-probe join` or `codex-probe join` from `target/live/recordings/<kind>/<scenario>`; see each README |
 | Terminal Claude transcripts no recording covers | `crates/claude-specs/fixtures/claude-pty` | a new capture; see its README |
 | Agent-process replays cut from those recordings | `crates/agent/tests/replay` | by hand; see its README |
 | Interpreter emission goldens (`*.json` input, `*.golden` output) per kind | `crates/interpret/fixtures` | `INTERPRET_UPDATE_GOLDENS=1` |
 | View data goldens | `crates/ui-view/tests/goldens` | `UI_VIEW_UPDATE_GOLDENS=1` |
-| Terminal component goldens (text plus style map, both themes) | `crates/tui/tests/golden` | `UPDATE_GOLDENS=1 just test-tui` |
-| Login-unit goldens | `crates/amux/tests/goldens/login` | `AMUX_UPDATE_GOLDENS=1 just suite desktop-cli-system supervise_cli::` |
+| Terminal component goldens (text plus style map) | `crates/tui/tests/golden` | `UPDATE_GOLDENS=1 just test-tui` |
 | Fake-provider scripts and served topologies | `journeys/scripts`, `journeys/topologies` | by hand |
-| Hand-written provider traffic | `journeys/recordings` | by hand |
 | Journey screen goldens: terminal frames and styles, phone element geometry | `journeys/goldens/terminal/<story>`, `journeys/goldens/phone/<story>` | `UPDATE_JOURNEY_GOLDENS=1` |
 | Phone component snapshots | `apps/apple/AmuxComponentSnapshotTests/__Snapshots__` | `just ios component-snapshots -- --record` |
-| Dump bundles replayed through their four stages | `crates/replay-support/tests/fixtures/bundle`, `crates/replay-support/tests/fixtures/healthy` | a fresh `amux dump` (for `healthy`, through `testnet ctl` on a served net); see [Debugging](DEBUGGING.md) |
 | Performance baselines | `perf/baselines` | `just perf --baseline` and `just ios perf --baseline`; see [Performance](PERFORMANCE.md) |
 
 The recordings and live captures are read by the protocol crates' strict decode tests (every message decodes to a
@@ -317,10 +292,6 @@ The phone has its own besides (`account-sign-in`, `purchase-restore`, `report`, 
 system journey on the built binaries. `resume` launches one installation three times (the first launch ever, a
 relaunch, and a launch after a machine restarted) and keeps each launch's link log in
 `target/ios/journey/resume/<launch>.log`.
-
-The phone journeys written before these stories are listed under `retired_phone_journeys`: each of their claims
-either names the story step that carries it (`story/screen`, a screen that story compares) or is listed as
-dropped with the reason, and a script test checks every named step exists.
 
 ```sh
 just journey terminal <story>   # builds amux, the fakes and testnet, then runs the story in tmux
@@ -350,7 +321,6 @@ above. [QA](QA.md) describes running it and turning findings into tests.
 | Phone journey | `target/journeys/phone/<story>`: each compared screen's picture and element geometry under `actual/`, `observations.json`, `result.txt`, `testnet.log` |
 | Phone component snapshots | `target/ios/component-snapshots` |
 | Phone accessibility audit | `target/ios/accessibility` |
-| TUI evidence bundle | `just tui-evidence`; rendered PNGs from `just shot` (see [amux-shot](../crates/shot/README.md)) |
 | Desktop performance | printed report; `--baseline` writes `perf/baselines/desktop/<model>.json` |
 | Phone performance | `target/ios/perf/report.md`; `--baseline` writes `perf/baselines/phone/<machine>.json` |
 | QA run | `~/.local/state/amux-qa/<run>/`: the ledger, the summary, and each tester's transcript, session log, shots and findings |

@@ -1,10 +1,11 @@
 shell |  | agents | 0,62,402,778
 chat |  | decision-codex | 0,116,402,724
 chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | Check the deployment once. |  | 16,158,370,40
-chat.row.run | 1 command | folded | 16,198,370,44
-chat.row.prose | The deploy check passed. | final | 16,244,370,20
-chat.prose.render |  | rendered | 16,244,370,20
+chat.row.error | deprecationNotice | folded | 16,146,370,98
+chat.row.prompt | Check the deployment once. |  | 16,246,370,40
+chat.row.run | 1 command | folded | 16,286,370,44
+chat.row.prose | The deploy check passed. | final | 16,332,370,20
+chat.prose.render |  | rendered | 16,332,370,20
 chat.row.turn-end | <volatile>
 chat.field | Message decision-codex |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
@@ -20,10 +21,11 @@ chat.title | decision-codex | decision-codex | 80,66,153,36
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
  | Started |  | 16,124,370,34
- | Check the deployment once. |  | 16,158,370,40
- | 1 command |  | 16,198,370,44
- | The deploy check passed. |  | 16,244,370,20
- | Worked <t> |  | 16,271,62,16
+ | deprecationNotice, Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`. |  | 16,146,370,98
+ | Check the deployment once. |  | 16,246,370,40
+ | 1 command |  | 16,286,370,44
+ | The deploy check passed. |  | 16,332,370,20
+ | Worked <t> |  | 16,359,62,16
  | Back |  | 20,66,40,36
  | decision-codex, /t/a/n/d/work · desk |  | 80,66,153,36
  | More |  | 350,66,28,36

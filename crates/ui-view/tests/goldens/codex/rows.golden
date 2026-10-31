@@ -1,84 +1,39 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 3 fact {"channel":"rpc","json":{"method":"mcpServer/startupStatus/updated","params":{"error":"connection refused","name":"docs","status":"failed","threadId":"t1"}}}
-  row    2 mcp:docs Hidden collapsed
 ## 6 input {"id":"p1","prompt":{"text":"Refactor the parser."}}
-  row    3 prompt:7031 Prompt { text: [Text("Refactor the parser.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 10 fact {"channel":"rpc","json":{"method":"warning","params":{"message":"This request was routed to gpt-5.6-mini. To use gpt-5.6-luna for this work, apply for trusted access.","threadId":"t1"}}}
-  row    4 warning:2 Error { error_kind: "warning", message: "This request was routed to gpt-5.6-mini. To use gpt-5.6-luna for this work, apply for trusted access.", attempts: 0, gave_up: true } attention
 ## 11 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"content":[],"id":"rs-1","summary":[],"type":"reasoning"},"threadId":"t1","turnId":"turn-1"}}}
-  row    5 rs-1 Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 13 fact {"channel":"rpc","json":{"method":"item/reasoning/summaryTextDelta","params":{"delta":"**Reading the parser**","itemId":"rs-1","summaryIndex":0,"threadId":"t1","turnId":"turn-1"}}}
-  row    5 rs-1 Thinking { text: "**Reading the parser**", open: true, duration_ms: None }
-## 14 fact {"channel":"rpc","json":{"method":"item/reasoning/textDelta","params":{"delta":"The parser has two entry points.","itemId":"rs-1","threadId":"t1","turnId":"turn-1"}}}
-  row    5 rs-1 Thinking { text: "The parser has two entry points.", open: true, duration_ms: None }
 ## 15 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"content":["The parser has two entry points."],"id":"rs-1","summary":["**Reading the parser**"],"type":"reasoning"},"threadId":"t1","turnId":"turn-1"}}}
-  row    5 rs-1 Thinking { text: "The parser has two entry points.", open: false, duration_ms: None }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 19 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"note-1","phase":"commentary","text":"","type":"agentMessage"},"startedAtMs":null,"threadId":"t1","turnId":"turn-1"}}}
-  row    6 note-1 Prose { text: [], streaming: true, working_note: true }
-## 20 fact {"channel":"rpc","json":{"method":"item/agentMessage/delta","params":{"delta":"Splitting the lexer out first.","itemId":"note-1","threadId":"t1","turnId":"turn-1"}}}
-  row    6 note-1 Prose { text: [Text("Splitting the lexer out first.")], streaming: true, working_note: true }
-## 21 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"note-1","phase":"commentary","text":"Splitting the lexer out first.","type":"agentMessage"},"threadId":"t1","turnId":"turn-1"}}}
-  row    6 note-1 Prose { text: [Text("Splitting the lexer out first.")], streaming: false, working_note: true }
 ## 22 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"command":"/bin/zsh -lc 'cargo watch'","commandActions":[{"command":"cargo watch","type":"unknown"}],"cwd":"/work","exitCode":null,"id":"cmd-1","status":"inProgress","type":"commandExecution"},"startedAtMs":1800000001000,"threadId":"t1","turnId":"turn-1"}}}
-  row    7 cmd-1 Command { command: "cargo watch", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "cmd-1" }) queue=[] underway=[] refused=[]
-## 23 fact {"channel":"rpc","json":{"method":"item/commandExecution/outputDelta","params":{"delta":"[watching]\n","itemId":"cmd-1","threadId":"t1","turnId":"turn-1"}}}
-  row    7 cmd-1 Command { command: "cargo watch", state: Running, exit_code: None, output_head: ["[watching]"], more_lines: 0, output_trimmed: false, output_tail: ["[watching]"], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-## 24 fact {"channel":"rpc","json":{"method":"turn/diff/updated","params":{"diff":"diff --git a/lexer.rs b/lexer.rs\n","threadId":"t1","turnId":"turn-1"}}}
-  row    8 diff:turn-1 Hidden collapsed
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 27 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"rv-1","review":"current changes","type":"enteredReviewMode"},"threadId":"t1","turnId":"turn-1"}}}
-  row    7 cmd-1 Command { command: "cargo watch", state: Running, exit_code: None, output_head: ["[watching]"], more_lines: 0, output_trimmed: false, output_tail: ["[watching]"], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-  row    9 rv-1 SlashOutput { command: "review", args: "", output: "Code review started: current changes" }
-## 30 fact {"channel":"rpc","json":{"method":"item/somethingNew","params":{"itemId":"x","threadId":"t1"}}}
-  row   10 unrecognized:3 Unrecognized { what: "item/somethingNew", summary: "a notification amux does not read" }
-## 31 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"msg-1","phase":"final_answer","text":"","type":"agentMessage"},"startedAtMs":null,"threadId":"t1","turnId":"turn-1"}}}
-  row   11 msg-1 Prose { text: [], streaming: true, working_note: false }
-## 32 fact {"channel":"rpc","json":{"method":"item/agentMessage/delta","params":{"delta":"The lexer is split.","itemId":"msg-1","threadId":"t1","turnId":"turn-1"}}}
-  row   11 msg-1 Prose { text: [Text("The lexer is split.")], streaming: true, working_note: false }
-## 33 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"msg-1","phase":"final_answer","text":"The lexer is split.","type":"agentMessage"},"threadId":"t1","turnId":"turn-1"}}}
-  row   11 msg-1 Prose { text: [Text("The lexer is split.")], streaming: false, working_note: false }
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 34 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"durationMs":4000,"id":"turn-1","status":"completed"}}}}
-  row    7 cmd-1 Background { command: "cargo watch", running: true, duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-  row   12 turn:1 TurnEnd { duration_ms: Some(4000), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 36 fact {"channel":"rpc","json":{"method":"item/completed","params":{"completedAtMs":1800000010000,"item":{"aggregatedOutput":"[watching]\n[done]\n","command":"/bin/zsh -lc 'cargo watch'","commandActions":[{"command":"cargo watch","type":"unknown"}],"cwd":"/work","durationMs":9000,"exitCode":0,"id":"cmd-1","status":"completed","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
-  row    7 cmd-1 Background { command: "cargo watch", running: false, duration_ms: Some(9000) } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
 ## 37 input {"id":"p2","prompt":{"text":"Run the tests."}}
-  row   13 prompt:7032 Prompt { text: [Text("Run the tests.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 40 fact {"channel":"rpc","json":{"method":"error","params":{"error":{"additionalDetails":"upstream returned 502","codexErrorInfo":{"responseStreamDisconnected":{"httpStatusCode":502}},"message":"Reconnecting... 1/3"},"threadId":"t1","turnId":"turn-2","willRetry":true}}}
-  row   14 error:turn-2 Error { error_kind: "responseStreamDisconnected", message: "upstream returned 502", attempts: 1, gave_up: false }
   composer Send activity=Some(Retrying { attempt: 1, max_attempts: 3, retry_at_ms: None }) queue=[] underway=[] refused=[]
 ## 41 fact {"channel":"rpc","json":{"method":"error","params":{"error":{"additionalDetails":"upstream returned 502","codexErrorInfo":{"responseStreamDisconnected":{"httpStatusCode":502}},"message":"Reconnecting... 2/3"},"threadId":"t1","turnId":"turn-2","willRetry":true}}}
-  row   14 error:turn-2 Error { error_kind: "responseStreamDisconnected", message: "upstream returned 502", attempts: 2, gave_up: false }
   composer Send activity=Some(Retrying { attempt: 2, max_attempts: 3, retry_at_ms: None }) queue=[] underway=[] refused=[]
 ## 42 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"error":{"additionalDetails":null,"codexErrorInfo":"other","message":"stream closed"},"id":"turn-2","status":"failed"}}}}
-  row   14 error:turn-2 Error { error_kind: "other", message: "stream closed", attempts: 0, gave_up: true } attention
-  row   15 turn:2 TurnEnd { duration_ms: Some(0), failed: true }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 mcp:docs Hidden collapsed
-     3 prompt:7031 Prompt { text: [Text("Refactor the parser.")], steered: false }
-     4 warning:2 Error { error_kind: "warning", message: "This request was routed to gpt-5.6-mini. To use gpt-5.6-luna for this work, apply for trusted access.", attempts: 0, gave_up: true } attention
-     5 rs-1 Thinking { text: "The parser has two entry points.", open: false, duration_ms: None }
-     6 note-1 Prose { text: [Text("Splitting the lexer out first.")], streaming: false, working_note: true }
-     7 cmd-1 Background { command: "cargo watch", running: false, duration_ms: Some(9000) } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-     8 diff:turn-1 Hidden collapsed
-     9 rv-1 SlashOutput { command: "review", args: "", output: "Code review started: current changes" }
-    10 unrecognized:3 Unrecognized { what: "item/somethingNew", summary: "a notification amux does not read" }
-    11 msg-1 Prose { text: [Text("The lexer is split.")], streaming: false, working_note: false }
-    12 turn:1 TurnEnd { duration_ms: Some(4000), failed: false }
-    13 prompt:7032 Prompt { text: [Text("Run the tests.")], steered: false }
-    14 error:turn-2 Error { error_kind: "other", message: "stream closed", attempts: 0, gave_up: true } attention
-    15 turn:2 TurnEnd { duration_ms: Some(0), failed: true }
+     2 prompt:7031 Prompt { text: [Text("Refactor the parser.")], steered: false }
+     3 warning:2 Error { error_kind: "warning", message: "This request was routed to gpt-5.6-mini. To use gpt-5.6-luna for this work, apply for trusted access.", attempts: 0, gave_up: true } attention
+     4 rs-1 Thinking { text: "The parser has two entry points.", open: false, duration_ms: None }
+     5 note-1 Prose { text: [Text("Splitting the lexer out first.")], streaming: false, working_note: true }
+     6 cmd-1 Background { command: "cargo watch", running: false, duration_ms: Some(9000) } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+     7 rv-1 SlashOutput { command: "review", args: "", output: "Code review started: current changes" }
+     8 unrecognized:3 Unrecognized { what: "item/somethingNew", summary: "a notification amux does not read" }
+     9 msg-1 Prose { text: [Text("The lexer is split.")], streaming: false, working_note: false }
+    10 turn:1 TurnEnd { duration_ms: Some(4000), failed: false }
+    11 prompt:7032 Prompt { text: [Text("Run the tests.")], steered: false }
+    12 error:turn-2 Error { error_kind: "other", message: "stream closed", attempts: 0, gave_up: true } attention
+    13 turn:2 TurnEnd { duration_ms: Some(0), failed: true }
 == overview Overview { tasks: Some(TasksView { done: 1, total: 3, current: "Split the lexer", entries: [TaskLine { subject: "Read the parser", mark: Done }, TaskLine { subject: "Split the lexer", mark: Current }, TaskLine { subject: "Run the tests", mark: Todo }] }), jobs: [], failed_servers: [ServerView { name: "docs", error: "connection refused", needs_auth: false }], usage_near_limit: Some(UsageView { blocked: true, windows: [UsageWindowView { label: FiveHour, used_percent: Some(100.0), resets_at_ms: Some(1800003600000), state: Blocked }, UsageWindowView { label: Weekly { model: None }, used_percent: Some(40.0), resets_at_ms: Some(1800600000000), state: Ok }], credits: Some("0") }), changes: None }
 == context Some(ContextView { used_tokens: 48000, window_tokens: Some(258400), percent: Some(18), near_full: false }) sign-in Some(SignInView { state: SignedOut, account: "", message: "" })
 == settings

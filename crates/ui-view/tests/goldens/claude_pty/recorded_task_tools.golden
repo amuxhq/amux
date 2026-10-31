@@ -3,10 +3,8 @@
 ## 3 recorded 1: fact Transcript type=assistant uuid=fecf3c49-ef27-43f8-88ca-e3addea98097
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 11 recorded 9: fact Transcript type=assistant uuid=2fe54192-94de-47c9-8952-81cd5f90a77b
-  row    1 toolu_0111yBonGHJL4YvNmE5Zm5iK FileChange { files: [FileRow { path: "/tmp/planner-probe/permission-request-target.txt", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Running } run[toolu_0111yBonGHJL4YvNmE5Zm5iK..toolu_0111yBonGHJL4YvNmE5Zm5iK x1 recent=0 live RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_0111yBonGHJL4YvNmE5Zm5iK" }) queue=[] underway=[] refused=[]
 ## 13 recorded 11: fact Transcript type=user uuid=28e06a2a-da3b-4238-a2e3-24ee0625ca69
-  row    1 toolu_0111yBonGHJL4YvNmE5Zm5iK FileChange { files: [FileRow { path: "/tmp/planner-probe/permission-request-target.txt", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Failed } run[toolu_0111yBonGHJL4YvNmE5Zm5iK..toolu_0111yBonGHJL4YvNmE5Zm5iK x1 recent=0 live RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] attention
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
      1 toolu_0111yBonGHJL4YvNmE5Zm5iK FileChange { files: [FileRow { path: "/tmp/planner-probe/permission-request-target.txt", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Failed } run[toolu_0111yBonGHJL4YvNmE5Zm5iK..toolu_0111yBonGHJL4YvNmE5Zm5iK x1 recent=0 live RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] attention

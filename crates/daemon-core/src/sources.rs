@@ -43,10 +43,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use store::{Absorb, AgentKey, AgentRow, Marker, Record, SourceEvent, StoreError};
+use store::{Absorb, AgentKey, AgentRow, Marker, Record, StoreError};
 use wire::{
-    Agent, AgentRemoved, Item, ListItemsResponse, PeerSubscribeSessionRequest, RemovalReason,
-    SessionEvent, inventory_event, peer_subscribe_session_request, session_event,
+    Agent, AgentRemoved, Item, ListItemsResponse, SessionEvent, SubscribeSessionRequest,
+    inventory_event, session_event, subscribe_session_request,
 };
 
 use crate::ids::{AgentId, CallId, HostId, TimerId};
@@ -398,7 +398,7 @@ impl Daemon {
             })
             .collect();
         for key in &untrusted {
-            self.drop_replica(key, RemovalReason::HostUntrusted, out)?;
+            self.drop_replica(key, false, out)?;
         }
         // The outbox drops what is owed to agents there.
         self.deliveries_due();
@@ -808,7 +808,7 @@ impl Daemon {
             self.touched.host_set = true;
         }
         for key in &unlisted {
-            self.drop_replica(key, RemovalReason::NoLongerListed, out)?;
+            self.drop_replica(key, true, out)?;
             // A parent held here and listed no more is gone for good, so
             // every child here follows, however recently it was made.
             self.parent_changed(key, ParentSays::Deleted, out)?;
@@ -872,7 +872,7 @@ impl Daemon {
     /// follow, whether or not this host ever held its row.
     fn replica_removed(&mut self, key: &AgentKey, out: &mut Vec<Output>) -> Result<(), StoreError> {
         if self.store.agent(key)?.is_some() {
-            self.drop_replica(key, RemovalReason::NoLongerListed, out)?;
+            self.drop_replica(key, true, out)?;
         }
         self.parent_changed(key, ParentSays::Deleted, out)
     }
@@ -892,7 +892,7 @@ impl Daemon {
     fn drop_replica(
         &mut self,
         key: &AgentKey,
-        reason: RemovalReason,
+        gone_for_good: bool,
         out: &mut Vec<Output>,
     ) -> Result<(), StoreError> {
         let held = Key::from(key);
@@ -902,9 +902,9 @@ impl Daemon {
         let parent = self.store.agent(key)?.and_then(|row| row.parent);
         self.store.delete_agent(key)?;
         // An agent its host no longer lists is gone for good, deleted or
-        // removed by retention there; one whose host is untrusted is not.
-        // Its draft goes too.
-        if reason == RemovalReason::NoLongerListed {
+        // removed by retention there, and its draft goes too; one whose
+        // host is untrusted is not.
+        if gone_for_good {
             self.forget_draft(&key.agent);
         }
         out.push(Output::Shell(ShellWork::ReplicaDropped {
@@ -913,7 +913,6 @@ impl Daemon {
         let removed = AgentRemoved {
             host_id: key.host.clone(),
             agent_id: key.agent.clone(),
-            reason: reason as i32,
         };
         let removed = inventory(inventory_event::Of::AgentRemoved(removed));
         self.agent_removed(key, Arc::new(removed), out);
@@ -1035,7 +1034,7 @@ impl Daemon {
     ) -> Option<(CallId, bool)> {
         let row = self.store.agent(agent).ok().flatten()?;
         let from = self.source_from(&row);
-        let tail = matches!(from, peer_subscribe_session_request::From::Tail(_));
+        let tail = matches!(from, subscribe_session_request::From::Tail(_));
         let call = self.pending.peers.mint();
         self.pending.peers.waiting.insert(
             call,
@@ -1046,7 +1045,7 @@ impl Daemon {
         out.push(Output::Call {
             host,
             call,
-            request: PeerRequest::SubscribeSession(PeerSubscribeSessionRequest {
+            request: PeerRequest::SubscribeSession(SubscribeSessionRequest {
                 agent_id: agent.agent.clone(),
                 from: Some(from),
             }),
@@ -1057,16 +1056,16 @@ impl Daemon {
 
     /// Where a replica's Subscribe starts: a tail of K with no block,
     /// otherwise after its cursor.
-    fn source_from(&self, row: &AgentRow) -> peer_subscribe_session_request::From {
+    fn source_from(&self, row: &AgentRow) -> subscribe_session_request::From {
         let k = self.settings.tail_rows;
         if row.complete_from_order.is_some() {
-            peer_subscribe_session_request::From::After(wire::After {
+            subscribe_session_request::From::After(wire::After {
                 revision: row.source_cursor,
                 cap: k,
                 generation: row.source_generation,
             })
         } else {
-            peer_subscribe_session_request::From::Tail(k)
+            subscribe_session_request::From::Tail(k)
         }
     }
 
@@ -1091,7 +1090,7 @@ impl Daemon {
                         {
                             continue;
                         }
-                        calls.push(PeerRequest::SubscribeSession(PeerSubscribeSessionRequest {
+                        calls.push(PeerRequest::SubscribeSession(SubscribeSessionRequest {
                             agent_id: row.agent.agent.clone(),
                             from: Some(self.source_from(row)),
                         }));
@@ -1329,7 +1328,7 @@ impl Daemon {
         let Some(row) = self.store.agent(key)? else {
             return Ok(None);
         };
-        let events: Vec<SourceEvent> = catch_up
+        let events: Vec<Record> = catch_up
             .events
             .into_iter()
             .filter_map(|event| event.of.map(source_event))
@@ -1412,7 +1411,7 @@ impl Daemon {
         &mut self,
         key: &AgentKey,
         session: u64,
-        record: SourceEvent,
+        record: Record,
         out: &mut Vec<Output>,
     ) -> Result<bool, StoreError> {
         let current = HostId::from_slice(&key.host)
@@ -1420,7 +1419,7 @@ impl Daemon {
         if !current || self.store.agent(key)?.is_none() {
             return Ok(false);
         }
-        let envelope = matches!(record, SourceEvent::Snapshot(_));
+        let envelope = matches!(record, Record::Snapshot(_));
         let absorbed = self.store.absorb(
             key,
             Absorb::Delta {
@@ -1595,16 +1594,13 @@ fn streaming(call: CallId, tail: bool) -> Feeding {
 /// A replacing catch-up as the store absorbs it: the tail with each key in
 /// its newest state, the newest snapshot, and the appends that do not
 /// apply to a row of the tail, kept in order for a delta.
-fn fold_tail(
-    events: Vec<SourceEvent>,
-    row: &AgentRow,
-) -> (Vec<Item>, wire::Snapshot, Vec<SourceEvent>) {
+fn fold_tail(events: Vec<Record>, row: &AgentRow) -> (Vec<Item>, wire::Snapshot, Vec<Record>) {
     let mut items: HashMap<String, Item> = HashMap::new();
     let mut snapshot: Option<wire::Snapshot> = None;
     let mut rest = Vec::new();
     for event in events {
         match event {
-            SourceEvent::Item(item) => {
+            Record::Item(item) => {
                 if items
                     .get(&item.key)
                     .is_none_or(|held| held.revision < item.revision)
@@ -1612,14 +1608,14 @@ fn fold_tail(
                     items.insert(item.key.clone(), item);
                 }
             }
-            SourceEvent::Append(append) => match items.get_mut(&append.key) {
+            Record::Append(append) => match items.get_mut(&append.key) {
                 Some(held) if held.revision == append.base_revision => {
                     held.text.push_str(&append.text);
                     held.revision = append.revision;
                 }
-                _ => rest.push(SourceEvent::Append(append)),
+                _ => rest.push(Record::Append(append)),
             },
-            SourceEvent::Snapshot(next) => {
+            Record::Snapshot(next) => {
                 if snapshot
                     .as_ref()
                     .is_none_or(|held| held.revision < next.revision)
@@ -1630,7 +1626,6 @@ fn fold_tail(
         }
     }
     let snapshot = snapshot.unwrap_or_else(|| wire::Snapshot {
-        agent_id: row.agent.agent.clone(),
         kind: row.kind,
         phase: wire::Phase::Starting as i32,
         ..wire::Snapshot::default()
@@ -1655,11 +1650,11 @@ fn event_of(of: session_event::Of) -> SessionEvent {
 
 /// A record of a source's stream as the store absorbs it. Only records are
 /// held or landed.
-fn source_event(of: session_event::Of) -> SourceEvent {
+fn source_event(of: session_event::Of) -> Record {
     match of {
-        session_event::Of::Item(item) => SourceEvent::Item(item),
-        session_event::Of::Append(append) => SourceEvent::Append(append),
-        session_event::Of::Snapshot(snapshot) => SourceEvent::Snapshot(snapshot),
+        session_event::Of::Item(item) => Record::Item(item),
+        session_event::Of::Append(append) => Record::Append(append),
+        session_event::Of::Snapshot(snapshot) => Record::Snapshot(snapshot),
         other => unreachable!("only records are held: {other:?}"),
     }
 }
@@ -1886,7 +1881,7 @@ mod tests {
                 assert_eq!(request.agent_id, THEIRS.to_vec());
                 assert_eq!(
                     request.from,
-                    Some(peer_subscribe_session_request::From::Tail(200)),
+                    Some(subscribe_session_request::From::Tail(200)),
                     "with no block it asks for a tail of K"
                 );
                 *call
@@ -2212,106 +2207,6 @@ mod tests {
         );
     }
 
-    /// A page asked below the block, then a Reset whose tail starts at the
-    /// same order: the page meets the new block, but the origin read it
-    /// before the rows the Reset's cursor vouches for, so it is answered
-    /// and never absorbed.
-    #[test]
-    fn a_page_asked_before_a_reset_is_answered_and_not_absorbed() {
-        let mut daemon = daemon();
-        let (_, source) = sourced(&mut daemon);
-        for of in [
-            session_event::Of::Opening(Opening { generation: 3 }),
-            session_event::Of::Item(item("e", 5, 4)),
-            session_event::Of::CaughtUp(CaughtUp { revision: 4 }),
-        ] {
-            step(&mut daemon, session(source, of));
-        }
-        let asked = step(
-            &mut daemon,
-            Input::ClientCall {
-                call: CallId(60),
-                request: ClientRequest::ListItems(wire::ListItemsRequest {
-                    agent_id: THEIRS.to_vec(),
-                    before_order: None,
-                    page_size: 10,
-                }),
-            },
-        );
-        let page = match calls(&asked).as_slice() {
-            [(page, PeerRequest::ListItems(_))] => *page,
-            other => panic!("the origin is asked below the block: {other:?}"),
-        };
-
-        // The stream ends, and the source's next stream opens with a Reset
-        // whose tail starts where the old block did.
-        let ended = step(
-            &mut daemon,
-            Input::PeerAnswer {
-                call: source,
-                answer: Answer::Ended,
-            },
-        );
-        let timer = ended
-            .iter()
-            .find_map(|output| match output {
-                Output::ArmTimer {
-                    id: id @ TimerId::Source(..),
-                    ..
-                } => Some(*id),
-                _ => None,
-            })
-            .unwrap_or_else(|| panic!("the source opens again: {ended:?}"));
-        let opened = step(&mut daemon, Input::Timer { id: timer });
-        let again = match calls(&opened).as_slice() {
-            [(call, PeerRequest::SubscribeSession(_))] => *call,
-            other => panic!("the source asks again: {other:?}"),
-        };
-        for of in [
-            session_event::Of::Opening(Opening { generation: 3 }),
-            session_event::Of::Reset(wire::Reset { generation: 3 }),
-            session_event::Of::Item(item("e", 5, 7)),
-            session_event::Of::CaughtUp(CaughtUp { revision: 7 }),
-        ] {
-            step(&mut daemon, session(again, of));
-        }
-        let floor = |daemon: &Daemon| {
-            daemon
-                .store
-                .agent(&key())
-                .unwrap()
-                .unwrap()
-                .complete_from_order
-        };
-        assert_eq!(floor(&daemon), Some(5));
-
-        let answered = step(
-            &mut daemon,
-            Input::PeerAnswer {
-                call: page,
-                answer: Answer::Reply(Box::new(PeerReply::Fetched(wire::ListItemsResponse {
-                    items: vec![item("c", 3, 2)],
-                    exhausted: false,
-                }))),
-            },
-        );
-        assert!(
-            !answered
-                .iter()
-                .any(|output| matches!(output, Output::Dump { .. } | Output::Shell(_))),
-            "the page writes nothing: {answered:?}"
-        );
-        assert!(
-            answered.contains(&Output::EndCall {
-                call: CallId(60),
-                status: Status::Ok,
-            }),
-            "the client is still answered: {answered:?}"
-        );
-        assert!(daemon.store.get(&key(), "c").unwrap().is_none());
-        assert_eq!(floor(&daemon), Some(5));
-    }
-
     #[test]
     fn a_first_flight_carries_the_calls_following_the_host_makes() {
         let mut daemon = daemon();
@@ -2423,7 +2318,7 @@ mod tests {
             revision: 1,
             ..Item::default()
         };
-        let (tail, snapshot, _) = fold_tail(vec![SourceEvent::Item(item)], &row);
+        let (tail, snapshot, _) = fold_tail(vec![Record::Item(item)], &row);
         assert_eq!(
             snapshot.kind, UNKNOWN,
             "the default snapshot takes the row's kind"

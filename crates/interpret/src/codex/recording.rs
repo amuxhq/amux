@@ -12,12 +12,11 @@
 //! empty turn after an inject is the interpreter's own kick and is left out
 //! too.
 //!
-//! A recording of two clients on one server marks each line with the
-//! client it went to or came from. Only amux's lines are read: what the
-//! other client caused reaches amux as what Codex tells it. amux's prompts
-//! and steers carry their input id in hex as Codex's client message id, and
-//! the inputs read here take that id back, so the interpreter's echo
-//! matching sees what it would live.
+//! A recording holds amux's own client's lines alone: what another client
+//! of the same server caused reaches amux as what Codex tells it. amux's
+//! prompts and steers carry their input id in hex as Codex's client message
+//! id, and the inputs read here take that id back, so the interpreter's
+//! echo matching sees what it would live.
 //!
 //! The interpreter numbers its requests `amux-<n>`, so the ids of the
 //! host's requests it stands in for are renumbered the same way, in order,
@@ -34,8 +33,8 @@ use codex_protocol::{
 };
 use serde::Deserialize;
 use wire::{
-    CodexAnswer, CodexInput, Envelope, FormAction, FormAnswer, GrantAnswer, Input, Interrupt,
-    LinkAnswer, PromptInput, QuestionAnswer, QuestionResponse, codex_answer, codex_input,
+    AgentInput, Answer, Envelope, FormAction, FormAnswer, GrantAnswer, Input, Interrupt,
+    LinkAnswer, PromptInput, QuestionAnswer, QuestionResponse, agent_input, answer,
 };
 
 use crate::{Channel, Event, Fact};
@@ -52,14 +51,7 @@ struct Recorded {
     /// The JSON-RPC line; an exit has none.
     #[serde(default)]
     line: Option<String>,
-    /// The client a two-client recording's line belongs to.
-    #[serde(default)]
-    transport_id: Option<String>,
 }
-
-/// The transport amux's own client is recorded under when two share a
-/// server; a recording of one client marks none.
-const AMUX: &str = "amux";
 
 /// A recorded line, read in the direction it went.
 enum Line {
@@ -80,10 +72,7 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
             serde_json::from_str::<Recorded>(line)
                 .map_err(|error| format!("line {}: {error}", index + 1))
         })
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .filter(|recorded| recorded.transport_id.as_deref().is_none_or(|id| id == AMUX))
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let parsed = |recorded: &Recorded| {
         let line = recorded.line.as_deref()?.as_bytes();
         Some(if recorded.dir == "stdout" {
@@ -212,8 +201,8 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                     if let Some(model) = params.model {
                         push(Event::Input(Input::new(
                             format!("stdin-{inputs}-model").into_bytes(),
-                            CodexInput {
-                                of: Some(codex_input::Of::Model(wire::SetModel {
+                            AgentInput {
+                                of: Some(agent_input::Of::Model(wire::SetModel {
                                     model: Some(model),
                                 })),
                             },
@@ -222,8 +211,8 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                     if let Some(Some(effort)) = params.effort {
                         push(Event::Input(Input::new(
                             format!("stdin-{inputs}-effort").into_bytes(),
-                            CodexInput {
-                                of: Some(codex_input::Of::Effort(wire::SetEffort {
+                            AgentInput {
+                                of: Some(agent_input::Of::Effort(wire::SetEffort {
                                     effort: Some(effort.as_str().to_owned()),
                                 })),
                             },
@@ -242,17 +231,17 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                     {
                         push(Event::Input(Input::new(
                             format!("stdin-{inputs}-permission").into_bytes(),
-                            CodexInput {
-                                of: Some(codex_input::Of::Permission(wire::SetPermission {
+                            AgentInput {
+                                of: Some(agent_input::Of::Permission(wire::SetPermission {
                                     value: value.to_owned(),
                                 })),
                             },
                         )));
                     }
                     if let Some(plan) = started {
-                        codex_input::Of::Answer(CodexAnswer {
+                        agent_input::Of::Answer(Answer {
                             ask_key: super::plan_ask_key(&plan),
-                            of: Some(codex_answer::Of::Plan(wire::PlanAnswer {
+                            of: Some(answer::Of::Plan(wire::PlanAnswer {
                                 choice: wire::PlanChoice::Start as i32,
                                 note: None,
                             })),
@@ -261,14 +250,14 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                         if let Some(collaboration) = &params.collaboration_mode {
                             push(Event::Input(Input::new(
                                 format!("stdin-{inputs}-mode").into_bytes(),
-                                CodexInput {
-                                    of: Some(codex_input::Of::Mode(wire::SetMode {
+                                AgentInput {
+                                    of: Some(agent_input::Of::Mode(wire::SetMode {
                                         value: collaboration.mode.as_str().to_owned(),
                                     })),
                                 },
                             )));
                         }
-                        codex_input::Of::Prompt(PromptInput {
+                        agent_input::Of::Prompt(PromptInput {
                             text,
                             ..Default::default()
                         })
@@ -285,14 +274,14 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                         .unwrap_or_else(|| format!("stdin-{inputs}-queued").into_bytes());
                     push(Event::Input(Input::new(
                         queued.clone(),
-                        CodexInput {
-                            of: Some(codex_input::Of::Prompt(PromptInput {
+                        AgentInput {
+                            of: Some(agent_input::Of::Prompt(PromptInput {
                                 text: input_text(&params.input),
                                 ..Default::default()
                             })),
                         },
                     )));
-                    codex_input::Of::SendNow(wire::SendQueuedNow {
+                    agent_input::Of::SendNow(wire::SendQueuedNow {
                         queued_input_id: queued,
                     })
                 }
@@ -328,10 +317,10 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                                 .and_then(|id| crate::from_hex(id).ok());
                             push(Event::Input(Input::new(
                                 sent.unwrap_or(input_id),
-                                CodexInput {
-                                    of: Some(codex_input::Of::Answer(CodexAnswer {
+                                AgentInput {
+                                    of: Some(agent_input::Of::Answer(Answer {
                                         ask_key: key,
-                                        of: Some(codex_answer::Of::Reply(wire::ReplyInstead {
+                                        of: Some(answer::Of::Reply(wire::ReplyInstead {
                                             text: input_text(&params.input),
                                             answers_so_far: Vec::new(),
                                         })),
@@ -340,13 +329,13 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                             )));
                             continue;
                         }
-                        _ => codex_input::Of::Interrupt(Interrupt {}),
+                        _ => agent_input::Of::Interrupt(Interrupt {}),
                     }
                 }
                 ClientMessage::Request {
                     request: ClientRequest::ThreadCompactStart(_),
                     ..
-                } => codex_input::Of::Prompt(PromptInput {
+                } => agent_input::Of::Prompt(PromptInput {
                     text: "/compact".into(),
                     ..Default::default()
                 }),
@@ -397,7 +386,7 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
             };
         push(Event::Input(Input::new(
             input_id,
-            CodexInput { of: Some(arm) },
+            AgentInput { of: Some(arm) },
         )));
     }
     Ok(events)
@@ -436,14 +425,14 @@ fn answer(
     request: &ServerRequest,
     key: String,
     response: &ClientResponse,
-) -> Option<codex_input::Of> {
-    let body = |of: codex_answer::Of| {
-        Some(codex_input::Of::Answer(CodexAnswer {
+) -> Option<agent_input::Of> {
+    let body = |of: answer::Of| {
+        Some(agent_input::Of::Answer(Answer {
             ask_key: key.clone(),
             of: Some(of),
         }))
     };
-    let approve = |decision: wire::Decision| body(codex_answer::Of::Approve(decision as i32));
+    let approve = |decision: wire::Decision| body(answer::Of::Approve(decision as i32));
     match (request, response) {
         (
             ServerRequest::CommandApproval(_) | ServerRequest::FileChangeApproval(_),
@@ -460,7 +449,7 @@ fn answer(
         (ServerRequest::PermissionsApproval(_), ClientResponse::PermissionsApproval(grant)) => {
             let files = grant.permissions.file_system.clone().flatten();
             let files = files.unwrap_or_default();
-            body(codex_answer::Of::Grant(GrantAnswer {
+            body(answer::Of::Grant(GrantAnswer {
                 read: files.read.unwrap_or_default(),
                 write: files.write.unwrap_or_default(),
                 network: grant
@@ -503,9 +492,7 @@ fn answer(
                     response
                 })
                 .collect();
-            body(codex_answer::Of::Question(QuestionAnswer {
-                answers: responses,
-            }))
+            body(answer::Of::Question(QuestionAnswer { answers: responses }))
         }
         (ServerRequest::Elicitation(params), ClientResponse::Elicitation(answered)) => {
             let action = match answered.action {
@@ -535,11 +522,11 @@ fn answer(
                     _ => wire::Decision::Abort,
                 })
             } else if params.mode == "url" {
-                body(codex_answer::Of::Link(LinkAnswer {
+                body(answer::Of::Link(LinkAnswer {
                     action: action as i32,
                 }))
             } else {
-                body(codex_answer::Of::Form(FormAnswer {
+                body(answer::Of::Form(FormAnswer {
                     action: action as i32,
                     content_json: answered
                         .content
@@ -562,14 +549,11 @@ mod tests {
         serde_json::json!({"us": us, "dir": dir, "line": message.to_string()}).to_string()
     }
 
-    fn inputs(events: Vec<Event>) -> Vec<codex_input::Of> {
+    fn inputs(events: Vec<Event>) -> Vec<agent_input::Of> {
         events
             .into_iter()
             .filter_map(|event| match event {
-                Event::Input(input) => match input.decode_body()? {
-                    wire::KindInput::Codex(CodexInput { of: Some(of) }) => Some(of),
-                    _ => None,
-                },
+                Event::Input(input) => input.decode_body()?.of,
                 _ => None,
             })
             .collect()
@@ -611,13 +595,13 @@ mod tests {
         ]
         .join("\n");
         let got = inputs(read("codex_io", recording.as_bytes()).unwrap());
-        let [codex_input::Of::Answer(answer)] = got.as_slice() else {
+        let [agent_input::Of::Answer(answer)] = got.as_slice() else {
             panic!("one answer, not {got:?}");
         };
         assert_eq!(answer.ask_key, "0");
         assert_eq!(
             answer.of,
-            Some(codex_answer::Of::Reply(wire::ReplyInstead {
+            Some(answer::Of::Reply(wire::ReplyInstead {
                 text: "Never mind.".into(),
                 answers_so_far: Vec::new(),
             }))
@@ -641,7 +625,7 @@ mod tests {
         .join("\n");
         let got = inputs(read("codex_io", recording.as_bytes()).unwrap());
         assert!(
-            matches!(got.last(), Some(codex_input::Of::Interrupt(_))),
+            matches!(got.last(), Some(agent_input::Of::Interrupt(_))),
             "{got:?}"
         );
     }
@@ -686,13 +670,13 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(ids, [vec![0x72, 0x31]]);
         let got = inputs(events);
-        let [codex_input::Of::Answer(answer)] = got.as_slice() else {
+        let [agent_input::Of::Answer(answer)] = got.as_slice() else {
             panic!("one answer, not {got:?}");
         };
         assert_eq!(answer.ask_key, "plan:p1");
         assert_eq!(
             answer.of,
-            Some(codex_answer::Of::Plan(wire::PlanAnswer {
+            Some(answer::Of::Plan(wire::PlanAnswer {
                 choice: wire::PlanChoice::Start as i32,
                 note: None,
             }))
@@ -708,7 +692,7 @@ mod tests {
         assert!(
             matches!(
                 got.as_slice(),
-                [codex_input::Of::Mode(_), codex_input::Of::Prompt(_)]
+                [agent_input::Of::Mode(_), agent_input::Of::Prompt(_)]
             ),
             "{got:?}"
         );

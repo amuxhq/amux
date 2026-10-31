@@ -895,9 +895,9 @@ impl Edge {
 
     /// Asks the cloud what the account buys now, over the live cloud link.
     pub async fn refresh_entitlement(&self) -> Result<crate::Tier, String> {
-        // The link's lock is held only to take the refresher: pausing,
-        // signing out and shutting down take it too, and must not wait
-        // behind the relay's answer.
+        // The link's lock is held only to take the refresher: signing out
+        // and shutting down take it too, and must not wait behind the
+        // relay's answer.
         let refresher = self
             .cloud
             .lock()

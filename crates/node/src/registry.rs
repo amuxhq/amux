@@ -1,5 +1,5 @@
 //! The installation's profiles as a person manages them: listed and
-//! watched, created, renamed and deleted, signed in and out, paused. The
+//! watched, created, renamed and deleted, signed in and out. The
 //! front door serves these on its socket; an embedder that serves no
 //! sockets calls them here.
 

@@ -5001,7 +5001,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tonic-prost-build",
- "version-stamp",
 ]
 
 [[package]]

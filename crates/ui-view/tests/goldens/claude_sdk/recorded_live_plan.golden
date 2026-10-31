@@ -1,85 +1,89 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 6 recorded 5: input 0x8744b179efef4c7db68436727acd1e63
+## 6 recorded 5: input 0xa36c0888d548402599fd8fe49922087f
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 72 recorded 71: fact Stream type=stream_event uuid=dfef1f68-67ff-42f0-b333-1308004abb03
-  composer Send activity=Some(Running { key: "toolu_01FQVocCu5r4uTMaVSifk7QA" }) queue=[] underway=[] refused=[]
-## 87 recorded 86: fact Stream type=user uuid=20262855-f8a2-4f48-b610-2c08e92b2cfc
+## 19 recorded 18: fact Stream type=stream_event uuid=487aec24-4f70-4ef6-b47a-e7b313cd5d6a
+  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
+## 28 recorded 27: fact Stream type=assistant uuid=e227a575-b084-41b6-9633-31b099da4afc
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 103 recorded 102: fact Stream type=control_request
-  ask 340eadf8-d6aa-4147-85c7-b8d162f14f4d -> "toolu_01GroRUTKoaxaeTEwXAL2VUJ" 1/1 Open
+## 30 recorded 29: fact Stream type=stream_event uuid=9e012380-f9df-4104-b296-8c4f3b2a49e1
+  composer Send activity=Some(Running { key: "toolu_01LBd2bwpJvXTMMnXAchFT2u" }) queue=[] underway=[] refused=[]
+## 46 recorded 45: fact Stream type=stream_event uuid=2f0f23f8-2e17-482a-9ea4-267d1b2979fb
+  composer Send activity=Some(Running { key: "toolu_01JG5eUBRrQpBr2uzfxfUjw9" }) queue=[] underway=[] refused=[]
+## 64 recorded 63: fact Stream type=user uuid=fb863e1c-ae65-4699-9b77-9a681dba62b5
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 74 recorded 73: fact Stream type=stream_event uuid=0d01761b-c0b4-4b52-bed7-35eca930bb41
+  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
+## 82 recorded 81: fact Stream type=assistant uuid=0ffdc490-238d-4b09-9a95-09e2807527a7
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 101 recorded 100: fact Stream type=stream_event uuid=415539fa-9559-402d-bb52-83ad03ff3506
+  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
+## 106 recorded 105: fact Stream type=assistant uuid=ace2afb7-b82f-4b70-bc21-c366013c7fac
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 109 recorded 108: fact Stream type=stream_event uuid=d7f527cc-8966-4274-98a6-de25fe00328c
+  composer Send activity=Some(Running { key: "toolu_018XZV31HkWJjmFt3PxrPVDe" }) queue=[] underway=[] refused=[]
+## 117 recorded 116: fact Stream type=user uuid=df5d3097-6749-44c3-b655-cbfc88cadada
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 209 recorded 208: fact Stream type=control_request
+  ask a9a5d547-4135-4587-945e-58ffaf177f15 -> "toolu_01XbtUxDasR3Hhm3NCwYWmvQ" 1/1 Open
     choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "auto", mode_name: "Auto" }, SendBack+note
-    body Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\n1. In `<MACHINE_PATH>, replace the only line `CURRENT` with `UPDATED` (Edit tool).\n\n## Verification\nRead README.md and confirm it contains only `UPDATED`.\n" }
+    body Plan { title: Some("Plan: Update README.md"), body: "\n## Context\n`<MACHINE_PATH> contains a single line, `CURRENT`. The request is to change it to `UPDATED`.\n\n## Step\n1. Edit `README.md` and replace the line `CURRENT` with `UPDATED`. Keep the trailing newline.\n\n## Verification\nRead `README.md` and confirm it contains only `UPDATED`.\n" }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 109 recorded 108: input stdin-4
+## 217 recorded 216: input stdin-4
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 119 recorded 118: fact Stream type=stream_event uuid=90f33929-246e-4fe6-a6f2-8f426c11b985
+## 228 recorded 227: fact Stream type=stream_event uuid=34338d9a-6f9a-4804-83dd-fd8122ebb073
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 129 recorded 128: fact Stream type=assistant uuid=b14001b7-e931-4060-81ce-3c2b854e341a
+## 238 recorded 237: fact Stream type=assistant uuid=1a0d646e-f835-4e13-83c6-a1ab0d553ee3
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 132 recorded 131: fact Stream type=stream_event uuid=3daed5a9-6440-4d6a-a0d4-243ee868c549
-  composer Send activity=Some(Running { key: "toolu_019k6RAsffJVpjZWTqpENCCx" }) queue=[] underway=[] refused=[]
-## 156 recorded 155: fact Stream type=user uuid=fe79da69-985c-44c8-99fb-fdf20fa3a87c
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 162 recorded 161: fact Stream type=stream_event uuid=aedf36ac-6284-4f12-8508-c81a47f46fc4
-  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 166 recorded 165: fact Stream type=assistant uuid=718b0ea9-90b6-4572-82ec-3f3d8ceb47e3
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 169 recorded 168: fact Stream type=stream_event uuid=09c2813b-6479-4383-bcf4-ebc61518189d
-  composer Send activity=Some(Running { key: "toolu_01TNhCXvsRc7iT2ozHYy5bNt" }) queue=[] underway=[] refused=[]
-## 194 recorded 193: fact Stream type=control_request
-  ask f31eebce-6515-4397-a5e0-52b8da38cdc5 -> "toolu_01TNhCXvsRc7iT2ozHYy5bNt" 1/1 Open
+## 241 recorded 240: fact Stream type=stream_event uuid=7bbebebe-9bd4-4753-aefa-6babfb6b8eb7
+  composer Send activity=Some(Running { key: "toolu_01JKDeTGxD754hVJtAJZqJeK" }) queue=[] underway=[] refused=[]
+## 263 recorded 262: fact Stream type=stream_event uuid=28ea1304-97ca-4090-adb9-49c947fbf49d
+  composer Send activity=Some(Running { key: "toolu_01FhHxcpPHL99r1yVYpSYeij" }) queue=[] underway=[] refused=[]
+## 266 recorded 265: fact Stream type=control_request
+  ask 7489cda5-f181-49c2-8355-b8f5395d158e -> "toolu_01JKDeTGxD754hVJtAJZqJeK" 1/1 Open
     choices AllowOnce*, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "Accept edits", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
     body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 1, lines: [Line(PatchLine { number: None, kind: Removed, text: "CURRENT" }), Line(PatchLine { number: None, kind: Added, text: "UPDATED" })], line: None, reason: "", created: Some(false) }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 200 recorded 199: input stdin-5
+## 272 recorded 271: input stdin-5
   ask none
-  composer Send activity=Some(Running { key: "toolu_01TNhCXvsRc7iT2ozHYy5bNt" }) queue=[] underway=[] refused=[]
-## 204 recorded 203: fact Stream type=user uuid=6e204f6f-4eaf-4b3c-b23e-1930995c8fdb
+  composer Send activity=Some(Running { key: "toolu_01FhHxcpPHL99r1yVYpSYeij" }) queue=[] underway=[] refused=[]
+## 288 recorded 287: fact Stream type=user uuid=ab97bd92-3df0-4c90-a254-3c5d6d053180
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 209 recorded 208: fact Stream type=stream_event uuid=e7dfdf42-5665-4787-981c-65b9adbd6f2f
-  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 214 recorded 213: fact Stream type=assistant uuid=0b7bc6e9-8fc9-4ad8-8ab2-78b829b1ae9e
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 217 recorded 216: fact Stream type=stream_event uuid=788fdec9-a1db-4f39-9406-04382ecee6a4
-  composer Send activity=Some(Running { key: "toolu_01Qe1UJ5XuQHWBggq8kvp37P" }) queue=[] underway=[] refused=[]
-## 241 recorded 240: fact Stream type=user uuid=f649740f-ca5c-4e40-8640-63d4bc146b39
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 247 recorded 246: fact Stream type=stream_event uuid=ec1d0c3a-867d-4761-b6b8-bfad62e06414
-  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 253 recorded 252: fact Stream type=assistant uuid=32268a59-985c-4d00-a6f8-489c5ce4b85a
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 279 recorded 278: fact Stream type=result subtype=success uuid=1dc355fe-5e81-4da0-9c12-da07a9506e94
+## 332 recorded 331: fact Stream type=result subtype=success uuid=f9018cd5-6eea-47c2-98bf-3fcbe6b65b1e
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 8744b179-efef-4c7d-b684-36727acd1e63 Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval.")], steered: false }
-     3 52646844-f0bc-4e9b-9488-204897e68a44 Hidden collapsed
-     4 toolu_01FQVocCu5r4uTMaVSifk7QA Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded, result: "" } run[toolu_01FQVocCu5r4uTMaVSifk7QA..toolu_01FQVocCu5r4uTMaVSifk7QA x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-     5 a47a4da3-a559-4ded-9cdd-14c59d3d8755 Hidden collapsed
-     6 toolu_01GroRUTKoaxaeTEwXAL2VUJ Ask(Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\n1. In `<MACHINE_PATH>, replace the only line `CURRENT` with `UPDATED` (Edit tool).\n\n## Verification\nRead README.md and confirm it contains only `UPDATED`.\n", verdict: Approved, mode: "", mode_name: "", note…
-     7 273d4871-3947-425d-aeaa-605dda23da84 Hidden collapsed
-     8 msg_011CfnB7bQLJPHU6fyND8sr6:0 Thinking { text: "", open: false, duration_ms: Some(699) }
-     9 toolu_019k6RAsffJVpjZWTqpENCCx Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_019k6RAsffJVpjZWTqpENCCx..toolu_01Qe1UJ5XuQHWBggq8kvp37P x3 recent=2] collapsed
-    10 d406efdf-c2b4-44e9-9c94-af2832e87ea0 Hidden run[toolu_019k6RAsffJVpjZWTqpENCCx..toolu_01Qe1UJ5XuQHWBggq8kvp37P x3] collapsed
-    11 msg_011CfnB7jZUK5E8ucUbNfxRU:0 Thinking { text: "", open: false, duration_ms: Some(847) } run[toolu_019k6RAsffJVpjZWTqpENCCx..toolu_01Qe1UJ5XuQHWBggq8kvp37P x3] collapsed
-    12 toolu_01TNhCXvsRc7iT2ozHYy5bNt FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[toolu_019k6RAsffJVpjZWTqpENCCx..toolu_01Qe1UJ5XuQHWBggq8kvp37P x3 recent=1] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false } collapsed
-    13 88fdc157-164f-4d48-ab79-9c9809dba96c Hidden run[toolu_019k6RAsffJVpjZWTqpENCCx..toolu_01Qe1UJ5XuQHWBggq8kvp37P x3] collapsed
-    14 msg_011CfnB7rPUgtPdwpwUthJpE:0 Thinking { text: "", open: false, duration_ms: Some(1243) } run[toolu_019k6RAsffJVpjZWTqpENCCx..toolu_01Qe1UJ5XuQHWBggq8kvp37P x3] collapsed
-    15 toolu_01Qe1UJ5XuQHWBggq8kvp37P Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_019k6RAsffJVpjZWTqpENCCx..toolu_01Qe1UJ5XuQHWBggq8kvp37P x3 recent=0 RunCounts { commands: 0, edits: 1, reads: 2, searches: 0, subagents: 0, other: 0 }]
-    16 c1ccffd9-89a8-4bbb-9a79-977057852189 Hidden collapsed
-    17 msg_011CfnB7wZXsD79UUd1hP4DP:0 Thinking { text: "", open: false, duration_ms: Some(841) }
-    18 msg_011CfnB7wZXsD79UUd1hP4DP:1 Prose { text: [Text("✅ **Complete.** README.md has been updated from `CURRENT` to `UPDATED`.")], streaming: false, working_note: false }
-    19 turn:1 TurnEnd { duration_ms: Some(9053), failed: false }
+     2 a36c0888-d548-4025-99fd-8fe49922087f Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval with the ExitPlanMode tool.")], steered: false }
+     3 02de5f7e-aaaa-456f-a258-89bcbddac724 Hidden collapsed
+     4 msg_011CgZmkhBFnmwcBi1SkJ3kU:0 Thinking { text: "", open: false, duration_ms: Some(920) }
+     5 toolu_01LBd2bwpJvXTMMnXAchFT2u Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01LBd2bwpJvXTMMnXAchFT2u..toolu_018XZV31HkWJjmFt3PxrPVDe x3 recent=2] collapsed
+     6 toolu_01JG5eUBRrQpBr2uzfxfUjw9 Explore { verb: Search, subject: "select:ExitPlanMode,EnterPlanMode", state: Succeeded, result: "" } run[toolu_01LBd2bwpJvXTMMnXAchFT2u..toolu_018XZV31HkWJjmFt3PxrPVDe x3 recent=1] collapsed
+     7 0d0365e9-23aa-430e-a1e8-82bf57adc602 Hidden run[toolu_01LBd2bwpJvXTMMnXAchFT2u..toolu_018XZV31HkWJjmFt3PxrPVDe x3] collapsed
+     8 msg_011CgZmkrSNJEY8jgzwM52YD:0 Thinking { text: "", open: false, duration_ms: Some(1013) } run[toolu_01LBd2bwpJvXTMMnXAchFT2u..toolu_018XZV31HkWJjmFt3PxrPVDe x3] collapsed
+     9 ddaa7e8c-e744-488b-a0ab-c3d09bb117cd Hidden run[toolu_01LBd2bwpJvXTMMnXAchFT2u..toolu_018XZV31HkWJjmFt3PxrPVDe x3] collapsed
+    10 msg_011CgZmkzsNqZao2Z5jbdAV5:0 Thinking { text: "", open: false, duration_ms: Some(2015) } run[toolu_01LBd2bwpJvXTMMnXAchFT2u..toolu_018XZV31HkWJjmFt3PxrPVDe x3] collapsed
+    11 toolu_018XZV31HkWJjmFt3PxrPVDe ToolCall { server: "", tool: "EnterPlanMode", fact: "", state: Succeeded, result: "Entered plan mode. You should now focus on exploring the codebase and designing an implementation approach.\n\nIn plan mode, you should:\n1. Thoroughly explore the codebase to understand existing patterns\n2. Identify similar features and architectural approaches\n3. Consider mult…
+    12 46bd60fb-d39f-48bc-96c4-8ff92d9bd8ad Hidden collapsed
+    13 msg_011CgZmm5fc9LLhPw8NUnRD4:0 Prose { text: [Text("Trivial one-step task, so I'm skipping the agents and writing the plan file now.")], streaming: false, working_note: false }
+    14 340b84ed-c3a3-4ff6-b389-4f63302bbaf0 Hidden collapsed
+    15 toolu_01XbtUxDasR3Hhm3NCwYWmvQ Ask(Plan { title: Some("Plan: Update README.md"), body: "\n## Context\n`<MACHINE_PATH> contains a single line, `CURRENT`. The request is to change it to `UPDATED`.\n\n## Step\n1. Edit `README.md` and replace the line `CURRENT` with `UPDATED`. Keep the trailing newline.\n\n## Verification\nRead `README.md` and confirm it contains only `UPDATED`.\n", verdict: Appr…
+    16 fe9cbf32-1494-4c97-bcda-75c4be26f3a8 Hidden collapsed
+    17 msg_011CgZmmN3bbYx6ct9rs8iCB:0 Thinking { text: "", open: false, duration_ms: Some(896) }
+    18 toolu_01JKDeTGxD754hVJtAJZqJeK FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[toolu_01JKDeTGxD754hVJtAJZqJeK..toolu_01FhHxcpPHL99r1yVYpSYeij x2 recent=1] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false } collapsed
+    19 toolu_01FhHxcpPHL99r1yVYpSYeij Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01JKDeTGxD754hVJtAJZqJeK..toolu_01FhHxcpPHL99r1yVYpSYeij x2 recent=0 RunCounts { commands: 0, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }]
+    20 3de691e8-a0da-4432-8d0d-23b77047687c Hidden collapsed
+    21 msg_011CgZmmUXmqqmx2HT3mqX8H:0 Prose { text: [Text("`README.md` now contains `UPDATED` instead of `CURRENT`. I read the file back and it shows `UPDATED` on line 1, with the trailing newline unchanged.\n\nThe plan you approved is saved at `<MACHINE_PATH>")], streaming: false, working_note: false }
+    22 turn:1 TurnEnd { duration_ms: Some(11789), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 17100, window_tokens: Some(200000), percent: Some(8), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 27440, window_tokens: Some(1000000), percent: Some(2), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]
   model  opus "Opus 5.5" efforts=[low,medium,high,xhigh,max]
   model  fable "Fable 5.1" efforts=[low,medium,high,xhigh,max]
   model  sonnet "Sonnet 5.5" efforts=[low,medium,high,xhigh,max]
-  model* haiku "Haiku 4.5" efforts=[]
+  model* haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
+  model  claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
   model  claude-sonnet-5 "Sonnet 5" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-5 "Opus 5" efforts=[low,medium,high,xhigh,max]
   model  claude-fable-5 "Fable 5" efforts=[low,medium,high,xhigh,max]
@@ -87,12 +91,18 @@
   model  claude-opus-4-7 "Opus 4.7" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-4-6 "Opus 4.6" efforts=[low,medium,high,max]
   model  claude-sonnet-4-6 "Sonnet 4.6" efforts=[low,medium,high,max]
+  effort  low
+  effort  medium
+  effort* high
+  effort  xhigh
+  effort  max
   permission* "default" "Ask" normal
   permission  "acceptEdits" "Accept edits"
   permission  "plan" "Plan"
-  permission  "auto" "Auto" unsettable
-  changes: model Pick · effort NotOffered · permission Pick · mode NotOffered
+  permission  "auto" "Auto"
+  changes: model Pick · effort Pick · permission Pick · mode NotOffered
   command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
   command /deep-research source="" hint="" "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)"
   command /design source="" hint="consent | revoke" "Grant or revoke Claude agent access to your Design projects"
@@ -101,17 +111,18 @@
   command /update-config source="" hint="" "Use this skill to configure the Claude Code harness via settings.json. Automated behaviors (\"from now on when X\", \"each time X\", \"whenever X\", \"before/after X\") require hooks configured in settings.json - the harness executes these, not Claude, so memory/preferences cannot fulfill them. Also use for: permissions (\"allow X\", \"add permission\", \"move permission to\"), env vars (\"set X=…
   command /verify source="" hint="" "Verify that a code change actually does what it's supposed to by exercising it end-to-end and observing behavior — drive the affected flow, not just tests or typecheck. Run before committing nontrivial changes; bootstraps this repo's project verify skill if none exists yet. Don't invoke it on a diff that only touches tests, docs, or other code with no runtime surface to drive (a change to product…
   command /debug source="" hint="[issue description]" "Enable debug logging for this session and help diagnose issues"
-  command /code-review source="" hint="[low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<pr#>|<branch>|<path>] [--max-findings <n>|all]" "Review the current diff, or a PR number/branch/path target, for correctness bugs (plus reuse/simplification/efficiency cleanups where the model's review recipe covers them) at the given effort level (low|medium|high|xhigh|max: from few high-confidence findings up to many, some of them uncertain; ultra: deep multi-agent review in the cloud); with no level given, it reuses the level you typed last.…
+  command /code-review source="" hint="[low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<pr#>|<branch>|<path>] [--max-findings <n>|all]" "Review the current diff, or a PR number/branch/path target, for correctness bugs (plus reuse/simplification/efficiency cleanups where the model's recipe covers them) at the effort level given first, before any target (low|medium|high|xhigh|max: from few high-confidence findings to many, some uncertain; ultra: deep multi-agent review in the cloud); with no level given, it reuses the level you type…
   command /simplify source="" hint="[<target>]" "Review the changed code for reuse, simplification, efficiency, and altitude cleanups, then apply the fixes. Quality only — it does not hunt for bugs; use /code-review for that."
   command /batch source="" hint="<instruction>" "Research and plan a large-scale change, then execute it in parallel across 5–30 isolated worktree agents that each open a PR."
   command /fewer-permission-prompts source="" hint="" "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts."
   command /loop source="" hint="[interval] [prompt]" "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace."
   command /schedule source="" hint="" "Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule."
+  command /send-to-project source="" hint="[\"project name\" or id] [message]" "Send this session's work to a Claude Project"
   command /claude-api source="" hint="" "Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration.\nTRIGGER — read BEFORE opening the target file; don't skip because it \"looks like a one-liner\" — whenever: the prompt names Claude/Anthropic in any form (Claude, Anthropic, Fable, Opus, Sonnet, Haiku, `anthropic`, `@anthropic-ai`, `claude-*`, `us…
   command /workflow-authoring source="" hint="" "Reference for writing a Workflow tool script (script API and gotchas, resume, quality patterns, worked examples). Load before authoring a script for a workflow the user already opted into; it does not itself authorize running one."
   command /run source="" hint="" "Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library)."
   command /run-skill-generator source="" hint="" "Author or improve the run-<unit> skill - a per-project skill that tells agents how to build, launch, and drive this project's app. Use when the user asks to set up the project, get it running, write run instructions, or verify build/run steps work from a clean environment."
-  command /plugin-authoring source="" hint="" "Make a mod: a live pane, band, status line, toast or hook inside Claude Code (terminal or desktop Code tab), written as a plugin of function hooks that hot-reloads in this session. Load before writing or debugging a hooks module."
+  command /plugin-authoring source="" hint="" "Make a mod: a change to Claude's own interface or behaviour, such as a panel or pane that stays beside the chat and updates, a band, status line, toast, slash command, or hook on tool calls. Use to make, change or debug a mod or its hooks module."
   command /advisor source="" hint="[fable|opus|sonnet|off]" "Let Claude consult a stronger model at key moments"
   command /autocompact source="" hint="[auto|<tokens>]" "Configure the auto-compact window size"
   command /clear source="" hint="[name]" "Start a new session with empty context; previous session stays on disk (resumable with /resume)"
@@ -126,7 +137,7 @@
   command /workflow-launch-exec source="" hint="" "Execute a server-launched workflow handoff (workflow_launch event sessions only)"
   command /reload-plugins source="" hint="[--force]" "Activate pending plugin changes in the current session"
   command /reload-skills source="" hint="" "Pick up skills added or changed on disk during this session"
-  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~15-25 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
+  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~5-15 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
   command /security-review source="" hint="" "Complete a security review of the pending changes on the current branch"
   command /usage-credits source="" hint="" "Configure usage credits or request them from your admin when you hit a limit"
   command /extra-usage source="" hint="" "Renamed to /usage-credits"
@@ -139,4 +150,4 @@
   command /design-revoke source="" hint="" "Revoke Claude agent access to your Design projects"
   command /list-agents source="" hint="" "List subagents, teammates, and other Claude sessions you can message"
   command /team-onboarding source="" hint="" "Help teammates ramp on Claude Code with a guide from your usage"
-  controls: model=Some("Haiku 4.5") effort=None permission=None mode=None
+  controls: model=Some("Haiku 5.5") effort=Some("high") permission=None mode=None

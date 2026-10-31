@@ -1,10 +1,10 @@
 {
-  "about": "A turn on a launch-configured model.",
+  "about": "A turn with Claude's thinking shown, as its launch arguments ask: the thinking item carries its text.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/sdk/configured_turn/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/sdk/configured_turn/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

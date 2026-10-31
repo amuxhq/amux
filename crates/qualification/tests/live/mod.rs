@@ -28,6 +28,7 @@
 mod asks;
 mod attach;
 mod capture;
+mod corpus;
 mod offers;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -85,10 +86,32 @@ pub enum Scenario {
     Permission,
     Mode,
     Attach,
+    MultiTurn,
+    Compacted,
+    Cleared,
+    Controls,
+    Effort,
+    ConfiguredTurn,
+    QuestionAsked,
+    QuestionEveryShape,
+    QuestionDismissed,
+    PlanReviewed,
+    ElicitationAccepted,
+    ElicitationDeclined,
+    ElicitationCancelled,
+    ElicitationLinkAccepted,
+    FailedToolServer,
+    FailingCommand,
+    TaskList,
+    BackgroundShell,
+    SubagentTask,
+    Image,
+    SignInProblem,
+    SteerFolded,
 }
 
 /// Every scenario, in the order a run takes them.
-pub const SCENARIOS: [Scenario; 13] = [
+pub const SCENARIOS: [Scenario; 35] = [
     Scenario::Initialize,
     Scenario::Respond,
     Scenario::Decide,
@@ -102,6 +125,28 @@ pub const SCENARIOS: [Scenario; 13] = [
     Scenario::Permission,
     Scenario::Mode,
     Scenario::Attach,
+    Scenario::MultiTurn,
+    Scenario::Compacted,
+    Scenario::Cleared,
+    Scenario::Controls,
+    Scenario::Effort,
+    Scenario::ConfiguredTurn,
+    Scenario::QuestionAsked,
+    Scenario::QuestionEveryShape,
+    Scenario::QuestionDismissed,
+    Scenario::PlanReviewed,
+    Scenario::ElicitationAccepted,
+    Scenario::ElicitationDeclined,
+    Scenario::ElicitationCancelled,
+    Scenario::ElicitationLinkAccepted,
+    Scenario::FailedToolServer,
+    Scenario::FailingCommand,
+    Scenario::TaskList,
+    Scenario::BackgroundShell,
+    Scenario::SubagentTask,
+    Scenario::Image,
+    Scenario::SignInProblem,
+    Scenario::SteerFolded,
 ];
 
 impl Scenario {
@@ -120,17 +165,55 @@ impl Scenario {
             Scenario::Permission => "permission",
             Scenario::Mode => "mode",
             Scenario::Attach => "attach",
+            Scenario::MultiTurn => "multi_turn",
+            Scenario::Compacted => "compacted",
+            Scenario::Cleared => "cleared",
+            Scenario::Controls => "controls",
+            Scenario::Effort => "effort",
+            Scenario::ConfiguredTurn => "configured_turn",
+            Scenario::QuestionAsked => "question_asked",
+            Scenario::QuestionEveryShape => "question_every_shape",
+            Scenario::QuestionDismissed => "question_dismissed",
+            Scenario::PlanReviewed => "plan_reviewed",
+            Scenario::ElicitationAccepted => "elicitation_accepted",
+            Scenario::ElicitationDeclined => "elicitation_declined",
+            Scenario::ElicitationCancelled => "elicitation_cancelled",
+            Scenario::ElicitationLinkAccepted => "elicitation_link_accepted",
+            Scenario::FailedToolServer => "failed_tool_server",
+            Scenario::FailingCommand => "failing_command",
+            Scenario::TaskList => "task_list",
+            Scenario::BackgroundShell => "background_shell",
+            Scenario::SubagentTask => "subagent_task",
+            Scenario::Image => "image",
+            Scenario::SignInProblem => "sign_in_problem",
+            Scenario::SteerFolded => "steer_folded",
         }
+    }
+
+    /// The scenario's agent's name: agent names take hyphens, not
+    /// underscores.
+    fn agent(self) -> String {
+        self.name().replace('_', "-")
     }
 
     /// Whether `kind` has what the scenario exercises: terminal Claude
     /// reports no usage; only Codex has amux-set permissions and modes and
-    /// an app of its own to attach.
+    /// an app of its own to attach; the rest record headless Claude's
+    /// corpus (corpus.rs).
     fn applies(self, kind: Kind) -> bool {
         match self {
+            Scenario::Initialize
+            | Scenario::Respond
+            | Scenario::Decide
+            | Scenario::Interrupt
+            | Scenario::Resume
+            | Scenario::Plan
+            | Scenario::Questions
+            | Scenario::Catalogue
+            | Scenario::HostCatalogue => true,
             Scenario::Usage => kind != Kind::ClaudePty,
             Scenario::Permission | Scenario::Mode | Scenario::Attach => kind == Kind::Codex,
-            _ => true,
+            _ => kind == Kind::ClaudeSdk,
         }
     }
 }
@@ -570,12 +653,12 @@ impl Install {
     /// Kills every agent and stops the daemon, so nothing outlives the run.
     async fn shutdown(&self) {
         if let Ok(listing) = self.amux(&["ls"]).await {
-            for name in SCENARIOS.map(Scenario::name) {
+            for name in SCENARIOS.map(Scenario::agent) {
                 if listing
                     .lines()
-                    .any(|line| line.split_whitespace().next() == Some(name))
+                    .any(|line| line.split_whitespace().next() == Some(name.as_str()))
                 {
-                    let _ = self.amux(&["stop", name]).await;
+                    let _ = self.amux(&["stop", &name]).await;
                 }
             }
         }
@@ -626,6 +709,17 @@ impl Install {
     /// `amux new` with more of the provider's own arguments. Claude runs in
     /// a terminal for its own interface and headless for amux's.
     async fn create_with(&self, scenario: Scenario, extra: &[&str]) -> Result<Vec<u8>, String> {
+        self.create_as(scenario, CLAUDE_MODEL, &[], extra).await
+    }
+
+    /// `amux new` on a Claude `model`, with more of amux's own `options`.
+    async fn create_as(
+        &self,
+        scenario: Scenario,
+        model: &str,
+        options: &[&str],
+        extra: &[&str],
+    ) -> Result<Vec<u8>, String> {
         let cwd = self.project(scenario)?.to_string_lossy().into_owned();
         let agent: &[&str] = match self.kind {
             Kind::ClaudePty => &["claude", "--in", "native"],
@@ -634,14 +728,16 @@ impl Install {
         };
         let mut args = vec!["new"];
         args.extend(agent);
-        args.extend(["--name", scenario.name(), "--cwd", cwd.as_str()]);
+        let name = scenario.agent();
+        args.extend(["--name", name.as_str(), "--cwd", cwd.as_str()]);
+        args.extend(options);
         if self.kind != Kind::Codex {
             // Only amux's own tool server and no settings but the
             // project's (it has none): the operator's MCP servers and
             // permission rules stay out of the run.
             args.extend([
                 "--model",
-                CLAUDE_MODEL,
+                model,
                 "--",
                 "--setting-sources",
                 "project",
@@ -730,7 +826,7 @@ impl Install {
             .clone()
             .create_agent(CreateAgentRequest {
                 agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-                name: Some(scenario.name().to_owned()),
+                name: Some(scenario.agent()),
                 cwd: self.project(scenario)?.to_string_lossy().into_owned(),
                 agent: Some(wire::create_agent_request::Agent::Codex(config)),
                 ..CreateAgentRequest::default()
@@ -818,7 +914,9 @@ impl Install {
     }
 
     async fn send(&self, scenario: Scenario, text: &str) -> Result<(), String> {
-        self.amux(&["send", scenario.name(), text]).await.map(drop)
+        self.amux(&["send", &scenario.agent(), text])
+            .await
+            .map(drop)
     }
 
     /// Sends an input the CLI has no verb for, as the apps send it.
@@ -923,6 +1021,28 @@ impl Install {
             Scenario::Permission => self.permission().await,
             Scenario::Mode => self.mode().await,
             Scenario::Attach => self.attach().await,
+            Scenario::MultiTurn => self.multi_turn().await,
+            Scenario::Compacted => self.compacted().await,
+            Scenario::Cleared => self.cleared().await,
+            Scenario::Controls => self.controls().await,
+            Scenario::Effort => self.effort().await,
+            Scenario::ConfiguredTurn => self.configured_turn().await,
+            Scenario::QuestionAsked => self.question_asked().await,
+            Scenario::QuestionEveryShape => self.question_every_shape().await,
+            Scenario::QuestionDismissed => self.question_dismissed().await,
+            Scenario::PlanReviewed => self.plan_reviewed().await,
+            Scenario::ElicitationAccepted => self.elicitation_accepted().await,
+            Scenario::ElicitationDeclined => self.elicitation_declined().await,
+            Scenario::ElicitationCancelled => self.elicitation_cancelled().await,
+            Scenario::ElicitationLinkAccepted => self.elicitation_link_accepted().await,
+            Scenario::FailedToolServer => self.failed_tool_server().await,
+            Scenario::FailingCommand => self.failing_command().await,
+            Scenario::TaskList => self.task_list().await,
+            Scenario::BackgroundShell => self.background_shell().await,
+            Scenario::SubagentTask => self.subagent_task().await,
+            Scenario::Image => self.image().await,
+            Scenario::SignInProblem => self.sign_in_problem().await,
+            Scenario::SteerFolded => self.steer_folded().await,
         }
     }
 
@@ -1265,13 +1385,21 @@ impl Log {
             .unwrap_or_default()
     }
 
-    /// Something of the provider's own follows the prompt.
+    /// Something of the provider's own follows the prompt: more than the
+    /// status headless Claude reports as it sends each request.
     fn under_way(&self, kind: Kind) -> bool {
         let items = self.ordered();
         items
             .iter()
             .position(|item| item_token(kind, item).as_deref() == Some("prompt"))
-            .is_some_and(|at| items.len() > at + 1)
+            .is_some_and(|at| {
+                items[at + 1..].iter().any(|item| {
+                    !matches!(
+                        ItemBody::decode(kind, &item.body),
+                        ItemBody::ClaudeSdk(wire::claude_sdk_item::Kind::Status(_))
+                    )
+                })
+            })
     }
 
     /// The items after the first `mark` in order, and the snapshots since
@@ -1371,6 +1499,20 @@ impl Shape {
             && self.phases[at + 1..].starts_with(&[Phase::Working, Phase::Idle, Phase::Working])
         {
             self.phases.drain(at + 2..at + 4);
+        }
+    }
+
+    /// A prompt queued behind a turn starts the moment that turn ends. Its
+    /// recording carries the prompt as a line written after the turn's
+    /// result, so the replay reads idle in between, which a session never
+    /// shows for longer than the step that ended the turn.
+    fn queued_ran_at_once(&mut self) {
+        if let Some(at) = self
+            .phases
+            .windows(3)
+            .position(|window| window == [Phase::Working, Phase::Idle, Phase::Working])
+        {
+            self.phases.drain(at + 1..at + 3);
         }
     }
 }

@@ -18,7 +18,6 @@ macro_rules! absent {
 }
 
 absent! {
-    color => "color",
     api_key_source => "apiKeySource",
     claude_code_version => "claude_code_version",
     content => "content",

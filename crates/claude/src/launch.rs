@@ -1,10 +1,9 @@
 //! Shared Claude Code process launch construction.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde_json::Value;
-use uuid::Uuid;
 
 /// The variable naming the folder Claude reads an organization's managed
 /// settings from, in place of the platform's own.
@@ -72,17 +71,6 @@ impl MergedSettings {
     }
 }
 
-/// Everything shared launch construction needs for either Claude driver.
-#[derive(Debug, Clone)]
-pub struct Launch {
-    pub binary: PathBuf,
-    pub cwd: PathBuf,
-    pub args: Vec<String>,
-    pub session_id: Uuid,
-    pub settings: MergedSettings,
-    pub env_scrub: &'static [&'static str],
-}
-
 /// Read each user `--settings` source relative to `cwd` and merge it in order.
 pub fn load_user_settings(cwd: &Path, sources: &[String]) -> Result<Option<Value>> {
     let mut merged = Value::Object(serde_json::Map::new());
@@ -141,17 +129,6 @@ pub fn take_settings_args(args: &mut Vec<String>) -> Result<Vec<String>> {
     }
     *args = retained;
     Ok(settings)
-}
-
-/// Build PTY-driver arguments. Host-owned name and messaging arguments may be
-/// supplied in `Launch::args`; callers decide them from runtime facts.
-pub fn pty_spawn_args(launch: &Launch) -> Vec<String> {
-    let mut args = launch.args.clone();
-    args.extend([
-        "--settings".to_string(),
-        launch.settings.as_value().to_string(),
-    ]);
-    args
 }
 
 fn read_settings(cwd: &Path, source: &str) -> Result<Value> {

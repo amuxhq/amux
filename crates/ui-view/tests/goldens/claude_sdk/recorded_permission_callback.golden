@@ -1,38 +1,38 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 4 recorded 3: input stdin-2
+## 6 recorded 5: input 0xb179bed08ba84918856e1378bec65f8f
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 14 recorded 13: fact Stream type=assistant uuid=d0f0ce7f-0d8b-4044-8034-48846cd999d9
-  composer Send activity=Some(Running { key: "toolu_01EL5DWY3x1bL3WmhF7d4j1d" }) queue=[] underway=[] refused=[]
-## 16 recorded 15: fact Stream type=control_request
-  ask c49aa720-db5e-429c-8936-e6b5b9f5861a -> "toolu_01EL5DWY3x1bL3WmhF7d4j1d" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "Accept edits", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
-    body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 0, lines: [Line(PatchLine { number: None, kind: Added, text: "TOOL_OK" })], line: None, reason: "", created: None }
+## 19 recorded 18: fact Stream type=stream_event uuid=b474190b-b77a-4875-892e-52b1f39015ea
+  composer Send activity=Some(Running { key: "toolu_01AZBDo9L68r63wnDdnnMogS" }) queue=[] underway=[] refused=[]
+## 36 recorded 35: fact Stream type=control_request
+  ask 6b2032a9-41e7-45fd-99ad-18195d83be8d -> "toolu_01AZBDo9L68r63wnDdnnMogS" 1/1 Open
+    choices AllowOnce*, AllowAlways { subjects: ["touch decided.txt"], directories: [], mode: "", mode_name: "", scope: Project }, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "Accept edits", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
+    body Command { command: "touch decided.txt", cwd: "", reason: "outside the allowed directories: <MACHINE_PATH>", description: "Create empty file decided.txt in current directory" }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 18 recorded 17: input stdin-3
+## 43 recorded 42: input stdin-4
   ask none
-  composer Send activity=Some(Running { key: "toolu_01EL5DWY3x1bL3WmhF7d4j1d" }) queue=[] underway=[] refused=[]
-## 22 recorded 21: fact Stream type=user uuid=f67b17b6-957d-4ebf-951e-55a38b031322
+  composer Send activity=Some(Running { key: "toolu_01AZBDo9L68r63wnDdnnMogS" }) queue=[] underway=[] refused=[]
+## 47 recorded 46: fact Stream type=user uuid=2e15f01a-21fd-40b6-a42b-2f6ecd637b08
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 28 recorded 27: fact Stream type=result subtype=success uuid=de4ba7ce-e7e3-48fa-a6c5-976de544ad0a
+## 61 recorded 60: fact Stream type=result subtype=success uuid=66f7b381-8759-451d-962a-822eec0bd98f
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Use the Write tool once to create tool.txt containing exactly TOOL_OK, then reply exactly DONE.")], steered: false }
-     3 msg_011CgWLDJXTR41oLqEzozmCq:0 Thinking { text: "", open: false, duration_ms: Some(2070) }
-     4 toolu_01EL5DWY3x1bL3WmhF7d4j1d FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[toolu_01EL5DWY3x1bL3WmhF7d4j1d..toolu_01EL5DWY3x1bL3WmhF7d4j1d x1 recent=0 RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: N…
-     5 msg_011CgWLDXDSSghEogWeAPReq:0 Thinking { text: "", open: false, duration_ms: Some(1345) }
-     6 msg_011CgWLDXDSSghEogWeAPReq:1 Prose { text: [Text("DONE")], streaming: false, working_note: false }
-     7 turn:1 TurnEnd { duration_ms: Some(4495), failed: false }
+     2 b179bed0-8ba8-4918-856e-1378bec65f8f Prompt { text: [Text("Run exactly this shell command once, with your shell tool, and nothing else: touch decided.txt. Then reply with the single word done.")], steered: false }
+     3 a1f7b629-c0a9-4483-b5e3-344b6b970d3c Hidden collapsed
+     4 toolu_01AZBDo9L68r63wnDdnnMogS Command { command: "touch decided.txt", state: Succeeded, exit_code: None, output_head: ["(Bash completed with no output)"], more_lines: 0, output_trimmed: false, output_tail: ["(Bash completed with no output)"], duration_ms: Some(131) } run[toolu_01AZBDo9L68r63wnDdnnMogS..toolu_01AZBDo9L68r63wnDdnnMogS x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, se…
+     5 9114c68e-922f-4b94-be66-e569d7467698 Hidden collapsed
+     6 msg_011CgZkjH3YhXHRKySDomwgB:0 Prose { text: [Text("done")], streaming: false, working_note: false }
+     7 turn:1 TurnEnd { duration_ms: Some(2080), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 24056, window_tokens: Some(200000), percent: Some(12), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 20511, window_tokens: Some(1000000), percent: Some(2), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]
   model  opus "Opus 5.5" efforts=[low,medium,high,xhigh,max]
   model  fable "Fable 5.1" efforts=[low,medium,high,xhigh,max]
   model  sonnet "Sonnet 5.5" efforts=[low,medium,high,xhigh,max]
-  model  haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
-  model* claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
+  model* haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
+  model  claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
   model  claude-sonnet-5 "Sonnet 5" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-5 "Opus 5" efforts=[low,medium,high,xhigh,max]
   model  claude-fable-5 "Fable 5" efforts=[low,medium,high,xhigh,max]
@@ -40,12 +40,18 @@
   model  claude-opus-4-7 "Opus 4.7" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-4-6 "Opus 4.6" efforts=[low,medium,high,max]
   model  claude-sonnet-4-6 "Sonnet 4.6" efforts=[low,medium,high,max]
+  effort  low
+  effort  medium
+  effort* high
+  effort  xhigh
+  effort  max
   permission* "default" "Ask" normal
   permission  "acceptEdits" "Accept edits"
   permission  "plan" "Plan"
-  permission  "auto" "Auto" unsettable
-  changes: model Pick · effort NotOffered · permission Pick · mode NotOffered
+  permission  "auto" "Auto"
+  changes: model Pick · effort Pick · permission Pick · mode NotOffered
   command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
   command /deep-research source="" hint="" "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)"
   command /design source="" hint="consent | revoke" "Grant or revoke Claude agent access to your Design projects"
@@ -60,6 +66,7 @@
   command /fewer-permission-prompts source="" hint="" "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts."
   command /loop source="" hint="[interval] [prompt]" "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace."
   command /schedule source="" hint="" "Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule."
+  command /send-to-project source="" hint="[\"project name\" or id] [message]" "Send this session's work to a Claude Project"
   command /claude-api source="" hint="" "Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration.\nTRIGGER — read BEFORE opening the target file; don't skip because it \"looks like a one-liner\" — whenever: the prompt names Claude/Anthropic in any form (Claude, Anthropic, Fable, Opus, Sonnet, Haiku, `anthropic`, `@anthropic-ai`, `claude-*`, `us…
   command /workflow-authoring source="" hint="" "Reference for writing a Workflow tool script (script API and gotchas, resume, quality patterns, worked examples). Load before authoring a script for a workflow the user already opted into; it does not itself authorize running one."
   command /run source="" hint="" "Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library)."
@@ -79,7 +86,7 @@
   command /workflow-launch-exec source="" hint="" "Execute a server-launched workflow handoff (workflow_launch event sessions only)"
   command /reload-plugins source="" hint="[--force]" "Activate pending plugin changes in the current session"
   command /reload-skills source="" hint="" "Pick up skills added or changed on disk during this session"
-  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~15-25 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
+  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~5-15 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
   command /security-review source="" hint="" "Complete a security review of the pending changes on the current branch"
   command /usage-credits source="" hint="" "Configure usage credits or request them from your admin when you hit a limit"
   command /extra-usage source="" hint="" "Renamed to /usage-credits"
@@ -92,4 +99,4 @@
   command /design-revoke source="" hint="" "Revoke Claude agent access to your Design projects"
   command /list-agents source="" hint="" "List subagents, teammates, and other Claude sessions you can message"
   command /team-onboarding source="" hint="" "Help teammates ramp on Claude Code with a guide from your usage"
-  controls: model=Some("Haiku 4.5") effort=None permission=None mode=None
+  controls: model=Some("Haiku 5.5") effort=Some("high") permission=None mode=None

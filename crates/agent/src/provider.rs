@@ -561,7 +561,7 @@ impl Provider {
         // A version that cannot be read starts anyway: a wrapper or an odd
         // banner is likelier than an old Claude.
         match claude::version::probe_version(Path::new(&spec.provider_command)).await {
-            Ok(version) if version.0 < claude::version::MIN_TERMINAL => {
+            Ok(version) if version < claude::version::MIN_TERMINAL => {
                 return Err(ProviderError::ClaudeTooOld {
                     found: version.to_string(),
                 });

@@ -1525,7 +1525,7 @@ fn an_answered_question_row_reads_the_question_and_what_was_picked() {
         assert!(screen.contains(row), "{name}:\n{screen}");
         if kind == Kind::ClaudeSdk {
             assert!(screen.contains("→ Hammer, Drill"), "{screen}");
-            assert!(screen.contains("→ Dried mango"), "{screen}");
+            assert!(screen.contains("→ Whatever is fresh"), "{screen}");
         } else {
             assert!(screen.contains("Answered a question"), "{screen}");
         }
@@ -2130,7 +2130,7 @@ fn ctrl_c_in_an_ask_field_clears_that_field_and_never_the_draft() {
     kept(&view);
     let screen = screen_of(&mut view, &state, at);
     assert!(
-        screen.contains("› 3. No") && !screen.contains("No: no"),
+        screen.contains("› 5. No") && !screen.contains("No: no"),
         "{screen}"
     );
 

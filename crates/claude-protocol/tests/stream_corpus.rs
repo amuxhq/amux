@@ -7,12 +7,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use claude_protocol::stream::control::ControlOutcome;
-use claude_protocol::stream::init::ContextUsage;
 use claude_protocol::stream::{
-    self, ControlResponse, ElicitationResult, HookOutput, InitializationResult, Input,
-    InterruptResult, McpPermissionModeOverrideResult, McpSetServersResult, McpStatusResult, Output,
-    PermissionResult, ReloadPluginsResult, ReloadSkillsResult, RewindFilesResult,
-    SetPermissionModeResult, SettingsResult, UserDialogResult,
+    self, ControlResponse, ElicitationResult, InitializationResult, Input, InterruptResult, Output,
+    PermissionResult, SetPermissionModeResult, SettingsResult,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -22,8 +19,8 @@ fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../claude-specs/fixtures")
 }
 
-/// The registered corpus and the live captures beside it.
-const ROOTS: [&str; 2] = ["sdk", "live/sdk"];
+/// The headless corpus: the live lane's captures.
+const ROOT: &str = "live/sdk";
 
 /// One recording's lines: where each came from, whether Claude wrote it,
 /// and the line.
@@ -31,18 +28,14 @@ type Recording = Vec<(String, bool, String)>;
 
 /// Each recording's lines, in the order they were written.
 fn recorded() -> Vec<Recording> {
-    let mut recordings = Vec::new();
-    for root in ROOTS {
-        let mut found: Vec<_> = std::fs::read_dir(fixtures().join(root))
-            .unwrap_or_else(|error| panic!("fixtures/{root}: {error}"))
-            .map(|entry| entry.expect("entry").path().join("io.jsonl"))
-            .filter(|path| path.is_file())
-            .collect();
-        found.sort();
-        recordings.extend(found);
-    }
+    let mut recordings: Vec<_> = std::fs::read_dir(fixtures().join(ROOT))
+        .unwrap_or_else(|error| panic!("fixtures/{ROOT}: {error}"))
+        .map(|entry| entry.expect("entry").path().join("io.jsonl"))
+        .filter(|path| path.is_file())
+        .collect();
+    recordings.sort();
     assert!(
-        recordings.len() >= 36,
+        recordings.len() >= 29,
         "found only {} recordings",
         recordings.len()
     );
@@ -124,16 +117,7 @@ fn every_recorded_line_encodes_back_to_the_same_json() {
 
 /// Requests whose answer this crate keeps as plain JSON, with no result
 /// type to hold it to.
-const UNTYPED_ANSWERS: &[&str] = &[
-    "mcp_message",
-    "background_tasks",
-    "stop_task",
-    "apply_flag_settings",
-    "mcp_reconnect",
-    "mcp_toggle",
-    "seed_read_state",
-    "set_model",
-];
+const UNTYPED_ANSWERS: &[&str] = &["stop_task", "apply_flag_settings", "set_model"];
 
 /// Reads an answer strictly as `T` and encodes it back.
 fn reread<T: DeserializeOwned + Serialize>(
@@ -155,19 +139,10 @@ fn reread_as(subtype: &str, answer: &ControlResponse) -> Option<Result<Value, St
         "initialize" => reread::<InitializationResult>(answer),
         "interrupt" => reread::<InterruptResult>(answer),
         "set_permission_mode" => reread::<SetPermissionModeResult>(answer),
-        "set_mcp_permission_mode_override" => reread::<McpPermissionModeOverrideResult>(answer),
-        "mcp_set_servers" => reread::<McpSetServersResult>(answer),
-        "get_context_usage" => reread::<ContextUsage>(answer),
         "get_settings" => reread::<SettingsResult>(answer),
-        "mcp_status" => reread::<McpStatusResult>(answer),
-        "reload_plugins" => reread::<ReloadPluginsResult>(answer),
-        "reload_skills" => reread::<ReloadSkillsResult>(answer),
-        "rewind_files" => reread::<RewindFilesResult>(answer),
         // What amux answers Claude.
         "can_use_tool" => reread::<PermissionResult>(answer),
-        "hook_callback" => reread::<HookOutput>(answer),
         "elicitation" => reread::<ElicitationResult>(answer),
-        "request_user_dialog" => reread::<UserDialogResult>(answer),
         subtype if UNTYPED_ANSWERS.contains(&subtype) => None,
         subtype => Some(Err(format!("{subtype} has no result type in this test"))),
     }

@@ -355,7 +355,8 @@ ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-p
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,
 # resume, plan, questions, usage, catalogue, host_catalogue, permission, mode,
-# attach, or all), under the operator's existing login. With no arguments
+# attach, a headless-corpus scenario for claude_sdk, or all), under the
+# operator's existing login. With no arguments
 # it reports not_run for every kind and starts nothing. Its tests are not
 # libtest's, so they run under cargo test, with the binaries they start built
 # first.

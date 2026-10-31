@@ -215,7 +215,7 @@ cargo = [
 
 [[suite]]
 name = "claude-recorded-adapter"
-contract = "Recorded Claude PTY and SDK traffic replays completely and remains tied to its wire provenance."
+contract = "Recorded terminal Claude traffic replays completely through its specifications and remains tied to its wire provenance, and the capture tools record, sanitize and join captures as the live lane needs."
 paths = ["crates/claude-specs/tests", "crates/claude-specs/fixtures"]
 recipe = "just suite claude-recorded-adapter"
 boundary = "Provider adapter"
@@ -226,11 +226,11 @@ time = "driven"
 capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = "crates/claude-specs/fixtures"
-update = "Run `claude-probe record` for the spec and review its manifest."
+update = "Run `claude-probe record <spec>` and review its manifest."
 cargo = [
   { package = "claude-specs", kind = "lib", targets = ["claude_specs"], features = [] },
   { package = "claude-specs", kind = "bin", targets = ["claude-probe"], features = [] },
-  { package = "claude-specs", modules = ["capture_proxy", "scrub", "sdk_boundary", "spec_replay"], features = [] },
+  { package = "claude-specs", modules = ["capture_proxy", "scrub", "spec_replay"], features = [] },
 ]
 
 [[suite]]
@@ -265,7 +265,7 @@ substituted = ["live Claude process"]
 time = "none"
 capabilities = ["Rust toolchain"]
 lane = "fast"
-evidence = "crates/claude-specs/fixtures/sdk and crates/claude-specs/fixtures/pty"
+evidence = "crates/claude-specs/fixtures/live/sdk and crates/claude-specs/fixtures/pty"
 update = "A failing line is provider drift or a wrong type: fix the type in crates/claude-protocol/src, never a live recording."
 cargo = [
   { package = "claude-protocol", kind = "lib", targets = ["claude_protocol"], features = [] },
@@ -613,7 +613,7 @@ cargo = [
 
 [[suite]]
 name = "provider-io-library-units"
-contract = "PTY ownership, capture redaction, the connection to a hosted Codex app server and Claude's launch settings, hook receiver, transcript tailer and version probe preserve process, signal, byte, sanitization and protocol contracts."
+contract = "PTY ownership, capture redaction, the connection to a hosted Codex app server and Claude's launch settings, hook forwarding and version probe preserve process, signal, byte, sanitization and protocol contracts."
 paths = ["crates/claude/src", "crates/codex/src", "crates/pty-host/src", "crates/redaction/src"]
 recipe = "just suite provider-io-library-units"
 boundary = "Provider adapter"
@@ -791,7 +791,7 @@ cargo = [{ package = "qualification", targets = ["claude_pty_live"], features = 
 
 [[suite]]
 name = "claude-sdk-live-compatibility"
-contract = "A real headless Claude session still initializes, responds, takes a native decision, interrupts and resumes with the structure its recorded interpreter fixtures show."
+contract = "A real headless Claude session still initializes, responds, takes a native decision, interrupts and resumes, and plays every scenario of the headless corpus, with the structure its recorded interpreter fixtures show."
 paths = ["crates/qualification/tests/claude_sdk_live.rs", "crates/qualification/tests/live"]
 recipe = "just live claude_sdk all"
 boundary = "Provider adapter"
@@ -802,7 +802,7 @@ time = "real"
 capabilities = ["Unix", "Claude credentials", "network", "may spend provider credits"]
 lane = "qualification"
 evidence = "the printed verdict table; AMUX_LIVE_KEEP=1 keeps the installation under /tmp"
-update = "Capture through claude-probe and graduate the recording deliberately."
+update = "Join a passing run's capture into the headless corpus with claude-probe join, deliberately."
 cargo = [{ package = "qualification", targets = ["claude_sdk_live"], features = ["bundled", "live"] }]
 
 [[suite]]

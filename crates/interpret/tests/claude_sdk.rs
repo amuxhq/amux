@@ -47,21 +47,17 @@ goldens! {
     recorded_compacted => "recorded_compacted",
     recorded_configured_turn => "recorded_configured_turn",
     recorded_controls => "recorded_controls",
-    recorded_effortful_turn => "recorded_effortful_turn",
+    recorded_effort => "recorded_effort",
     recorded_elicitation_accepted => "recorded_elicitation_accepted",
-    recorded_hook_lifecycle => "recorded_hook_lifecycle",
     recorded_interrupted => "recorded_interrupted",
-    recorded_introspection => "recorded_introspection",
     recorded_multi_turn => "recorded_multi_turn",
     recorded_permission_callback => "recorded_permission_callback",
     recorded_plan_reviewed => "recorded_plan_reviewed",
     recorded_question_asked => "recorded_question_asked",
     recorded_resumed => "recorded_resumed",
-    recorded_streamed_turn => "recorded_streamed_turn",
     recorded_subagent_task => "recorded_subagent_task",
     recorded_text_turn => "recorded_text_turn",
     recorded_background_shell => "recorded_background_shell",
-    recorded_client_id => "recorded_client_id",
     recorded_elicitation_declined => "recorded_elicitation_declined",
     recorded_elicitation_link_accepted => "recorded_elicitation_link_accepted",
     recorded_failed_tool_server => "recorded_failed_tool_server",
@@ -69,12 +65,10 @@ goldens! {
     recorded_image => "recorded_image",
     recorded_question_dismissed => "recorded_question_dismissed",
     recorded_question_every_shape => "recorded_question_every_shape",
-    recorded_side_channel => "recorded_side_channel",
     recorded_sign_in_problem => "recorded_sign_in_problem",
     recorded_task_list => "recorded_task_list",
     recorded_elicitation_cancelled => "recorded_elicitation_cancelled",
     recorded_steer_folded => "recorded_steer_folded",
-    recorded_steer_preempted => "recorded_steer_preempted",
     recorded_live_plan => "recorded_live_plan",
     recorded_live_questions => "recorded_live_questions",
     recorded_live_usage => "recorded_live_usage",
@@ -401,7 +395,7 @@ fn the_initialize_answer_lists_models_with_efforts_and_commands_with_sources() {
     let first = &snapshot.models[0];
     assert_eq!(first.value, "default");
     assert_eq!(first.display_name, "Default (recommended)");
-    assert!(first.description.starts_with("Opus 5.5"));
+    assert!(first.description.starts_with("Fable 5.1"));
     assert_eq!(first.efforts, ["low", "medium", "high", "xhigh", "max"]);
     let haiku = snapshot
         .models
@@ -848,24 +842,30 @@ fn compacting_status_is_an_item() {
             let kind = wire::ClaudeSdkItem::decode(item.body.as_slice())
                 .ok()?
                 .kind?;
-            matches!(kind, Kind::Status(_) | Kind::Compaction(_)).then(|| (item.key.clone(), kind))
+            // Claude's other statuses ("requesting") are items too.
+            let kept = match &kind {
+                Kind::Status(status) => status.status == wire::SdkStatus::Compacting as i32,
+                Kind::Compaction(_) => true,
+                _ => false,
+            };
+            kept.then(|| (item.key.clone(), kind))
         })
         .collect();
     assert_eq!(
         kinds,
         [
             (
-                "335a34cf-0794-4ca4-8a83-3fa3e1d49ae7".to_owned(),
+                "0f824bf4-6639-415d-bacc-1515a418fa59".to_owned(),
                 Kind::Status(wire::Status {
                     status: wire::SdkStatus::Compacting as i32,
                     word: "compacting".into(),
                 }),
             ),
             (
-                "be835eab-7b1e-4c04-927b-1f6e8dcdb955".to_owned(),
+                "343f2fc0-3b5d-49e9-af38-8578cd8d5255".to_owned(),
                 Kind::Compaction(wire::Compaction {
-                    tokens_before: Some(25_097),
-                    tokens_after: Some(4_034),
+                    tokens_before: Some(21_378),
+                    tokens_after: Some(4_266),
                     automatic: false,
                 }),
             ),

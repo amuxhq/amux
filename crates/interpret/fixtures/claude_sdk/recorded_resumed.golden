@@ -2,42 +2,54 @@
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 2 recorded 1: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue 8572d50d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=55 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue 8572d50d
-snapshot IDLE queue=[] working_on=- at=1793268070114 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 4 recorded 3: input stdin-2
-effect reply stdin-2 accepted
-effect user 73746469-6e2d-4200-8000-000000000000 "Remember the word ALBATROSS. Reply with exactly REMEMBERED."
-item boundary:1 boundary final at=1793268070116 text="" BOUNDARY_KIND_STARTED
-item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793268070116 text="Remember the word ALBATROSS. Reply with exactly REMEMBERED."
-snapshot WORKING queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1793268070116 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 6 recorded 5: fact Stream type=system subtype=init uuid=57bbef3e-7bb7-4327-a383-c6e0d856d6f7
-item boundary:1 boundary final at=1793268070161 text="" BOUNDARY_KIND_STARTED
-snapshot WORKING queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1793268070161 asks=[] session=abdb9664-0e40-4816-8600-dabe47610cb7 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 8 recorded 7: fact Stream type=assistant uuid=37b2a5ff-74e1-48e6-adab-7e13caf279e2
-item msg_011CgWLNgU4PW1sEg1RcJ64y:0 thinking final at=1793268071772 text=""
-snapshot WORKING queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1793268071772 asks=[] session=abdb9664-0e40-4816-8600-dabe47610cb7 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23730/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 10 recorded 9: fact Stream type=assistant uuid=77d64622-c6ea-4bb5-9faa-0afbd8e4f9a9
-item msg_011CgWLNgU4PW1sEg1RcJ64y:1 message final at=1793268071774 text="REMEMBERED"
-## 12 recorded 11: fact Stream type=rate_limit_event uuid=0d911141-9b9e-47e4-bcf0-cd7552daf417
-snapshot WORKING queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1793268071783 asks=[] session=abdb9664-0e40-4816-8600-dabe47610cb7 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23730/? tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 14 recorded 13: fact Stream type=result subtype=success uuid=e8f7758f-f7a6-492d-bce0-dfb19980f7ae
-item turn:1 turn final at=1793268071791 text="" #1 TURN_OUTCOME_COMPLETED started=1793268070136
-snapshot IDLE queue=[] working_on="Remember the word ALBATROSS. Reply with exactly REMEMBERED." at=1793268071791 asks=[] session=abdb9664-0e40-4816-8600-dabe47610cb7 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23730/200000 tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-turn_end 1 last=msg_011CgWLNgU4PW1sEg1RcJ64y:1
-## 15 recorded 14: fact Stream type=control_response
+effect catalogue 08dc149d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=56 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 08dc149d
+snapshot IDLE queue=[] working_on=- at=1793424141215 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 4 recorded 3: fact Stream type=control_response
+snapshot IDLE queue=[] working_on=- at=1793424141221 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 6 recorded 5: input 0xb020901a329a4aeb82fb28c089afec4d
+effect reply 0xb020901a329a4aeb82fb28c089afec4d accepted
+effect user b020901a-329a-4aeb-82fb-28c089afec4d "Reply with the single word one and nothing else."
+item boundary:1 boundary final at=1793424141276 text="" BOUNDARY_KIND_STARTED
+item b020901a-329a-4aeb-82fb-28c089afec4d prompt final input=0xb020901a329a4aeb82fb28c089afec4d at=1793424141276 text="Reply with the single word one and nothing else."
+snapshot WORKING queue=[] working_on="Reply with the single word one and nothing else." at=1793424141276 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 12 recorded 11: fact Stream type=system subtype=init uuid=178d0847-9c1d-4413-85f0-c9f3572bb381
+item boundary:1 boundary final at=1793424141463 text="" BOUNDARY_KIND_STARTED
+snapshot WORKING queue=[] working_on="Reply with the single word one and nothing else." at=1793424141463 asks=[] session=1c7bb24b-9cb4-4b58-95ae-cd203ccae5a2 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 14 recorded 13: fact Stream type=system subtype=status uuid=9a00faa3-3dae-41de-8372-db22829c4afa
+item 9a00faa3-3dae-41de-8372-db22829c4afa status final at=1793424141466 text="" SDK_STATUS_UNSPECIFIED requesting
+## 17 recorded 16: fact Stream type=stream_event uuid=fe1f323a-55b5-4ddd-8b15-4285944924a2
+snapshot WORKING queue=[] working_on="Reply with the single word one and nothing else." at=1793424142283 asks=[] session=1c7bb24b-9cb4-4b58-95ae-cd203ccae5a2 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20357/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 19 recorded 18: fact Stream type=stream_event uuid=0c65aa83-b7f3-4c65-bf48-0bba2d363ec3
+item msg_011CgZkjRHtPLdJ96PSnW8Ty:0 message open at=1793424142284 text=""
+## 20 recorded 19: fact Stream type=stream_event uuid=3cb9d16f-f81d-4e83-a8d3-c3628a1d89f3
+append msg_011CgZkjRHtPLdJ96PSnW8Ty:0 "one"
+## 22 recorded 21: fact Stream type=assistant uuid=113c9c19-89eb-4d23-8139-e68156428763
+item msg_011CgZkjRHtPLdJ96PSnW8Ty:0 message final at=1793424142284 text="one"
+## 29 recorded 28: fact Stream type=rate_limit_event uuid=73e628cc-332e-4102-93cd-9cdb5d0a65a3
+snapshot WORKING queue=[] working_on="Reply with the single word one and nothing else." at=1793424142498 asks=[] session=1c7bb24b-9cb4-4b58-95ae-cd203ccae5a2 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20357/? tasks=? active=[] usage=ok 5h:20%(ok) 7d:2%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 31 recorded 30: fact Stream type=result subtype=success uuid=046783a5-bc05-4a8e-9941-8af2b616b81f
+item turn:1 turn final at=1793424142503 text="" #1 TURN_OUTCOME_COMPLETED started=1793424141451
+snapshot IDLE queue=[] working_on="Reply with the single word one and nothing else." at=1793424142503 asks=[] session=1c7bb24b-9cb4-4b58-95ae-cd203ccae5a2 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20357/1000000 tasks=? active=[] usage=ok 5h:20%(ok) 7d:2%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 1 last=msg_011CgZkjRHtPLdJ96PSnW8Ty:0
+## 34 recorded 33: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-2\",\"type\":\"control_request\"}"
-## 16 recorded 15: input stdin-4
-effect reply stdin-4 accepted
-effect user 73746469-6e2d-4400-8000-000000000000 "What word did I ask you to remember? Reply with just that word."
-item 73746469-6e2d-4400-8000-000000000000 prompt final input=stdin-4 at=1793268071791 text="What word did I ask you to remember? Reply with just that word."
-snapshot WORKING queue=[] working_on="What word did I ask you to remember? Reply with just that word." at=1793268071791 asks=[] session=abdb9664-0e40-4816-8600-dabe47610cb7 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23730/200000 tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 20 recorded 19: fact Stream type=assistant uuid=47fc4744-3a4a-4d46-9c79-ac59b76d0acc
-item msg_011CgWLNpUWif7MbEKgL1k7H:0 thinking final at=1793268071791 text=""
-snapshot WORKING queue=[] working_on="What word did I ask you to remember? Reply with just that word." at=1793268071791 asks=[] session=abdb9664-0e40-4816-8600-dabe47610cb7 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23840/200000 tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 21 recorded 20: fact Stream type=assistant uuid=99d732b3-7014-44e4-9605-c5033a75cb4d
-item msg_011CgWLNpUWif7MbEKgL1k7H:1 message final at=1793268071791 text="ALBATROSS"
-## 23 recorded 22: fact Stream type=result subtype=success uuid=a3f39345-cfce-44d3-b6c0-19ab8de5e29a
-item turn:2 turn final at=1793268071791 text="" #2 TURN_OUTCOME_COMPLETED started=1793268070396
-snapshot IDLE queue=[] working_on="What word did I ask you to remember? Reply with just that word." at=1793268071791 asks=[] session=abdb9664-0e40-4816-8600-dabe47610cb7 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23840/200000 tasks=? active=[] usage=ok 5h:2%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-turn_end 2 last=msg_011CgWLNpUWif7MbEKgL1k7H:1
+## 36 recorded 35: input 0x7993eb0a746c40d49d83421a60f4b63e
+effect reply 0x7993eb0a746c40d49d83421a60f4b63e accepted
+effect user 7993eb0a-746c-40d4-9d83-421a60f4b63e "Reply with the single word two and nothing else."
+item 7993eb0a-746c-40d4-9d83-421a60f4b63e prompt final input=0x7993eb0a746c40d49d83421a60f4b63e at=1793424142504 text="Reply with the single word two and nothing else."
+snapshot WORKING queue=[] working_on="Reply with the single word two and nothing else." at=1793424142504 asks=[] session=1c7bb24b-9cb4-4b58-95ae-cd203ccae5a2 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20357/1000000 tasks=? active=[] usage=ok 5h:20%(ok) 7d:2%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 40 recorded 39: fact Stream type=system subtype=status uuid=d9bc0ce7-afe8-4088-a455-45d888330209
+item d9bc0ce7-afe8-4088-a455-45d888330209 status final at=1793424142504 text="" SDK_STATUS_UNSPECIFIED requesting
+## 43 recorded 42: fact Stream type=stream_event uuid=d1b14a58-2899-4fa8-b562-58d03bfee04c
+snapshot WORKING queue=[] working_on="Reply with the single word two and nothing else." at=1793424142676 asks=[] session=1c7bb24b-9cb4-4b58-95ae-cd203ccae5a2 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20400/1000000 tasks=? active=[] usage=ok 5h:20%(ok) 7d:2%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 45 recorded 44: fact Stream type=stream_event uuid=6d164f88-5db4-4026-b0df-a41f8a4f4d86
+item msg_011CgZkjYoaqvP3Nw3Vt7K2D:0 message open at=1793424142677 text=""
+## 46 recorded 45: fact Stream type=stream_event uuid=df26d43b-3bb0-442d-9f6a-b855e11829ba
+append msg_011CgZkjYoaqvP3Nw3Vt7K2D:0 "two"
+## 47 recorded 46: fact Stream type=assistant uuid=8a4734c9-648b-4cc4-a643-fef625f63946
+item msg_011CgZkjYoaqvP3Nw3Vt7K2D:0 message final at=1793424142677 text="two"
+## 56 recorded 55: fact Stream type=result subtype=success uuid=af128eca-c406-424c-8a92-4c0bd626a179
+item turn:2 turn final at=1793424142692 text="" #2 TURN_OUTCOME_COMPLETED started=1793424141390
+snapshot IDLE queue=[] working_on="Reply with the single word two and nothing else." at=1793424142692 asks=[] session=1c7bb24b-9cb4-4b58-95ae-cd203ccae5a2 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20400/1000000 tasks=? active=[] usage=ok 5h:20%(ok) 7d:2%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 2 last=msg_011CgZkjYoaqvP3Nw3Vt7K2D:0

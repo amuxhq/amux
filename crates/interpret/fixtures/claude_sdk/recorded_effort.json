@@ -1,0 +1,10 @@
+{
+  "about": "A turn at a launch effort, then the effort changed from amux and a second turn: the snapshot reads each.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "../../../claude-specs/fixtures/live/sdk/effort/io.jsonl",
+    "format": "claude_sdk_io"
+  }
+}

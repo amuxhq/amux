@@ -1,51 +1,51 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 4 recorded 3: input 0x22222222222242228222222222222201
+## 6 recorded 5: input 0xb33bc545544b43269bcaeaf3c3d31338
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 20 recorded 19: fact Stream type=assistant uuid=2420dda8-63a3-454c-8cdc-19d949b0e010
-  composer Send activity=Some(Running { key: "toolu_013UjuyX4boAgnztaTUphnA8" }) queue=[] underway=[] refused=[]
-## 26 recorded 25: input 0x22222222222242228222222222222202
-  composer Send activity=Some(Running { key: "toolu_013UjuyX4boAgnztaTUphnA8" }) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 2], text: [Text("Also append the word BANANA.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
-## 27 recorded 26: input stdin-3-now
-  composer Send activity=Some(Running { key: "toolu_013UjuyX4boAgnztaTUphnA8" }) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 2], text: [Text("Also append the word BANANA.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
-## 28 recorded 27: input 0x22222222222242228222222222222203
-  composer Send activity=Some(Running { key: "toolu_013UjuyX4boAgnztaTUphnA8" }) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 2], text: [Text("Also append the word BANANA.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }, QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 3], text: [Text("…
-## 35 recorded 34: fact Stream type=user uuid=3a878151-e1f8-4603-8c1b-3e8b7c174521
-  composer Send activity=Some(Working) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 2], text: [Text("Also append the word BANANA.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }, QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 3], text: [Text("Reply with exactly LATER-C.")], from_agent…
-## 37 recorded 36: fact Stream type=user uuid=22222222-2222-4222-8222-222222222202
-  composer Send activity=Some(Working) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 3], text: [Text("Reply with exactly LATER-C.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
-## 43 recorded 42: fact Stream type=assistant uuid=3475ca8e-3ebf-44a5-85de-9d7c40f6c2ae
-  composer Send activity=Some(Running { key: "toolu_0178udjz2UMT6BxntKjQGZQm" }) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 3], text: [Text("Reply with exactly LATER-C.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
-## 49 recorded 48: fact Stream type=user uuid=a3180243-10fc-4c84-9d5a-c13b5e79c839
-  composer Send activity=Some(Working) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 3], text: [Text("Reply with exactly LATER-C.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
-## 57 recorded 56: fact Stream type=result subtype=success uuid=f9737f30-2a17-4395-bf24-556e82607989
+## 18 recorded 17: fact Stream type=stream_event uuid=eefcc38d-14ef-443c-ba88-1cec55063b53
+  composer Send activity=Some(Running { key: "toolu_01W4Z2576KPZjFR1Jr8nXgXm" }) queue=[] underway=[] refused=[]
+## 22 recorded 21: input 0xe2f925cdcf974c0cb496006a60038cca
+  composer Send activity=Some(Running { key: "toolu_01W4Z2576KPZjFR1Jr8nXgXm" }) queue=[QueuedRow { input_id: [226, 249, 37, 205, 207, 151, 76, 12, 180, 150, 0, 106, 96, 3, 140, 202], text: [Text("Also append the word BANANA.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
+## 23 recorded 22: input stdin-4-now
+  composer Send activity=Some(Running { key: "toolu_01W4Z2576KPZjFR1Jr8nXgXm" }) queue=[QueuedRow { input_id: [226, 249, 37, 205, 207, 151, 76, 12, 180, 150, 0, 106, 96, 3, 140, 202], text: [Text("Also append the word BANANA.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
+## 51 recorded 50: fact Stream type=user uuid=e4d1874a-3e16-408e-afd7-849efd486d5b
+  composer Send activity=Some(Working) queue=[QueuedRow { input_id: [226, 249, 37, 205, 207, 151, 76, 12, 180, 150, 0, 106, 96, 3, 140, 202], text: [Text("Also append the word BANANA.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
+## 53 recorded 52: fact Stream type=user uuid=e2f925cd-cf97-4c0c-b496-006a60038cca
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 71 recorded 70: fact Stream type=result subtype=success uuid=cbfccc7c-936b-40d6-baff-a5fc8f3ecbb9
+## 60 recorded 59: fact Stream type=stream_event uuid=42073f83-8ac5-4be0-99b0-01d43a9f6b03
+  composer Send activity=Some(Running { key: "toolu_017KfEhkKGzHaSCkS3xfPKN7" }) queue=[] underway=[] refused=[]
+## 89 recorded 88: fact Stream type=user uuid=351dc2c8-daab-4f68-8c1b-f874ef321e1b
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 107 recorded 106: fact Stream type=result subtype=success uuid=e72c0401-d263-48d4-a195-53c58479373a
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 109 recorded 108: input 0x307e9a0e17d046e8a689ed22e4efb9fa
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 129 recorded 128: fact Stream type=result subtype=success uuid=c754b714-056c-40d3-a195-b3e3fc419182
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 22222222-2222-4222-8222-222222222201 Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly DONE-A plus any extra words the user asked for.")], steered: false }
-     3 msg_011CgWLXcM1aujP3XipbysKS:0 Thinking { text: "", open: false, duration_ms: Some(3177) }
-     4 toolu_013UjuyX4boAgnztaTUphnA8 Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15207) } run[toolu_013UjuyX4boAgnztaTUphnA8..toolu_013UjuyX4boAgnztaTUphnA8 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0,…
-     5 22222222-2222-4222-8222-222222222202 Prompt { text: [Text("Also append the word BANANA.")], steered: true }
-     6 msg_011CgWLYyBR5dsBmN3fMXFHR:0 Thinking { text: "", open: false, duration_ms: Some(1331) }
-     7 toolu_0178udjz2UMT6BxntKjQGZQm Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5092) } run[toolu_0178udjz2UMT6BxntKjQGZQm..toolu_0178udjz2UMT6BxntKjQGZQm x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
-     8 msg_011CgWLZTuKBXKqUjRBLMyf9:0 Thinking { text: "", open: false, duration_ms: Some(6298) }
-     9 msg_011CgWLZTuKBXKqUjRBLMyf9:1 Prose { text: [Text("DONE-A BANANA")], streaming: false, working_note: false }
-    10 turn:1 TurnEnd { duration_ms: Some(26587), failed: false }
-    11 22222222-2222-4222-8222-222222222203 Prompt { text: [Text("Reply with exactly LATER-C.")], steered: false }
-    12 msg_011CgWLZZCp4hRFTsZimPZxQ:0 Thinking { text: "", open: false, duration_ms: Some(1034) }
-    13 msg_011CgWLZZCp4hRFTsZimPZxQ:1 Prose { text: [Text("LATER-C")], streaming: false, working_note: false }
-    14 turn:2 TurnEnd { duration_ms: Some(1047), failed: false }
+     2 b33bc545-544b-4326-9bca-eaf3c3d31338 Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly DONE plus any extra words the user asked for.")], steered: false }
+     3 daed4565-5473-4360-a4d4-1a8b869b074a Hidden collapsed
+     4 toolu_01W4Z2576KPZjFR1Jr8nXgXm Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15546) } run[toolu_01W4Z2576KPZjFR1Jr8nXgXm..toolu_01W4Z2576KPZjFR1Jr8nXgXm x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0,…
+     5 e2f925cd-cf97-4c0c-b496-006a60038cca Prompt { text: [Text("Also append the word BANANA.")], steered: true }
+     6 edc5f883-ff15-479c-bf5b-d75764375b3b Hidden collapsed
+     7 toolu_017KfEhkKGzHaSCkS3xfPKN7 Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5289) } run[toolu_017KfEhkKGzHaSCkS3xfPKN7..toolu_017KfEhkKGzHaSCkS3xfPKN7 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
+     8 67ff0335-90fb-44b9-81bc-8913171abfb8 Hidden collapsed
+     9 msg_011CgZmSbZQzKGtxpvz1PPnB:0 Prose { text: [Text("DONE BANANA")], streaming: false, working_note: false }
+    10 turn:1 TurnEnd { duration_ms: Some(23356), failed: false }
+    11 307e9a0e-17d0-46e8-a689-ed22e4efb9fa Prompt { text: [Text("Then reply with exactly LATER.")], steered: false }
+    12 1afb8cca-892a-46c0-83bb-0ac79f35931a Hidden collapsed
+    13 msg_011CgZmSfP6uwinEfc7dXBfD:0 Prose { text: [Text("LATER")], streaming: false, working_note: false }
+    14 turn:2 TurnEnd { duration_ms: Some(1055), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 24484, window_tokens: Some(200000), percent: Some(12), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 20855, window_tokens: Some(1000000), percent: Some(2), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]
   model  opus "Opus 5.5" efforts=[low,medium,high,xhigh,max]
   model  fable "Fable 5.1" efforts=[low,medium,high,xhigh,max]
   model  sonnet "Sonnet 5.5" efforts=[low,medium,high,xhigh,max]
-  model  haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
-  model* claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
+  model* haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
+  model  claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
   model  claude-sonnet-5 "Sonnet 5" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-5 "Opus 5" efforts=[low,medium,high,xhigh,max]
   model  claude-fable-5 "Fable 5" efforts=[low,medium,high,xhigh,max]
@@ -53,12 +53,18 @@
   model  claude-opus-4-7 "Opus 4.7" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-4-6 "Opus 4.6" efforts=[low,medium,high,max]
   model  claude-sonnet-4-6 "Sonnet 4.6" efforts=[low,medium,high,max]
+  effort  low
+  effort  medium
+  effort* high
+  effort  xhigh
+  effort  max
   permission* "default" "Ask" normal
   permission  "acceptEdits" "Accept edits"
   permission  "plan" "Plan"
-  permission  "auto" "Auto" unsettable
-  changes: model Pick · effort NotOffered · permission Pick · mode NotOffered
+  permission  "auto" "Auto"
+  changes: model Pick · effort Pick · permission Pick · mode NotOffered
   command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
   command /deep-research source="" hint="" "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)"
   command /design source="" hint="consent | revoke" "Grant or revoke Claude agent access to your Design projects"
@@ -73,6 +79,7 @@
   command /fewer-permission-prompts source="" hint="" "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts."
   command /loop source="" hint="[interval] [prompt]" "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace."
   command /schedule source="" hint="" "Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule."
+  command /send-to-project source="" hint="[\"project name\" or id] [message]" "Send this session's work to a Claude Project"
   command /claude-api source="" hint="" "Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration.\nTRIGGER — read BEFORE opening the target file; don't skip because it \"looks like a one-liner\" — whenever: the prompt names Claude/Anthropic in any form (Claude, Anthropic, Fable, Opus, Sonnet, Haiku, `anthropic`, `@anthropic-ai`, `claude-*`, `us…
   command /workflow-authoring source="" hint="" "Reference for writing a Workflow tool script (script API and gotchas, resume, quality patterns, worked examples). Load before authoring a script for a workflow the user already opted into; it does not itself authorize running one."
   command /run source="" hint="" "Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library)."
@@ -92,7 +99,7 @@
   command /workflow-launch-exec source="" hint="" "Execute a server-launched workflow handoff (workflow_launch event sessions only)"
   command /reload-plugins source="" hint="[--force]" "Activate pending plugin changes in the current session"
   command /reload-skills source="" hint="" "Pick up skills added or changed on disk during this session"
-  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~15-25 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
+  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~5-15 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
   command /security-review source="" hint="" "Complete a security review of the pending changes on the current branch"
   command /usage-credits source="" hint="" "Configure usage credits or request them from your admin when you hit a limit"
   command /extra-usage source="" hint="" "Renamed to /usage-credits"
@@ -105,4 +112,4 @@
   command /design-revoke source="" hint="" "Revoke Claude agent access to your Design projects"
   command /list-agents source="" hint="" "List subagents, teammates, and other Claude sessions you can message"
   command /team-onboarding source="" hint="" "Help teammates ramp on Claude Code with a guide from your usage"
-  controls: model=Some("Haiku 4.5") effort=None permission=None mode=None
+  controls: model=Some("Haiku 5.5") effort=Some("high") permission=None mode=None

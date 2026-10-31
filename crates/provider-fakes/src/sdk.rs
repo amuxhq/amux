@@ -354,6 +354,9 @@ impl Engine {
                 if let Some(id) = response["request_id"].as_str() {
                     self.answers.insert(id.to_owned(), response.clone());
                 }
+                // Claude writes back each answer it reads, as it replays the
+                // host's other input.
+                self.send(frame).await;
             }
             Some("user") => self.user(frame).await,
             other => eprintln!("fake-claude-sdk: ignoring input of type {other:?}"),
@@ -708,9 +711,18 @@ impl Engine {
                 match step {
                     Step::Text { chunks } => self.text(&request, &message, &chunks).await,
                     Step::Thinking { text } => {
+                        // Claude shows thinking's text only when asked to
+                        // summarize it; otherwise its blocks are empty.
+                        let display = if text.is_empty() {
+                            "updates"
+                        } else {
+                            "summarized"
+                        };
                         let block =
                             json!({ "type": "thinking", "thinking": text, "signature": "" });
-                        let frame = self.assistant(&request, &message, block);
+                        let mut frame = self.assistant(&request, &message, block);
+                        frame["thinking_display"] = json!(display);
+                        frame["thinking_duration_ms"] = json!(1);
                         self.send(frame).await;
                     }
                     Step::Tool(tool) => {
@@ -768,7 +780,8 @@ impl Engine {
             return Some(code);
         }
         if let Some(message) = self.auth_failed.take() {
-            self.failed(calls, &message).await;
+            let prompts = self.prompts(&self.absorbed);
+            self.failed(calls, &message, &prompts).await;
             for command in std::mem::take(&mut self.absorbed)
                 .into_iter()
                 .chain(self.running.take())
@@ -781,12 +794,13 @@ impl Engine {
         // Commands folded into a finished turn complete before its result,
         // the one that started it after; a preempted turn's are cancelled.
         let absorbed = std::mem::take(&mut self.absorbed);
+        let prompts = self.prompts(&absorbed);
         let commands = match self.cut {
             None => {
                 for command in &absorbed {
                     self.lifecycle(command, "completed").await;
                 }
-                self.succeed(calls).await;
+                self.succeed(calls, &prompts).await;
                 self.running
                     .take()
                     .into_iter()
@@ -794,7 +808,7 @@ impl Engine {
                     .collect()
             }
             Some(Cut::Preempted) => {
-                self.preempted(calls).await;
+                self.preempted(calls, &prompts).await;
                 self.running
                     .take()
                     .into_iter()
@@ -803,7 +817,7 @@ impl Engine {
                     .collect()
             }
             Some(Cut::Interrupted) => {
-                self.interrupted(calls).await;
+                self.interrupted(calls, &prompts).await;
                 self.running
                     .take()
                     .into_iter()
@@ -822,6 +836,12 @@ impl Engine {
         }
         self.busy = false;
         None
+    }
+
+    /// The prompts the running turn answers: the one that started it, then
+    /// those folded into it.
+    fn prompts(&self, absorbed: &[String]) -> Vec<String> {
+        self.running.iter().chain(absorbed).cloned().collect()
     }
 
     async fn replay(&mut self, queued: &Queued) {
@@ -1121,8 +1141,8 @@ impl Engine {
     }
 
     /// A turn that ended on a refused credential: an error result.
-    async fn failed(&mut self, calls: u32, message: &str) {
-        let frame = json!({
+    async fn failed(&mut self, calls: u32, message: &str, prompts: &[String]) {
+        let mut frame = json!({
             "type": "result",
             "subtype": "success",
             "api_error_status": 401,
@@ -1152,6 +1172,7 @@ impl Engine {
             "usage": result_usage(),
             "uuid": uuid(),
         });
+        answered(&mut frame, prompts);
         self.send(frame).await;
     }
 
@@ -1542,8 +1563,8 @@ impl Engine {
         self.tool_use(request, message, &tool).await.0
     }
 
-    async fn succeed(&mut self, calls: u32) {
-        let frame = json!({
+    async fn succeed(&mut self, calls: u32, prompts: &[String]) {
+        let mut frame = json!({
             "type": "result",
             "subtype": "success",
             "api_error_status": null,
@@ -1573,6 +1594,7 @@ impl Engine {
             "usage": result_usage(),
             "uuid": uuid(),
         });
+        answered(&mut frame, prompts);
         self.send(frame).await;
     }
 
@@ -1608,9 +1630,9 @@ impl Engine {
     /// A `now` message ends the running turn once its call returns, as
     /// Claude does: a successful result whose terminal reason says the turn
     /// was cut, with no interruption marker.
-    async fn preempted(&mut self, calls: u32) {
+    async fn preempted(&mut self, calls: u32, prompts: &[String]) {
         self.skip_turn();
-        let frame = json!({
+        let mut frame = json!({
             "type": "result",
             "subtype": "success",
             "api_error_status": null,
@@ -1640,12 +1662,13 @@ impl Engine {
             "usage": result_usage(),
             "uuid": uuid(),
         });
+        answered(&mut frame, prompts);
         self.send(frame).await;
     }
 
     /// An interrupt cuts the turn short the way Claude does: the
     /// interruption marker, then an error result.
-    async fn interrupted(&mut self, calls: u32) {
+    async fn interrupted(&mut self, calls: u32, prompts: &[String]) {
         self.skip_turn();
         let marker = if std::mem::take(&mut self.refused_call) {
             "[Request interrupted by user for tool use]"
@@ -1661,7 +1684,7 @@ impl Engine {
             "uuid": uuid(),
         });
         self.send(frame).await;
-        let frame = json!({
+        let mut frame = json!({
             "type": "result",
             "subtype": "error_during_execution",
             "duration_api_ms": 1,
@@ -1685,6 +1708,7 @@ impl Engine {
             "usage": result_usage(),
             "uuid": uuid(),
         });
+        answered(&mut frame, prompts);
         self.send(frame).await;
     }
 }
@@ -1746,6 +1770,15 @@ enum Ran {
 
 /// What Claude answers a call the person refused.
 const REFUSED: &str = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
+
+/// A result names the prompts its turn answered: the first, and all of
+/// them.
+fn answered(result: &mut Value, prompts: &[String]) {
+    if let Some(first) = prompts.first() {
+        result["user_message_uuid"] = json!(first);
+        result["user_message_uuids"] = json!(prompts);
+    }
+}
 
 /// The allow or the refusal text of a `can_use_tool` answer.
 fn allowed(answer: &Value) -> Result<(), String> {

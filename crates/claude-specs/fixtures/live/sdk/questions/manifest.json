@@ -3,21 +3,21 @@
   "spec": "questions",
   "recorded": {
     "provider": "claude",
-    "version": "2.1.292",
-    "model": "claude-haiku-4-5-20251001",
-    "at": "2026-10-07T04:02:10.175625Z"
+    "version": "2.1.314",
+    "model": "claude-haiku-5-5",
+    "at": "2026-10-31T05:32:07.309738Z"
   },
   "content": {
-    "io.jsonl": "sha256:1c48e9fccb01d221e8e2340ebd7dc34e8fcd4241beb4406a33521b5052dd13c4",
-    "spawn.jsonl": "sha256:c33a7c0b477afc3f6725903e0e41e5617286293e202a8960305326ebd5410434"
+    "io.jsonl": "sha256:447ec150e8e6ec9824a1dc781a116c487a3cba5cb84b95519efceff7c02700e7",
+    "spawn.jsonl": "sha256:ec2d4f6c54c20118298e8cc931547c24fe8faf658bf966e0f98158a556a43920"
   },
   "redaction": {
-    "secrets": 0,
-    "machine_paths": 7,
+    "secrets": 1,
+    "machine_paths": 9,
     "personal_identifiers": 2
   },
   "session_ids": [
-    "57aa0e10-cd09-4b47-a847-9bd1e155bdc8"
+    "8efa36bd-33c2-459b-b287-73cc1b86569b"
   ],
   "provider_extra": {
     "driven_by": "amux's interpreter, in the live qualification lane"

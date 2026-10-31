@@ -7,7 +7,6 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use claude::launch::Launch;
 use claude_protocol::hooks;
 use claude_protocol::stream::PermissionMode;
 use replay_support::{IoDirection, IoEvent, Manifest, ReplayReport, SpecEntry, StrictReplay};
@@ -18,6 +17,7 @@ use crate::driver::pty::{
     AskAnswer, AskFacts, AskKind, Intent, PermissionAnswer, PlanAnswer, PtyEvent, QuestionAnswer,
     QuestionResponse, RelinkReason,
 };
+use crate::terminal::Launch;
 
 /// How long a specification's claim may take before it is called stalled.
 const WAIT: Duration = Duration::from_secs(600);
@@ -243,8 +243,7 @@ pub async fn run(entry: &SpecEntry, source: Source) -> Result<RunReport, SpecFai
             }
             let provider_version = claude::version::probe_version(&launch.binary)
                 .await
-                .map_err(|error| failure(entry, error.to_string()))?
-                .0;
+                .map_err(|error| failure(entry, error.to_string()))?;
             let session_id = launch.session_id.to_string();
             let env = definition
                 .env

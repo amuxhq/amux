@@ -50,7 +50,7 @@ struct Scenario {
 
 fn root(kind: Kind) -> PathBuf {
     let corpus = match kind {
-        Kind::ClaudeSdk => "claude-specs/fixtures/sdk",
+        Kind::ClaudeSdk => "claude-specs/fixtures/live/sdk",
         Kind::ClaudePty => "claude-specs/fixtures/pty",
         Kind::Codex => "codex-specs/fixtures/runtime",
     };
@@ -622,43 +622,20 @@ mod claude_sdk {
     }
 
     #[tokio::test]
-    async fn steer_preempted() {
-        conforms(scenario(
-            "steer_preempted",
-            json!([
-                thinking(),
-                bash(Some(GATE)),
-                thinking(),
-                text(),
-                "turn_end",
-                thinking(),
-                bash(None),
-                thinking(),
-                text(),
-                "turn_end"
-            ]),
-            Some("user tool_result"),
-        ))
-        .await;
-    }
-
-    #[tokio::test]
     async fn steer_folded() {
         conforms(scenario(
             "steer_folded",
+            // The message reached Claude before its first call.
             json!([
-                thinking(),
-                bash(Some(GATE)),
-                thinking(),
+                {"wait_for": {"path": GATE}},
                 bash(None),
-                thinking(),
+                bash(None),
                 text(),
                 "turn_end",
-                thinking(),
                 text(),
                 "turn_end"
             ]),
-            Some("user tool_result"),
+            Some("assistant tool_use"),
         ))
         .await;
     }
@@ -667,7 +644,7 @@ mod claude_sdk {
     async fn question_asked() {
         conforms(scenario(
             "question_asked",
-            json!([thinking(), question(), thinking(), text(), "turn_end"]),
+            json!([question(), text(), "turn_end"]),
             None,
         ))
         .await;
@@ -677,7 +654,7 @@ mod claude_sdk {
     async fn permission_callback() {
         conforms(scenario(
             "permission_callback",
-            json!([thinking(), permission(), thinking(), text(), "turn_end"]),
+            json!([permission(), text(), "turn_end"]),
             None,
         ))
         .await;

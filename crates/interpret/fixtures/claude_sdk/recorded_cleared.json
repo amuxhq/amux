@@ -1,10 +1,10 @@
 {
-  "about": "/clear: a cleared boundary carrying the new session.",
+  "about": "A turn, then the conversation cleared from amux: a cleared boundary carrying the new session.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/sdk/cleared/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/sdk/cleared/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

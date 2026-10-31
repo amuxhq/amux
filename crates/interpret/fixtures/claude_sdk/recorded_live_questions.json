@@ -1,5 +1,5 @@
 {
-  "about": "A live run at Claude Code 2.1.292, driven by amux: two questions asked together, the first skipped and the second answered, then a third replied to instead.",
+  "about": "Two questions asked together, the first skipped and the second answered, then a third replied to instead.",
   "spec": {
     "created_at_ms": 0
   },

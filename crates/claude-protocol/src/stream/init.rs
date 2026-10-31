@@ -57,19 +57,6 @@ pub struct AccountInfo {
     pub extensions: Extensions,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ContextUsageCategory {
-    pub name: String,
-    pub tokens: u64,
-    #[serde(default = "crate::absent::color")]
-    pub color: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub is_deferred: Option<bool>,
-    #[serde(flatten)]
-    pub extensions: Extensions,
-}
-
 /// What `get_settings` says the session runs with now: the model and
 /// effort Claude applied from every settings source and the session's own
 /// changes.
@@ -79,17 +66,6 @@ pub struct AppliedSettings {
     pub model: Option<String>,
     #[serde(default)]
     pub effort: Option<String>,
-    #[serde(flatten)]
-    pub extensions: Extensions,
-}
-
-/// Lossless typed top-level response from `Query::get_context_usage`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ContextUsage {
-    pub categories: Vec<ContextUsageCategory>,
-    pub total_tokens: u64,
-    pub max_tokens: u64,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

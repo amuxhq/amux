@@ -1,10 +1,10 @@
 {
-  "about": "Claude reads an image file: the Read row carries the image it read.",
+  "about": "An image attached to a prompt, then the same image read from the project: the prompt and the Read row carry it.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/sdk/image/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/sdk/image/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

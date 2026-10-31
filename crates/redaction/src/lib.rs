@@ -191,7 +191,6 @@ fn is_sensitive_key(key: &str) -> bool {
         normalized.as_str(),
         "token"
             | "apikey"
-            | "anthropicapikey"
             | "authorization"
             | "accesstoken"
             | "refreshtoken"
@@ -216,7 +215,9 @@ fn is_path_key(key: &str) -> bool {
         || normalized.ends_with("directories")
 }
 
-fn normalized_key(key: &str) -> String {
+/// A field or variable name lowercased with everything but letters and
+/// digits dropped, as every key rule compares it.
+pub fn normalized_key(key: &str) -> String {
     key.chars()
         .filter(|character| character.is_ascii_alphanumeric())
         .flat_map(char::to_lowercase)

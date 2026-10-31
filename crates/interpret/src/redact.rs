@@ -23,7 +23,7 @@ use std::sync::OnceLock;
 use prost::{Message, Name};
 use prost_types::field_descriptor_proto::Type;
 use prost_types::{DescriptorProto, FileDescriptorSet};
-use redaction::{Redaction, RedactionSummary, SECRET_PLACEHOLDER};
+use redaction::{Redaction, RedactionSummary, SECRET_PLACEHOLDER, normalized_key};
 use serde_json::Value;
 use wire::Kind;
 
@@ -36,7 +36,7 @@ use crate::{
 
 /// What a session or thread id becomes: this prefix, eight hex digits of a
 /// hash of the id, and `>`.
-pub const SESSION_PLACEHOLDER_PREFIX: &str = "<SESSION-";
+const SESSION_PLACEHOLDER_PREFIX: &str = "<SESSION-";
 
 /// The rules every target is redacted under: this machine's home, user
 /// and host names on top of the shared ones, read once.
@@ -270,7 +270,7 @@ impl Scrubber {
                 // the names stay, every value goes.
                 if message.ends_with("EnvEntry") && field.name == "value" {
                     SECRET_PLACEHOLDER.as_bytes().to_vec()
-                } else if is_session_key(&normalized(&field.name)) {
+                } else if is_session_key(&normalized_key(&field.name)) {
                     self.session(&text).into_bytes()
                 } else {
                     self.string(&text).into_bytes()
@@ -326,7 +326,7 @@ impl Scrubber {
             Value::Object(map) => {
                 let entries = std::mem::take(map);
                 for (key, mut value) in entries {
-                    let norm = normalized(&key);
+                    let norm = normalized_key(&key);
                     if is_env_key(&norm) {
                         blank_env(&mut value);
                     } else if is_session_key(&norm) && value.is_string() {
@@ -390,13 +390,6 @@ fn session_placeholder(id: &str) -> String {
         (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193)
     });
     format!("{SESSION_PLACEHOLDER_PREFIX}{hash:08x}>")
-}
-
-fn normalized(key: &str) -> String {
-    key.chars()
-        .filter(char::is_ascii_alphanumeric)
-        .flat_map(char::to_lowercase)
-        .collect()
 }
 
 fn is_session_key(norm: &str) -> bool {

@@ -1489,6 +1489,15 @@ mod tests {
         }
     }
 
+    /// Whether the registry holds a link to `peer`.
+    async fn linked(links: &LinkRegistry, peer: HostId) -> bool {
+        links
+            .links_per_peer()
+            .await
+            .iter()
+            .any(|(host, _)| *host == peer)
+    }
+
     fn host(id: u128) -> Host {
         Host {
             id: HostId::from_u128(id),
@@ -1799,7 +1808,7 @@ mod tests {
 
         send_hello(&mut sink, &peer, Some("initial-token")).await;
         expect_accepted(&mut source).await;
-        assert!(links.link_to_peer(peer.id).await.is_some());
+        assert!(linked(&links, peer.id).await);
 
         tokio::time::advance(Duration::from_secs(61)).await;
         let close = expect_link_close(&mut source, wire::LinkCloseReason::AuthExpired).await;
@@ -1812,7 +1821,7 @@ mod tests {
             wire::LinkCloseReason::AuthExpired
         );
         task.await.unwrap().unwrap();
-        assert!(links.link_to_peer(peer.id).await.is_none());
+        assert!(!linked(&links, peer.id).await);
     }
 
     #[tokio::test]
@@ -1907,7 +1916,7 @@ mod tests {
             wire::LinkCloseReason::VersionMismatch
         );
         task.await.unwrap().unwrap();
-        assert!(links.link_to_peer(peer.id).await.is_none());
+        assert!(!linked(&links, peer.id).await);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1926,7 +1935,7 @@ mod tests {
         let (_sink, _source) = connector_carrier.control();
 
         tokio::task::yield_now().await;
-        assert!(links.link_to_peer(peer.id).await.is_none());
+        assert!(!linked(&links, peer.id).await);
         tokio::time::advance(LINK_CONNECT_HELLO_TIMEOUT + Duration::from_millis(1)).await;
 
         assert_eq!(
@@ -1934,7 +1943,7 @@ mod tests {
             wire::LinkCloseReason::ProtocolError
         );
         task.await.unwrap().unwrap();
-        assert!(links.link_to_peer(peer.id).await.is_none());
+        assert!(!linked(&links, peer.id).await);
     }
 
     /// What a link tells its peer of where this host can be reached.

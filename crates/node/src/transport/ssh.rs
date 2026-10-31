@@ -12,13 +12,6 @@ use tokio::task::JoinHandle;
 
 use super::{Result, TransportError};
 
-fn ssh_program() -> std::ffi::OsString {
-    #[cfg(debug_assertions)]
-    if let Some(program) = std::env::var_os("AMUX_SSH") {
-        return program;
-    }
-    "ssh".into()
-}
 /// What the far host runs: amux's own hidden commands, which every amux
 /// build answers to, so hosts on different releases still pair and link.
 const RELAY_ARGS: [&str; 2] = ["internal", "ssh-link"];
@@ -113,7 +106,7 @@ pub(crate) async fn with_said(failed: String, stderr: Option<SshStderr>) -> Stri
 pub(crate) fn spawn_ssh_relay(target: &str, profile: crate::ProfileId) -> Result<SshChildIo> {
     let profile = profile.to_string();
     spawn_ssh_amux_command(
-        &ssh_program(),
+        std::ffi::OsStr::new("ssh"),
         target,
         &[RELAY_ARGS[0], RELAY_ARGS[1], "--profile", &profile],
         "SSH relay",
@@ -121,7 +114,12 @@ pub(crate) fn spawn_ssh_relay(target: &str, profile: crate::ProfileId) -> Result
 }
 
 pub(crate) fn spawn_ssh_pair_recv(target: &str) -> Result<SshPairRecvIo> {
-    spawn_ssh_amux_command(&ssh_program(), target, &PAIR_RECV_ARGS, "SSH pairing")
+    spawn_ssh_amux_command(
+        std::ffi::OsStr::new("ssh"),
+        target,
+        &PAIR_RECV_ARGS,
+        "SSH pairing",
+    )
 }
 
 fn spawn_ssh_amux_command(

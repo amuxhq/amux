@@ -441,13 +441,6 @@ impl CloudLinkServer {
             .with_clock(inner.identity.clock.clone())
     }
 
-    pub async fn user_has_link_to(&self, user_id: Uuid, host_id: HostId) -> bool {
-        match self.inner.accounts.links_of(user_id).await {
-            Some(links) => links.link_to_peer(host_id).await.is_some(),
-            None => false,
-        }
-    }
-
     /// Which hosts this account is connected to the relay by, and how many
     /// links each of them holds. One per host is what a client multiplexing
     /// its work over a single connection looks like from here.

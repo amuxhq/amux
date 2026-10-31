@@ -7,14 +7,6 @@
 //! [`crate::presence`]'s; the catalogue keeps what a client is told of a
 //! host beside that: its version and what it runs.
 //!
-//! Untrusted hosts are held up to [`HOST_CAP`]: a relay may claim every
-//! host of its account, and nothing bounds an account. A new claim past the
-//! cap evicts the oldest claimed host this profile does not trust and holds
-//! no link to, or is not held. A direct link is never refused here: a link
-//! is admitted by certificate before the core hears of it, so its host is
-//! one this host dialed or paired with, and its entry counts toward the
-//! cap without being evictable.
-//!
 //! A host said it no longer trusts this one by closing a link saying so or
 //! by refusing this host's certificate on a channel. The mark comes off
 //! when the host takes this host again — a link to it comes up, or a
@@ -32,9 +24,6 @@ use crate::ids::{ChannelId, HostId, LinkId};
 use crate::io::Output;
 use crate::payload::CarrierKind;
 use crate::trust::TrustChange;
-
-/// How many hosts this profile does not trust it holds descriptions of.
-pub const HOST_CAP: usize = 1000;
 
 /// What a host said of itself in a handshake or a neighbor's claim.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -79,20 +68,6 @@ struct Claimed {
     said: Said,
     /// The neighbors claiming it, in claim order.
     relays: Vec<HostId>,
-    /// When it was first claimed: the cap evicts the oldest.
-    order: u64,
-}
-
-/// What updating the catalogue came to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Outcome {
-    Inserted,
-    AlreadyKnown,
-    /// Past the cap with nothing to evict: not held.
-    RejectedByCap,
-    /// The host's trust is being replaced: nothing about it is held until
-    /// the replacement ends.
-    Replacing,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,7 +75,6 @@ pub struct Catalogue {
     directs: BTreeMap<HostId, Direct>,
     claims: BTreeMap<HostId, Claimed>,
     replacing: BTreeSet<HostId>,
-    next_claim: u64,
     /// The hosts that said they no longer trust this one, each with the
     /// count of notes at which it said so.
     revoked: BTreeMap<HostId, u64>,
@@ -108,10 +82,6 @@ pub struct Catalogue {
 }
 
 impl Catalogue {
-    fn is_present(&self, host: HostId) -> bool {
-        self.directs.contains_key(&host) || self.claims.contains_key(&host)
-    }
-
     /// What `host` said of itself while a link or a claim holds it.
     pub fn said(&self, host: HostId) -> Option<&Said> {
         self.directs
@@ -170,66 +140,35 @@ impl Catalogue {
         before
     }
 
-    fn direct_up(
-        &mut self,
-        host: HostId,
-        said: Said,
-        link: LinkId,
-        trusted: &BTreeSet<HostId>,
-    ) -> Outcome {
+    /// Holds what `host` said over `link`; false, holding nothing, while
+    /// the host's trust is being replaced.
+    fn direct_up(&mut self, host: HostId, said: Said, link: LinkId) -> bool {
         if self.replacing.contains(&host) {
-            return Outcome::Replacing;
-        }
-        // Never refused: see the module's word on the cap. Evicting a claim
-        // keeps the count of untrusted hosts held at the cap.
-        if !self.is_present(host) && !trusted.contains(&host) && self.untrusted(trusted) >= HOST_CAP
-        {
-            self.evict(trusted);
+            return false;
         }
         let direct = self.directs.entry(host).or_insert_with(|| Direct {
             said: said.clone(),
             links: BTreeSet::new(),
         });
         direct.said = said;
-        if direct.links.insert(link) {
-            Outcome::Inserted
-        } else {
-            Outcome::AlreadyKnown
-        }
+        direct.links.insert(link);
+        true
     }
 
-    fn claim_up(
-        &mut self,
-        relay: HostId,
-        host: HostId,
-        said: Said,
-        trusted: &BTreeSet<HostId>,
-    ) -> Outcome {
+    /// Holds that `relay` claims `host`, unless the host's trust is being
+    /// replaced.
+    fn claim_up(&mut self, relay: HostId, host: HostId, said: Said) {
         if self.replacing.contains(&host) {
-            return Outcome::Replacing;
+            return;
         }
-        if !self.is_present(host)
-            && !trusted.contains(&host)
-            && self.untrusted(trusted) >= HOST_CAP
-            && self.evict(trusted).is_none()
-        {
-            return Outcome::RejectedByCap;
-        }
-        let order = self.next_claim;
         let claimed = self.claims.entry(host).or_insert_with(|| Claimed {
             said: said.clone(),
             relays: Vec::new(),
-            order,
         });
-        if claimed.order == order {
-            self.next_claim += 1;
-        }
         claimed.said = said;
-        if claimed.relays.contains(&relay) {
-            return Outcome::AlreadyKnown;
+        if !claimed.relays.contains(&relay) {
+            claimed.relays.push(relay);
         }
-        claimed.relays.push(relay);
-        Outcome::Inserted
     }
 
     fn claim_down(&mut self, relay: HostId, host: HostId) {
@@ -264,36 +203,9 @@ impl Catalogue {
             self.claim_down(relay, host);
         }
     }
-
-    fn untrusted(&self, trusted: &BTreeSet<HostId>) -> usize {
-        self.directs
-            .keys()
-            .chain(
-                self.claims
-                    .keys()
-                    .filter(|host| !self.directs.contains_key(host)),
-            )
-            .filter(|host| !trusted.contains(host))
-            .count()
-    }
-
-    fn evict(&mut self, trusted: &BTreeSet<HostId>) -> Option<HostId> {
-        let oldest = self
-            .claims
-            .iter()
-            .filter(|(host, _)| !trusted.contains(host) && !self.directs.contains_key(host))
-            .min_by_key(|(_, claimed)| claimed.order)
-            .map(|(host, _)| *host)?;
-        self.claims.remove(&oldest);
-        Some(oldest)
-    }
 }
 
 impl Daemon {
-    fn trusted_hosts(&self) -> BTreeSet<HostId> {
-        self.trust.store().paired_hosts().into_iter().collect()
-    }
-
     /// What a link's handshake or a neighbor frame says of the hosts it
     /// makes present: the link's peer, said by itself, and the hosts it
     /// claims, said by it.
@@ -324,11 +236,10 @@ impl Daemon {
             }
             _ => return,
         };
-        let trusted = self.trusted_hosts();
         if let Some(said) = said.filter(|said| said.host_id == peer.0) {
             self.remember_said(peer, said, out);
             let said = Said::from_wire(said);
-            if self.routing.catalogue.direct_up(peer, said, link, &trusted) != Outcome::Replacing
+            if self.routing.catalogue.direct_up(peer, said, link)
                 && self.routing.catalogue.clear_revoked(peer)
             {
                 self.revocation_cleared(peer, out);
@@ -349,7 +260,7 @@ impl Daemon {
             }
             self.routing
                 .catalogue
-                .claim_up(peer, id, Said::from_wire(host), &trusted);
+                .claim_up(peer, id, Said::from_wire(host));
         }
         self.touched.host_set = true;
     }

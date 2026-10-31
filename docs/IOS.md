@@ -286,14 +286,24 @@ the browser again and lists every agent again.
 
 The runtime is told of each moment as a lifecycle input, fed on the core
 queue: Foreground on coming to the front, Background on going to the back,
-and Suspending when the app is put away and the system is about to suspend it
-(and when a push that woke it in the background is done). Suspending makes
-every profile's store whole on the drive before it returns, under background
-time the app asks for, so a phone the system ends while suspended opens next
-time on what it last showed. Foreground also revalidates network paths. A
-previously working relay connection that was lost gets one immediate reconnect
-attempt, without the usual retry pause; if that attempt fails, normal backoff
-resumes. An existing healthy connection and a cold-start dial stay in place.
+Suspending when the app is put away and the system is about to suspend it
+(and when a push that woke it in the background is done), and Woken when a
+push wakes it in the background. Suspending says goodbye on every link,
+closes them and the relay link, and stops dialling; then it makes every
+profile's store whole on the drive before it returns, under background time
+the app asks for, so a phone the system ends while suspended opens next time
+on what it last showed. Foreground and Woken bind the link socket afresh and
+dial the relay and every host at once, each first flight carrying its calls
+on a session ticket.
+
+Links are let go rather than left for the system to freeze because a
+suspended phone cannot tell that its connections died. Its peers drop a
+silent connection after their idle timeout (thirty seconds on a desktop),
+but the phone's own timers do not count the time the device sleeps, and the
+far end's socket still answers path probes whatever it has forgotten. A
+phone that kept its links would find each dead only when it next wrote to
+it, and a link through the relay not even then until the relay link came
+back; dialling afresh costs one round trip.
 
 The same moments drive [product analytics](ANALYTICS.md), which the
 runtime keeps and sends: coming to the front counts the app as opened (at

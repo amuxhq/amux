@@ -301,6 +301,13 @@ pub struct Edge {
     paths: Arc<PathDriver>,
     /// The machine's interface addresses, where a test stands in for them.
     interfaces: Option<Vec<std::net::IpAddr>>,
+    /// Whether the core dials hosts' own addresses, and whether this host
+    /// listens for direct links, as the edge started: what dialling starts
+    /// again with after a suspension.
+    dial: bool,
+    listening: bool,
+    /// The app is suspended: its links are closed and nothing is dialled.
+    suspended: tokio::sync::Mutex<bool>,
 }
 
 /// What a network change did: whether the socket was bound afresh, how
@@ -540,6 +547,9 @@ impl Edge {
             first_flights,
             paths,
             interfaces: options.interfaces.clone(),
+            dial: options.dial,
+            listening: options.lan.is_some(),
+            suspended: tokio::sync::Mutex::new(false),
         });
         // The core dials the relay through the edge's cloud link.
         let weak = Arc::downgrade(&edge);
@@ -551,8 +561,7 @@ impl Edge {
         }));
         // The core dials every trusted host from here: a launch's first
         // flights.
-        edge.reachability
-            .start_dialling(options.dial, options.lan.is_some());
+        edge.reachability.start_dialling(edge.dial, edge.listening);
         edge.tasks.lock().unwrap().push(follow_plan(
             &edge.status,
             &edge.connections,
@@ -777,13 +786,50 @@ impl Edge {
         &self.paths
     }
 
-    /// The app is running again: revalidate its paths and let a lost
-    /// relay recover without a retry pause.
-    pub fn foreground(&self) {
-        tracing::info!(host = %self.host_id(), "the app returned to the foreground");
-        if let Err(error) = self.network_changed() {
-            tracing::warn!(%error, "foreground network recovery failed");
+    /// The app is about to be suspended, its sockets with it: every link
+    /// says goodbye and closes, the relay link too, and nothing is dialled
+    /// until [`Edge::resume`]. A link left open would be dropped by its peer
+    /// at the peer's idle timeout while the phone sleeps, and the phone,
+    /// whose timers do not count the time it sleeps, would find it dead only
+    /// when it next wrote to it, the link through the relay not even then
+    /// until the relay link came back. A goodbye also tells each peer this
+    /// host dials it as it returns, so the peer does not dial across it.
+    pub async fn suspend(&self) {
+        let mut suspended = self.suspended.lock().await;
+        if std::mem::replace(&mut *suspended, true) {
+            return;
         }
+        tracing::info!(host = %self.host_id(), "suspending: closing every link");
+        self.reachability.stop_dialling();
+        // The core first, so the relay link's ending asks for no other.
+        crate::driver::CoreLinks::new(self.runtime.clone())
+            .feed(daemon_core::Input::RelayWanted(false))
+            .await;
+        self.channels
+            .link_registry()
+            .send_link_close_to_all(wire::LinkCloseReason::UserShutdown)
+            .await;
+        tokio::time::sleep(LINK_CLOSE_FLUSH).await;
+        self.reachability.release_links().await;
+        self.stop_cloud().await;
+    }
+
+    /// The app runs again after [`Edge::suspend`], on screen or woken in the
+    /// background: the socket is bound afresh, in case the system reclaimed
+    /// it or the network changed meanwhile, and every host and the relay
+    /// are dialled at once, each with a session ticket so its first flight
+    /// carries its calls.
+    pub async fn resume(&self) {
+        let mut suspended = self.suspended.lock().await;
+        if !std::mem::take(&mut *suspended) {
+            return;
+        }
+        tracing::info!(host = %self.host_id(), "resuming: dialling every host");
+        if let Err(error) = self.network_changed() {
+            tracing::warn!(%error, "rebinding the link socket on resume failed");
+        }
+        self.reachability.start_dialling(self.dial, self.listening);
+        self.start_cloud().await;
     }
 
     /// The host's network changed: the profile's socket is bound afresh
@@ -804,7 +850,7 @@ impl Edge {
         self.local_host.set_listed(own_listed(lan, Some(&addrs)));
         let machines_told = self.paths.network_changed(addrs.clone());
         if let Some(core) = self.channels.link_registry().core() {
-            core.report(daemon_core::Input::RecoverRelay);
+            core.report(daemon_core::Input::NetworkChanged);
         }
         crate::link_log::Rebind {
             rebound,

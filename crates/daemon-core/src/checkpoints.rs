@@ -164,7 +164,7 @@ fn writes(input: &Input, copying: JobId) -> bool {
         | Input::TryAgain { .. }
         | Input::Candidates { .. }
         | Input::Dialling(_)
-        | Input::RecoverRelay
+        | Input::NetworkChanged
         | Input::Listening(_)
         | Input::Wanted { .. }
         | Input::Entropy(_)

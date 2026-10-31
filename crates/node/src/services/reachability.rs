@@ -211,6 +211,7 @@ impl ReachabilityLinkConnector {
     /// hosts' own addresses, or stays off the local network, and
     /// `listening` whether hosts may dial this one.
     pub(crate) fn start_dialling(&self, direct: bool, listening: bool) {
+        self.inner.stopped.store(false, Ordering::SeqCst);
         self.inner.report(Input::Listening(listening));
         self.inner.report(Input::Dialling(if direct {
             daemon_core::reach::Dialling::All
@@ -233,8 +234,6 @@ impl ReachabilityLinkConnector {
             .candidates(self.inner.found_hosts.candidates());
     }
 
-    /// Stops dialling: the core is told, every attempt out is dropped, and
-    /// the links of this profile's own close.
     /// Dials nothing more, and drops the attempts under way: a stopping
     /// host that redialled the links its goodbye closes would cross the
     /// peers' own redials.
@@ -247,10 +246,18 @@ impl ReachabilityLinkConnector {
         }
     }
 
+    /// Stops dialling: the core is told, every attempt out is dropped, and
+    /// the links of this profile's own close.
     pub(crate) async fn close_direct_links(&self) {
-        let inner = &self.inner;
         self.stop_dialling();
-        inner.shutdown.send_replace(true);
+        self.inner.shutdown.send_replace(true);
+        self.release_links().await;
+    }
+
+    /// Closes the links of this profile's own, and waits for the
+    /// connectors of those its attempts brought up to end.
+    pub(crate) async fn release_links(&self) {
+        let inner = &self.inner;
         inner.channels.link_registry().close_peer_links().await;
         let links = std::mem::take(&mut *inner.links.lock().unwrap());
         for link in &links {

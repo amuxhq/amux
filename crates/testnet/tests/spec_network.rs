@@ -3231,70 +3231,121 @@ async fn a_host_behind_the_relay_rebinds_mid_stream_and_its_session_carries_on()
     net.shutdown().await.unwrap();
 }
 
+/// A relay link lost before the device's network changed is dialled again
+/// at the change, not after its pause: what failed on the old network says
+/// nothing of the new one.
 #[tokio::test(flavor = "multi_thread")]
-async fn network_recovery_reconnects_the_relay_without_the_retry_pause() {
-    for notification_first in [false, true] {
-        let net = Net::start(Topology::new().relay(&["ada"]).host("phone"))
-            .await
-            .unwrap();
-        net.sign_in("phone", "ada").await.unwrap();
-        let phone = edge(&net, "phone");
-        let relay = net.relay().unwrap();
-        let ups = || {
-            testnet::link_log::captured(phone.host_id())
-                .iter()
-                .filter(|event| {
-                    event.peer == relay.host_id()
-                        && event.event == node::link_log::LinkTransition::Up
-                })
-                .count()
-        };
-        let before = ups();
-        let mut status = phone.subscribe_relay();
-        assert!(matches!(
-            *status.borrow(),
-            Some(node::Relay::Connected { .. })
-        ));
-        if notification_first {
-            phone.network_changed().unwrap();
-        }
-        relay
-            .server()
-            .send_link_close_to_all(wire::LinkCloseReason::UserShutdown)
-            .await;
-        if !notification_first {
-            tokio::time::timeout(
-                Duration::from_secs(5),
-                status.wait_for(|state| !matches!(state, Some(node::Relay::Connected { .. }))),
-            )
-            .await
-            .expect("the old relay link ends")
-            .unwrap();
-        }
-        let began = tokio::time::Instant::now();
-        if !notification_first {
-            phone.network_changed().unwrap();
-        }
-        // The smallest ordinary retry pause is 750 ms. Require an actual
-        // new link, not the old connection's cached Connected status.
-        tokio::time::timeout(Duration::from_millis(700), async {
-            loop {
-                let connected = matches!(*status.borrow(), Some(node::Relay::Connected { .. }));
-                if ups() > before
-                    && connected
-                    && relay.links("ada").await == vec![(phone.host_id(), 1)]
-                {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        })
+async fn a_network_change_redials_a_lost_relay_without_its_pause() {
+    let net = Net::start(Topology::new().relay(&["ada"]).host("phone"))
         .await
-        .expect("recovery must not wait for the retry timer");
-        println!(
-            "relay recovered in {:?}; notification first: {notification_first}",
-            began.elapsed()
-        );
-        net.shutdown().await.unwrap();
-    }
+        .unwrap();
+    net.sign_in("phone", "ada").await.unwrap();
+    let phone = edge(&net, "phone");
+    let relay = net.relay().unwrap();
+    let ups = || {
+        testnet::link_log::captured(phone.host_id())
+            .iter()
+            .filter(|event| {
+                event.peer == relay.host_id() && event.event == node::link_log::LinkTransition::Up
+            })
+            .count()
+    };
+    let before = ups();
+    let mut status = phone.subscribe_relay();
+    assert!(matches!(
+        *status.borrow(),
+        Some(node::Relay::Connected { .. })
+    ));
+    relay
+        .server()
+        .send_link_close_to_all(wire::LinkCloseReason::UserShutdown)
+        .await;
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        status.wait_for(|state| !matches!(state, Some(node::Relay::Connected { .. }))),
+    )
+    .await
+    .expect("the old relay link ends")
+    .unwrap();
+    let began = tokio::time::Instant::now();
+    phone.network_changed().unwrap();
+    // The shortest pause is 750 ms. A new link, not the old connection's
+    // status, is what counts.
+    tokio::time::timeout(Duration::from_millis(700), async {
+        loop {
+            let connected = matches!(*status.borrow(), Some(node::Relay::Connected { .. }));
+            if ups() > before && connected && relay.links("ada").await == vec![(phone.host_id(), 1)]
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the network change ends the pause");
+    println!(
+        "the relay link came back {:?} after the change",
+        began.elapsed()
+    );
+    net.shutdown().await.unwrap();
+}
+
+/// A phone about to be suspended says goodbye on every link, closes them
+/// and its relay link, and dials nothing while it sleeps; running again, it
+/// dials the relay and every host at once and is reached through the relay
+/// before any retry pause could have passed. A link left open through a
+/// sleep would be dropped by its peer while the phone still held it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_suspended_host_lets_go_of_its_links_and_dials_them_at_once_as_it_resumes() {
+    let topology = Topology::new()
+        .relay(&["ada"])
+        .host_decl(relay_host("desk", "ada"))
+        .host_decl(relay_host("phone", "ada"));
+    let mut net = Net::start(topology).await.unwrap();
+    net.trust("desk", "phone").await.unwrap();
+    net.trust("phone", "desk").await.unwrap();
+    let (desk, phone_id) = (host_id(&net, "desk"), host_id(&net, "phone"));
+    until_via(&net, "phone", "desk", LiveRoute::Relay).await;
+    let phone = edge(&net, "phone");
+    let relay = net.relay().unwrap();
+
+    phone.suspend().await;
+    assert_eq!(edge(&net, "desk").via(phone_id).await, LiveRoute::Offline);
+    assert_eq!(phone.via(desk).await, LiveRoute::Offline);
+    assert_eq!(relay.links("ada").await, vec![(desk, 1)]);
+    holds_for(
+        "the suspended phone to dial nothing",
+        Duration::from_millis(1_500),
+        || {
+            let phone = phone.clone();
+            async move {
+                phone.via(desk).await == LiveRoute::Offline
+                    && !relay
+                        .links("ada")
+                        .await
+                        .iter()
+                        .any(|(host, _)| *host == phone_id)
+            }
+        },
+    )
+    .await
+    .unwrap();
+
+    let began = tokio::time::Instant::now();
+    phone.resume().await;
+    tokio::time::timeout(Duration::from_millis(700), async {
+        while phone.via(desk).await != LiveRoute::Relay
+            || edge(&net, "desk").via(phone_id).await != LiveRoute::Relay
+        {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("resuming waits out no pause");
+    println!("linked again {:?} after resuming", began.elapsed());
+    peer_inventory_hosts(&phone, desk)
+        .await
+        .expect("the phone's calls reach the desk again");
+    still_relayed(&net, "phone", "desk");
+    net.shutdown().await.unwrap();
 }

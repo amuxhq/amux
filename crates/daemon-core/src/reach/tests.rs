@@ -1052,108 +1052,51 @@ fn a_pairing_dial_takes_the_found_addresses_first_then_the_requested_then_the_fo
 }
 
 #[test]
-fn foreground_recovers_a_relay_lost_before_or_after_the_notification() {
-    for ended_first in [true, false] {
-        let mut daemon = daemon(trusting());
-        let first = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
-        step(&mut daemon, Input::RelayLinked { attempt: first });
-        at(&mut daemon, 60_000);
-        let out = if ended_first {
-            let lost = relay_ends(&mut daemon, first, RelayOutcome::Closed);
-            assert!(armed(&lost, TimerId::RelayRetry).is_some());
-            let out = step(&mut daemon, Input::RecoverRelay);
-            assert!(out.contains(&Output::CancelTimer {
-                id: TimerId::RelayRetry
-            }));
-            out
-        } else {
-            assert!(step(&mut daemon, Input::RecoverRelay).is_empty());
-            at(&mut daemon, 60_100);
-            relay_ends(&mut daemon, first, RelayOutcome::Closed)
-        };
-        let recovered = relay_dial(&out);
-        assert_ne!(recovered, first);
-        assert_eq!(armed(&out, TimerId::RelayRetry), None);
-        assert!(
-            step(
-                &mut daemon,
-                Input::Timer {
-                    id: TimerId::RelayRetry
-                }
-            )
-            .is_empty(),
-            "a canceled timer cannot duplicate the dial"
-        );
-        for _ in 0..3 {
-            assert!(step(&mut daemon, Input::RecoverRelay).is_empty());
-        }
-        let failed = relay_ends(&mut daemon, recovered, RelayOutcome::Lost("offline".into()));
-        assert!(armed(&failed, TimerId::RelayRetry).is_some());
-        for _ in 0..3 {
-            assert!(
-                step(&mut daemon, Input::RecoverRelay).is_empty(),
-                "failure backoff cannot be bypassed again"
-            );
-        }
-    }
-}
-
-#[test]
-fn cold_start_and_an_in_flight_retry_are_not_duplicated_by_foreground() {
+fn a_network_change_ends_the_relay_pause_and_starts_the_count_afresh() {
     let mut daemon = daemon(trusting());
-    assert!(step(&mut daemon, Input::RecoverRelay).is_empty());
     let first = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
-    assert!(step(&mut daemon, Input::RecoverRelay).is_empty());
     let failed = relay_ends(&mut daemon, first, RelayOutcome::Lost("offline".into()));
-    let due = armed(&failed, TimerId::RelayRetry).unwrap();
-    assert!(step(&mut daemon, Input::RecoverRelay).is_empty());
-    at(&mut daemon, due);
-    let second = relay_dial(&step(
-        &mut daemon,
-        Input::Timer {
-            id: TimerId::RelayRetry,
-        },
-    ));
-    assert!(step(&mut daemon, Input::RecoverRelay).is_empty());
-    assert_eq!(daemon.relay_reach().attempt(), Some(second));
-}
-
-#[test]
-fn foreground_keeps_a_healthy_relay_and_a_later_loss_has_normal_backoff() {
-    let mut daemon = daemon(trusting());
-    let first = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
-    step(&mut daemon, Input::RelayLinked { attempt: first });
-    assert!(step(&mut daemon, Input::RecoverRelay).is_empty());
-    assert_eq!(daemon.relay_reach().attempt(), Some(first));
-    at(&mut daemon, super::relay::RELAY_RECOVERY_WINDOW_MS + 1);
-    let failed = relay_ends(
-        &mut daemon,
-        first,
-        RelayOutcome::Lost("later outage".into()),
-    );
     assert!(armed(&failed, TimerId::RelayRetry).is_some());
+    let out = step(&mut daemon, Input::NetworkChanged);
+    assert!(out.contains(&Output::CancelTimer {
+        id: TimerId::RelayRetry
+    }));
+    let second = relay_dial(&out);
+    assert!(
+        step(
+            &mut daemon,
+            Input::Timer {
+                id: TimerId::RelayRetry
+            }
+        )
+        .is_empty(),
+        "a cancelled pause cannot dial again"
+    );
+    at(&mut daemon, 10_000);
+    let again = relay_ends(&mut daemon, second, RelayOutcome::Lost("offline".into()));
+    assert_eq!(
+        armed(&again, TimerId::RelayRetry),
+        Some(10_000 + RELAY_RETRY_FIRST_MS),
+        "the failure after the change pauses as a first one does"
+    );
 }
 
 #[test]
-fn a_recovered_relay_earns_one_more_recovery_only_after_it_links() {
+fn a_network_change_leaves_an_attempt_out_or_a_link_up_alone() {
     let mut daemon = daemon(trusting());
+    assert!(step(&mut daemon, Input::NetworkChanged).is_empty());
     let first = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
+    assert!(step(&mut daemon, Input::NetworkChanged).is_empty());
     step(&mut daemon, Input::RelayLinked { attempt: first });
-    relay_ends(&mut daemon, first, RelayOutcome::Closed);
-    let second = relay_dial(&step(&mut daemon, Input::RecoverRelay));
-    step(&mut daemon, Input::RelayLinked { attempt: second });
-    relay_ends(&mut daemon, second, RelayOutcome::Closed);
-    let third = relay_dial(&step(&mut daemon, Input::RecoverRelay));
-    assert_ne!(second, third);
+    assert!(step(&mut daemon, Input::NetworkChanged).is_empty());
+    assert_eq!(daemon.relay_reach().attempt(), Some(first));
 }
 
 #[test]
-fn foreground_never_overrides_sign_out_or_a_final_relay_refusal() {
+fn a_network_change_never_overrides_sign_out_or_a_final_relay_refusal() {
     for signed_out in [true, false] {
         let mut daemon = daemon(trusting());
         let first = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
-        step(&mut daemon, Input::RelayLinked { attempt: first });
-        step(&mut daemon, Input::RecoverRelay);
         if signed_out {
             step(&mut daemon, Input::RelayWanted(false));
         } else {
@@ -1163,20 +1106,7 @@ fn foreground_never_overrides_sign_out_or_a_final_relay_refusal() {
                 RelayOutcome::Final("sign in again".into()),
             );
         }
-        assert!(step(&mut daemon, Input::RecoverRelay).is_empty());
+        assert!(step(&mut daemon, Input::NetworkChanged).is_empty());
         assert_eq!(daemon.relay_reach().attempt(), None);
     }
-}
-
-#[test]
-fn relay_recovery_survives_a_checkpoint_with_its_remaining_allowance() {
-    let mut daemon = daemon(trusting());
-    let first = relay_dial(&step(&mut daemon, Input::RelayWanted(true)));
-    step(&mut daemon, Input::RelayLinked { attempt: first });
-    step(&mut daemon, Input::RecoverRelay);
-    let checkpoint = daemon.checkpoint();
-    let mut restored = Daemon::restore(checkpoint, Sqlite::open_in_memory(OWN).unwrap()).unwrap();
-    let out = relay_ends(&mut restored, first, RelayOutcome::Closed);
-    assert_eq!(out, relay_ends(&mut daemon, first, RelayOutcome::Closed));
-    relay_dial(&out);
 }

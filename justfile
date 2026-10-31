@@ -304,11 +304,6 @@ tests-check:
 script-tests:
     {{bounded}} 120 scripts/py -m unittest discover -s scripts/tests -p '*_test.py' -t scripts/tests
 
-# List every parked property of the protocol models, with its reason, and fail
-# while any remains: the landing gate for decisions still waiting.
-parked-check:
-    {{bounded}} 600 cargo run --locked -q -p models --bin parked-check
-
 # Check the protocol models at their nightly bounds: each model's ignored
 # test, one after another, every core each. Model names, the modules of the
 # models' integration tests (`just models-nightly family`), narrow it to

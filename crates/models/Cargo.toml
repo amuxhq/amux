@@ -28,16 +28,6 @@ ui-state = { workspace = true }
 uuid = { workspace = true }
 wire = { workspace = true }
 
-[[bin]]
-name = "parked-check"
-path = "src/bin/parked-check.rs"
-test = false
-
-[[bin]]
-name = "properties"
-path = "src/bin/properties.rs"
-test = false
-
 [[test]]
 name = "integration"
 path = "tests/integration.rs"

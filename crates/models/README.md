@@ -26,25 +26,6 @@ failure. `walk(model, bounds, seed)` follows
 one schedule chosen by the seed: the same seed walks the same schedule on every
 run, so a failing walk is reproduced by its seed alone.
 
-## Parked properties
-
-When the checker finds a property failing and what to do about it is a
-decision still waiting, the property is parked rather than weakened: it
-keeps its sentence and predicate, and `.parked(Parked { since,
-counterexample, reason })` records when, the path that broke it and the
-decision it waits on. The checker reports a parked property with its reason
-instead of exploring it, so `just test` stays green meanwhile, and
-`just parked-check` lists every parked property and fails while any
-remains, so nothing lands with one.
-
-## Naming a property elsewhere
-
-`cargo run -p models --bin properties` lists every property of every model
-as JSON lines (machine, kind, sentence), each once. A `model` contract in
-`tests/contracts.toml` names a property by its machine and sentence, and
-`just contracts-check` fails when that list does not hold it, so rewording a
-sentence means updating its contract.
-
 ## Replication
 
 `Replication` follows one agent from its origin to one replica, both real

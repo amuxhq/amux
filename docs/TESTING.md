@@ -295,10 +295,6 @@ system journey on the built binaries. `resume` launches one installation three t
 relaunch, and a launch after a machine restarted) and keeps each launch's link log in
 `target/ios/journey/resume/<launch>.log`.
 
-The phone journeys written before these stories are listed under `retired_phone_journeys`: each of their claims
-either names the story step that carries it (`story/screen`, a screen that story compares) or is listed as
-dropped with the reason, and a script test checks every named step exists.
-
 ```sh
 just journey terminal <story>   # builds amux, the fakes and testnet, then runs the story in tmux
 just journey terminal all       # every terminal story in the manifest; summary in target/journeys/summary.txt

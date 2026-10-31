@@ -3,6 +3,8 @@ syntax = "proto3";
 package amux.v1;
 
 import "amux/v1/chat.proto";
+import "amux/v1/claude.proto";
+import "amux/v1/codex.proto";
 import "amux/v1/records.proto";
 
 // Sessions: one agent's conversation. Its stream of records, older items by
@@ -111,17 +113,63 @@ message GetDraftRequest {
   bytes agent_id = 1;
 }
 
-// A client-generated input id, the agent's kind, and that kind's input
-// message encoded. Daemons forward the bytes untouched; only the agent of
-// that kind decodes them, so an arm or field this daemon does not know
-// reaches a newer agent intact. The reply is the interpreter's verdict,
-// never a handover receipt. The daemon decodes a copy for its analytics and
-// tolerates a copy it cannot decode.
+// A client-generated input id and an AgentInput encoded. Daemons forward
+// the bytes untouched; only the agent decodes them, so an arm or field this
+// daemon does not know reaches a newer agent intact. The reply is the
+// interpreter's verdict, never a handover receipt. The daemon decodes a copy
+// for its analytics and tolerates a copy it cannot decode.
 message Input {
   bytes input_id = 1;
-  Kind kind = 2;
-  // ClaudePtyInput, ClaudeSdkInput or CodexInput, as `kind` names.
-  bytes body = 3;
+  bytes body = 2;
+}
+
+// A person's input, the same message for every kind. A kind refuses an arm
+// it does not take REFUSAL_UNSUPPORTED, as it does an arm it does not know.
+message AgentInput {
+  oneof of {
+    PromptInput prompt = 1;
+    Answer answer = 2;
+    Interrupt interrupt = 3;
+    Clear clear = 4;
+    WithdrawQueued withdraw = 5;
+    SendQueuedNow send_now = 6;
+    // Headless Claude and Codex.
+    SetPermission permission = 7;
+    SetModel model = 8;
+    SetEffort effort = 9;
+    StopJob stop_job = 10;
+    // Codex.
+    SetMode mode = 11;
+    // Terminal Claude's permission-mode cycle, the one keystroke a remote
+    // client sends; the agent process emits the bytes for the Claude it
+    // runs. Raw terminal bytes never cross the wire; anything else is
+    // typed at the machine.
+    CyclePermissionMode cycle_permission_mode = 12;
+    // Terminal Claude: back to this agent's conversation after Claude's own
+    // view switched away; types `/resume <this agent's session>`.
+    SwitchBack switch_back = 13;
+  }
+}
+
+// An answer to the open ask `ask_key`: a ClaudeAsk's or CodexAsk's key (for
+// Codex the app-server request id, or amux's own key for a plan). Rejected
+// REFUSAL_CLOSED_ASK if the ask is not open, and REFUSAL_UNSUPPORTED for an
+// arm the ask does not take or a decision it did not offer.
+message Answer {
+  string ask_key = 1;
+  oneof of {
+    // Claude's permission asks.
+    PermissionAnswer permission = 2;
+    // Codex's approvals.
+    Decision approve = 3;
+    QuestionAnswer question = 4;
+    PlanAnswer plan = 5;
+    FormAnswer form = 6;
+    LinkAnswer link = 7;
+    // Codex's access grants.
+    GrantAnswer grant = 8;
+    ReplyInstead reply = 9;
+  }
 }
 
 // A prompt with its client-generated input id, where a whole Input would

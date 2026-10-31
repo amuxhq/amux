@@ -574,7 +574,16 @@ impl SessionService for ClientApi {
             "an agent sends input only to its own children",
         )
         .await?;
-        let shape = request.input.as_ref().and_then(InputShape::of);
+        let shape = match &request.input {
+            Some(input) if self.counts() => runtime
+                .row_by_id(&request.agent_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|row| telemetry::kind_coded(row.kind))
+                .and_then(|kind| InputShape::of(kind, input)),
+            _ => None,
+        };
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             let forwarded = runtime.on_peer(host, request).await;
             return match forwarded {

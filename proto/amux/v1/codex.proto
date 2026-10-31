@@ -257,21 +257,6 @@ message McpToolApproval {
   bytes arguments_json = 3;
 }
 
-message CodexInput {
-  oneof of {
-    PromptInput prompt = 1;
-    CodexAnswer answer = 2;
-    Interrupt interrupt = 3;
-    SetPermission permission = 4;
-    SetMode mode = 5;
-    SetModel model = 6;
-    WithdrawQueued withdraw = 7;
-    SetEffort effort = 8;
-    SendQueuedNow send_now = 9;
-    StopJob stop_job = 10;
-  }
-}
-
 enum Decision {
   DECISION_UNSPECIFIED = 0;
   DECISION_APPROVE = 1;
@@ -287,18 +272,3 @@ enum Decision {
   DECISION_APPROVE_ALWAYS = 7;
 }
 
-// Rejected REFUSAL_CLOSED_ASK if ask_key is not open. An approval is rejected
-// REFUSAL_UNSUPPORTED when its decision is not one the ask offered.
-message CodexAnswer {
-  // CodexAsk.key: the app-server request id, or amux's own key for a plan.
-  string ask_key = 1;
-  oneof of {
-    Decision approve = 2;
-    QuestionAnswer question = 3;
-    FormAnswer form = 4;
-    LinkAnswer link = 5;
-    GrantAnswer grant = 6;
-    PlanAnswer plan = 7;
-    ReplyInstead reply = 8;
-  }
-}

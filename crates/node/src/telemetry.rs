@@ -92,36 +92,16 @@ pub(crate) enum InputShape {
 }
 
 impl InputShape {
-    /// Read from a decoded copy of the body. An input whose body this
-    /// daemon cannot decode, of a kind or arm it does not know, is not
-    /// counted; it is still delivered, since the agent alone decides it.
-    pub(crate) fn of(input: &wire::Input) -> Option<Self> {
-        use wire::KindInput;
-        Some(match input.decode_body()? {
-            KindInput::ClaudePty(input) => {
-                use wire::claude_pty_input::Of;
-                match input.of? {
-                    Of::Prompt(_) => Self::Prompt(Kind::ClaudePty),
-                    Of::Answer(answer) => Self::Answer(Kind::ClaudePty, claude_ask(&answer)?),
-                    _ => return None,
-                }
-            }
-            KindInput::ClaudeSdk(input) => {
-                use wire::claude_sdk_input::Of;
-                match input.of? {
-                    Of::Prompt(_) => Self::Prompt(Kind::ClaudeSdk),
-                    Of::Answer(answer) => Self::Answer(Kind::ClaudeSdk, claude_ask(&answer)?),
-                    _ => return None,
-                }
-            }
-            KindInput::Codex(input) => {
-                use wire::codex_input::Of;
-                match input.of? {
-                    Of::Prompt(_) => Self::Prompt(Kind::Codex),
-                    Of::Answer(answer) => Self::Answer(Kind::Codex, codex_ask(&answer)?),
-                    _ => return None,
-                }
-            }
+    /// Read from a decoded copy of the body, sent to an agent of `kind`. An
+    /// input whose body this daemon cannot decode, of an arm it does not
+    /// know, is not counted; it is still delivered, since the agent alone
+    /// decides it.
+    pub(crate) fn of(kind: Kind, input: &wire::Input) -> Option<Self> {
+        use wire::agent_input::Of;
+        Some(match input.decode_body()?.of? {
+            Of::Prompt(_) => Self::Prompt(kind),
+            Of::Answer(answer) => Self::Answer(kind, ask(&answer)?),
+            _ => return None,
         })
     }
 
@@ -142,28 +122,16 @@ pub(crate) fn accepted(response: &wire::SendInputResponse) -> Option<bool> {
     }
 }
 
-fn claude_ask(answer: &wire::ClaudeAnswer) -> Option<Ask> {
-    use wire::claude_answer::Of;
+fn ask(answer: &wire::Answer) -> Option<Ask> {
+    use wire::answer::Of;
     Some(match answer.of.as_ref()? {
-        Of::Permission(_) => Ask::Permission,
+        Of::Permission(_) | Of::Approve(_) => Ask::Permission,
         Of::Question(_) => Ask::Question,
         Of::Plan(_) => Ask::Plan,
-        Of::Form(_) => Ask::Form,
-        Of::Link(_) => Ask::Link,
-        // A reply in place of answering closes the question it stood in for.
-        Of::Reply(_) => Ask::Question,
-    })
-}
-
-fn codex_ask(answer: &wire::CodexAnswer) -> Option<Ask> {
-    use wire::codex_answer::Of;
-    Some(match answer.of.as_ref()? {
-        Of::Approve(_) => Ask::Permission,
-        Of::Question(_) => Ask::Question,
         Of::Form(_) => Ask::Form,
         Of::Link(_) => Ask::Link,
         Of::Grant(_) => Ask::Grant,
-        Of::Plan(_) => Ask::Plan,
+        // A reply in place of answering closes the question it stood in for.
         Of::Reply(_) => Ask::Question,
     })
 }
@@ -279,53 +247,52 @@ mod tests {
         );
     }
 
-    fn input(of: impl Into<wire::KindInput>) -> wire::Input {
+    fn input(of: wire::AgentInput) -> wire::Input {
         wire::Input::new(Vec::new(), of)
     }
 
     #[test]
     fn prompts_and_answers_are_counted_and_keys_are_not() {
-        let prompt = input(wire::CodexInput {
-            of: Some(wire::codex_input::Of::Prompt(wire::PromptInput::default())),
+        let prompt = input(wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput::default())),
         });
         assert_eq!(
-            InputShape::of(&prompt).map(|shape| shape.event(On::ThisHost, true)),
+            InputShape::of(Kind::Codex, &prompt).map(|shape| shape.event(On::ThisHost, true)),
             Some(Event::PromptSent {
                 kind: Kind::Codex,
                 on: On::ThisHost,
                 queued: true
             })
         );
-        let answer = input(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
+        let answer = input(wire::AgentInput {
+            of: Some(wire::agent_input::Of::Answer(wire::Answer {
                 ask_key: "k".into(),
-                of: Some(wire::claude_answer::Of::Plan(wire::PlanAnswer::default())),
+                of: Some(wire::answer::Of::Plan(wire::PlanAnswer::default())),
             })),
         });
         let peer = HostId::from_u128(3);
         assert_eq!(
-            InputShape::of(&answer).map(|shape| shape.event(On::PairedHost(peer), false)),
+            InputShape::of(Kind::ClaudeSdk, &answer)
+                .map(|shape| shape.event(On::PairedHost(peer), false)),
             Some(Event::AskAnswered {
                 kind: Kind::ClaudeSdk,
                 on: On::PairedHost(peer),
                 ask: Ask::Plan
             })
         );
-        let approve = input(wire::CodexInput {
-            of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
+        let approve = input(wire::AgentInput {
+            of: Some(wire::agent_input::Of::Answer(wire::Answer {
                 ask_key: "k".into(),
-                of: Some(wire::codex_answer::Of::Approve(
-                    wire::Decision::Approve as i32,
-                )),
+                of: Some(wire::answer::Of::Approve(wire::Decision::Approve as i32)),
             })),
         });
         assert_eq!(
-            InputShape::of(&approve),
+            InputShape::of(Kind::Codex, &approve),
             Some(InputShape::Answer(Kind::Codex, Ask::Permission))
         );
-        let key = input(wire::ClaudePtyInput {
-            of: Some(wire::claude_pty_input::Of::Interrupt(wire::Interrupt {})),
+        let key = input(wire::AgentInput {
+            of: Some(wire::agent_input::Of::Interrupt(wire::Interrupt {})),
         });
-        assert_eq!(InputShape::of(&key), None);
+        assert_eq!(InputShape::of(Kind::Codex, &key), None);
     }
 }

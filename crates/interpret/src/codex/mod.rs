@@ -57,11 +57,11 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, AskClosed, AskItem, BackgroundJob, CodexAnswer, CodexAsk, CodexGrant, CodexItem,
-    CodexSnapshot, CodexUsage, ContextMeter, Decision, DecisionOutcome, Envelope, FormAction,
-    Input, KindInput, OfferedCommand, OfferedMode, OfferedModel, OfferedPermission, OfferedSkill,
-    QueuedInput, Refusal, Rejected, Step, TaskList, TaskListEntry, ToolDecision, ToolServer, Work,
-    codex_answer, codex_ask, codex_grant, codex_input, codex_item, tool_decision, work,
+    AgentSpec, AskClosed, AskItem, BackgroundJob, CodexAsk, CodexGrant, CodexItem, CodexSnapshot,
+    CodexUsage, ContextMeter, Decision, DecisionOutcome, Envelope, FormAction, Input,
+    OfferedCommand, OfferedMode, OfferedModel, OfferedPermission, OfferedSkill, QueuedInput,
+    Refusal, Rejected, Step, TaskList, TaskListEntry, ToolDecision, ToolServer, Work, agent_input,
+    answer, codex_ask, codex_grant, codex_item, tool_decision, work,
 };
 
 use crate::claude_common::{clip, describe_tasks, or_dash};
@@ -946,17 +946,16 @@ impl State {
 
     fn input(&mut self, emit: &mut Emit, input: Input) {
         let id = input.input_id.clone();
-        // Another kind's input, or an arm a newer client sends that this
-        // version cannot read.
+        // An arm a newer client sends that this version cannot read.
         let arm = match input.decode_body() {
-            Some(KindInput::Codex(wire::CodexInput { of: Some(arm) })) => arm,
+            Some(wire::AgentInput { of: Some(arm) }) => arm,
             _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
-            codex_input::Of::StopJob(stop) => self.stop_job(emit, &id, stop.key),
+            agent_input::Of::StopJob(stop) => self.stop_job(emit, &id, stop.key),
             // A `/word` that is not a command amux runs would reach the
             // model as words. A skill is mentioned as `$name` instead.
-            codex_input::Of::Prompt(prompt) if Command::parse(&prompt.text) == Some(Err(())) => {
+            agent_input::Of::Prompt(prompt) if Command::parse(&prompt.text) == Some(Err(())) => {
                 match self.names_skill(&prompt.text) {
                     Some(skill) => {
                         let detail = format!("Codex takes a skill as a mention: type ${skill}");
@@ -973,7 +972,7 @@ impl State {
                 }
             }
             // Refused here, so the words go back to the composer.
-            codex_input::Of::Prompt(prompt) if prompt.text.chars().count() > PROMPT_CHARS_MOST => {
+            agent_input::Of::Prompt(prompt) if prompt.text.chars().count() > PROMPT_CHARS_MOST => {
                 self.shared.refuse(
                     emit,
                     &id,
@@ -987,7 +986,7 @@ impl State {
                     },
                 )
             }
-            codex_input::Of::Prompt(prompt) => {
+            agent_input::Of::Prompt(prompt) => {
                 if let Some(key) = self.plan_ask() {
                     self.shared.close_ask(&key);
                     self.decide_plan(emit, wire::PlanVerdict::Dismissed, None);
@@ -996,10 +995,10 @@ impl State {
                     self.submit(emit, entry, Vec::new());
                 }
             }
-            codex_input::Of::Withdraw(withdraw) => {
+            agent_input::Of::Withdraw(withdraw) => {
                 self.shared.withdraw(emit, &id, &withdraw.queued_input_id)
             }
-            codex_input::Of::SendNow(send) => {
+            agent_input::Of::SendNow(send) => {
                 let turn = self.active_turn.clone();
                 if let Some(entry) =
                     self.shared
@@ -1009,11 +1008,11 @@ impl State {
                     self.steer(emit, &turn, entry);
                 }
             }
-            codex_input::Of::Interrupt(_) => {
+            agent_input::Of::Interrupt(_) => {
                 self.interrupt(emit);
                 self.shared.accept(emit, &id, false);
             }
-            codex_input::Of::Permission(set) => {
+            agent_input::Of::Permission(set) => {
                 let Some(named) = permission(&set.value) else {
                     return self.shared.reject(emit, &id, Refusal::Unsupported);
                 };
@@ -1023,7 +1022,7 @@ impl State {
                 self.overrides.permission = Some(set.value);
                 self.shared.accept(emit, &id, false);
             }
-            codex_input::Of::Mode(set) => {
+            agent_input::Of::Mode(set) => {
                 if !MODES.iter().any(|(value, _)| *value == set.value) {
                     return self.shared.reject(emit, &id, Refusal::Unsupported);
                 }
@@ -1032,18 +1031,22 @@ impl State {
                 self.left_plan(emit);
                 self.shared.accept(emit, &id, false);
             }
-            codex_input::Of::Model(model) => {
+            agent_input::Of::Model(model) => {
                 let model = model.model.or_else(|| self.launch_model.clone());
                 self.model = model.clone();
                 self.overrides.model = model;
                 self.shared.accept(emit, &id, false);
             }
-            codex_input::Of::Effort(effort) => {
+            agent_input::Of::Effort(effort) => {
                 self.effort = effort.effort.clone();
                 self.overrides.effort = Some(effort.effort);
                 self.shared.accept(emit, &id, false);
             }
-            codex_input::Of::Answer(answer) => self.answer(emit, &id, answer),
+            agent_input::Of::Answer(answer) => self.answer(emit, &id, answer),
+            // Terminal Claude's keystrokes, and Claude's own clear.
+            agent_input::Of::Clear(_)
+            | agent_input::Of::CyclePermissionMode(_)
+            | agent_input::Of::SwitchBack(_) => self.shared.reject(emit, &id, Refusal::Unsupported),
         }
     }
 
@@ -1385,7 +1388,7 @@ impl State {
         self.submit(emit, entry, consumes);
     }
 
-    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: CodexAnswer) {
+    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: wire::Answer) {
         let key = answer.ask_key;
         let Some(ask) = self.shared.asks().get(&key).cloned() else {
             return self.shared.reject(emit, id, Refusal::ClosedAsk);
@@ -1393,14 +1396,14 @@ impl State {
         let parsed = answer.of;
         if let Some(codex_ask::Body::Plan(_)) = ask.body {
             return match parsed {
-                Some(codex_answer::Of::Plan(plan)) => self.answer_plan(emit, id, &key, plan),
+                Some(answer::Of::Plan(plan)) => self.answer_plan(emit, id, &key, plan),
                 _ => self.shared.reject(emit, id, Refusal::Unsupported),
             };
         }
-        if let Some(codex_answer::Of::Approve(decision)) = parsed {
+        if let Some(answer::Of::Approve(decision)) = parsed {
             return self.approve(emit, id, &ask, decision);
         }
-        if let (Some(codex_ask::Body::Question(asked)), Some(codex_answer::Of::Reply(reply))) =
+        if let (Some(codex_ask::Body::Question(asked)), Some(answer::Of::Reply(reply))) =
             (&ask.body, &parsed)
         {
             return self.reply_instead(emit, id, &ask, asked, reply);
@@ -1650,10 +1653,10 @@ pub(crate) const USER_NOTE: &str = "user_note: ";
 fn codex_answer_response(
     ask: &CodexAsk,
     meta: &AskMeta,
-    answer: codex_answer::Of,
+    answer: answer::Of,
 ) -> Option<(ClientResponse, AskClosed)> {
     match (ask.body.as_ref()?, answer) {
-        (codex_ask::Body::Question(asked), codex_answer::Of::Question(answer)) => {
+        (codex_ask::Body::Question(asked), answer::Of::Question(answer)) => {
             if answer.answers.len() != meta.questions.len() {
                 return None;
             }
@@ -1690,7 +1693,7 @@ fn codex_answer_response(
                 ask_item::answered(asked, &answer)?,
             ))
         }
-        (codex_ask::Body::McpForm(asked), codex_answer::Of::Form(form)) => {
+        (codex_ask::Body::McpForm(asked), answer::Of::Form(form)) => {
             let action = form_action(form.action)?;
             let content = (action == ElicitationAction::Accept).then(|| {
                 serde_json::from_slice(&form.content_json)
@@ -1701,11 +1704,11 @@ fn codex_answer_response(
                 ask_item::form_sent(&form, &asked.schema_json),
             ))
         }
-        (codex_ask::Body::McpLink(_), codex_answer::Of::Link(link)) => Some((
+        (codex_ask::Body::McpLink(_), answer::Of::Link(link)) => Some((
             elicitation_response(form_action(link.action)?, None, None),
             ask_item::link_answered(link.action),
         )),
-        (codex_ask::Body::Access(asked), codex_answer::Of::Grant(grant)) => {
+        (codex_ask::Body::Access(asked), answer::Of::Grant(grant)) => {
             let subset = |granted: &[String], asked: &[String]| {
                 granted.iter().all(|path| asked.contains(path))
             };
@@ -1851,9 +1854,7 @@ impl Interpreter for Codex {
     }
 
     fn redact(target: RedactTarget) -> RedactTarget {
-        crate::redact::redact_kind::<wire::CodexItem, wire::CodexSnapshot, wire::CodexInput, State>(
-            target,
-        )
+        crate::redact::redact_kind::<wire::CodexItem, wire::CodexSnapshot, State>(target)
     }
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {

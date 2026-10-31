@@ -588,7 +588,6 @@ async fn origin_rewind() {
             .prompt("go"),
     );
     let mut net = Net::start(topology).await.unwrap();
-    let kind = net.agent("worker").unwrap().kind;
     net.current("laptop", "worker").await.unwrap();
     let mut chat = net.observe("laptop", "worker", 20).await.unwrap();
     chat.observe_until(observe::caught_up, PATIENCE)
@@ -609,7 +608,7 @@ async fn origin_rewind() {
     .unwrap();
     let later = Uuid::new_v4();
     let accepted = net
-        .input("worker", testnet::prompt(kind, later.as_bytes(), "later"))
+        .input("worker", testnet::prompt(later.as_bytes(), "later"))
         .await
         .unwrap();
     assert!(
@@ -632,7 +631,7 @@ async fn origin_rewind() {
 
     net.input(
         "worker",
-        withdraw(kind, Uuid::new_v4().as_bytes(), later.as_bytes()),
+        withdraw(Uuid::new_v4().as_bytes(), later.as_bytes()),
     )
     .await
     .unwrap();

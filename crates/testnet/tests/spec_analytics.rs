@@ -9,7 +9,7 @@ use support::*;
 use testnet::{AgentDecl, Net, NetOptions, Topology, until};
 use tonic::Request;
 use wire::session_service_server::SessionService as _;
-use wire::{ClaudeSdkInput, PromptInput, SendInputRequest, begin_pair_request, claude_sdk_input};
+use wire::{AgentInput, PromptInput, SendInputRequest, agent_input, begin_pair_request};
 
 use crate::support;
 
@@ -84,8 +84,8 @@ async fn pairing_counts_on_both_sides_and_a_prompt_counts_where_it_was_sent() {
         agent_id: worker.as_bytes().to_vec(),
         input: Some(wire::Input::new(
             uuid::Uuid::new_v4().as_bytes().to_vec(),
-            ClaudeSdkInput {
-                of: Some(claude_sdk_input::Of::Prompt(PromptInput {
+            AgentInput {
+                of: Some(agent_input::Of::Prompt(PromptInput {
                     text: "and the tests?".into(),
                     attachments: Vec::new(),
                 })),

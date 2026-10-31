@@ -2844,8 +2844,8 @@ async fn a_host_notices_a_silently_dead_link_at_its_keepalive_and_idle_timeout()
 fn sdk_prompt(text: &str) -> wire::Input {
     wire::Input::new(
         uuid::Uuid::new_v4().as_bytes().to_vec(),
-        wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: text.to_owned(),
                 attachments: Vec::new(),
             })),

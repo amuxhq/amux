@@ -130,8 +130,8 @@ fn agent_message(id: &[u8]) -> Event {
 fn prompt(id: &[u8], text: &str) -> Event {
     Event::Input(wire::Input::new(
         id.to_vec(),
-        wire::CodexInput {
-            of: Some(wire::codex_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: text.into(),
                 ..Default::default()
             })),
@@ -230,8 +230,8 @@ fn a_prompt_with_attachments_leaves_them_to_the_agent_process() {
         &mut state,
         Event::Input(wire::Input::new(
             b"p1".to_vec(),
-            wire::CodexInput {
-                of: Some(wire::codex_input::Of::Prompt(wire::PromptInput {
+            wire::AgentInput {
+                of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                     text: "What is this? \u{FFFC}".into(),
                     attachments: vec![wire::Attachment::default()],
                 })),
@@ -507,10 +507,10 @@ fn an_mcp_approval_answered_always_persists_it() {
     let key = agent.snapshot.asks[0].key.clone();
     let answered = agent.step(Event::Input(wire::Input::new(
         b"a1".to_vec(),
-        wire::CodexInput {
-            of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Answer(wire::Answer {
                 ask_key: key,
-                of: Some(wire::codex_answer::Of::Approve(
+                of: Some(wire::answer::Of::Approve(
                     wire::Decision::ApproveAlways as i32,
                 )),
             })),
@@ -567,10 +567,10 @@ fn approval_outside_offered_decisions_is_rejected() {
     let approve = |id: &[u8], decision: wire::Decision| {
         Event::Input(wire::Input::new(
             id.to_vec(),
-            wire::CodexInput {
-                of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
+            wire::AgentInput {
+                of: Some(wire::agent_input::Of::Answer(wire::Answer {
                     ask_key: key.clone(),
-                    of: Some(wire::codex_answer::Of::Approve(decision as i32)),
+                    of: Some(wire::answer::Of::Approve(decision as i32)),
                 })),
             },
         ))
@@ -1501,8 +1501,8 @@ fn an_interrupt_lists_the_commands_codex_keeps_running() {
         ),
         Event::Input(wire::Input::new(
             b"i1".to_vec(),
-            wire::CodexInput {
-                of: Some(wire::codex_input::Of::Interrupt(wire::Interrupt {})),
+            wire::AgentInput {
+                of: Some(wire::agent_input::Of::Interrupt(wire::Interrupt {})),
             },
         )),
         rpc(
@@ -2328,8 +2328,8 @@ fn a_stopped_background_command_reads_stopping_until_it_ends() {
     let stop = |id: &[u8], key: &str| {
         Event::Input(wire::Input::new(
             id.to_vec(),
-            wire::CodexInput {
-                of: Some(wire::codex_input::Of::StopJob(wire::StopJob {
+            wire::AgentInput {
+                of: Some(wire::agent_input::Of::StopJob(wire::StopJob {
                     key: key.into(),
                 })),
             },

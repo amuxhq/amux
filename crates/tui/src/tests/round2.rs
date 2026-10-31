@@ -309,9 +309,9 @@ fn the_settings_key_under_an_ask_opens_no_hidden_picker() {
     let effects = view.key(&state, key(KeyCode::Enter), theme());
     let changed_model = matches!(
         sent(&effects),
-        Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Model(_)),
-        }))
+        Some(wire::AgentInput {
+            of: Some(wire::agent_input::Of::Model(_)),
+        })
     );
     assert!(
         !changed_model,
@@ -669,9 +669,9 @@ fn slash_model_with_a_value_sets_the_model_and_sends_no_prompt() {
     let effects = view.key(&state, key(KeyCode::Enter), theme());
     let set = matches!(
         sent(&effects),
-        Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Model(ref model)),
-        })) if model.model.as_deref() == Some(other.value.as_str())
+        Some(wire::AgentInput {
+            of: Some(wire::agent_input::Of::Model(ref model)),
+        }) if model.model.as_deref() == Some(other.value.as_str())
     );
     assert!(
         set && no_prompt(&effects),
@@ -869,13 +869,13 @@ fn a_multi_select_sends_its_ticks_with_the_words_typed_as_something_else() {
             _ => None,
         })
         .unwrap_or_else(|| panic!("no answer from {effects:?}:\n{screen}"));
-    let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
+    let Some(wire::AgentInput {
         of:
-            Some(wire::claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
-                of: Some(wire::claude_answer::Of::Question(sent)),
+            Some(wire::agent_input::Of::Answer(wire::Answer {
+                of: Some(wire::answer::Of::Question(sent)),
                 ..
             })),
-    })) = answer.decode_body()
+    }) = answer.decode_body()
     else {
         panic!("{answer:?}");
     };

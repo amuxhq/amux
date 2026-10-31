@@ -124,47 +124,9 @@ message RunningCall {
 // Claude in a terminal
 // ---------------------------------------------------------------------------
 
-message ClaudePtyInput {
-  oneof of {
-    PromptInput prompt = 1;
-    ClaudeAnswer answer = 2;
-    // Terminal Claude's permission-mode cycle, the one keystroke a remote
-    // client sends; the agent process emits the bytes for the Claude it
-    // runs. Raw terminal bytes never cross the wire; anything else is
-    // typed at the machine.
-    CyclePermissionMode cycle_permission_mode = 3;
-    Clear clear = 4;
-    Interrupt interrupt = 5;
-    WithdrawQueued withdraw = 6;
-    SendQueuedNow send_now = 7;
-    // Back to this agent's conversation after Claude's own view switched
-    // away: types `/resume <this agent's session>`.
-    SwitchBack switch_back = 8;
-  }
-}
-
 message CyclePermissionMode {}
 
 message SwitchBack {}
-
-// ---------------------------------------------------------------------------
-// Claude through the SDK
-// ---------------------------------------------------------------------------
-
-message ClaudeSdkInput {
-  oneof of {
-    PromptInput prompt = 1;
-    ClaudeAnswer answer = 2;
-    Interrupt interrupt = 3;
-    SetPermission permission = 4;
-    SetModel model = 5;
-    Clear clear = 6;
-    WithdrawQueued withdraw = 7;
-    SetEffort effort = 8;
-    SendQueuedNow send_now = 9;
-    StopJob stop_job = 10;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Usage (for both Claude kinds)
@@ -189,19 +151,6 @@ message ClaudeUsageWindow {
 // ---------------------------------------------------------------------------
 // Answers (for both Claude kinds)
 // ---------------------------------------------------------------------------
-
-// Rejected REFUSAL_CLOSED_ASK if ask_key is not open.
-message ClaudeAnswer {
-  string ask_key = 1;
-  oneof of {
-    PermissionAnswer permission = 2;
-    QuestionAnswer question = 3;
-    PlanAnswer plan = 4;
-    FormAnswer form = 5;
-    LinkAnswer link = 6;
-    ReplyInstead reply = 7;
-  }
-}
 
 message PermissionAnswer {
   oneof of {

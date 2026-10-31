@@ -18,8 +18,8 @@ use tonic::{Code, Request};
 use wire::agent_service_server::AgentService as _;
 use wire::session_service_server::SessionService as _;
 use wire::{
-    AgentRef, ClaudeSdkInput, Input, Lifecycle, PromptInput, SendInputRequest, SendInputResponse,
-    SendMessageRequest, claude_sdk_input, send_input_response, sender,
+    AgentInput, AgentRef, Input, Lifecycle, PromptInput, SendInputRequest, SendInputResponse,
+    SendMessageRequest, agent_input, send_input_response, sender,
 };
 
 use crate::support;
@@ -51,8 +51,8 @@ async fn crash(daemon: Daemon, runtime: Arc<ProfileRuntime>) {
 fn prompt(id: &[u8], text: &str) -> Input {
     Input::new(
         id.to_vec(),
-        ClaudeSdkInput {
-            of: Some(claude_sdk_input::Of::Prompt(PromptInput {
+        AgentInput {
+            of: Some(agent_input::Of::Prompt(PromptInput {
                 text: text.to_owned(),
                 attachments: Vec::new(),
             })),
@@ -63,8 +63,8 @@ fn prompt(id: &[u8], text: &str) -> Input {
 fn interrupt(id: &[u8]) -> Input {
     Input::new(
         id.to_vec(),
-        ClaudeSdkInput {
-            of: Some(claude_sdk_input::Of::Interrupt(wire::Interrupt {})),
+        AgentInput {
+            of: Some(agent_input::Of::Interrupt(wire::Interrupt {})),
         },
     )
 }

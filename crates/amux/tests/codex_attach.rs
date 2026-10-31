@@ -15,7 +15,7 @@ use support::desk::{Desk, LONG_GRACE_SECS, say};
 use support::term::Term;
 use support::{chat, client, says, until};
 use wire::{
-    CodexInput, Decision, Input, Phase, ResolveAgentRequest, SendInputRequest, codex_input,
+    AgentInput, Decision, Input, Phase, ResolveAgentRequest, SendInputRequest, agent_input,
     send_input_response,
 };
 
@@ -130,10 +130,10 @@ async fn codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux() {
             agent_id: coder.clone(),
             input: Some(Input::new(
                 b"approve-1".to_vec(),
-                CodexInput {
-                    of: Some(codex_input::Of::Answer(wire::CodexAnswer {
+                AgentInput {
+                    of: Some(agent_input::Of::Answer(wire::Answer {
                         ask_key: request.clone(),
-                        of: Some(wire::codex_answer::Of::Approve(Decision::Approve as i32)),
+                        of: Some(wire::answer::Of::Approve(Decision::Approve as i32)),
                     })),
                 },
             )),

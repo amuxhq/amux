@@ -157,7 +157,7 @@ fn nothing_is_kept_between_opens() {
             ev_snapshot(snapshot(kind, 2, Phase::Idle, &[], &[])),
         );
         apply_checked(&mut first, ev_item(text(kind, 1, 2, "a")));
-        apply_checked(&mut first, Msg::Send(prompt_input(kind, b"p1", "hi")));
+        apply_checked(&mut first, Msg::Send(prompt_input(b"p1", "hi")));
         let reopened = SessionState::new(agent(kind), CAP);
         assert_eq!(reopened, SessionState::new(agent(kind), CAP));
         assert!(reopened.transcript().is_empty());

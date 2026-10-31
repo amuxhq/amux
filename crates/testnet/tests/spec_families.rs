@@ -23,8 +23,7 @@ use uuid::Uuid;
 use wire::agent_service_server::AgentService as _;
 use wire::session_service_server::SessionService as _;
 use wire::{
-    AgentRef, ClaudeSdkInput, CreateAgentRequest, InventoryEvent, Kind, Lifecycle, Phase,
-    claude_sdk_input,
+    AgentInput, AgentRef, CreateAgentRequest, InventoryEvent, Kind, Lifecycle, Phase, agent_input,
 };
 
 fn text(text: &str) -> Step {
@@ -85,8 +84,8 @@ fn message(id: &[u8], to: &AgentRef, text: &str) -> wire::SendMessageRequest {
 fn interrupt() -> wire::Input {
     wire::Input::new(
         Uuid::new_v4().as_bytes().to_vec(),
-        ClaudeSdkInput {
-            of: Some(claude_sdk_input::Of::Interrupt(wire::Interrupt {})),
+        AgentInput {
+            of: Some(agent_input::Of::Interrupt(wire::Interrupt {})),
         },
     )
 }

@@ -47,10 +47,9 @@ use prost::Message as _;
 use serde::Deserialize;
 use serde_json::Value;
 use wire::{
-    AgentSpec, ClaudeAnswer, CodexAnswer, Envelope, Input, Item, Phase, PromptInput,
-    SendInputResponse, SendQueuedNow, Sender, SessionEvent, Snapshot, Step, WithdrawQueued,
-    claude_answer, claude_pty_input, claude_sdk_input, codex_input, send_input_response, sender,
-    session_event,
+    AgentSpec, Answer, Envelope, Input, Item, Phase, PromptInput, SendInputResponse, SendQueuedNow,
+    Sender, SessionEvent, Snapshot, Step, WithdrawQueued, agent_input, answer, send_input_response,
+    sender, session_event,
 };
 
 use crate::serde_pb::{from_hex, to_hex};
@@ -810,7 +809,7 @@ fn withdraw(target: &str) -> WithdrawQueued {
     }
 }
 
-fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
+fn claude_answer(ask: &str, answer: &Value) -> Option<Answer> {
     let text = |value: &Value, key: &str| {
         value
             .get(key)
@@ -819,7 +818,7 @@ fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
             .to_owned()
     };
     let of = if let Some(allow) = answer.get("allow") {
-        claude_answer::Of::Permission(wire::PermissionAnswer {
+        answer::Of::Permission(wire::PermissionAnswer {
             of: Some(wire::permission_answer::Of::Allow(wire::PermissionAllow {
                 scope: allow
                     .get("scope")
@@ -828,7 +827,7 @@ fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
             })),
         })
     } else if let Some(deny) = answer.get("deny") {
-        claude_answer::Of::Permission(wire::PermissionAnswer {
+        answer::Of::Permission(wire::PermissionAnswer {
             of: Some(wire::permission_answer::Of::Deny(wire::PermissionDeny {
                 note: text(deny, "note"),
                 stop: deny.get("stop").and_then(Value::as_bool).unwrap_or(false),
@@ -840,7 +839,7 @@ fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
             .get("switching")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        claude_answer::Of::Plan(wire::PlanAnswer {
+        answer::Of::Plan(wire::PlanAnswer {
             choice: if switching {
                 wire::PlanChoice::StartSwitching
             } else {
@@ -849,18 +848,18 @@ fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
             note: None,
         })
     } else if answer.get("selected").is_some() {
-        claude_answer::Of::Question(question_answer(answer))
+        answer::Of::Question(question_answer(answer))
     } else if let Some(reply) = answer.get("reply") {
-        claude_answer::Of::Reply(reply_instead(reply))
+        answer::Of::Reply(reply_instead(reply))
     } else if let Some(link) = answer.get("link") {
-        claude_answer::Of::Link(wire::LinkAnswer {
+        answer::Of::Link(wire::LinkAnswer {
             action: wire::FormAction::from_str_name(&format!(
                 "FORM_ACTION_{}",
                 text(link, "action").to_uppercase()
             ))? as i32,
         })
     } else if let Some(form) = answer.get("form") {
-        claude_answer::Of::Form(wire::FormAnswer {
+        answer::Of::Form(wire::FormAnswer {
             action: wire::FormAction::from_str_name(&format!(
                 "FORM_ACTION_{}",
                 text(form, "action").to_uppercase()
@@ -872,12 +871,12 @@ fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
         })
     } else {
         let send_back = answer.get("send_back")?;
-        claude_answer::Of::Plan(wire::PlanAnswer {
+        answer::Of::Plan(wire::PlanAnswer {
             choice: wire::PlanChoice::KeepPlanning as i32,
             note: Some(text(send_back, "note")).filter(|note| !note.is_empty()),
         })
     };
-    Some(ClaudeAnswer {
+    Some(Answer {
         ask_key: ask.to_owned(),
         of: Some(of),
     })
@@ -885,7 +884,7 @@ fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
 
 /// The shared fixture vocabulary as a Claude PTY input.
 pub fn claude_pty_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
-    use claude_pty_input::Of;
+    use agent_input::Of;
     let of = match input {
         FixtureInput::Prompt { text } => Of::Prompt(prompt(text)),
         FixtureInput::Withdraw { target } => Of::Withdraw(withdraw(target)),
@@ -902,12 +901,12 @@ pub fn claude_pty_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input
         | FixtureInput::Mode { .. }
         | FixtureInput::Effort { .. } => return None,
     };
-    Some(Input::new(input_id, wire::ClaudePtyInput { of: Some(of) }))
+    Some(Input::new(input_id, wire::AgentInput { of: Some(of) }))
 }
 
 /// The shared fixture vocabulary as a Claude SDK input.
 pub fn claude_sdk_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
-    use claude_sdk_input::Of;
+    use agent_input::Of;
     let of = match input {
         FixtureInput::Prompt { text } => Of::Prompt(prompt(text)),
         FixtureInput::Withdraw { target } => Of::Withdraw(withdraw(target)),
@@ -928,12 +927,12 @@ pub fn claude_sdk_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input
         | FixtureInput::Mode { .. }
         | FixtureInput::Raw { .. } => return None,
     };
-    Some(Input::new(input_id, wire::ClaudeSdkInput { of: Some(of) }))
+    Some(Input::new(input_id, wire::AgentInput { of: Some(of) }))
 }
 
 /// The shared fixture vocabulary as a Codex input.
 pub fn codex_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
-    use codex_input::Of;
+    use agent_input::Of;
     let of = match input {
         FixtureInput::Prompt { text } => Of::Prompt(prompt(text)),
         FixtureInput::Withdraw { target } => Of::Withdraw(withdraw(target)),
@@ -956,7 +955,7 @@ pub fn codex_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
         | FixtureInput::CyclePermissionMode {}
         | FixtureInput::Raw { .. } => return None,
     };
-    Some(Input::new(input_id, wire::CodexInput { of: Some(of) }))
+    Some(Input::new(input_id, wire::AgentInput { of: Some(of) }))
 }
 
 /// One response per question: an option index, a list of indices for a
@@ -1024,8 +1023,8 @@ fn reply_instead(reply: &Value) -> wire::ReplyInstead {
     }
 }
 
-fn codex_answer(ask: &str, answer: &Value) -> Option<CodexAnswer> {
-    use wire::codex_answer::Of;
+fn codex_answer(ask: &str, answer: &Value) -> Option<Answer> {
+    use wire::answer::Of;
     let action = |value: &Value| {
         wire::FormAction::from_str_name(&format!(
             "FORM_ACTION_{}",
@@ -1096,7 +1095,7 @@ fn codex_answer(ask: &str, answer: &Value) -> Option<CodexAnswer> {
                 .unwrap_or(false),
         })
     };
-    Some(CodexAnswer {
+    Some(Answer {
         ask_key: ask.to_owned(),
         of: Some(of),
     })

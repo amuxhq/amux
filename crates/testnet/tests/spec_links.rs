@@ -392,11 +392,7 @@ async fn route_lan_signing_out_keeps_the_direct_link_and_the_session() {
         .unwrap()
         .send_input(tonic::Request::new(wire::SendInputRequest {
             agent_id: net.agent("worker").unwrap().id.as_bytes().to_vec(),
-            input: Some(testnet::prompt(
-                testnet::FakeKind::ClaudeSdk,
-                uuid::Uuid::new_v4().as_bytes(),
-                "go",
-            )),
+            input: Some(testnet::prompt(uuid::Uuid::new_v4().as_bytes(), "go")),
         }))
         .await
         .unwrap();

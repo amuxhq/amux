@@ -266,8 +266,8 @@ async fn headless_claude_gets_a_persons_image_as_an_image_block() {
     };
     let input = wire::Input::new(
         b"p1".to_vec(),
-        wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: format!("What colour is {} here?", attachments::PLACEHOLDER),
                 attachments: vec![image.clone()],
             })),
@@ -1484,8 +1484,8 @@ async fn headless_claude_gets_an_image_block_typed_by_its_bytes_and_anything_els
     );
     let input = wire::Input::new(
         b"p1".to_vec(),
-        wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: format!("{0} and {0}", attachments::PLACEHOLDER),
                 attachments: vec![png, svg],
             })),
@@ -1548,14 +1548,14 @@ async fn one_job_stops(kind: Kind) {
     let input = match kind {
         Kind::Codex => wire::Input::new(
             b"s1".to_vec(),
-            wire::CodexInput {
-                of: Some(wire::codex_input::Of::StopJob(stop)),
+            wire::AgentInput {
+                of: Some(wire::agent_input::Of::StopJob(stop)),
             },
         ),
         _ => wire::Input::new(
             b"s1".to_vec(),
-            wire::ClaudeSdkInput {
-                of: Some(wire::claude_sdk_input::Of::StopJob(stop)),
+            wire::AgentInput {
+                of: Some(wire::agent_input::Of::StopJob(stop)),
             },
         ),
     };

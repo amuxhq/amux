@@ -176,7 +176,7 @@ fn offered(card: &AskCard) -> Vec<(String, Answer, &'static str)> {
                 },
             })
             .collect();
-        answers.push(("first options".into(), question_answer(card, &first), ""));
+        answers.push(("first options".into(), question_answer(&first), ""));
         if questions.iter().all(|question| question.allow_other) {
             let typed: Vec<QuestionResponse> = questions
                 .iter()
@@ -185,7 +185,7 @@ fn offered(card: &AskCard) -> Vec<(String, Answer, &'static str)> {
                     ..QuestionResponse::default()
                 })
                 .collect();
-            answers.push(("something else".into(), question_answer(card, &typed), ""));
+            answers.push(("something else".into(), question_answer(&typed), ""));
         }
         // A multi-select takes ticked options and typed words together.
         if questions
@@ -203,14 +203,14 @@ fn offered(card: &AskCard) -> Vec<(String, Answer, &'static str)> {
                 .collect();
             answers.push((
                 "picks and something else".into(),
-                question_answer(card, &both),
+                question_answer(&both),
                 "",
             ));
         }
         if card.question_skip {
             let mut skipped = first.clone();
             skipped[0] = QuestionResponse::skip();
-            answers.push(("one skipped".into(), question_answer(card, &skipped), ""));
+            answers.push(("one skipped".into(), question_answer(&skipped), ""));
         }
         if card.question_reply {
             let mut so_far = vec![QuestionResponse::skip(); questions.len()];
@@ -218,7 +218,7 @@ fn offered(card: &AskCard) -> Vec<(String, Answer, &'static str)> {
             so_far[0].other = first[0].other.clone();
             answers.push((
                 "reply instead".into(),
-                reply_answer(card, "Let's talk it through first", &so_far),
+                reply_answer("Let's talk it through first", &so_far),
                 "",
             ));
         }
@@ -272,10 +272,7 @@ where
             }
             for (choice, answer, note) in offered(&card) {
                 let at = format!("{dir}/{name} after {label:.80}: {} {choice}", card.key);
-                let Some(mut input) = answer_input(&card, &answer, note) else {
-                    failures.push(format!("{at}: no input"));
-                    continue;
-                };
+                let mut input = answer_input(&card, &answer, note);
                 input.input_id = format!("answer {choice}").into_bytes();
                 let mut fork = driven.clone();
                 let replies = fork.step::<I>(Some(Event::Input(input.clone())));
@@ -486,11 +483,11 @@ fn a_multi_select_answer_keeps_its_picks_beside_something_else() {
             },
         })
         .collect();
-    let answer = question_answer(&card, &given);
-    let Answer::Claude(wire::ClaudeAnswer {
-        of: Some(wire::claude_answer::Of::Question(sent)),
+    let answer = question_answer(&given);
+    let wire::Answer {
+        of: Some(wire::answer::Of::Question(sent)),
         ..
-    }) = &answer
+    } = &answer
     else {
         panic!("{answer:?}");
     };
@@ -501,7 +498,7 @@ fn a_multi_select_answer_keeps_its_picks_beside_something_else() {
     assert_eq!(sent.answers[multi].selected, [0, 1]);
     assert_eq!(sent.answers[multi].other.as_deref(), Some("and the docs"));
 
-    let mut input = answer_input(&card, &answer, "").expect("an input");
+    let mut input = answer_input(&card, &answer, "");
     input.input_id = b"both".to_vec();
     let replies = driven.step::<ClaudePty>(Some(Event::Input(input)));
     assert!(

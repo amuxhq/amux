@@ -21,10 +21,10 @@ use claude_protocol::stream::{
 };
 use serde::Deserialize;
 use wire::{
-    ClaudeAnswer, ClaudeSdkInput, FormAction, FormAnswer, Input, Interrupt, LinkAnswer,
-    PermissionAllow, PermissionAnswer, PermissionDeny, PlanAnswer, PlanChoice, PromptInput,
-    QuestionAnswer, QuestionResponse, ReplyInstead, SendQueuedNow, SetEffort, SetModel,
-    SetPermission, claude_answer, claude_sdk_input, permission_answer,
+    AgentInput, Answer, FormAction, FormAnswer, Input, Interrupt, LinkAnswer, PermissionAllow,
+    PermissionAnswer, PermissionDeny, PlanAnswer, PlanChoice, PromptInput, QuestionAnswer,
+    QuestionResponse, ReplyInstead, SendQueuedNow, SetEffort, SetModel, SetPermission, agent_input,
+    answer, permission_answer,
 };
 
 use crate::claude_common::{AnsweredResult, PLAN_TOOL, QUESTION_TOOL, QuestionInput, message_text};
@@ -123,8 +123,8 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
             if turn_running {
                 send_now = Some(Input::new(
                     format!("stdin-{inputs}-now").into_bytes(),
-                    ClaudeSdkInput {
-                        of: Some(claude_sdk_input::Of::SendNow(SendQueuedNow {
+                    AgentInput {
+                        of: Some(agent_input::Of::SendNow(SendQueuedNow {
                             queued_input_id: id.clone(),
                         })),
                     },
@@ -133,26 +133,24 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
             turn_running = true;
         }
         let arm = match written {
-            Written::User(user) => Some(claude_sdk_input::Of::Prompt(PromptInput {
+            Written::User(user) => Some(agent_input::Of::Prompt(PromptInput {
                 text: message_text(&user.message.content),
                 ..Default::default()
             })),
             Written::ControlRequest(request) => match request.request {
-                ControlRequestBody::Interrupt(_) => {
-                    Some(claude_sdk_input::Of::Interrupt(Interrupt {}))
-                }
+                ControlRequestBody::Interrupt(_) => Some(agent_input::Of::Interrupt(Interrupt {})),
                 ControlRequestBody::SetModel(set) => {
-                    Some(claude_sdk_input::Of::Model(SetModel { model: set.model }))
+                    Some(agent_input::Of::Model(SetModel { model: set.model }))
                 }
                 ControlRequestBody::SetPermissionMode(set) => {
-                    Some(claude_sdk_input::Of::Permission(SetPermission {
+                    Some(agent_input::Of::Permission(SetPermission {
                         value: set.mode.as_str().to_owned(),
                     }))
                 }
                 ControlRequestBody::ApplyFlagSettings(apply) => apply
                     .settings
                     .effort_level
-                    .map(|effort| claude_sdk_input::Of::Effort(SetEffort { effort })),
+                    .map(|effort| agent_input::Of::Effort(SetEffort { effort })),
                 _ => None,
             },
             Written::ControlResponse(response) => {
@@ -161,7 +159,7 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                     .get(&request_id)
                     .and_then(|request| answer(request, &response))
                     .map(|body| {
-                        claude_sdk_input::Of::Answer(ClaudeAnswer {
+                        agent_input::Of::Answer(Answer {
                             ask_key: request_id,
                             of: Some(body),
                         })
@@ -170,10 +168,7 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
             Written::Unknown(_) => None,
         };
         if let Some(arm) = arm {
-            push(Event::Input(Input::new(
-                id,
-                ClaudeSdkInput { of: Some(arm) },
-            )));
+            push(Event::Input(Input::new(id, AgentInput { of: Some(arm) })));
         }
         if let Some(send_now) = send_now {
             push(Event::Input(send_now));
@@ -196,7 +191,7 @@ fn timestamp_ms(line: &Line) -> Option<i64> {
 }
 
 /// The answer a recorded control response gave to the request it answers.
-fn answer(request: &ControlRequestBody, response: &ControlResponse) -> Option<claude_answer::Of> {
+fn answer(request: &ControlRequestBody, response: &ControlResponse) -> Option<answer::Of> {
     match request {
         ControlRequestBody::Elicitation(asked) => {
             let (action, content) = match response.result::<ElicitationResult>() {
@@ -208,11 +203,11 @@ fn answer(request: &ControlRequestBody, response: &ControlResponse) -> Option<cl
             };
             // A link carries no content: the person went to the page.
             if asked.mode.as_deref() == Some("url") {
-                return Some(claude_answer::Of::Link(LinkAnswer {
+                return Some(answer::Of::Link(LinkAnswer {
                     action: action as i32,
                 }));
             }
-            Some(claude_answer::Of::Form(FormAnswer {
+            Some(answer::Of::Form(FormAnswer {
                 action: action as i32,
                 content_json: content
                     .map(|content| content.to_string().into_bytes())
@@ -239,7 +234,7 @@ fn answer(request: &ControlRequestBody, response: &ControlResponse) -> Option<cl
                 None => (false, None, None, String::new(), false),
             };
             match asked.tool_name.as_str() {
-                PLAN_TOOL => Some(claude_answer::Of::Plan(if allow {
+                PLAN_TOOL => Some(answer::Of::Plan(if allow {
                     match chosen {
                         Some(PermissionUpdate::SetMode { mode, .. })
                             if !matches!(
@@ -266,7 +261,7 @@ fn answer(request: &ControlRequestBody, response: &ControlResponse) -> Option<cl
                 QUESTION_TOOL if allow => {
                     let answered = AnsweredResult::deserialize(updated_input.as_ref()?).ok()?;
                     let questions = QuestionInput::deserialize(&asked.input).ok()?;
-                    Some(claude_answer::Of::Question(QuestionAnswer {
+                    Some(answer::Of::Question(QuestionAnswer {
                         answers: questions
                             .questions
                             .iter()
@@ -303,12 +298,12 @@ fn answer(request: &ControlRequestBody, response: &ControlResponse) -> Option<cl
                 }
                 // Refused with words of the person's own: replied instead.
                 QUESTION_TOOL if !message.is_empty() && !stop => {
-                    Some(claude_answer::Of::Reply(ReplyInstead {
+                    Some(answer::Of::Reply(ReplyInstead {
                         text: message,
                         answers_so_far: Vec::new(),
                     }))
                 }
-                _ => Some(claude_answer::Of::Permission(PermissionAnswer {
+                _ => Some(answer::Of::Permission(PermissionAnswer {
                     of: Some(if allow {
                         let offered = asked.permission_suggestions.as_deref().unwrap_or_default();
                         let scope = chosen

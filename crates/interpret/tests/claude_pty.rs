@@ -998,8 +998,8 @@ fn a_permission_amux_cycles_is_in_the_snapshot_at_once() {
         })),
         Event::Input(wire::Input::new(
             b"k1".to_vec(),
-            wire::ClaudePtyInput {
-                of: Some(wire::claude_pty_input::Of::CyclePermissionMode(
+            wire::AgentInput {
+                of: Some(wire::agent_input::Of::CyclePermissionMode(
                     wire::CyclePermissionMode {},
                 )),
             },
@@ -1384,8 +1384,8 @@ fn auto_mode_is_in_the_plan_switch_and_the_cycle_where_claude_offers_it() {
             &mut state,
             Event::Input(wire::Input::new(
                 format!("k{at}").into_bytes(),
-                wire::ClaudePtyInput {
-                    of: Some(wire::claude_pty_input::Of::CyclePermissionMode(
+                wire::AgentInput {
+                    of: Some(wire::agent_input::Of::CyclePermissionMode(
                         wire::CyclePermissionMode {},
                     )),
                 },
@@ -1449,8 +1449,8 @@ fn before_claude_names_its_model_the_launched_one_decides_auto_mode() {
             &mut state,
             Event::Input(wire::Input::new(
                 format!("k{at}").into_bytes(),
-                wire::ClaudePtyInput {
-                    of: Some(wire::claude_pty_input::Of::CyclePermissionMode(
+                wire::AgentInput {
+                    of: Some(wire::agent_input::Of::CyclePermissionMode(
                         wire::CyclePermissionMode {},
                     )),
                 },

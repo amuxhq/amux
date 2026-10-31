@@ -442,12 +442,12 @@ fn item(order: u64, revision: u64, text: &str, kind: claude_item::Kind) -> Item 
 fn prompt() -> wire::Input {
     wire::Input::new(
         INPUT.to_vec(),
-        wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        wire::AgentInput {
+            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
                 text: "and then this".into(),
                 attachments: Vec::new(),
             })),
-        }),
+        },
     )
 }
 

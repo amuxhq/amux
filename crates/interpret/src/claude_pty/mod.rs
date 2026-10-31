@@ -114,9 +114,9 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, Ask, AskClosed, Attachment, BoundaryKind, ClaudeAnswer, ClaudeGrant, ClaudeSnapshot,
-    DecisionOutcome, Envelope, Input, KindInput, Refusal, RunningCall, Step, SubagentProgress,
-    ToolDecision, claude_answer, claude_item, claude_pty_input, tool_decision,
+    AgentSpec, Answer, Ask, AskClosed, Attachment, BoundaryKind, ClaudeGrant, ClaudeSnapshot,
+    DecisionOutcome, Envelope, Input, Refusal, RunningCall, Step, SubagentProgress, ToolDecision,
+    agent_input, answer, claude_item, tool_decision,
 };
 
 use crate::claude_answers::{self, AnswerShape, Decided};
@@ -1247,30 +1247,29 @@ impl State {
 
     fn input(&mut self, emit: &mut Emit, input: Input) {
         let id = input.input_id.clone();
-        // Another kind's input, or an arm a newer client sends that this
-        // version cannot read.
+        // An arm a newer client sends that this version cannot read.
         let arm = match input.decode_body() {
-            Some(KindInput::ClaudePty(wire::ClaudePtyInput { of: Some(arm) })) => arm,
+            Some(wire::AgentInput { of: Some(arm) }) => arm,
             _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
             // Claude's own view shows a conversation that is not this
             // agent's: nothing is typed into it.
-            claude_pty_input::Of::Prompt(_) if self.provider.switched_away => {
+            agent_input::Of::Prompt(_) if self.provider.switched_away => {
                 self.shared
                     .reject(emit, &id, Refusal::ConversationElsewhere)
             }
-            claude_pty_input::Of::Prompt(prompt) => {
+            agent_input::Of::Prompt(prompt) => {
                 self.dismiss_plan(emit);
                 if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, human()) {
                     self.typed(emit, entry);
                 }
             }
-            claude_pty_input::Of::Withdraw(withdraw) => {
+            agent_input::Of::Withdraw(withdraw) => {
                 self.shared.withdraw(emit, &id, &withdraw.queued_input_id)
             }
             // Back to this agent's conversation: Claude's own resume of it.
-            claude_pty_input::Of::SwitchBack(_) => {
+            agent_input::Of::SwitchBack(_) => {
                 let ours = self.provider.session.clone();
                 match ours.filter(|_| self.provider.switched_away) {
                     Some(session) => {
@@ -1288,7 +1287,7 @@ impl State {
             // message do. Claude's send-now chord is not used: it moves a
             // running command to the background or cancels the reply being
             // written. Nothing is typed over an open menu.
-            claude_pty_input::Of::SendNow(send) => {
+            agent_input::Of::SendNow(send) => {
                 let running = self.shared.is_busy() && self.shared.asks().is_empty();
                 if let Some(entry) = self
                     .shared
@@ -1300,23 +1299,29 @@ impl State {
                     }));
                 }
             }
-            claude_pty_input::Of::Interrupt(_) => {
+            agent_input::Of::Interrupt(_) => {
                 self.interrupt(emit);
                 self.shared.accept(emit, &id, false);
             }
-            claude_pty_input::Of::Clear(_) => {
+            agent_input::Of::Clear(_) => {
                 emit.effect(Effect::Terminal(TerminalInput::Clear));
                 self.shared.accept(emit, &id, false);
             }
             // amux knows Claude's cycle, so the permission it moves to is
             // recorded at once; Claude's next record of it confirms it.
-            claude_pty_input::Of::CyclePermissionMode(_) => {
+            agent_input::Of::CyclePermissionMode(_) => {
                 emit.effect(Effect::Terminal(TerminalInput::CyclePermissionMode));
                 let next = self.next_permission();
                 self.permission_seen(emit, &next);
                 self.shared.accept(emit, &id, false);
             }
-            claude_pty_input::Of::Answer(answer) => self.answer(emit, &id, answer),
+            agent_input::Of::Answer(answer) => self.answer(emit, &id, answer),
+            // Settings terminal Claude takes at its own terminal only.
+            agent_input::Of::Permission(_)
+            | agent_input::Of::Model(_)
+            | agent_input::Of::Effort(_)
+            | agent_input::Of::StopJob(_)
+            | agent_input::Of::Mode(_) => self.shared.reject(emit, &id, Refusal::Unsupported),
         }
     }
 
@@ -1324,7 +1329,7 @@ impl State {
     /// handed to Claude as the output of the hook it waits on, the decision
     /// headless Claude would be handed. The ask closes with the outcome the
     /// answer carries.
-    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: ClaudeAnswer) {
+    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: Answer) {
         let key = answer.ask_key;
         if self.shared.asks().get(&key).is_none() {
             self.shared.answer(emit, id, &key);
@@ -1350,10 +1355,10 @@ impl State {
         // A tool server's form or link is the ask's own item, closed with
         // what was sent.
         let dialog = match (&parsed, &body) {
-            (Some(claude_answer::Of::Form(form)), Some(wire::ask::Body::Form(asked))) => {
+            (Some(answer::Of::Form(form)), Some(wire::ask::Body::Form(asked))) => {
                 Some(ask_item::form_sent(form, &asked.schema_json))
             }
-            (Some(claude_answer::Of::Link(link)), _) => Some(ask_item::link_answered(link.action)),
+            (Some(answer::Of::Link(link)), _) => Some(ask_item::link_answered(link.action)),
             _ => None,
         };
         let Some((decision, decided)) = parsed.and_then(|parsed| {
@@ -1415,15 +1420,9 @@ impl State {
 impl State {
     /// The trust question answered through amux: its first answer trusts
     /// the folder, its second exits.
-    fn answer_trust(
-        &mut self,
-        emit: &mut Emit,
-        id: &[u8],
-        key: &str,
-        parsed: Option<claude_answer::Of>,
-    ) {
+    fn answer_trust(&mut self, emit: &mut Emit, id: &[u8], key: &str, parsed: Option<answer::Of>) {
         let trust = match &parsed {
-            Some(claude_answer::Of::Question(answer))
+            Some(answer::Of::Question(answer))
                 if answer
                     .answers
                     .iter()
@@ -1439,7 +1438,7 @@ impl State {
             }
             _ => None,
         };
-        let (Some(trust), Some(claude_answer::Of::Question(answer))) = (trust, parsed) else {
+        let (Some(trust), Some(answer::Of::Question(answer))) = (trust, parsed) else {
             return self.shared.reject(emit, id, Refusal::Unsupported);
         };
         let Some(ask) = self.shared.answer(emit, id, key) else {
@@ -1547,12 +1546,7 @@ impl Interpreter for ClaudePty {
     }
 
     fn redact(target: RedactTarget) -> RedactTarget {
-        crate::redact::redact_kind::<
-            wire::ClaudeItem,
-            wire::ClaudeSnapshot,
-            wire::ClaudePtyInput,
-            State,
-        >(target)
+        crate::redact::redact_kind::<wire::ClaudeItem, wire::ClaudeSnapshot, State>(target)
     }
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {

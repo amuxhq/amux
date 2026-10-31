@@ -4466,49 +4466,6 @@ impl ::prost::Name for RunningCall {
         "type.googleapis.com/amux.v1.RunningCall".into()
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClaudePtyInput {
-    #[prost(oneof = "claude_pty_input::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
-    pub of: ::core::option::Option<claude_pty_input::Of>,
-}
-/// Nested message and enum types in `ClaudePtyInput`.
-pub mod claude_pty_input {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Of {
-        #[prost(message, tag = "1")]
-        Prompt(super::PromptInput),
-        #[prost(message, tag = "2")]
-        Answer(super::ClaudeAnswer),
-        /// Terminal Claude's permission-mode cycle, the one keystroke a remote
-        /// client sends; the agent process emits the bytes for the Claude it
-        /// runs. Raw terminal bytes never cross the wire; anything else is
-        /// typed at the machine.
-        #[prost(message, tag = "3")]
-        CyclePermissionMode(super::CyclePermissionMode),
-        #[prost(message, tag = "4")]
-        Clear(super::Clear),
-        #[prost(message, tag = "5")]
-        Interrupt(super::Interrupt),
-        #[prost(message, tag = "6")]
-        Withdraw(super::WithdrawQueued),
-        #[prost(message, tag = "7")]
-        SendNow(super::SendQueuedNow),
-        /// Back to this agent's conversation after Claude's own view switched
-        /// away: types `/resume <this agent's session>`.
-        #[prost(message, tag = "8")]
-        SwitchBack(super::SwitchBack),
-    }
-}
-impl ::prost::Name for ClaudePtyInput {
-    const NAME: &'static str = "ClaudePtyInput";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ClaudePtyInput".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ClaudePtyInput".into()
-    }
-}
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CyclePermissionMode {}
 impl ::prost::Name for CyclePermissionMode {
@@ -4531,47 +4488,6 @@ impl ::prost::Name for SwitchBack {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.SwitchBack".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClaudeSdkInput {
-    #[prost(oneof = "claude_sdk_input::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
-    pub of: ::core::option::Option<claude_sdk_input::Of>,
-}
-/// Nested message and enum types in `ClaudeSdkInput`.
-pub mod claude_sdk_input {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Of {
-        #[prost(message, tag = "1")]
-        Prompt(super::PromptInput),
-        #[prost(message, tag = "2")]
-        Answer(super::ClaudeAnswer),
-        #[prost(message, tag = "3")]
-        Interrupt(super::Interrupt),
-        #[prost(message, tag = "4")]
-        Permission(super::SetPermission),
-        #[prost(message, tag = "5")]
-        Model(super::SetModel),
-        #[prost(message, tag = "6")]
-        Clear(super::Clear),
-        #[prost(message, tag = "7")]
-        Withdraw(super::WithdrawQueued),
-        #[prost(message, tag = "8")]
-        Effort(super::SetEffort),
-        #[prost(message, tag = "9")]
-        SendNow(super::SendQueuedNow),
-        #[prost(message, tag = "10")]
-        StopJob(super::StopJob),
-    }
-}
-impl ::prost::Name for ClaudeSdkInput {
-    const NAME: &'static str = "ClaudeSdkInput";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ClaudeSdkInput".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ClaudeSdkInput".into()
     }
 }
 /// Claude's usage limits. `state` says whether the agent can work at all,
@@ -4614,42 +4530,6 @@ impl ::prost::Name for ClaudeUsageWindow {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.ClaudeUsageWindow".into()
-    }
-}
-/// Rejected REFUSAL_CLOSED_ASK if ask_key is not open.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClaudeAnswer {
-    #[prost(string, tag = "1")]
-    pub ask_key: ::prost::alloc::string::String,
-    #[prost(oneof = "claude_answer::Of", tags = "2, 3, 4, 5, 6, 7")]
-    pub of: ::core::option::Option<claude_answer::Of>,
-}
-/// Nested message and enum types in `ClaudeAnswer`.
-pub mod claude_answer {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Of {
-        #[prost(message, tag = "2")]
-        Permission(super::PermissionAnswer),
-        #[prost(message, tag = "3")]
-        Question(super::QuestionAnswer),
-        #[prost(message, tag = "4")]
-        Plan(super::PlanAnswer),
-        #[prost(message, tag = "5")]
-        Form(super::FormAnswer),
-        #[prost(message, tag = "6")]
-        Link(super::LinkAnswer),
-        #[prost(message, tag = "7")]
-        Reply(super::ReplyInstead),
-    }
-}
-impl ::prost::Name for ClaudeAnswer {
-    const NAME: &'static str = "ClaudeAnswer";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ClaudeAnswer".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ClaudeAnswer".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -5326,87 +5206,6 @@ impl ::prost::Name for McpToolApproval {
         "type.googleapis.com/amux.v1.McpToolApproval".into()
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CodexInput {
-    #[prost(oneof = "codex_input::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
-    pub of: ::core::option::Option<codex_input::Of>,
-}
-/// Nested message and enum types in `CodexInput`.
-pub mod codex_input {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Of {
-        #[prost(message, tag = "1")]
-        Prompt(super::PromptInput),
-        #[prost(message, tag = "2")]
-        Answer(super::CodexAnswer),
-        #[prost(message, tag = "3")]
-        Interrupt(super::Interrupt),
-        #[prost(message, tag = "4")]
-        Permission(super::SetPermission),
-        #[prost(message, tag = "5")]
-        Mode(super::SetMode),
-        #[prost(message, tag = "6")]
-        Model(super::SetModel),
-        #[prost(message, tag = "7")]
-        Withdraw(super::WithdrawQueued),
-        #[prost(message, tag = "8")]
-        Effort(super::SetEffort),
-        #[prost(message, tag = "9")]
-        SendNow(super::SendQueuedNow),
-        #[prost(message, tag = "10")]
-        StopJob(super::StopJob),
-    }
-}
-impl ::prost::Name for CodexInput {
-    const NAME: &'static str = "CodexInput";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.CodexInput".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.CodexInput".into()
-    }
-}
-/// Rejected REFUSAL_CLOSED_ASK if ask_key is not open. An approval is rejected
-/// REFUSAL_UNSUPPORTED when its decision is not one the ask offered.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CodexAnswer {
-    /// CodexAsk.key: the app-server request id, or amux's own key for a plan.
-    #[prost(string, tag = "1")]
-    pub ask_key: ::prost::alloc::string::String,
-    #[prost(oneof = "codex_answer::Of", tags = "2, 3, 4, 5, 6, 7, 8")]
-    pub of: ::core::option::Option<codex_answer::Of>,
-}
-/// Nested message and enum types in `CodexAnswer`.
-pub mod codex_answer {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Of {
-        #[prost(enumeration = "super::Decision", tag = "2")]
-        Approve(i32),
-        #[prost(message, tag = "3")]
-        Question(super::QuestionAnswer),
-        #[prost(message, tag = "4")]
-        Form(super::FormAnswer),
-        #[prost(message, tag = "5")]
-        Link(super::LinkAnswer),
-        #[prost(message, tag = "6")]
-        Grant(super::GrantAnswer),
-        #[prost(message, tag = "7")]
-        Plan(super::PlanAnswer),
-        #[prost(message, tag = "8")]
-        Reply(super::ReplyInstead),
-    }
-}
-impl ::prost::Name for CodexAnswer {
-    const NAME: &'static str = "CodexAnswer";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.CodexAnswer".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.CodexAnswer".into()
-    }
-}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum FileChangeKind {
@@ -5810,20 +5609,16 @@ impl ::prost::Name for GetDraftRequest {
         "type.googleapis.com/amux.v1.GetDraftRequest".into()
     }
 }
-/// A client-generated input id, the agent's kind, and that kind's input
-/// message encoded. Daemons forward the bytes untouched; only the agent of
-/// that kind decodes them, so an arm or field this daemon does not know
-/// reaches a newer agent intact. The reply is the interpreter's verdict,
-/// never a handover receipt. The daemon decodes a copy for its analytics and
-/// tolerates a copy it cannot decode.
+/// A client-generated input id and an AgentInput encoded. Daemons forward
+/// the bytes untouched; only the agent decodes them, so an arm or field this
+/// daemon does not know reaches a newer agent intact. The reply is the
+/// interpreter's verdict, never a handover receipt. The daemon decodes a copy
+/// for its analytics and tolerates a copy it cannot decode.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Input {
     #[prost(bytes = "vec", tag = "1")]
     pub input_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(enumeration = "Kind", tag = "2")]
-    pub kind: i32,
-    /// ClaudePtyInput, ClaudeSdkInput or CodexInput, as `kind` names.
-    #[prost(bytes = "vec", tag = "3")]
+    #[prost(bytes = "vec", tag = "2")]
     pub body: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for Input {
@@ -5834,6 +5629,112 @@ impl ::prost::Name for Input {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Input".into()
+    }
+}
+/// A person's input, the same message for every kind. A kind refuses an arm
+/// it does not take REFUSAL_UNSUPPORTED, as it does an arm it does not know.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AgentInput {
+    #[prost(
+        oneof = "agent_input::Of",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13"
+    )]
+    pub of: ::core::option::Option<agent_input::Of>,
+}
+/// Nested message and enum types in `AgentInput`.
+pub mod agent_input {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Of {
+        #[prost(message, tag = "1")]
+        Prompt(super::PromptInput),
+        #[prost(message, tag = "2")]
+        Answer(super::Answer),
+        #[prost(message, tag = "3")]
+        Interrupt(super::Interrupt),
+        #[prost(message, tag = "4")]
+        Clear(super::Clear),
+        #[prost(message, tag = "5")]
+        Withdraw(super::WithdrawQueued),
+        #[prost(message, tag = "6")]
+        SendNow(super::SendQueuedNow),
+        /// Headless Claude and Codex.
+        #[prost(message, tag = "7")]
+        Permission(super::SetPermission),
+        #[prost(message, tag = "8")]
+        Model(super::SetModel),
+        #[prost(message, tag = "9")]
+        Effort(super::SetEffort),
+        #[prost(message, tag = "10")]
+        StopJob(super::StopJob),
+        /// Codex.
+        #[prost(message, tag = "11")]
+        Mode(super::SetMode),
+        /// Terminal Claude's permission-mode cycle, the one keystroke a remote
+        /// client sends; the agent process emits the bytes for the Claude it
+        /// runs. Raw terminal bytes never cross the wire; anything else is
+        /// typed at the machine.
+        #[prost(message, tag = "12")]
+        CyclePermissionMode(super::CyclePermissionMode),
+        /// Terminal Claude: back to this agent's conversation after Claude's own
+        /// view switched away; types `/resume <this agent's session>`.
+        #[prost(message, tag = "13")]
+        SwitchBack(super::SwitchBack),
+    }
+}
+impl ::prost::Name for AgentInput {
+    const NAME: &'static str = "AgentInput";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AgentInput".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AgentInput".into()
+    }
+}
+/// An answer to the open ask `ask_key`: a ClaudeAsk's or CodexAsk's key (for
+/// Codex the app-server request id, or amux's own key for a plan). Rejected
+/// REFUSAL_CLOSED_ASK if the ask is not open, and REFUSAL_UNSUPPORTED for an
+/// arm the ask does not take or a decision it did not offer.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Answer {
+    #[prost(string, tag = "1")]
+    pub ask_key: ::prost::alloc::string::String,
+    #[prost(oneof = "answer::Of", tags = "2, 3, 4, 5, 6, 7, 8, 9")]
+    pub of: ::core::option::Option<answer::Of>,
+}
+/// Nested message and enum types in `Answer`.
+pub mod answer {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Of {
+        /// Claude's permission asks.
+        #[prost(message, tag = "2")]
+        Permission(super::PermissionAnswer),
+        /// Codex's approvals.
+        #[prost(enumeration = "super::Decision", tag = "3")]
+        Approve(i32),
+        #[prost(message, tag = "4")]
+        Question(super::QuestionAnswer),
+        #[prost(message, tag = "5")]
+        Plan(super::PlanAnswer),
+        #[prost(message, tag = "6")]
+        Form(super::FormAnswer),
+        #[prost(message, tag = "7")]
+        Link(super::LinkAnswer),
+        /// Codex's access grants.
+        #[prost(message, tag = "8")]
+        Grant(super::GrantAnswer),
+        #[prost(message, tag = "9")]
+        Reply(super::ReplyInstead),
+    }
+}
+impl ::prost::Name for Answer {
+    const NAME: &'static str = "Answer";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Answer".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Answer".into()
     }
 }
 /// A prompt with its client-generated input id, where a whole Input would

@@ -8,7 +8,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
-use wire::{ClaudeAnswer, CodexAnswer, claude_answer};
+use wire::answer;
 
 use crate::ask::{Answer, AskBody, AskCard, ChoiceOutcome};
 
@@ -452,16 +452,8 @@ fn read(field: &FormField, value: &FormValue) -> Result<Option<Value>, FieldProb
 /// server's schema describes. Any other answer comes back as it was.
 fn with_form_content(answer: &Answer, content_json: Vec<u8>) -> Answer {
     let mut answer = answer.clone();
-    match &mut answer {
-        Answer::Claude(ClaudeAnswer {
-            of: Some(claude_answer::Of::Form(form)),
-            ..
-        })
-        | Answer::Codex(CodexAnswer {
-            of: Some(wire::codex_answer::Of::Form(form)),
-            ..
-        }) => form.content_json = content_json,
-        _ => {}
+    if let Some(answer::Of::Form(form)) = &mut answer.of {
+        form.content_json = content_json;
     }
     answer
 }

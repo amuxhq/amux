@@ -1964,10 +1964,10 @@ async fn a_restarted_daemon_serves_the_tools_of_the_agents_it_adopts() {
     );
 }
 
-fn sdk_input(of: wire::claude_sdk_input::Of) -> wire::Input {
+fn sdk_input(of: wire::agent_input::Of) -> wire::Input {
     wire::Input::new(
         uuid::Uuid::new_v4().as_bytes().to_vec(),
-        wire::ClaudeSdkInput { of: Some(of) },
+        wire::AgentInput { of: Some(of) },
     )
 }
 
@@ -2039,10 +2039,10 @@ async fn a_resume_keeps_the_permission_and_effort_the_agent_last_ran_with() {
         .unwrap();
     let id = id_of(&agent);
     for of in [
-        wire::claude_sdk_input::Of::Permission(wire::SetPermission {
+        wire::agent_input::Of::Permission(wire::SetPermission {
             value: "acceptEdits".into(),
         }),
-        wire::claude_sdk_input::Of::Effort(wire::SetEffort {
+        wire::agent_input::Of::Effort(wire::SetEffort {
             effort: Some("high".into()),
         }),
     ] {

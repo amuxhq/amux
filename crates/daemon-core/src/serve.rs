@@ -21,8 +21,6 @@ use crate::{Daemon, Pending};
 
 /// The most items one Fetch returns, whatever the limit asked for.
 pub const MAX_PAGE: u32 = 500;
-/// The most rows a peer's catch-up may ask for.
-pub const MAX_CAP: u32 = 10_000;
 
 /// Open calls, by id: what each streams, or that it awaits a job; and the
 /// agents nothing is told about for now.
@@ -258,7 +256,6 @@ impl Daemon {
                 cap,
                 generation: held,
             } => {
-                let cap = cap.min(MAX_CAP);
                 // A cursor of another generation names revisions this
                 // origin may have minted again for different content, so
                 // it is answered as a cursor too far behind is: with a

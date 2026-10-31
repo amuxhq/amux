@@ -107,8 +107,7 @@ embedded runtime reads no configuration file and runs with the defaults.
    [performance](PERFORMANCE.md).
 
 4. **Page caps.** `ListItems` returns at most `MAX_PAGE` (500) items whatever the
-   limit, and a peer's catch-up may ask for at most 10,000 rows (`MAX_CAP`),
-   both in [`crates/node/src/serve.rs`](../crates/node/src/serve.rs). A client
+   limit, in [`crates/daemon-core/src/serve.rs`](../crates/daemon-core/src/serve.rs). A client
    asking for a 1,000-row page at a collapsed run gets 500 and asks again.
 
 5. **Blob size.** An attachment is at most `ATTACHMENT_SIZE_LIMIT` (64 MiB,

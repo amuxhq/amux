@@ -15,7 +15,7 @@ snapshot WORKING queue=[] working_on="Think briefly about the number seven, then
 item boundary:1 boundary final at=1793267890624 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Think briefly about the number seven, then reply with exactly SEVEN." at=1793267890624 asks=[] session=95afdfa5-62ca-4887-9267-dcaacb8afc35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 8 recorded 7: fact Stream type=system subtype=status uuid=4877ce12-32af-4fe9-bda1-2d7be57bf485
-item 4877ce12-32af-4fe9-bda1-2d7be57bf485 status final at=1793267890626 text="" SDK_STATUS_REQUESTING requesting
+item 4877ce12-32af-4fe9-bda1-2d7be57bf485 status final at=1793267890626 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 10 recorded 9: fact Stream type=stream_event uuid=0431f4ea-45a9-4ea5-b8cc-79f7ee50aa0c
 snapshot WORKING queue=[] working_on="Think briefly about the number seven, then reply with exactly SEVEN." at=1793267891475 asks=[] session=95afdfa5-62ca-4887-9267-dcaacb8afc35 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23730/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 11 recorded 10: fact Stream type=stream_event uuid=d34f0b5e-4a3c-4b7f-87ca-45bf00d406db

@@ -172,7 +172,6 @@ impl State {
                 if let Some(word) = status.status.as_deref().map(without_terminal_codes) {
                     let typed = match word.as_str() {
                         "compacting" => wire::SdkStatus::Compacting,
-                        "requesting" => wire::SdkStatus::Requesting,
                         _ => wire::SdkStatus::Unspecified,
                     };
                     self.shared.item(

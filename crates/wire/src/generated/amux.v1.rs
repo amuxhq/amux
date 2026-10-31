@@ -5005,7 +5005,6 @@ impl TaskState {
 pub enum SdkStatus {
     Unspecified = 0,
     Compacting = 1,
-    Requesting = 2,
 }
 impl SdkStatus {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -5016,7 +5015,6 @@ impl SdkStatus {
         match self {
             Self::Unspecified => "SDK_STATUS_UNSPECIFIED",
             Self::Compacting => "SDK_STATUS_COMPACTING",
-            Self::Requesting => "SDK_STATUS_REQUESTING",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -5024,7 +5022,6 @@ impl SdkStatus {
         match value {
             "SDK_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
             "SDK_STATUS_COMPACTING" => Some(Self::Compacting),
-            "SDK_STATUS_REQUESTING" => Some(Self::Requesting),
             _ => None,
         }
     }

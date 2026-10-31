@@ -17,7 +17,7 @@ snapshot WORKING queue=[] working_on="Plan changing README.md's only line from C
 item boundary:1 boundary final at=1791344082880 text="" BOUNDARY_KIND_STARTED
 snapshot WORKING queue=[] working_on="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval." at=1791344082880 asks=[] session=513299b0-01fe-4d8c-9f53-1db4e708a4fa model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 14 recorded 13: fact Stream type=system subtype=status uuid=52646844-f0bc-4e9b-9488-204897e68a44
-item 52646844-f0bc-4e9b-9488-204897e68a44 status final at=1791344082882 text="" SDK_STATUS_REQUESTING requesting
+item 52646844-f0bc-4e9b-9488-204897e68a44 status final at=1791344082882 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 17 recorded 16: fact Stream type=stream_event uuid=0704086b-1a03-497a-ab5a-b3ddfe3339cf
 snapshot WORKING queue=[] working_on="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval." at=1791344083650 asks=[] session=513299b0-01fe-4d8c-9f53-1db4e708a4fa model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=plan context=19656/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 69 recorded 68: fact Stream type=assistant uuid=00f4438a-0e62-4934-8369-953f71501810
@@ -31,7 +31,7 @@ item toolu_01FQVocCu5r4uTMaVSifk7QA tool final at=1791344084838 text="" ToolSear
 ## 92 recorded 91: fact Stream type=rate_limit_event uuid=2c4c6344-9456-44da-b1f9-3a32d1295514
 snapshot WORKING queue=[] working_on="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval." at=1791344085430 asks=[] session=513299b0-01fe-4d8c-9f53-1db4e708a4fa model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=? mode=plan context=19656/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 94 recorded 93: fact Stream type=system subtype=status uuid=a47a4da3-a559-4ded-9cdd-14c59d3d8755
-item a47a4da3-a559-4ded-9cdd-14c59d3d8755 status final at=1791344085436 text="" SDK_STATUS_REQUESTING requesting
+item a47a4da3-a559-4ded-9cdd-14c59d3d8755 status final at=1791344085436 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 96 recorded 95: fact Stream type=stream_event uuid=dc35fbe4-d22e-464b-8186-f1e37b9528de
 snapshot WORKING queue=[] working_on="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval." at=1791344086058 asks=[] session=513299b0-01fe-4d8c-9f53-1db4e708a4fa model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=? mode=plan context=21007/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 101 recorded 100: fact Stream type=assistant uuid=a4c9e3b8-1b87-4826-ac1b-14feff5d972b
@@ -46,7 +46,7 @@ snapshot WORKING queue=[] working_on="Plan changing README.md's only line from C
 ## 111 recorded 110: fact Stream type=system subtype=status uuid=a9cae524-da4d-4254-9663-c78032b3d905
 snapshot WORKING queue=[] working_on="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval." at=1791344086250 asks=[] session=513299b0-01fe-4d8c-9f53-1db4e708a4fa model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=? mode=default context=21007/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 116 recorded 115: fact Stream type=system subtype=status uuid=273d4871-3947-425d-aeaa-605dda23da84
-item 273d4871-3947-425d-aeaa-605dda23da84 status final at=1791344086269 text="" SDK_STATUS_REQUESTING requesting
+item 273d4871-3947-425d-aeaa-605dda23da84 status final at=1791344086269 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 118 recorded 117: fact Stream type=stream_event uuid=d53a959e-cb7f-4198-8de2-d323b871a50f
 snapshot WORKING queue=[] working_on="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval." at=1791344086758 asks=[] session=513299b0-01fe-4d8c-9f53-1db4e708a4fa model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=? mode=default context=16490/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 119 recorded 118: fact Stream type=stream_event uuid=90f33929-246e-4fe6-a6f2-8f426c11b985
@@ -65,7 +65,7 @@ item toolu_019k6RAsffJVpjZWTqpENCCx tool final at=1791344087805 text="" Read TOO
 ## 156 recorded 155: fact Stream type=user uuid=fe79da69-985c-44c8-99fb-fdf20fa3a87c
 item toolu_019k6RAsffJVpjZWTqpENCCx tool final at=1791344087805 text="" Read TOOL_STATE_SUCCEEDED read ended=1791344088170 input="{\"file_path\":\"<MACHINE_PATH>\"}" out="1\tCURRENT\n2\t"
 ## 158 recorded 157: fact Stream type=system subtype=status uuid=d406efdf-c2b4-44e9-9c94-af2832e87ea0
-item d406efdf-c2b4-44e9-9c94-af2832e87ea0 status final at=1791344088174 text="" SDK_STATUS_REQUESTING requesting
+item d406efdf-c2b4-44e9-9c94-af2832e87ea0 status final at=1791344088174 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 160 recorded 159: fact Stream type=stream_event uuid=3bd89cec-f49f-4e6c-bdfb-e8715f7c85f3
 snapshot WORKING queue=[] working_on="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval." at=1791344088651 asks=[] session=513299b0-01fe-4d8c-9f53-1db4e708a4fa model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=16707/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 162 recorded 161: fact Stream type=stream_event uuid=aedf36ac-6284-4f12-8508-c81a47f46fc4
@@ -88,7 +88,7 @@ snapshot WORKING queue=[] working_on="Plan changing README.md's only line from C
 ## 204 recorded 203: fact Stream type=user uuid=6e204f6f-4eaf-4b3c-b23e-1930995c8fdb
 item toolu_01TNhCXvsRc7iT2ozHYy5bNt tool final at=1791344089043 text="" Edit TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED started=1791344089752 ended=1791344089761 line=1 input=edit:"<MACHINE_PATH>"x1 patch=1/2 out="The file <MACHINE_PATH> has been updated successfully. (file…"
 ## 206 recorded 205: fact Stream type=system subtype=status uuid=88fdc157-164f-4d48-ab79-9c9809dba96c
-item 88fdc157-164f-4d48-ab79-9c9809dba96c status final at=1791344089763 text="" SDK_STATUS_REQUESTING requesting
+item 88fdc157-164f-4d48-ab79-9c9809dba96c status final at=1791344089763 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 208 recorded 207: fact Stream type=stream_event uuid=dc21a71d-d301-43bf-8c90-e15f59129e90
 snapshot WORKING queue=[] working_on="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval." at=1791344090286 asks=[] session=513299b0-01fe-4d8c-9f53-1db4e708a4fa model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=16945/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 209 recorded 208: fact Stream type=stream_event uuid=e7dfdf42-5665-4787-981c-65b9adbd6f2f
@@ -104,7 +104,7 @@ item toolu_01Qe1UJ5XuQHWBggq8kvp37P tool final at=1791344090645 text="" Read TOO
 ## 241 recorded 240: fact Stream type=user uuid=f649740f-ca5c-4e40-8640-63d4bc146b39
 item toolu_01Qe1UJ5XuQHWBggq8kvp37P tool final at=1791344090645 text="" Read TOOL_STATE_SUCCEEDED read ended=1791344090978 input="{\"file_path\":\"<MACHINE_PATH>\"}" out="1\tUPDATED\n2\t"
 ## 243 recorded 242: fact Stream type=system subtype=status uuid=c1ccffd9-89a8-4bbb-9a79-977057852189
-item c1ccffd9-89a8-4bbb-9a79-977057852189 status final at=1791344090981 text="" SDK_STATUS_REQUESTING requesting
+item c1ccffd9-89a8-4bbb-9a79-977057852189 status final at=1791344090981 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 245 recorded 244: fact Stream type=stream_event uuid=79b9c01d-84f6-497d-8e2b-5cab19749cbb
 snapshot WORKING queue=[] working_on="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval." at=1791344091485 asks=[] session=513299b0-01fe-4d8c-9f53-1db4e708a4fa model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=17100/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 247 recorded 246: fact Stream type=stream_event uuid=ec1d0c3a-867d-4761-b6b8-bfad62e06414

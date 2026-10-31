@@ -171,7 +171,6 @@ message Status {
 enum SdkStatus {
   SDK_STATUS_UNSPECIFIED = 0;
   SDK_STATUS_COMPACTING = 1;
-  SDK_STATUS_REQUESTING = 2;
 }
 
 message ClaudeSdkSnapshot {

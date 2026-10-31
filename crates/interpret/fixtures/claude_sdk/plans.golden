@@ -1,42 +1,42 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"stream","json":{"claude_code_version":"2.1.282","model":"claude-opus-5-5","permissionMode":"plan","session_id":"s1","subtype":"init","type":"system","uuid":"init-s1"}}
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 2 input {"id":"p1","prompt":{"text":"plan the README change"}}
 effect reply p1 accepted
 effect user 70310000-0000-4000-8000-000000000000 "plan the README change"
 item 70310000-0000-4000-8000-000000000000 prompt final input=p1 at=1800000000000 text="plan the README change"
-snapshot WORKING queue=[] working_on="plan the README change" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="plan the README change" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 fact {"channel":"stream","json":{"message":{"content":[{"id":"w1","input":{"content":"# Plan\n\n- Edit README.md","file_path":"/home/me/.claude/plans/tidy-readme.md"},"name":"Write","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"session_id":"s1","type":"assistant","uuid":"m1"}}
 ## 4 fact {"channel":"stream","json":{"message":{"content":[{"content":"File created successfully at: /home/me/.claude/plans/tidy-readme.md","is_error":false,"tool_use_id":"w1","type":"tool_result"}],"role":"user"},"session_id":"s1","type":"user","uuid":"u1"}}
 ## 5 fact {"channel":"stream","json":{"message":{"content":[{"id":"t1","input":{"plan":"# Plan\n\n- Edit README.md"},"name":"ExitPlanMode","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"session_id":"s1","type":"assistant","uuid":"m2"}}
 item t1 plan final at=1800000000000 text="# Plan\n\n- Edit README.md" PLAN_VERDICT_UNDECIDED
 ## 6 fact {"channel":"stream","json":{"request":{"input":{"plan":"# Plan\n\n- Edit README.md"},"subtype":"can_use_tool","tool_name":"ExitPlanMode","tool_use_id":"t1"},"request_id":"req-1","type":"control_request"}}
-snapshot NEEDS_YOU queue=[] working_on="plan the README change" at=1800000000000 asks=[req-1->t1 plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot NEEDS_YOU queue=[] working_on="plan the README change" at=1800000000000 asks=[req-1->t1 plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 7 input {"id":"p2","prompt":{"text":"never mind, just fix the typo"}}
 effect write "{\"response\":{\"request_id\":\"req-1\",\"response\":{\"behavior\":\"deny\",\"interrupt\":true,\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file).\"},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply p2 queued
 item t1 plan final at=1800000000000 text="# Plan\n\n- Edit README.md" PLAN_VERDICT_DISMISSED
-snapshot WORKING queue=[p2] working_on="plan the README change" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[p2] working_on="plan the README change" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 8 fact {"channel":"stream","json":{"message":{"content":[{"content":"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file).","is_error":true,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"session_id":"s1","type":"user","uuid":"u2"}}
 ## 9 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"session_id":"s1","subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r1"}}
 effect user 70320000-0000-4000-8000-000000000000 "never mind, just fix the typo"
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_INTERRUPTED started=1799999999000
 item 70320000-0000-4000-8000-000000000000 prompt final input=p2 at=1800000000000 text="never mind, just fix the typo"
-snapshot WORKING queue=[] working_on="never mind, just fix the typo" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="never mind, just fix the typo" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 1 last=-
 ## 10 fact {"channel":"stream","json":{"message":{"content":[{"id":"t2","input":{"plan":"# Plan\n\n- Edit README.md"},"name":"ExitPlanMode","type":"tool_use"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"session_id":"s1","type":"assistant","uuid":"m3"}}
 item t2 plan final at=1800000000000 text="# Plan\n\n- Edit README.md" PLAN_VERDICT_UNDECIDED
 ## 11 fact {"channel":"stream","json":{"request":{"input":{"plan":"# Plan\n\n- Edit README.md"},"subtype":"can_use_tool","tool_name":"ExitPlanMode","tool_use_id":"t2"},"request_id":"req-2","type":"control_request"}}
-snapshot NEEDS_YOU queue=[] working_on="never mind, just fix the typo" at=1800000000000 asks=[req-2->t2 plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot NEEDS_YOU queue=[] working_on="never mind, just fix the typo" at=1800000000000 asks=[req-2->t2 plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 12 input {"id":"s1","permission":{"value":"acceptEdits"}}
 effect write "{\"response\":{\"request_id\":\"req-2\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"plan\":\"# Plan\\n\\n- Edit README.md\"},\"updatedPermissions\":[{\"destination\":\"session\",\"mode\":\"acceptEdits\",\"type\":\"setMode\"}]},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply s1 accepted
 item t2 plan final at=1800000000000 text="# Plan\n\n- Edit README.md" PLAN_VERDICT_APPROVED_SWITCHING to=acceptEdits
-snapshot WORKING queue=[] working_on="never mind, just fix the typo" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="never mind, just fix the typo" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 13 fact {"channel":"stream","json":{"permissionMode":"acceptEdits","session_id":"s1","status":null,"subtype":"status","type":"system","uuid":"st1"}}
-snapshot WORKING queue=[] working_on="never mind, just fix the typo" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=acceptEdits context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="never mind, just fix the typo" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=acceptEdits context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 14 fact {"channel":"stream","json":{"message":{"content":[{"id":"e1","input":{"file_path":"/w/README.md","new_string":"the","old_string":"teh"},"name":"Edit","type":"tool_use"}],"id":"m4","model":"claude-opus-5-5","role":"assistant"},"session_id":"s1","type":"assistant","uuid":"m4"}}
 item e1 tool final at=1800000000000 text="" Edit TOOL_STATE_RUNNING input=edit:"/w/README.md"x1
 ## 15 fact {"channel":"stream","json":{"message":{"content":[{"content":"The file /w/README.md has been updated successfully.","is_error":false,"tool_use_id":"e1","type":"tool_result"}],"role":"user"},"session_id":"s1","type":"user","uuid":"u3"}}

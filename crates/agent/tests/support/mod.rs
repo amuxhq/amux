@@ -877,15 +877,14 @@ impl Log {
         let Some(snapshot) = self.snapshot() else {
             return Vec::new();
         };
-        let servers = match snapshot.kind() {
+        match snapshot.kind() {
             Kind::ClaudeSdk | Kind::ClaudePty => {
                 ClaudeSnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .servers
             }
             other => panic!("no snapshot reader for {other:?}"),
-        };
-        servers.map(|servers| servers.servers).unwrap_or_default()
+        }
     }
 
     pub fn open_asks(&self) -> usize {

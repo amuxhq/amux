@@ -33,8 +33,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
     AgentSpec, Ask, AskClosed, ClaudeAnswer, ClaudeSnapshot, ClaudeUsage, DecisionOutcome,
-    Envelope, Input, KindInput, OfferedCommand, OfferedModel, Refusal, SignIn, Step,
-    ToolServerHealth, claude_answer, claude_item, claude_sdk_input,
+    Envelope, Input, KindInput, OfferedCommand, OfferedModel, Refusal, SignIn, Step, ToolServer,
+    claude_answer, claude_item, claude_sdk_input,
 };
 
 use crate::claude_answers::{self, Answer, AnswerShape, Decided};
@@ -201,8 +201,8 @@ pub struct State {
     context_window: Option<u64>,
     #[serde(with = "serde_pb::opt_msg")]
     usage: Option<ClaudeUsage>,
-    #[serde(with = "serde_pb::opt_msg")]
-    servers: Option<ToolServerHealth>,
+    #[serde(with = "serde_pb::msgs")]
+    servers: Vec<ToolServer>,
     /// Launched without amux's tool server, by organization policy.
     tools_withheld: bool,
     #[serde(with = "serde_pb::opt_msg")]
@@ -281,7 +281,7 @@ impl State {
             context_tokens: None,
             context_window: None,
             usage: None,
-            servers: None,
+            servers: Vec::new(),
             tools_withheld: false,
             sign_in: None,
             jobs: Jobs::default(),
@@ -337,17 +337,11 @@ impl State {
                 .map(|(id, task)| task.to_wire(id))
                 .collect(),
             usage: Some(self.usage.clone().unwrap_or_else(unknown::claude_usage)),
-            servers: Some({
-                let servers = self
-                    .servers
-                    .clone()
-                    .unwrap_or_else(unknown::tool_server_health);
-                if self.tools_withheld {
-                    crate::claude_common::amux_tools_withheld(servers)
-                } else {
-                    servers
-                }
-            }),
+            servers: if self.tools_withheld {
+                crate::claude_common::amux_tools_withheld(self.servers.clone())
+            } else {
+                self.servers.clone()
+            },
             sign_in: Some(self.sign_in.clone().unwrap_or_else(unknown::sign_in)),
             background_jobs: Some(self.shared.jobs()),
             provider_session: self.session.clone(),

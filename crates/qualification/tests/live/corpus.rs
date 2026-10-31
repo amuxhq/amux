@@ -760,7 +760,7 @@ impl Install {
         )
         .await?;
         let servers = follow.snapshot().state(self.kind).servers;
-        if !servers.servers.iter().any(|server| {
+        if !servers.iter().any(|server| {
             server.name == "broken" && server.status() == wire::ToolServerStatus::Failed
         }) {
             return Err(format!("no failed server named broken: {servers:?}"));

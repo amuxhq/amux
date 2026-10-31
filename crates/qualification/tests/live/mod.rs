@@ -1796,7 +1796,7 @@ fn known(state: &AgentState) -> BTreeSet<&'static str> {
         ("session", state.provider_session.is_some()),
         ("context", state.context.known),
         ("usage", state.usage.state() != wire::UsageState::Unknown),
-        ("servers", state.servers.state != 0),
+        ("servers", !state.servers.is_empty()),
         ("sign_in", state.sign_in.state != 0),
     ]
     .into_iter()

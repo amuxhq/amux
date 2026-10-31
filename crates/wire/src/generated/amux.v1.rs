@@ -2620,24 +2620,7 @@ impl ::prost::Name for UsageMeter {
         "type.googleapis.com/amux.v1.UsageMeter".into()
     }
 }
-/// Session strip: tool-server health, shown only when one fails.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ToolServerHealth {
-    #[prost(enumeration = "HealthState", tag = "1")]
-    pub state: i32,
-    #[prost(message, repeated, tag = "2")]
-    pub servers: ::prost::alloc::vec::Vec<ToolServer>,
-}
-impl ::prost::Name for ToolServerHealth {
-    const NAME: &'static str = "ToolServerHealth";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ToolServerHealth".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ToolServerHealth".into()
-    }
-}
+/// Session strip: one tool server's health, shown only when one fails.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ToolServer {
     #[prost(string, tag = "1")]
@@ -3536,35 +3519,6 @@ impl Limit {
             "LIMIT_UNSPECIFIED" => Some(Self::Unspecified),
             "LIMIT_FIVE_HOUR" => Some(Self::FiveHour),
             "LIMIT_WEEKLY" => Some(Self::Weekly),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum HealthState {
-    Unknown = 0,
-    Healthy = 1,
-    Degraded = 2,
-}
-impl HealthState {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unknown => "HEALTH_STATE_UNKNOWN",
-            Self::Healthy => "HEALTH_STATE_HEALTHY",
-            Self::Degraded => "HEALTH_STATE_DEGRADED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "HEALTH_STATE_UNKNOWN" => Some(Self::Unknown),
-            "HEALTH_STATE_HEALTHY" => Some(Self::Healthy),
-            "HEALTH_STATE_DEGRADED" => Some(Self::Degraded),
             _ => None,
         }
     }
@@ -4487,8 +4441,8 @@ pub struct ClaudeSnapshot {
     pub provider_session: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(message, optional, tag = "8")]
     pub usage: ::core::option::Option<ClaudeUsage>,
-    #[prost(message, optional, tag = "9")]
-    pub servers: ::core::option::Option<ToolServerHealth>,
+    #[prost(message, repeated, tag = "9")]
+    pub servers: ::prost::alloc::vec::Vec<ToolServer>,
     #[prost(message, optional, tag = "10")]
     pub sign_in: ::core::option::Option<SignIn>,
     #[prost(message, optional, tag = "11")]
@@ -5263,8 +5217,8 @@ pub struct CodexSnapshot {
     /// Absent while no turn is known to be running.
     #[prost(string, optional, tag = "11")]
     pub active_turn: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(message, optional, tag = "12")]
-    pub servers: ::core::option::Option<ToolServerHealth>,
+    #[prost(message, repeated, tag = "12")]
+    pub servers: ::prost::alloc::vec::Vec<ToolServer>,
     #[prost(message, optional, tag = "13")]
     pub usage: ::core::option::Option<CodexUsage>,
     #[prost(message, optional, tag = "14")]

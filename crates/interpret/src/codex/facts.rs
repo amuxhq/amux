@@ -29,8 +29,8 @@ use wire::{
     AccessGrant, ApiError, BackgroundJob, CodexAsk, CodexUsage, CodexUsageWindow, CommandApproval,
     Decision, DecisionOutcome, FileChangeApproval, FormAsk, Limit, LinkAsk, McpToolApproval,
     OfferedModel, Question, QuestionAsk, QuestionOption, ReviewerVerdict, SignIn, SignInState,
-    TaskListStatus, ToolClass, ToolDecision, ToolServer, ToolServerHealth, ToolServerStatus,
-    ToolState, Turn, TurnOutcome, UsageMeter, UsageState, Work, codex_ask, codex_item, work,
+    TaskListStatus, ToolClass, ToolDecision, ToolServer, ToolServerStatus, ToolState, Turn,
+    TurnOutcome, UsageMeter, UsageState, Work, codex_ask, codex_item, work,
 };
 
 use super::{
@@ -1786,25 +1786,15 @@ impl State {
         let error = some_of(updated.error.as_deref())
             .or_else(|| some_of(updated.failure_reason.as_deref()))
             .unwrap_or_default();
-        let health = self.servers.get_or_insert_with(ToolServerHealth::default);
         let entry = ToolServer {
             name: name.clone(),
             status: status as i32,
             error: error.clone(),
         };
-        match health.servers.iter_mut().find(|server| server.name == name) {
+        match self.servers.iter_mut().find(|server| server.name == name) {
             Some(server) => *server = entry,
-            None => health.servers.push(entry),
+            None => self.servers.push(entry),
         }
-        let failed = health.servers.iter().any(|server| {
-            server.status == ToolServerStatus::Failed as i32
-                || server.status == ToolServerStatus::NeedsAuth as i32
-        });
-        health.state = if failed {
-            wire::HealthState::Degraded
-        } else {
-            wire::HealthState::Healthy
-        } as i32;
         if matches!(
             status,
             ToolServerStatus::Failed | ToolServerStatus::NeedsAuth

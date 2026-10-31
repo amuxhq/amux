@@ -60,8 +60,8 @@ use wire::{
     AgentSpec, AskClosed, AskItem, BackgroundJob, CodexAnswer, CodexAsk, CodexGrant, CodexItem,
     CodexSnapshot, CodexUsage, ContextMeter, Decision, DecisionOutcome, Envelope, FormAction,
     Input, KindInput, OfferedCommand, OfferedMode, OfferedModel, OfferedPermission, OfferedSkill,
-    QueuedInput, Refusal, Rejected, Step, TaskList, TaskListEntry, ToolDecision, ToolServerHealth,
-    Work, codex_answer, codex_ask, codex_grant, codex_input, codex_item, tool_decision, work,
+    QueuedInput, Refusal, Rejected, Step, TaskList, TaskListEntry, ToolDecision, ToolServer, Work,
+    codex_answer, codex_ask, codex_grant, codex_input, codex_item, tool_decision, work,
 };
 
 use crate::claude_common::{clip, describe_tasks, or_dash};
@@ -574,8 +574,8 @@ pub struct State {
     context_window: Option<u64>,
     #[serde(with = "serde_pb::opt_msg")]
     usage: Option<CodexUsage>,
-    #[serde(with = "serde_pb::opt_msg")]
-    servers: Option<ToolServerHealth>,
+    #[serde(with = "serde_pb::msgs")]
+    servers: Vec<ToolServer>,
     #[serde(with = "serde_pb::opt_msg")]
     sign_in: Option<wire::SignIn>,
     /// Reviewer verdicts on work Codex has not reported yet.
@@ -661,7 +661,7 @@ impl State {
             context_tokens: None,
             context_window: None,
             usage: None,
-            servers: None,
+            servers: Vec::new(),
             sign_in: None,
             reviewed: BTreeMap::new(),
             final_error: None,
@@ -709,11 +709,7 @@ impl State {
                 .filter(|mode| MODES.iter().any(|(value, _)| value == mode)),
             approval_policy: self.approval.clone(),
             active_turn: self.active_turn.clone(),
-            servers: Some(
-                self.servers
-                    .clone()
-                    .unwrap_or_else(unknown::tool_server_health),
-            ),
+            servers: self.servers.clone(),
             usage: Some(self.usage.clone().unwrap_or_else(unknown::codex_usage)),
             sign_in: Some(self.sign_in.clone().unwrap_or_else(unknown::sign_in)),
             background_jobs: Some(self.shared.jobs()),
@@ -2261,7 +2257,7 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
     let snapshot = CodexSnapshot::decode(body).unwrap_or_default();
     let context = snapshot.context.unwrap_or_default();
     let usage = snapshot.usage.unwrap_or_default();
-    let servers = snapshot.servers.unwrap_or_default();
+    let servers = snapshot.servers;
     let sign_in = snapshot.sign_in.unwrap_or_default();
     SnapshotView {
         asks: snapshot
@@ -2298,24 +2294,7 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
             },
             describe_tasks(&snapshot.plan.unwrap_or_default()),
             describe_codex_usage(&usage),
-            match wire::HealthState::try_from(servers.state).unwrap_or_default() {
-                wire::HealthState::Unknown => "?".to_owned(),
-                state => format!(
-                    "{}[{}]",
-                    state.as_str_name(),
-                    servers
-                        .servers
-                        .iter()
-                        .map(|server| format!(
-                            "{}:{}",
-                            server.name,
-                            wire::ToolServerStatus::try_from(server.status)
-                                .map_or("?", |status| status.as_str_name())
-                        ))
-                        .collect::<Vec<_>>()
-                        .join(",")
-                ),
-            },
+            crate::shared::describe_servers(&servers),
             match wire::SignInState::try_from(sign_in.state).unwrap_or_default() {
                 wire::SignInState::Unknown => "?".to_owned(),
                 state => format!(

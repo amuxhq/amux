@@ -657,18 +657,7 @@ enum Limit {
   LIMIT_WEEKLY = 2;
 }
 
-// Session strip: tool-server health, shown only when one fails.
-message ToolServerHealth {
-  HealthState state = 1;
-  repeated ToolServer servers = 2;
-}
-
-enum HealthState {
-  HEALTH_STATE_UNKNOWN = 0;
-  HEALTH_STATE_HEALTHY = 1;
-  HEALTH_STATE_DEGRADED = 2;
-}
-
+// Session strip: one tool server's health, shown only when one fails.
 message ToolServer {
   string name = 1;
   ToolServerStatus status = 2;

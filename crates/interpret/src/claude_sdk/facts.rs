@@ -15,9 +15,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use wire::claude_item::Kind;
 use wire::{
-    BoundaryKind, ClaudeUsage, ClaudeUsageWindow, DecisionOutcome, FormAsk, HealthState, Limit,
-    LinkAsk, PermissionAsk, SignIn, SignInState, TaskState as WireTaskState, ToolServer,
-    ToolServerHealth, ToolServerStatus, ToolState, Turn, TurnOutcome, UsageMeter, UsageState,
+    BoundaryKind, ClaudeUsage, ClaudeUsageWindow, DecisionOutcome, FormAsk, Limit, LinkAsk,
+    PermissionAsk, SignIn, SignInState, TaskState as WireTaskState, ToolServer, ToolServerStatus,
+    ToolState, Turn, TurnOutcome, UsageMeter, UsageState,
 };
 
 use super::{AskMeta, Call, Request, State, TaskState, Tool};
@@ -432,10 +432,11 @@ impl State {
             self.effort = effort.clone();
         }
         if let Some(servers) = &init.mcp_servers {
-            self.servers =
-                Some(server_health(servers.iter().map(|server| {
-                    (server.name.as_str(), server.status.as_str(), "")
-                })));
+            self.servers = server_health(
+                servers
+                    .iter()
+                    .map(|server| (server.name.as_str(), server.status.as_str(), "")),
+            );
         }
         let changed = session.is_some() && session != previous;
         // A reset's boundary names the session it began once one does.
@@ -1525,8 +1526,8 @@ fn local_output(text: &str) -> Option<String> {
 
 fn server_health<'a>(
     servers: impl Iterator<Item = (&'a str, &'a str, &'a str)>,
-) -> ToolServerHealth {
-    let servers = servers
+) -> Vec<ToolServer> {
+    servers
         .map(|(name, status, error)| ToolServer {
             name: name.to_owned(),
             status: match status {
@@ -1538,19 +1539,7 @@ fn server_health<'a>(
             } as i32,
             error: error.to_owned(),
         })
-        .collect::<Vec<_>>();
-    // A server waiting for sign-in is the person's choice, not a failure.
-    let degraded = servers
-        .iter()
-        .any(|server| server.status == ToolServerStatus::Failed as i32);
-    ToolServerHealth {
-        state: if degraded {
-            HealthState::Degraded
-        } else {
-            HealthState::Healthy
-        } as i32,
-        servers,
-    }
+        .collect()
 }
 
 /// One window's use and reset as reported; a reset later than the one held

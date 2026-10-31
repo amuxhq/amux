@@ -201,7 +201,7 @@ message CodexSnapshot {
   optional string approval_policy = 7;
   // Absent while no turn is known to be running.
   optional string active_turn = 11;
-  ToolServerHealth servers = 12;
+  repeated ToolServer servers = 12;
   CodexUsage usage = 13;
   SignIn sign_in = 14;
   BackgroundJobs background_jobs = 15;

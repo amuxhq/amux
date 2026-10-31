@@ -103,7 +103,7 @@ message ClaudeSnapshot {
   // Absent until the session's start names it.
   optional string provider_session = 7;
   ClaudeUsage usage = 8;
-  ToolServerHealth servers = 9;
+  repeated ToolServer servers = 9;
   SignIn sign_in = 10;
   BackgroundJobs background_jobs = 11;
   // Terminal Claude's calls PreToolUse hooks announced that no result has

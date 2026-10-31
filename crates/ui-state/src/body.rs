@@ -7,7 +7,7 @@
 use prost::Message;
 use wire::{
     Ask, BackgroundJobs, ClaudeItem, ClaudeSnapshot, CodexAsk, CodexItem, CodexSnapshot,
-    ContextMeter, Kind, OfferedCommand, OfferedModel, SignIn, Task, TaskList, ToolServerHealth,
+    ContextMeter, Kind, OfferedCommand, OfferedModel, SignIn, Task, TaskList, ToolServer,
     UsageState,
 };
 
@@ -287,7 +287,7 @@ pub struct AgentState {
     pub active_tasks: Vec<Task>,
     /// Each provider's usage limits in its own terms.
     pub usage: Usage,
-    pub servers: ToolServerHealth,
+    pub servers: Vec<ToolServer>,
     pub sign_in: SignIn,
     pub background: BackgroundJobs,
     pub provider_session: Option<String>,
@@ -351,7 +351,7 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
             state.active_tasks = snapshot.active_tasks;
             state.provider_session = snapshot.provider_session;
             state.usage = snapshot.usage.map_or(Usage::Unknown, Usage::Claude);
-            state.servers = snapshot.servers.unwrap_or_default();
+            state.servers = snapshot.servers;
             state.sign_in = snapshot.sign_in.unwrap_or_default();
             state.background = snapshot.background_jobs.unwrap_or_default();
             state.running_calls = snapshot.running_calls;
@@ -372,7 +372,7 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
             state.approval_policy = snapshot.approval_policy;
             state.provider_session = snapshot.thread_id;
             state.usage = snapshot.usage.map_or(Usage::Unknown, Usage::Codex);
-            state.servers = snapshot.servers.unwrap_or_default();
+            state.servers = snapshot.servers;
             state.sign_in = snapshot.sign_in.unwrap_or_default();
             state.background = snapshot.background_jobs.unwrap_or_default();
         }

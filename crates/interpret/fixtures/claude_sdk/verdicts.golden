@@ -1,52 +1,52 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"stream","json":{"claude_code_version":"2.1.282","model":"claude-opus-5-5","permissionMode":"default","session_id":"s1","subtype":"init","type":"system","uuid":"init-s1"}}
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 2 input {"id":"p1","prompt":{"text":"ask me"}}
 effect reply p1 accepted
 effect user 70310000-0000-4000-8000-000000000000 "ask me"
 item 70310000-0000-4000-8000-000000000000 prompt final input=p1 at=1800000000000 text="ask me"
-snapshot WORKING queue=[] working_on="ask me" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="ask me" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 fact {"channel":"stream","json":{"message":{"content":[{"id":"t1","input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"","label":"Red"},{"description":"","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"},{"description":"","label":"Drill"}],"question":"Pick tools"}]},"name":"AskUserQuestion","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"type":"assistant","uuid":"m1"}}
 item t1 ask final at=1800000000000 text="" question×2 open
 ## 4 fact {"channel":"stream","json":{"request":{"input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"","label":"Red"},{"description":"","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"},{"description":"","label":"Drill"}],"question":"Pick tools"}]},"requires_user_interaction":true,"subtype":"can_use_tool","tool_name":"AskUserQuestion","tool_use_id":"t1"},"request_id":"req-1","type":"control_request"}}
-snapshot NEEDS_YOU queue=[] working_on="ask me" at=1800000000000 asks=[req-1->t1 question:2+other,3m+other] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot NEEDS_YOU queue=[] working_on="ask me" at=1800000000000 asks=[req-1->t1 question:2+other,3m+other] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 input {"answer":{"answer":{"selected":[[0,1],[0]]},"ask":"req-1"},"id":"bad"}
 effect reply bad rejected:UNSUPPORTED
 ## 6 input {"answer":{"answer":{"note":"keep the old strings for one release","selected":["Teal",[0,2]]},"ask":"req-1"},"id":"a1"}
 effect write "{\"response\":{\"request_id\":\"req-1\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"annotations\":{\"Pick tools\":{\"notes\":\"keep the old strings for one release\"}},\"answers\":{\"Pick a color\":\"Teal\",\"Pick tools\":\"Hammer, Drill\"},\"questions\":[{\"header\":\"Color\",\"multiSelect\":false,\"options\":[{\"description\":\"\",\"label\":\"Red\"},{\"description\":\"\",\"label\":\"Blue\"}],\"question\":\"Pick a color\"},{\"header\":\"Tools\",\"multiSelect\":true,\"options\":[{\"description\":\"\",\"label\":\"Hammer\"},{\"description\":\"\",\"label\":\"Saw\"},{\"description\":\"\",\"label\":\"Drill\"}],\"question\":\"Pick tools\"}]}},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a1 accepted
 item t1 ask final at=1800000000000 text="" question×2 ASK_OUTCOME_ANSWERED answered 2 of 2 ["Teal"; Hammer+Drill note="keep the old strings for one release"]
-snapshot WORKING queue=[] working_on="ask me" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="ask me" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 7 fact {"channel":"stream","json":{"message":{"content":[{"id":"t2","input":{"plan":"# Plan\n- edit"},"name":"ExitPlanMode","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"type":"assistant","uuid":"m2"}}
 item t2 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_UNDECIDED
 ## 8 fact {"channel":"stream","json":{"request":{"input":{"plan":"# Plan\n- edit"},"subtype":"can_use_tool","tool_name":"ExitPlanMode","tool_use_id":"t2"},"request_id":"req-2","type":"control_request"}}
-snapshot NEEDS_YOU queue=[] working_on="ask me" at=1800000000000 asks=[req-2->t2 plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot NEEDS_YOU queue=[] working_on="ask me" at=1800000000000 asks=[req-2->t2 plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 9 input {"answer":{"answer":{"approve_plan":{"switching":true}},"ask":"req-2"},"id":"a2"}
 effect write "{\"response\":{\"request_id\":\"req-2\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"plan\":\"# Plan\\n- edit\"},\"updatedPermissions\":[{\"destination\":\"session\",\"mode\":\"acceptEdits\",\"type\":\"setMode\"}]},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a2 accepted
 item t2 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_APPROVED_SWITCHING to=acceptEdits
-snapshot WORKING queue=[] working_on="ask me" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="ask me" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 10 fact {"channel":"stream","json":{"message":{"content":[{"id":"t3","input":{"plan":"# Plan\n- edit"},"name":"ExitPlanMode","type":"tool_use"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"type":"assistant","uuid":"m3"}}
 item t3 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_UNDECIDED
 ## 11 fact {"channel":"stream","json":{"request":{"input":{"plan":"# Plan\n- edit"},"subtype":"can_use_tool","tool_name":"ExitPlanMode","tool_use_id":"t3"},"request_id":"req-3","type":"control_request"}}
-snapshot NEEDS_YOU queue=[] working_on="ask me" at=1800000000000 asks=[req-3->t3 plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot NEEDS_YOU queue=[] working_on="ask me" at=1800000000000 asks=[req-3->t3 plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 12 input {"answer":{"answer":{"approve_plan":{}},"ask":"req-3"},"id":"a3"}
 effect write "{\"response\":{\"request_id\":\"req-3\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"plan\":\"# Plan\\n- edit\"},\"updatedPermissions\":[{\"destination\":\"session\",\"mode\":\"default\",\"type\":\"setMode\"}]},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a3 accepted
 item t3 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_APPROVED
-snapshot WORKING queue=[] working_on="ask me" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="ask me" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 13 fact {"channel":"stream","json":{"message":{"content":[{"id":"t4","input":{"plan":"# Plan\n- edit"},"name":"ExitPlanMode","type":"tool_use"}],"id":"m4","model":"claude-opus-5-5","role":"assistant"},"type":"assistant","uuid":"m4"}}
 item t4 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_UNDECIDED
 ## 14 fact {"channel":"stream","json":{"request":{"input":{"plan":"# Plan\n- edit"},"subtype":"can_use_tool","tool_name":"ExitPlanMode","tool_use_id":"t4"},"request_id":"req-4","type":"control_request"}}
-snapshot NEEDS_YOU queue=[] working_on="ask me" at=1800000000000 asks=[req-4->t4 plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot NEEDS_YOU queue=[] working_on="ask me" at=1800000000000 asks=[req-4->t4 plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 15 input {"answer":{"answer":{"send_back":{"note":"say why"}},"ask":"req-4"},"id":"a4"}
 effect write "{\"response\":{\"request_id\":\"req-4\",\"response\":{\"behavior\":\"deny\",\"interrupt\":false,\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\\nsay why\"},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a4 accepted
 item t4 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_SENT_BACK note="say why"
-snapshot WORKING queue=[] working_on="ask me" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="ask me" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 16 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r1"}}
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1799999999000
-snapshot IDLE queue=[] working_on="ask me" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on="ask me" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 1 last=-

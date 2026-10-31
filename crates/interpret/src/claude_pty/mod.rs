@@ -664,10 +664,11 @@ impl State {
             permission: self.provider.permission_mode.clone(),
             provider_session: self.provider.session.clone(),
             background_jobs: Some(self.shared.jobs()),
-            servers: self
-                .provider
-                .tools_withheld
-                .then(|| crate::claude_common::amux_tools_withheld(unknown::tool_server_health())),
+            servers: if self.provider.tools_withheld {
+                crate::claude_common::amux_tools_withheld(Vec::new())
+            } else {
+                Vec::new()
+            },
             running_calls: self
                 .running
                 .iter()

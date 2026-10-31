@@ -8,8 +8,8 @@
 //! is present with its own unknown state.
 
 use wire::{
-    BackgroundJobs, ClaudeSnapshot, ClaudeUsage, CodexSnapshot, CodexUsage, ContextMeter,
-    HealthState, SignIn, SignInState, TaskList, ToolServerHealth, UsageState,
+    BackgroundJobs, ClaudeSnapshot, ClaudeUsage, CodexSnapshot, CodexUsage, ContextMeter, SignIn,
+    SignInState, TaskList, UsageState,
 };
 
 pub fn task_list() -> TaskList {
@@ -42,13 +42,6 @@ pub fn codex_usage() -> CodexUsage {
     }
 }
 
-pub fn tool_server_health() -> ToolServerHealth {
-    ToolServerHealth {
-        state: HealthState::Unknown as i32,
-        servers: Vec::new(),
-    }
-}
-
 pub fn sign_in() -> SignIn {
     SignIn {
         state: SignInState::Unknown as i32,
@@ -78,7 +71,7 @@ pub fn claude() -> ClaudeSnapshot {
         effort: None,
         switched_away: None,
         usage: Some(claude_usage()),
-        servers: Some(tool_server_health()),
+        servers: Vec::new(),
         sign_in: Some(sign_in()),
         background_jobs: Some(background_jobs()),
         running_calls: Vec::new(),
@@ -96,7 +89,7 @@ pub fn codex() -> CodexSnapshot {
         mode: None,
         approval_policy: None,
         active_turn: None,
-        servers: Some(tool_server_health()),
+        servers: Vec::new(),
         usage: Some(codex_usage()),
         sign_in: Some(sign_in()),
         background_jobs: Some(background_jobs()),

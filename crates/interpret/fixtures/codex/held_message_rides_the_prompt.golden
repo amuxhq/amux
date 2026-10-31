@@ -1,8 +1,8 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 1 input {"id":"p1","prompt":{"text":"Review the parser change."}}
 effect reply p1 queued
-snapshot STARTING queue=[p1] working_on=- at=1800000000000 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[p1] working_on=- at=1800000000000 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 2 agent_message {"envelope":"e1","from":"lead","text":"It is on branch parser."}
 effect reply e1 queued
 item agent-message:6531 agent_message final input=e1 at=1800000000000 text="It is on branch parser." envelope=6531
@@ -15,13 +15,13 @@ effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
 item prompt:7031 prompt final input=p1 at=1800000000000 text="Review the parser change."
-snapshot WORKING queue=[] working_on="Review the parser change." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="Review the parser change." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 4 fact {"channel":"rpc","json":{"id":"amux-1","result":{}}}
 ## 5 fact {"channel":"rpc","json":{"id":"amux-2","result":{"turn":{"id":"turn-1"}}}}
-snapshot WORKING queue=[] working_on="Review the parser change." at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="Review the parser change." at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
 pending []
 ## 6 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-1","status":"inProgress"}}}}
 ## 7 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000000
-snapshot IDLE queue=[] working_on="Review the parser change." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=[]
+snapshot IDLE queue=[] working_on="Review the parser change." at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=[]
 turn_end 1 last=-

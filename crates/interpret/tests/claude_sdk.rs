@@ -2060,8 +2060,6 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
         let snapshot = step.snapshot.as_ref().expect("a snapshot");
         let body = wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap();
         body.servers
-            .unwrap_or_default()
-            .servers
             .iter()
             .any(|server| server.status == wire::ToolServerStatus::Failed as i32)
     };

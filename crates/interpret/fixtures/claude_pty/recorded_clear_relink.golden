@@ -1,32 +1,32 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1793309061606 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on=- at=1793309061606 asks=[] session=ff28912e-4ab5-4c99-b2e7-01439bef4908 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793309061606 asks=[] session=ff28912e-4ab5-4c99-b2e7-01439bef4908 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
-snapshot IDLE queue=[] working_on=- at=1793309061629 asks=[] session=ff28912e-4ab5-4c99-b2e7-01439bef4908 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793309061629 asks=[] session=ff28912e-4ab5-4c99-b2e7-01439bef4908 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 13 recorded 11: fact Transcript type=user uuid=c4587b59-ea05-4336-95f2-977b5eccc19f
 item c4587b59-ea05-4336-95f2-977b5eccc19f prompt final at=1793309061846 text="Reply exactly READY_FOR_RELINK and nothing else."
-snapshot WORKING queue=[] working_on=- at=1793309061846 asks=[] session=ff28912e-4ab5-4c99-b2e7-01439bef4908 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793309061846 asks=[] session=ff28912e-4ab5-4c99-b2e7-01439bef4908 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 35 recorded 33: fact Hook hook_event_name=Stop
-snapshot WORKING queue=[] working_on=- at=1793309062853 asks=[] session=ff28912e-4ab5-4c99-b2e7-01439bef4908 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1793309062853 asks=[] session=ff28912e-4ab5-4c99-b2e7-01439bef4908 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 37 recorded 35: fact Hook hook_event_name=MessageDisplay
 item stream:35301250-eae2-434b-8421-36b40536d999 message open at=1793309063256 text="READY_FOR_RELINK"
 ## 38 recorded 36: fact Transcript type=assistant uuid=510cd5b3-48ec-43f7-abaf-ce74c18247c9
 item 510cd5b3-48ec-43f7-abaf-ce74c18247c9 thinking final at=1793309063058 text=""
-snapshot WORKING queue=[] working_on=- at=1793309063256 asks=[] session=ff28912e-4ab5-4c99-b2e7-01439bef4908 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34720/? tasks=? active=[] usage=? servers=? sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1793309063256 asks=[] session=ff28912e-4ab5-4c99-b2e7-01439bef4908 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34720/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 39 recorded 37: fact Transcript type=assistant uuid=f55c23b9-57d4-4472-a8b4-c550b1e7831a
 item stream:35301250-eae2-434b-8421-36b40536d999 message final at=1793309063061 text="READY_FOR_RELINK"
 ## 43 recorded 41: fact Transcript type=system subtype=turn_duration uuid=b55f71f2-e6c5-43e2-8636-a886b43cd4eb
 item turn:1 turn final at=1793309063096 text="" #1 TURN_OUTCOME_COMPLETED started=1793309061836
-snapshot IDLE queue=[] working_on=- at=1793309063269 asks=[] session=ff28912e-4ab5-4c99-b2e7-01439bef4908 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34720/? tasks=? active=[] usage=? servers=? sign_in=? background=[]
+snapshot IDLE queue=[] working_on=- at=1793309063269 asks=[] session=ff28912e-4ab5-4c99-b2e7-01439bef4908 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34720/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 1 last=stream:35301250-eae2-434b-8421-36b40536d999
 ## 53 recorded 51: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_2>"
 item boundary:2 boundary final at=1793309063469 text="" BOUNDARY_KIND_CLEARED
-snapshot IDLE queue=[] working_on=- at=1793309063469 asks=[] session=7f153bbe-8169-4490-9da8-6da0050274e9 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=[]
+snapshot IDLE queue=[] working_on=- at=1793309063469 asks=[] session=7f153bbe-8169-4490-9da8-6da0050274e9 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]

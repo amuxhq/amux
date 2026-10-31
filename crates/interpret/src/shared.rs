@@ -1192,6 +1192,20 @@ pub(crate) fn describe_usage_window(
     format!(" {label}:{used}%({})", describe_usage_state(meter.state))
 }
 
+/// Tool servers as goldens print them: each name and its status, in
+/// brackets.
+pub(crate) fn describe_servers(servers: &[wire::ToolServer]) -> String {
+    let servers = servers
+        .iter()
+        .map(|server| {
+            let status = wire::ToolServerStatus::try_from(server.status)
+                .map_or("?", |status| status.as_str_name());
+            format!("{}:{status}", server.name)
+        })
+        .collect::<Vec<_>>();
+    format!("[{}]", servers.join(","))
+}
+
 /// A background job list as goldens print it: `?` while unknown, else each
 /// job as the key of the item that started it, its command and start time.
 pub(crate) fn describe_jobs(jobs: Option<&wire::BackgroundJobs>) -> String {

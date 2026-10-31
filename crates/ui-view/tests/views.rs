@@ -693,21 +693,18 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
         }],
         credits: None,
     };
-    let servers = wire::ToolServerHealth {
-        state: wire::HealthState::Degraded as i32,
-        servers: vec![
-            wire::ToolServer {
-                name: "ok".into(),
-                status: wire::ToolServerStatus::Ready as i32,
-                error: String::new(),
-            },
-            wire::ToolServer {
-                name: "github".into(),
-                status: wire::ToolServerStatus::Failed as i32,
-                error: "401".into(),
-            },
-        ],
-    };
+    let servers = vec![
+        wire::ToolServer {
+            name: "ok".into(),
+            status: wire::ToolServerStatus::Ready as i32,
+            error: String::new(),
+        },
+        wire::ToolServer {
+            name: "github".into(),
+            status: wire::ToolServerStatus::Failed as i32,
+            error: "401".into(),
+        },
+    ];
     let sign_in = wire::SignIn {
         state: wire::SignInState::Expired as i32,
         account: "me@example.com".into(),
@@ -766,7 +763,7 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
             model: Some("opus".into()),
             permission: Some("default".into()),
             usage: Some(claude_usage.clone()),
-            servers: Some(servers),
+            servers,
             sign_in: Some(sign_in),
             background_jobs: Some(background.clone()),
             ..Default::default()
@@ -780,7 +777,7 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
             effort: Some("high".into()),
             permission: Some("default".into()),
             usage: Some(claude_usage),
-            servers: Some(servers),
+            servers,
             sign_in: Some(sign_in),
             background_jobs: Some(background.clone()),
             ..Default::default()
@@ -794,7 +791,7 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
             effort: Some("high".into()),
             approval_policy: Some("on-request".into()),
             usage: Some(codex_usage),
-            servers: Some(servers),
+            servers,
             sign_in: Some(sign_in),
             background_jobs: Some(background.clone()),
             ..Default::default()

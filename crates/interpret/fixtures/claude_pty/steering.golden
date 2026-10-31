@@ -1,27 +1,27 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 input {"id":"p0","prompt":{"text":"Plan it."}}
 effect reply p0 queued
-snapshot STARTING queue=[p0] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[p0] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 2 input {"id":"n0","send_now":{"target":"p0"}}
 effect reply n0 rejected:UNSUPPORTED
 ## 3 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
 effect follow "/t/s1.jsonl"
 effect terminal prompt "Plan it."
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on="Plan it." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on="Plan it." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 4 fact {"channel":"transcript","json":{"message":{"content":"Plan it.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
 item u1 prompt final input=p0 at=1800000000010 text="Plan it."
-snapshot WORKING queue=[] working_on="Plan it." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="Plan it." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 fact {"channel":"transcript","json":{"message":{"content":[{"id":"toolu_1","input":{"command":"make build"},"name":"Bash","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.020Z","type":"assistant","uuid":"a1"}}
 item toolu_1 tool final at=1800000000020 text="" Bash TOOL_STATE_RUNNING input=shell:"make build"
 ## 6 input {"id":"p1","prompt":{"text":"Use the staging config."}}
 effect reply p1 queued
-snapshot WORKING queue=[p1] working_on="Plan it." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[p1] working_on="Plan it." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 7 input {"id":"n1","send_now":{"target":"p1"}}
 effect reply n1 accepted
 effect terminal send now "Use the staging config."
-snapshot WORKING queue=[p1(steered)] working_on="Plan it." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[p1(steered)] working_on="Plan it." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 8 input {"id":"w1","withdraw":{"target":"p1"}}
 effect reply w1 rejected:NOT_QUEUED
 ## 9 input {"id":"n2","send_now":{"target":"p1"}}
@@ -32,7 +32,7 @@ item toolu_1 tool final at=1800000000020 text="" Bash TOOL_STATE_SUCCEEDED ended
 ## 12 fact {"channel":"transcript","json":{"content":"Use the staging config.","operation":"remove","sessionId":"s1","timestamp":"2027-01-15T08:00:00.050Z","type":"queue-operation"}}
 ## 13 fact {"channel":"transcript","json":{"attachment":{"commandMode":"prompt","humanTurn":true,"origin":{"kind":"human"},"prompt":"Use the staging config.","source_uuid":"src-q1","type":"queued_command"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.060Z","type":"attachment","uuid":"q1"}}
 item q1 steer final input=p1 at=1800000000060 text="Use the staging config."
-snapshot WORKING queue=[] working_on="Plan it." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="Plan it." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 14 agent_message {"envelope":"e1","from":"lead","text":"Status?"}
 effect inject e1 via MessagingSocket
 effect reply e1 queued
@@ -44,69 +44,69 @@ effect reply n3 rejected:NOT_QUEUED
 item a2 message final at=1800000000070 text="Built with the staging config."
 ## 17 input {"id":"p2","prompt":{"text":"Then summarise."}}
 effect reply p2 queued
-snapshot WORKING queue=[p2] working_on="Plan it." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[p2] working_on="Plan it." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 18 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.080Z","type":"system","uuid":"d1"}}
 effect terminal prompt "Then summarise."
 item turn:1 turn final at=1800000000080 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000075
-snapshot IDLE queue=[] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 1 last=a2
 ## 19 input {"id":"n4","send_now":{"target":"p2"}}
 effect reply n4 rejected:NOT_QUEUED
 ## 20 fact {"channel":"transcript","json":{"message":{"content":"Then summarise.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.090Z","type":"user","uuid":"u3"}}
 item u3 prompt final input=p2 at=1800000000090 text="Then summarise."
-snapshot WORKING queue=[] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 21 input {"id":"p3","prompt":{"text":"Also check the logs."}}
 effect reply p3 queued
-snapshot WORKING queue=[p3] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[p3] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 22 input {"id":"n5","send_now":{"target":"p3"}}
 effect reply n5 accepted
 effect terminal send now "Also check the logs."
-snapshot WORKING queue=[p3(steered)] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[p3(steered)] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 23 input {"id":"p4","prompt":{"text":"And the tests."}}
 effect reply p4 queued
-snapshot WORKING queue=[p3(steered),p4] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[p3(steered),p4] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 24 fact {"channel":"transcript","json":{"content":"Also check the logs.","operation":"enqueue","sessionId":"s1","timestamp":"2027-01-15T08:00:00.100Z","type":"queue-operation"}}
 ## 25 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Summary.","type":"text"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.110Z","type":"assistant","uuid":"a3"}}
 item a3 message final at=1800000000110 text="Summary."
 ## 26 fact {"channel":"transcript","json":{"operation":"dequeue","sessionId":"s1","timestamp":"2027-01-15T08:00:00.120Z","type":"queue-operation"}}
 ## 27 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.130Z","type":"system","uuid":"d2"}}
 item turn:2 turn final at=1800000000130 text="" #2 TURN_OUTCOME_COMPLETED started=1800000000125
-snapshot IDLE queue=[p3(steered),p4] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[p3(steered),p4] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 2 last=a3
 ## 28 fact {"channel":"transcript","json":{"message":{"content":"Also check the logs.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.140Z","type":"user","uuid":"u4"}}
 item u4 prompt final input=p3 at=1800000000140 text="Also check the logs."
-snapshot WORKING queue=[p4] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[p4] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 29 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Logs are clean.","type":"text"}],"id":"m4","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.150Z","type":"assistant","uuid":"a4"}}
 item a4 message final at=1800000000150 text="Logs are clean."
 ## 30 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.160Z","type":"system","uuid":"d3"}}
 effect terminal prompt "And the tests."
 item turn:3 turn final at=1800000000160 text="" #3 TURN_OUTCOME_COMPLETED started=1800000000155
-snapshot IDLE queue=[] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 3 last=a4
 ## 31 fact {"channel":"transcript","json":{"message":{"content":"And the tests.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.170Z","type":"user","uuid":"u5"}}
 item u5 prompt final input=p4 at=1800000000170 text="And the tests."
-snapshot WORKING queue=[] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 32 fact {"channel":"transcript","json":{"message":{"content":[{"id":"toolu_2","input":{"command":"make test"},"name":"Bash","type":"tool_use"}],"id":"m5","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.180Z","type":"assistant","uuid":"a5"}}
 item toolu_2 tool final at=1800000000180 text="" Bash TOOL_STATE_RUNNING input=shell:"make test"
 ## 33 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"make test"},"tool_name":"Bash","tool_use_id":"toolu_2"}}
-snapshot WORKING queue=[] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_2 Bash since=1800000000000
+snapshot WORKING queue=[] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_2 Bash since=1800000000000
 ## 34 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"make test"},"tool_name":"Bash"}}
-snapshot NEEDS_YOU queue=[] working_on="And the tests." at=1800000000000 asks=[ask:1->toolu_2 permission:Bash deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_2 Bash since=1800000000000
+snapshot NEEDS_YOU queue=[] working_on="And the tests." at=1800000000000 asks=[ask:1->toolu_2 permission:Bash deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_2 Bash since=1800000000000
 ## 35 input {"id":"p5","prompt":{"text":"Stop after this."}}
 effect reply p5 queued
-snapshot NEEDS_YOU queue=[p5] working_on="And the tests." at=1800000000000 asks=[ask:1->toolu_2 permission:Bash deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_2 Bash since=1800000000000
+snapshot NEEDS_YOU queue=[p5] working_on="And the tests." at=1800000000000 asks=[ask:1->toolu_2 permission:Bash deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_2 Bash since=1800000000000
 ## 36 input {"id":"n6","send_now":{"target":"p5"}}
 effect reply n6 rejected:UNSUPPORTED
 ## 37 fact {"channel":"transcript","json":{"message":{"content":[{"content":"tests ran","tool_use_id":"toolu_2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.185Z","type":"user","uuid":"u7"}}
 effect hook 1 released
 item toolu_2 tool final at=1800000000180 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere ended=1800000000185 input=shell:"make test" out="tests ran"
-snapshot WORKING queue=[p5] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[p5] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 38 input {"id":"n7","send_now":{"target":"p5"}}
 effect reply n7 accepted
 effect terminal send now "Stop after this."
-snapshot WORKING queue=[p5(steered)] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[p5(steered)] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 39 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.190Z","type":"user","uuid":"u6"}}
 item u6 interruption final at=1800000000190 text=""
 item turn:4 turn final at=1800000000190 text="" #4 TURN_OUTCOME_INTERRUPTED started=1800000000000
-snapshot IDLE queue=[] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 4 last=-

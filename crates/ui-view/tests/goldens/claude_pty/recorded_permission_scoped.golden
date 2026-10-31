@@ -1,0 +1,38 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 13 recorded 11: fact Transcript type=user uuid=a7f6352f-3a41-458c-9b7a-1fd1635940f9
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 39 recorded 37: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01L1XAt2Wm51YFSRWJdSQzVJ
+  composer Send activity=Some(Running { key: "toolu_01L1XAt2Wm51YFSRWJdSQzVJ" }) queue=[] underway=[] refused=[]
+## 41 recorded 39: fact Hook hook_event_name=PermissionRequest
+  ask ask:1 -> "" 1/1 Open
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
+    body Command { command: "printf allow-scoped > allow-scoped.txt; printf allow-scoped.", cwd: "", reason: "", description: "Write allow-scoped.txt and print allow-scoped." }
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 44 recorded 42: fact Transcript type=assistant uuid=68506b2a-1431-4fb5-9a09-dac5e7ff809a
+  ask ask:1 -> "toolu_01L1XAt2Wm51YFSRWJdSQzVJ" 1/1 Open
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
+    body Command { command: "printf allow-scoped > allow-scoped.txt; printf allow-scoped.", cwd: "", reason: "", description: "Write allow-scoped.txt and print allow-scoped." }
+## 49 recorded 47: fact Transcript type=user uuid=0a3eb759-d68e-489f-80b8-72d400659509
+  ask none
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 68 recorded 66: fact Transcript type=system subtype=turn_duration uuid=2679ade6-08c8-4fb1-a1ab-94ff2a20d6ff
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 a7f6352f-3a41-458c-9b7a-1fd1635940f9 Prompt { text: [Text("Use the Bash tool to run exactly: printf allow-scoped > allow-scoped.txt; printf allow-scoped. Then stop.")], steered: false }
+     3 toolu_01L1XAt2Wm51YFSRWJdSQzVJ Command { command: "printf allow-scoped > allow-scoped.txt; printf allow-scoped.", state: Succeeded, exit_code: None, output_head: ["allow-scoped."], more_lines: 0, output_trimmed: false, output_tail: ["allow-scoped."], duration_ms: Some(346) } run[toolu_01L1XAt2Wm51YFSRWJdSQzVJ..toolu_01L1XAt2Wm51YFSRWJdSQzVJ x1 recent=0 RunCounts { commands: 1, edits: 0, reads…
+     4 stream:3a6167af-f097-4826-9274-ae764043216e Prose { text: [Text("I ran the command. It wrote `allow-scoped` to `allow-scoped.txt` in the working directory and printed `allow-scoped.` to stdout. I didn't run anything else.")], streaming: false, working_note: false }
+     5 turn:1 TurnEnd { duration_ms: Some(2133), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 35816, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

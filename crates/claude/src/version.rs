@@ -14,44 +14,30 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 /// the events amux follows a session by, so it is refused at launch.
 pub const MIN_TERMINAL: Version = Version::new(2, 1, 251);
 
-#[derive(Debug, thiserror::Error)]
-pub enum VersionError {
-    #[error("could not run Claude version probe: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Claude version probe timed out")]
-    Timeout,
-    #[error("Claude version probe failed with {0}")]
-    Status(std::process::ExitStatus),
-    #[error("Claude version output was not UTF-8: {0}")]
-    Utf8(#[from] std::string::FromUtf8Error),
-    #[error("Claude version output was empty")]
-    Empty,
-    #[error("invalid Claude version `{value}`: {source}")]
-    Invalid {
-        value: String,
-        source: semver::Error,
-    },
-}
-
-pub async fn probe_version(binary: &Path) -> Result<Version, VersionError> {
+/// The version of the Claude at `binary`, or why its `--version` could not
+/// be read: the agent only reports that, and starts Claude anyway.
+pub async fn probe_version(binary: &Path) -> Result<Version, String> {
     let mut command = Command::new(binary);
     command.arg("--version");
     probe_command(command).await
 }
 
-async fn probe_command(mut command: Command) -> Result<Version, VersionError> {
+async fn probe_command(mut command: Command) -> Result<Version, String> {
     command.kill_on_drop(true);
     let output = tokio::time::timeout(PROBE_TIMEOUT, command.output())
         .await
-        .map_err(|_| VersionError::Timeout)??;
+        .map_err(|_| "Claude version probe timed out".to_owned())?
+        .map_err(|error| format!("could not run Claude version probe: {error}"))?;
     if !output.status.success() {
-        return Err(VersionError::Status(output.status));
+        return Err(format!("Claude version probe failed with {}", output.status));
     }
-    let raw = String::from_utf8(output.stdout)?.trim().to_string();
+    let raw = String::from_utf8(output.stdout)
+        .map_err(|error| format!("Claude version output was not UTF-8: {error}"))?;
+    let raw = raw.trim();
     if raw.is_empty() {
-        return Err(VersionError::Empty);
+        return Err("Claude version output was empty".to_owned());
     }
-    parse(&raw).map_err(|source| VersionError::Invalid { value: raw, source })
+    parse(raw).map_err(|error| format!("invalid Claude version `{raw}`: {error}"))
 }
 
 /// The version at the head of Claude's `--version` banner.
@@ -86,12 +72,10 @@ mod tests {
             command.args(["-c", script]);
             let output = probe_command(command).await;
             match expected {
-                "status" => assert!(
-                    matches!(output, Err(VersionError::Status(status)) if status.code() == Some(17))
-                ),
-                "empty" => assert!(matches!(output, Err(VersionError::Empty))),
-                "invalid" => assert!(matches!(output, Err(VersionError::Invalid { .. }))),
-                "utf8" => assert!(matches!(output, Err(VersionError::Utf8(_)))),
+                "status" => assert!(output.unwrap_err().contains("17")),
+                "empty" => assert!(output.unwrap_err().contains("empty")),
+                "invalid" => assert!(output.unwrap_err().contains("invalid")),
+                "utf8" => assert!(output.unwrap_err().contains("UTF-8")),
                 version => assert_eq!(output.unwrap().to_string(), version),
             }
         }

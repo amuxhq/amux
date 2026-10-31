@@ -633,8 +633,8 @@ session's window, with a row handed over for every changed key the host held and
   reproduces from the facts, a client bug from the slice. `Bundle::replay_all` (in `replay.rs`, and the
   `dump-replay` binary) runs all four stages, the daemon core's among them, with the properties judged at every
   step; see [Debugging](DEBUGGING.md#replaying-a-dump).
-- **Recorded provider traffic.** `ReplayTransport`, `strict_replay` and recording manifests let terminal Claude's
-  spec crate (`claude-specs`) replay captured sessions byte for byte, and both probes join live captures.
+- **Recorded provider traffic.** Recording manifests, sanitizing and the capture plumbing (`live`) let both
+  probes stand in for their provider in the live lane and join its captures to the corpus.
 
 [`redaction`](../crates/redaction/src/lib.rs) is the structural redactor for everything that is not a per-kind
 body: `redact_value` for JSON and `redact_text` for free text replace secrets, machine paths, emails and the local

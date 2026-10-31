@@ -55,50 +55,6 @@ macro_rules! recordings {
     };
 }
 
-// Unix only: Windows does not host terminal Claude, and ConPTY re-renders the
-// child's output in its own escape sequences, so byte-exact playback against
-// these Unix recordings cannot hold there; see docs/ARCHITECTURE.md, "Windows,
-// as a stated cost".
-#[cfg(unix)]
-mod claude_pty {
-    use super::*;
-
-    recordings!(Kind::ClaudePty, "claude-specs/fixtures/pty", {
-        api_error => "api_error",
-        background_shell => "background_shell",
-        clear_relink => "clear_relink",
-        compact_relink => "compact_relink",
-        file_changes_and_failure => "file_changes_and_failure",
-        image => "image",
-        interrupt => "interrupt",
-        mode_cycle => "mode_cycle",
-        permission_allow_once => "permission_allow_once",
-        permission_allow_scoped => "permission_allow_scoped",
-        permission_deny_feedback => "permission_deny_feedback",
-        plan_approve => "plan_approve",
-        plan_auto => "plan_auto",
-        plan_request_changes => "plan_request_changes",
-        prompt => "prompt",
-        prompt_multiline => "prompt_multiline",
-        prompt_long => "prompt_long",
-        question_cancelled => "question_cancelled",
-        question_every_shape => "question_every_shape",
-        question_mixed => "question_mixed",
-        question_multi_other => "question_multi_other",
-        question_other_single => "question_other_single",
-        question_single => "question_single",
-        question_skip_reply => "question_skip_reply",
-        question_tabs => "question_tabs",
-        sign_in_problem => "sign_in_problem",
-        steer_queued => "steer_queued",
-        steer_send_now => "steer_send_now",
-        subagent => "subagent",
-        task_list => "task_list",
-        thinking => "thinking",
-        tools => "tools",
-    });
-}
-
 /// Headless Claude's corpus: captures from live runs, driven by amux's own
 /// interpreter.
 mod claude_sdk {
@@ -137,13 +93,45 @@ mod claude_sdk {
     });
 }
 
+/// Terminal Claude's corpus: captures from live runs, driven by amux's own
+/// interpreter. Unix only: Windows does not host terminal Claude, and
+/// ConPTY re-renders the child's output in its own escape sequences, so
+/// byte-exact playback against these Unix recordings cannot hold there; see
+/// docs/ARCHITECTURE.md, "Windows, as a stated cost".
 #[cfg(unix)]
-mod claude_pty_live {
+mod claude_pty {
     use super::*;
 
     recordings!(Kind::ClaudePty, "claude-specs/fixtures/live/pty", {
+        api_error => "api_error",
+        background_shell => "background_shell",
+        cleared => "cleared",
+        compacted => "compacted",
+        configured_turn => "configured_turn",
+        failing_command => "failing_command",
+        image => "image",
+        interrupted => "interrupted",
+        long_prompt => "long_prompt",
+        mode_cycle => "mode_cycle",
+        multi_turn => "multi_turn",
+        permission_callback => "permission_callback",
+        permission_denied => "permission_denied",
+        permission_scoped => "permission_scoped",
         plan => "plan",
+        plan_reviewed => "plan_reviewed",
+        question_asked => "question_asked",
+        question_dismissed => "question_dismissed",
+        question_every_shape => "question_every_shape",
         questions => "questions",
+        resumed => "resumed",
+        sign_in_problem => "sign_in_problem",
+        steer_folded => "steer_folded",
+        subagent_task => "subagent_task",
+        task_list => "task_list",
+        terminal_allow => "terminal_allow",
+        terminal_escape => "terminal_escape",
+        terminal_question => "terminal_question",
+        text_turn => "text_turn",
     });
 }
 

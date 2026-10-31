@@ -49,7 +49,6 @@ absent! {
     parent_uuid => "parentUuid",
     pre_tokens => "preTokens",
     prompt => "prompt",
-    prompt_id => "promptId",
     row_session_id => "sessionId",
     status => "status",
     timestamp => "timestamp",

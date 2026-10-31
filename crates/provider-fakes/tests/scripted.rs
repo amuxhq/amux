@@ -51,7 +51,7 @@ struct Scenario {
 fn root(kind: Kind) -> PathBuf {
     let corpus = match kind {
         Kind::ClaudeSdk => "claude-specs/fixtures/live/sdk",
-        Kind::ClaudePty => "claude-specs/fixtures/pty",
+        Kind::ClaudePty => "claude-specs/fixtures/live/pty",
         Kind::Codex => "codex-specs/fixtures/live",
     };
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -196,6 +196,10 @@ fn row_kind(row: &Value) -> Option<String> {
         | "atis-latch"
         | "ai-title"
         | "file-history-snapshot"
+        | "tools-used"
+        | "api-request"
+        | "api-request-shape"
+        | "api-request-blob"
         | "bridge-session" => return None,
         "attachment" => {
             let attachment = row["attachment"]["type"].as_str()?;
@@ -472,6 +476,11 @@ async fn terminal(scenario: &Scenario) -> Result<(), String> {
             }
             continue;
         }
+        // The fake runs on a session of its own and no messaging socket.
+        if arg == "--session-id" || arg == "--messaging-socket-path" {
+            argv.next();
+            continue;
+        }
         args.push(arg.clone());
     }
     args.extend([
@@ -524,6 +533,7 @@ async fn terminal(scenario: &Scenario) -> Result<(), String> {
     let fake_hooks = || -> Vec<String> {
         read(&hook_log)
             .iter()
+            .filter(|hook| compared_hook(hook))
             .map(|hook| {
                 hook["hook_event_name"]
                     .as_str()
@@ -569,6 +579,9 @@ async fn terminal(scenario: &Scenario) -> Result<(), String> {
             }
             Channel::Hook => {
                 let hook: Value = serde_json::from_slice(&event.bytes).unwrap();
+                if !compared_hook(&hook) {
+                    continue;
+                }
                 hooks.push(
                     hook["hook_event_name"]
                         .as_str()
@@ -596,6 +609,18 @@ async fn terminal(scenario: &Scenario) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether a terminal session's hook payload is compared. Claude runs a
+/// reply's MessageDisplay hooks beside the turn's Stop, so either may land
+/// first; and its own helpers (a compaction's summary, a turn's title) stop
+/// as subagents of no type, which no fake runs.
+fn compared_hook(hook: &Value) -> bool {
+    match hook["hook_event_name"].as_str() {
+        Some("MessageDisplay") => false,
+        Some("SubagentStop") => hook["agent_type"] != "",
+        _ => true,
+    }
+}
+
 /// Kills the fake's process group when dropped, so the test's end, by
 /// return or by panic, is the fake's end too.
 struct Reaper(pty_host::PtyHandle);
@@ -620,10 +645,6 @@ async fn conforms(scenario: Scenario) {
             scenario.recording
         );
     }
-}
-
-fn thinking() -> Value {
-    json!({"thinking": {"text": "Considering"}})
 }
 
 fn text() -> Value {
@@ -718,26 +739,17 @@ mod claude_pty {
         }
     }
 
+    /// A message amux typed while a command ran folds into the turn at
+    /// the next call; another typed after the turn runs as its own.
     #[tokio::test]
-    async fn steer_send_now() {
+    async fn steer_folded() {
         conforms(scenario(
-            "steer_send_now",
-            json!([thinking(), bash(Some(NEVER)), {"wait_for": {"path": NEVER}}, "turn_end"]),
-            None,
-        ))
-        .await;
-    }
-
-    #[tokio::test]
-    async fn steer_queued() {
-        conforms(scenario(
-            "steer_queued",
+            "steer_folded",
             json!([
-                thinking(),
                 bash(Some(GATE)),
-                thinking(),
                 bash(None),
-                thinking(),
+                text(),
+                "turn_end",
                 text(),
                 "turn_end"
             ]),
@@ -746,12 +758,12 @@ mod claude_pty {
         .await;
     }
 
+    /// Escape on the permission menu refuses the call and ends the turn.
     #[tokio::test]
-    async fn permission_deny_feedback() {
+    async fn terminal_escape() {
         conforms(scenario(
-            "permission_deny_feedback",
-            json!([thinking(), permission(), "turn_end", {"wait_for": {"path": NEVER}},
-                   "turn_end"]),
+            "terminal_escape",
+            json!([permission(), "turn_end"]),
             None,
         ))
         .await;

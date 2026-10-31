@@ -1,35 +1,40 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 13 recorded 11: fact Transcript type=user uuid=0ee82fd0-231e-4674-b571-d77cc039c022
+## 13 recorded 11: fact Transcript type=user uuid=ac62fe61-ff1a-43c0-8cf5-1c5c76f3d567
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 38 recorded 36: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_014Pht6rfzd2sTpWXMUpuKyP
-  composer Send activity=Some(Running { key: "toolu_014Pht6rfzd2sTpWXMUpuKyP" }) queue=[] underway=[] refused=[]
-## 40 recorded 38: fact Hook hook_event_name=PermissionRequest
+## 55 recorded 53: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01GwDnpBC3417y1akWucpwhP
+  composer Send activity=Some(Running { key: "toolu_01GwDnpBC3417y1akWucpwhP" }) queue=[] underway=[] refused=[]
+## 57 recorded 55: fact Hook hook_event_name=PermissionRequest
   ask ask:1 -> "" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Red color", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue color", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Which tools do you need?", mu…
+    body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Which tools do you need?", multi_select: …
   composer Send activity=None queue=[] underway=[] refused=[]
-## 45 recorded 43: fact Transcript type=assistant uuid=7b185743-7e76-4623-865f-32f49040289e
-  ask ask:1 -> "toolu_014Pht6rfzd2sTpWXMUpuKyP" 1/1 Open
+## 63 recorded 61: fact Transcript type=assistant uuid=d6e0d220-350b-4fb6-8567-3347178fc489
+  ask ask:1 -> "toolu_01GwDnpBC3417y1akWucpwhP" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Red color", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue color", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Which tools do you need?", mu…
-## 49 recorded 47: fact Transcript type=user uuid=05a88200-917d-4c91-af9b-f5624cd0faf4
+    body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Which tools do you need?", multi_select: …
+## 65 recorded 63: fact Transcript type=user uuid=9e6bb805-567e-44b5-a8d9-25bef764584f
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 81 recorded 79: fact Transcript type=system subtype=turn_duration uuid=d1a90fcd-4dd9-4e8c-9468-894c17f80d6f
+  composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 0ee82fd0-231e-4674-b571-d77cc039c022 Prompt { text: [Text("Use exactly one AskUserQuestion call containing exactly four questions, in this order. 1: header Color, question 'Which color do you prefer?', single-select, options Red and Blue. 2: header Tools, question 'Which tools do you need?', multiSelect true, options Hammer, Saw and Drill. 3: header Layout, question 'Which layout should the p…
-     3 4f166fe8-2abd-4fcf-b2df-03de2ae99434 Thinking { text: "", open: false, duration_ms: Some(2354) }
-     4 toolu_014Pht6rfzd2sTpWXMUpuKyP [Answered: Color = Blue; Tools = Hammer, Drill; Layout = Grid; Snack = "Dried mango" skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Red color", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue co…
+     2 ac62fe61-ff1a-43c0-8cf5-1c5c76f3d567 Prompt { text: [Text("Use exactly one AskUserQuestion call containing exactly four questions, in this order. 1: header Color, question 'Which color do you prefer?', single-select, options Red and Blue. 2: header Tools, question 'Which tools do you need?', multiSelect true, options Hammer, Saw and Drill. 3: header Layout, question 'Which layout should the p…
+     3 toolu_01X4nzvky1hpkkusgPE7BzMw [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, Questi…
+     4 e7161bf7-fc03-44c3-8c54-2fc2bd3db188 Thinking { text: "", open: false, duration_ms: Some(1089) }
+     5 toolu_01GwDnpBC3417y1akWucpwhP [Answered: Color = Blue; Tools = Hammer, Drill; Layout = Grid; Snack = "Whatever is fresh" skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", …
+     6 stream:7e00cbf5-5a0e-4229-9c51-f98d9bcd001c Prose { text: [Text("Your answers:\n\n1. **Color:** Blue\n2. **Tools:** Hammer, Drill\n3. **Layout:** Grid\n4. **Snack:** Whatever is fresh\n\nMy first call failed validation because I left out the fourth Layout option, so I re-sent it with all four options (Sidebar, Topbar, Grid, Stack). That was the only other change, and the call went out once.")…
+     7 turn:1 TurnEnd { duration_ms: Some(6980), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 47022, window_tokens: None, percent: None, near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 37504, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings
-  model* unlisted claude-sonnet-5 "Sonnet 5" efforts=[]
-  effort* unlisted high
-  permission  "default" "Ask" normal unsettable
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
   permission  "acceptEdits" "Accept edits" unsettable
   permission  "plan" "Plan" unsettable
-  permission* "auto" "Auto" unsettable
+  permission  "auto" "Auto" unsettable
   changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
   command /rename source="" hint="<name>" "Rename the agent"
-  controls: model=Some("Sonnet 5") effort=Some("high") permission=Some("auto") mode=None
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

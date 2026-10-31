@@ -1,0 +1,27 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"agent","json":{"type":"launch"}}
+effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue cd96cd29
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 3 recorded 1: fact Hook hook_event_name=SessionStart
+effect follow "<TRANSCRIPT_1>"
+item boundary:1 boundary final at=1793452829400 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1793452829400 asks=[] session=ae4a17eb-3d5b-4180-8e17-4dfb551d9eaf model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793452829871 asks=[] session=ae4a17eb-3d5b-4180-8e17-4dfb551d9eaf model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 12 recorded 10: fact Transcript type=user uuid=e6ebcddd-54ab-46e2-b820-e76dc427e567
+item e6ebcddd-54ab-46e2-b820-e76dc427e567 prompt final at=1793452830073 text="Use Bash to run exactly: python3 -c 'import select; select.select([], [], [], 30)'; printf SHOULD_NOT_FINISH. Do not do anything else."
+snapshot WORKING queue=[] working_on=- at=1793452830073 asks=[] session=ae4a17eb-3d5b-4180-8e17-4dfb551d9eaf model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 36 recorded 34: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01HLFK8EUYZ9NnLWz12cAGd5
+snapshot WORKING queue=[] working_on=- at=1793452830872 asks=[] session=ae4a17eb-3d5b-4180-8e17-4dfb551d9eaf model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01HLFK8EUYZ9NnLWz12cAGd5 Bash since=1793452830872
+## 39 recorded 37: fact Transcript type=assistant uuid=e8d663f1-4a39-42cb-8010-674db9444fee
+item toolu_01HLFK8EUYZ9NnLWz12cAGd5 tool final at=1793452831060 text="" Bash TOOL_STATE_RUNNING input=shell:"python3 -c 'import select; select.select([], [], [], 30)'; p…"
+snapshot WORKING queue=[] working_on=- at=1793452831024 asks=[] session=ae4a17eb-3d5b-4180-8e17-4dfb551d9eaf model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35634/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01HLFK8EUYZ9NnLWz12cAGd5 Bash since=1793452830872
+## 41 recorded 39: fact Transcript type=user uuid=18afa0e8-dc2d-47f2-8a1d-06516b555cc7
+item toolu_01HLFK8EUYZ9NnLWz12cAGd5 tool final at=1793452831060 text="" Bash TOOL_STATE_CANCELLED ended=1793452831377 input=shell:"python3 -c 'import select; select.select([], [], [], 30)'; p…" out="The user doesn't want to proceed with this tool use. The too…"
+snapshot WORKING queue=[] working_on=- at=1793452831275 asks=[] session=ae4a17eb-3d5b-4180-8e17-4dfb551d9eaf model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35634/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 45 recorded 43: fact Transcript type=user uuid=022da76d-9726-4484-8e5c-31063e59d249
+item turn:1 turn final at=1793452831378 text="" #1 TURN_OUTCOME_INTERRUPTED started=1793452830073
+snapshot IDLE queue=[] working_on=- at=1793452831282 asks=[] session=ae4a17eb-3d5b-4180-8e17-4dfb551d9eaf model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35634/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+turn_end 1 last=-

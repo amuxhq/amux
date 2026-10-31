@@ -79,11 +79,6 @@ pub fn strict(bytes: &[u8]) -> Result<Payload, Drift> {
     })
 }
 
-/// One payload as Claude would write it.
-pub fn encode(payload: &Payload) -> Vec<u8> {
-    decoding::encode(payload)
-}
-
 /// The fields every hook payload carries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Common {

@@ -1,0 +1,24 @@
+{
+  "spec": "failing_command",
+  "recorded": {
+    "provider": "claude",
+    "version": "2.1.316",
+    "model": "claude-haiku-5-5",
+    "at": "2026-10-31T13:29:42.603608Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:047618ea9edb02ccfc6fa0d5f26d50ce5d7a0b0f9d5bdfdbffd94f48262ebb8c",
+    "spawn.jsonl": "sha256:ea9e94ee42257654b3ff2df564a3336a1afa80383425f24c730d7bcd61e1fdd2"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 52,
+    "personal_identifiers": 0
+  },
+  "session_ids": [
+    "ba2814c1-3eb9-4b1c-9dc4-ea1527ba314d"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

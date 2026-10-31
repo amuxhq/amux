@@ -1,0 +1,29 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"agent","json":{"type":"launch"}}
+effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue cd96cd29
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 3 recorded 1: fact Hook hook_event_name=SessionStart
+effect follow "<TRANSCRIPT_1>"
+item boundary:1 boundary final at=1793453301164 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1793453301164 asks=[] session=cb141eb8-4965-44f8-aa06-0b818733d445 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793453302865 asks=[] session=cb141eb8-4965-44f8-aa06-0b818733d445 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 13 recorded 11: fact Transcript type=user uuid=340c9d8d-c711-4a18-a07f-d97ee9a26441
+item 340c9d8d-c711-4a18-a07f-d97ee9a26441 prompt final at=1793453303048 text="Use the Bash tool to run exactly: printf escaped > escaped.txt. Then reply with the single word done."
+snapshot WORKING queue=[] working_on=- at=1793453303048 asks=[] session=cb141eb8-4965-44f8-aa06-0b818733d445 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 41 recorded 39: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01Deb4FKBuR8mXnD7YHFojnR
+snapshot WORKING queue=[] working_on=- at=1793453303817 asks=[] session=cb141eb8-4965-44f8-aa06-0b818733d445 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01Deb4FKBuR8mXnD7YHFojnR Bash since=1793453303817
+## 43 recorded 41: fact Hook hook_event_name=PermissionRequest
+snapshot NEEDS_YOU queue=[] working_on=- at=1793453303845 asks=[ask:1->- permission:Bash/session <MACHINE_PATH> deny-can-stop] session=cb141eb8-4965-44f8-aa06-0b818733d445 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01Deb4FKBuR8mXnD7YHFojnR Bash since=1793453303817
+## 48 recorded 46: fact Transcript type=assistant uuid=a77e04d0-fd1a-4ca5-989b-8b0db1949716
+item toolu_01Deb4FKBuR8mXnD7YHFojnR tool final at=1793453304016 text="" Bash TOOL_STATE_RUNNING input=shell:"printf escaped > escaped.txt"
+snapshot NEEDS_YOU queue=[] working_on=- at=1793453304000 asks=[ask:1->toolu_01Deb4FKBuR8mXnD7YHFojnR permission:Bash/session <MACHINE_PATH> deny-can-stop] session=cb141eb8-4965-44f8-aa06-0b818733d445 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35611/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01Deb4FKBuR8mXnD7YHFojnR Bash since=1793453303817
+## 50 recorded 48: fact Transcript type=user uuid=815df227-6641-4182-bf92-f9cb455626f6
+item toolu_01Deb4FKBuR8mXnD7YHFojnR tool final at=1793453304016 text="" Bash TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED elsewhere ended=1793453305299 input=shell:"printf escaped > escaped.txt" out="The user doesn't want to proceed with this tool use. The too…"
+snapshot WORKING queue=[] working_on=- at=1793453305248 asks=[] session=cb141eb8-4965-44f8-aa06-0b818733d445 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35611/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 54 recorded 52: fact Transcript type=user uuid=548df660-149d-4387-9f45-5f07e31de412
+item turn:1 turn final at=1793453305301 text="" #1 TURN_OUTCOME_INTERRUPTED started=1793453303048
+snapshot IDLE queue=[] working_on=- at=1793453305255 asks=[] session=cb141eb8-4965-44f8-aa06-0b818733d445 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35611/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+turn_end 1 last=-

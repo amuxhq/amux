@@ -1499,13 +1499,8 @@ fn an_answered_question_row_reads_the_question_and_what_was_picked() {
     for (kind, name, row) in [
         (
             Kind::ClaudePty,
-            "recorded_question_single",
-            "Which color do you prefer?\n  │   → Red",
-        ),
-        (
-            Kind::ClaudePty,
-            "recorded_question_other_single",
-            "Which color do you prefer?\n  │   → a warm ochre",
+            "recorded_question_asked",
+            "Which color do you prefer?\n  │   → Blue",
         ),
         (
             Kind::ClaudeSdk,

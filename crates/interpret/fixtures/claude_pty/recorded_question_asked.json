@@ -1,0 +1,20 @@
+{
+  "about": "One question answered with an option from amux.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "../../../claude-specs/fixtures/live/pty/question_asked/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

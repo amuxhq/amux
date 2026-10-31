@@ -1,0 +1,20 @@
+{
+  "about": "A message sent into the running turn from amux, typed while a command runs, and another left queued for the next turn.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "../../../claude-specs/fixtures/live/pty/steer_folded/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

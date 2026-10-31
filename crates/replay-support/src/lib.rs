@@ -1,21 +1,15 @@
 pub mod bundle;
 pub mod live;
 mod manifest;
-mod registry;
 pub mod replay;
 mod sanitize;
 pub mod show;
-pub mod transport;
 
 use std::path::Path;
 
-pub use manifest::{Manifest, Recorded, Recording, RecordingError, load_recording};
-pub use registry::{RegistryRow, SpecEntry, below_minimum, orphan_recordings, registry_rows};
+pub use manifest::{Manifest, Recorded};
+use manifest::{RecordingError, load_recording};
 pub use sanitize::sanitize;
-pub use transport::{
-    ReplayAdvance, ReplayClock, ReplayController, ReplayError, ReplayReport, ReplayTransport,
-    ReplayWriteMismatch, StrictReplay, strict_replay,
-};
 
 /// A single IO event from a recorded session.
 #[derive(Debug, Clone, PartialEq, Eq)]

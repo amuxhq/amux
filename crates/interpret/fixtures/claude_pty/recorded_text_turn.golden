@@ -1,0 +1,26 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"agent","json":{"type":"launch"}}
+effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue cd96cd29
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 3 recorded 1: fact Hook hook_event_name=SessionStart
+effect follow "<TRANSCRIPT_1>"
+item boundary:1 boundary final at=1793452822745 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1793452822745 asks=[] session=298b7a8b-e712-4294-880b-3a51833464a4 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793452823285 asks=[] session=298b7a8b-e712-4294-880b-3a51833464a4 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 13 recorded 11: fact Transcript type=user uuid=5dd083a7-0b05-4e59-b67d-aabdf900b2fd
+item 5dd083a7-0b05-4e59-b67d-aabdf900b2fd prompt final at=1793452823479 text="Reply with the single word pong and nothing else."
+snapshot WORKING queue=[] working_on=- at=1793452823479 asks=[] session=298b7a8b-e712-4294-880b-3a51833464a4 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 39 recorded 37: fact Hook hook_event_name=MessageDisplay
+item stream:037be4f2-47b9-4362-b540-15b77a981c96 message open at=1793452824085 text="pong"
+## 41 recorded 39: fact Hook hook_event_name=Stop
+snapshot WORKING queue=[] working_on=- at=1793452824088 asks=[] session=298b7a8b-e712-4294-880b-3a51833464a4 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 43 recorded 41: fact Transcript type=assistant uuid=3678b250-ff35-47d3-8300-f8ce5c4053b2
+item stream:037be4f2-47b9-4362-b540-15b77a981c96 message final at=1793452824267 text="pong"
+snapshot WORKING queue=[] working_on=- at=1793452824229 asks=[] session=298b7a8b-e712-4294-880b-3a51833464a4 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35576/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 49 recorded 47: fact Transcript type=system subtype=turn_duration uuid=6f8e77ed-fe59-446b-99a7-c0613ae4fe95
+item turn:1 turn final at=1793452824317 text="" #1 TURN_OUTCOME_COMPLETED started=1793452823470
+snapshot IDLE queue=[] working_on=- at=1793452824237 asks=[] session=298b7a8b-e712-4294-880b-3a51833464a4 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35576/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+turn_end 1 last=stream:037be4f2-47b9-4362-b540-15b77a981c96

@@ -1792,7 +1792,10 @@ impl State {
                 let whole = unwrap_pasted(&command.content);
                 self.user_text(emit, command.envelope.uuid.clone(), whole, false, at_ms);
             }
-            SystemRow::StopHookSummary(_) | SystemRow::Unknown(_) => {}
+            // A notice for the person at Claude's own terminal, about its
+            // own interface.
+            SystemRow::StopHookSummary(_) | SystemRow::Informational(_) | SystemRow::Unknown(_) => {
+            }
         }
     }
 }

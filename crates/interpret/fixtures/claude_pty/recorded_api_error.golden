@@ -6,16 +6,16 @@ snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
-item boundary:1 boundary final at=1793309191916 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on=- at=1793309191916 asks=[] session=f0ff34c8-28c3-4379-a7c3-5994a4baeffb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
-## 4 recorded 2: fact Hook hook_event_name=UserPromptSubmit
-snapshot IDLE queue=[] working_on=- at=1793309191916 asks=[] session=f0ff34c8-28c3-4379-a7c3-5994a4baeffb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
-## 11 recorded 9: fact Transcript type=user uuid=53d70f05-9455-468a-8b5a-9fe24936d464
-item 53d70f05-9455-468a-8b5a-9fe24936d464 prompt final at=1793309191944 text="Reply exactly PTY_SPEC_API_ERROR and nothing else."
-snapshot WORKING queue=[] working_on=- at=1793309191944 asks=[] session=f0ff34c8-28c3-4379-a7c3-5994a4baeffb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
-## 32 recorded 30: fact Transcript type=assistant uuid=8da88e3c-98e2-43bf-843c-7111c72c5ba6
-item 8da88e3c-98e2-43bf-843c-7111c72c5ba6 api_error final at=1793309193844 text="" server_error "API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)" retry=false 0/0
-## 33 recorded 31: fact Transcript type=system subtype=turn_duration uuid=cef450ac-502d-47f1-9a46-419f1e890b9c
-item turn:1 turn final at=1793309193848 text="" #1 TURN_OUTCOME_COMPLETED started=1793309191934
-snapshot IDLE queue=[] working_on=- at=1793309193802 asks=[] session=f0ff34c8-28c3-4379-a7c3-5994a4baeffb model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+item boundary:1 boundary final at=1793453277892 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1793453277892 asks=[] session=cd11970a-8385-430f-a202-5f0ff2e166d8 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793453278451 asks=[] session=cd11970a-8385-430f-a202-5f0ff2e166d8 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 12 recorded 10: fact Transcript type=user uuid=579ddd93-36a3-4289-b48b-71a947a42ca4
+item 579ddd93-36a3-4289-b48b-71a947a42ca4 prompt final at=1793453278648 text="Reply with the single word pong and nothing else."
+snapshot WORKING queue=[] working_on=- at=1793453278648 asks=[] session=cd11970a-8385-430f-a202-5f0ff2e166d8 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 38 recorded 36: fact Transcript type=assistant uuid=41b461e8-a92b-4168-ad3a-5e9a984a69bf
+item 41b461e8-a92b-4168-ad3a-5e9a984a69bf api_error final at=1793453280446 text="" server_error "API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)" retry=false 0/0
+## 39 recorded 37: fact Transcript type=system subtype=turn_duration uuid=80082483-1c13-47f9-8c33-98ff593edfab
+item turn:1 turn final at=1793453280450 text="" #1 TURN_OUTCOME_COMPLETED started=1793453278638
+snapshot IDLE queue=[] working_on=- at=1793453280348 asks=[] session=cd11970a-8385-430f-a202-5f0ff2e166d8 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 1 last=-

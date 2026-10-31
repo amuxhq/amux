@@ -1,5 +1,5 @@
 {
-  "about": "A command started in the background, its output read and the shell stopped: the tool rows and the running-process count.",
+  "about": "A shell run in the background and its output read.",
   "spec": {
     "created_at_ms": 0
   },
@@ -14,7 +14,7 @@
     }
   ],
   "recording": {
-    "path": "../../../claude-specs/fixtures/pty/background_shell/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/pty/background_shell/io.jsonl",
     "format": "claude_pty_io"
   }
 }

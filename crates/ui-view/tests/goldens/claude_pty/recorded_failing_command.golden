@@ -1,0 +1,28 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 13 recorded 11: fact Transcript type=user uuid=bb4c51af-fe07-4070-905f-2b7c0fcb1820
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 41 recorded 39: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01HKJpnEWBDMKvtDKb4XsPFQ
+  composer Send activity=Some(Running { key: "toolu_01HKJpnEWBDMKvtDKb4XsPFQ" }) queue=[] underway=[] refused=[]
+## 48 recorded 46: fact Transcript type=user uuid=82ccd416-7d60-4cd3-b2b3-83ef634a4eba
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 66 recorded 64: fact Transcript type=system subtype=turn_duration uuid=9b3f4837-3436-4ff2-ba88-57a62725cf19
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 bb4c51af-fe07-4070-905f-2b7c0fcb1820 Prompt { text: [Text("Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed.")], steered: false }
+     3 toolu_01HKJpnEWBDMKvtDKb4XsPFQ Command { command: "ls does-not-exist", state: Failed, exit_code: None, output_head: ["Exit code 1", "ls: does-not-exist: No such file or directory"], more_lines: 0, output_trimmed: false, output_tail: ["Exit code 1", "ls: does-not-exist: No such file or directory"], duration_ms: Some(241) } run[toolu_01HKJpnEWBDMKvtDKb4XsPFQ..toolu_01HKJpnEWBDMKvtDKb4XsPFQ x1 r…
+     4 stream:716f02f4-ed7e-4483-a180-d10abc1d6e5b Prose { text: [Text("Yes, it failed. `ls does-not-exist` exited with code 1 and printed `ls: does-not-exist: No such file or directory`, because there is no such path in the working directory.")], streaming: false, working_note: false }
+     5 turn:1 TurnEnd { duration_ms: Some(2387), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 35749, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

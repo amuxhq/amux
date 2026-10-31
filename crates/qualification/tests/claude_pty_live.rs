@@ -11,9 +11,11 @@ fn main() -> std::process::ExitCode {
         kind: wire::Kind::ClaudePty,
         command: "claude",
         recording: |scenario| match scenario {
-            Scenario::Initialize | Scenario::Respond | Scenario::Resume => Some("recorded_prompt"),
-            Scenario::Decide => Some("recorded_permission_allow_once"),
-            Scenario::Interrupt => Some("recorded_interrupt"),
+            Scenario::Initialize | Scenario::Respond | Scenario::Resume => {
+                Some("recorded_text_turn")
+            }
+            Scenario::Decide => Some("recorded_permission_callback"),
+            Scenario::Interrupt => Some("recorded_interrupted"),
             _ => None,
         },
         replay: interpret::replay::<interpret::claude_pty::ClaudePty>,

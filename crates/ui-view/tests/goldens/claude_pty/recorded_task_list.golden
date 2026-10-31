@@ -1,32 +1,23 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 13 recorded 11: fact Transcript type=user uuid=6bcb3b33-c3b2-4218-842a-af4537719260
+## 13 recorded 11: fact Transcript type=user uuid=ed2cdc78-88db-4837-ad44-939c2fc828ad
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 36 recorded 34: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01HhD2XhtWuKUDgixBanANq8
-  composer Send activity=Some(Running { key: "toolu_01HhD2XhtWuKUDgixBanANq8" }) queue=[] underway=[] refused=[]
-## 38 recorded 36: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01HhD2XhtWuKUDgixBanANq8
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 43 recorded 41: fact Transcript type=assistant uuid=c499f9b8-5604-4080-ab7c-43dbd72eddb5
-  composer Send activity=Some(Running { key: "toolu_01HhD2XhtWuKUDgixBanANq8" }) queue=[] underway=[] refused=[]
-## 45 recorded 43: fact Transcript type=user uuid=3b727aad-d711-4e8a-a132-e199278a72ce
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 92 recorded 90: fact Transcript type=system subtype=turn_duration uuid=a81f8bfa-dc5e-45d1-b27d-dd16bc13ce14
+  composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 6bcb3b33-c3b2-4218-842a-af4537719260 Prompt { text: [Text("Track this work with your task tools: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop.")], steered: false }
-     3 d1dfaa6a-5cc0-4e23-b10c-d04565e0494d Thinking { text: "", open: false, duration_ms: Some(2384) }
-     4 toolu_01HhD2XhtWuKUDgixBanANq8 Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded, result: "" } run[toolu_01HhD2XhtWuKUDgixBanANq8..toolu_01HhD2XhtWuKUDgixBanANq8 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-     5 dd81342f-ecf4-4dd4-adc0-9182fb2f5f17 Thinking { text: "", open: false, duration_ms: Some(1427) }
-     6 2986b0c3-e7fc-4beb-bb6c-8dd43ba73236 Thinking { text: "", open: false, duration_ms: Some(2137) }
-     7 stream:0d8af667-d00b-4795-bc9e-85614a295184 Prose { text: [Text("Done.")], streaming: true, working_note: false }
+     2 ed2cdc78-88db-4837-ad44-939c2fc828ad Prompt { text: [Text("Track this work with your task or todo tool: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop.")], steered: false }
+     3 stream:b386ced7-483d-47d1-a6a3-8efd8df1bb64 Prose { text: [Text("I created three tasks (Draft, Review, Publish), marked Draft in progress, then marked it completed. Review and Publish are still pending, and I've stopped there.")], streaming: false, working_note: false }
+     4 turn:1 TurnEnd { duration_ms: Some(3842), failed: false }
 == overview Overview { tasks: Some(TasksView { done: 1, total: 3, current: "", entries: [TaskLine { subject: "Draft", mark: Done }, TaskLine { subject: "Review", mark: Todo }, TaskLine { subject: "Publish", mark: Todo }] }), jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 37198, window_tokens: None, percent: None, near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 9493, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings
-  model* unlisted claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
-  permission  "default" "Ask" normal unsettable
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
   permission  "acceptEdits" "Accept edits" unsettable
   permission  "plan" "Plan" unsettable
   permission  "auto" "Auto" unsettable
-  permission* unlisted "bypassPermissions" "bypassPermissions" unsettable
   changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
   command /rename source="" hint="<name>" "Rename the agent"
-  controls: model=Some("Haiku 4.5") effort=None permission=Some("bypassPermissions") mode=None
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

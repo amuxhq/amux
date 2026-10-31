@@ -94,8 +94,6 @@ pub struct Launch {
     /// Environment additions for every provider child.
     pub provider_env: HashMap<String, String>,
     pub agent: settings::AgentSettings,
-    /// The agent's journal segment size; its default when zero.
-    pub journal_segment_bytes: u64,
     /// How long a new process has to take its lock and send its Hello.
     pub start_deadline_ms: i64,
     /// How long a stop may take before the daemon kills the process group.
@@ -183,7 +181,6 @@ impl Default for Launch {
             codex_command: "codex".to_owned(),
             provider_env: HashMap::new(),
             agent: settings::AgentSettings::default(),
-            journal_segment_bytes: 0,
             start_deadline_ms: 20_000,
             stop_deadline_ms: 30_000,
             ctl_write_ms: 5_000,

@@ -106,7 +106,6 @@ enum ForwardRefusal {
   FORWARD_REFUSAL_NO_ROUTE = 1;
   FORWARD_REFUSAL_PAYMENT_REQUIRED = 2;
   FORWARD_REFUSAL_RATE_LIMITED = 3;
-  FORWARD_REFUSAL_SHUTTING_DOWN = 4;
 }
 
 // Fire-and-forget credential refresh on the cloud link, sent before the

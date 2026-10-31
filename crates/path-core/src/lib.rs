@@ -43,7 +43,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::net::SocketAddr;
 use std::time::Instant;
 
-pub use daemon_core::payload::Source;
+pub use daemon_core::payload::{ForwardRefusal, Source};
 pub use daemon_core::{Check, DumpReason, LinkId, StepBudget, Violation};
 
 /// How long the link stays on a path that keeps working before it may move
@@ -77,17 +77,6 @@ impl Path {
     pub fn is_forwarded(&self) -> bool {
         matches!(self, Path::Forwarded(_))
     }
-}
-
-/// Why a forwarder would not carry the link's packets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ForwardRefusal {
-    /// The forwarder holds no link to the peer.
-    NoRoute,
-    /// The account's plan carries no connections between hosts.
-    PaymentRequired,
-    RateLimited,
-    ShuttingDown,
 }
 
 /// Everything the driver can tell the machine; the clock is an input like
@@ -523,9 +512,7 @@ impl Paths {
                 self.refused.insert(link);
                 self.plan(false, out);
             }
-            ForwardRefusal::NoRoute
-            | ForwardRefusal::RateLimited
-            | ForwardRefusal::ShuttingDown => {
+            ForwardRefusal::NoRoute | ForwardRefusal::RateLimited | ForwardRefusal::Unspecified => {
                 if let Some(state) = self.paths.get_mut(&key) {
                     state.failed = true;
                     state.probe_deadline_ms = None;

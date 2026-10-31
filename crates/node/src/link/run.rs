@@ -1118,7 +1118,7 @@ async fn handle_control_body(
                     .unwrap_or(wire::ForwardRefusal::Unspecified);
                 ctx.links.close_forwarded(host, link.core(), reason).await;
                 if let Some(paths) = ctx.links.paths() {
-                    paths.forward_refused(host, link.core(), super::paths::refusal(reason));
+                    paths.forward_refused(host, link.core(), reason);
                 }
             }
             ctx.report_frame(link, wire::message::Body::ForwardRefused(refused));

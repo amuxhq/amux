@@ -55,7 +55,7 @@ message Trusted {
     // connection between hosts: upgrading reaches this host.
     Empty away = 2;
     // Anything else: no route, or a channel that failed for any reason but
-    // the plan (no route at the relay, rate limited, shutting down, revoked,
+    // the plan (no route at the relay, rate limited, revoked,
     // TLS or identity failure, timeout, link gone).
     Offline offline = 3;
   }

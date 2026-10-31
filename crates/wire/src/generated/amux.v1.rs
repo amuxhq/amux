@@ -1324,7 +1324,6 @@ pub enum ForwardRefusal {
     NoRoute = 1,
     PaymentRequired = 2,
     RateLimited = 3,
-    ShuttingDown = 4,
 }
 impl ForwardRefusal {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1337,7 +1336,6 @@ impl ForwardRefusal {
             Self::NoRoute => "FORWARD_REFUSAL_NO_ROUTE",
             Self::PaymentRequired => "FORWARD_REFUSAL_PAYMENT_REQUIRED",
             Self::RateLimited => "FORWARD_REFUSAL_RATE_LIMITED",
-            Self::ShuttingDown => "FORWARD_REFUSAL_SHUTTING_DOWN",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1347,7 +1345,6 @@ impl ForwardRefusal {
             "FORWARD_REFUSAL_NO_ROUTE" => Some(Self::NoRoute),
             "FORWARD_REFUSAL_PAYMENT_REQUIRED" => Some(Self::PaymentRequired),
             "FORWARD_REFUSAL_RATE_LIMITED" => Some(Self::RateLimited),
-            "FORWARD_REFUSAL_SHUTTING_DOWN" => Some(Self::ShuttingDown),
             _ => None,
         }
     }
@@ -3857,7 +3854,7 @@ pub mod trusted {
         #[prost(message, tag = "2")]
         Away(super::Empty),
         /// Anything else: no route, or a channel that failed for any reason but
-        /// the plan (no route at the relay, rate limited, shutting down, revoked,
+        /// the plan (no route at the relay, rate limited, revoked,
         /// TLS or identity failure, timeout, link gone).
         #[prost(message, tag = "3")]
         Offline(super::Offline),

@@ -178,9 +178,7 @@ impl Daemon {
         let refused_for_plan = match reason {
             ForwardRefusal::PaymentRequired => true,
             ForwardRefusal::NoRoute => false,
-            ForwardRefusal::RateLimited
-            | ForwardRefusal::ShuttingDown
-            | ForwardRefusal::Unspecified => return,
+            ForwardRefusal::RateLimited | ForwardRefusal::Unspecified => return,
         };
         self.touched.host(host);
         self.presence
@@ -558,12 +556,13 @@ mod tests {
     }
 
     #[test]
-    fn a_forward_refused_for_the_rate_or_a_shutdown_says_nothing_of_the_host() {
+    fn a_forward_refused_for_the_rate_says_nothing_of_the_host() {
         let mut daemon = refused_desk();
-        for reason in [ForwardRefusal::RateLimited, ForwardRefusal::ShuttingDown] {
-            assert_eq!(forward_refused(&mut daemon, 1, DESK, reason), Vec::new());
-            assert_eq!(view(&daemon, DESK).presence, Presence::Away);
-        }
+        assert_eq!(
+            forward_refused(&mut daemon, 1, DESK, ForwardRefusal::RateLimited),
+            Vec::new()
+        );
+        assert_eq!(view(&daemon, DESK).presence, Presence::Away);
     }
 
     #[test]

@@ -782,12 +782,8 @@ impl Machine for PathModel {
             }
             if s.relay_up && s.sent_on_relay() && s.used.refusals < self.refusals {
                 out.extend(
-                    [
-                        ForwardRefusal::NoRoute,
-                        ForwardRefusal::RateLimited,
-                        ForwardRefusal::ShuttingDown,
-                    ]
-                    .map(Action::RelayRefusesFor),
+                    [ForwardRefusal::NoRoute, ForwardRefusal::RateLimited]
+                        .map(Action::RelayRefusesFor),
                 );
             }
         }

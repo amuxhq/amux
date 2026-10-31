@@ -560,16 +560,6 @@ fn carrier_kind(kind: PathKind) -> CarrierKind {
     }
 }
 
-/// The refusal as a path machine reads it.
-pub(crate) fn refusal(reason: wire::ForwardRefusal) -> ForwardRefusal {
-    match reason {
-        wire::ForwardRefusal::PaymentRequired => ForwardRefusal::PaymentRequired,
-        wire::ForwardRefusal::RateLimited => ForwardRefusal::RateLimited,
-        wire::ForwardRefusal::ShuttingDown => ForwardRefusal::ShuttingDown,
-        _ => ForwardRefusal::NoRoute,
-    }
-}
-
 async fn run(
     driver: Weak<PathDriver>,
     wake: Arc<Notify>,

@@ -462,8 +462,8 @@ by `MESSAGE_SIZE_LIMIT` (16 MiB). The complete control vocabulary is:
   come from has changed. The relay looks every two seconds; a free host and a
   host linked over TCP are never told one.
 - `ForwardRefused`: a forwarder could not deliver packets naming `dst`, with
-  one `ForwardRefusal` reason: `NO_ROUTE`, `PAYMENT_REQUIRED`,
-  `RATE_LIMITED` or `SHUTTING_DOWN`. The packets themselves are dropped.
+  one `ForwardRefusal` reason: `NO_ROUTE`, `PAYMENT_REQUIRED` or
+  `RATE_LIMITED`. The packets themselves are dropped.
 - `Reauth`: a fire-and-forget replacement token for a cloud link.
 - `RefreshCredential`: a relay asking a link on the free plan for a fresh
   token, because another link of the same account has just presented a paid
@@ -614,7 +614,7 @@ A forwarder that will not carry a pair answers on the sender's control link
 with `ForwardRefused`, naming the destination and why, at most once per
 destination every five seconds: `NO_ROUTE` when it holds no link to the
 destination, `PAYMENT_REQUIRED` when the account's plan carries no
-connections between hosts, `RATE_LIMITED`, `SHUTTING_DOWN`. The host closes
+connections between hosts, `RATE_LIMITED`. The host closes
 its links to that destination through the forwarder before its core hears
 why, so presence reads the host away on a payment refusal while no other
 route carries it, and offline at once on no route.

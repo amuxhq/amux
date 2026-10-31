@@ -245,7 +245,7 @@ local address keeps answering. In the second, an answer arrives for a path
 with no probe of it outstanding (late, duplicated, or from before the
 network changed; never on a path whose probe the machine still waits on,
 since the driver passes only the outstanding probe's answer), the relay
-refuses for no route, the rate limit or shutting down, the peer stops
+refuses for no route or the rate limit, the peer stops
 listing an address, and the peer lists an IPv6 address as near as its IPv4
 one, while the relay link stays up and the local address keeps answering.
 The properties read the world's own record of what the machine asked for

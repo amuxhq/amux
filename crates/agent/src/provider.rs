@@ -1304,7 +1304,6 @@ fn claude_launch(
             .map(|_| format!("mcp__{}__*", interpret::AMUX_TOOL_SERVER))
             .chain([format!("Read(/{}/**)", rule_path(&dir.join(dir::BLOBS)))])
             .collect(),
-        ..Default::default()
     };
     let settings = claude::launch::merged_settings(user, &managed).into_value();
     Ok((args, settings.to_string(), withheld))

@@ -559,12 +559,6 @@ impl LinkSocket {
         tracing::debug!(%destination, %error, "link socket dropped a send");
     }
 
-    /// The largest datagram every path of this peer carries: the smallest
-    /// of its paths', so a switch between them never needs a smaller one.
-    pub fn max_datagram(&self, peer: HostId) -> usize {
-        self.lock().peers.max_datagram(peer)
-    }
-
     /// What the socket holds for its peers: their states, stand-ins,
     /// addresses and forwarding links.
     #[cfg(test)]
@@ -1363,10 +1357,8 @@ mod tests {
     #[test]
     fn socket_largest_datagram_fits_ipv6_behind_the_header() {
         let (_fake, socket, _own) = fake_socket();
-        let peer = HostId::new_v4();
-        assert_eq!(socket.max_datagram(peer), 1200);
         // IPv6's minimum MTU less its own and UDP's headers.
-        assert!(socket.max_datagram(peer) + FORWARD_HEADER <= 1280 - 40 - 8);
+        const { assert!(MAX_DATAGRAM + FORWARD_HEADER <= 1280 - 40 - 8) };
         // The fake reports a v4 address; quinn still sees an IPv6 socket.
         assert!(AsyncUdpSocket::local_addr(&*socket).unwrap().is_ipv6());
     }

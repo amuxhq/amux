@@ -34,8 +34,6 @@ pub enum Message {
     ModelRefusalFallback(ModelRefusalFallbackMessage),
     ModelRefusalNoFallback(ModelRefusalNoFallbackMessage),
     LocalCommandOutput(LocalCommandOutputMessage),
-    HookStarted(HookStartedMessage),
-    HookResponse(HookResponseMessage),
     AuthStatus(AuthStatusMessage),
     TaskNotification(TaskNotificationMessage),
     TaskStarted(TaskStartedMessage),
@@ -47,10 +45,8 @@ pub enum Message {
     RateLimit(RateLimitEvent),
     ElicitationComplete(ElicitationCompleteMessage),
     PermissionDenied(PermissionDeniedMessage),
-    PromptSuggestion(PromptSuggestionMessage),
     ConversationReset(ConversationResetMessage),
     CommandLifecycle(CommandLifecycleMessage),
-    SessionTitleChanged(SessionTitleChangedMessage),
     UnknownSystem(RawFrame),
     Unknown(RawFrame),
 }
@@ -76,7 +72,6 @@ impl Message {
             "stream_event" => parse_known(raw, false).map(Self::StreamEvent),
             "auth_status" => parse_known(raw, false).map(Self::AuthStatus),
             "rate_limit_event" => parse_known(raw, false).map(Self::RateLimit),
-            "prompt_suggestion" => parse_known(raw, false).map(Self::PromptSuggestion),
             "conversation_reset" => parse_known(raw, false).map(Self::ConversationReset),
             "command_lifecycle" => parse_known(raw, false).map(Self::CommandLifecycle),
             _ => Ok(Self::Unknown(RawFrame::unknown("frame", raw))),
@@ -92,8 +87,6 @@ impl Message {
             "model_refusal_fallback" => parse_known(raw, true).map(Self::ModelRefusalFallback),
             "model_refusal_no_fallback" => parse_known(raw, true).map(Self::ModelRefusalNoFallback),
             "local_command_output" => parse_known(raw, true).map(Self::LocalCommandOutput),
-            "hook_started" => parse_known(raw, true).map(Self::HookStarted),
-            "hook_response" => parse_known(raw, true).map(Self::HookResponse),
             "task_notification" => parse_known(raw, true).map(Self::TaskNotification),
             "task_started" => parse_known(raw, true).map(Self::TaskStarted),
             "task_updated" => parse_known(raw, true).map(Self::TaskUpdated),
@@ -103,7 +96,6 @@ impl Message {
             "commands_changed" => parse_known(raw, true).map(Self::CommandsChanged),
             "elicitation_complete" => parse_known(raw, true).map(Self::ElicitationComplete),
             "permission_denied" => parse_known(raw, true).map(Self::PermissionDenied),
-            "session_title_changed" => parse_known(raw, true).map(Self::SessionTitleChanged),
             _ => Ok(Self::UnknownSystem(RawFrame::unknown("system frame", raw))),
         }
     }
@@ -122,8 +114,6 @@ impl Message {
             Self::ModelRefusalFallback(_) => "system.model_refusal_fallback",
             Self::ModelRefusalNoFallback(_) => "system.model_refusal_no_fallback",
             Self::LocalCommandOutput(_) => "system.local_command_output",
-            Self::HookStarted(_) => "system.hook_started",
-            Self::HookResponse(_) => "system.hook_response",
             Self::AuthStatus(_) => "auth_status",
             Self::TaskNotification(_) => "system.task_notification",
             Self::TaskStarted(_) => "system.task_started",
@@ -135,10 +125,8 @@ impl Message {
             Self::RateLimit(_) => "rate_limit_event",
             Self::ElicitationComplete(_) => "system.elicitation_complete",
             Self::PermissionDenied(_) => "system.permission_denied",
-            Self::PromptSuggestion(_) => "prompt_suggestion",
             Self::ConversationReset(_) => "conversation_reset",
             Self::CommandLifecycle(_) => "command_lifecycle",
-            Self::SessionTitleChanged(_) => "system.session_title_changed",
             Self::UnknownSystem(v) => v
                 .field("subtype")
                 .and_then(|v| v.as_str())
@@ -167,8 +155,6 @@ impl Message {
             Self::ModelRefusalFallback(v) => Some(&v.session_id),
             Self::ModelRefusalNoFallback(v) => Some(&v.session_id),
             Self::LocalCommandOutput(v) => Some(&v.session_id),
-            Self::HookStarted(v) => Some(&v.session_id),
-            Self::HookResponse(v) => Some(&v.session_id),
             Self::AuthStatus(v) => Some(&v.session_id),
             Self::TaskNotification(v) => Some(&v.session_id),
             Self::TaskStarted(v) => Some(&v.session_id),
@@ -180,10 +166,8 @@ impl Message {
             Self::RateLimit(v) => Some(&v.session_id),
             Self::ElicitationComplete(v) => Some(&v.session_id),
             Self::PermissionDenied(v) => Some(&v.session_id),
-            Self::PromptSuggestion(v) => Some(&v.session_id),
             Self::ConversationReset(v) => Some(&v.session_id),
             Self::CommandLifecycle(v) => Some(&v.session_id),
-            Self::SessionTitleChanged(v) => Some(&v.session_id),
         }
     }
 }
@@ -214,8 +198,6 @@ impl Serialize for Message {
             Self::ModelRefusalFallback(v) => env!(v, "system", Some("model_refusal_fallback")),
             Self::ModelRefusalNoFallback(v) => env!(v, "system", Some("model_refusal_no_fallback")),
             Self::LocalCommandOutput(v) => env!(v, "system", Some("local_command_output")),
-            Self::HookStarted(v) => env!(v, "system", Some("hook_started")),
-            Self::HookResponse(v) => env!(v, "system", Some("hook_response")),
             Self::AuthStatus(v) => env!(v, "auth_status", None),
             Self::TaskNotification(v) => env!(v, "system", Some("task_notification")),
             Self::TaskStarted(v) => env!(v, "system", Some("task_started")),
@@ -227,10 +209,8 @@ impl Serialize for Message {
             Self::RateLimit(v) => env!(v, "rate_limit_event", None),
             Self::ElicitationComplete(v) => env!(v, "system", Some("elicitation_complete")),
             Self::PermissionDenied(v) => env!(v, "system", Some("permission_denied")),
-            Self::PromptSuggestion(v) => env!(v, "prompt_suggestion", None),
             Self::ConversationReset(v) => env!(v, "conversation_reset", None),
             Self::CommandLifecycle(v) => env!(v, "command_lifecycle", None),
-            Self::SessionTitleChanged(v) => env!(v, "system", Some("session_title_changed")),
             Self::UnknownSystem(v) | Self::Unknown(v) => v.serialize(serializer),
         }
     }
@@ -411,7 +391,6 @@ wire_struct!(ResultSuccess {
     #[serde(flatten)] pub common:ResultCommon,#[serde(default="crate::absent::result")] pub result:String,
 });
 wire_struct!(ResultError { #[serde(flatten)] pub common:ResultCommon,#[serde(default="crate::absent::errors")] pub errors:Vec<String>, });
-wire_struct!(DeferredToolUse { pub id:String,pub name:String,pub input:serde_json::Value, });
 
 wire_struct!(SystemInitMessage {
     pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
@@ -476,12 +455,6 @@ wire_struct!(ModelRefusalNoFallbackMessage {
     pub content:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
 });
 wire_struct!(LocalCommandOutputMessage { pub content:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
-wire_struct!(HookStartedMessage { pub hook_id:String,pub hook_name:String,pub hook_event:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
-wire_struct!(HookResponseMessage {
-    pub hook_id:String,pub hook_name:String,pub hook_event:String,pub output:String,pub stdout:String,pub stderr:String,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub exit_code:Option<i32>,
-    pub outcome:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
-});
 wire_struct!(AuthStatusMessage {
     #[serde(rename="isAuthenticating")] pub is_authenticating:bool,pub output:Vec<String>,
     #[serde(default,skip_serializing_if="Option::is_none")] pub error:Option<String>,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
@@ -549,11 +522,9 @@ wire_struct!(PermissionDeniedMessage {
     #[serde(default,skip_serializing_if="Option::is_none")] pub decision_reason:Option<String>,
     pub message:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
 });
-wire_struct!(PromptSuggestionMessage { pub suggestion:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
 // Where a queued prompt is in its life, named by the sender's uuid.
 wire_struct!(CommandLifecycleMessage { pub command_uuid:String,pub state:String,#[serde(default="crate::absent::uuid")] pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
 // The session's title, as set by the caller's `title` option or changed since.
-wire_struct!(SessionTitleChangedMessage { pub title:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
 wire_struct!(ConversationResetMessage { pub new_conversation_id:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
 
 fn required_string<'a>(raw: &'a serde_json::Value, field: &str) -> Result<&'a str, ProtocolError> {

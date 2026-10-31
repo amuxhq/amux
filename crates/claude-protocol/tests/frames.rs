@@ -6,9 +6,9 @@ use std::path::Path;
 use claude_protocol::stream::control::{ControlOutcome, InitializeRequestBody};
 use claude_protocol::stream::{
     self, ContentBlock, ControlRequest, ControlRequestBody, ControlResponse, Extensions,
-    HookOutput, HookSpecificOutput, InitializationResult, Input, Message, MessageContent,
-    MessageParam, Output, PermissionMode, PermissionResult, PermissionUpdate,
-    PermissionUpdateDestination, ResultMessage, Role, SyncHookOutput, UserInput,
+    InitializationResult, Input, Message, MessageContent, MessageParam, Output, PermissionMode,
+    PermissionResult, PermissionUpdate, PermissionUpdateDestination, ResultMessage, Role,
+    UserInput,
 };
 use serde_json::Value;
 
@@ -135,30 +135,6 @@ fn amux_answers_write_only_the_keys_amux_sets() {
     assert_eq!(
         answer(&deny),
         r#"{"response":{"request_id":"req_1","response":{"behavior":"deny","interrupt":false,"message":"no"},"subtype":"success"},"type":"control_response"}"#
-    );
-
-    let carry_on = HookOutput::Sync(SyncHookOutput {
-        r#continue: Some(true),
-        ..SyncHookOutput::default()
-    });
-    assert_eq!(
-        answer(&carry_on),
-        r#"{"response":{"request_id":"req_1","response":{"continue":true},"subtype":"success"},"type":"control_response"}"#
-    );
-    let decided = HookOutput::Sync(SyncHookOutput {
-        hook_specific_output: Some(HookSpecificOutput::PermissionRequest { decision: deny }),
-        ..SyncHookOutput::default()
-    });
-    assert_eq!(
-        answer(&decided),
-        r#"{"response":{"request_id":"req_1","response":{"hookSpecificOutput":{"decision":{"behavior":"deny","interrupt":false,"message":"no"},"hookEventName":"PermissionRequest"}},"subtype":"success"},"type":"control_response"}"#
-    );
-    let later = HookOutput::Async {
-        timeout: Some(std::time::Duration::from_secs(2)),
-    };
-    assert_eq!(
-        answer(&later),
-        r#"{"response":{"request_id":"req_1","response":{"async":true,"asyncTimeout":2000},"subtype":"success"},"type":"control_response"}"#
     );
 }
 

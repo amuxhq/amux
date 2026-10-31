@@ -3,13 +3,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use claude_protocol::stream::control::{CanUseToolRequest, ControlOutcome};
-use claude_protocol::stream::init::{ContextUsage, SlashCommand};
+use claude_protocol::stream::init::SlashCommand;
 use claude_protocol::stream::{
     self, AssistantMessage, CompactTrigger, ContentBlock, ControlRequest, ControlRequestBody,
-    ControlResponse, InitializationResult, McpServerStatus, McpStatusResult, Message,
-    MessageContent, ModelUsage, Output, RateLimitInfo, ReloadPluginsResult, ResultCommon,
-    ResultError, ResultMessage, SettingsResult, StreamDelta, StreamEvent, SystemInitMessage,
-    TaskUsage, Usage, UserMessageOutput,
+    ControlResponse, InitializationResult, Message, MessageContent, ModelUsage, Output,
+    RateLimitInfo, ResultCommon, ResultError, ResultMessage, SettingsResult, StreamDelta,
+    StreamEvent, SystemInitMessage, TaskUsage, Usage, UserMessageOutput,
 };
 use prost::Message as _;
 use serde::Deserialize;
@@ -1452,8 +1451,7 @@ impl State {
     }
 
     /// Responses to requests: the interpreter's own, matched by id, and
-    /// the agent process's initialize, mcp_status and get_context_usage,
-    /// recognised by their shape.
+    /// the agent process's initialize, recognised by its shape.
     fn control_response_in(&mut self, emit: &mut Emit, response: ControlResponse) {
         let ok = response.response.subtype == ControlOutcome::Success;
         match self.requests.remove(response.request_id()) {
@@ -1505,24 +1503,16 @@ impl State {
                     .unwrap_or_default(),
                 message: String::new(),
             });
-        } else if let Some(Ok(reloaded)) = response.result::<ReloadPluginsResult>() {
-            self.commands_listed(emit, ok, &reloaded.commands);
-            self.servers_listed(&reloaded.mcp_servers);
-        } else if let Some(Ok(status)) = response.result::<McpStatusResult>() {
-            self.servers_listed(&status.mcp_servers);
-        } else if let Some(Ok(usage)) = response.result::<ContextUsage>() {
-            self.context_tokens = Some(usage.total_tokens);
-            self.context_window = Some(usage.max_tokens);
         }
     }
 }
 
 impl State {
-    /// An answer listing Claude's commands: initialize's, or a plugin
-    /// reload's. Claude reports its init only once the first message
-    /// arrives, so this answer is what says it takes input; without it a
-    /// queued first prompt would wait for an init that only a prompt can
-    /// bring. What it applies may have changed with it.
+    /// Initialize's answer, which lists Claude's commands. Claude reports
+    /// its init only once the first message arrives, so this answer is
+    /// what says it takes input; without it a queued first prompt would
+    /// wait for an init that only a prompt can bring. What it applies may
+    /// have changed with it.
     fn commands_listed(&mut self, emit: &mut Emit, ok: bool, commands: &[SlashCommand]) {
         if ok {
             self.shared.provider_started();
@@ -1544,16 +1534,6 @@ impl State {
                 ..Default::default()
             },
         );
-    }
-
-    fn servers_listed(&mut self, servers: &[McpServerStatus]) {
-        self.servers = Some(server_health(servers.iter().map(|server| {
-            (
-                server.name.as_str(),
-                server.status.as_str(),
-                server.error.as_deref().unwrap_or_default(),
-            )
-        })));
     }
 }
 

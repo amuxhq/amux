@@ -926,35 +926,9 @@ pub enum PermissionResult {
     },
 }
 
-// ── Hook enums used in multiple modules ─────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SessionStartSource {
-    Startup,
-    Resume,
-    Clear,
-    Compact,
-}
+// ── Enums used in multiple modules ──────────────────────────────────
 
 open_string_enum!(CompactTrigger {
     Manual => "manual",
     Auto => "auto",
 });
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SetupTrigger {
-    Init,
-    Maintenance,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ConfigChangeSource {
-    UserSettings,
-    ProjectSettings,
-    LocalSettings,
-    PolicySettings,
-    Skills,
-}

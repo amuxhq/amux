@@ -13,19 +13,15 @@ pub mod control;
 mod error;
 pub mod init;
 pub mod message;
-pub mod options;
 pub mod types;
 
 pub use control::{
-    ControlCancelRequest, ControlRequest, ControlRequestBody, ControlResponse, FlagSettings,
-    InterruptResult, McpPermissionMode, McpPermissionModeOverrideResult, McpServerStatus,
-    McpSetServersResult, McpStatusResult, ReloadPluginsResult, ReloadSkillsResult,
-    RewindFilesResult, SetPermissionModeResult, SettingsResult,
+    ControlCancelRequest, ControlRequest, ControlRequestBody, ControlResponse, ElicitationResult,
+    FlagSettings, InterruptResult, SetPermissionModeResult, SettingsResult,
 };
 pub use error::ProtocolError;
 pub use init::InitializationResult;
 pub use message::*;
-pub use options::*;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};

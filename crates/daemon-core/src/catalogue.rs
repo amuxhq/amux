@@ -90,6 +90,14 @@ impl Catalogue {
             .or_else(|| self.claims.get(&host).map(|claimed| &claimed.said))
     }
 
+    /// The neighbors claiming `host`, in claim order.
+    pub fn relays_to(&self, host: HostId) -> Vec<HostId> {
+        self.claims
+            .get(&host)
+            .map(|claimed| claimed.relays.clone())
+            .unwrap_or_default()
+    }
+
     /// Every host a neighbor claims, with what it said of itself and the
     /// neighbors claiming it, in claim order.
     pub fn claimed(&self) -> impl Iterator<Item = (HostId, &Said, &[HostId])> {

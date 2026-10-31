@@ -6,7 +6,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::stream::error::ProtocolError;
 use crate::stream::types::{
     ApiKeySource, ApiMessage, AssistantMessageError, CompactTrigger, Extensions, MessageParam,
-    ModelUsage, PermissionDenial, PermissionMode, RawFrame, StreamEvent, Usage, present_nullable,
+    ModelUsage, PermissionMode, RawFrame, StreamEvent, Usage, present_nullable,
 };
 
 macro_rules! wire_struct {
@@ -31,15 +31,11 @@ pub enum Message {
     CompactBoundary(CompactBoundaryMessage),
     Status(StatusMessage),
     ApiRetry(ApiRetryMessage),
-    ControlRequestProgress(ControlRequestProgressMessage),
     ModelRefusalFallback(ModelRefusalFallbackMessage),
     ModelRefusalNoFallback(ModelRefusalNoFallbackMessage),
     LocalCommandOutput(LocalCommandOutputMessage),
     HookStarted(HookStartedMessage),
-    HookProgress(HookProgressMessage),
     HookResponse(HookResponseMessage),
-    PluginInstall(PluginInstallMessage),
-    ToolProgress(ToolProgressMessage),
     AuthStatus(AuthStatusMessage),
     TaskNotification(TaskNotificationMessage),
     TaskStarted(TaskStartedMessage),
@@ -47,20 +43,13 @@ pub enum Message {
     TaskProgress(TaskProgressMessage),
     BackgroundTasksChanged(BackgroundTasksChangedMessage),
     ThinkingTokens(ThinkingTokensMessage),
-    SessionStateChanged(SessionStateChangedMessage),
     CommandsChanged(CommandsChangedMessage),
-    Notification(NotificationMessage),
-    FilesPersisted(FilesPersistedEvent),
-    ToolUseSummary(ToolUseSummaryMessage),
-    MemoryRecall(MemoryRecallMessage),
     RateLimit(RateLimitEvent),
     ElicitationComplete(ElicitationCompleteMessage),
     PermissionDenied(PermissionDeniedMessage),
     PromptSuggestion(PromptSuggestionMessage),
-    Informational(InformationalMessage),
     ConversationReset(ConversationResetMessage),
     CommandLifecycle(CommandLifecycleMessage),
-    PeerMessageHold(PeerMessageHoldMessage),
     SessionTitleChanged(SessionTitleChangedMessage),
     UnknownSystem(RawFrame),
     Unknown(RawFrame),
@@ -85,9 +74,7 @@ impl Message {
             "result" => ResultMessage::parse(raw).map(Self::Result),
             "system" => Self::parse_system(raw),
             "stream_event" => parse_known(raw, false).map(Self::StreamEvent),
-            "tool_progress" => parse_known(raw, false).map(Self::ToolProgress),
             "auth_status" => parse_known(raw, false).map(Self::AuthStatus),
-            "tool_use_summary" => parse_known(raw, false).map(Self::ToolUseSummary),
             "rate_limit_event" => parse_known(raw, false).map(Self::RateLimit),
             "prompt_suggestion" => parse_known(raw, false).map(Self::PromptSuggestion),
             "conversation_reset" => parse_known(raw, false).map(Self::ConversationReset),
@@ -102,29 +89,20 @@ impl Message {
             "compact_boundary" => parse_known(raw, true).map(Self::CompactBoundary),
             "status" => parse_known(raw, true).map(Self::Status),
             "api_retry" => parse_known(raw, true).map(Self::ApiRetry),
-            "control_request_progress" => parse_known(raw, true).map(Self::ControlRequestProgress),
             "model_refusal_fallback" => parse_known(raw, true).map(Self::ModelRefusalFallback),
             "model_refusal_no_fallback" => parse_known(raw, true).map(Self::ModelRefusalNoFallback),
             "local_command_output" => parse_known(raw, true).map(Self::LocalCommandOutput),
             "hook_started" => parse_known(raw, true).map(Self::HookStarted),
-            "hook_progress" => parse_known(raw, true).map(Self::HookProgress),
             "hook_response" => parse_known(raw, true).map(Self::HookResponse),
-            "plugin_install" => parse_known(raw, true).map(Self::PluginInstall),
             "task_notification" => parse_known(raw, true).map(Self::TaskNotification),
             "task_started" => parse_known(raw, true).map(Self::TaskStarted),
             "task_updated" => parse_known(raw, true).map(Self::TaskUpdated),
             "task_progress" => parse_known(raw, true).map(Self::TaskProgress),
             "background_tasks_changed" => parse_known(raw, true).map(Self::BackgroundTasksChanged),
             "thinking_tokens" => parse_known(raw, true).map(Self::ThinkingTokens),
-            "session_state_changed" => parse_known(raw, true).map(Self::SessionStateChanged),
             "commands_changed" => parse_known(raw, true).map(Self::CommandsChanged),
-            "notification" => parse_known(raw, true).map(Self::Notification),
-            "files_persisted" => parse_known(raw, true).map(Self::FilesPersisted),
-            "memory_recall" => parse_known(raw, true).map(Self::MemoryRecall),
             "elicitation_complete" => parse_known(raw, true).map(Self::ElicitationComplete),
             "permission_denied" => parse_known(raw, true).map(Self::PermissionDenied),
-            "informational" => parse_known(raw, true).map(Self::Informational),
-            "peer_message_hold" => parse_known(raw, true).map(Self::PeerMessageHold),
             "session_title_changed" => parse_known(raw, true).map(Self::SessionTitleChanged),
             _ => Ok(Self::UnknownSystem(RawFrame::unknown("system frame", raw))),
         }
@@ -141,15 +119,11 @@ impl Message {
             Self::CompactBoundary(_) => "system.compact_boundary",
             Self::Status(_) => "system.status",
             Self::ApiRetry(_) => "system.api_retry",
-            Self::ControlRequestProgress(_) => "system.control_request_progress",
             Self::ModelRefusalFallback(_) => "system.model_refusal_fallback",
             Self::ModelRefusalNoFallback(_) => "system.model_refusal_no_fallback",
             Self::LocalCommandOutput(_) => "system.local_command_output",
             Self::HookStarted(_) => "system.hook_started",
-            Self::HookProgress(_) => "system.hook_progress",
             Self::HookResponse(_) => "system.hook_response",
-            Self::PluginInstall(_) => "system.plugin_install",
-            Self::ToolProgress(_) => "tool_progress",
             Self::AuthStatus(_) => "auth_status",
             Self::TaskNotification(_) => "system.task_notification",
             Self::TaskStarted(_) => "system.task_started",
@@ -157,20 +131,13 @@ impl Message {
             Self::TaskProgress(_) => "system.task_progress",
             Self::BackgroundTasksChanged(_) => "system.background_tasks_changed",
             Self::ThinkingTokens(_) => "system.thinking_tokens",
-            Self::SessionStateChanged(_) => "system.session_state_changed",
             Self::CommandsChanged(_) => "system.commands_changed",
-            Self::Notification(_) => "system.notification",
-            Self::FilesPersisted(_) => "system.files_persisted",
-            Self::ToolUseSummary(_) => "tool_use_summary",
-            Self::MemoryRecall(_) => "system.memory_recall",
             Self::RateLimit(_) => "rate_limit_event",
             Self::ElicitationComplete(_) => "system.elicitation_complete",
             Self::PermissionDenied(_) => "system.permission_denied",
             Self::PromptSuggestion(_) => "prompt_suggestion",
-            Self::Informational(_) => "system.informational",
             Self::ConversationReset(_) => "conversation_reset",
             Self::CommandLifecycle(_) => "command_lifecycle",
-            Self::PeerMessageHold(_) => "system.peer_message_hold",
             Self::SessionTitleChanged(_) => "system.session_title_changed",
             Self::UnknownSystem(v) => v
                 .field("subtype")
@@ -197,15 +164,11 @@ impl Message {
             Self::CompactBoundary(v) => Some(&v.session_id),
             Self::Status(v) => Some(&v.session_id),
             Self::ApiRetry(v) => Some(&v.session_id),
-            Self::ControlRequestProgress(v) => Some(&v.session_id),
             Self::ModelRefusalFallback(v) => Some(&v.session_id),
             Self::ModelRefusalNoFallback(v) => Some(&v.session_id),
             Self::LocalCommandOutput(v) => Some(&v.session_id),
             Self::HookStarted(v) => Some(&v.session_id),
-            Self::HookProgress(v) => Some(&v.session_id),
             Self::HookResponse(v) => Some(&v.session_id),
-            Self::PluginInstall(v) => Some(&v.session_id),
-            Self::ToolProgress(v) => Some(&v.session_id),
             Self::AuthStatus(v) => Some(&v.session_id),
             Self::TaskNotification(v) => Some(&v.session_id),
             Self::TaskStarted(v) => Some(&v.session_id),
@@ -213,20 +176,13 @@ impl Message {
             Self::TaskProgress(v) => Some(&v.session_id),
             Self::BackgroundTasksChanged(v) => Some(&v.session_id),
             Self::ThinkingTokens(v) => Some(&v.session_id),
-            Self::SessionStateChanged(v) => Some(&v.session_id),
             Self::CommandsChanged(v) => Some(&v.session_id),
-            Self::Notification(v) => Some(&v.session_id),
-            Self::FilesPersisted(v) => Some(&v.session_id),
-            Self::ToolUseSummary(v) => Some(&v.session_id),
-            Self::MemoryRecall(v) => Some(&v.session_id),
             Self::RateLimit(v) => Some(&v.session_id),
             Self::ElicitationComplete(v) => Some(&v.session_id),
             Self::PermissionDenied(v) => Some(&v.session_id),
             Self::PromptSuggestion(v) => Some(&v.session_id),
-            Self::Informational(v) => Some(&v.session_id),
             Self::ConversationReset(v) => Some(&v.session_id),
             Self::CommandLifecycle(v) => Some(&v.session_id),
-            Self::PeerMessageHold(v) => Some(&v.session_id),
             Self::SessionTitleChanged(v) => Some(&v.session_id),
         }
     }
@@ -255,15 +211,11 @@ impl Serialize for Message {
             Self::CompactBoundary(v) => env!(v, "system", Some("compact_boundary")),
             Self::Status(v) => env!(v, "system", Some("status")),
             Self::ApiRetry(v) => env!(v, "system", Some("api_retry")),
-            Self::ControlRequestProgress(v) => env!(v, "system", Some("control_request_progress")),
             Self::ModelRefusalFallback(v) => env!(v, "system", Some("model_refusal_fallback")),
             Self::ModelRefusalNoFallback(v) => env!(v, "system", Some("model_refusal_no_fallback")),
             Self::LocalCommandOutput(v) => env!(v, "system", Some("local_command_output")),
             Self::HookStarted(v) => env!(v, "system", Some("hook_started")),
-            Self::HookProgress(v) => env!(v, "system", Some("hook_progress")),
             Self::HookResponse(v) => env!(v, "system", Some("hook_response")),
-            Self::PluginInstall(v) => env!(v, "system", Some("plugin_install")),
-            Self::ToolProgress(v) => env!(v, "tool_progress", None),
             Self::AuthStatus(v) => env!(v, "auth_status", None),
             Self::TaskNotification(v) => env!(v, "system", Some("task_notification")),
             Self::TaskStarted(v) => env!(v, "system", Some("task_started")),
@@ -271,20 +223,13 @@ impl Serialize for Message {
             Self::TaskProgress(v) => env!(v, "system", Some("task_progress")),
             Self::BackgroundTasksChanged(v) => env!(v, "system", Some("background_tasks_changed")),
             Self::ThinkingTokens(v) => env!(v, "system", Some("thinking_tokens")),
-            Self::SessionStateChanged(v) => env!(v, "system", Some("session_state_changed")),
             Self::CommandsChanged(v) => env!(v, "system", Some("commands_changed")),
-            Self::Notification(v) => env!(v, "system", Some("notification")),
-            Self::FilesPersisted(v) => env!(v, "system", Some("files_persisted")),
-            Self::ToolUseSummary(v) => env!(v, "tool_use_summary", None),
-            Self::MemoryRecall(v) => env!(v, "system", Some("memory_recall")),
             Self::RateLimit(v) => env!(v, "rate_limit_event", None),
             Self::ElicitationComplete(v) => env!(v, "system", Some("elicitation_complete")),
             Self::PermissionDenied(v) => env!(v, "system", Some("permission_denied")),
             Self::PromptSuggestion(v) => env!(v, "prompt_suggestion", None),
-            Self::Informational(v) => env!(v, "system", Some("informational")),
             Self::ConversationReset(v) => env!(v, "conversation_reset", None),
             Self::CommandLifecycle(v) => env!(v, "command_lifecycle", None),
-            Self::PeerMessageHold(v) => env!(v, "system", Some("peer_message_hold")),
             Self::SessionTitleChanged(v) => env!(v, "system", Some("session_title_changed")),
             Self::UnknownSystem(v) | Self::Unknown(v) => v.serialize(serializer),
         }
@@ -427,12 +372,8 @@ pub struct ResultCommon {
     #[serde(default = "crate::absent::session_id")]
     pub session_id: String,
     pub duration_ms: u64,
-    #[serde(default = "crate::absent::duration_api_ms")]
-    pub duration_api_ms: u64,
     #[serde(default = "crate::absent::is_error")]
     pub is_error: bool,
-    #[serde(default = "crate::absent::num_turns")]
-    pub num_turns: u32,
     #[serde(
         default = "crate::absent::stop_reason",
         deserialize_with = "required_option"
@@ -452,10 +393,6 @@ pub struct ResultCommon {
         skip_serializing_if = "Option::is_none"
     )]
     pub model_usage: Option<BTreeMap<String, ModelUsage>>,
-    #[serde(default = "crate::absent::permission_denials")]
-    pub permission_denials: Vec<PermissionDenial>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub queued_turn_count: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_message_uuid: Option<String>,
     /// Every client uuid whose prompt this turn consumed.
@@ -463,10 +400,6 @@ pub struct ResultCommon {
     pub user_message_uuids: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_reason: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fast_mode_state: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fast_mode_disabled_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<ResultOrigin>,
 }
@@ -476,16 +409,6 @@ wire_struct!(ResultOrigin {
 });
 wire_struct!(ResultSuccess {
     #[serde(flatten)] pub common:ResultCommon,#[serde(default="crate::absent::result")] pub result:String,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub structured_output:Option<serde_json::Value>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub deferred_tool_use:Option<DeferredToolUse>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub ttft_ms:Option<u64>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub ttft_stream_ms:Option<u64>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub time_to_request_ms:Option<u64>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub request_sent_wall_ms:Option<u64>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub time_to_request_from_spawn_ms:Option<u64>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub warm_spare_claimed:Option<bool>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub time_origin_ms:Option<u64>,
-    #[serde(default,deserialize_with="present_nullable",skip_serializing_if="Option::is_none")] pub api_error_status:Option<Option<u16>>,
 });
 wire_struct!(ResultError { #[serde(flatten)] pub common:ResultCommon,#[serde(default="crate::absent::errors")] pub errors:Vec<String>, });
 wire_struct!(DeferredToolUse { pub id:String,pub name:String,pub input:serde_json::Value, });
@@ -501,9 +424,6 @@ wire_struct!(SystemInitMessage {
     #[serde(default="crate::absent::mcp_servers",skip_serializing_if="Option::is_none")] pub mcp_servers:Option<Vec<McpServerInfo>>,
     #[serde(default="crate::absent::model")] pub model:String,
     #[serde(rename="permissionMode",default="crate::absent::permission_mode")] pub permission_mode:PermissionMode,
-    #[serde(default="crate::absent::slash_commands")] pub slash_commands:Vec<String>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub terminal_slash_commands:Option<Vec<String>>,
-    #[serde(default="crate::absent::output_style")] pub output_style:String,
     #[serde(default="crate::absent::skills")] pub skills:Vec<String>,
     #[serde(default="crate::absent::plugins")] pub plugins:Vec<PluginInfo>,
     #[serde(default,skip_serializing_if="Option::is_none")] pub capabilities:Option<Vec<String>>,
@@ -537,14 +457,6 @@ wire_struct!(ApiRetryMessage {
     #[serde(deserialize_with="required_option")] pub error_status:Option<u16>,
     pub error:AssistantMessageError,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
 });
-wire_struct!(ControlRequestProgressMessage {
-    pub request_id:String,pub status:String,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub attempt:Option<u32>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub max_retries:Option<u32>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub retry_delay_ms:Option<u64>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub error_status:Option<u16>,
-    pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
-});
 wire_struct!(ModelRefusalFallbackMessage {
     pub trigger:String,pub direction:String,
     #[serde(default,skip_serializing_if="Option::is_none")] pub scope:Option<String>,
@@ -565,23 +477,10 @@ wire_struct!(ModelRefusalNoFallbackMessage {
 });
 wire_struct!(LocalCommandOutputMessage { pub content:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
 wire_struct!(HookStartedMessage { pub hook_id:String,pub hook_name:String,pub hook_event:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
-wire_struct!(HookProgressMessage { pub hook_id:String,pub hook_name:String,pub hook_event:String,pub stdout:String,pub stderr:String,pub output:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
 wire_struct!(HookResponseMessage {
     pub hook_id:String,pub hook_name:String,pub hook_event:String,pub output:String,pub stdout:String,pub stderr:String,
     #[serde(default,skip_serializing_if="Option::is_none")] pub exit_code:Option<i32>,
     pub outcome:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
-});
-wire_struct!(PluginInstallMessage {
-    pub status:String,#[serde(default,skip_serializing_if="Option::is_none")] pub name:Option<String>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub error:Option<String>,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
-});
-wire_struct!(ToolProgressMessage {
-    pub tool_use_id:String,pub tool_name:String,#[serde(deserialize_with="required_option")] pub parent_tool_use_id:Option<String>,
-    pub elapsed_time_seconds:f64,#[serde(default,skip_serializing_if="Option::is_none")] pub task_id:Option<String>,
-    pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub heartbeat:Option<bool>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub subagent_type:Option<String>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub subagent_retry:Option<serde_json::Value>,
 });
 wire_struct!(AuthStatusMessage {
     #[serde(rename="isAuthenticating")] pub is_authenticating:bool,pub output:Vec<String>,
@@ -624,29 +523,12 @@ wire_struct!(TaskProgressMessage {
 wire_struct!(BackgroundTask { #[serde(default="crate::absent::task_id")] pub task_id:String,#[serde(default="crate::absent::task_type")] pub task_type:String,#[serde(default="crate::absent::description")] pub description:String,#[serde(default,skip_serializing_if="Option::is_none")] pub ambient:Option<bool>, });
 wire_struct!(BackgroundTasksChangedMessage { #[serde(default="crate::absent::tasks",skip_serializing_if="Option::is_none")] pub tasks:Option<Vec<BackgroundTask>>,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
 wire_struct!(ThinkingTokensMessage { pub estimated_tokens:u64,pub estimated_tokens_delta:u64,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
-wire_struct!(SessionStateChangedMessage { pub state:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
 wire_struct!(CommandsChangedMessage { pub commands:Vec<crate::stream::init::SlashCommand>,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
-wire_struct!(NotificationMessage {
-    pub key:String,pub text:String,pub priority:String,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub color:Option<String>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub timeout_ms:Option<u64>,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
-});
-wire_struct!(PersistedFile { pub filename:String,pub file_id:String, });
-wire_struct!(FailedFile { pub filename:String,pub error:String, });
-wire_struct!(FilesPersistedEvent { pub files:Vec<PersistedFile>,pub failed:Vec<FailedFile>,pub processed_at:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
-wire_struct!(ToolUseSummaryMessage { pub summary:String,pub preceding_tool_use_ids:Vec<String>,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
-wire_struct!(RecalledMemory { pub path:String,pub scope:String,#[serde(default,skip_serializing_if="Option::is_none")] pub content:Option<String>, });
-wire_struct!(MemoryRecallMessage { pub mode:String,pub memories:Vec<RecalledMemory>,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
 wire_struct!(RateLimitInfo {
     pub status:String,
     #[serde(rename="resetsAt",default,skip_serializing_if="Option::is_none")] pub resets_at:Option<u64>,
     #[serde(rename="rateLimitType",default,skip_serializing_if="Option::is_none")] pub rate_limit_type:Option<String>,
     #[serde(default,skip_serializing_if="Option::is_none")] pub utilization:Option<f64>,
-    #[serde(rename="overageStatus",default,skip_serializing_if="Option::is_none")] pub overage_status:Option<String>,
-    #[serde(rename="overageResetsAt",default,skip_serializing_if="Option::is_none")] pub overage_resets_at:Option<u64>,
-    #[serde(rename="overageDisabledReason",default,skip_serializing_if="Option::is_none")] pub overage_disabled_reason:Option<String>,
-    #[serde(rename="isUsingOverage",default,skip_serializing_if="Option::is_none")] pub is_using_overage:Option<bool>,
-    #[serde(rename="overageInUse",default,skip_serializing_if="Option::is_none")] pub overage_in_use:Option<bool>,
     #[serde(rename="surpassedThreshold",default,skip_serializing_if="Option::is_none")] pub surpassed_threshold:Option<f64>,
     #[serde(rename="errorCode",default,skip_serializing_if="Option::is_none")] pub error_code:Option<String>,
     #[serde(rename="canUserPurchaseCredits",default,skip_serializing_if="Option::is_none")] pub can_user_purchase_credits:Option<bool>,
@@ -668,18 +550,8 @@ wire_struct!(PermissionDeniedMessage {
     pub message:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
 });
 wire_struct!(PromptSuggestionMessage { pub suggestion:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
-wire_struct!(InformationalMessage {
-    pub content:String,pub level:String,#[serde(default,skip_serializing_if="Option::is_none")] pub tool_use_id:Option<String>,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub prevent_continuation:Option<bool>,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
-});
 // Where a queued prompt is in its life, named by the sender's uuid.
 wire_struct!(CommandLifecycleMessage { pub command_uuid:String,pub state:String,#[serde(default="crate::absent::uuid")] pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
-// A message from another session Claude is holding back, and why.
-wire_struct!(PeerMessageHoldMessage {
-    pub message_uuid:String,pub state:String,
-    #[serde(default,skip_serializing_if="Option::is_none")] pub cause:Option<String>,
-    pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
-});
 // The session's title, as set by the caller's `title` option or changed since.
 wire_struct!(SessionTitleChangedMessage { pub title:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
 wire_struct!(ConversationResetMessage { pub new_conversation_id:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });

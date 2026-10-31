@@ -17,11 +17,10 @@ pub mod options;
 pub mod types;
 
 pub use control::{
-    BackgroundTaskSummary, ControlCancelRequest, ControlRequest, ControlRequestBody,
-    ControlResponse, FlagSettings, InterruptResult, McpPermissionMode,
-    McpPermissionModeOverrideResult, McpServerStatus, McpSetServersResult, McpStatusResult,
-    PluginInfo, ReloadPluginsResult, ReloadSkillsResult, RewindFilesResult,
-    SetPermissionModeResult, SettingsResult,
+    ControlCancelRequest, ControlRequest, ControlRequestBody, ControlResponse, FlagSettings,
+    InterruptResult, McpPermissionMode, McpPermissionModeOverrideResult, McpServerStatus,
+    McpSetServersResult, McpStatusResult, ReloadPluginsResult, ReloadSkillsResult,
+    RewindFilesResult, SetPermissionModeResult, SettingsResult,
 };
 pub use error::ProtocolError;
 pub use init::InitializationResult;

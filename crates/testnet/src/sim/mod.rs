@@ -619,12 +619,6 @@ impl World for SimNet {
         ))
     }
 
-    fn bind_ipv6_only(&mut self, _: &str) -> Result<Ack, NetError> {
-        Err(NetError::Unsupported(
-            "binding IPv6 only in a simulated net",
-        ))
-    }
-
     fn carrying_path(&self, _: &str, _: &str) -> Result<Option<PathKind>, NetError> {
         Err(NetError::Unsupported(
             "the carrying path in a simulated net",

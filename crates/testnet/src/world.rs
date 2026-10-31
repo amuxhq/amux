@@ -54,8 +54,6 @@ pub trait World {
     /// Moves the host onto another network: its link socket is rebound and
     /// its links migrate.
     fn change_network(&mut self, host: &str) -> Result<Ack, NetError>;
-    /// Binds the host's socket to IPv6 loopback alone from its next start.
-    fn bind_ipv6_only(&mut self, host: &str) -> Result<Ack, NetError>;
     /// The path carrying the host's link to `peer` now, by its link log;
     /// none while the link is down.
     fn carrying_path(&self, host: &str, peer: &str) -> Result<Option<PathKind>, NetError>;
@@ -218,10 +216,6 @@ impl World for Net {
 
     fn change_network(&mut self, host: &str) -> Result<Ack, NetError> {
         Net::change_network(self, host)
-    }
-
-    fn bind_ipv6_only(&mut self, host: &str) -> Result<Ack, NetError> {
-        Net::bind_ipv6_only(self, host)
     }
 
     fn carrying_path(&self, host: &str, peer: &str) -> Result<Option<PathKind>, NetError> {

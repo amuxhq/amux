@@ -91,10 +91,6 @@ test-build:
 doctest:
     {{bounded}} 600 cargo test --locked --workspace --doc {{desktop_features}}
 
-# Run the whole-daemon and UI-state specification suites.
-spec *ARGS: nextest
-    if [ "${1-}" = -- ]; then shift; fi; scripts/spec-test.sh "$@"
-
 # Exercise TUI behavior.
 test-tui *ARGS: nextest
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo nextest run --locked -p tui --features fixtures "$@"

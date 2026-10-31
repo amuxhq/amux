@@ -42,7 +42,7 @@ enum RowState: Equatable {
     /// agent is history, whatever its machine is doing now. A dark machine
     /// comes next, and above `needsYou` deliberately: what an agent last
     /// asked for on a machine nobody can reach cannot be answered.
-    init(row: AgentRow) {
+    init(row: FleetRow) {
         if !row.readable {
             self = .unsupported
             return

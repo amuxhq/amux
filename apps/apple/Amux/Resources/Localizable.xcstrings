@@ -10129,18 +10129,6 @@
         }
       }
     },
-    "unread" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "unread"
-          }
-        }
-      }
-    },
     "update amux to open it" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/RowState.swift.",
       "extractionState" : "manual",

@@ -592,7 +592,6 @@ private struct AgentsTab: View {
         ) { action in
             switch action {
             case .open(let agent):
-                stores.fleet.opened(agent)
                 router.open(.conversation(agent))
             case .newAgent: router.composing = true
             case .openExceptions: router.select(.hosts)
@@ -716,7 +715,6 @@ private struct NewAgentPage: View {
         // joined, not at the form that made it.
         .onChange(of: stores.newAgent.created) { _, started in
             guard let started else { return }
-            stores.fleet.opened(started)
             router.started(started)
         }
     }

@@ -173,7 +173,7 @@ public final class NewAgentStore {
     /// What the fleet lists, for names and directories per host, and the
     /// agent to start with: the kind most recently at work, since with
     /// several to choose from that is the one most often wanted again.
-    public func remember(_ rows: [AgentRow]) {
+    public func remember(_ rows: [FleetRow]) {
         if !providerPicked, let latest = rows.filter({ Provider($0.card.kind) != nil })
             .max(by: { $0.lastActivity < $1.lastActivity }), let usual = Provider(latest.card.kind) {
             provider = usual

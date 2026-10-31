@@ -1196,21 +1196,10 @@ impl App {
                     })
                 })
             }
-            ChatEffect::Resend { id } => {
-                let input = session
-                    .state()
-                    .inputs()
-                    .get(&id)
-                    .map(|sent| sent.input.clone());
-                if let Some(mut input) = input {
-                    session.discard(&id);
-                    input.input_id.clear();
-                    self.spawn(async move {
-                        session.send(input).await;
-                        None
-                    });
-                }
-            }
+            ChatEffect::Resend { id } => self.spawn(async move {
+                session.resend(&id).await;
+                None
+            }),
             ChatEffect::Discard { id } => session.discard(&id),
             ChatEffect::Cancel { id } => {
                 let words = match session.state().inputs().get(&id).map(|sent| &sent.what) {

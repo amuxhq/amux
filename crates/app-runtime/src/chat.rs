@@ -464,15 +464,7 @@ impl Chat {
     /// Sends a not-confirmed input again under a new id, forgetting the
     /// old one.
     pub async fn resend(&self, input_id: &[u8]) -> Option<SendOutcome> {
-        let mut input = self
-            .session
-            .state()
-            .inputs()
-            .get(input_id)
-            .map(|sent| sent.input.clone())?;
-        self.session.discard(input_id);
-        input.input_id.clear();
-        let sent = self.session.send(input).await;
+        let sent = self.session.resend(input_id).await?;
         let state = self
             .session
             .state()

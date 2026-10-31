@@ -73,10 +73,6 @@ pub const DUMPS_FINISH_WITHIN: Duration = Duration::from_secs(5);
 /// A queue of one batch would close a caught-up reader whenever a short
 /// batch followed a full one before its task was scheduled.
 pub const FANOUT_CAPACITY: usize = 4 * INGEST_BATCH;
-/// The tail size K: the rows a replica keeps and asks for, and the newest
-/// rows own retention never trims. About an hour of a busy agent and
-/// several screens of scroll-back.
-pub const TAIL_ROWS: u32 = 200;
 
 /// What the daemon starts agents with; read at every spawn and resume, so
 /// a change affects the next incarnation and never a running agent.
@@ -90,46 +86,29 @@ pub struct Launch {
     /// Environment additions for every provider child.
     pub provider_env: HashMap<String, String>,
     pub agent: settings::AgentSettings,
-    /// How long a new process has to take its lock and send its Hello.
-    pub start_deadline_ms: i64,
-    /// How long a stop may take before the daemon kills the process group.
-    pub stop_deadline_ms: i64,
+    /// What the profile's core reads: its deadlines, retry waits and the
+    /// tail size, compared and handed to it before each input.
+    pub core: daemon_core::Settings,
     /// How long one write on an agent's control connection may take,
     /// waiting for the connection included. Past it the agent is taken to
     /// have stopped reading, and the connection is closed.
     pub ctl_write_ms: i64,
-    /// How long an input waits for the interpreter's verdict, which it
-    /// gives at once; past this the answer is taken to be lost.
-    pub reply_patience_ms: i64,
-    /// How long a notification waits before it is sent, so an answer from
-    /// another client cancels it.
-    pub notify_delay_ms: i64,
     /// How far a subscription may fall behind its agent's broadcast before
     /// it is closed with Lagged. Read when a runtime opens.
     pub fanout_capacity: usize,
     /// The same for inventory subscriptions.
     pub inventory_capacity: usize,
-    /// How often the deliveries outbox is tried again while rows wait.
-    pub delivery_retry_ms: i64,
-    /// How long a push that failed waits before it is tried again.
-    pub push_retry_ms: i64,
     /// The bytes this profile's own rows may hold before retention removes
     /// exited agents and trims live ones.
     pub own_budget_bytes: u64,
     /// About how much one trimming round takes from the largest live agent.
     pub retention_chunk_bytes: u64,
-    /// The newest rows retention never trims: the tail size replicas keep.
-    pub tail_rows: u32,
     /// How often the retention sweep runs.
     pub retention_interval_ms: i64,
     /// The bytes rows replicated from other hosts may hold.
     pub replica_budget_bytes: u64,
     /// The bytes replica blob files may hold.
     pub replica_blob_budget_bytes: u64,
-    /// A source's first wait before reconnecting to a reachable origin;
-    /// it doubles on each failure up to the ceiling.
-    pub source_backoff_ms: i64,
-    pub source_backoff_max_ms: i64,
     /// Where the host looks for Git repositories to offer new agents.
     pub repository_roots: Vec<PathBuf>,
     /// How old the host's copy of what a provider offers may grow before
@@ -138,10 +117,6 @@ pub struct Launch {
     /// How often a copy's provider version is read to see whether it
     /// changed, and how soon a copy that says signed out is asked again.
     pub catalogue_recheck_ms: i64,
-    /// How long after a commit the profile's core checkpoints: what the
-    /// input ring holds, and how long ingested journal waits to be
-    /// reclaimed.
-    pub checkpoint_interval_ms: i64,
     /// How long one step of the profile's core may take before it is
     /// reported with a dump.
     pub step_budget: daemon_core::StepBudget,
@@ -177,28 +152,19 @@ impl Default for Launch {
             codex_command: "codex".to_owned(),
             provider_env: HashMap::new(),
             agent: settings::AgentSettings::default(),
-            start_deadline_ms: 20_000,
-            stop_deadline_ms: 30_000,
+            core: daemon_core::Settings::default(),
             ctl_write_ms: 5_000,
-            reply_patience_ms: 30_000,
-            notify_delay_ms: 30_000,
             fanout_capacity: FANOUT_CAPACITY,
             inventory_capacity: 1024,
-            delivery_retry_ms: 30_000,
-            push_retry_ms: 60_000,
             own_budget_bytes: OWN_BUDGET_BYTES,
             // A few MiB: a small overrun costs a small trim.
             retention_chunk_bytes: 4 << 20,
-            tail_rows: TAIL_ROWS,
             retention_interval_ms: 10 * 60_000,
             replica_budget_bytes: REPLICA_BUDGET_BYTES,
             replica_blob_budget_bytes: REPLICA_BLOB_BUDGET_BYTES,
-            source_backoff_ms: 1_000,
-            source_backoff_max_ms: 30_000,
             repository_roots: Vec::new(),
             catalogue_max_age_ms: 30 * 60_000,
             catalogue_recheck_ms: 60_000,
-            checkpoint_interval_ms: 60_000,
             step_budget: daemon_core::StepBudget::DAEMON,
             agent_step_budget_micros: 0,
             dump_interval_ms: core_ring::DumpLimit::INTERVAL_MS,
@@ -826,6 +792,12 @@ impl ProfileRuntime {
 
     pub fn launch(&self) -> Launch {
         self.launch.lock().unwrap().clone()
+    }
+
+    /// The settings the profile's core reads, without the rest of
+    /// [`Launch`].
+    pub(crate) fn core_settings(&self) -> daemon_core::Settings {
+        self.launch.lock().unwrap().core
     }
 
     /// The profile's directory.

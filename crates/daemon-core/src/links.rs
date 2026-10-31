@@ -26,9 +26,7 @@ use wire::{HelloAck, hello_ack};
 use crate::Daemon;
 use crate::ids::{ChannelId, HostId, LinkId, TimerId};
 use crate::io::{Job, Output};
-use crate::payload::{
-    CarrierKind, ChannelClass, ChannelError, LinkFrame, PeerAddress, PublicKey, Source,
-};
+use crate::payload::{CarrierKind, ChannelError, LinkFrame, PeerAddress, PublicKey, Source};
 use crate::presence::Route;
 use crate::trust::TrustChange;
 
@@ -67,9 +65,6 @@ pub struct Link {
 pub struct Channel {
     pub link: LinkId,
     pub peer: HostId,
-    pub class: ChannelClass,
-    /// Whether the driver reported its handshake done.
-    pub open: bool,
     /// Where the catalogue's revocation notes stood as it was asked for.
     pub begun: u64,
 }
@@ -519,60 +514,27 @@ impl Daemon {
 
     /// The shell wants a channel: opened over a link that is up, to a peer
     /// whose key is pinned, or refused.
-    pub(crate) fn want_channel(
-        &mut self,
-        link: LinkId,
-        peer: HostId,
-        class: ChannelClass,
-        out: &mut Vec<Output>,
-    ) {
-        let refused = |reason| Output::ChannelRefused {
-            link,
-            peer,
-            class,
-            reason,
-        };
+    pub(crate) fn want_channel(&mut self, link: LinkId, peer: HostId, out: &mut Vec<Output>) {
         if self.routing.links.route_over(link, peer).is_none() {
-            out.push(refused(ChannelError::NoLink));
+            out.push(Output::Channel(Err(ChannelError::NoLink)));
             return;
         }
-        let Some(pin) = self
+        if self
             .trust()
             .pubkey_for_host(Uuid::from_bytes(peer.0))
-            .map(|key| PublicKey(key.to_vec()))
-        else {
-            out.push(refused(ChannelError::Unpinned));
+            .is_none()
+        {
+            out.push(Output::Channel(Err(ChannelError::Unpinned)));
             return;
-        };
+        }
         let begun = self.routing.catalogue.mark();
         let registry = &mut self.routing.links;
         registry.next_channel += 1;
         let channel = ChannelId(registry.next_channel);
-        registry.channels.insert(
-            channel,
-            Channel {
-                link,
-                peer,
-                class,
-                open: false,
-                begun,
-            },
-        );
-        out.push(Output::OpenChannel {
-            channel,
-            link,
-            peer,
-            class,
-            pin,
-        });
-    }
-
-    /// The driver's handshake on a channel the core asked for verified its
-    /// pin. One whose link went meanwhile is already forgotten.
-    pub(crate) fn channel_opened(&mut self, channel: ChannelId) {
-        if let Some(opened) = self.routing.links.channels.get_mut(&channel) {
-            opened.open = true;
-        }
+        registry
+            .channels
+            .insert(channel, Channel { link, peer, begun });
+        out.push(Output::Channel(Ok(channel)));
     }
 
     /// A channel closed. Whatever it closed for says nothing of the host:
@@ -656,16 +618,10 @@ mod tests {
             Input::WantChannel {
                 link: LINK,
                 peer: PEER,
-                class: ChannelClass::Calls,
             },
         )
         .into_iter()
-        .filter(|output| {
-            matches!(
-                output,
-                Output::OpenChannel { .. } | Output::ChannelRefused { .. }
-            )
-        })
+        .filter(|output| matches!(output, Output::Channel(_)))
         .collect()
     }
 
@@ -710,49 +666,29 @@ mod tests {
         up(&mut untrusting);
         assert!(matches!(
             want(&mut untrusting).as_slice(),
-            [Output::ChannelRefused {
-                reason: ChannelError::Unpinned,
-                ..
-            }]
+            [Output::Channel(Err(ChannelError::Unpinned))]
         ));
-        let (mut daemon, pin) = trusting();
+        let (mut daemon, _) = trusting();
         assert!(matches!(
             want(&mut daemon).as_slice(),
-            [Output::ChannelRefused {
-                reason: ChannelError::NoLink,
-                ..
-            }]
+            [Output::Channel(Err(ChannelError::NoLink))]
         ));
         up(&mut daemon);
         let out = want(&mut daemon);
-        let [
-            Output::OpenChannel {
-                channel,
-                link: LINK,
-                peer: PEER,
-                class: ChannelClass::Calls,
-                pin: given,
-            },
-        ] = out.as_slice()
-        else {
+        let [Output::Channel(Ok(channel))] = out.as_slice() else {
             panic!("the channel is opened: {out:?}");
         };
-        assert_eq!(
-            *given, pin,
-            "the handshake checks the key pinned for the peer"
-        );
         let channel = *channel;
-        step(&mut daemon, Input::ChannelOpened { channel });
-        assert!(daemon.links().channel(channel).is_some_and(|c| c.open));
+        assert!(
+            daemon
+                .links()
+                .channel(channel)
+                .is_some_and(|c| c.link == LINK && c.peer == PEER)
+        );
 
         // A second channel gets an id of its own; closing one forgets it.
         let out = want(&mut daemon);
-        let [
-            Output::OpenChannel {
-                channel: second, ..
-            },
-        ] = out.as_slice()
-        else {
+        let [Output::Channel(Ok(second))] = out.as_slice() else {
             panic!("the second channel is opened: {out:?}");
         };
         assert_ne!(*second, channel);

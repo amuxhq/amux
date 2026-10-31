@@ -543,10 +543,8 @@ async fn a_retry_after_reply_patience_is_concluded_by_the_verdict_that_comes() {
     recipient.go_live();
     recipient.freeze();
     let clock = agent_dir::ManualClock::new(T0);
-    let launch = Launch {
-        reply_patience_ms: REPLY_MS,
-        ..quiet_launch()
-    };
+    let mut launch = quiet_launch();
+    launch.core.reply_patience_ms = REPLY_MS as u64;
     let daemon = node::start(
         node::StartOptions {
             clock: Arc::new(clock.clone()),
@@ -1162,12 +1160,12 @@ async fn an_agent_that_stops_reading_holds_up_neither_other_parents_nor_a_kill()
         child.append(&item("last", "the tests pass"));
         child.append(&turn_end(1, "last"));
     }
-    let launch = Launch {
+    let mut launch = Launch {
         ctl_write_ms: WRITE_MS,
-        reply_patience_ms: REPLY_MS,
-        stop_deadline_ms: STOP_MS,
         ..quiet_launch()
     };
+    launch.core.reply_patience_ms = REPLY_MS as u64;
+    launch.core.stop_deadline_ms = STOP_MS as u64;
     let started = tokio::time::Instant::now();
     let daemon = install.start("boot-1", launch).await;
     let runtime = runtime(&daemon, &install);

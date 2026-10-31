@@ -157,11 +157,9 @@ fn writes(input: &Input, copying: JobId) -> bool {
         | Input::LinkControl { .. }
         | Input::Credential { .. }
         | Input::WantChannel { .. }
-        | Input::ChannelOpened { .. }
         | Input::ChannelClosed { .. }
         | Input::ChannelAnswered { .. }
         | Input::PlanChanged
-        | Input::TryAgain { .. }
         | Input::Candidates { .. }
         | Input::Dialling(_)
         | Input::RecoverRelay
@@ -253,7 +251,7 @@ impl Daemon {
                 // onto it.
                 self.checkpoints.landing = Some(cursors);
                 self.touched.serialized = true;
-                let state = self.checkpoint().to_bytes();
+                let state = self.checkpoint();
                 out.push(Output::Checkpoint { state });
             }
             result => {
@@ -549,12 +547,8 @@ mod tests {
         // the step that serialized it, and the inputs after it replay onto
         // it: the driver's Checkpointed comes first and lets what waited
         // through.
-        let mut restored = Daemon::restore(
-            crate::Checkpoint::from_bytes(&state).expect("it reads"),
-            main,
-            dir.path().join("agents"),
-        )
-        .expect("it restores");
+        let mut restored =
+            Daemon::restore(&state, main, dir.path().join("agents")).expect("it restores");
         assert_eq!(restored.checkpoint(), daemon.checkpoint());
         assert!(spawned(&step(&mut daemon, Input::Checkpointed)), "it lands");
         assert!(spawned(&step(&mut restored, Input::Checkpointed)));

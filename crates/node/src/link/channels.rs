@@ -308,9 +308,9 @@ pub struct ChannelPool {
     resumed: OnceLock<Arc<dyn ResumedDial>>,
 }
 
-/// A channel the core said to open, whose outcome the core is told exactly
-/// once: opened, or closed when it is dropped untold, as when the open
-/// failed or a caller that gave up waiting dropped it.
+/// A channel the core said to open, which the core hears closed when it is
+/// dropped before it opens, as when the open failed or a caller that gave
+/// up waiting dropped it.
 struct Telling {
     core: CoreLinks,
     channel: daemon_core::ChannelId,
@@ -320,7 +320,6 @@ struct Telling {
 impl Telling {
     fn opened(mut self) -> (CoreLinks, daemon_core::ChannelId) {
         self.told = true;
-        self.core.opened(self.channel);
         (self.core.clone(), self.channel)
     }
 }
@@ -455,11 +454,8 @@ impl ChannelPool {
         lifetime: Arc<CancellationToken>,
     ) {
         if let Some(core) = self.links.core() {
-            match core.want_channel(link, key.peer, key.class).await {
-                Ok(opening) => {
-                    core.opened(opening.channel);
-                    ended.arm(core.clone(), opening.channel);
-                }
+            match core.want_channel(link, key.peer).await {
+                Ok(channel) => ended.arm(core.clone(), channel),
                 Err(_) => {
                     lifetime.cancel();
                     return;
@@ -548,10 +544,10 @@ impl ChannelPool {
         // A channel opens at the profile core's word, which refuses a host
         // no key is pinned for.
         let core = self.links.core().ok_or_else(unavailable)?;
-        let telling = match core.want_channel(link, key.peer, key.class).await {
-            Ok(opening) => Telling {
+        let telling = match core.want_channel(link, key.peer).await {
+            Ok(channel) => Telling {
                 core: core.clone(),
-                channel: opening.channel,
+                channel,
                 told: false,
             },
             Err(daemon_core::payload::ChannelError::Unpinned) => return Err(unpinned(key.peer)),

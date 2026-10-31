@@ -9,8 +9,6 @@ use sha2::{Digest, Sha256};
 
 use crate::{IoEvent, parse_script};
 
-pub const MANIFEST_SCHEMA_VERSION: u32 = 2;
-
 /// A verified recording directory and its parsed I/O events.
 #[derive(Clone, Debug)]
 pub struct Recording {
@@ -23,15 +21,11 @@ pub struct Recording {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
-    pub schema_version: u32,
     pub spec: String,
     pub recorded: Recorded,
     pub content: BTreeMap<String, String>,
-    #[serde(default)]
     pub redaction: RedactionSummary,
-    #[serde(default)]
     pub session_ids: Vec<String>,
-    #[serde(default)]
     pub provider_extra: serde_json::Map<String, serde_json::Value>,
 }
 
@@ -71,15 +65,6 @@ pub fn load_recording(dir: &Path) -> Result<Recording, RecordingError> {
             path: manifest_path.clone(),
             reason: error.to_string(),
         })?;
-    if manifest.schema_version != MANIFEST_SCHEMA_VERSION {
-        return Err(RecordingError::Malformed {
-            path: manifest_path,
-            reason: format!(
-                "unsupported schema version {}; expected {MANIFEST_SCHEMA_VERSION}",
-                manifest.schema_version
-            ),
-        });
-    }
 
     validate_inventory(dir, &manifest.content)?;
     let io = parse_script(&dir.join("io.jsonl"))?;
@@ -95,7 +80,6 @@ impl Manifest {
     /// replay-relevant one inventoried by its digest.
     pub fn inventory(dir: &Path, spec: &str, recorded: Recorded) -> Result<Self, RecordingError> {
         Ok(Self {
-            schema_version: MANIFEST_SCHEMA_VERSION,
             spec: spec.to_owned(),
             recorded,
             content: build_inventory(dir)?,
@@ -290,7 +274,6 @@ mod tests {
     #[test]
     fn manifest_types_serialize_with_semver_versions() {
         let manifest = Manifest {
-            schema_version: MANIFEST_SCHEMA_VERSION,
             spec: "session/example".to_string(),
             recorded: Recorded {
                 provider: "codex".to_string(),

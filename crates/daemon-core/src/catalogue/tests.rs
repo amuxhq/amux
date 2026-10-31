@@ -5,7 +5,7 @@ use wire::{Hello, Message, NeighborUp};
 use super::*;
 use crate::ids::{CallId, JobId};
 use crate::io::{Input, Job};
-use crate::payload::{CarrierKind, ChannelClass, ClientRequest, JobResult};
+use crate::payload::{CarrierKind, ClientRequest, JobResult};
 use crate::trust::{Reachability, TrustStore};
 use crate::{StartOptions, StepBudget};
 
@@ -107,25 +107,21 @@ fn entry(daemon: &Daemon, id: HostId) -> wire::HostEntry {
         .expect("the host is in the host set")
 }
 
-/// Opens a calls channel to `peer` over `link`; returns its id.
+/// Opens a channel to `peer` over `link`; returns its id.
 fn channel(daemon: &mut Daemon, link: u64, peer: HostId) -> ChannelId {
     let out = step(
         daemon,
         Input::WantChannel {
             link: LinkId(link),
             peer,
-            class: ChannelClass::Calls,
         },
     );
-    let channel = out
-        .iter()
+    out.iter()
         .find_map(|output| match output {
-            Output::OpenChannel { channel, .. } => Some(*channel),
+            Output::Channel(Ok(channel)) => Some(*channel),
             _ => None,
         })
-        .expect("the core opens the channel");
-    step(daemon, Input::ChannelOpened { channel });
-    channel
+        .expect("the core opens the channel")
 }
 
 fn teardown(out: &[Output]) -> JobId {
@@ -169,7 +165,13 @@ fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
     linked(&mut daemon, 2, DESK, CarrierKind::Direct, &[]);
     linked(&mut daemon, 3, RELAY, CarrierKind::Relay, &[DESK]);
     assert!(daemon.routing.catalogue.said(DESK).is_none());
-    assert!(daemon.routing.catalogue.relays_to(DESK).is_empty());
+    assert!(
+        daemon
+            .routing
+            .catalogue
+            .claimed()
+            .all(|(host, ..)| host != DESK)
+    );
 
     step(
         &mut daemon,
@@ -179,7 +181,13 @@ fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
         },
     );
     neighbor_up(&mut daemon, 3, DESK);
-    assert_eq!(daemon.routing.catalogue.relays_to(DESK), vec![RELAY]);
+    assert!(
+        daemon
+            .routing
+            .catalogue
+            .claimed()
+            .any(|(host, _, relays)| host == DESK && relays == [RELAY])
+    );
 }
 
 #[test]

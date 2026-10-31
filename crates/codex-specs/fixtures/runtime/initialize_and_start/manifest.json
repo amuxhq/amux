@@ -1,5 +1,4 @@
 {
-  "schema_version": 2,
   "spec": "initialize_and_start",
   "recorded": {
     "provider": "codex",

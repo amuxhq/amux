@@ -11,7 +11,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use daemon_core::{AgentId, Checkpoint, Daemon, Fingerprint, Input, Output, StartOptions};
+use daemon_core::{AgentId, Daemon, Fingerprint, Input, Output, StartOptions};
 use store::{AgentKey, Dump, Marker, Sqlite};
 
 /// One host: its core, as its checkpoint, and its store, as its dump.
@@ -24,7 +24,7 @@ pub(crate) struct Held {
 impl Held {
     /// A host whose core is `daemon`, which hands its store back.
     pub(crate) fn of(daemon: Daemon) -> (Self, Sqlite) {
-        let core = daemon.checkpoint().to_bytes();
+        let core = daemon.checkpoint();
         let store = daemon.into_store();
         let dump = store.dump().expect("a store dumps");
         (Self { core, store: dump }, store)
@@ -129,8 +129,7 @@ impl Slot {
     /// The core as `held` holds it, over this slot's store as loaded.
     fn restore(&mut self, held: &Held) -> Daemon {
         let store = self.store.take().expect("the slot's store is home");
-        let checkpoint = Checkpoint::from_bytes(&held.core).expect("a checkpoint reads");
-        Daemon::restore(checkpoint, store, self.agents.clone()).expect("a checkpoint restores")
+        Daemon::restore(&held.core, store, self.agents.clone()).expect("a checkpoint restores")
     }
 
     /// Builds the host's core over this slot's store as `held` holds it,
@@ -169,7 +168,7 @@ impl Slot {
     }
 
     fn put_back(&mut self, held: &mut Held, daemon: Daemon, before: Option<Changes>) {
-        held.core = daemon.checkpoint().to_bytes();
+        held.core = daemon.checkpoint();
         let store = self.store.insert(daemon.into_store());
         if before.is_none_or(|before| before != Changes::of(store)) {
             held.store = store.dump().expect("a store dumps");

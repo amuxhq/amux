@@ -1,5 +1,4 @@
 {
-  "schema_version": 2,
   "spec": "text_turn",
   "recorded": {
     "provider": "claude",

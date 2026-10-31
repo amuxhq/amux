@@ -98,14 +98,6 @@ impl Catalogue {
             .map(|(host, claimed)| (*host, &claimed.said, claimed.relays.as_slice()))
     }
 
-    /// The neighbors claiming `host`, in claim order.
-    pub fn relays_to(&self, host: HostId) -> Vec<HostId> {
-        self.claims
-            .get(&host)
-            .map(|claimed| claimed.relays.clone())
-            .unwrap_or_default()
-    }
-
     /// Whether `host` said it no longer trusts this one, and has not taken
     /// it back.
     pub fn revoked(&self, host: HostId) -> bool {

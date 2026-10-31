@@ -262,10 +262,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
             .any(|name| name.starts_with("core/store.sqlite-")),
         "{names:?}"
     );
-    let checkpoint = daemon_core::Checkpoint::from_bytes(
-        &std::fs::read(bundle.join("core/checkpoint")).unwrap(),
-    )
-    .expect("the core's checkpoint reads");
+    let checkpoint = std::fs::read(bundle.join("core/checkpoint")).unwrap();
     let lines: Vec<daemon_core::Recorded> =
         core_ring::inputs(&std::fs::read(bundle.join("core/inputs")).unwrap());
     let reads = lines
@@ -287,7 +284,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         2,
         "the store as of the checkpoint holds both agents"
     );
-    let restored = daemon_core::Daemon::restore(checkpoint, copy, scratch.path().join("agents"));
+    let restored = daemon_core::Daemon::restore(&checkpoint, copy, scratch.path().join("agents"));
     assert!(restored.is_ok(), "the core restores from its part");
 
     let live_part: Vec<&&str> = names
@@ -757,7 +754,7 @@ async fn a_clean_shutdown_ends_a_dump_still_waiting_for_an_agents_part() {
 async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
     use daemon_core::pairing::{WindowMethod, WindowSecret};
     use daemon_core::payload::{ClientRequest, Response};
-    use daemon_core::{CallId, Checkpoint, Daemon, Input, Output, Recorded, StepBudget};
+    use daemon_core::{CallId, Daemon, Input, Output, Recorded, StepBudget};
     use tonic::Request;
     use wire::profile_admin_service_server::ProfileAdminService as _;
     use wire::{Empty, StartPairingRequest, start_pairing_request};
@@ -806,12 +803,11 @@ async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
     // What the bundle can compute: its checkpoint, every randomness its
     // inputs recorded, and the window opened next.
     let core = bundle.join("core");
-    let checkpoint =
-        Checkpoint::from_bytes(&std::fs::read(core.join("checkpoint")).unwrap()).unwrap();
+    let checkpoint = std::fs::read(core.join("checkpoint")).unwrap();
     let store =
         store::Sqlite::open_in_memory(support::synthetic::host(&install).as_bytes().to_vec())
             .unwrap();
-    let mut restored = Daemon::restore(checkpoint, store, Default::default()).unwrap();
+    let mut restored = Daemon::restore(&checkpoint, store, Default::default()).unwrap();
     restored.set_budget(StepBudget::UNLIMITED);
     let mut out = Vec::new();
     let recorded: Vec<Recorded> = core_ring::inputs(&std::fs::read(core.join("inputs")).unwrap());

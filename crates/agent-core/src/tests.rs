@@ -292,13 +292,13 @@ fn frames_from_a_replaced_connection_are_ignored() {
     let out = run.frame(ctl_frame::Of::Stop(wire::Stop { kill: true }));
     assert_eq!(exit_of(&out), None);
     run.on(Input::DaemonGone { connection: DAEMON });
-    assert_eq!(run.agent.connection, Some(ConnId(2)));
+    assert_eq!(run.agent.life.connection, Some(ConnId(2)));
 }
 
 #[test]
 fn a_drain_deadline_armed_while_running_is_a_violation() {
     let mut run = Run::start(&spec(false, None));
-    run.agent.ask = Some(OpenAsk { until: 0 });
+    run.agent.life.ask = Some(OpenAsk { until: 0 });
     let mut out = Vec::new();
     run.agent
         .step(Input::DaemonDials { connection: DAEMON }, &mut out);
@@ -319,7 +319,7 @@ fn an_input_taken_while_still_queued_is_a_violation() {
     run.fact(json!({"type": "ready"}));
     run.prompt("p1", "hello");
     // The journal's queue still names the prompt the provider records next.
-    run.agent.pending.queued.insert(b"p1".to_vec());
+    run.agent.life.pending.queued.insert(b"p1".to_vec());
     let out = run.reflect("p1");
     assert!(
         matches!(dumps(&out).as_slice(), [DumpReason::Violation(violation)]

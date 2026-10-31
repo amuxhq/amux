@@ -45,8 +45,8 @@ use daemon_core::payload::{
 };
 use daemon_core::trust::{TrustChange, TrustChanged, TrustStore};
 use daemon_core::{
-    AgentId, CallId, Checkpoint, Daemon, DumpReason, HostId, Input, Job, JobId, LinkId, Output,
-    Route, ShellWork, StartOptions, StepBudget, TimerId,
+    AgentId, CallId, Daemon, DumpReason, HostId, Input, Job, JobId, LinkId, Output, Route,
+    ShellWork, StartOptions, StepBudget, TimerId,
 };
 use store::{AgentKey, AgentRow, Dump, Sqlite};
 use wire::{Item, Step, session_event};
@@ -1110,10 +1110,7 @@ fn replay(live: &State) -> Option<String> {
 
 /// A core's checkpoint, as a counterexample shows it.
 fn summary(core: &[u8]) -> String {
-    match Checkpoint::from_bytes(core) {
-        Ok(checkpoint) => format!("{:02x?}", checkpoint.state),
-        Err(error) => error.to_string(),
-    }
+    format!("{core:02x?}")
 }
 
 /// Every row a step answered to any call, as the call, the key and the
@@ -1379,16 +1376,15 @@ impl Scratch {
     fn daemon(&mut self, core: &[u8], store: &Dump, journal: &Journal) -> Daemon {
         self.load(store);
         self.lay_out(journal);
-        let checkpoint = Checkpoint::from_bytes(core).expect("a checkpoint reads");
         let store = self.store.take().expect("the scratch store is home");
         let agents = self.agents.path().to_path_buf();
-        Daemon::restore(checkpoint, store, agents).expect("a checkpoint restores")
+        Daemon::restore(core, store, agents).expect("a checkpoint restores")
     }
 
     /// Takes the store back from a core, and the core's checkpoint. The
     /// store is then this scratch's, holding whatever the core left in it.
     fn put_back(&mut self, daemon: Daemon) -> (Vec<u8>, &Sqlite) {
-        let core = daemon.checkpoint().to_bytes();
+        let core = daemon.checkpoint();
         self.store = Some(daemon.into_store());
         self.holds = Dump::default();
         (

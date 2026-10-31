@@ -176,11 +176,6 @@ impl Registry {
         hosted.into_iter().map(state).collect()
     }
 
-    /// One hosted profile.
-    pub fn profile(&self, id: ProfileId) -> Result<ProfileState, ProfileRefusal> {
-        Self::one(&*self.installation()?, id)
-    }
-
     fn one(installation: &Installation, id: ProfileId) -> Result<ProfileState, ProfileRefusal> {
         installation
             .hosted

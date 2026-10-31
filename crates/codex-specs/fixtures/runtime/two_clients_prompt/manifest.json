@@ -1,5 +1,4 @@
 {
-  "schema_version": 2,
   "spec": "two_clients_prompt",
   "recorded": {
     "provider": "codex",

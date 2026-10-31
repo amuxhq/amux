@@ -1,5 +1,4 @@
 {
-  "schema_version": 2,
   "spec": "compact_relink",
   "recorded": {
     "provider": "claude",

@@ -277,11 +277,6 @@ fn a_host_is_in_one_attempt_at_a_time() {
         dials(&step(&mut daemon, Input::Wanted { host: DESK })),
         Vec::new()
     );
-    assert_eq!(
-        dials(&step(&mut daemon, Input::TryAgain { host: DESK })),
-        Vec::new(),
-        "nothing new to dial"
-    );
 
     // A path the attempt was not given: the attempt gives way to one on
     // every path at once.
@@ -1157,7 +1152,7 @@ fn relay_recovery_survives_a_checkpoint_with_its_remaining_allowance() {
     step(&mut daemon, Input::RecoverRelay);
     let checkpoint = daemon.checkpoint();
     let store = Sqlite::open_in_memory(OWN).unwrap();
-    let mut restored = Daemon::restore(checkpoint, store, Default::default()).unwrap();
+    let mut restored = Daemon::restore(&checkpoint, store, Default::default()).unwrap();
     let out = relay_ends(&mut restored, first, RelayOutcome::Closed);
     assert_eq!(out, relay_ends(&mut daemon, first, RelayOutcome::Closed));
     relay_dial(&out);

@@ -55,7 +55,7 @@ pub use ids::{
 };
 pub use ingest::Journals;
 pub use io::{
-    FromShell, IngestEnd, Ingested, Input, Job, Output, ParentSays, Recorded, Settings, ShellWork,
+    IngestEnd, Ingested, Input, Job, Output, ParentSays, Recorded, Settings, ShellWork,
     SourcePolicy,
 };
 pub use links::LinkRegistry;
@@ -262,7 +262,7 @@ impl Daemon {
                 id: TimerId::Source(host, agent),
             } => self.source_due(host, agent, out),
             Input::Configure(settings) => self.settings = settings,
-            Input::FromShell(change) => self.shell_changed(change, out),
+            Input::ShellSession { agent, event } => self.publish_session(&agent, event, out),
             Input::LinkUp {
                 link,
                 peer,
@@ -281,14 +281,10 @@ impl Daemon {
             Input::Timer {
                 id: TimerId::Refresh(link),
             } => self.refresh_due(link, out),
-            Input::WantChannel { link, peer, class } => self.want_channel(link, peer, class, out),
-            Input::ChannelOpened { channel } => self.channel_opened(channel),
+            Input::WantChannel { link, peer } => self.want_channel(link, peer, out),
             Input::ChannelClosed { channel } => self.channel_closed(channel),
             Input::PlanChanged => self.plan_changed(out),
-            Input::TryAgain { host } => {
-                self.reconsider(host, out);
-                self.sources_try_again(host, out);
-            }
+
             Input::Started => self.trust_started(out),
             Input::ChangeTrust(change) => self.change_trust(change, None, out),
             Input::Policy(policy) => self.set_policy(policy, out),
@@ -473,10 +469,12 @@ impl Daemon {
         Ok(())
     }
 
-    /// The core as of this step. With the store's main file after a passive
-    /// WAL checkpoint that no commit has followed, it is the daemon
-    /// exactly.
-    pub fn checkpoint(&self) -> Checkpoint {
+    /// The core as of this step, serialized. With the store's main file
+    /// after a passive WAL checkpoint that no commit has followed, it is
+    /// the daemon exactly. A checkpoint is read only by the build that
+    /// wrote it: rings are reset with the stores they sit beside, so no
+    /// other layout is ever met.
+    pub fn checkpoint(&self) -> Vec<u8> {
         let core = (
             &self.routing,
             &self.presence,
@@ -494,16 +492,14 @@ impl Daemon {
             &self.settings,
             &self.options,
         );
-        Checkpoint {
-            state: postcard::to_allocvec(&core).expect("the core's state serializes"),
-        }
+        postcard::to_allocvec(&core).expect("the core's state serializes")
     }
 
     /// Rebuilds a core from a checkpoint and the store it was taken beside,
     /// its agents' directories under `agents`. A checkpoint that does not
     /// decode is refused, never half applied.
     pub fn restore(
-        checkpoint: Checkpoint,
+        checkpoint: &[u8],
         store: Sqlite,
         agents: PathBuf,
     ) -> Result<Daemon, RestoreError> {
@@ -523,7 +519,7 @@ impl Daemon {
             pending,
             settings,
             mut options,
-        ) = checkpoint_parts(&checkpoint)?;
+        ) = checkpoint_parts(checkpoint)?;
         options.agents = agents;
         let trust = trust.restored(&store);
         Ok(Daemon {
@@ -737,27 +733,6 @@ pub struct Pending {
 
 pub use core_ring::{Check, DumpReason, StepBudget, Violation, finish_step};
 
-/// The core's state as of one step, serialized. A checkpoint is read only
-/// by the build that wrote it: rings are reset with the stores they sit
-/// beside, so no other layout is ever met.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Checkpoint {
-    pub state: Vec<u8>,
-}
-
-impl Checkpoint {
-    /// The bytes a checkpoint job writes.
-    pub fn to_bytes(&self) -> Vec<u8> {
-        postcard::to_allocvec(self).expect("a checkpoint serializes")
-    }
-
-    /// Reads a checkpoint back. Its state is read only by
-    /// [`Daemon::restore`].
-    pub fn from_bytes(bytes: &[u8]) -> Result<Checkpoint, RestoreError> {
-        postcard::from_bytes(bytes).map_err(RestoreError::of)
-    }
-}
-
 /// The core's state as a checkpoint holds it, in the order
 /// [`Daemon::checkpoint`] writes it.
 type Parts = (
@@ -779,8 +754,8 @@ type Parts = (
 );
 
 /// A checkpoint's state read back.
-fn checkpoint_parts(checkpoint: &Checkpoint) -> Result<Parts, RestoreError> {
-    postcard::from_bytes(&checkpoint.state).map_err(RestoreError::of)
+fn checkpoint_parts(checkpoint: &[u8]) -> Result<Parts, RestoreError> {
+    postcard::from_bytes(checkpoint).map_err(RestoreError::of)
 }
 
 /// Why a checkpoint could not be restored: its bytes do not decode under
@@ -808,9 +783,7 @@ mod tests {
 
     #[test]
     fn a_checkpoint_that_does_not_decode_is_refused() {
-        let checkpoint = Checkpoint { state: vec![0xff] };
         let store = Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens");
-        assert!(Daemon::restore(checkpoint, store, PathBuf::new()).is_err());
-        assert!(Checkpoint::from_bytes(&[]).is_err());
+        assert!(Daemon::restore(&[0xff], store, PathBuf::new()).is_err());
     }
 }

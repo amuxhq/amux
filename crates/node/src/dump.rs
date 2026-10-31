@@ -776,8 +776,7 @@ struct CoreDumped {
 /// checkpoint and ring lines redacted as the core's values, the store copy
 /// at `scratch` redacted in place and moved in.
 fn write_core(captured: &Captured, scratch: &Path, out: &Path) -> Result<CoreDumped, String> {
-    let checkpoint = daemon_core::Checkpoint::from_bytes(&captured.checkpoint)
-        .and_then(|checkpoint| checkpoint.redacted(&Redact))
+    let checkpoint = daemon_core::redact::checkpoint(&captured.checkpoint, &Redact)
         .map_err(|error| format!("the checkpoint: {error}"))?;
     let cursors = store::redact::redact_file(scratch, &Redact)
         .map_err(|error| format!("redacting the store: {error}"))?;
@@ -802,7 +801,7 @@ fn write_core(captured: &Captured, scratch: &Path, out: &Path) -> Result<CoreDum
     let write = |name: &str, bytes: &[u8]| {
         std::fs::write(out.join(name), bytes).map_err(|error| format!("writing {name}: {error}"))
     };
-    write(CORE_CHECKPOINT, &checkpoint.to_bytes())?;
+    write(CORE_CHECKPOINT, &checkpoint)?;
     write(CORE_INPUTS, &lines)?;
     std::fs::copy(scratch, out.join(CORE_STORE))
         .map_err(|error| format!("writing {CORE_STORE}: {error}"))?;

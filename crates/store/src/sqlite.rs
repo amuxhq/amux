@@ -12,8 +12,7 @@ use crate::rows::{self, ABSORBED, COMMITTED, Rows};
 use crate::schema::{SCHEMA, SCHEMA_VERSION};
 use crate::{
     Absorb, Absorbed, AgentKey, AgentRow, Append, CommitClock, Committed, Cut, Delivery, Item,
-    Marker, Notification, Page, PageEnd, Record, Snapshot, SourceEvent, Step, StoreError,
-    TrustedHost,
+    Marker, Notification, Page, PageEnd, Record, Snapshot, Step, StoreError, TrustedHost,
 };
 
 /// Marks a file as an amux profile store ("amux").
@@ -825,8 +824,8 @@ fn absorb(rows: &Rows<'_>, agent: &AgentKey, what: Absorb) -> Result<Absorbed, S
         Absorb::Delta { events, live } => {
             for event in events {
                 let record = match event {
-                    SourceEvent::Item(item) => absorb_item(&item)?.then_some(Record::Item(item)),
-                    SourceEvent::Append(append) => rows
+                    Record::Item(item) => absorb_item(&item)?.then_some(Record::Item(item)),
+                    Record::Append(append) => rows
                         .extend(
                             agent,
                             &append.key,
@@ -837,11 +836,12 @@ fn absorb(rows: &Rows<'_>, agent: &AgentKey, what: Absorb) -> Result<Absorbed, S
                         // Otherwise the stream ends with the full item;
                         // nothing to do.
                         .map(|_| Record::Append(append)),
-                    SourceEvent::Snapshot(snapshot) => (snapshot.revision > held_snapshot(&row))
-                        .then(|| {
+                    Record::Snapshot(snapshot) => {
+                        (snapshot.revision > held_snapshot(&row)).then(|| {
                             copy_envelope(&mut row, &snapshot);
                             Record::Snapshot(snapshot)
-                        }),
+                        })
+                    }
                 };
                 if let Some(record) = record {
                     if live {

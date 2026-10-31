@@ -1,5 +1,4 @@
 {
-  "schema_version": 2,
   "spec": "clear_relink",
   "recorded": {
     "provider": "claude",

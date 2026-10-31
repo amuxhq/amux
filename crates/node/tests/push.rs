@@ -50,7 +50,7 @@ impl Rig {
         let clock = ManualClock::new(T0);
         let pushes = Arc::new(Recording::default());
         let mut launch = quiet_launch();
-        launch.notify_delay_ms = DELAY;
+        launch.core.notify_delay_ms = DELAY;
         let options = StartOptions {
             clock: Arc::new(clock.clone()),
             push: pushes.clone(),

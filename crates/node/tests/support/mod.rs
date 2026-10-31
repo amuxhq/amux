@@ -92,7 +92,7 @@ impl Install {
         // that an agent a failed test leaves behind goes away on its own.
         launch.agent.grace_secs = 20;
         launch.agent.drain_secs = 5;
-        launch.stop_deadline_ms = 15_000;
+        launch.core.stop_deadline_ms = 15_000;
         launch
     }
 

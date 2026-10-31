@@ -222,9 +222,10 @@ impl ProfileRuntime {
         }
         let _handed = Handed::new(&handle);
         // Reply patience is policy time, on the profile's clock.
-        let patience = self
-            .clock()
-            .sleep_until(self.clock_now().saturating_add(launch.reply_patience_ms));
+        let patience = self.clock().sleep_until(
+            self.clock_now()
+                .saturating_add_unsigned(launch.core.reply_patience_ms),
+        );
         tokio::select! {
             waited = rx => match waited {
                 Ok(Some(verdict)) => Ok(verdict),

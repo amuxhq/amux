@@ -169,7 +169,7 @@ fn the_daemon_cores_part_prints_its_checkpoint_inputs_and_store() {
     };
     store.commit(&agent, &[(57, step)], clock).unwrap();
     let daemon = Daemon::new(store, StartOptions::default());
-    std::fs::write(core.join("checkpoint"), daemon.checkpoint().to_bytes()).unwrap();
+    std::fs::write(core.join("checkpoint"), daemon.checkpoint()).unwrap();
     drop(daemon);
 
     let id = daemon_core::AgentId([0x22; 16]);

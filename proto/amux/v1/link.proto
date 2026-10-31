@@ -27,11 +27,13 @@ message Message {
 }
 
 // The handshake carries the sender's current neighbor snapshot; everything
-// after it is a delta (NeighborUp/NeighborDown) by definition.
+// after it is a delta (NeighborUp/NeighborDown) by definition. The dialler
+// sends one, and the acceptor answers with its own in `HelloAck.accepted`.
 message Hello {
   uint32 protocol_version = 1;
   Host host = 2;
   repeated Host neighbors = 3;
+  // The dialler's credential, on a link to the relay.
   optional string auth_token = 4;
   // 16 random bytes drawn when the sender's runtime starts and kept for its
   // life. A link that arrives carrying a different runtime instance id than
@@ -45,29 +47,17 @@ message Hello {
   // host:port. Only a paid host is told one: it is the candidate hole
   // punching works from, so a receiver keeps it apart from `addrs`.
   optional string public_addr = 7;
+  // In the acceptor's answer: the address the relay saw the dialler's
+  // packets come from, as host:port. Only a relay sets it, and only for a
+  // paid host: it is the candidate hole punching works from.
+  optional string observed_addr = 8;
 }
 
 message HelloAck {
   oneof outcome {
-    HelloAccepted accepted = 1;
+    Hello accepted = 1;
     google.rpc.Status error = 2;
   }
-}
-
-message HelloAccepted {
-  uint32 protocol_version = 1;
-  Host host = 2;
-  repeated Host neighbors = 3;
-  // The acceptor's; see `Hello.runtime_instance_id`.
-  bytes runtime_instance_id = 4;
-  // The acceptor's; see `Hello.addrs`.
-  repeated string addrs = 5;
-  // The address the relay saw the sender's packets come from, as host:port.
-  // Only a relay sets it, and only for a paid host: it is the candidate
-  // hole punching works from.
-  optional string observed_addr = 6;
-  // The acceptor's; see `Hello.public_addr`.
-  optional string public_addr = 7;
 }
 
 // "I have a direct link to this host." Strictly adjacency: a node never

@@ -1063,7 +1063,7 @@ mod tests {
             token: &str,
         ) -> (
             Arc<QuicCarrier>,
-            wire::HelloAccepted,
+            wire::Hello,
             crate::link::ControlSink,
             crate::link::ControlSource,
         ) {

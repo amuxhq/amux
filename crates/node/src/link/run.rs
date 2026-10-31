@@ -457,7 +457,8 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
                     outcome: Some(wire::hello_ack::Outcome::Accepted(accepted)),
                 })) => {
                     let (peer, neighbors, runtime_instance) =
-                        accept_peer_hello_ack(&ctx, accepted).map_err(protocol_status)?;
+                        accept_peer_hello(&ctx, accepted, ctx.expected_peer)
+                            .map_err(protocol_status)?;
                     Ok((frame, (peer, runtime_instance), neighbors))
                 }
                 Some(wire::message::Body::HelloAck(wire::HelloAck {
@@ -537,7 +538,7 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
             ctx.link_role = LinkRole::CloudRelay;
         }
         let snapshot = neighbor_snapshot(&ctx, carrier.as_ref()).await;
-        let peer = match accept_peer_hello(&ctx, hello) {
+        let peer = match accept_peer_hello(&ctx, hello, ctx.authenticated_peer) {
             Ok(peer) => peer,
             Err(error) => {
                 write_message(&mut sink, &error_hello_ack(error)).await?;
@@ -1133,21 +1134,25 @@ async fn handle_control_body(
     }
 }
 
+/// The peer a handshake's Hello names, with its neighbors and runtime
+/// instance. `expected` is the peer the carrier already proved or the dial
+/// was made to, when there is one.
 fn accept_peer_hello(
     ctx: &LinkCtx,
     hello: wire::Hello,
+    expected: Option<HostId>,
 ) -> Result<(Host, Vec<Host>, RuntimeInstance), wire::Error> {
     let host = hello
         .host
         .ok_or_else(|| "Hello.host is required".to_string())
         .and_then(|host| host_from_wire(host).map_err(|error| error.to_string()))
         .map_err(invalid_argument_error)?;
-    if let Some(authenticated_peer) = ctx.authenticated_peer
-        && host.id != authenticated_peer
+    if let Some(expected) = expected
+        && host.id != expected
     {
         return Err(invalid_argument_error(format!(
-            "Hello.host_id {} does not match carrier peer {}",
-            host.id, authenticated_peer
+            "Hello.host_id {} does not match expected peer {}",
+            host.id, expected
         )));
     }
     if host.id == ctx.local_host.id() {
@@ -1165,40 +1170,6 @@ fn accept_peer_hello(
     ))
 }
 
-fn accept_peer_hello_ack(
-    ctx: &LinkCtx,
-    accepted: wire::HelloAccepted,
-) -> Result<(Host, Vec<Host>, RuntimeInstance), wire::Error> {
-    if accepted.protocol_version != PROTOCOL_VERSION {
-        return Err(net_error::version_mismatch());
-    }
-    let host = accepted
-        .host
-        .ok_or_else(|| "HelloAccepted.host is required".to_string())
-        .and_then(|host| host_from_wire(host).map_err(|error| error.to_string()))
-        .map_err(invalid_argument_error)?;
-    if let Some(expected_peer) = ctx.expected_peer
-        && host.id != expected_peer
-    {
-        return Err(invalid_argument_error(format!(
-            "HelloAccepted.host_id {} does not match expected peer {}",
-            host.id, expected_peer
-        )));
-    }
-    if host.id == ctx.local_host.id() {
-        return Err(host_id_collision_error(
-            "peer host_id matches local host_id",
-        ));
-    }
-    let runtime_instance = RuntimeInstance::from_wire(&accepted.runtime_instance_id)
-        .map_err(invalid_argument_error)?;
-    Ok((
-        host,
-        neighbors_from_wire(accepted.neighbors)?,
-        runtime_instance,
-    ))
-}
-
 /// What a host's link to the relay opens with, for its dial to write the
 /// moment it starts: the Hello presenting `token`, listing no addresses
 /// (punching needs only what the relay sees), and the neighbors it lists.
@@ -1208,14 +1179,28 @@ pub(crate) async fn relay_opening(
     forwarding: Option<super::quic::EarlyForwarding>,
 ) -> super::quic::Opening {
     let neighbors = ctx.links.neighbor_snapshot().await;
-    let mut hello = connector_hello(ctx, &neighbors, &crate::routing::OwnAddresses::default());
-    if let Some(wire::message::Body::Hello(opening)) = hello.body.as_mut() {
-        opening.auth_token = Some(token.to_owned());
-    }
+    let mut hello = own_hello(ctx, &neighbors, &crate::routing::OwnAddresses::default());
+    hello.auth_token = Some(token.to_owned());
     super::quic::Opening {
-        hello,
+        hello: wire::Message {
+            body: Some(wire::message::Body::Hello(hello)),
+        },
         neighbors,
         forwarding,
+    }
+}
+
+/// This host's Hello, listing `neighbors` and the addresses in `own`.
+fn own_hello(ctx: &LinkCtx, neighbors: &[Host], own: &crate::routing::OwnAddresses) -> wire::Hello {
+    wire::Hello {
+        protocol_version: PROTOCOL_VERSION,
+        host: Some(host_to_wire(&ctx.local_host.snapshot())),
+        neighbors: neighbors.iter().map(host_to_wire).collect(),
+        auth_token: None,
+        runtime_instance_id: ctx.local_host.runtime_instance().to_wire(),
+        addrs: own.listed.iter().map(ToString::to_string).collect(),
+        public_addr: own.public.map(|addr| addr.to_string()),
+        observed_addr: None,
     }
 }
 
@@ -1224,19 +1209,13 @@ fn connector_hello(
     snapshot: &[Host],
     own: &crate::routing::OwnAddresses,
 ) -> wire::Message {
+    let mut hello = own_hello(ctx, snapshot, own);
+    hello.auth_token = ctx
+        .connector_auth
+        .as_ref()
+        .map(|auth| auth.token.token.clone());
     wire::Message {
-        body: Some(wire::message::Body::Hello(wire::Hello {
-            protocol_version: PROTOCOL_VERSION,
-            host: Some(host_to_wire(&ctx.local_host.snapshot())),
-            neighbors: snapshot.iter().map(host_to_wire).collect(),
-            auth_token: ctx
-                .connector_auth
-                .as_ref()
-                .map(|auth| auth.token.token.clone()),
-            runtime_instance_id: ctx.local_host.runtime_instance().to_wire(),
-            addrs: own.listed.iter().map(ToString::to_string).collect(),
-            public_addr: own.public.map(|addr| addr.to_string()),
-        })),
+        body: Some(wire::message::Body::Hello(hello)),
     }
 }
 
@@ -1247,21 +1226,16 @@ fn accepted_hello_ack(
     own: &crate::routing::OwnAddresses,
     observed: Option<std::net::SocketAddr>,
 ) -> wire::Message {
+    let neighbors = snapshot
+        .iter()
+        .filter(|host| host.id != peer)
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut hello = own_hello(ctx, &neighbors, own);
+    hello.observed_addr = observed.map(|addr| addr.to_string());
     wire::Message {
         body: Some(wire::message::Body::HelloAck(wire::HelloAck {
-            outcome: Some(wire::hello_ack::Outcome::Accepted(wire::HelloAccepted {
-                protocol_version: PROTOCOL_VERSION,
-                host: Some(host_to_wire(&ctx.local_host.snapshot())),
-                neighbors: snapshot
-                    .iter()
-                    .filter(|host| host.id != peer)
-                    .map(host_to_wire)
-                    .collect(),
-                runtime_instance_id: ctx.local_host.runtime_instance().to_wire(),
-                addrs: own.listed.iter().map(ToString::to_string).collect(),
-                observed_addr: observed.map(|addr| addr.to_string()),
-                public_addr: own.public.map(|addr| addr.to_string()),
-            })),
+            outcome: Some(wire::hello_ack::Outcome::Accepted(hello)),
         })),
     }
 }
@@ -1557,6 +1531,7 @@ mod tests {
                     runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
                     addrs: Vec::new(),
                     public_addr: None,
+                    observed_addr: None,
                 })),
             },
         )
@@ -1900,6 +1875,7 @@ mod tests {
                     runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
                     addrs: Vec::new(),
                     public_addr: None,
+                    observed_addr: None,
                 })),
             },
         )

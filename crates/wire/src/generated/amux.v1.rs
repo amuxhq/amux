@@ -1025,7 +1025,8 @@ impl ::prost::Name for Message {
     }
 }
 /// The handshake carries the sender's current neighbor snapshot; everything
-/// after it is a delta (NeighborUp/NeighborDown) by definition.
+/// after it is a delta (NeighborUp/NeighborDown) by definition. The dialler
+/// sends one, and the acceptor answers with its own in `HelloAck.accepted`.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Hello {
     #[prost(uint32, tag = "1")]
@@ -1034,6 +1035,7 @@ pub struct Hello {
     pub host: ::core::option::Option<Host>,
     #[prost(message, repeated, tag = "3")]
     pub neighbors: ::prost::alloc::vec::Vec<Host>,
+    /// The dialler's credential, on a link to the relay.
     #[prost(string, optional, tag = "4")]
     pub auth_token: ::core::option::Option<::prost::alloc::string::String>,
     /// 16 random bytes drawn when the sender's runtime starts and kept for its
@@ -1051,6 +1053,11 @@ pub struct Hello {
     /// punching works from, so a receiver keeps it apart from `addrs`.
     #[prost(string, optional, tag = "7")]
     pub public_addr: ::core::option::Option<::prost::alloc::string::String>,
+    /// In the acceptor's answer: the address the relay saw the dialler's
+    /// packets come from, as host:port. Only a relay sets it, and only for a
+    /// paid host: it is the candidate hole punching works from.
+    #[prost(string, optional, tag = "8")]
+    pub observed_addr: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for Hello {
     const NAME: &'static str = "Hello";
@@ -1072,7 +1079,7 @@ pub mod hello_ack {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Outcome {
         #[prost(message, tag = "1")]
-        Accepted(super::HelloAccepted),
+        Accepted(super::Hello),
         #[prost(message, tag = "2")]
         Error(super::super::super::google::rpc::Status),
     }
@@ -1085,39 +1092,6 @@ impl ::prost::Name for HelloAck {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.HelloAck".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct HelloAccepted {
-    #[prost(uint32, tag = "1")]
-    pub protocol_version: u32,
-    #[prost(message, optional, tag = "2")]
-    pub host: ::core::option::Option<Host>,
-    #[prost(message, repeated, tag = "3")]
-    pub neighbors: ::prost::alloc::vec::Vec<Host>,
-    /// The acceptor's; see `Hello.runtime_instance_id`.
-    #[prost(bytes = "vec", tag = "4")]
-    pub runtime_instance_id: ::prost::alloc::vec::Vec<u8>,
-    /// The acceptor's; see `Hello.addrs`.
-    #[prost(string, repeated, tag = "5")]
-    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// The address the relay saw the sender's packets come from, as host:port.
-    /// Only a relay sets it, and only for a paid host: it is the candidate
-    /// hole punching works from.
-    #[prost(string, optional, tag = "6")]
-    pub observed_addr: ::core::option::Option<::prost::alloc::string::String>,
-    /// The acceptor's; see `Hello.public_addr`.
-    #[prost(string, optional, tag = "7")]
-    pub public_addr: ::core::option::Option<::prost::alloc::string::String>,
-}
-impl ::prost::Name for HelloAccepted {
-    const NAME: &'static str = "HelloAccepted";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.HelloAccepted".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.HelloAccepted".into()
     }
 }
 /// "I have a direct link to this host." Strictly adjacency: a node never

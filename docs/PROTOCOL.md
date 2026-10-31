@@ -450,10 +450,10 @@ by `MESSAGE_SIZE_LIMIT` (16 MiB). The complete control vocabulary is:
   packets come from (`public_addr`, only a paid host has one), and an
   authentication token only for a cloud link. A host lists no addresses on its
   link to the relay.
-- `HelloAck`: either the accepted version plus the acceptor's host, neighbor
-  snapshot, runtime instance id and addresses, or an error. A relay accepting
-  a paid host also fills `observed_addr`, the address it saw that host's
-  packets come from.
+- `HelloAck`: either the acceptor's own `Hello` (no token), or an error. A
+  relay accepting a paid host also fills that `Hello`'s `observed_addr`, the
+  address it saw that host's packets come from. A dialler of another version
+  never gets one: the acceptor closes with `VERSION_MISMATCH` instead.
 - `NeighborUp` and `NeighborDown`: adjacency deltas after the handshake.
 - `Addresses`: the sender's whole new address list and public address,
   replacing the ones its `Hello` or an earlier `Addresses` carried; sent

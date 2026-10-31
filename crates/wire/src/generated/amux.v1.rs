@@ -4282,7 +4282,7 @@ impl ::prost::Name for ClaudeCreateConfig {
 pub struct ClaudeItem {
     #[prost(
         oneof = "claude_item::Kind",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19"
+        tags = "1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19"
     )]
     pub kind: ::core::option::Option<claude_item::Kind>,
 }
@@ -4302,10 +4302,6 @@ pub mod claude_item {
         Turn(super::Turn),
         #[prost(message, tag = "6")]
         Compaction(super::Compaction),
-        #[prost(message, tag = "7")]
-        CompactSummary(super::CompactSummary),
-        #[prost(message, tag = "8")]
-        Interruption(super::Interruption),
         #[prost(message, tag = "9")]
         AgentMessage(super::AgentMessage),
         #[prost(message, tag = "10")]
@@ -4342,33 +4338,6 @@ impl ::prost::Name for ClaudeItem {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.ClaudeItem".into()
-    }
-}
-/// The summary a compaction wrote into terminal Claude's transcript; the
-/// summary is the envelope text.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct CompactSummary {}
-impl ::prost::Name for CompactSummary {
-    const NAME: &'static str = "CompactSummary";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.CompactSummary".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.CompactSummary".into()
-    }
-}
-/// "You stopped it."
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Interruption {}
-impl ::prost::Name for Interruption {
-    const NAME: &'static str = "Interruption";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Interruption".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Interruption".into()
     }
 }
 /// A task headless Claude reports whose starting call it never showed; a
@@ -4829,7 +4798,7 @@ impl ::prost::Name for CodexCreateConfig {
 pub struct CodexItem {
     #[prost(
         oneof = "codex_item::Kind",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19"
+        tags = "1, 2, 3, 4, 6, 7, 8, 9, 10, 12, 13, 15, 16, 17, 18, 19"
     )]
     pub kind: ::core::option::Option<codex_item::Kind>,
 }
@@ -4846,8 +4815,6 @@ pub mod codex_item {
         Reasoning(super::Reasoning),
         #[prost(message, tag = "4")]
         Work(super::Work),
-        #[prost(message, tag = "5")]
-        McpStartup(super::McpStartup),
         #[prost(message, tag = "6")]
         Turn(super::Turn),
         /// A prompt delivered into the running turn; the text is the envelope's.
@@ -4864,8 +4831,6 @@ pub mod codex_item {
         /// Working notes, marked apart from the final answer.
         #[prost(message, tag = "13")]
         WorkingNote(super::Text),
-        #[prost(message, tag = "14")]
-        TurnDiff(super::TurnDiff),
         #[prost(message, tag = "15")]
         Verdict(super::ReviewerVerdict),
         /// A question, access grant, tool-server form or link: an ask that is
@@ -5128,41 +5093,6 @@ impl ::prost::Name for CollabWork {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.CollabWork".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct McpStartup {
-    #[prost(string, tag = "1")]
-    pub server: ::prost::alloc::string::String,
-    #[prost(enumeration = "ToolServerStatus", tag = "2")]
-    pub status: i32,
-    #[prost(string, tag = "3")]
-    pub error: ::prost::alloc::string::String,
-}
-impl ::prost::Name for McpStartup {
-    const NAME: &'static str = "McpStartup";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.McpStartup".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.McpStartup".into()
-    }
-}
-/// The whole-turn diff Codex reports at turn end.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct TurnDiff {
-    #[prost(string, tag = "1")]
-    pub patch: ::prost::alloc::string::String,
-}
-impl ::prost::Name for TurnDiff {
-    const NAME: &'static str = "TurnDiff";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.TurnDiff".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.TurnDiff".into()
     }
 }
 /// An automatic reviewer's verdict on an action.

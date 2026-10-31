@@ -24,7 +24,6 @@ item toolu_01KoJ2dKV5HwLLhD1G1aNB2a tool final at=1793309029391 text="" Bash TOO
 item toolu_01KoJ2dKV5HwLLhD1G1aNB2a tool final at=1793309029391 text="" Bash TOOL_STATE_CANCELLED ended=1793309029532 input=shell:"python3 -c 'import select; select.select([], [], [], 30)'; p…" out="The user doesn't want to proceed with this tool use. The too…"
 snapshot WORKING queue=[] working_on=- at=1793309029464 asks=[] session=55cacab2-8400-4582-b1a6-1eae81ed95bf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=34745/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 45 recorded 43: fact Transcript type=user uuid=be7be0a0-9dca-408a-8cd4-d5ee6f025fe6
-item be7be0a0-9dca-408a-8cd4-d5ee6f025fe6 interruption final at=1793309029533 text=""
 item turn:1 turn final at=1793309029533 text="" #1 TURN_OUTCOME_INTERRUPTED started=1793309025445
 snapshot IDLE queue=[] working_on=- at=1793309029487 asks=[] session=55cacab2-8400-4582-b1a6-1eae81ed95bf model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=34745/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 1 last=-

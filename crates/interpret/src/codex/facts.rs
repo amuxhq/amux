@@ -1543,24 +1543,6 @@ impl State {
             ServerNotification::ReasoningSummaryTextDelta(delta) => {
                 self.summary_delta(emit, &delta.item_id, delta.summary_index, &delta.delta);
             }
-            ServerNotification::TurnDiffUpdated(updated) => {
-                let key = format!("diff:{}", updated.turn_id);
-                let diff = (key.clone(), updated.diff);
-                if self.last_diff.as_ref() == Some(&diff) {
-                    return;
-                }
-                let patch = diff.1.clone();
-                self.last_diff = Some(diff);
-                self.emit_item(
-                    emit,
-                    ItemDraft {
-                        key,
-                        body: item_body(codex_item::Kind::TurnDiff(wire::TurnDiff { patch })),
-                        complete: true,
-                        ..Default::default()
-                    },
-                );
-            }
             ServerNotification::TurnPlanUpdated(updated) => {
                 self.plan = Some(
                     updated
@@ -1624,9 +1606,7 @@ impl State {
                     });
                 }
             }
-            ServerNotification::McpServerStatusUpdated(updated) => {
-                self.server_status(emit, updated)
-            }
+            ServerNotification::McpServerStatusUpdated(updated) => self.server_status(updated),
             ServerNotification::Error(error) => self.api_error(emit, error),
             ServerNotification::AutoApprovalReviewStarted(review) => {
                 self.review(emit, review, false)
@@ -1658,7 +1638,8 @@ impl State {
             | ServerNotification::ThreadNameUpdated(_)
             | ServerNotification::ThreadGoalCleared(_)
             | ServerNotification::RemoteControlStatusChanged(_)
-            | ServerNotification::TerminalInteraction(_) => {}
+            | ServerNotification::TerminalInteraction(_)
+            | ServerNotification::TurnDiffUpdated(_) => {}
             ServerNotification::SkillsChanged(_) => self.skills_changed(emit),
             // Configuration Codex found and did not apply: the person
             // wants to know, in Codex's words.
@@ -1774,7 +1755,7 @@ impl State {
         }
     }
 
-    fn server_status(&mut self, emit: &mut Emit, updated: McpServerStatusUpdated) {
+    fn server_status(&mut self, updated: McpServerStatusUpdated) {
         let name = updated.name;
         let status = match updated.status.as_str() {
             "starting" => ToolServerStatus::Starting,
@@ -1789,29 +1770,11 @@ impl State {
         let entry = ToolServer {
             name: name.clone(),
             status: status as i32,
-            error: error.clone(),
+            error,
         };
         match self.servers.iter_mut().find(|server| server.name == name) {
             Some(server) => *server = entry,
             None => self.servers.push(entry),
-        }
-        if matches!(
-            status,
-            ToolServerStatus::Failed | ToolServerStatus::NeedsAuth
-        ) {
-            self.emit_item(
-                emit,
-                ItemDraft {
-                    key: format!("mcp:{name}"),
-                    body: item_body(codex_item::Kind::McpStartup(wire::McpStartup {
-                        server: name,
-                        status: status as i32,
-                        error,
-                    })),
-                    complete: true,
-                    ..Default::default()
-                },
-            );
         }
     }
 

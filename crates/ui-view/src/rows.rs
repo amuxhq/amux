@@ -661,9 +661,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
                 duration_ms: None,
             }),
             Claude::Turn(turn) => plain(turn_row(state, held, turn)),
-            Claude::Status(_) | Claude::CompactSummary(_) | Claude::Interruption(_) => {
-                plain(RowKind::Hidden)
-            }
+            Claude::Status(_) => plain(RowKind::Hidden),
             Claude::Boundary(b) => plain(boundary(b)),
             Claude::AgentMessage(m) => plain(agent_message(held, m)),
             Claude::ApiError(e) => error(e),
@@ -701,7 +699,6 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
                 })
             }
             Codex::Work(work) => codex_work(state, held, work),
-            Codex::McpStartup(_) | Codex::TurnDiff(_) => plain(RowKind::Hidden),
             Codex::Turn(turn) => plain(turn_row(state, held, turn)),
             Codex::Boundary(b) => plain(boundary(b)),
             Codex::AgentMessage(m) => plain(agent_message(held, m)),

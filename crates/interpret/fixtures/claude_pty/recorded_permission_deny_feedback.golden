@@ -27,7 +27,6 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1793308315812 asks=[ask:1->toolu_01M
 item toolu_01MrkrGH3LhhhPoF4crGT4pe tool final at=1793308314082 text="" Bash TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED elsewhere ended=1793308314186 input=shell:"printf denied > denied.txt" out="The user doesn't want to proceed with this tool use. The too…"
 snapshot WORKING queue=[] working_on=- at=1793308315813 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34728/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 51 recorded 49: fact Transcript type=user uuid=cf1dc556-e2eb-4025-9562-7b5cad9e499b
-item cf1dc556-e2eb-4025-9562-7b5cad9e499b interruption final at=1793308314187 text=""
 item turn:1 turn final at=1793308314187 text="" #1 TURN_OUTCOME_INTERRUPTED started=1793308312403
 snapshot IDLE queue=[] working_on=- at=1793308315820 asks=[] session=3a757542-58f0-4e4b-98a4-9fb3e9a9862d model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34728/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 1 last=-

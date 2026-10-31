@@ -581,8 +581,6 @@ pub struct State {
     /// Reviewer verdicts on work Codex has not reported yet.
     #[serde(with = "serde_pb::msg_map")]
     reviewed: BTreeMap<String, ToolDecision>,
-    /// The whole-turn diff last emitted, by key.
-    last_diff: Option<(String, String)>,
     /// The turn whose final error is already an item.
     final_error: Option<String>,
     /// Commands still running after the turn that started them ended.
@@ -665,7 +663,6 @@ impl State {
             sign_in: None,
             reviewed: BTreeMap::new(),
             final_error: None,
-            last_diff: None,
             background: None,
             jobs_asked: 0,
             plan: None,
@@ -2015,17 +2012,6 @@ fn describe_item(body: &[u8]) -> ItemView {
             ),
         ),
         Some(Kind::Work(work)) => ("work", work_complete(&work), describe_work(&work)),
-        Some(Kind::McpStartup(startup)) => (
-            "mcp_startup",
-            true,
-            format!(
-                "{} {} {}",
-                startup.server,
-                wire::ToolServerStatus::try_from(startup.status)
-                    .map_or("?", |status| status.as_str_name()),
-                Value::String(startup.error)
-            ),
-        ),
         Some(Kind::Turn(turn)) => (
             "turn",
             true,
@@ -2072,11 +2058,6 @@ fn describe_item(body: &[u8]) -> ItemView {
                 unrecognized.fact_type,
                 Value::String(unrecognized.summary)
             ),
-        ),
-        Some(Kind::TurnDiff(diff)) => (
-            "turn_diff",
-            true,
-            format!("patch={}", clip(&diff.patch, 60)),
         ),
         Some(Kind::Ask(item)) => ("ask", true, ask_item::describe(&item)),
         Some(Kind::Verdict(verdict)) => (

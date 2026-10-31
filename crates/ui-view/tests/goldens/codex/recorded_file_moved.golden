@@ -22,9 +22,8 @@
      3 prompt:d2edc92f5cb24cbab209977cba9726b3 Prompt { text: [Text("Use apply_patch to rename old.txt to moved.txt and change its one line from old to moved, in one Update File hunk with a Move to line. Do not use shell commands. Then reply DONE.")], steered: false }
      4 msg_01a63f92e9d504d1016ae5e58ab5308191aeb3ba23b1005948 Prose { text: [Text("I’ll use one `Update File` patch to move the file and change its line.")], streaming: false, working_note: true }
      5 exec-1e3f28fd-b1f5-4724-9cd6-347b69ad0eed FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Moved { to: "<MACHINE_PATH>" }, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[exec-1e3f28fd-b1f5-4724-9cd6-347b69ad0eed..exec-1e3f28fd-b1f5-4724-9cd6-347b69ad0eed x1 recent=0 RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decis…
-     6 diff:01a19208-9c5a-7ed3-b7f2-bbde7eb82f0d Hidden collapsed
-     7 msg_01a63f92e9d504d1016ae5e58e5c7c8191b7ddcdeba979cb36 Prose { text: [Text("DONE")], streaming: false, working_note: false }
-     8 turn:1 TurnEnd { duration_ms: Some(6434), failed: false }
+     6 msg_01a63f92e9d504d1016ae5e58e5c7c8191b7ddcdeba979cb36 Prose { text: [Text("DONE")], streaming: false, working_note: false }
+     7 turn:1 TurnEnd { duration_ms: Some(6434), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 15498, window_tokens: Some(475000), percent: Some(3), near_full: false }) sign-in None
 == settings

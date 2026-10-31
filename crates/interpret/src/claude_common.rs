@@ -1956,8 +1956,6 @@ pub(crate) fn describe_item(body: &[u8]) -> ItemView {
                 describe_cause(&boundary)
             ),
         ),
-        Some(Kind::CompactSummary(_)) => ("compact_summary", true, String::new()),
-        Some(Kind::Interruption(_)) => ("interruption", true, String::new()),
         Some(Kind::AgentMessage(message)) => (
             "agent_message",
             true,

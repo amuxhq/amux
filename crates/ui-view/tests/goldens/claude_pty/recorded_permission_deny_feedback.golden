@@ -25,9 +25,8 @@
      2 335b9300-c427-4258-98e5-1b29839f0fdd Prompt { text: [Text("Use the Bash tool to run exactly: printf denied > denied.txt. Then stop.")], steered: false }
      3 846c1c3f-d387-4728-a8e4-70f0f2285e75 Thinking { text: "", open: false, duration_ms: Some(1360) }
      4 toolu_01MrkrGH3LhhhPoF4crGT4pe Command { command: "printf denied > denied.txt", state: Denied, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed."], more_lines: 0, output_trimmed: false, o…
-     5 cf1dc556-e2eb-4025-9562-7b5cad9e499b Hidden collapsed
-     6 turn:1 Stopped
-     7 79ba042e-9a41-4492-8c77-39c5fba59e63 Prompt { text: [Text("Use a read-only command instead")], steered: false }
+     5 turn:1 Stopped
+     6 79ba042e-9a41-4492-8c77-39c5fba59e63 Prompt { text: [Text("Use a read-only command instead")], steered: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 34728, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings

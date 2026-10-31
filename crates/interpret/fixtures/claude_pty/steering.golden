@@ -106,7 +106,6 @@ effect reply n7 accepted
 effect terminal send now "Stop after this."
 snapshot WORKING queue=[p5(steered)] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 39 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.190Z","type":"user","uuid":"u6"}}
-item u6 interruption final at=1800000000190 text=""
 item turn:4 turn final at=1800000000190 text="" #4 TURN_OUTCOME_INTERRUPTED started=1800000000000
 snapshot IDLE queue=[] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 4 last=-

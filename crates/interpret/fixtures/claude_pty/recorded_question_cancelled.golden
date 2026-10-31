@@ -27,7 +27,6 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1793309090221 asks=[ask:1->toolu_01L
 item toolu_01LdtVF2aDHgH1Lysj9nKwH2 ask final at=1793309090317 text="" question×1 ASK_OUTCOME_DISMISSED
 snapshot WORKING queue=[] working_on=- at=1793309090221 asks=[] session=f401d338-004c-4959-a2f6-7e2371f9b61b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34745/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 48 recorded 46: fact Transcript type=user uuid=38a11e09-d482-4c3e-b4a5-15ae70729a96
-item 38a11e09-d482-4c3e-b4a5-15ae70729a96 interruption final at=1793309090417 text=""
 item turn:1 turn final at=1793309090417 text="" #1 TURN_OUTCOME_INTERRUPTED started=1793309086822
 snapshot IDLE queue=[] working_on=- at=1793309090230 asks=[] session=f401d338-004c-4959-a2f6-7e2371f9b61b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34745/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 1 last=-

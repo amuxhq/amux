@@ -30,8 +30,6 @@ message ClaudeItem {
     ToolCall tool = 4;
     Turn turn = 5;
     Compaction compaction = 6;
-    CompactSummary compact_summary = 7;
-    Interruption interruption = 8;
     AgentMessage agent_message = 9;
     ApiError api_error = 10;
     Boundary boundary = 11;
@@ -49,13 +47,6 @@ message ClaudeItem {
     ModelSwitch model_switch = 19;
   }
 }
-
-// The summary a compaction wrote into terminal Claude's transcript; the
-// summary is the envelope text.
-message CompactSummary {}
-
-// "You stopped it."
-message Interruption {}
 
 // A task headless Claude reports whose starting call it never showed; a
 // task of a known call is progress on that call instead.

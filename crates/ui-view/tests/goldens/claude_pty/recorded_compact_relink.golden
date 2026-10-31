@@ -37,7 +37,6 @@
     18 b726b725-5370-4192-a6a3-f0597c8951cf SlashOutput { command: "/compact", args: "", output: "Compacted (ctrl+o to see full summary)" }
     19 boundary:2 Boundary { kind: Compacted, cause: "" }
     20 dea719a6-ee02-4248-aca6-0cd3a909a9af Compaction { tokens_before: Some(35102), tokens_after: Some(4538), automatic: false }
-    21 dd7162e9-9c57-4c78-8552-a18b6ff85667 Hidden collapsed
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 4538, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings

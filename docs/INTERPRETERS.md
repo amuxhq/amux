@@ -391,9 +391,10 @@ transcript row, in transcript order:
 - A queued-command attachment row is a prompt Claude took into the running
   turn at a tool boundary: a steer item.
 - Slash commands (`<command-name>` rows and their `<local-command-stdout>`
-  output, with terminal colour codes stripped), compaction boundaries and summaries, API error rows and the
-  interruption row (one beginning `[Request interrupted by user`) each become
-  their item.
+  output, with terminal colour codes stripped), compaction boundaries and API
+  error rows each become their item. The interruption row (one beginning
+  `[Request interrupted by user`) ends the turn as stopped, and a
+  compaction's summary row becomes nothing.
 - A `!command` typed in Claude's own view (`<bash-input>` and its
   `<bash-stdout>`/`<bash-stderr>` rows) is a Bash step with its output.
 - A user row of task-notification origin carries a background subagent's

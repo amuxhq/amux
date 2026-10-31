@@ -59,9 +59,7 @@ impl ItemBody {
                 Claude::Status(status) if status.status() == wire::SdkStatus::Compacting => {
                     ItemClass::Compacting
                 }
-                Claude::Status(_) | Claude::CompactSummary(_) | Claude::Interruption(_) => {
-                    ItemClass::Silent
-                }
+                Claude::Status(_) => ItemClass::Silent,
                 Claude::Task(_)
                 | Claude::Slash(_)
                 | Claude::Unrecognized(_)
@@ -86,7 +84,6 @@ impl ItemBody {
                 Codex::Error(error) => api_error(error),
                 Codex::Boundary(_) => ItemClass::Boundary,
                 Codex::AgentMessage(_) => ItemClass::AgentMessage,
-                Codex::McpStartup(_) | Codex::TurnDiff(_) => ItemClass::Silent,
                 Codex::Unrecognized(_) | Codex::Verdict(_) => ItemClass::Other,
                 Codex::Ask(_) | Codex::Plan(_) => ItemClass::Ask,
             },
@@ -124,8 +121,8 @@ pub enum ItemClass {
     /// decision, not activity: the activity line reads past it to the work
     /// it interrupted.
     Ask,
-    /// Drawn by no client: Claude's status and task bookkeeping, Codex's
-    /// tool-server start-up and turn diffs.
+    /// Drawn by no client: Claude's status bookkeeping, a finished safety
+    /// check.
     Silent,
     Other,
 }

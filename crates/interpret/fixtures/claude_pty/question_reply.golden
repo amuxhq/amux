@@ -28,7 +28,6 @@ item t1 ask final at=1800000000020 text="" question×2 ASK_OUTCOME_REPLIED answe
 ## 9 fact {"channel":"transcript","json":{"message":{"content":[{"content":"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.","is_error":true,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.025Z","toolUseResult":"User rejected tool use","type":"user","uuid":"r1"}}
 snapshot WORKING queue=[] working_on="test it" at=0 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 10 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user for tool use]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.026Z","type":"user","uuid":"i1"}}
-item i1 interruption final at=1800000000026 text=""
 item turn:1 turn final at=1800000000026 text="" #1 TURN_OUTCOME_INTERRUPTED started=0
 snapshot IDLE queue=[] working_on="test it" at=0 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 1 last=-

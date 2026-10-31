@@ -9,7 +9,6 @@ snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- mo
 ## 2 fact {"channel":"rpc","json":{"method":"mcpServer/startupStatus/updated","params":{"error":null,"name":"docs","status":"starting","threadId":"t1"}}}
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[docs:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
 ## 3 fact {"channel":"rpc","json":{"method":"mcpServer/startupStatus/updated","params":{"error":"connection refused","name":"docs","status":"failed","threadId":"t1"}}}
-item mcp:docs mcp_startup final at=1800000000000 text="" docs TOOL_SERVER_STATUS_FAILED "connection refused"
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[docs:TOOL_SERVER_STATUS_FAILED] sign_in=? background=?
 ## 4 fact {"channel":"rpc","json":{"method":"account/updated","params":{"authMode":"chatgpt","planType":"pro","threadId":"t1"}}}
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
@@ -51,7 +50,6 @@ item cmd-1 work open at=1800000001000 text="" command "cargo watch" cwd=/work TO
 ## 23 fact {"channel":"rpc","json":{"method":"item/commandExecution/outputDelta","params":{"delta":"[watching]\n","itemId":"cmd-1","threadId":"t1","turnId":"turn-1"}}}
 append cmd-1 "[watching]\n"
 ## 24 fact {"channel":"rpc","json":{"method":"turn/diff/updated","params":{"diff":"diff --git a/lexer.rs b/lexer.rs\n","threadId":"t1","turnId":"turn-1"}}}
-item diff:turn-1 turn_diff final at=1800000000000 text="" patch="diff --git a/lexer.rs b/lexer.rs\n"
 ## 25 fact {"channel":"rpc","json":{"method":"turn/diff/updated","params":{"diff":"diff --git a/lexer.rs b/lexer.rs\n","threadId":"t1","turnId":"turn-1"}}}
 ## 26 fact {"channel":"rpc","json":{"method":"thread/tokenUsage/updated","params":{"threadId":"t1","tokenUsage":{"last":{"totalTokens":48000},"modelContextWindow":258400,"total":{"totalTokens":90000}},"turnId":"turn-1"}}}
 snapshot WORKING queue=[] working_on="Splitting the lexer" at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=48000/258400 plan=[1:TASK_LIST_STATUS_COMPLETED:"Read the parser",2:TASK_LIST_STATUS_IN_PROGRESS:"Split the lexer",3:TASK_LIST_STATUS_PENDING:"Run the tests"] usage=blocked 5h:100%(blocked) 7d:40%(ok) credits=0 servers=[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?

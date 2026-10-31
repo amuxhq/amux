@@ -68,8 +68,7 @@
     13 turn:3 TurnEnd { duration_ms: Some(5), failed: false }
     14 u5 Prompt { text: [Text("And the tests.")], steered: false }
     15 toolu_2 Command { command: "make test", state: Succeeded, exit_code: None, output_head: ["tests ran"], more_lines: 0, output_trimmed: false, output_tail: ["tests ran"], duration_ms: Some(5) } run[toolu_2..toolu_2 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true }
-    16 u6 Hidden collapsed
-    17 turn:4 Stopped
+    16 turn:4 Stopped
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

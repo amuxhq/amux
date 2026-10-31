@@ -39,7 +39,6 @@ item stream:d-c message open at=1800000000100 text="There is one file:\n"
 effect terminal interrupt
 effect reply i1 accepted
 ## 18 fact {"channel":"transcript","json":{"message":{"content":"[Request interrupted by user]","role":"user"},"origin":{"kind":"human"},"promptId":"q1","promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:05.000Z","type":"user","uuid":"u2"}}
-item u2 interruption final at=1800000005000 text=""
 item stream:d-c message final at=1800000000100 text="There is one file:\n"
 item turn:1 turn final at=1800000005000 text="" #1 TURN_OUTCOME_INTERRUPTED started=1800000000010
 snapshot IDLE queue=[] working_on=- at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?

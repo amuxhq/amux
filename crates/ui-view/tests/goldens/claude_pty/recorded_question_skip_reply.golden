@@ -41,9 +41,8 @@
      4 toolu_01H5LGgXxwh97FzPmAaQ889g [Answered: Colour = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "The colour red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The colour blue", preview: "", recommended: false }], a…
      5 1d63fea4-7c98-49b3-8904-a69115c9a1ae Thinking { text: "", open: false, duration_ms: Some(2836) }
      6 toolu_01SFEMSPgUqDbcKCfPRHNiRL [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "A circle shape", preview: "", recommended: false }, OptionView { label: "Square", description: "A square shape", preview: "", recommended: false }], allow_other: true, secret: fal…
-     7 1e7f134f-6b27-4eb3-a3a7-88a0863b73b1 Hidden collapsed
-     8 turn:1 Stopped
-     9 bb1d7be2-7225-4d89-9e1e-16775854821e Prompt { text: [Text("Skip the shape; we are done here.")], steered: false }
+     7 turn:1 Stopped
+     8 bb1d7be2-7225-4d89-9e1e-16775854821e Prompt { text: [Text("Skip the shape; we are done here.")], steered: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 35123, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings

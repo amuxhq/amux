@@ -24,7 +24,6 @@ message CodexItem {
     Text message = 2;
     Reasoning reasoning = 3;
     Work work = 4;
-    McpStartup mcp_startup = 5;
     Turn turn = 6;
     // A prompt delivered into the running turn; the text is the envelope's.
     Steer steer = 7;
@@ -34,7 +33,6 @@ message CodexItem {
     Unrecognized unrecognized = 12;
     // Working notes, marked apart from the final answer.
     Text working_note = 13;
-    TurnDiff turn_diff = 14;
     ReviewerVerdict verdict = 15;
     // A question, access grant, tool-server form or link: an ask that is
     // the work.
@@ -151,17 +149,6 @@ message CollabWork {
   string tool = 1;
   repeated string thread_ids = 2;
   string prompt = 3;
-}
-
-message McpStartup {
-  string server = 1;
-  ToolServerStatus status = 2;
-  string error = 3;
-}
-
-// The whole-turn diff Codex reports at turn end.
-message TurnDiff {
-  string patch = 1;
 }
 
 // An automatic reviewer's verdict on an action.

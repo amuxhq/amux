@@ -937,12 +937,7 @@ impl Machine for PathModel {
                 next.lost.clear();
                 next.answered.clear();
                 next.failed.clear();
-                let ip = if next.on_lan {
-                    IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5))
-                } else {
-                    IpAddr::V4(Ipv4Addr::new(172, 20, 10, 5))
-                };
-                Input::NetworkChanged { addrs: vec![ip] }
+                Input::NetworkChanged
             }
             Action::ForwardingDown => {
                 next.used.forwarding_drops += 1;

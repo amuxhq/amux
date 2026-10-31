@@ -599,11 +599,6 @@ impl Daemon {
         &mut self.store
     }
 
-    /// How long one step may take before it is reported.
-    pub fn budget(&self) -> StepBudget {
-        self.options.budget
-    }
-
     /// Sets how long one step may take before it is reported: a replay of
     /// a checkpoint the daemon took under its own budget runs under none,
     /// so that its steps are a function of their inputs alone.

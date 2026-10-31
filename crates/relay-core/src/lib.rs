@@ -910,11 +910,6 @@ impl Relay {
     pub fn host_of(&self, link: LinkId) -> Option<HostId> {
         self.links.get(&link).map(|up| up.host)
     }
-
-    /// How long one step may take before it is reported.
-    pub fn budget(&self) -> StepBudget {
-        self.budget
-    }
 }
 
 #[cfg(test)]

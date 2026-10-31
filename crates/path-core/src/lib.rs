@@ -40,7 +40,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::time::Instant;
 
 pub use daemon_core::payload::Source;
@@ -125,9 +125,7 @@ pub enum Input {
         reason: ForwardRefusal,
     },
     /// The host's own interface addresses changed; every path is suspect.
-    NetworkChanged {
-        addrs: Vec<IpAddr>,
-    },
+    NetworkChanged,
     Plan {
         paid: bool,
     },
@@ -272,8 +270,6 @@ pub struct Paths {
     on_all: Vec<Path>,
     /// The Tick last asked for.
     armed: Option<u64>,
-    /// The host's interface addresses, as last told.
-    local: Vec<IpAddr>,
     switched: Option<Switch>,
     budget: StepBudget,
 }
@@ -301,7 +297,6 @@ impl Paths {
             carrying: None,
             on_all: Vec::new(),
             armed: None,
-            local: Vec::new(),
             switched: None,
             budget,
         }
@@ -333,7 +328,7 @@ impl Paths {
                 self.paths.remove(&Key::Forwarded(link));
             }
             Input::ForwardRefused { link, reason } => self.forward_refused(link, reason, out),
-            Input::NetworkChanged { addrs } => self.network_changed(addrs, out),
+            Input::NetworkChanged => self.network_changed(out),
             Input::Plan { paid } => self.plan(paid, out),
             Input::LinkUp => {
                 self.link_up = true;
@@ -381,16 +376,6 @@ impl Paths {
     /// answered.
     pub fn carrying(&self) -> Option<&Path> {
         self.carrying.as_ref().map(|carrying| &carrying.path)
-    }
-
-    /// How long one step may take before it is reported.
-    pub fn budget(&self) -> StepBudget {
-        self.budget
-    }
-
-    /// The interface addresses last told in a network change.
-    pub fn local_addrs(&self) -> &[IpAddr] {
-        &self.local
     }
 
     /// The invariants, checked after every step over the few paths held.
@@ -559,8 +544,7 @@ impl Paths {
         }
     }
 
-    fn network_changed(&mut self, addrs: Vec<IpAddr>, out: &mut Vec<Output>) {
-        self.local = addrs;
+    fn network_changed(&mut self, out: &mut Vec<Output>) {
         for state in self.paths.values_mut() {
             state.stale = true;
             state.probe_deadline_ms = None;

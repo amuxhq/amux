@@ -234,7 +234,7 @@ pub(crate) async fn run<I: Interpreter>(
             0 => DEFAULT_RING_BYTES,
             bytes => bytes,
         },
-        &agent.checkpoint().state,
+        &agent.checkpoint(),
     )
     .map_err(AgentError::Journal)?;
     let mut driver = Driver::<I> {
@@ -377,7 +377,7 @@ impl<I: Interpreter> Driver<I> {
             // input meets. A rotation that fails is a write that fails.
             if !matches!(input, Input::WriteFailed { .. })
                 && self.ring.full()
-                && let Err(error) = self.ring.rotate(&self.agent.checkpoint().state)
+                && let Err(error) = self.ring.rotate(&self.agent.checkpoint())
             {
                 next = Some(write_failed(error.to_string()));
                 continue;

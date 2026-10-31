@@ -174,7 +174,7 @@ fn the_daemon_cores_part_prints_its_checkpoint_inputs_and_store() {
 
     let text = show::show(dir.path(), None).expect("the bundle prints");
     for expected in [
-        "\n== daemon core ==\n-- checkpoint (schema 1, ",
+        "\n== daemon core ==\n-- checkpoint (",
         "-- inputs (1 inputs, 1 journal reads) --\n",
         &written,
         "-- store as of the checkpoint --\nagent 22222222-2222-2222-2222-222222222222 \

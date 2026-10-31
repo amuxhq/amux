@@ -70,10 +70,6 @@ pub use retention::{Retain, Retained};
 pub use serve::Answers;
 pub use sources::{Sources, Standing, from_wire};
 
-/// The checkpoint layout this build writes and restores. A checkpoint under
-/// any other is refused whole.
-pub const CHECKPOINT_SCHEMA: u32 = 1;
-
 /// The daemon's whole state: the store owned outright, one machine per
 /// concern, open calls by id, armed timers and jobs awaiting their result.
 pub struct Daemon {
@@ -517,13 +513,12 @@ impl Daemon {
             &self.options,
         );
         Checkpoint {
-            schema: CHECKPOINT_SCHEMA,
             state: postcard::to_allocvec(&core).expect("the core's state serializes"),
         }
     }
 
     /// Rebuilds a core from a checkpoint and the store it was taken beside.
-    /// A checkpoint under another schema is refused, never half applied.
+    /// A checkpoint that does not decode is refused, never half applied.
     pub fn restore(checkpoint: Checkpoint, store: Sqlite) -> Result<Daemon, RestoreError> {
         let (
             routing,
@@ -768,25 +763,24 @@ pub struct Pending {
 
 pub use core_ring::{Check, DumpReason, StepBudget, Violation};
 
-/// The core's state as of one step, serialized, under the layout it was
-/// written with.
+/// The core's state as of one step, serialized. A checkpoint is read only
+/// by the build that wrote it: rings are reset with the stores they sit
+/// beside, so no other layout is ever met.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Checkpoint {
-    pub schema: u32,
     pub state: Vec<u8>,
 }
 
 impl Checkpoint {
-    /// The bytes a checkpoint job writes: the layout first, so a reader
-    /// knows whether it can read the rest before it tries.
+    /// The bytes a checkpoint job writes.
     pub fn to_bytes(&self) -> Vec<u8> {
         postcard::to_allocvec(self).expect("a checkpoint serializes")
     }
 
     /// Reads a checkpoint back. Its state is read only by
-    /// [`Daemon::restore`], which refuses another layout.
+    /// [`Daemon::restore`].
     pub fn from_bytes(bytes: &[u8]) -> Result<Checkpoint, RestoreError> {
-        postcard::from_bytes(bytes).map_err(|error| RestoreError::Corrupt(error.to_string()))
+        postcard::from_bytes(bytes).map_err(RestoreError::of)
     }
 }
 
@@ -810,36 +804,25 @@ type Parts = (
     StartOptions,
 );
 
-/// A checkpoint's state read back; one under another schema is refused.
+/// A checkpoint's state read back.
 fn checkpoint_parts(checkpoint: &Checkpoint) -> Result<Parts, RestoreError> {
-    if checkpoint.schema != CHECKPOINT_SCHEMA {
-        return Err(RestoreError::Schema {
-            found: checkpoint.schema,
-            expected: CHECKPOINT_SCHEMA,
-        });
-    }
-    postcard::from_bytes(&checkpoint.state)
-        .map_err(|error| RestoreError::Corrupt(error.to_string()))
+    postcard::from_bytes(&checkpoint.state).map_err(RestoreError::of)
 }
 
-/// Why a checkpoint could not be restored.
+/// Why a checkpoint could not be restored: its bytes do not decode under
+/// this build's layout.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RestoreError {
-    /// Written under another layout.
-    Schema { found: u32, expected: u32 },
-    /// The bytes do not decode under this layout.
-    Corrupt(String),
+pub struct RestoreError(String);
+
+impl RestoreError {
+    fn of(error: postcard::Error) -> Self {
+        Self(error.to_string())
+    }
 }
 
 impl fmt::Display for RestoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RestoreError::Schema { found, expected } => write!(
-                f,
-                "the checkpoint was written under layout {found}; this build reads {expected}"
-            ),
-            RestoreError::Corrupt(why) => write!(f, "the checkpoint does not decode: {why}"),
-        }
+        write!(f, "the checkpoint does not decode: {}", self.0)
     }
 }
 
@@ -851,35 +834,9 @@ mod tests {
 
     #[test]
     fn a_checkpoint_that_does_not_decode_is_refused() {
-        let checkpoint = Checkpoint {
-            schema: CHECKPOINT_SCHEMA,
-            state: vec![0xff],
-        };
+        let checkpoint = Checkpoint { state: vec![0xff] };
         let store = Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens");
-        assert!(matches!(
-            Daemon::restore(checkpoint, store),
-            Err(RestoreError::Corrupt(_))
-        ));
-        assert!(matches!(
-            Checkpoint::from_bytes(&[]),
-            Err(RestoreError::Corrupt(_))
-        ));
-    }
-
-    #[test]
-    fn a_checkpoint_under_another_layout_is_refused() {
-        let checkpoint = Checkpoint {
-            schema: CHECKPOINT_SCHEMA + 1,
-            state: Vec::new(),
-        };
-        let store = Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens");
-        let refused = Daemon::restore(checkpoint, store).err();
-        assert_eq!(
-            refused,
-            Some(RestoreError::Schema {
-                found: CHECKPOINT_SCHEMA + 1,
-                expected: CHECKPOINT_SCHEMA,
-            })
-        );
+        assert!(Daemon::restore(checkpoint, store).is_err());
+        assert!(Checkpoint::from_bytes(&[]).is_err());
     }
 }

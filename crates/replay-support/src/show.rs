@@ -282,8 +282,7 @@ fn core_section(
     let _ = match daemon_core::Checkpoint::from_bytes(&core.checkpoint) {
         Ok(checkpoint) => writeln!(
             out,
-            "-- checkpoint (schema {}, {} bytes of state) --",
-            checkpoint.schema,
+            "-- checkpoint ({} bytes of state) --",
             checkpoint.state.len()
         ),
         Err(error) => writeln!(out, "-- checkpoint ({error}) --"),

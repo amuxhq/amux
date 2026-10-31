@@ -18,8 +18,7 @@
   "automatic": true,
   "core": {
     "inputs": 6,
-    "reads": 0,
-    "schema": 1
+    "reads": 0
   },
   "created_at_ms": 1792444164973,
   "daemon_version": "0.8.0",

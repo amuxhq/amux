@@ -2394,9 +2394,7 @@ impl Transition<'_> {
         let (h, agent_id) = (process.host, process.agent);
         if let Some(Core(value)) = process.core.take() {
             let core = Agent::<Kind>::from_value(&value).expect("an agent's value restores");
-            self.w
-                .resumes
-                .insert(agent_id, core.checkpoint().state.clone());
+            self.w.resumes.insert(agent_id, core.checkpoint());
         }
         if self.w.running.get(&agent_id) == Some(&p) {
             self.w.running.remove(&agent_id);

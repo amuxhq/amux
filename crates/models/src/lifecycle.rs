@@ -364,7 +364,7 @@ impl AgentLifecycle {
     /// says it is ready.
     fn started(&self, state: &mut State, mut agent: Agent<Kind>, out: Vec<Output>) {
         state.ring = Ring {
-            checkpoint: agent.checkpoint().state,
+            checkpoint: agent.checkpoint(),
             entries: Vec::new(),
         };
         let mut fed = VecDeque::new();
@@ -598,7 +598,7 @@ impl Machine for AgentLifecycle {
         if *action == Action::Resume {
             let held = state.daemon.held.clone()?;
             let agent = Agent::<Kind>::from_value(&s.agent).expect("the value restores");
-            if interpret::encode_checkpoint(&s.ring.replayed()) != agent.checkpoint().state {
+            if interpret::encode_checkpoint(&s.ring.replayed()) != agent.checkpoint() {
                 state.seen.ring_diverged = true;
             }
             let resumed = Resumed {

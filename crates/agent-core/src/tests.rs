@@ -389,16 +389,3 @@ fn an_agent_restored_from_its_value_steps_as_the_original_does() {
     assert_eq!(again, original);
     assert_eq!(restored.value(), run.agent.value());
 }
-
-#[test]
-fn a_checkpoint_under_another_layout_is_refused() {
-    let mut checkpoint = Run::start(&spec(false, None)).agent.checkpoint();
-    checkpoint.schema += 1;
-    assert_eq!(
-        checkpoint.interpreter::<Kind>().err(),
-        Some(RestoreError::Schema {
-            found: CHECKPOINT_SCHEMA + 1,
-            expected: CHECKPOINT_SCHEMA,
-        })
-    );
-}

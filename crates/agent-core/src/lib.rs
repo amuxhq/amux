@@ -242,7 +242,7 @@ impl ExitCause {
                 wire::ExitCause::CouldNotStart,
                 Some(format!("the provider: {why}")),
             ),
-            // No interpreter asks to exit today; were one to, its words are
+            // The interpreter's words, such as Codex refusing a thread, are
             // all that says why.
             ExitCause::Interpreter(why) => (wire::ExitCause::EndedUnexpectedly, Some(why.clone())),
             ExitCause::WriteFailed(why) => (

@@ -114,10 +114,6 @@ pub(crate) enum Opening {
 }
 
 /// A client's decoded request.
-///
-/// An inventory opening still reads the host set the profile's shell
-/// publishes. Until that moves into the core the driver reads it as it
-/// hands the call over, and it rides on the request.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ClientRequest {
     /// Opens a stream of an agent's session events: the opening cut, then

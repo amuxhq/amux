@@ -165,7 +165,13 @@ fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
     linked(&mut daemon, 2, DESK, CarrierKind::Direct, &[]);
     linked(&mut daemon, 3, RELAY, CarrierKind::Relay, &[DESK]);
     assert!(daemon.routing.catalogue.said(DESK).is_none());
-    assert!(daemon.routing.catalogue.relays_to(DESK).is_empty());
+    assert!(
+        daemon
+            .routing
+            .catalogue
+            .claimed()
+            .all(|(host, ..)| host != DESK)
+    );
 
     step(
         &mut daemon,
@@ -175,7 +181,13 @@ fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
         },
     );
     neighbor_up(&mut daemon, 3, DESK);
-    assert_eq!(daemon.routing.catalogue.relays_to(DESK), vec![RELAY]);
+    assert!(
+        daemon
+            .routing
+            .catalogue
+            .claimed()
+            .any(|(host, _, relays)| host == DESK && relays == [RELAY])
+    );
 }
 
 #[test]

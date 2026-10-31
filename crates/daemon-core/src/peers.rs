@@ -134,8 +134,8 @@ impl Pending {
 }
 
 impl Daemon {
-    /// A paired host's call. Only reads are answered here so far; the
-    /// shell serves the rest until what they write moves into the core.
+    /// A paired host's call. Only reads are answered here; the shell
+    /// forwards the rest.
     pub(crate) fn peer_call(
         &mut self,
         from: HostId,

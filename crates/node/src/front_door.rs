@@ -168,8 +168,9 @@ impl InstallationService for FrontDoor {
     ) -> Result<Response<wire::Profile>, Status> {
         let request = request.into_inner();
         let id = profile_id(&request.profile_id)?;
-        let label = request.override_name.unwrap_or_default();
-        Ok(Response::new(info(self.registry.rename(id, &label).await?)))
+        Ok(Response::new(info(
+            self.registry.rename(id, &request.name).await?,
+        )))
     }
 
     async fn delete_profile(

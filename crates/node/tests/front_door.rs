@@ -204,7 +204,7 @@ async fn rename_and_delete_change_the_listed_profile() {
     let renamed = door
         .rename_profile(Request::new(RenameProfileRequest {
             profile_id: created.id.clone(),
-            override_name: Some("kept".to_owned()),
+            name: "kept".to_owned(),
         }))
         .await
         .unwrap()

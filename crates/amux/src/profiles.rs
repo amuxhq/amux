@@ -52,7 +52,7 @@ pub async fn rename(profiles: &mut Profiles, reference: &str, name: &str) -> Res
     let renamed = profiles
         .rename_profile(RenameProfileRequest {
             profile_id: profile.id.clone(),
-            override_name: Some(name.to_owned()),
+            name: name.to_owned(),
         })
         .await
         .map_err(crate::plain)?

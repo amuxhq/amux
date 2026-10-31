@@ -113,7 +113,7 @@ message BindProfileRequest {
 
 message RenameProfileRequest {
   bytes profile_id = 1;
-  optional string override_name = 2;
+  string name = 2;
 }
 
 message DeleteProfileRequest {

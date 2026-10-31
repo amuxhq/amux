@@ -10494,8 +10494,8 @@ impl ::prost::Name for BindProfileRequest {
 pub struct RenameProfileRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub profile_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(string, optional, tag = "2")]
-    pub override_name: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "2")]
+    pub name: ::prost::alloc::string::String,
 }
 impl ::prost::Name for RenameProfileRequest {
     const NAME: &'static str = "RenameProfileRequest";

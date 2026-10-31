@@ -502,7 +502,7 @@ cargo = [
 
 [[suite]]
 name = "state-machine-cores"
-contract = "Each state-machine core takes one input to the outputs it wants done and ends every step by checking its cheap invariants, a checkpoint restores only under the layout it was written with, and the ring of inputs since a checkpoint resumes from the newest one with a torn tail cut."
+contract = "Each state-machine core takes one input to the outputs it wants done and ends every step by checking its cheap invariants, a checkpoint this build cannot decode is refused, and the ring of inputs since a checkpoint resumes from the newest one with a torn tail cut."
 paths = ["crates/agent-core/src", "crates/core-ring/src", "crates/daemon-core/src", "crates/path-core/src", "crates/relay-core/src", "crates/supervisor-core/src"]
 recipe = "just suite state-machine-cores"
 boundary = "Single daemon"
@@ -586,7 +586,7 @@ paths = ["crates/patience/src", "crates/testnet/src", "crates/testnet/tests/harn
 recipe = "just suite testnet-harness"
 modes = ["real"]
 boundary = "Many daemons"
-oracle = "Harness values, event observations, observation deadlines, door replies and the capability map the crate docs list."
+oracle = "Harness values, event observations, observation deadlines and door replies."
 real = ["daemon runtimes", "agent processes", "loopback sockets", "child processes"]
 substituted = ["cloud account", "providers by the scripted fakes"]
 time = "driven"

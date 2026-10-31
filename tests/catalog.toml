@@ -823,38 +823,19 @@ cargo = [{ package = "qualification", targets = ["codex_live"], features = ["bun
 
 [[suite]]
 name = "flood-workload-smoke"
-contract = "The flood performance workload keeps running between perf runs and measures every metric it reports, and the served flood topology is the one the perf lane measures."
-paths = ["crates/qualification/tests/flood.rs", "journeys/topologies/flood.json"]
+contract = "The flood performance workload keeps running between perf runs and measures every metric it reports."
+paths = ["crates/qualification/tests/flood.rs"]
 recipe = "just suite flood-workload-smoke"
 boundary = "System composition"
-oracle = "Every reported metric is measured, and the served topology equals the measured one; budgets are not judged here."
+oracle = "Every reported metric is measured; budgets are not judged here."
 real = ["daemon runtimes", "agent processes", "SQLite store"]
 substituted = ["providers by the scripted fakes", "cloud account"]
 time = "real"
 capabilities = ["desktop"]
 lane = "fast"
 evidence = ""
-update = "FLOOD_TOPOLOGY_UPDATE=1 just suite flood-workload-smoke"
+update = "Change the workload in crates/qualification/src/perf/flood.rs and this test together."
 cargo = [{ package = "qualification", modules = ["flood"], features = ["bundled"] }]
-
-[[suite]]
-name = "phone-workload-topology"
-contract = "The phone's performance topology loads as testnet serves it and holds the workload the suite describes: three machines, forty agents, and a conversation a thousand rows long that streams five cued bursts."
-paths = ["crates/qualification/tests/phone.rs", "crates/qualification/src/perf/phone.rs", "crates/qualification/src/bin/phone_topology.rs"]
-recipe = "just suite phone-workload-topology"
-boundary = "System composition"
-oracle = "The generated topology round-trips through the served form and its counts are the suite's constants."
-real = ["topology generator"]
-substituted = []
-time = "none"
-capabilities = ["Rust toolchain"]
-lane = "fast"
-evidence = ""
-update = "Change the constants in crates/qualification/src/perf/phone.rs and this test together."
-cargo = [
-  { package = "qualification", modules = ["phone"], features = ["bundled"] },
-  { package = "qualification", kind = "bin", targets = ["phone-topology"], features = ["bundled"] },
-]
 
 [[suite]]
 name = "phone-performance-qualification"

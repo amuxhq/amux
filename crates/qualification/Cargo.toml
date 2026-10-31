@@ -33,11 +33,13 @@ name = "relay-curve"
 path = "src/bin/relay_curve.rs"
 required-features = ["perf"]
 
-# The phone's performance topology, written for `testnet serve` by
-# `just ios perf`; needs no feature, so the ordinary tools build carries it.
+# The performance workloads' topologies, written for `testnet serve` (the
+# phone's by `just ios perf`); needs no feature, so the ordinary tools build
+# carries it.
 [[bin]]
-name = "phone-topology"
-path = "src/bin/phone_topology.rs"
+name = "perf-topology"
+path = "src/bin/perf_topology.rs"
+test = false
 
 [dependencies]
 anyhow = { workspace = true }

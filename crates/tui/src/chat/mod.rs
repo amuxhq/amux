@@ -35,7 +35,7 @@ use ui_view::{
 use wire::{Attachment, attachment};
 
 use self::ask::{AskAction, AskUi};
-use self::composer::{COMPOSER_LINES, QueueEntry, edge_row, editor_lines, placeholder};
+use self::composer::{COMPOSER_LINES, QueueEntry, edge_row, editor_lines};
 use self::feed::FeedHit;
 pub use self::layout::ToolSteps;
 use self::layout::{Anchor, Frame, Laid, Toggle};
@@ -2322,10 +2322,7 @@ impl ChatView {
                                 takes_keys: bool| {
             // Kept from sending, or exited, the box's edge says why; the
             // empty field still invites the draft.
-            let invite = match state.composer() {
-                Composer::Holds(_) | Composer::Resume => format!("Message {name}"),
-                composer => placeholder(&composer, &name, &host, self.reach),
-            };
+            let invite = format!("Message {name}");
             let boxed = boxed_composer(editor, &invite, &summary, !pane_keys, width, theme);
             if takes_keys {
                 *cursor = Some((bottom.len() + boxed.cursor.0, boxed.cursor.1));
@@ -3364,10 +3361,7 @@ pub(crate) fn composer_lines(
     width: usize,
     theme: Theme,
 ) -> Vec<Line<'static>> {
-    let invite = match composer {
-        Composer::Holds(_) | Composer::Resume => format!("Message {name}"),
-        composer => placeholder(composer, name, host, reach),
-    };
+    let invite = format!("Message {name}");
     let edge = ui_view::ControlsSummary::default();
     let mut lines = boxed_composer(editor, &invite, &edge, true, width, theme).lines;
     if let Some((words, ink)) = edge_title(None, false, composer, host, reach, None, theme)

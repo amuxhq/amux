@@ -2,8 +2,7 @@
 //! composer.
 
 use ratatui::text::{Line, Span};
-use ui_state::{Composer, Waiting};
-use ui_view::{Offline, Overview, QueuedRow, Reach, Segment, composer_tokens};
+use ui_view::{Overview, QueuedRow, Segment, composer_tokens};
 use unicode_segmentation::UnicodeSegmentation as _;
 
 use super::rows::chip;
@@ -299,26 +298,6 @@ impl QueueEntry {
             QueueEntry::Unconfirmed { .. } => vec!["[Resend]", "[Discard]"],
             QueueEntry::Held { .. } => vec!["[Cancel]"],
         }
-    }
-}
-
-/// What the empty composer says, and whether it can send.
-pub fn placeholder(mode: &Composer, name: &str, host: &str, reach: Reach) -> String {
-    match mode {
-        Composer::Send => format!("Message {name}"),
-        Composer::Resume => format!("{name} has exited · type to resume it with a message"),
-        // The hint under the composer says a send is held and what it
-        // waits for, so the placeholder only names the cause.
-        Composer::Holds(Waiting::CatchingUp) => "Catching up".into(),
-        Composer::Holds(Waiting::Detached) => match reach {
-            Reach::Offline(Offline::Revoked) => format!("{host} no longer trusts this machine"),
-            Reach::Offline(Offline::SignedOut) => {
-                format!("{host} is away · this machine is signed out")
-            }
-            Reach::Away => format!("{host} is away · {}", super::FREE_PLAN_AWAY),
-            Reach::Online(_) | Reach::Offline(Offline::Plain) => format!("{host} is away"),
-        },
-        Composer::Holds(Waiting::Reconnecting) => "Reconnecting to amux".into(),
     }
 }
 

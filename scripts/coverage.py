@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure line coverage per workspace crate and write it to tests/coverage.md.
+"""Measure line coverage per workspace crate and write it to target/coverage/coverage.md.
 
 Runs every workspace test target under cargo-llvm-cov with the desktop
 features, as `just test` does, then sums the per-file line counts of each
@@ -25,9 +25,9 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REPORT = ROOT / "tests" / "coverage.md"
 # Kept apart from target/debug: instrumented builds would invalidate it.
 TARGET = ROOT / "target" / "coverage"
+REPORT = TARGET / "coverage.md"
 SUMMARY = TARGET / "summary.json"
 # nextest's closing list of the tests that did not pass, one per line: a
 # status (FAIL, SIGABRT, TIMEOUT, LEAK-FAIL...), the time, a padded counter,

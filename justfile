@@ -325,8 +325,8 @@ nightly *ARGS: nextest
 
 # Run every workspace test under cargo-llvm-cov with the desktop features and
 # write line coverage per crate, with the commit it measured, to
-# tests/coverage.md. Needs `cargo install --locked cargo-llvm-cov@0.9.0` and the
-# llvm-tools-preview rustup component.
+# target/coverage/coverage.md. Needs `cargo install --locked
+# cargo-llvm-cov@0.9.0` and the llvm-tools-preview rustup component.
 coverage: nextest
     {{bounded}} 3600 scripts/py scripts/coverage.py
 

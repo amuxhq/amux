@@ -202,7 +202,7 @@ rather than with the CPU. To see what the net's in-process hosts did in a failin
 (`RUST_LOG=warn,daemon_core=debug,node=info`): their tracing goes to the test's standard error, which nextest shows
 for a test that failed. Hosts the net runs as processes do not inherit it; their daemon logs are theirs.
 
-`just coverage` writes `tests/coverage.md`: line coverage per crate and the commit it measured. Each crate's lines
+`just coverage` writes `target/coverage/coverage.md`: line coverage per crate and the commit it measured. Each crate's lines
 count whichever tests ran them, so a core's figure includes what the models and the testnet reach. It is a reading
 aid for judging which tests earn their keep, not a gate. The recipe's comment names the coverage tool and the
 toolchain component it needs.

@@ -1198,7 +1198,7 @@ cases = ["apps/apple/Tools/ios-scope-audit.py"]
 [[suite]]
 name = "line-coverage"
 contract = "The coverage recipe runs every workspace test under instrumentation with the desktop features and reports line coverage per crate with the commit it measured, naming any target that failed while measured."
-paths = ["scripts/coverage.py", "tests/coverage.md"]
+paths = ["scripts/coverage.py"]
 recipe = "just coverage"
 boundary = "System composition"
 oracle = "cargo-llvm-cov's per-file line counts summed over each crate's own sources; a reading aid, never a gate on the numbers."
@@ -1207,8 +1207,8 @@ substituted = []
 time = "real"
 capabilities = ["Rust toolchain", "cargo-llvm-cov", "llvm-tools-preview"]
 lane = "tool"
-evidence = "tests/coverage.md"
-update = "just coverage, then commit tests/coverage.md."
+evidence = "target/coverage/coverage.md"
+update = "just coverage."
 cases = ["scripts/coverage.py"]
 
 [[suite]]

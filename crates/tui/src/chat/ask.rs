@@ -338,9 +338,9 @@ impl BoxLines {
                 push(&mut row, " ".repeat(col), ink, width);
             }
             let shown = if i == 0 && cut > 0 {
-                text_tail(&format!("…{part}"), room)
+                text::tail(&format!("…{part}"), room)
             } else {
-                text_tail(part, room)
+                text::tail(part, room)
             };
             end = text::str_width(&shown);
             push(&mut row, shown, ink, width);
@@ -904,7 +904,7 @@ impl AskUi {
                 let mut name = Line::default();
                 push(
                     &mut name,
-                    text_tail(path, width.saturating_sub(after).max(1)),
+                    text::tail(path, width.saturating_sub(after).max(1)),
                     theme.code(),
                     width,
                 );
@@ -1135,118 +1135,41 @@ fn wrapped_choice_rows(card: &AskCard, width: usize) -> usize {
         .sum()
 }
 
-/// `source` with its inline code (`` `like this` ``) unmarked, and where
-/// that code stands in what is left, by byte range. A backtick with no
-/// partner is kept as it is.
-fn inline_code(source: &str) -> (String, Vec<std::ops::Range<usize>>) {
-    let mut plain = String::with_capacity(source.len());
-    let mut code = Vec::new();
-    let mut rest = source;
-    while let Some(at) = rest.find('`') {
-        plain.push_str(&rest[..at]);
-        let fence_len = rest[at..].len() - rest[at..].trim_start_matches('`').len();
-        let fence = &rest[at..at + fence_len];
-        let after = &rest[at + fence_len..];
-        match after.find(fence).filter(|&end| end > 0) {
-            Some(end) => {
-                let start = plain.len();
-                plain.push_str(&after[..end]);
-                code.push(start..plain.len());
-                rest = &after[end + fence_len..];
-            }
-            None => {
-                plain.push_str(fence);
-                rest = after;
-            }
-        }
-    }
-    plain.push_str(rest);
-    (plain, code)
-}
-
-/// The piece `from..to` of `plain` as runs, the code in `code`'s style and
-/// the rest in `ink`.
-fn styled_runs(
-    plain: &str,
-    ranges: &[std::ops::Range<usize>],
-    from: usize,
-    to: usize,
-    ink: Style,
-    code: Style,
-) -> Vec<(String, Style)> {
-    let mut runs: Vec<(String, Style)> = Vec::new();
-    let mut at = from;
-    while at < to {
-        let inside = ranges.iter().find(|range| range.contains(&at));
-        let (end, style) = match inside {
-            Some(range) => (range.end.min(to), code),
-            None => (
-                ranges
-                    .iter()
-                    .map(|range| range.start)
-                    .filter(|&start| start > at)
-                    .min()
-                    .unwrap_or(to)
-                    .min(to),
-                ink,
-            ),
-        };
-        runs.push((plain[at..end].to_owned(), style));
-        at = end;
-    }
-    runs
-}
-
-/// An agent's words on one line, its inline code drawn as code.
-fn code_runs(source: &str, ink: Style, code: Style) -> Vec<(String, Style)> {
-    let (plain, ranges) = inline_code(source);
-    styled_runs(&plain, &ranges, 0, plain.len(), ink, code)
-}
-
-/// An agent's words wrapped at `width`, its inline code drawn as code
-/// without the backticks, as its prose is.
-fn code_wrap(source: &str, width: usize, ink: Style, code: Style) -> Vec<Vec<(String, Style)>> {
-    let (plain, ranges) = inline_code(source);
-    let mut cursor = 0;
-    text::wrap(&plain, width.max(1))
+/// An agent's words as markdown wrapped at `width`, its plain words in
+/// `ink`; code, emphasis and links keep their own styles.
+fn words_rows(source: &str, width: usize, ink: Style, theme: Theme) -> Vec<Vec<Span<'static>>> {
+    let body = theme.text();
+    let mut rows: Vec<Vec<Span<'static>>> = crate::markdown::markdown_rows(source, width, theme)
         .into_iter()
-        .map(|part| match plain[cursor..].find(part.as_str()) {
-            Some(found) => {
-                let start = cursor + found;
-                cursor = start + part.len();
-                styled_runs(&plain, &ranges, start, cursor, ink, code)
-            }
-            None => vec![(part, ink)],
+        .map(|spans| {
+            spans
+                .into_iter()
+                .map(|span| match span.style == body {
+                    true => Span::styled(span.content, ink),
+                    false => span,
+                })
+                .collect()
         })
-        .collect()
+        .collect();
+    if rows.is_empty() {
+        rows.push(Vec::new());
+    }
+    rows
 }
 
-/// Pushes runs onto `line`, clipped at `width`.
-fn push_runs(line: &mut Line<'static>, runs: Vec<(String, Style)>, width: usize) {
-    for (words, style) in runs {
-        push(line, words, style, width);
-    }
+/// An agent's words on one line, as [`words_rows`] draws them.
+fn words_line(source: &str, ink: Style, theme: Theme) -> Vec<Span<'static>> {
+    words_rows(source, ONE_LINE, ink, theme).swap_remove(0)
 }
 
-/// The end of `words` in at most `max` columns, "…" where it is cut.
-fn text_tail(words: &str, max: usize) -> String {
-    if text::str_width(words) <= max {
-        return words.to_owned();
+/// Wide enough that a label or description never wraps.
+const ONE_LINE: usize = 4_096;
+
+/// Pushes spans onto `line`, clipped at `width`.
+fn push_spans(line: &mut Line<'static>, spans: Vec<Span<'static>>, width: usize) {
+    for span in spans {
+        push(line, span.content, span.style, width);
     }
-    let keep = max.saturating_sub(1);
-    let chars: Vec<char> = words.chars().collect();
-    let mut out: Vec<char> = Vec::new();
-    let mut used = 0;
-    for c in chars.iter().rev() {
-        let w = text::str_width(c.encode_utf8(&mut [0; 4]));
-        if used + w > keep {
-            break;
-        }
-        used += w;
-        out.push(*c);
-    }
-    out.reverse();
-    format!("…{}", out.into_iter().collect::<String>())
 }
 
 /// A question's rows in the box: its options, "Something else" when it
@@ -2008,11 +1931,11 @@ impl AskUi {
             // highlighted one's lines brighten.
             for (at, question) in questions.iter().enumerate() {
                 let lit = self.selected == at;
-                for (i, part) in code_wrap(
+                for (i, part) in words_rows(
                     &question.question,
                     width.saturating_sub(2),
                     if lit { theme.text() } else { theme.faint() },
-                    theme.code(),
+                    theme,
                 )
                 .into_iter()
                 .enumerate()
@@ -2024,7 +1947,7 @@ impl AskUi {
                         theme.attention(),
                         width,
                     );
-                    push_runs(&mut row, part, width);
+                    push_spans(&mut row, part, width);
                     out.spots
                         .push((out.lines.len(), (0, width), BoxSpot::Choice(at)));
                     out.lines.push(row);
@@ -2113,11 +2036,11 @@ impl AskUi {
 
         let question = &questions[self.step];
         let rows = QuestionRows::of(question, card);
-        let asked_rows = code_wrap(&question.question, width, theme.text(), theme.code());
+        let asked_rows = words_rows(&question.question, width, theme.text(), theme);
         let asked = out.lines.len()..out.lines.len() + asked_rows.len();
         for part in asked_rows {
             let mut line = Line::default();
-            push_runs(&mut line, part, width);
+            push_spans(&mut line, part, width);
             out.lines.push(line);
         }
         // A form's field: required, and what it is for.
@@ -2568,12 +2491,12 @@ impl AskUi {
                 );
             }
             let indent = text::line_width(&row);
-            push_runs(
+            push_spans(
                 &mut row,
-                code_runs(
+                words_line(
                     &option.label,
                     if lit { theme.bright() } else { theme.text() },
-                    theme.code(),
+                    theme,
                 ),
                 width,
             );
@@ -2601,24 +2524,25 @@ impl AskUi {
             let description = option.description.trim();
             if descriptions && !description.is_empty() {
                 let used = text::line_width(&row);
-                if used + 3 + text::str_width(&inline_code(description).0) <= width {
+                let one_line = words_line(description, theme.faint(), theme);
+                let fits: usize = one_line
+                    .iter()
+                    .map(|span| text::str_width(&span.content))
+                    .sum();
+                if used + 3 + fits <= width {
                     push(&mut row, " · ", theme.faint(), width);
-                    push_runs(
-                        &mut row,
-                        code_runs(description, theme.faint(), theme.code()),
-                        width,
-                    );
+                    push_spans(&mut row, one_line, width);
                     out.lines.push(row);
                 } else {
                     out.lines.push(row);
-                    for part in code_wrap(
+                    for part in words_rows(
                         description,
                         width.saturating_sub(indent),
                         theme.faint(),
-                        theme.code(),
+                        theme,
                     ) {
                         let mut more = Line::from(Span::raw(" ".repeat(indent)));
-                        push_runs(&mut more, part, width);
+                        push_spans(&mut more, part, width);
                         out.spots
                             .push((out.lines.len(), (0, width), BoxSpot::Choice(at)));
                         out.lines.push(more);
@@ -2909,10 +2833,6 @@ pub(crate) fn access_words(
     }
 }
 
-fn middle_cut(text: &str, max: usize) -> String {
-    text::ellipsize_middle(text, max)
-}
-
 impl AskUi {
     /// The form's values as the person left them, in field order.
     fn form_values(&self) -> Vec<FormValue> {
@@ -3034,7 +2954,7 @@ impl AskUi {
             out.lines.push(line);
         }
         let mut link = Line::default();
-        let shown = middle_cut(url, width);
+        let shown = text::ellipsize_middle(url, width);
         push(&mut link, shown.clone(), theme.code(), width);
         out.spots.push((
             out.lines.len(),

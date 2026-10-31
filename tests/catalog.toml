@@ -890,22 +890,22 @@ evidence = "crates/tui/tests/golden"
 update = "UPDATE_GOLDENS=1 just test-tui"
 cargo = [
   { package = "tui", kind = "lib", targets = ["tui"], features = ["fixtures"] },
-  { package = "tui", modules = ["frames", "golden"], features = ["fixtures"] },
+  { package = "tui", modules = ["served", "golden"], features = ["fixtures"] },
 ]
 
 [[suite]]
 name = "terminal-evidence-tools"
-contract = "Terminal evidence tools render deterministic PNGs of every vocabulary component and verify them, the storybook's stories are the terminal stories of tests/stories.json by name and in its order, and every story draws at every size in both palettes."
+contract = "The terminal's PNG renderer gives every glyph the vocabulary draws a vendored face and rebuilds a report's frame cell for cell, the storybook's stories are the terminal stories of tests/stories.json by name and in its order, and every story draws at every size in both palettes."
 paths = ["crates/shot/src", "tests/stories.json"]
 recipe = "just suite terminal-evidence-tools"
 boundary = "Native presentation"
-oracle = "Byte-stable images, exact dimensions, a face for every drawn glyph, and manifest membership."
+oracle = "Exact pixel colours, a face for every drawn glyph, rebuilt report cells, and the story list."
 real = ["font rasterizer", "temporary image files"]
 substituted = ["interactive terminal"]
 time = "none"
 capabilities = ["Rust toolchain", "vendored fonts"]
 lane = "tool"
-evidence = "target/tui-evidence"
+evidence = ""
 update = ""
 cargo = [
   { package = "shot", kind = "lib", targets = ["shot"] },

@@ -1,32 +1,12 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 5 recorded 4: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"on-…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 20 recorded 19: fact Rpc method=turn/started
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 24 recorded 23: fact Rpc method=item/completed
-  row    2 01a10efb-e428-7d01-a95b-8d1207ff1a08 Prompt { text: [Text("Reply with exactly CODEX_SPEC_OTHER and nothing else.")], steered: false }
-## 26 recorded 25: fact Rpc method=item/started
-  row    3 msg_0d4fe278a9664e72016ac45910526487d28941bd617dde458d Prose { text: [], streaming: true, working_note: false }
-## 28 recorded 27: fact Rpc method=item/agentMessage/delta
-  row    3 msg_0d4fe278a9664e72016ac45910526487d28941bd617dde458d Prose { text: [Text("CODE")], streaming: true, working_note: false }
-## 29 recorded 28: fact Rpc method=item/agentMessage/delta
-  row    3 msg_0d4fe278a9664e72016ac45910526487d28941bd617dde458d Prose { text: [Text("CODEX")], streaming: true, working_note: false }
-## 31 recorded 30: fact Rpc method=item/agentMessage/delta
-  row    3 msg_0d4fe278a9664e72016ac45910526487d28941bd617dde458d Prose { text: [Text("CODEX_SPEC")], streaming: true, working_note: false }
-## 33 recorded 32: fact Rpc method=item/agentMessage/delta
-  row    3 msg_0d4fe278a9664e72016ac45910526487d28941bd617dde458d Prose { text: [Text("CODEX_SPEC_OTHER")], streaming: true, working_note: false }
-## 35 recorded 34: fact Rpc method=item/completed
-  row    3 msg_0d4fe278a9664e72016ac45910526487d28941bd617dde458d Prose { text: [Text("CODEX_SPEC_OTHER")], streaming: false, working_note: false }
 ## 43 recorded 42: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(1785), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 47 recorded 46: fact Rpc method=turn/started
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 51 recorded 50: fact Rpc method=item/completed
-  row    5 01a10efb-e879-71a1-ac48-c250bdfc406e Prompt { text: [Text("Count slowly from one to one hundred, one number per line.")], steered: false }
 ## 54 recorded 53: fact Rpc method=turn/completed
-  row    6 turn:2 Stopped
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

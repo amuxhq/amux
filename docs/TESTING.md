@@ -348,7 +348,6 @@ above. [QA](QA.md) describes running it and turning findings into tests.
 | Phone journey | `target/journeys/phone/<story>`: each compared screen's picture and element geometry under `actual/`, `observations.json`, `result.txt`, `testnet.log` |
 | Phone component snapshots | `target/ios/component-snapshots` |
 | Phone accessibility audit | `target/ios/accessibility` |
-| TUI evidence bundle | `just tui-evidence`; rendered PNGs from `just shot` (see [amux-shot](../crates/shot/README.md)) |
 | Desktop performance | printed report; `--baseline` writes `perf/baselines/desktop/<model>.json` |
 | Phone performance | `target/ios/perf/report.md`; `--baseline` writes `perf/baselines/phone/<machine>.json` |
 | QA run | `~/.local/state/amux-qa/<run>/`: the ledger, the summary, and each tester's transcript, session log, shots and findings |

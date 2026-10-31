@@ -1,27 +1,12 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Remember the word ALBATROSS. Reply with exactly REMEMBERED.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=57bbef3e-7bb7-4327-a383-c6e0d856d6f7
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 8 recorded 7: fact Stream type=assistant uuid=37b2a5ff-74e1-48e6-adab-7e13caf279e2
-  row    3 msg_011CgWLNgU4PW1sEg1RcJ64y:0 Thinking { text: "", open: false, duration_ms: Some(1656) }
-## 10 recorded 9: fact Stream type=assistant uuid=77d64622-c6ea-4bb5-9faa-0afbd8e4f9a9
-  row    4 msg_011CgWLNgU4PW1sEg1RcJ64y:1 Prose { text: [Text("REMEMBERED")], streaming: false, working_note: false }
 ## 14 recorded 13: fact Stream type=result subtype=success uuid=e8f7758f-f7a6-492d-bce0-dfb19980f7ae
-  row    5 turn:1 TurnEnd { duration_ms: Some(1655), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 16 recorded 15: input stdin-4
-  row    6 73746469-6e2d-4400-8000-000000000000 Prompt { text: [Text("What word did I ask you to remember? Reply with just that word.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 20 recorded 19: fact Stream type=assistant uuid=47fc4744-3a4a-4d46-9c79-ac59b76d0acc
-  row    7 msg_011CgWLNpUWif7MbEKgL1k7H:0 Thinking { text: "", open: false, duration_ms: None }
-## 21 recorded 20: fact Stream type=assistant uuid=99d732b3-7014-44e4-9605-c5033a75cb4d
-  row    8 msg_011CgWLNpUWif7MbEKgL1k7H:1 Prose { text: [Text("ALBATROSS")], streaming: false, working_note: false }
 ## 23 recorded 22: fact Stream type=result subtype=success uuid=a3f39345-cfce-44d3-b6c0-19ab8de5e29a
-  row    9 turn:2 TurnEnd { duration_ms: Some(1395), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

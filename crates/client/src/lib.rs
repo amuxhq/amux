@@ -132,30 +132,15 @@ pub trait Client: Send + Sync + 'static {
     /// profile is signed in.
     async fn submit_report(
         &self,
-        _request: wire::SubmitReportRequest,
-    ) -> Result<wire::SubmitReportResponse, RpcError> {
-        Err(unimplemented("submit_report"))
-    }
+        request: wire::SubmitReportRequest,
+    ) -> Result<wire::SubmitReportResponse, RpcError>;
     /// Keeps an agent's unsent draft on this machine; an empty one forgets
-    /// it. A client that keeps none of its own answers Unimplemented.
+    /// it.
     async fn update_draft(
         &self,
-        _request: wire::UpdateDraftRequest,
-    ) -> Result<wire::Draft, RpcError> {
-        Err(unimplemented("update_draft"))
-    }
-    async fn get_draft(&self, _request: wire::GetDraftRequest) -> Result<wire::Draft, RpcError> {
-        Err(unimplemented("get_draft"))
-    }
-}
-
-/// The error a client that does not serve a call answers with.
-fn unimplemented(call: &str) -> RpcError {
-    RpcError::Refused(wire::Error {
-        code: ErrorCode::Unimplemented as i32,
-        message: format!("{call} is not served here"),
-        details: Vec::new(),
-    })
+        request: wire::UpdateDraftRequest,
+    ) -> Result<wire::Draft, RpcError>;
+    async fn get_draft(&self, request: wire::GetDraftRequest) -> Result<wire::Draft, RpcError>;
 }
 
 /// One implementation of [`Client`] per way of reaching the services:

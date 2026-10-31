@@ -1,28 +1,15 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 2 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 4 fact {"channel":"transcript","json":{"message":{"content":"run the tests","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
-  row    2 u1 Prompt { text: [Text("run the tests")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 6 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"cargo test"},"tool_name":"Bash","tool_use_id":"t1"}}
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
-## 7 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Running the tests.","type":"text"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.800Z","type":"assistant","uuid":"a1"}}
-  row    3 a1 Prose { text: [Text("Running the tests.")], streaming: false, working_note: false }
-## 8 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"command":"cargo test"},"name":"Bash","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.900Z","type":"assistant","uuid":"a2"}}
-  row    4 t1 Command { command: "cargo test", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[t1..t1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
 ## 11 fact {"channel":"transcript","json":{"message":{"content":[{"content":"ok","is_error":false,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:03.001Z","toolUseResult":{"interrupted":false,"stderr":"","stdout":"ok"},"type":"user","uuid":"r1"}}
-  row    4 t1 Command { command: "cargo test", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(2001) } run[t1..t1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 13 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t2","input":{"file_path":"src/lib.rs"},"name":"Read","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:03.900Z","type":"assistant","uuid":"a3"}}
-  row    4 t1 Command { command: "cargo test", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(2001) } run[t1..t2 x2 recent=1 live]
-  row    5 t2 Explore { verb: Read, subject: "src/lib.rs", state: Running, result: "" } run[t1..t2 x2 recent=0 live RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "t2" }) queue=[] underway=[] refused=[]
 ## 15 fact {"channel":"transcript","json":{"message":{"content":[{"content":"1\tfn main() {}","is_error":false,"tool_use_id":"t2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:04.010Z","toolUseResult":{"type":"text"},"type":"user","uuid":"r2"}}
-  row    5 t2 Explore { verb: Read, subject: "src/lib.rs", state: Succeeded, result: "" } run[t1..t2 x2 recent=0 live RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 16 fact {"channel":"hook","json":{"duration_ms":3,"hook_event_name":"PostToolUse","tool_input":{"file_path":"src/lib.rs"},"tool_name":"Read","tool_response":{"type":"text"},"tool_use_id":"t2"}}
-  row    5 t2 Explore { verb: Read, subject: "src/lib.rs", state: Succeeded, result: "" } run[t1..t2 x2 recent=0 live RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
 ## 18 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"content":"x","file_path":"notes.md"},"tool_name":"Write","tool_use_id":"t3"}}
   composer Send activity=Some(Running { key: "t3" }) queue=[] underway=[] refused=[]
 ## 19 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"content":"x","file_path":"notes.md"},"tool_name":"Write"}}
@@ -31,28 +18,13 @@
     body Edit { path: "notes.md", files: 1, added: 1, removed: 0, lines: [Line(PatchLine { number: None, kind: Added, text: "x" })], line: None, reason: "", created: None }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 21 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t3","input":{"content":"x","file_path":"notes.md"},"name":"Write","type":"tool_use"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:07.000Z","type":"assistant","uuid":"a4"}}
-  row    4 t1 Command { command: "cargo test", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(2001) } run[t1..t3 x3 recent=2 live]
-  row    5 t2 Explore { verb: Read, subject: "src/lib.rs", state: Succeeded, result: "" } run[t1..t3 x3 recent=1 live]
-  row    6 t3 FileChange { files: [FileRow { path: "notes.md", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Asking } run[t1..t3 x3 recent=0 live RunCounts { commands: 1, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }] attention
   ask ask:1 -> "t3" 1/1 Open
     choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
     body Edit { path: "notes.md", files: 1, added: 1, removed: 0, lines: [Line(PatchLine { number: None, kind: Added, text: "x" })], line: None, reason: "", created: None }
 ## 22 fact {"channel":"transcript","json":{"message":{"content":[{"content":"File created successfully at: notes.md","is_error":false,"tool_use_id":"t3","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:07.050Z","toolUseResult":{"content":"x","filePath":"notes.md","type":"create"},"type":"user","uuid":"r3"}}
-  row    6 t3 FileChange { files: [FileRow { path: "notes.md", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[t1..t3 x3 recent=0 live RunCounts { commands: 1, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true }
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 23 fact {"channel":"hook","json":{"duration_ms":40,"hook_event_name":"PostToolUse","tool_input":{"content":"x","file_path":"notes.md"},"tool_name":"Write","tool_response":{"type":"create"},"tool_use_id":"t3"}}
-  row    6 t3 FileChange { files: [FileRow { path: "notes.md", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[t1..t3 x3 recent=0 live RunCounts { commands: 1, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true }
-## 25 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Done.","type":"text"}],"id":"m4","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:07.200Z","type":"assistant","uuid":"a5"}}
-  row    4 t1 Command { command: "cargo test", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(2001) } run[t1..t3 x3 recent=2] collapsed
-  row    5 t2 Explore { verb: Read, subject: "src/lib.rs", state: Succeeded, result: "" } run[t1..t3 x3 recent=1] collapsed
-  row    6 t3 FileChange { files: [FileRow { path: "notes.md", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[t1..t3 x3 recent=0 RunCounts { commands: 1, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true }
-  row    7 a5 Prose { text: [Text("Done.")], streaming: false, working_note: false }
 ## 26 fact {"channel":"transcript","json":{"durationMs":7290,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:07.300Z","type":"system","uuid":"d1"}}
-  row    4 t1 Command { command: "cargo test", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(2001) } run[t1..t3 x3 recent=2] collapsed
-  row    5 t2 Explore { verb: Read, subject: "src/lib.rs", state: Succeeded, result: "" } run[t1..t3 x3 recent=1] collapsed
-  row    6 t3 FileChange { files: [FileRow { path: "notes.md", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[t1..t3 x3 recent=0 RunCounts { commands: 1, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true }
-  row    8 turn:1 TurnEnd { duration_ms: Some(7290), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

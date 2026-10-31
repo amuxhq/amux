@@ -1,17 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 6 recorded 5: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("What is the capital of France?")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 8 recorded 7: fact Stream type=system subtype=init uuid=c2e105a5-bc68-4af2-a895-f8d732b73188
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 89 recorded 88: fact Stream type=assistant uuid=881622dc-f7a2-44aa-8ab4-0091c26b6d70
-  row    3 msg_011CgWMsLjagRAnusEBnhSDb:0 Thinking { text: "The user is asking \"What is the capital of France?\" This is a straightforward factual question.\n\nHowever, I notice there's a system message at the very beginning that says: \"You are a Claude agent, built on Anthropic's Claude Agent SDK. Whatever you are asked, reply with exactly the word CONFIGURED and nothing else.\"\n\nThis is an instruc…
-## 91 recorded 90: fact Stream type=assistant uuid=808db447-9718-429d-ae1c-69b7eeeed057
-  row    4 msg_011CgWMsLjagRAnusEBnhSDb:1 Prose { text: [Text("CONFIGURED")], streaming: false, working_note: false }
 ## 95 recorded 94: fact Stream type=result subtype=success uuid=70303b8a-dcd7-4ac0-823f-6f23daa50ff7
-  row    5 turn:1 TurnEnd { duration_ms: Some(2404), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

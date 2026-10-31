@@ -42,7 +42,7 @@ pub use self::layout::ToolSteps;
 use self::layout::{Anchor, Frame, Laid, Toggle};
 use self::review::{ReviewAction, ReviewPage};
 use crate::clipboard::ClipboardContent;
-use crate::editor::{Edit, Editor};
+use crate::editor::Editor;
 use crate::text::{self, push};
 use crate::theme::Theme;
 use crate::wheel::Direction;
@@ -357,8 +357,6 @@ pub struct ChatView {
     /// The mode on the composer's edge.
     mode_spot: Option<(u16, (u16, u16))>,
     composer_spot: Option<ComposerSpot>,
-    /// The old design's tray rows by screen row.
-    tray_spots: Vec<(u16, usize)>,
     /// Queued prompts above the composer: their rows and their controls.
     queued_spots: Vec<QueuedSpot>,
     /// The queued prompt under the pointer.
@@ -458,7 +456,6 @@ impl ChatView {
             jump_spot: None,
             mode_spot: None,
             composer_spot: None,
-            tray_spots: Vec::new(),
             queued_spots: Vec::new(),
             queued_hover: None,
             queued_from: 0,
@@ -776,7 +773,7 @@ impl ChatView {
             if !self.arm_ask(&card, now_ms, quiet_since) {
                 // Words typed as the ask appears are still the draft's; Enter
                 // neither sends the draft nor answers what was not read.
-                if key.code != KeyCode::Enter && self.editor.key(key) == Edit::Changed {
+                if key.code != KeyCode::Enter && self.editor.key(key) {
                     self.not_sent = None;
                 }
                 return vec![];
@@ -901,7 +898,7 @@ impl ChatView {
                 vec![]
             }
             _ => {
-                if self.editor.key(key) == Edit::Changed {
+                if self.editor.key(key) {
                     self.focus = None;
                     // Editing answers why the last one was not sent.
                     self.not_sent = None;
@@ -936,7 +933,7 @@ impl ChatView {
                             .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
                     {
                         self.tray = None;
-                        if self.editor.key(key) == Edit::Changed {
+                        if self.editor.key(key) {
                             self.not_sent = None;
                         }
                         None
@@ -1570,10 +1567,6 @@ impl ChatView {
                         KeyModifiers::SHIFT,
                     ))];
                 }
-                if let Some((_, i)) = self.tray_spots.iter().find(|(row, _)| *row == y) {
-                    self.tray = Some(*i);
-                    return vec![];
-                }
                 // A queued prompt's controls act; a click elsewhere on it
                 // highlights it.
                 if let Some(spot) = self.queued_spots.iter().find(|spot| spot.row == y).cloned() {
@@ -2122,7 +2115,7 @@ impl ChatView {
 
         let overview = self.overview(state);
         let sign_in = ui_view::sign_in(state);
-        let edge_words = EdgeWords::of(&ui_view::controls(state));
+        let summary = ui_view::controls(state);
         let items = pane::Contents {
             overview: &overview,
             folded: &self.pane_folds,
@@ -2334,7 +2327,7 @@ impl ChatView {
                 Composer::Holds(_) | Composer::Resume => format!("Message {name}"),
                 composer => placeholder(&composer, &name, &host, self.reach),
             };
-            let boxed = boxed_composer(editor, &invite, &edge_words, !pane_keys, width, theme);
+            let boxed = boxed_composer(editor, &invite, &summary, !pane_keys, width, theme);
             if takes_keys {
                 *cursor = Some((bottom.len() + boxed.cursor.0, boxed.cursor.1));
             }
@@ -2374,7 +2367,7 @@ impl ChatView {
                 self.ask.set_room(usize::from(area.height), self.attach);
                 let drawn = self.ask.box_lines(card, inner, theme);
                 let (lines, mode, _) =
-                    framed(drawn.lines, theme.attention(), &edge_words, width, theme);
+                    framed(drawn.lines, theme.attention(), &summary, width, theme);
                 let at = bottom.len();
                 if let Some((row, col)) = drawn.cursor {
                     cursor = Some((at + 1 + row, MARGIN + 2 + col));
@@ -2414,7 +2407,7 @@ impl ChatView {
             // agent exited with leaves the composer to say it exited.
             _ if let Some(sign_in) = &sign_in => {
                 let (lines, mode) =
-                    sign_in_box(state.kind(), &host, sign_in, &edge_words, width, theme);
+                    sign_in_box(state.kind(), &host, sign_in, &summary, width, theme);
                 if let Some(cols) = mode {
                     ask_mode = Some((bottom.len() + lines.len() - 1, cols));
                 }
@@ -2620,7 +2613,6 @@ impl ChatView {
                 )
             })
             .collect();
-        self.tray_spots.clear();
         self.queued_spots = queued_at
             .into_iter()
             .map(|(at, index, drawn)| QueuedSpot {
@@ -3100,19 +3092,36 @@ fn problem_words(
     host: &str,
     theme: Theme,
 ) -> Option<(String, ratatui::style::Style)> {
-    let (words, style) = state_words(state, reach, host, theme);
-    match (state.composer(), state.phase()) {
-        (_, PhaseView::Exited { .. }) | (Composer::Holds(_), _) => Some((
-            words,
-            if style == theme.muted() {
-                theme.faint()
-            } else {
-                style
-            },
-        )),
-        _ if state.reset_pending() => Some((words, theme.faint())),
-        _ => None,
-    }
+    let away_words = || {
+        let host = if host.is_empty() { "host" } else { host };
+        match reach {
+            Reach::Offline(Offline::SignedOut) => {
+                format!("{host} away · this machine is signed out")
+            }
+            Reach::Offline(Offline::Revoked) => format!("{host} no longer trusts this machine"),
+            Reach::Away => format!("{host} away · {FREE_PLAN_AWAY}"),
+            Reach::Online(_) | Reach::Offline(Offline::Plain) => {
+                format!("{host} away · not current")
+            }
+        }
+    };
+    Some(match (state.composer(), state.phase()) {
+        // Resuming asks the host, so why it is away matters more than why
+        // the agent ended.
+        (_, PhaseView::Exited { cause }) if !reach.online() => {
+            let ended = match cause {
+                ExitCause::Finished => "finished",
+                ExitCause::Ended | ExitCause::Failed(_) => "exited",
+            };
+            (format!("{ended} · {}", away_words()), theme.warning())
+        }
+        (_, PhaseView::Exited { cause }) => (exit_words(&cause), theme.faint()),
+        (Composer::Holds(Waiting::Detached), _) => (away_words(), theme.warning()),
+        (Composer::Holds(Waiting::Reconnecting), _) => ("reconnecting".to_owned(), theme.warning()),
+        (Composer::Holds(Waiting::CatchingUp), _) => ("catching up".to_owned(), theme.faint()),
+        _ if state.reset_pending() => ("refreshing".to_owned(), theme.faint()),
+        _ => return None,
+    })
 }
 
 /// Why a setting cannot change from here, as a notice: how it does
@@ -3180,14 +3189,14 @@ fn sign_in_box(
     kind: wire::Kind,
     host: &str,
     sign_in: &ui_view::SignInView,
-    edge_words: &EdgeWords,
+    controls: &ui_view::ControlsSummary,
     width: usize,
     theme: Theme,
 ) -> (Vec<Line<'static>>, Option<(usize, usize)>) {
     const MARGIN: usize = 2;
     let inner = width.saturating_sub(2 * MARGIN + 4).max(1);
     let body = sign_in_lines(kind, host, sign_in, inner, theme);
-    let (lines, mode, _) = framed(body, theme.attention(), edge_words, width, theme);
+    let (lines, mode, _) = framed(body, theme.attention(), controls, width, theme);
     (lines, mode)
 }
 
@@ -3202,10 +3211,9 @@ pub(crate) fn sign_in_composer_lines(
     width: usize,
     theme: Theme,
 ) -> Vec<Line<'static>> {
-    let edge = EdgeWords {
+    let edge = ui_view::ControlsSummary {
         model: Some(model.to_owned()),
-        effort: None,
-        controls: None,
+        ..Default::default()
     };
     sign_in_box(kind, host, sign_in, &edge, width, theme).0
 }
@@ -3358,11 +3366,7 @@ pub(crate) fn composer_lines(
         Composer::Holds(_) | Composer::Resume => format!("Message {name}"),
         composer => placeholder(composer, name, host, reach),
     };
-    let edge = EdgeWords {
-        model: None,
-        effort: None,
-        controls: None,
-    };
+    let edge = ui_view::ControlsSummary::default();
     let mut lines = boxed_composer(editor, &invite, &edge, true, width, theme).lines;
     if let Some((words, ink)) = edge_title(None, false, composer, host, reach, None, theme)
         && let Some(top) = lines.first_mut()
@@ -3430,22 +3434,6 @@ fn quiet_activity(activity: &ui_state::Activity, width: usize, theme: Theme) -> 
 
 /// What the composer's bottom edge says, in the words a person reads: the
 /// model by its name, its effort, and the permission and mode.
-struct EdgeWords {
-    model: Option<String>,
-    effort: Option<String>,
-    controls: Option<String>,
-}
-
-impl EdgeWords {
-    fn of(controls: &ui_view::ControlsSummary) -> EdgeWords {
-        EdgeWords {
-            model: controls.model.clone(),
-            effort: controls.effort.clone(),
-            controls: crate::words::control_words(controls),
-        }
-    }
-}
-
 /// The composer in its box, as drawn: its lines, the cursor's (line,
 /// column), the mode's columns on the bottom edge, where the draft's words
 /// start, how many wrapped lines are scrolled off above, and the width the
@@ -3466,7 +3454,7 @@ struct Boxed {
 fn boxed_composer(
     editor: &Editor,
     placeholder: &str,
-    edge_words: &EdgeWords,
+    controls: &ui_view::ControlsSummary,
     focused: bool,
     width: usize,
     theme: Theme,
@@ -3489,7 +3477,7 @@ fn boxed_composer(
         theme.hairline()
     };
     let body = body.into_iter().skip(skip).take(COMPOSER_LINES).collect();
-    let (lines, mode, label) = framed(body, edge, edge_words, width, theme);
+    let (lines, mode, label) = framed(body, edge, controls, width, theme);
     Boxed {
         lines,
         cursor: (1 + row - skip, MARGIN + 2 + col),
@@ -3529,7 +3517,7 @@ fn marked_edge_in(
 fn framed(
     body: Vec<Line<'static>>,
     edge: ratatui::style::Style,
-    edge_words: &EdgeWords,
+    controls: &ui_view::ControlsSummary,
     width: usize,
     theme: Theme,
 ) -> (Vec<Line<'static>>, Option<(usize, usize)>, Option<usize>) {
@@ -3554,7 +3542,7 @@ fn framed(
     // click) changes, in the reading ink; normal ones are left unsaid.
     let known = |fact: &Option<String>| fact.clone().filter(|fact| !fact.is_empty());
     let mut label: Vec<Span<'static>> = Vec::new();
-    match (known(&edge_words.model), known(&edge_words.effort)) {
+    match (known(&controls.model), known(&controls.effort)) {
         (Some(model), Some(effort)) => {
             label.push(Span::styled(format!("{model} ({effort})"), theme.faint()))
         }
@@ -3562,7 +3550,7 @@ fn framed(
         (None, Some(effort)) => label.push(Span::styled(format!("({effort})"), theme.faint())),
         (None, None) => {}
     }
-    let mode_words = known(&edge_words.controls);
+    let mode_words = crate::words::control_words(controls).filter(|words| !words.is_empty());
     if let Some(mode) = &mode_words {
         if !label.is_empty() {
             label.push(Span::styled(" · ", theme.faint()));
@@ -3898,49 +3886,6 @@ fn mime_of(name: &str) -> &'static str {
         "txt" | "md" | "log" => "text/plain",
         "json" => "application/json",
         _ => "application/octet-stream",
-    }
-}
-
-/// The one word, or few, for where the chat stands: needs you, working,
-/// idle, exited with its cause, or why it cannot be current.
-fn state_words(
-    state: &SessionState,
-    reach: Reach,
-    host: &str,
-    theme: Theme,
-) -> (String, ratatui::style::Style) {
-    let away_words = || {
-        let host = if host.is_empty() { "host" } else { host };
-        match reach {
-            Reach::Offline(Offline::SignedOut) => {
-                format!("{host} away · this machine is signed out")
-            }
-            Reach::Offline(Offline::Revoked) => format!("{host} no longer trusts this machine"),
-            Reach::Away => format!("{host} away · {FREE_PLAN_AWAY}"),
-            Reach::Online(_) | Reach::Offline(Offline::Plain) => {
-                format!("{host} away · not current")
-            }
-        }
-    };
-    match (state.composer(), state.phase()) {
-        // Resuming asks the host, so why it is away matters more than why
-        // the agent ended.
-        (_, PhaseView::Exited { cause }) if !reach.online() => {
-            let ended = match cause {
-                ExitCause::Finished => "finished",
-                ExitCause::Ended | ExitCause::Failed(_) => "exited",
-            };
-            (format!("{ended} · {}", away_words()), theme.warning())
-        }
-        (_, PhaseView::Exited { cause }) => (exit_words(&cause), theme.muted()),
-        (Composer::Holds(Waiting::Detached), _) => (away_words(), theme.warning()),
-        (Composer::Holds(Waiting::Reconnecting), _) => ("reconnecting".to_owned(), theme.warning()),
-        (Composer::Holds(Waiting::CatchingUp), _) => ("catching up".to_owned(), theme.muted()),
-        (_, _) if state.reset_pending() => ("refreshing".to_owned(), theme.muted()),
-        (_, PhaseView::NeedsYou) => ("needs you".to_owned(), theme.attention()),
-        (_, PhaseView::Working) => ("working".to_owned(), theme.muted()),
-        (_, PhaseView::Idle) => ("idle".to_owned(), theme.muted()),
-        (_, PhaseView::Starting) => ("starting".to_owned(), theme.muted()),
     }
 }
 

@@ -1,15 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Reply with exactly EFFORT_OK and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=20d8c9fc-2966-40f5-a1df-6664a4129d62
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 8 recorded 7: fact Stream type=assistant uuid=0ec74858-be83-408b-82ce-811c5dde02d7
-  row    3 msg_011CgWLMiRMaaw3q4GS7svHH:0 Prose { text: [Text("EFFORT_OK")], streaming: false, working_note: false }
 ## 12 recorded 11: fact Stream type=result subtype=success uuid=f6596617-460e-4b22-adb9-b62c96ac15d0
-  row    4 turn:1 TurnEnd { duration_ms: Some(2194), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

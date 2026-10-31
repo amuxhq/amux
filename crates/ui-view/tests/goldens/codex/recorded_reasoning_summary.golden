@@ -1,26 +1,12 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 7 recorded 6: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"nev…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 13 recorded 12: input stdin-4
-  row    2 prompt:737464696e2d34 Prompt { text: [Text("Think carefully about which is larger, 17 * 23 or 19 * 21, then reply with only the larger product.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 30 recorded 29: fact Rpc method=item/started
-  row    3 rs_062a207d005b1e31016ab72901af9c87d2af961a0015e992f0 Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 33 recorded 32: fact Rpc method=item/reasoning/summaryTextDelta
-  row    3 rs_062a207d005b1e31016ab72901af9c87d2af961a0015e992f0 Thinking { text: "**Identifying product 399**", open: true, duration_ms: None }
 ## 35 recorded 34: fact Rpc method=item/completed
-  row    3 rs_062a207d005b1e31016ab72901af9c87d2af961a0015e992f0 Thinking { text: "**Identifying product 399**", open: false, duration_ms: Some(3925) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 36 recorded 35: fact Rpc method=item/started
-  row    4 msg_062a207d005b1e31016ab729029a3487d2afd04ebdee8294b6 Prose { text: [], streaming: true, working_note: false }
-## 38 recorded 37: fact Rpc method=item/agentMessage/delta
-  row    4 msg_062a207d005b1e31016ab729029a3487d2afd04ebdee8294b6 Prose { text: [Text("399")], streaming: true, working_note: false }
-## 40 recorded 39: fact Rpc method=item/completed
-  row    4 msg_062a207d005b1e31016ab729029a3487d2afd04ebdee8294b6 Prose { text: [Text("399")], streaming: false, working_note: false }
 ## 47 recorded 46: fact Rpc method=turn/completed
-  row    5 turn:1 TurnEnd { duration_ms: Some(4889), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

@@ -1,7 +1,7 @@
 {
   "set": "vocabulary",
-  "command": "just shot -- render vocabulary --out DIR",
-  "note": "Copy the listed light PNGs from DIR; each fixture is the terminal client's authored component of that name (crates/tui/src/vocabulary.rs).",
+  "command": "just shot -- render <fixture>... --theme light --out docs/figures/vocabulary",
+  "note": "Each fixture is the terminal client's authored component of that name (crates/tui/src/vocabulary.rs).",
   "entries": [
     {
       "fixture": "row_prose",

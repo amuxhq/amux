@@ -1,23 +1,16 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 2 fact {"channel":"agent","json":{"type":"trust_dialog"}}
-  row    1 ask:ask:1 [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Folder", question: "Do you trust the files in this folder?", multi_select: false, options: [OptionView { label: "Trust this folder", description: "Claude can read, edit and run files here", preview: "", recommended: false }, OptionView { label: "Exit", description: "Claude exits without starting", preview: "", re…
   ask ask:1 -> "ask:ask:1" 1/1 Open
     choices 
     body Question([QuestionView { header: "Folder", question: "Do you trust the files in this folder?", multi_select: false, options: [OptionView { label: "Trust this folder", description: "Claude can read, edit and run files here", preview: "", recommended: false }, OptionView { label: "Exit", description: "Claude exits without starting", preview: "", recommended: false }], allow_other: false, secret: fal…
 ## 4 input {"answer":{"answer":{"selected":[1]},"ask":"ask:1"},"id":"a1"}
-  row    1 ask:ask:1 [Answered: Folder = Exit skipped=0] Ask(Questions { questions: [QuestionView { header: "Folder", question: "Do you trust the files in this folder?", multi_select: false, options: [OptionView { label: "Trust this folder", description: "Claude can read, edit and run files here", preview: "", recommended: false }, OptionView { label: "Exit", description: "Claude exits without starting"…
   ask none
-## 5 provider_exit {"code":1}
-  row    2 boundary:1 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
 ## 7 fact {"channel":"agent","json":{"type":"trust_dialog"}}
-  row    3 ask:ask:2 [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Folder", question: "Do you trust the files in this folder?", multi_select: false, options: [OptionView { label: "Trust this folder", description: "Claude can read, edit and run files here", preview: "", recommended: false }, OptionView { label: "Exit", description: "Claude exits without starting", preview: "", re…
   ask ask:2 -> "ask:ask:2" 1/1 Open
     choices 
     body Question([QuestionView { header: "Folder", question: "Do you trust the files in this folder?", multi_select: false, options: [OptionView { label: "Trust this folder", description: "Claude can read, edit and run files here", preview: "", recommended: false }, OptionView { label: "Exit", description: "Claude exits without starting", preview: "", recommended: false }], allow_other: false, secret: fal…
 ## 9 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
-  row    3 ask:ask:2 [Answered: Folder = Trust this folder skipped=0] Ask(Questions { questions: [QuestionView { header: "Folder", question: "Do you trust the files in this folder?", multi_select: false, options: [OptionView { label: "Trust this folder", description: "Claude can read, edit and run files here", preview: "", recommended: false }, OptionView { label: "Exit", description: "Claude exits with…
-  row    4 boundary:2 Boundary { kind: Restarted, cause: "" }
   ask none
 == chat
      1 ask:ask:1 [Answered: Folder = Exit skipped=0] Ask(Questions { questions: [QuestionView { header: "Folder", question: "Do you trust the files in this folder?", multi_select: false, options: [OptionView { label: "Trust this folder", description: "Claude can read, edit and run files here", preview: "", recommended: false }, OptionView { label: "Exit", description: "Claude exits without starting"…

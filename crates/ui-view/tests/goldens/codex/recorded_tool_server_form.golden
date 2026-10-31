@@ -1,82 +1,16 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 8 recorded 7: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"on-…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 11 recorded 10: input stdin-4
-  row    2 prompt:737464696e2d34 Prompt { text: [Text("Call the ask_the_operator tool from the spec tool server twice, one call at a time: first with word BLUE, then with word LINK. Then reply with what each call returned.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 28 recorded 27: fact Rpc method=item/started
-  row    3 rs_0a42dc39e07eb227016ab72eb9efc887d2801b1e2c86c0946f Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
 ## 30 recorded 29: fact Rpc method=item/completed
-  row    3 rs_0a42dc39e07eb227016ab72eb9efc887d2801b1e2c86c0946f Thinking { text: "", open: false, duration_ms: Some(6757) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 32 recorded 31: fact Rpc method=item/started
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [], streaming: true, working_note: true }
-## 34 recorded 33: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I")], streaming: true, working_note: true }
-## 35 recorded 34: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll")], streaming: true, working_note: true }
-## 37 recorded 36: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call")], streaming: true, working_note: true }
-## 39 recorded 38: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the")], streaming: true, working_note: true }
-## 41 recorded 40: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec")], streaming: true, working_note: true }
-## 43 recorded 42: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server")], streaming: true, working_note: true }
-## 45 recorded 44: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool")], streaming: true, working_note: true }
-## 47 recorded 46: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice")], streaming: true, working_note: true }
-## 48 recorded 47: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in")], streaming: true, working_note: true }
-## 50 recorded 49: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence")], streaming: true, working_note: true }
-## 52 recorded 51: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence,")], streaming: true, working_note: true }
-## 54 recorded 53: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first")], streaming: true, working_note: true }
-## 56 recorded 55: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with")], streaming: true, working_note: true }
-## 58 recorded 57: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `")], streaming: true, working_note: true }
-## 60 recorded 59: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `BLUE")], streaming: true, working_note: true }
-## 62 recorded 61: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `BLUE`,")], streaming: true, working_note: true }
-## 64 recorded 63: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `BLUE`, then")], streaming: true, working_note: true }
-## 66 recorded 65: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `BLUE`, then with")], streaming: true, working_note: true }
-## 68 recorded 67: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `BLUE`, then with `")], streaming: true, working_note: true }
-## 70 recorded 69: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `BLUE`, then with `LINK")], streaming: true, working_note: true }
-## 72 recorded 71: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `BLUE`, then with `LINK`,")], streaming: true, working_note: true }
-## 74 recorded 73: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `BLUE`, then with `LINK`, and")], streaming: true, working_note: true }
-## 76 recorded 75: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `BLUE`, then with `LINK`, and report")], streaming: true, working_note: true }
-## 78 recorded 77: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `BLUE`, then with `LINK`, and report both")], streaming: true, working_note: true }
-## 80 recorded 79: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `BLUE`, then with `LINK`, and report both returned")], streaming: true, working_note: true }
-## 82 recorded 81: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `BLUE`, then with `LINK`, and report both returned values")], streaming: true, working_note: true }
-## 84 recorded 83: fact Rpc method=item/agentMessage/delta
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `BLUE`, then with `LINK`, and report both returned values.")], streaming: true, working_note: true }
-## 86 recorded 85: fact Rpc method=item/completed
-  row    4 msg_0a42dc39e07eb227016ab72eba6e9487d2b1e318f9468757c3 Prose { text: [Text("I’ll call the spec server tool twice in sequence, first with `BLUE`, then with `LINK`, and report both returned values.")], streaming: false, working_note: true }
 ## 91 recorded 90: fact Rpc method=item/started
-  row    5 rs_0a42dc39e07eb227016ab72ebc7e0887d2915da4b4feee5dea Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
 ## 93 recorded 92: fact Rpc method=item/completed
-  row    5 rs_0a42dc39e07eb227016ab72ebc7e0887d2915da4b4feee5dea Thinking { text: "", open: false, duration_ms: Some(2147) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 95 recorded 94: fact Rpc method=item/started
-  row    6 exec-5adffbb8-ae90-4058-9833-1a29154d8128 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Running, result: "" } run[exec-5adffbb8-ae90-4058-9833-1a29154d8128..exec-5adffbb8-ae90-4058-9833-1a29154d8128 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
   composer Send activity=Some(Running { key: "exec-5adffbb8-ae90-4058-9833-1a29154d8128" }) queue=[] underway=[] refused=[]
 ## 98 recorded 97: fact Rpc method=mcpServer/elicitation/request
   ask 0 -> "exec-5adffbb8-ae90-4058-9833-1a29154d8128" 1/1 Open
@@ -84,25 +18,19 @@
     body Tool { server: "spec", tool: "ask_the_operator", arguments: "{\n  \"word\": \"BLUE\"\n}" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 100 recorded 99: input stdin-5
-  row    6 exec-5adffbb8-ae90-4058-9833-1a29154d8128 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Running, result: "" } run[exec-5adffbb8-ae90-4058-9833-1a29154d8128..exec-5adffbb8-ae90-4058-9833-1a29154d8128 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, el…
   ask none
   composer Send activity=Some(Running { key: "exec-5adffbb8-ae90-4058-9833-1a29154d8128" }) queue=[] underway=[] refused=[]
 ## 106 recorded 105: fact Rpc method=mcpServer/elicitation/request
-  row    6 exec-5adffbb8-ae90-4058-9833-1a29154d8128 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Running, result: "" } run[exec-5adffbb8-ae90-4058-9833-1a29154d8128..exec-5adffbb8-ae90-4058-9833-1a29154d8128 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhe…
-  row    7 ask:1 Ask(Form { server: "<REDACTED_IDENTIFIER>", message: "Confirm the word BLUE.", fields: [], resolution: Open }) attention
   ask 1 -> "ask:1" 1/1 Open
     choices Submit*, Decline
     body Form { server: "<REDACTED_IDENTIFIER>", message: "Confirm the word BLUE.", fields: [FormField { name: "confirmed", title: "confirmed", description: "", required: true, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 107 recorded 106: input stdin-6
-  row    7 ask:1 Ask(Form { server: "<REDACTED_IDENTIFIER>", message: "Confirm the word BLUE.", fields: ["confirmed"], resolution: Answered })
   ask none
   composer Send activity=Some(Running { key: "exec-5adffbb8-ae90-4058-9833-1a29154d8128" }) queue=[] underway=[] refused=[]
 ## 111 recorded 110: fact Rpc method=item/completed
-  row    6 exec-5adffbb8-ae90-4058-9833-1a29154d8128 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"BLUE\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-5adffbb8-ae90-4058-9833-1a29154d8128..exec-5adffbb8-ae90-4058-9833-1a29154d8128 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, s…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 116 recorded 115: fact Rpc method=item/started
-  row    8 exec-2656a517-59e9-4a69-b383-8c58ae2f102c ToolCall { server: "spec", tool: "ask_the_operator", fact: "LINK", state: Running, result: "" } run[exec-2656a517-59e9-4a69-b383-8c58ae2f102c..exec-2656a517-59e9-4a69-b383-8c58ae2f102c x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
   composer Send activity=Some(Running { key: "exec-2656a517-59e9-4a69-b383-8c58ae2f102c" }) queue=[] underway=[] refused=[]
 ## 119 recorded 118: fact Rpc method=mcpServer/elicitation/request
   ask 2 -> "exec-2656a517-59e9-4a69-b383-8c58ae2f102c" 1/1 Open
@@ -110,75 +38,19 @@
     body Tool { server: "spec", tool: "ask_the_operator", arguments: "{\n  \"word\": \"LINK\"\n}" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 121 recorded 120: input stdin-7
-  row    8 exec-2656a517-59e9-4a69-b383-8c58ae2f102c ToolCall { server: "spec", tool: "ask_the_operator", fact: "LINK", state: Running, result: "" } run[exec-2656a517-59e9-4a69-b383-8c58ae2f102c..exec-2656a517-59e9-4a69-b383-8c58ae2f102c x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, el…
   ask none
   composer Send activity=Some(Running { key: "exec-2656a517-59e9-4a69-b383-8c58ae2f102c" }) queue=[] underway=[] refused=[]
 ## 126 recorded 125: fact Rpc method=mcpServer/elicitation/request
-  row    8 exec-2656a517-59e9-4a69-b383-8c58ae2f102c ToolCall { server: "spec", tool: "ask_the_operator", fact: "LINK", state: Running, result: "" } run[exec-2656a517-59e9-4a69-b383-8c58ae2f102c..exec-2656a517-59e9-4a69-b383-8c58ae2f102c x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhe…
-  row    9 ask:3 Ask(Link { server: "<REDACTED_IDENTIFIER>", message: "Open the page to confirm.", url: "https://example.com/confirm", resolution: Open }) attention
   ask 3 -> "ask:3" 1/1 Open
     choices OpenLink*, Decline
     body Link { server: "<REDACTED_IDENTIFIER>", message: "Open the page to confirm.", url: "https://example.com/confirm", local_page: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 128 recorded 127: input stdin-8
-  row    9 ask:3 Ask(Link { server: "<REDACTED_IDENTIFIER>", message: "Open the page to confirm.", url: "https://example.com/confirm", resolution: Cancelled })
   ask none
   composer Send activity=Some(Running { key: "exec-2656a517-59e9-4a69-b383-8c58ae2f102c" }) queue=[] underway=[] refused=[]
 ## 132 recorded 131: fact Rpc method=item/completed
-  row    8 exec-2656a517-59e9-4a69-b383-8c58ae2f102c ToolCall { server: "spec", tool: "ask_the_operator", fact: "LINK", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"elicitation cancel\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-2656a517-59e9-4a69-b383-8c58ae2f102c..exec-2656a517-59e9-4a69-b383-8c58ae2f102c x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, …
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 138 recorded 137: fact Rpc method=item/started
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [], streaming: true, working_note: false }
-## 140 recorded 139: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("-")], streaming: true, working_note: false }
-## 142 recorded 141: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `")], streaming: true, working_note: false }
-## 144 recorded 143: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE")], streaming: true, working_note: false }
-## 146 recorded 145: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE`")], streaming: true, working_note: false }
-## 148 recorded 147: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call")], streaming: true, working_note: false }
-## 150 recorded 149: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned")], streaming: true, working_note: false }
-## 152 recorded 151: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned:")], streaming: true, working_note: false }
-## 154 recorded 153: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `")], streaming: true, working_note: false }
-## 156 recorded 155: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE")], streaming: true, working_note: false }
-## 158 recorded 157: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n")], streaming: true, working_note: false }
-## 160 recorded 159: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n-")], streaming: true, working_note: false }
-## 162 recorded 161: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n- `")], streaming: true, working_note: false }
-## 164 recorded 163: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n- `LINK")], streaming: true, working_note: false }
-## 166 recorded 165: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n- `LINK`")], streaming: true, working_note: false }
-## 168 recorded 167: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n- `LINK` call")], streaming: true, working_note: false }
-## 170 recorded 169: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n- `LINK` call returned")], streaming: true, working_note: false }
-## 172 recorded 171: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n- `LINK` call returned:")], streaming: true, working_note: false }
-## 174 recorded 173: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n- `LINK` call returned: `")], streaming: true, working_note: false }
-## 176 recorded 175: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n- `LINK` call returned: `elic")], streaming: true, working_note: false }
-## 178 recorded 177: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n- `LINK` call returned: `elicitation")], streaming: true, working_note: false }
-## 180 recorded 179: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n- `LINK` call returned: `elicitation cancel")], streaming: true, working_note: false }
-## 181 recorded 180: fact Rpc method=item/agentMessage/delta
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n- `LINK` call returned: `elicitation cancel`")], streaming: true, working_note: false }
-## 183 recorded 182: fact Rpc method=item/completed
-  row   10 msg_0a42dc39e07eb227016ab72ebf677487d2a5f9c4fea5e3d548 Prose { text: [Text("- `BLUE` call returned: `BLUE`\n- `LINK` call returned: `elicitation cancel`")], streaming: false, working_note: false }
 ## 190 recorded 189: fact Rpc method=turn/completed
-  row    6 exec-5adffbb8-ae90-4058-9833-1a29154d8128 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"BLUE\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-5adffbb8-ae90-4058-9833-1a29154d8128..exec-5adffbb8-ae90-4058-9833-1a29154d8128 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, s…
-  row    8 exec-2656a517-59e9-4a69-b383-8c58ae2f102c ToolCall { server: "spec", tool: "ask_the_operator", fact: "LINK", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"elicitation cancel\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-2656a517-59e9-4a69-b383-8c58ae2f102c..exec-2656a517-59e9-4a69-b383-8c58ae2f102c x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, …
-  row   11 turn:1 TurnEnd { duration_ms: Some(12559), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

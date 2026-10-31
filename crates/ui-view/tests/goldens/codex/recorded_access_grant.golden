@@ -1,90 +1,28 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 8 recorded 7: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":{\"gr…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 11 recorded 10: input stdin-4
-  row    2 prompt:737464696e2d34 Prompt { text: [Text("Use your request_permissions tool to ask me for network access. Once granted, run `curl -sI https://example.com` and reply with its status line.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 13 recorded 12: fact Rpc method=warning
-  row    3 warning:2 Error { error_kind: "warning", message: "Under-development features enabled: request_permissions_tool. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in /private<MACHINE_PATH>", attempts: 0, gave_up: true } attention
 ## 27 recorded 26: fact Rpc method=item/started
-  row    4 rs_0267f61d4441067f016ab72ebb880487d2977d5737e6630637 Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
 ## 29 recorded 28: fact Rpc method=item/completed
-  row    4 rs_0267f61d4441067f016ab72ebb880487d2977d5737e6630637 Thinking { text: "", open: false, duration_ms: Some(7016) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 30 recorded 29: fact Rpc method=item/started
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [], streaming: true, working_note: true }
-## 32 recorded 31: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I")], streaming: true, working_note: true }
-## 34 recorded 33: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I’ll")], streaming: true, working_note: true }
-## 36 recorded 35: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I’ll request")], streaming: true, working_note: true }
-## 38 recorded 37: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I’ll request network")], streaming: true, working_note: true }
-## 40 recorded 39: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I’ll request network access")], streaming: true, working_note: true }
-## 42 recorded 41: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I’ll request network access,")], streaming: true, working_note: true }
-## 44 recorded 43: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I’ll request network access, then")], streaming: true, working_note: true }
-## 46 recorded 45: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I’ll request network access, then run")], streaming: true, working_note: true }
-## 48 recorded 47: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I’ll request network access, then run the")], streaming: true, working_note: true }
-## 50 recorded 49: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I’ll request network access, then run the requested")], streaming: true, working_note: true }
-## 52 recorded 51: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I’ll request network access, then run the requested header")], streaming: true, working_note: true }
-## 54 recorded 53: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I’ll request network access, then run the requested header check")], streaming: true, working_note: true }
-## 56 recorded 55: fact Rpc method=item/agentMessage/delta
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I’ll request network access, then run the requested header check.")], streaming: true, working_note: true }
-## 58 recorded 57: fact Rpc method=item/completed
-  row    5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I’ll request network access, then run the requested header check.")], streaming: false, working_note: true }
 ## 61 recorded 60: fact Rpc method=item/permissions/requestApproval
-  row    6 ask:0 Ask(Grant { reason: "Network access is needed to run the requested curl check against example.com.", read: [], write: [], network: true, hosts: [], granted: None, resolution: Open }) attention
   ask 0 -> "ask:0" 1/1 Open
     choices GrantForTurn*, GrantForSession, Deny { stops: false }
     body Access { reason: "Network access is needed to run the requested curl check against example.com.", read: [], write: [], network: true, hosts: [] }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 62 recorded 61: input stdin-5
-  row    6 ask:0 Ask(Grant { reason: "Network access is needed to run the requested curl check against example.com.", read: [], write: [], network: true, hosts: [], granted: Some(Granted { read: [], write: [], network: true, for_session: false }), resolution: Answered })
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 70 recorded 69: fact Rpc method=item/started
-  row    7 rs_0267f61d4441067f016ab72ec0b23887d2be569947ad83f017 Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
 ## 72 recorded 71: fact Rpc method=item/completed
-  row    7 rs_0267f61d4441067f016ab72ec0b23887d2be569947ad83f017 Thinking { text: "", open: false, duration_ms: Some(2443) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 74 recorded 73: fact Rpc method=item/started
-  row    8 exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0 Command { command: "curl -sI https://example.com", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0..exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0,…
   composer Send activity=Some(Running { key: "exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0" }) queue=[] underway=[] refused=[]
-## 76 recorded 75: fact Rpc method=item/commandExecution/outputDelta
-  row    8 exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0 Command { command: "curl -sI https://example.com", state: Running, exit_code: None, output_head: ["HTTP/2 200 ", "date: Sat, 26 Sep 2026 02:32:33 GMT", "content-type: text/html"], more_lines: 8, output_trimmed: false, output_tail: ["HTTP/2 200 ", "date: Sat, 26 Sep 2026 02:32:33 GMT", "content-type: text/html", "server: cloudflare", "last-modified: Tu…
 ## 78 recorded 77: fact Rpc method=item/completed
-  row    8 exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0 Command { command: "curl -sI https://example.com", state: Succeeded, exit_code: Some(0), output_head: ["HTTP/2 200 ", "date: Sat, 26 Sep 2026 02:32:33 GMT", "content-type: text/html"], more_lines: 8, output_trimmed: false, output_tail: ["HTTP/2 200 ", "date: Sat, 26 Sep 2026 02:32:33 GMT", "content-type: text/html", "server: cloudflare", "last-modifie…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 83 recorded 82: fact Rpc method=item/started
-  row    8 exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0 Command { command: "curl -sI https://example.com", state: Succeeded, exit_code: Some(0), output_head: ["HTTP/2 200 ", "date: Sat, 26 Sep 2026 02:32:33 GMT", "content-type: text/html"], more_lines: 8, output_trimmed: false, output_tail: ["HTTP/2 200 ", "date: Sat, 26 Sep 2026 02:32:33 GMT", "content-type: text/html", "server: cloudflare", "last-modifie…
-  row    9 msg_0267f61d4441067f016ab72ec30e7487d281dfeb0bf02e2447 Prose { text: [], streaming: true, working_note: false }
-## 84 recorded 83: fact Rpc method=item/agentMessage/delta
-  row    9 msg_0267f61d4441067f016ab72ec30e7487d281dfeb0bf02e2447 Prose { text: [Text("HTTP")], streaming: true, working_note: false }
-## 86 recorded 85: fact Rpc method=item/agentMessage/delta
-  row    9 msg_0267f61d4441067f016ab72ec30e7487d281dfeb0bf02e2447 Prose { text: [Text("HTTP/")], streaming: true, working_note: false }
-## 88 recorded 87: fact Rpc method=item/agentMessage/delta
-  row    9 msg_0267f61d4441067f016ab72ec30e7487d281dfeb0bf02e2447 Prose { text: [Text("HTTP/2")], streaming: true, working_note: false }
-## 90 recorded 89: fact Rpc method=item/agentMessage/delta
-  row    9 msg_0267f61d4441067f016ab72ec30e7487d281dfeb0bf02e2447 Prose { text: [Text("HTTP/2 ")], streaming: true, working_note: false }
-## 92 recorded 91: fact Rpc method=item/agentMessage/delta
-  row    9 msg_0267f61d4441067f016ab72ec30e7487d281dfeb0bf02e2447 Prose { text: [Text("HTTP/2 200")], streaming: true, working_note: false }
-## 94 recorded 93: fact Rpc method=item/completed
-  row    9 msg_0267f61d4441067f016ab72ec30e7487d281dfeb0bf02e2447 Prose { text: [Text("HTTP/2 200")], streaming: false, working_note: false }
 ## 100 recorded 99: fact Rpc method=turn/completed
-  row    8 exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0 Command { command: "curl -sI https://example.com", state: Succeeded, exit_code: Some(0), output_head: ["HTTP/2 200 ", "date: Sat, 26 Sep 2026 02:32:33 GMT", "content-type: text/html"], more_lines: 8, output_trimmed: false, output_tail: ["HTTP/2 200 ", "date: Sat, 26 Sep 2026 02:32:33 GMT", "content-type: text/html", "server: cloudflare", "last-modifie…
-  row   10 turn:1 TurnEnd { duration_ms: Some(14566), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

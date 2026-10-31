@@ -104,7 +104,7 @@ impl Scene {
             Scene::Report(under) => {
                 under.draw(frame, area, theme);
                 let frozen = frame.buffer_mut().clone();
-                Report::without_dump(frozen, theme).draw(frame, area, theme);
+                Report::new(frozen, theme, None).draw(frame, area, theme);
             }
         }
     }
@@ -172,7 +172,7 @@ pub fn all() -> Vec<Story> {
         }),
         story("new-agent.terminal", || {
             let mut home = tui::vocabulary::authored_home();
-            home.chat_in = ChatInSetting::Native;
+            home.home.place.chat_in = ChatInSetting::Native;
             home.key(KeyCode::Char('n'));
             Scene::Home(Box::new(home))
         }),
@@ -448,11 +448,10 @@ fn first_run() -> HomeScene {
     }
     fleet.update(FleetMsg::Connection(Connection::Live));
     HomeScene {
-        home: tui::home::Home::default(),
+        home: tui::vocabulary::desk_home(),
         fleet,
         lines: Default::default(),
         now: 1_800_000_000_000,
-        chat_in: ChatInSetting::Amux,
     }
 }
 

@@ -1,40 +1,12 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 7 recorded 6: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"on-…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 17 recorded 16: input p1
-  row    2 prompt:7031 Prompt { text: [Text("Run this exact shell command and no substitute: /usr/bin/touch <MACHINE_PATH> Then say DONE.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 30 recorded 29: fact Rpc method=item/started
-  row    3 rs_02fafd3bec891489016ac4591a528c87d2abc434ae381c68a0 Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
 ## 32 recorded 31: fact Rpc method=item/completed
-  row    3 rs_02fafd3bec891489016ac4591a528c87d2abc434ae381c68a0 Thinking { text: "", open: false, duration_ms: Some(1852) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 34 recorded 33: fact Rpc method=item/started
-  row    4 msg_02fafd3bec891489016ac4591afed887d2a4e7aa3f50341516 Prose { text: [], streaming: true, working_note: true }
-## 36 recorded 35: fact Rpc method=item/agentMessage/delta
-  row    4 msg_02fafd3bec891489016ac4591afed887d2a4e7aa3f50341516 Prose { text: [Text("I")], streaming: true, working_note: true }
-## 38 recorded 37: fact Rpc method=item/agentMessage/delta
-  row    4 msg_02fafd3bec891489016ac4591afed887d2a4e7aa3f50341516 Prose { text: [Text("I’ll")], streaming: true, working_note: true }
-## 40 recorded 39: fact Rpc method=item/agentMessage/delta
-  row    4 msg_02fafd3bec891489016ac4591afed887d2a4e7aa3f50341516 Prose { text: [Text("I’ll run")], streaming: true, working_note: true }
-## 42 recorded 41: fact Rpc method=item/agentMessage/delta
-  row    4 msg_02fafd3bec891489016ac4591afed887d2a4e7aa3f50341516 Prose { text: [Text("I’ll run the")], streaming: true, working_note: true }
-## 44 recorded 43: fact Rpc method=item/agentMessage/delta
-  row    4 msg_02fafd3bec891489016ac4591afed887d2a4e7aa3f50341516 Prose { text: [Text("I’ll run the exact")], streaming: true, working_note: true }
-## 46 recorded 45: fact Rpc method=item/agentMessage/delta
-  row    4 msg_02fafd3bec891489016ac4591afed887d2a4e7aa3f50341516 Prose { text: [Text("I’ll run the exact command")], streaming: true, working_note: true }
-## 48 recorded 47: fact Rpc method=item/agentMessage/delta
-  row    4 msg_02fafd3bec891489016ac4591afed887d2a4e7aa3f50341516 Prose { text: [Text("I’ll run the exact command you")], streaming: true, working_note: true }
-## 50 recorded 49: fact Rpc method=item/agentMessage/delta
-  row    4 msg_02fafd3bec891489016ac4591afed887d2a4e7aa3f50341516 Prose { text: [Text("I’ll run the exact command you provided")], streaming: true, working_note: true }
-## 52 recorded 51: fact Rpc method=item/agentMessage/delta
-  row    4 msg_02fafd3bec891489016ac4591afed887d2a4e7aa3f50341516 Prose { text: [Text("I’ll run the exact command you provided.")], streaming: true, working_note: true }
-## 54 recorded 53: fact Rpc method=item/completed
-  row    4 msg_02fafd3bec891489016ac4591afed887d2a4e7aa3f50341516 Prose { text: [Text("I’ll run the exact command you provided.")], streaming: false, working_note: true }
 ## 57 recorded 56: fact Rpc method=item/started
-  row    5 exec-3f43165f-2bc7-4008-a351-7c18aab425cf Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[exec-3f43165f-2bc7-4008-a351-7c18aab425cf..exec-3f43165f-2bc7-4008-a351-7c18aab425cf x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0…
   composer Send activity=Some(Running { key: "exec-3f43165f-2bc7-4008-a351-7c18aab425cf" }) queue=[] underway=[] refused=[]
 ## 59 recorded 58: fact Rpc method=item/commandExecution/requestApproval
   ask 0 -> "exec-3f43165f-2bc7-4008-a351-7c18aab425cf" 1/1 Open
@@ -42,22 +14,11 @@
     body Command { command: "/usr/bin/touch <MACHINE_PATH>", cwd: "<MACHINE_PATH>", reason: "May I create the requested approval-elsewhere.txt file?", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 61 recorded 60: fact Rpc method=serverRequest/resolved
-  row    5 exec-3f43165f-2bc7-4008-a351-7c18aab425cf Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[exec-3f43165f-2bc7-4008-a351-7c18aab425cf..exec-3f43165f-2bc7-4008-a351-7c18aab425cf x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0…
   ask none
   composer Send activity=Some(Running { key: "exec-3f43165f-2bc7-4008-a351-7c18aab425cf" }) queue=[] underway=[] refused=[]
 ## 65 recorded 64: fact Rpc method=item/completed
-  row    5 exec-3f43165f-2bc7-4008-a351-7c18aab425cf Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-3f43165f-2bc7-4008-a351-7c18aab425cf..exec-3f43165f-2bc7-4008-a351-7c18aab425cf x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, suba…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 70 recorded 69: fact Rpc method=item/started
-  row    5 exec-3f43165f-2bc7-4008-a351-7c18aab425cf Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-3f43165f-2bc7-4008-a351-7c18aab425cf..exec-3f43165f-2bc7-4008-a351-7c18aab425cf x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents…
-  row    6 msg_02fafd3bec891489016ac4591e827887d29adb58a7d27afa4f Prose { text: [], streaming: true, working_note: false }
-## 72 recorded 71: fact Rpc method=item/agentMessage/delta
-  row    6 msg_02fafd3bec891489016ac4591e827887d29adb58a7d27afa4f Prose { text: [Text("DONE")], streaming: true, working_note: false }
-## 74 recorded 73: fact Rpc method=item/completed
-  row    6 msg_02fafd3bec891489016ac4591e827887d29adb58a7d27afa4f Prose { text: [Text("DONE")], streaming: false, working_note: false }
 ## 81 recorded 80: fact Rpc method=turn/completed
-  row    5 exec-3f43165f-2bc7-4008-a351-7c18aab425cf Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-3f43165f-2bc7-4008-a351-7c18aab425cf..exec-3f43165f-2bc7-4008-a351-7c18aab425cf x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents…
-  row    7 turn:1 TurnEnd { duration_ms: Some(6151), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

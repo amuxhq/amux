@@ -1,15 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Call the mcp__external__ask_the_operator tool with word set to PELICAN, then reply with exactly what it returned.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=e6724a78-b717-415a-b99f-cea73fa2d11b
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 8 recorded 7: fact Stream type=assistant uuid=04330547-5b1f-4e55-a07f-ca17aea5046b
-  row    3 msg_011CgWLKjp93LSSZX6heC7NJ:0 Thinking { text: "", open: false, duration_ms: Some(2593) }
 ## 10 recorded 9: fact Stream type=assistant uuid=cc881d41-b35c-4c96-ba66-b126e9f60cdc
-  row    4 toolu_01Jdhy6PQEi7bHuPFnDqbES6 ToolCall { server: "external", tool: "ask_the_operator", fact: "PELICAN", state: Running, result: "" } run[toolu_01Jdhy6PQEi7bHuPFnDqbES6..toolu_01Jdhy6PQEi7bHuPFnDqbES6 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
   composer Send activity=Some(Running { key: "toolu_01Jdhy6PQEi7bHuPFnDqbES6" }) queue=[] underway=[] refused=[]
 ## 12 recorded 11: fact Stream type=control_request
   ask 1586b742-c204-4c1e-add2-ed9a69c36c8a -> "toolu_01Jdhy6PQEi7bHuPFnDqbES6" 1/1 Open
@@ -17,30 +10,19 @@
     body Tool { server: "external", tool: "ask_the_operator", arguments: "{\n  \"word\": \"PELICAN\"\n}" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 13 recorded 12: input stdin-3
-  row    4 toolu_01Jdhy6PQEi7bHuPFnDqbES6 ToolCall { server: "external", tool: "ask_the_operator", fact: "PELICAN", state: Running, result: "" } run[toolu_01Jdhy6PQEi7bHuPFnDqbES6..toolu_01Jdhy6PQEi7bHuPFnDqbES6 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false }
   ask none
   composer Send activity=Some(Running { key: "toolu_01Jdhy6PQEi7bHuPFnDqbES6" }) queue=[] underway=[] refused=[]
 ## 17 recorded 16: fact Stream type=control_request
-  row    4 toolu_01Jdhy6PQEi7bHuPFnDqbES6 ToolCall { server: "external", tool: "ask_the_operator", fact: "PELICAN", state: Running, result: "" } run[toolu_01Jdhy6PQEi7bHuPFnDqbES6..toolu_01Jdhy6PQEi7bHuPFnDqbES6 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false }
-  row    5 ask:61ed2a88-a5ee-43ae-b983-ea391abfc8ea Ask(Form { server: "external", message: "Confirm the word PELICAN.", fields: [], resolution: Open }) attention
   ask 61ed2a88-a5ee-43ae-b983-ea391abfc8ea -> "ask:61ed2a88-a5ee-43ae-b983-ea391abfc8ea" 1/1 Open
     choices Submit*, Decline
     body Form { server: "external", message: "Confirm the word PELICAN.", fields: [FormField { name: "confirmed", title: "confirmed", description: "", required: true, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 18 recorded 17: input stdin-4
-  row    5 ask:61ed2a88-a5ee-43ae-b983-ea391abfc8ea Ask(Form { server: "external", message: "Confirm the word PELICAN.", fields: [], resolution: Declined })
   ask none
   composer Send activity=Some(Running { key: "toolu_01Jdhy6PQEi7bHuPFnDqbES6" }) queue=[] underway=[] refused=[]
 ## 20 recorded 19: fact Stream type=user uuid=f86aeb45-5bde-4ba3-9953-acda03acf08f
-  row    4 toolu_01Jdhy6PQEi7bHuPFnDqbES6 ToolCall { server: "external", tool: "ask_the_operator", fact: "PELICAN", state: Succeeded, result: "elicitation decline" } run[toolu_01Jdhy6PQEi7bHuPFnDqbES6..toolu_01Jdhy6PQEi7bHuPFnDqbES6 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: f…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 22 recorded 21: fact Stream type=assistant uuid=9ceb81d2-87d1-431b-99f5-a93ee45e62c5
-  row    6 msg_011CgWLKvYoDN1mewVrqcHFY:0 Thinking { text: "", open: false, duration_ms: Some(1127) }
-## 24 recorded 23: fact Stream type=assistant uuid=124225cf-9184-4a4d-b7b3-2c562c8f4b1e
-  row    7 msg_011CgWLKvYoDN1mewVrqcHFY:1 Prose { text: [Text("elicitation decline")], streaming: false, working_note: false }
 ## 26 recorded 25: fact Stream type=result subtype=success uuid=1de0cb17-421d-4ea4-9ebd-b691a39e1d9b
-  row    4 toolu_01Jdhy6PQEi7bHuPFnDqbES6 ToolCall { server: "external", tool: "ask_the_operator", fact: "PELICAN", state: Succeeded, result: "elicitation decline" } run[toolu_01Jdhy6PQEi7bHuPFnDqbES6..toolu_01Jdhy6PQEi7bHuPFnDqbES6 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: f…
-  row    8 turn:1 TurnEnd { duration_ms: Some(3936), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

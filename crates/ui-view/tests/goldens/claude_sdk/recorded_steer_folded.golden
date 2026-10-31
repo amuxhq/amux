@@ -1,15 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input 0x22222222222242228222222222222201
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 22222222-2222-4222-8222-222222222201 Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly DONE-A plus any extra words the user asked for.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 10 recorded 9: fact Stream type=system subtype=init uuid=d35210de-55a6-4b56-9ebf-7f41728b9f3b
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 18 recorded 17: fact Stream type=assistant uuid=ff96880c-55e9-44a3-808a-a5c05690c4f4
-  row    3 msg_011CgWLXcM1aujP3XipbysKS:0 Thinking { text: "", open: false, duration_ms: Some(3177) }
 ## 20 recorded 19: fact Stream type=assistant uuid=2420dda8-63a3-454c-8cdc-19d949b0e010
-  row    4 toolu_013UjuyX4boAgnztaTUphnA8 Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_013UjuyX4boAgnztaTUphnA8..toolu_013UjuyX4boAgnztaTUphnA8 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_013UjuyX4boAgnztaTUphnA8" }) queue=[] underway=[] refused=[]
 ## 26 recorded 25: input 0x22222222222242228222222222222202
   composer Send activity=Some(Running { key: "toolu_013UjuyX4boAgnztaTUphnA8" }) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 2], text: [Text("Also append the word BANANA.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
@@ -18,36 +11,16 @@
 ## 28 recorded 27: input 0x22222222222242228222222222222203
   composer Send activity=Some(Running { key: "toolu_013UjuyX4boAgnztaTUphnA8" }) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 2], text: [Text("Also append the word BANANA.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }, QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 3], text: [Text("…
 ## 35 recorded 34: fact Stream type=user uuid=3a878151-e1f8-4603-8c1b-3e8b7c174521
-  row    4 toolu_013UjuyX4boAgnztaTUphnA8 Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15207) } run[toolu_013UjuyX4boAgnztaTUphnA8..toolu_013UjuyX4boAgnztaTUphnA8 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagent…
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 2], text: [Text("Also append the word BANANA.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }, QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 3], text: [Text("Reply with exactly LATER-C.")], from_agent…
 ## 37 recorded 36: fact Stream type=user uuid=22222222-2222-4222-8222-222222222202
-  row    4 toolu_013UjuyX4boAgnztaTUphnA8 Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15207) } run[toolu_013UjuyX4boAgnztaTUphnA8..toolu_013UjuyX4boAgnztaTUphnA8 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0,…
-  row    5 22222222-2222-4222-8222-222222222202 Prompt { text: [Text("Also append the word BANANA.")], steered: true }
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 3], text: [Text("Reply with exactly LATER-C.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
-## 41 recorded 40: fact Stream type=assistant uuid=8bcee9e6-80d2-4aad-901e-f38ca8e85944
-  row    6 msg_011CgWLYyBR5dsBmN3fMXFHR:0 Thinking { text: "", open: false, duration_ms: Some(1331) }
 ## 43 recorded 42: fact Stream type=assistant uuid=3475ca8e-3ebf-44a5-85de-9d7c40f6c2ae
-  row    7 toolu_0178udjz2UMT6BxntKjQGZQm Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_0178udjz2UMT6BxntKjQGZQm..toolu_0178udjz2UMT6BxntKjQGZQm x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_0178udjz2UMT6BxntKjQGZQm" }) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 3], text: [Text("Reply with exactly LATER-C.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 49 recorded 48: fact Stream type=user uuid=a3180243-10fc-4c84-9d5a-c13b5e79c839
-  row    7 toolu_0178udjz2UMT6BxntKjQGZQm Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5092) } run[toolu_0178udjz2UMT6BxntKjQGZQm..toolu_0178udjz2UMT6BxntKjQGZQm x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents:…
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [34, 34, 34, 34, 34, 34, 66, 34, 130, 34, 34, 34, 34, 34, 34, 3], text: [Text("Reply with exactly LATER-C.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
-## 51 recorded 50: fact Stream type=assistant uuid=912fc360-932b-4f5a-899d-f4939d710be1
-  row    8 msg_011CgWLZTuKBXKqUjRBLMyf9:0 Thinking { text: "", open: false, duration_ms: Some(6298) }
-## 53 recorded 52: fact Stream type=assistant uuid=0074ffb2-a478-42a2-a933-b141240ba757
-  row    7 toolu_0178udjz2UMT6BxntKjQGZQm Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5092) } run[toolu_0178udjz2UMT6BxntKjQGZQm..toolu_0178udjz2UMT6BxntKjQGZQm x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
-  row    9 msg_011CgWLZTuKBXKqUjRBLMyf9:1 Prose { text: [Text("DONE-A BANANA")], streaming: false, working_note: false }
 ## 57 recorded 56: fact Stream type=result subtype=success uuid=f9737f30-2a17-4395-bf24-556e82607989
-  row    7 toolu_0178udjz2UMT6BxntKjQGZQm Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5092) } run[toolu_0178udjz2UMT6BxntKjQGZQm..toolu_0178udjz2UMT6BxntKjQGZQm x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, o…
-  row   10 turn:1 TurnEnd { duration_ms: Some(26587), failed: false }
-  row   11 22222222-2222-4222-8222-222222222203 Prompt { text: [Text("Reply with exactly LATER-C.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 67 recorded 66: fact Stream type=assistant uuid=56eb5eed-6145-4922-a830-467fbe66275a
-  row   12 msg_011CgWLZZCp4hRFTsZimPZxQ:0 Thinking { text: "", open: false, duration_ms: Some(1034) }
-## 69 recorded 68: fact Stream type=assistant uuid=9e97d17a-4afa-452c-ab4d-d75067a40934
-  row   13 msg_011CgWLZZCp4hRFTsZimPZxQ:1 Prose { text: [Text("LATER-C")], streaming: false, working_note: false }
 ## 71 recorded 70: fact Stream type=result subtype=success uuid=cbfccc7c-936b-40d6-baff-a5fc8f3ecbb9
-  row   14 turn:2 TurnEnd { duration_ms: Some(1047), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

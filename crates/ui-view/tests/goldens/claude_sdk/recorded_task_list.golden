@@ -1,33 +1,12 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Track this work with your task or todo tool: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=e6ac7e40-8c6b-4543-854f-89b3c5dc8f19
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 12 recorded 11: fact Stream type=assistant uuid=ae1c4999-3643-4aab-8505-80506993ee78
-  row    3 msg_011CgWLTAoFUdPKfgqCqbuWn:0 Thinking { text: "", open: false, duration_ms: Some(2512) }
 ## 14 recorded 13: fact Stream type=assistant uuid=b5ae27a6-56a5-4f59-93a5-168276ad0821
-  row    4 toolu_01RQkEbfDTojpEbXF8LUHA7N Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Running, result: "" } run[toolu_01RQkEbfDTojpEbXF8LUHA7N..toolu_01RQkEbfDTojpEbXF8LUHA7N x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_01RQkEbfDTojpEbXF8LUHA7N" }) queue=[] underway=[] refused=[]
 ## 16 recorded 15: fact Stream type=user uuid=ff66431a-3a29-413f-a486-0c6c430df48c
-  row    4 toolu_01RQkEbfDTojpEbXF8LUHA7N Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded, result: "" } run[toolu_01RQkEbfDTojpEbXF8LUHA7N..toolu_01RQkEbfDTojpEbXF8LUHA7N x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 24 recorded 23: fact Stream type=assistant uuid=9675995a-6a59-4c9d-96c2-1a4cac74f6bf
-  row    5 msg_011CgWLTMtzUYjViwM3sqYG3:0 Thinking { text: "", open: false, duration_ms: Some(1643) }
-## 42 recorded 41: fact Stream type=assistant uuid=11002e89-1175-4382-a279-02bd2b7916f2
-  row    6 msg_011CgWLTXyUdGCZAPrYdC7gn:0 Thinking { text: "", open: false, duration_ms: Some(1966) }
-## 48 recorded 47: fact Stream type=assistant uuid=b87ce4e9-4761-4d07-b83d-3c42030c6e1f
-  row    7 msg_011CgWLTeXcUcVRdHLPd1r4K:0 Thinking { text: "", open: false, duration_ms: Some(1428) }
-## 58 recorded 57: fact Stream type=assistant uuid=e57350f6-a306-4ad1-a545-d80742ea1697
-  row    8 msg_011CgWLU6r9cteVrJc7tCdAE:0 Thinking { text: "", open: false, duration_ms: Some(6511) }
-## 60 recorded 59: fact Stream type=assistant uuid=6672ef02-e710-49c3-b12c-fcd28d586dd8
-  row    4 toolu_01RQkEbfDTojpEbXF8LUHA7N Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded, result: "" } run[toolu_01RQkEbfDTojpEbXF8LUHA7N..toolu_01RQkEbfDTojpEbXF8LUHA7N x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-  row    9 msg_011CgWLU6r9cteVrJc7tCdAE:1 Prose { text: [Text("Done. Created three tasks (Draft, Review, Publish), marked Draft as in_progress, then marked it as completed.")], streaming: false, working_note: false }
 ## 62 recorded 61: fact Stream type=result subtype=success uuid=20acaad2-5c06-482f-a43d-272cb47a0a57
-  row    4 toolu_01RQkEbfDTojpEbXF8LUHA7N Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded, result: "" } run[toolu_01RQkEbfDTojpEbXF8LUHA7N..toolu_01RQkEbfDTojpEbXF8LUHA7N x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-  row   10 turn:1 TurnEnd { duration_ms: Some(14540), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

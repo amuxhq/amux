@@ -1,23 +1,12 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 3 recorded 1: fact Hook hook_event_name=SessionStart
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 13 recorded 11: fact Transcript type=user uuid=d3863719-5b5a-4cc6-8534-b35548ab6a57
-  row    2 d3863719-5b5a-4cc6-8534-b35548ab6a57 Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import select; select.select([], [], [], 30)'; printf SHOULD_NOT_FINISH. Do not do anything else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 35 recorded 33: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01KoJ2dKV5HwLLhD1G1aNB2a
   composer Send activity=Some(Running { key: "toolu_01KoJ2dKV5HwLLhD1G1aNB2a" }) queue=[] underway=[] refused=[]
-## 38 recorded 36: fact Transcript type=assistant uuid=63e49029-d509-46b6-b66d-192266852cff
-  row    3 63e49029-d509-46b6-b66d-192266852cff Thinking { text: "", open: false, duration_ms: Some(3478) }
-## 39 recorded 37: fact Transcript type=assistant uuid=91e5a2c4-c9ce-4c5a-adc4-b22925704446
-  row    4 toolu_01KoJ2dKV5HwLLhD1G1aNB2a Command { command: "python3 -c 'import select; select.select([], [], [], 30)'; printf SHOULD_NOT_FINISH", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_01KoJ2dKV5HwLLhD1G1aNB2a..toolu_01KoJ2dKV5HwLLhD1G1aNB2a x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, sear…
 ## 41 recorded 39: fact Transcript type=user uuid=6bc09a6c-80c5-4476-bcef-a9fd2884b6ff
-  row    4 toolu_01KoJ2dKV5HwLLhD1G1aNB2a Command { command: "python3 -c 'import select; select.select([], [], [], 30)'; printf SHOULD_NOT_FINISH", state: Cancelled, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell yo…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 45 recorded 43: fact Transcript type=user uuid=be7be0a0-9dca-408a-8cd4-d5ee6f025fe6
-  row    4 toolu_01KoJ2dKV5HwLLhD1G1aNB2a Command { command: "python3 -c 'import select; select.select([], [], [], 30)'; printf SHOULD_NOT_FINISH", state: Cancelled, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell yo…
-  row    5 be7be0a0-9dca-408a-8cd4-d5ee6f025fe6 Hidden collapsed
-  row    6 turn:1 Stopped
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

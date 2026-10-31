@@ -1,16 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("/clear")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=conversation_reset uuid=527853b9-b52c-4272-aa3f-d6aa5b58bd8f
-  row    3 boundary:2 Boundary { kind: Cleared, cause: "" }
-## 8 recorded 7: fact Stream type=system subtype=init uuid=5a2aae3f-aa14-46a7-868e-f2cbc9534a70
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    3 boundary:2 Boundary { kind: Cleared, cause: "" }
 ## 10 recorded 9: fact Stream type=result subtype=success uuid=d36b3c0b-8f47-472f-9bdd-df369fc7b8a6
-  row    4 turn:1 TurnEnd { duration_ms: Some(355), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

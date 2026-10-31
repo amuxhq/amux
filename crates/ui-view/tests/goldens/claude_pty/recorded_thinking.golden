@@ -1,18 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 3 recorded 1: fact Hook hook_event_name=SessionStart
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 13 recorded 11: fact Transcript type=user uuid=45ee5d55-ddf6-460b-b713-ad06687f1aa9
-  row    2 45ee5d55-ddf6-460b-b713-ad06687f1aa9 Prompt { text: [Text("Think hard about this before answering: which is larger, 17 squared or 2 to the power 8? Answer with just the larger number.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 36 recorded 34: fact Hook hook_event_name=MessageDisplay
-  row    3 stream:178179d0-7243-47d2-ac69-d7eae4675379 Prose { text: [Text("289")], streaming: true, working_note: false }
-## 38 recorded 36: fact Transcript type=assistant uuid=d8e5c72e-d873-4dcd-af27-aecf23fe27d7
-  row    4 d8e5c72e-d873-4dcd-af27-aecf23fe27d7 Thinking { text: "", open: false, duration_ms: Some(154) }
-## 39 recorded 37: fact Transcript type=assistant uuid=d99c3f57-72ea-4072-946d-f3b97a0407fc
-  row    3 stream:178179d0-7243-47d2-ac69-d7eae4675379 Prose { text: [Text("289")], streaming: false, working_note: false }
 ## 43 recorded 41: fact Transcript type=system subtype=turn_duration uuid=2d4db280-4397-4589-8f19-b613c0df7b7f
-  row    5 turn:1 TurnEnd { duration_ms: Some(1523), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

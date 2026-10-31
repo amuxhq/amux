@@ -1,75 +1,36 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 6 recorded 5: input 0x165d9bfba2c44df5b4ba0b8231f160ef
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 165d9bfb-a2c4-4df5-b4ba-0b8231f160ef Prompt { text: [Text("Use the AskUserQuestion tool once, asking me two questions in that one call: 'Which colour?' with the options Red and Blue, and 'Which size?' with the options Small and Large. After I answer, use it once more to ask me one question, 'Which shape?' with the options Circle and Square. Then reply with the single word done. Do nothing els…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 12 recorded 11: fact Stream type=system subtype=init uuid=df0ae923-181c-4bab-a99b-a7df6b256364
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 14 recorded 13: fact Stream type=system subtype=status uuid=3a8a2c0f-28ff-42fb-b5b3-78b242f7a262
-  row    3 3a8a2c0f-28ff-42fb-b5b3-78b242f7a262 Hidden collapsed
 ## 19 recorded 18: fact Stream type=stream_event uuid=ffa49acd-45cd-407d-8ef4-69858ce28130
-  row    4 msg_011CfnB85QpNQFtLTAjgbokb:0 Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 23 recorded 22: fact Stream type=stream_event uuid=d34c151d-ea57-4db6-aa07-e29d4b60f45a
-  row    4 msg_011CfnB85QpNQFtLTAjgbokb:0 Thinking { text: "", open: true, duration_ms: None }
-## 25 recorded 24: fact Stream type=stream_event uuid=56bc7cce-6d14-4666-a4ee-6c94c92411a1
-  row    4 msg_011CfnB85QpNQFtLTAjgbokb:0 Thinking { text: "", open: true, duration_ms: None }
 ## 30 recorded 29: fact Stream type=assistant uuid=14456286-bb7a-4f62-993d-5eaa2f4a8688
-  row    4 msg_011CfnB85QpNQFtLTAjgbokb:0 Thinking { text: "", open: false, duration_ms: Some(1008) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 102 recorded 101: fact Stream type=assistant uuid=49dd94a7-ed1a-4b25-9928-217f721952b1
-  row    5 toolu_01W6kGbyyVYBBy7NZibWCqgJ [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "The colour red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The colour blue", preview: "", recommended: false }], allow_other: true, secret: false }, Q…
 ## 104 recorded 103: fact Stream type=control_request
   ask ae56c573-d7c5-4ef5-825a-7dc4f7991015 -> "toolu_01W6kGbyyVYBBy7NZibWCqgJ" 1/1 Open
     choices 
     body Question([QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "The colour red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The colour blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Size", question: "Which size?", multi_select: fals…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 112 recorded 111: input stdin-4
-  row    5 toolu_01W6kGbyyVYBBy7NZibWCqgJ [Answered: Colour = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "The colour red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The colour blue", preview: "", recommended: false }], a…
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 118 recorded 117: fact Stream type=system subtype=status uuid=357ca1f0-abb5-4bc2-85b5-8a7aedddfb51
-  row    6 357ca1f0-abb5-4bc2-85b5-8a7aedddfb51 Hidden collapsed
 ## 122 recorded 121: fact Stream type=stream_event uuid=1fd9e5e1-cfc5-4060-a52f-56c5ed54406f
-  row    7 msg_011CfnB8H6H12W75ZyuW5693:0 Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 125 recorded 124: fact Stream type=stream_event uuid=cc075813-6729-4db2-888b-8d42434cd626
-  row    7 msg_011CfnB8H6H12W75ZyuW5693:0 Thinking { text: "", open: true, duration_ms: None }
-## 127 recorded 126: fact Stream type=stream_event uuid=732abf03-1496-45b7-8526-d334e649d1f2
-  row    7 msg_011CfnB8H6H12W75ZyuW5693:0 Thinking { text: "", open: true, duration_ms: None }
 ## 132 recorded 131: fact Stream type=assistant uuid=ce1a008c-4ad6-486d-8e15-db1c2b115807
-  row    7 msg_011CfnB8H6H12W75ZyuW5693:0 Thinking { text: "", open: false, duration_ms: Some(1814) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 160 recorded 159: fact Stream type=assistant uuid=0fdd8986-cb3a-4ad3-a1bc-9421d0d6efa4
-  row    8 toolu_01MrEoASRJVXZ8HofCXcyLnY [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "A circular shape", preview: "", recommended: false }, OptionView { label: "Square", description: "A square shape", preview: "", recommended: false }], allow_other: true, secret: false …
 ## 162 recorded 161: fact Stream type=control_request
   ask 0565081e-db13-4db2-980e-60da1365bc0e -> "toolu_01MrEoASRJVXZ8HofCXcyLnY" 1/1 Open
     choices 
     body Question([QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "A circular shape", preview: "", recommended: false }, OptionView { label: "Square", description: "A square shape", preview: "", recommended: false }], allow_other: true, secret: false }])
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 170 recorded 169: input stdin-5
-  row    8 toolu_01MrEoASRJVXZ8HofCXcyLnY [Replied: Shape = (skipped) skipped=1 reply="Never mind the shape. Reply with the single word done and nothing else."] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "A circular shape", preview: "", recommended: false }, OptionView { label: "Square", …
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 176 recorded 175: fact Stream type=system subtype=status uuid=1934a552-c50e-4688-b6c7-cd9285ea2826
-  row    9 1934a552-c50e-4688-b6c7-cd9285ea2826 Hidden collapsed
 ## 179 recorded 178: fact Stream type=stream_event uuid=5569538d-0715-4aeb-a173-248f6dcb3a53
-  row   10 msg_011CfnB8RqtScCuU3SHTZgYu:0 Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 181 recorded 180: fact Stream type=stream_event uuid=c5705819-7f7d-4335-8398-e5a7563dc165
-  row   10 msg_011CfnB8RqtScCuU3SHTZgYu:0 Thinking { text: "", open: true, duration_ms: None }
 ## 184 recorded 183: fact Stream type=assistant uuid=6254cbef-c851-473b-b114-1261ecda6d47
-  row   10 msg_011CfnB8RqtScCuU3SHTZgYu:0 Thinking { text: "", open: false, duration_ms: Some(1358) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 187 recorded 186: fact Stream type=stream_event uuid=c41b675b-b345-4d86-a30b-5f48257cd091
-  row   11 msg_011CfnB8RqtScCuU3SHTZgYu:1 Prose { text: [], streaming: true, working_note: false }
-## 189 recorded 188: fact Stream type=stream_event uuid=95c6fdbf-ba80-4d1a-98d6-1cf0e7fcd91c
-  row   11 msg_011CfnB8RqtScCuU3SHTZgYu:1 Prose { text: [Text("done")], streaming: true, working_note: false }
-## 191 recorded 190: fact Stream type=assistant uuid=aa56fb20-359e-43b8-a297-e69ab47c5ac4
-  row   11 msg_011CfnB8RqtScCuU3SHTZgYu:1 Prose { text: [Text("done")], streaming: false, working_note: false }
 ## 198 recorded 197: fact Stream type=result subtype=success uuid=5475d07d-fe8a-4719-86b3-cdbe848c72b9
-  row   12 turn:1 TurnEnd { duration_ms: Some(5949), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

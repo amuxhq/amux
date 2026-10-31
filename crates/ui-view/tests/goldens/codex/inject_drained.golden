@@ -1,26 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 2 input {"id":"p1","prompt":{"text":"Count to ten slowly."}}
-  row    2 prompt:7031 Prompt { text: [Text("Count to ten slowly.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 agent_message {"envelope":"e1","from":"reviewer","text":"Also say DONE at the end."}
-  row    3 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: [Text("Also say DONE at the end.")], to: "", sent: Unspecified, rejection: "" }
-## 8 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"msg-1","phase":"final_answer","text":"","type":"agentMessage"},"startedAtMs":null,"threadId":"t1","turnId":"turn-1"}}}
-  row    4 msg-1 Prose { text: [], streaming: true, working_note: false }
-## 9 fact {"channel":"rpc","json":{"method":"item/agentMessage/delta","params":{"delta":"1 2 3 4 5 6 7 8 9 10","itemId":"msg-1","threadId":"t1","turnId":"turn-1"}}}
-  row    4 msg-1 Prose { text: [Text("1 2 3 4 5 6 7 8 9 10")], streaming: true, working_note: false }
-## 10 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"msg-1","phase":"final_answer","text":"1 2 3 4 5 6 7 8 9 10","type":"agentMessage"},"threadId":"t1","turnId":"turn-1"}}}
-  row    4 msg-1 Prose { text: [Text("1 2 3 4 5 6 7 8 9 10")], streaming: false, working_note: false }
-## 11 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"msg-2","phase":"final_answer","text":"","type":"agentMessage"},"startedAtMs":null,"threadId":"t1","turnId":"turn-1"}}}
-  row    5 msg-2 Prose { text: [], streaming: true, working_note: false }
-## 12 fact {"channel":"rpc","json":{"method":"item/agentMessage/delta","params":{"delta":"DONE","itemId":"msg-2","threadId":"t1","turnId":"turn-1"}}}
-  row    5 msg-2 Prose { text: [Text("DONE")], streaming: true, working_note: false }
-## 13 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"msg-2","phase":"final_answer","text":"DONE","type":"agentMessage"},"threadId":"t1","turnId":"turn-1"}}}
-  row    5 msg-2 Prose { text: [Text("DONE")], streaming: false, working_note: false }
 ## 15 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
-  row    6 turn:1 TurnEnd { duration_ms: Some(2000), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

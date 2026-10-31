@@ -1,84 +1,16 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 7 recorded 6: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"nev…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 10 recorded 9: input stdin-4
-  row    2 prompt:737464696e2d34 Prompt { text: [Text("Run exactly this shell command once: ls does-not-exist. Then tell me whether it failed.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 25 recorded 24: fact Rpc method=item/started
-  row    3 rs_03fb63819d44799e016ab7291326c487d281862d482de41fea Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
 ## 27 recorded 26: fact Rpc method=item/completed
-  row    3 rs_03fb63819d44799e016ab7291326c487d281862d482de41fea Thinking { text: "", open: false, duration_ms: Some(2333) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 29 recorded 28: fact Rpc method=item/started
-  row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [], streaming: true, working_note: true }
-## 31 recorded 30: fact Rpc method=item/agentMessage/delta
-  row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I")], streaming: true, working_note: true }
-## 33 recorded 32: fact Rpc method=item/agentMessage/delta
-  row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll")], streaming: true, working_note: true }
-## 35 recorded 34: fact Rpc method=item/agentMessage/delta
-  row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll run")], streaming: true, working_note: true }
-## 37 recorded 36: fact Rpc method=item/agentMessage/delta
-  row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll run the")], streaming: true, working_note: true }
-## 39 recorded 38: fact Rpc method=item/agentMessage/delta
-  row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll run the exact")], streaming: true, working_note: true }
-## 41 recorded 40: fact Rpc method=item/agentMessage/delta
-  row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll run the exact command")], streaming: true, working_note: true }
-## 43 recorded 42: fact Rpc method=item/agentMessage/delta
-  row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll run the exact command once")], streaming: true, working_note: true }
-## 45 recorded 44: fact Rpc method=item/agentMessage/delta
-  row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll run the exact command once and")], streaming: true, working_note: true }
-## 47 recorded 46: fact Rpc method=item/agentMessage/delta
-  row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll run the exact command once and report")], streaming: true, working_note: true }
-## 49 recorded 48: fact Rpc method=item/agentMessage/delta
-  row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll run the exact command once and report its")], streaming: true, working_note: true }
-## 51 recorded 50: fact Rpc method=item/agentMessage/delta
-  row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll run the exact command once and report its result")], streaming: true, working_note: true }
-## 53 recorded 52: fact Rpc method=item/agentMessage/delta
-  row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll run the exact command once and report its result.")], streaming: true, working_note: true }
-## 55 recorded 54: fact Rpc method=item/completed
-  row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll run the exact command once and report its result.")], streaming: false, working_note: true }
 ## 57 recorded 56: fact Rpc method=item/started
-  row    5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Running, result: "" } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
   composer Send activity=Some(Running { key: "exec-8bcf460a-8814-4073-b121-3c591c0497e5" }) queue=[] underway=[] refused=[]
 ## 58 recorded 57: fact Rpc method=item/completed
-  row    5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Failed, result: "ls: does-not-exist: No such file or directory" } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 65 recorded 64: fact Rpc method=item/started
-  row    5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Failed, result: "ls: does-not-exist: No such file or directory" } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [], streaming: true, working_note: false }
-## 67 recorded 66: fact Rpc method=item/agentMessage/delta
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes")], streaming: true, working_note: false }
-## 69 recorded 68: fact Rpc method=item/agentMessage/delta
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes,")], streaming: true, working_note: false }
-## 71 recorded 70: fact Rpc method=item/agentMessage/delta
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it")], streaming: true, working_note: false }
-## 73 recorded 72: fact Rpc method=item/agentMessage/delta
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed")], streaming: true, working_note: false }
-## 75 recorded 74: fact Rpc method=item/agentMessage/delta
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed.")], streaming: true, working_note: false }
-## 77 recorded 76: fact Rpc method=item/agentMessage/delta
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed. The")], streaming: true, working_note: false }
-## 79 recorded 78: fact Rpc method=item/agentMessage/delta
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed. The command")], streaming: true, working_note: false }
-## 81 recorded 80: fact Rpc method=item/agentMessage/delta
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed. The command exited")], streaming: true, working_note: false }
-## 83 recorded 82: fact Rpc method=item/agentMessage/delta
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed. The command exited with")], streaming: true, working_note: false }
-## 85 recorded 84: fact Rpc method=item/agentMessage/delta
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed. The command exited with status")], streaming: true, working_note: false }
-## 87 recorded 86: fact Rpc method=item/agentMessage/delta
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed. The command exited with status `")], streaming: true, working_note: false }
-## 89 recorded 88: fact Rpc method=item/agentMessage/delta
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed. The command exited with status `1")], streaming: true, working_note: false }
-## 91 recorded 90: fact Rpc method=item/agentMessage/delta
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed. The command exited with status `1`.")], streaming: true, working_note: false }
-## 93 recorded 92: fact Rpc method=item/completed
-  row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed. The command exited with status `1`.")], streaming: false, working_note: false }
 ## 100 recorded 99: fact Rpc method=turn/completed
-  row    5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Failed, result: "ls: does-not-exist: No such file or directory" } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 unresolved RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
-  row    7 turn:1 TurnEnd { duration_ms: Some(6013), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

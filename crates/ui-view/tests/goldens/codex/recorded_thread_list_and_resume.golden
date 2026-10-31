@@ -1,29 +1,9 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"on-…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 10 recorded 9: input stdin-4
-  row    2 prompt:737464696e2d34 Prompt { text: [Text("Reply with exactly CODEX_SPEC_RESUME and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 24 recorded 23: fact Rpc method=item/started
-  row    3 msg_08f09d0809947ff5016a93484caf6087d2bba7960eab88b03d Prose { text: [], streaming: true, working_note: false }
-## 26 recorded 25: fact Rpc method=item/agentMessage/delta
-  row    3 msg_08f09d0809947ff5016a93484caf6087d2bba7960eab88b03d Prose { text: [Text("CODE")], streaming: true, working_note: false }
-## 28 recorded 27: fact Rpc method=item/agentMessage/delta
-  row    3 msg_08f09d0809947ff5016a93484caf6087d2bba7960eab88b03d Prose { text: [Text("CODEX")], streaming: true, working_note: false }
-## 30 recorded 29: fact Rpc method=item/agentMessage/delta
-  row    3 msg_08f09d0809947ff5016a93484caf6087d2bba7960eab88b03d Prose { text: [Text("CODEX_SPEC")], streaming: true, working_note: false }
-## 32 recorded 31: fact Rpc method=item/agentMessage/delta
-  row    3 msg_08f09d0809947ff5016a93484caf6087d2bba7960eab88b03d Prose { text: [Text("CODEX_SPEC_RES")], streaming: true, working_note: false }
-## 34 recorded 33: fact Rpc method=item/agentMessage/delta
-  row    3 msg_08f09d0809947ff5016a93484caf6087d2bba7960eab88b03d Prose { text: [Text("CODEX_SPEC_RESUME")], streaming: true, working_note: false }
-## 36 recorded 35: fact Rpc method=item/completed
-  row    3 msg_08f09d0809947ff5016a93484caf6087d2bba7960eab88b03d Prose { text: [Text("CODEX_SPEC_RESUME")], streaming: false, working_note: false }
 ## 42 recorded 41: fact Rpc method=turn/completed
-  row    4 turn:1 TurnEnd { duration_ms: Some(3535), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 49 recorded 48: fact Rpc "{\"id\":6,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"on-…
-  row    5 boundary:2 Boundary { kind: Resumed, cause: "" }
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:737464696e2d34 Prompt { text: [Text("Reply with exactly CODEX_SPEC_RESUME and nothing else.")], steered: false }

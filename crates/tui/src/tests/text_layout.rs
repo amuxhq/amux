@@ -343,7 +343,12 @@ fn a_long_commands_choices_stay_on_a_short_screen() {
     }
 }
 
-fn fleet_screen_at(view: &mut FleetView, fleet: &FleetState, width: u16, height: u16) -> String {
+fn fleet_screen_at(
+    view: &mut crate::home::Home,
+    fleet: &FleetState,
+    width: u16,
+    height: u16,
+) -> String {
     let mut terminal =
         ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
     terminal
@@ -365,7 +370,7 @@ fn a_refused_rename_keeps_its_reason_and_way_out_at_80_columns() {
         &mut fleet,
         agent_row(b"p", "brisk-raven", Phase::Idle, None),
     );
-    let mut view = FleetView::default();
+    let mut view = crate::home::Home::default();
     fleet_screen_at(&mut view, &fleet, 80, 24);
     view.key(&fleet, key(KeyCode::Char('r')));
     for c in " X".chars() {
@@ -482,7 +487,7 @@ fn an_idle_rows_background_jobs_are_counted_on_it() {
     };
     agent.background_jobs = 1;
     inventory(&mut fleet, wire::inventory_event::Of::Agent(agent.clone()));
-    let mut view = FleetView::default();
+    let mut view = crate::home::Home::default();
     let screen = fleet_screen_at(&mut view, &fleet, 80, 24);
     assert!(
         screen.contains("1 background job"),

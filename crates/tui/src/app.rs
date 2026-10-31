@@ -15,14 +15,15 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use tokio::sync::mpsc;
 use ui_runtime::{Fleet, InputError, Session, Window, inputs};
-use ui_state::{AgentKey, Composer, InputWhat, PhaseView, SessionState};
+use ui_state::{AgentKey, Composer, InputWhat, PhaseView};
 use ui_view::family_header;
 use wire::{Agent, Attachment, DeleteAgentRequest, Diff, RenameAgentRequest};
 
 use crate::chat::layout::{CAP, PAGE};
 use crate::chat::{ChatEffect, ChatView};
 use crate::clipboard::read_clipboard;
-use crate::fleet::{FleetEffect, FleetView};
+use crate::fleet::FleetEffect;
+use crate::home::{Home, Place};
 use crate::text::{self, push};
 use crate::theme::Theme;
 
@@ -45,9 +46,6 @@ pub struct TuiConfig {
     pub theme: Theme,
     /// A chat to open once its inventory row arrives.
     pub initial_chat: Option<Vec<u8>>,
-    /// Whether the embedding CLI can hand the terminal to an agent's own
-    /// interface.
-    pub attach: bool,
     /// This build's version, compared with the daemon's.
     pub version: String,
     /// The profile's host on this machine: only its agents' terminals are
@@ -56,9 +54,6 @@ pub struct TuiConfig {
     /// Where this client keeps its layout between runs; None keeps it for
     /// this run only.
     pub layout: Option<std::path::PathBuf>,
-    /// Where a report of a problem is written: the installation's reports
-    /// directory. None writes it beside the dump it carries.
-    pub reports: Option<std::path::PathBuf>,
     /// Where the person chats with their agents: in amux, or in each
     /// agent's own terminal, attached on start.
     pub chat_in: settings::ChatInSetting,
@@ -247,13 +242,6 @@ pub enum AppEvent {
         key: crate::chat::FetchKey,
         diff: Diff,
     },
-    /// A save of an agent's held prompts to the draft this machine keeps
-    /// ended: kept when it landed, to be made again when it did not.
-    HeldSaved {
-        agent: AgentKey,
-        ids: Vec<ui_state::InputId>,
-        saved: bool,
-    },
     /// What a host offers for a provider, for a new agent there.
     HostOffer {
         host: Vec<u8>,
@@ -293,7 +281,7 @@ impl OpenChat {
 pub struct App {
     client: Arc<dyn Client>,
     pub fleet: Arc<Fleet>,
-    pub fleet_view: FleetView,
+    pub home: Home,
     pub chat: Option<OpenChat>,
     pub config: TuiConfig,
     leader_pending: bool,
@@ -319,20 +307,6 @@ pub struct App {
     /// one: it outranks the daemon's copy, which the save may not have
     /// emptied yet, and the save as the client quits sends it again.
     drafts: HashMap<AgentKey, crate::editor::Editor>,
-    /// By agent, the prompts held for an unreachable host that the draft
-    /// this machine keeps already carries, by input id: a held prompt goes
-    /// back to the draft if the client closes first, and a client killed
-    /// without quitting has no chance to put it there then.
-    held_kept: HashMap<AgentKey, Vec<ui_state::InputId>>,
-    /// Saves of held prompts on their way to this machine's daemon, by
-    /// agent; one that fails leaves here unkept and is made again.
-    held_saving: HashMap<AgentKey, Vec<ui_state::InputId>>,
-    /// By agent, the prompts last seen on their way back to its draft:
-    /// held for an unreachable host, resent from held and not yet answered,
-    /// or refused while its chat was closed.
-    /// When the fleet drops the session holding them (its agent exited or
-    /// left), their words go into the agent's draft here.
-    returning: HashMap<AgentKey, Vec<(ui_state::InputId, String, Vec<Attachment>)>>,
     /// A chat closed under the person: home takes no key until
     /// [`crate::chat::ASK_ARMS_MS`] pass with none, as an ask arms, so the
     /// rest of what they were typing never acts on another agent. The last
@@ -375,36 +349,6 @@ fn composer_draft(editor: &crate::editor::Editor) -> wire::Draft {
     }
 }
 
-/// The prompts `state` holds for an unreachable host: id, words and
-/// attachments.
-fn held_prompts(state: &SessionState) -> Vec<(ui_state::InputId, String, Vec<Attachment>)> {
-    returning_prompts(state, false)
-}
-
-/// The prompts of `state` whose words go back to the agent's draft: those
-/// held for an unreachable host, and, for a chat that is not open, those
-/// the agent refused, which come back into the composer as it opens.
-fn returning_prompts(
-    state: &SessionState,
-    refused: bool,
-) -> Vec<(ui_state::InputId, String, Vec<Attachment>)> {
-    state
-        .inputs()
-        .iter()
-        .filter(|sent| match sent.state {
-            ui_state::InputState::Held => true,
-            ui_state::InputState::Rejected(_) => refused,
-            _ => false,
-        })
-        .filter_map(|sent| match &sent.what {
-            InputWhat::Prompt { text, attachments } => {
-                Some((sent.id.clone(), text.clone(), attachments.clone()))
-            }
-            _ => None,
-        })
-        .collect()
-}
-
 /// Saves drafts with this machine's daemon; a failure loses only what a
 /// client kept in memory anyway.
 async fn save_drafts(client: Arc<dyn Client>, drafts: Vec<(Vec<u8>, wire::Draft)>) {
@@ -428,16 +372,6 @@ struct ChatGone {
     deleted: bool,
 }
 
-impl Drop for App {
-    /// A client dropped without quitting (a test, an embedding) still
-    /// hands its drafts on, where a runtime is there to send them.
-    fn drop(&mut self) {
-        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            runtime.spawn(self.keep_drafts());
-        }
-    }
-}
-
 fn plain(error: InputError) -> String {
     match error {
         InputError::Rejected(reason) => {
@@ -450,21 +384,19 @@ fn plain(error: InputError) -> String {
 impl App {
     pub fn new(client: Arc<dyn Client>, fleet: Fleet, config: TuiConfig) -> App {
         let (events, receiver) = mpsc::unbounded_channel();
-        let fleet_view = FleetView {
-            attach: config.attach,
+        let home = Home::new(Place {
             version: config.version.clone(),
             local_host: config.local_host.clone(),
             working_dir: config.working_dir.to_string_lossy().into_owned(),
             chat_in: config.chat_in,
             defaults: config.defaults.clone(),
-            ..FleetView::default()
-        };
+        });
         let layout = Layout::load(config.layout.as_deref());
         App {
             layout,
             client,
             fleet: Arc::new(fleet),
-            fleet_view,
+            home,
             chat: None,
             config,
             leader_pending: false,
@@ -478,9 +410,6 @@ impl App {
             report: None,
             host_offers: HashMap::new(),
             drafts: HashMap::new(),
-            held_kept: HashMap::new(),
-            held_saving: HashMap::new(),
-            returning: HashMap::new(),
             home_held: None,
             offers_asked: HashSet::new(),
             events,
@@ -576,16 +505,6 @@ impl App {
 
     pub fn event(&mut self, event: AppEvent) -> Flow {
         match event {
-            AppEvent::HeldSaved { agent, ids, saved } => {
-                if self.held_saving.get(&agent) == Some(&ids) {
-                    self.held_saving.remove(&agent);
-                }
-                if saved && ids.is_empty() {
-                    self.held_kept.remove(&agent);
-                } else if saved {
-                    self.held_kept.insert(agent, ids);
-                }
-            }
             AppEvent::Opened {
                 agent,
                 result,
@@ -604,9 +523,10 @@ impl App {
                             self.fleet.close(&open.agent);
                             self.keep_draft(open);
                         }
-                        let terminal = self.fleet.state().agent(&agent).is_some_and(|entry| {
-                            self.config.attach && terminal_elsewhere(entry, &self.config).is_none()
-                        });
+                        let terminal =
+                            self.fleet.state().agent(&agent).is_some_and(|entry| {
+                                terminal_elsewhere(entry, &self.config).is_none()
+                            });
                         let mut view = ChatView::new(agent.agent.clone(), now_ms(), terminal);
                         match (self.drafts.remove(&agent), kept) {
                             (Some(draft), _) => view.editor = draft,
@@ -623,7 +543,7 @@ impl App {
                         view.pane_folds = self.layout.folds_of(&agent.agent);
                         view.comparison = self.layout.comparison;
                         view.tools = self.layout.tools_of(&agent.agent);
-                        self.fleet_view.select(agent.clone());
+                        self.home.select(agent.clone());
                         self.chat = Some(OpenChat {
                             session,
                             view,
@@ -719,7 +639,7 @@ impl App {
                 hash,
                 catalogue,
             } => {
-                if let Some(setup) = self.fleet_view.open_setup() {
+                if let Some(setup) = self.home.open_setup() {
                     setup.offer(&host, provider, &hash, &catalogue);
                 }
                 self.host_offers.insert(hash, catalogue);
@@ -729,21 +649,16 @@ impl App {
                 open,
                 attach,
             } => {
-                self.fleet_view.home.started();
+                self.home.started();
                 let key = ui_state::agent_key(&agent);
-                self.fleet_view.select(key.clone());
+                self.home.select(key.clone());
                 if attach {
                     // Straight into its own terminal; where it has none
                     // here, its chat opens and says why.
-                    let refusal = terminal_refusal(&agent, &self.config);
-                    if refusal.is_none() && self.config.attach {
+                    let Some(why) = terminal_refusal(&agent, &self.config) else {
                         return Flow::Attach(Box::new(agent));
-                    }
-                    let why = match refusal {
-                        Some(why) => format!("{why}; its chat opens instead"),
-                        None => "its own terminal would open here, but this amux cannot hand the terminal over; its chat opens instead".to_owned(),
                     };
-                    self.notice(why, Tone::Warn);
+                    self.notice(format!("{why}; its chat opens instead"), Tone::Warn);
                     self.config.initial_chat = Some(agent.agent_id.clone());
                     self.fleet_changed();
                 } else if open {
@@ -756,7 +671,7 @@ impl App {
                 }
             }
             AppEvent::StartFailed(error) => {
-                if !self.fleet_view.home.start_failed(error.clone()) {
+                if !self.home.start_failed(error.clone()) {
                     self.notice(format!("could not start the agent: {error}"), Tone::Warn);
                 }
             }
@@ -800,7 +715,7 @@ impl App {
     pub fn close_chat(&mut self) {
         if let Some(chat) = self.chat.take() {
             self.fleet.close(&chat.agent);
-            self.fleet_view.select(chat.agent.clone());
+            self.home.select(chat.agent.clone());
             self.keep_draft(chat);
         }
     }
@@ -830,19 +745,7 @@ impl App {
         for id in taken {
             chat.session.discard(&id);
         }
-        // Its held prompts go in the daemon's copy too, as they did while
-        // the chat was open, but not in the composer it reopens with.
-        let mut kept = chat.view.editor.clone();
-        for (_, text, attachments) in held_prompts(&chat.session.state()) {
-            kept.restore(&text, attachments);
-        }
-        // They are on their way back to the draft from now: the fleet may
-        // drop the session (its agent exiting) before the next look at it.
-        let returning = returning_prompts(&chat.session.state(), true);
-        if !returning.is_empty() {
-            self.returning.insert(chat.agent.clone(), returning);
-        }
-        let draft = composer_draft(&kept);
+        let draft = composer_draft(&chat.view.editor);
         let client = self.client.clone();
         let agent_id = chat.agent.agent.clone();
         self.spawn(async move {
@@ -853,9 +756,7 @@ impl App {
     }
 
     /// Every draft this client holds, for its daemon to keep as the client
-    /// closes: the open chat's, those of chats left, and, in each agent's,
-    /// the words of prompts held for an unreachable host, which go back to
-    /// the draft rather than being lost with the client.
+    /// closes: the open chat's and those of chats left.
     fn drafts_to_keep(&mut self) -> Vec<(Vec<u8>, wire::Draft)> {
         let mut editors: HashMap<AgentKey, crate::editor::Editor> =
             std::mem::take(&mut self.drafts);
@@ -870,122 +771,10 @@ impl App {
                 editors.retain(|agent, _| fleet.agent(agent).is_some());
             }
         }
-        let open = self.chat.as_ref().map(|chat| chat.agent.clone());
-        for session in self.fleet.sessions() {
-            let state = session.state();
-            let key = ui_state::agent_key(state.agent());
-            let held = returning_prompts(&state, open.as_ref() != Some(&key));
-            if held.is_empty() {
-                continue;
-            }
-            let editor = editors.entry(key).or_default();
-            for (_, text, attachments) in held {
-                editor.restore(&text, attachments);
-            }
-        }
         editors
             .into_iter()
             .map(|(agent, editor)| (agent.agent, composer_draft(&editor)))
             .collect()
-    }
-
-    /// Keeps each agent's held prompts in the draft this machine's daemon
-    /// keeps, from the moment they are held until they leave, so a client
-    /// that dies without quitting still hands them back to the draft. Saved
-    /// only when what is held changes, and counted kept only once the daemon
-    /// took it; the quit's save covers the typing.
-    fn keep_held_drafts(&mut self) {
-        let mut seen = HashSet::new();
-        let open = self.chat.as_ref().map(|chat| chat.agent.clone());
-        for session in self.fleet.sessions() {
-            let state = session.state();
-            let key = ui_state::agent_key(state.agent());
-            // A refused prompt comes back into an open chat's composer at
-            // once; a closed chat's waits for it to open, in the draft.
-            let held = returning_prompts(&state, open.as_ref() != Some(&key));
-            // A held prompt resent once its host is back is still on its
-            // way to the draft until the host answers: the fleet drops the
-            // session of an agent that exited meanwhile before the refusal
-            // arrives, and the prompt would be lost with it. One the host
-            // took just before its agent exited comes back too, which is
-            // the lesser harm.
-            let resent: Vec<_> = self
-                .returning
-                .get(&key)
-                .into_iter()
-                .flatten()
-                .filter(|(id, ..)| state.input_state(id) == Some(ui_state::InputState::Sent))
-                .cloned()
-                .collect();
-            drop(state);
-            seen.insert(key.clone());
-            let returning: Vec<_> = held.iter().cloned().chain(resent).collect();
-            if returning.is_empty() {
-                self.returning.remove(&key);
-            } else {
-                self.returning.insert(key.clone(), returning);
-            }
-            let ids: Vec<ui_state::InputId> = held.iter().map(|(id, ..)| id.clone()).collect();
-            if self
-                .held_kept
-                .get(&key)
-                .map_or(ids.is_empty(), |kept| *kept == ids)
-                || self.held_saving.get(&key) == Some(&ids)
-            {
-                continue;
-            }
-            let mut editor = match &self.chat {
-                Some(chat) if chat.agent == key => chat.view.editor.clone(),
-                _ => self.drafts.get(&key).cloned().unwrap_or_default(),
-            };
-            for (_, text, attachments) in held {
-                editor.restore(&text, attachments);
-            }
-            let request = wire::UpdateDraftRequest {
-                agent_id: key.agent.clone(),
-                draft: Some(composer_draft(&editor)),
-            };
-            self.held_saving.insert(key.clone(), ids.clone());
-            let client = self.client.clone();
-            self.spawn(async move {
-                let saved = client.update_draft(request).await.is_ok();
-                Some(AppEvent::HeldSaved {
-                    agent: key,
-                    ids,
-                    saved,
-                })
-            });
-        }
-        // A session gone (its agent exited or deleted) holds nothing more:
-        // what it held or had refused goes back to the agent's draft, and
-        // the draft is kept with it.
-        let dropped: Vec<AgentKey> = self
-            .returning
-            .keys()
-            .filter(|key| !seen.contains(*key))
-            .cloned()
-            .collect();
-        for key in dropped {
-            let Some(words) = self.returning.remove(&key) else {
-                continue;
-            };
-            // A deleted agent keeps no draft.
-            if self.fleet.state().agent(&key).is_none() {
-                continue;
-            }
-            let editor = self.drafts.entry(key.clone()).or_default();
-            for (_, text, attachments) in words {
-                editor.restore(&text, attachments);
-            }
-            let draft = composer_draft(editor);
-            let client = self.client.clone();
-            self.spawn(async move {
-                save_drafts(client, vec![(key.agent, draft)]).await;
-                None
-            });
-        }
-        self.held_kept.retain(|key, _| seen.contains(key));
-        self.held_saving.retain(|key, _| seen.contains(key));
     }
 
     /// Hands every draft to this machine's daemon; awaited as the client
@@ -1001,7 +790,7 @@ impl App {
                 let state = chat.session.state();
                 chat.view.field_text(&state)
             }
-            None => self.fleet_view.field_text(),
+            None => self.home.field_text(),
         }
     }
 
@@ -1032,7 +821,7 @@ impl App {
                         let state = chat.session.state();
                         chat.view.paste_text(&state, &text);
                     }
-                    None => self.fleet_view.paste(&text),
+                    None => self.home.paste(&text),
                 }
                 Flow::Continue
             }
@@ -1065,7 +854,7 @@ impl App {
                 }
                 let effects = {
                     let fleet = self.fleet.state();
-                    self.fleet_view.mouse(&fleet, mouse)
+                    self.home.mouse(&fleet, mouse)
                 };
                 for effect in effects {
                     if let Some(flow) = self.fleet_effect(effect) {
@@ -1103,7 +892,7 @@ impl App {
                         let state = chat.session.state();
                         chat.view.kill_field(&state)
                     }
-                    None => self.fleet_view.kill_field(),
+                    None => self.home.kill_field(),
                 };
                 return Flow::Continue;
             }
@@ -1148,7 +937,7 @@ impl App {
             KeyCode::Char('h') => {
                 drop(state);
                 self.close_chat();
-                self.fleet_view.home.open_hosts();
+                self.home.open_hosts();
             }
             KeyCode::Char('d') => return Flow::Quit,
             KeyCode::Char('k') => chat.view.move_focus(&state, true, theme),
@@ -1176,7 +965,7 @@ impl App {
                 .sibling(state.kind(), self.config.chat_in);
                 drop(state);
                 self.close_chat();
-                self.fleet_view.home.new_agent(setup);
+                self.home.new_agent(setup);
             }
             KeyCode::Char('r') => {
                 drop(state);
@@ -1193,7 +982,7 @@ impl App {
                 drop(state);
                 self.notice(format!("tool steps: {}", tools.words()), Tone::Info);
             }
-            KeyCode::Char('a') if self.config.attach => {
+            KeyCode::Char('a') => {
                 let agent = chat.agent.clone();
                 drop(state);
                 return self.raw_attach(&agent).unwrap_or(Flow::Continue);
@@ -1266,7 +1055,7 @@ impl App {
         }
         let effects = {
             let fleet = self.fleet.state();
-            self.fleet_view.key(&fleet, key)
+            self.home.key(&fleet, key)
         };
         for effect in effects {
             if let Some(flow) = self.fleet_effect(effect) {
@@ -1639,7 +1428,6 @@ impl App {
     /// closes to the fleet, and the changed files its overview lists are
     /// fetched when it asks.
     pub fn housekeep(&mut self) {
-        self.keep_held_drafts();
         if let Some(gone) = self.chat_gone() {
             if gone.deleted {
                 self.close_deleted_chat();
@@ -1680,7 +1468,7 @@ impl App {
     /// setup.
     fn ask_host_offers(&mut self) {
         let fleet = self.fleet.state();
-        let Some(setup) = self.fleet_view.open_setup() else {
+        let Some(setup) = self.home.open_setup() else {
             return;
         };
         let host = setup.host.clone();
@@ -1771,12 +1559,7 @@ impl App {
         }
         if self.leader_pending && self.chat.is_none() {
             let mut line = Line::from(Span::raw("  "));
-            let words = if self.chat.is_some() {
-                "h home · n new agent · p hosts · d detach · r review · k/j focus · o open · y copy"
-            } else {
-                "leader: nothing here"
-            };
-            push(&mut line, words, theme.muted(), width);
+            push(&mut line, "leader: nothing here", theme.muted(), width);
             return Some(line);
         }
         let (words, tone, _) = self.notice.as_ref()?;
@@ -1824,7 +1607,7 @@ impl App {
                     && self
                         .leader_since
                         .is_none_or(|since| since.elapsed() >= PANEL_AFTER);
-                chat.view.panel = panel_due.then(|| panel_entries(self.config.attach));
+                chat.view.panel = panel_due.then(panel_entries);
                 let page = {
                     let state = chat.session.state();
                     chat.view
@@ -1849,14 +1632,18 @@ impl App {
                     })
                     .collect();
                 let fleet = self.fleet.state();
-                self.fleet_view
+                self.home
                     .draw(paint, area, &fleet, &lines, footer, now, theme);
                 None
             }
         };
         if std::mem::take(&mut self.report_asked) {
             let frozen = paint.buffer_mut().clone();
-            self.report = Some(crate::report::Report::new(frozen, theme, self.start_dump()));
+            self.report = Some(crate::report::Report::new(
+                frozen,
+                theme,
+                Some(self.start_dump()),
+            ));
         }
         if let Some(report) = &self.report {
             let area = paint.area();
@@ -2003,7 +1790,7 @@ impl App {
 }
 
 /// The leader's panel in a chat: every chord and what it does.
-fn panel_entries(attach: bool) -> Vec<crate::chat::PanelEntry> {
+fn panel_entries() -> Vec<crate::chat::PanelEntry> {
     let entry =
         |group: &'static str, key: &str, label: &str, chord: char| crate::chat::PanelEntry {
             group,
@@ -2012,7 +1799,7 @@ fn panel_entries(attach: bool) -> Vec<crate::chat::PanelEntry> {
             chord,
         };
     // What is about amux first, then what is about this chat.
-    let mut entries = vec![
+    vec![
         entry("amux", "s", "home", 's'),
         entry("amux", "n", "new agent", 'n'),
         entry("amux", "h", "hosts", 'h'),
@@ -2032,17 +1819,12 @@ fn panel_entries(attach: bool) -> Vec<crate::chat::PanelEntry> {
             "tool steps: collapse, show all or hide",
             't',
         ),
-    ];
-    if attach {
-        entries.push(entry("this chat", "a", "attach to its own terminal", 'a'));
-    }
-    entries.extend([
+        entry("this chat", "a", "attach to its own terminal", 'a'),
         entry("this chat", "k", "focus an older row", 'k'),
         entry("this chat", "j", "focus a newer row", 'j'),
         entry("this chat", "o", "open the focused row", 'o'),
         entry("this chat", "y", "copy the focused row", 'y'),
-    ]);
-    entries
+    ]
 }
 
 pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'static>> {

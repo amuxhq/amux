@@ -226,9 +226,9 @@ entry turns online again while the chat is current. Each one is `Sent` again fro
 update's `Outcome::resend`, and the driver sends it under its own id. One already reflected or queued is settled
 instead. Only prompts and answers are held: an interrupt, a withdraw, a send-now or a setting sent later would act
 on whatever the agent is doing then, so those are refused at once with the reason. Discarding a held input is its
-Cancel. Held inputs live as long as the client: when the client closes, a held prompt's words go back to its
-draft and a held answer is dropped. A rejection with the refusal `REFUSAL_EXITED` flips the composer to Resume for that
-incarnation, so a send that raced the exit keeps its draft.
+Cancel. Held inputs live as long as the client: when the client closes, they are dropped. A rejection with the
+refusal `REFUSAL_EXITED` flips the composer to Resume for that incarnation, so a send that raced the exit keeps its
+draft.
 
 ### The fleet state
 

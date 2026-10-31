@@ -338,7 +338,7 @@ pub fn pane_lines(
                     let age = if job.stop == JobStop::Stopping {
                         "Stopping…".to_owned()
                     } else {
-                        ran_for(now_ms - job.started_at_ms)
+                        text::ran_for(now_ms - job.started_at_ms)
                     };
                     let mut line = Line::default();
                     let (tag, style) = match job.kind {
@@ -634,15 +634,4 @@ fn tint(line: Line<'static>, from: usize, to: usize, surface: Style) -> Line<'st
         out.spans.push(Span::styled(" ".repeat(to - col), surface));
     }
     out
-}
-
-/// How long a job has run, coarse enough not to tick every second once it
-/// has run a minute: "12s", "4m", "1h 5m".
-fn ran_for(ms: i64) -> String {
-    let secs = ms.max(0) / 1_000;
-    match secs {
-        0..60 => format!("{secs}s"),
-        60..3_600 => format!("{}m", secs / 60),
-        _ => format!("{}h {}m", secs / 3_600, secs % 3_600 / 60),
-    }
 }

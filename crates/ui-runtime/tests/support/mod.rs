@@ -193,6 +193,21 @@ impl Client for FakeRuntime {
     async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError> {
         self.call(|reply| Call::Dump(request, reply)).await
     }
+
+    async fn submit_report(
+        &self,
+        _: wire::SubmitReportRequest,
+    ) -> Result<wire::SubmitReportResponse, RpcError> {
+        unimplemented!("submit_report")
+    }
+
+    async fn update_draft(&self, _: wire::UpdateDraftRequest) -> Result<wire::Draft, RpcError> {
+        unimplemented!("update_draft")
+    }
+
+    async fn get_draft(&self, _: wire::GetDraftRequest) -> Result<wire::Draft, RpcError> {
+        unimplemented!("get_draft")
+    }
 }
 
 impl Calls {

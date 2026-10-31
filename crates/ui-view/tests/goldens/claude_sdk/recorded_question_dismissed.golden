@@ -1,15 +1,7 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Use AskUserQuestion to ask one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=45ef9731-e536-4ba2-a300-27ca12c77edf
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 14 recorded 13: fact Stream type=assistant uuid=94d505b2-7eae-4531-ba76-ef7882562902
-  row    3 msg_011CgWLJFxJmunDoyoNAyp4z:0 Thinking { text: "", open: false, duration_ms: Some(4988) }
-## 16 recorded 15: fact Stream type=assistant uuid=dfaf38db-e570-43ae-add8-80096b95d040
-  row    4 toolu_01CcF2LnoBbckygGGBDaxDY1 [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The color blue", preview: "", recommended: false }], allow_other: true, secret: …
 ## 18 recorded 17: fact Stream type=control_request
   ask 26d77e31-681f-4725-ad75-81268d2ac010 -> "toolu_01CcF2LnoBbckygGGBDaxDY1" 1/1 Open
     choices 
@@ -19,10 +11,7 @@
   ask 26d77e31-681f-4725-ad75-81268d2ac010 -> "toolu_01CcF2LnoBbckygGGBDaxDY1" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
     choices 
     body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The color blue", preview: "", recommended: false }], allow_other: true, secret: false }])
-## 21 recorded 20: fact Stream type=user uuid=ff9c4c5f-53bd-4790-a4e8-19cb10b43c69
-  row    4 toolu_01CcF2LnoBbckygGGBDaxDY1 [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The color blue", preview: "", recommended: false }], allow_other: true, sec…
 ## 24 recorded 23: fact Stream type=result subtype=error_during_execution uuid=2ce258b0-fdef-4008-bda8-de10e18cad90
-  row    5 turn:1 Stopped
   ask none
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

@@ -1,7 +1,11 @@
 //! View data goldens for all three kinds, derived from every interpreter
 //! fixture: the interpreter's emission is committed the way the daemon
 //! commits it (an order once per new key, a revision per record), reduced
-//! into a session, and the views are rendered after every frame.
+//! into a session. Each frame records where the ask card and the composer
+//! moved; the rows, the overview, the context and the settings are
+//! recorded once, as the fixture leaves them. The rows' streaming rules
+//! are held by the session spec and the views tests, not frame by frame
+//! here.
 //!
 //! Goldens live in `tests/goldens/<kind>/<fixture>.golden` and are only
 //! rewritten with `UI_VIEW_UPDATE_GOLDENS=1`; review the diff.
@@ -17,8 +21,8 @@ use interpret::{Interpreter, Replayed, replay};
 use support::Committer;
 use ui_state::{InputOutcome, Msg, SessionState};
 use ui_view::{
-    ChatOptions, ToolRows, ask_card, chat_rows, chat_rows_for, composer, context, overview,
-    prompts_underway, queue_rows, refused_prompts, settings, sign_in,
+    ChatOptions, ToolRows, ask_card, chat_rows, composer, context, overview, prompts_underway,
+    queue_rows, refused_prompts, settings, sign_in,
 };
 use wire::{Kind, SessionEvent, session_event};
 
@@ -199,14 +203,12 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
         for (id, verdict) in &frame.replies {
             state.update(Msg::Sent(id.clone(), InputOutcome::Reply(verdict.clone())));
         }
-        let mut changed = Vec::new();
         for event in committer.commit(&frame.step) {
             let outcome = state.update(Msg::Event(event));
             assert!(
                 outcome.need_get.is_none(),
                 "a committed append always has its base"
             );
-            changed.extend(outcome.changed);
         }
         if index == 0 {
             state.update(Msg::Event(SessionEvent {
@@ -221,11 +223,6 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
                 hash: hash.clone(),
                 catalogue: catalogue.clone(),
             });
-        }
-        changed.sort();
-        changed.dedup();
-        for row in chat_rows_for(&state, &changed, &opts) {
-            lines.push(format!("  row {}", describe_row(&row)));
         }
         let card = ask_card(&state);
         if card != last_card {

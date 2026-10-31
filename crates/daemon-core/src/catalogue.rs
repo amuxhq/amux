@@ -275,6 +275,15 @@ impl Daemon {
         self.touched.host_set = true;
     }
 
+    /// Whether a relay this profile is linked to claims `host`.
+    pub(crate) fn relay_claims(&self, host: HostId) -> bool {
+        self.routing
+            .catalogue
+            .relays_to(host)
+            .into_iter()
+            .any(|relay| self.routing.links.is_relay(relay))
+    }
+
     /// Keeps that the relay claimed a trusted host, so the next launch's
     /// first flight sends through the relay too, however the host paired.
     fn remember_on_the_account(&mut self, host: HostId, out: &mut Vec<Output>) {

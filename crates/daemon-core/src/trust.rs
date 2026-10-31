@@ -683,9 +683,23 @@ impl Daemon {
                 pubkey,
                 name,
                 reachability,
-            } => staged
-                .upsert_paired_peer(*host, pubkey.clone(), name.clone(), reachability.clone())
-                .map(TrustChanged::Paired),
+            } => {
+                let paired = staged.upsert_paired_peer(
+                    *host,
+                    pubkey.clone(),
+                    name.clone(),
+                    reachability.clone(),
+                );
+                // A host the relay claimed before this profile trusted it,
+                // as one on the account is from sign-in, is not claimed
+                // again when the pairing lands: the relay reaching it is
+                // kept now, or the next launch's first flight leaves the
+                // relay out.
+                if paired.is_ok() && self.relay_claims(HostId(*host.as_bytes())) {
+                    staged.remember_on_the_account(*host);
+                }
+                paired.map(TrustChanged::Paired)
+            }
             TrustChange::Remove { host } => staged
                 .remove(*host)
                 .map(TrustChanged::Removed)

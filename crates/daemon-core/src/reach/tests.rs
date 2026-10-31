@@ -1162,3 +1162,50 @@ fn relay_recovery_survives_a_checkpoint_with_its_remaining_allowance() {
     assert_eq!(out, relay_ends(&mut daemon, first, RelayOutcome::Closed));
     relay_dial(&out);
 }
+
+/// A phone signed in before it pairs: the relay claims the desk while the
+/// phone does not trust it yet, and says nothing more of it once the
+/// pairing on the same network lands. The relay reaching the desk is kept
+/// all the same, so the next launch's first flight goes through the relay
+/// too, and the relay link coming up during that flight adds no path: the
+/// flight is not redialled, which would spend the ticket it resumed with.
+#[test]
+fn a_host_the_relay_claimed_before_it_was_paired_is_first_flown_through_the_relay() {
+    let mut daemon = daemon(TrustStore::default());
+    up(&mut daemon, 1, RELAY, CarrierKind::Relay);
+    claims(&mut daemon, 1, &[DESK]);
+    step(
+        &mut daemon,
+        Input::ChangeTrust(crate::trust::TrustChange::Pair {
+            host: Uuid::from_bytes(DESK.0),
+            pubkey: vec![7; 32],
+            name: "desk".into(),
+            reachability: Some(crate::trust::Reachability::Direct {
+                addrs: vec![addr("10.0.0.1:7000")],
+            }),
+        }),
+    );
+
+    // Relaunched: the same store, no link up yet.
+    let mut daemon = Daemon::new(
+        daemon.into_store(),
+        StartOptions {
+            budget: StepBudget::UNLIMITED,
+            ..StartOptions::default()
+        },
+    );
+    step(&mut daemon, Input::Started);
+    let (attempt, plan) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);
+    assert_eq!(
+        plan,
+        Plan {
+            paths: vec![DialPath::Direct(addr("10.0.0.1:7000"))],
+            through_relay: true,
+        }
+    );
+
+    let mut out = up(&mut daemon, 1, RELAY, CarrierKind::Relay);
+    out.extend(claims(&mut daemon, 1, &[DESK]));
+    assert!(dials(&out).is_empty(), "{out:?}");
+    assert_eq!(daemon.reach().attempt(DESK), Some(attempt));
+}

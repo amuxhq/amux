@@ -52,11 +52,9 @@ use wire::{Item, Phase, SessionEvent, Snapshot, Step, session_event};
 
 use crate::held::{Held, Slot};
 use crate::single_daemon::{EARLY_AFTER_ACCEPT, REPLAY_CHANGES_NOTHING};
-use crate::{Fault, Host, Machine, MsgIndex, Property};
+use crate::{Machine, Property};
 
 const ORIGIN: HostId = HostId(*b"origin-host-0000");
-/// The origin, as the fault vocabulary names hosts.
-const ORIGIN_HOST: Host = Host(0);
 const REPLICA: HostId = HostId(*b"replica-host-000");
 const AGENT: AgentId = AgentId(*b"agent-0000000000");
 /// The replica's link to the origin.
@@ -320,12 +318,15 @@ pub enum Action {
     Answer,
     /// The stream delivers its next message to the replica's core.
     Deliver,
-    /// The world's doing: the origin reboots uncleanly, losing its newest
-    /// commit and coming back under the next generation to mint those
-    /// revisions again; the stream dies at a message, which goes with
-    /// everything behind it; or the replica's opening arrives again,
-    /// replayed on a connection of its own.
-    Fault(Fault),
+    /// The origin reboots uncleanly, losing its newest commit and coming
+    /// back under the next generation to mint those revisions again.
+    RebootUnclean,
+    /// The stream dies at the message at this place in flight, which goes
+    /// with everything behind it.
+    Lose(usize),
+    /// The replica's opening arrives again, replayed on a connection of its
+    /// own.
+    Duplicate,
     /// A client fetches below the replica's block: the replica's core asks
     /// the origin's for the page, which answers it at once.
     AskPage,
@@ -449,7 +450,7 @@ impl Machine for Replication {
             out.push(Action::Trim);
         }
         if s.generation < self.generations {
-            out.push(Action::Fault(Fault::RebootUnclean(ORIGIN_HOST)));
+            out.push(Action::RebootUnclean);
         }
         if s.timer {
             out.push(Action::Open);
@@ -463,14 +464,12 @@ impl Machine for Replication {
                     out.push(Action::Deliver);
                 }
                 if s.lost < self.losses {
-                    out.extend(
-                        (0..queue.len()).map(|index| Action::Fault(Fault::Lose(MsgIndex(index)))),
-                    );
+                    out.extend((0..queue.len()).map(Action::Lose));
                 }
             }
         }
         if s.replays < self.replays && matches!(s.link, Link::Asked { .. }) {
-            out.push(Action::Fault(Fault::Duplicate(MsgIndex(0))));
+            out.push(Action::Duplicate);
         }
         match s.page {
             // A page asked for rides the link too, held until the origin
@@ -607,7 +606,7 @@ impl Transition<'_> {
                 let pool = origin.pool_bytes(true)?;
                 origin.sweep_own(pool.saturating_sub(1), 1, 1).map(|_| ())
             })?,
-            Action::Fault(Fault::RebootUnclean(_)) => {
+            Action::RebootUnclean => {
                 if let Some(durable) = self.next.durable.take() {
                     self.next.origin.store = durable;
                 }
@@ -651,7 +650,7 @@ impl Transition<'_> {
                 });
             }
             Action::Resumed => self.resumed(),
-            Action::Fault(Fault::Duplicate(_)) => self.replay(),
+            Action::Duplicate => self.replay(),
             Action::Answer => {
                 let Link::Asked { call, request } = &self.next.link else {
                     unreachable!("answered without an ask")
@@ -693,7 +692,7 @@ impl Transition<'_> {
                     });
                 }
             }
-            Action::Fault(Fault::Lose(MsgIndex(index))) => {
+            Action::Lose(index) => {
                 let Link::Open {
                     call, queue, live, ..
                 } = &mut self.next.link
@@ -707,7 +706,6 @@ impl Transition<'_> {
                 // The origin's driver finds the stream gone.
                 self.origin(Input::CallCancelled { call });
             }
-            Action::Fault(fault) => unreachable!("replication never offers {fault:?}"),
             Action::AskPage => self.ask_page(),
             Action::PageArrives => {
                 let (call, page) = self.next.page.take().expect("a page in flight");

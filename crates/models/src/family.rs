@@ -41,7 +41,7 @@ use store::{AgentKey, Sqlite};
 use wire::{ErrorCode, InventoryEvent, Item, Lifecycle, Step, inventory_event};
 
 use crate::held::{Held, Slot};
-use crate::{Fault, Host, Machine, Property};
+use crate::{Machine, Property};
 
 /// The parent's host and the child's.
 const HOSTS: [HostId; 2] = [HostId(*b"parent-host-0000"), HostId(*b"child-host-00000")];
@@ -275,8 +275,8 @@ pub enum Action {
     LinkUp,
     /// The child's host unpairs from the parent's.
     Unpair,
-    /// The world's doing: a daemon crashes and starts again.
-    Fault(Fault),
+    /// The world's doing: the host's daemon crashes and starts again.
+    Crash(usize),
     /// The world stops changing: nobody creates, stops or deletes, no
     /// process exits unasked, no turn ends, the link stays as it is, the
     /// pairing stays and no daemon crashes. What the cores asked for still
@@ -496,8 +496,8 @@ impl Machine for FamilyDeliveries {
             out.push(Action::Unpair);
         }
         if world && s.used.crashes < self.crashes {
-            out.push(Action::Fault(Fault::Crash(Host(PARENTS as u8))));
-            out.push(Action::Fault(Fault::Crash(Host(CHILDS as u8))));
+            out.push(Action::Crash(PARENTS));
+            out.push(Action::Crash(CHILDS));
         }
     }
 
@@ -1193,11 +1193,10 @@ impl<'a> Transition<'a> {
                     }),
                 );
             }
-            Action::Fault(Fault::Crash(Host(host))) => {
+            Action::Crash(host) => {
                 self.next.used.crashes += 1;
-                self.crash(usize::from(*host));
+                self.crash(*host);
             }
-            Action::Fault(fault) => unreachable!("the family never offers {fault:?}"),
             Action::Rest => self.next.used.rested = true,
         }
     }

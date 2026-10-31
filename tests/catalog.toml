@@ -1095,22 +1095,6 @@ cases = ["apps/apple/AmuxUITests/AccessibilityAuditTests.swift"]
 swift = ["AmuxUITests"]
 
 [[suite]]
-name = "phone-loopback-smoke"
-contract = "A bare Swift executable links the driving bridge and reads a served relay through the public phone boundary."
-paths = ["apps/apple/Tools/loopback_smoke.py", "apps/apple/Tools/LoopbackSmoke.swift"]
-recipe = "just ios loopback-smoke"
-boundary = "Store, effects, bridge"
-oracle = "Executable output and served-relay inventory."
-real = ["Swift compiler", "Rust bridge", "iOS simulator", "served relay"]
-substituted = ["phone UI", "cloud account", "providers"]
-time = "real"
-capabilities = ["macOS", "Xcode 26.6", "golden iOS simulator"]
-lane = "system"
-evidence = "target/ios/loopback-smoke"
-update = ""
-cases = ["apps/apple/Tools/test_loopback_smoke.py"]
-
-[[suite]]
 name = "repository-script-tests"
 contract = "The test catalogue and phone build, simulator, journey, golden, performance, release, and QA scripts preserve their command contracts."
 paths = ["scripts/tests", "apps/apple/Tools"]

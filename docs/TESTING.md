@@ -103,7 +103,7 @@ A lane says when and where a suite runs.
 | Lane | What it holds | Where it runs |
 | --- | --- | --- |
 | fast | Offline, credential-free, deterministic suites: most of the table above. | `just test` on every push, on Linux, macOS and Windows; `just ios gate` for the phone when a push touches it |
-| system | Real processes, PTYs, sockets and the supervisor, with bounded deadlines. | Also `just test`, since they are ordinary Cargo targets; the phone's loopback smoke runs in `just ios gate`, the store on the simulator in `just ios captures` |
+| system | Real processes, PTYs, sockets and the supervisor, with bounded deadlines. | Also `just test`, since they are ordinary Cargo targets; the store on the simulator in `just ios captures` |
 | journey | Both clients driving complete stories against a served network. | Terminal journeys on every push (Linux and macOS); phone journeys and the accessibility audit in `just ios captures`, by hand |
 | tool | The repository's own machinery: scripts, source policy, CI command surface, the shipping-scope audit. | Beside the fast lane |
 | qualification | Live providers, measured performance, production cloud and purchases. | Only on request, on enrolled machines; results are `pass`, `fail`, `unavailable` or `not_run` |

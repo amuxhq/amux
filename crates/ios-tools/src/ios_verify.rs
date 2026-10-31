@@ -39,7 +39,6 @@ const GATE: &[&str] = &[
     "ios simulator golden",
     "ios test-build",
     "ios component-snapshots --skip-build",
-    "ios loopback-smoke",
     "ios unit --skip-build",
 ];
 

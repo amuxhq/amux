@@ -179,10 +179,9 @@ half of the phone's verification that building the app can settle.
 
 `just ios gate` runs, in order and stopping at the first failure,
 `just ios` `lint`, `script-tests`, `graph-check`, `rust`, `simulator golden`,
-`test-build`, `component-snapshots --skip-build`, `loopback-smoke` and
-`unit --skip-build`. The simulator boots while `test-build` compiles the app
-and every unit and component suite once, for any simulator, and the gate
-waits for both before the suites run what was built. `mobile-check` is left
+`test-build`, `component-snapshots --skip-build` and `unit --skip-build`. The
+simulator boots while `test-build` compiles the app and every unit and
+component suite once, for any simulator, and the gate waits for both before the suites run what was built. `mobile-check` is left
 to the iOS target check, which runs it on every push. The only pictures it
 compares are the component snapshots, drawn in-process and flat, so it
 answers the same on any machine. The component snapshot batch runs under its own bound, sized by the rule above
@@ -239,7 +238,7 @@ journey or baseline that does not exist.
 | Lane | What it holds | Where it runs |
 | --- | --- | --- |
 | `fast` | Offline, credential-free tests with no wall-time settling: unit tests, spec suites, adapter replays, store and effect integration, renderer goldens | `just test` on every push, on all three platforms |
-| `system` | Real processes and transports with bounded deadlines: the built `amux` binary and its supervisor, the phone bridge on a simulator, the store on iOS | The desktop suites in `just test` on every push (Unix runners); `ios loopback-smoke` in the iOS gate; `test-store-ios` in `just ios captures` |
+| `system` | Real processes and transports with bounded deadlines: the built `amux` binary and its supervisor, the store on iOS | The desktop suites in `just test` on every push (Unix runners); `test-store-ios` in `just ios captures` |
 | `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `just script-tests` on every push; `ios script-tests` and `ios lint` in the iOS gate; `ios scope-audit` before every app release |
 | `journey` | Complete client stories through the shared manifest, and the phone's accessibility sweep | The terminal journeys job and the system journey inside `just test` on every push; phone journeys and the accessibility sweep in iOS captures run by hand |
 | `qualification` | Real providers, real cloud accounts and measured performance | Never on an ordinary push: `just live`, `just perf` and the `just ios qa-*` recipes by hand, on machines that have the credentials or hardware; `just ios perf` by hand on the enrolled Mac, last in `just ios verify` |

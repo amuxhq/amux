@@ -673,15 +673,11 @@ prose are judged on their name only and listed in the record, which lands in
 
 | Recipe | Runs |
 | --- | --- |
-| `just ios gate` | Lint, script tests, bridge graph check, bridge, simulator, one build of the app and every unit and component suite, then component snapshots, loopback smoke and unit suites. What CI runs on every push that touches the phone's paths ([CI](CI.md)). |
+| `just ios gate` | Lint, script tests, bridge graph check, bridge, simulator, one build of the app and every unit and component suite, then component snapshots and unit suites. What CI runs on every push that touches the phone's paths ([CI](CI.md)). |
 | `just ios captures` | The store suite on the simulator, journeys and the accessibility audit. On demand in CI. |
 | `just ios shipping` | The shipping XCFramework and the Release scope audit. `just ios release` depends on both. |
 | `just ios measured` | The phone measured on this Mac: `just ios perf`, on an enrolled Mac only ([Performance](PERFORMANCE.md)). |
 | `just ios verify` | The workspace's format, lint, tests and specs, then all four of the above, stopping at the first failure. |
-
-`just ios loopback-smoke` links the driving bridge from a bare Swift
-executable, pairs it with a served machine by the link that machine prints,
-and reads the machine and its agents back.
 
 ## Large text
 

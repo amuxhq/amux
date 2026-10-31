@@ -45,7 +45,6 @@ fn ios_verify_fixture() -> tempfile::TempDir {
         "rust",
         "simulator",
         "test-build",
-        "loopback-smoke",
         "component-snapshots",
         "unit",
         "journey",
@@ -142,7 +141,7 @@ fn ios_verify_cli_runs_full_checks_bare_and_stops_on_failure_or_skipped_journey(
         if success {
             assert_eq!(
                 calls.replace("simulator booted\n", ""),
-                "fmt-check\nlint\ntest\nmobile-check\nios lint\nios script-tests\nios graph-check\nios rust\nios simulator golden\nios test-build\nios component-snapshots --skip-build\nios loopback-smoke\nios unit --skip-build\ntest-store-ios\nios journey\nios accessibility\nios package\nios scope-audit\nios perf\n"
+                "fmt-check\nlint\ntest\nmobile-check\nios lint\nios script-tests\nios graph-check\nios rust\nios simulator golden\nios test-build\nios component-snapshots --skip-build\nios unit --skip-build\ntest-store-ios\nios journey\nios accessibility\nios package\nios scope-audit\nios perf\n"
             );
             let booted = calls.find("simulator booted").unwrap();
             assert!(

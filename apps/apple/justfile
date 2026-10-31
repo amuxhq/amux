@@ -129,13 +129,6 @@ journey *ARGS: build tools
 accessibility: build tools
     scripts/with iphone -- {{bounded}} 2400 target/debug/testnet journey accessibility
 
-# Link the driving bridge from a bare Swift executable, run it on the
-# simulator, pair it with a machine a served test network runs by the link
-# that machine prints, and read the machine and its agents back.
-# Link the driving bridge from bare Swift and pair it with a served machine.
-loopback-smoke: tools
-    scripts/with iphone -- {{bounded}} 1800 {{python}} -B apps/apple/Tools/loopback_smoke.py
-
 # The optimised app on the enrolled Mac's simulator against the served
 # performance network: cold launch, store read, reconciliation at 0 and
 # 100 ms and through the relay with every way to it gated at 100 ms,

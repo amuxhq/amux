@@ -1,19 +1,11 @@
 //! Semantic colour tokens shared by every TUI surface.
 
 use ratatui::style::{Color, Modifier, Style};
+use settings::ColorSetting;
 
 /// The colour capability selected once at the terminal boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ColorMode {
-    TrueColor,
-    Ansi,
-}
-
-/// The user's colour-capability preference.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ColorPreference {
-    #[default]
-    Auto,
     TrueColor,
     Ansi,
 }
@@ -1030,15 +1022,15 @@ fn rgb_distance(left: (u8, u8, u8), right: (u8, u8, u8)) -> u32 {
 /// environment strings. `TERM` is accepted at this boundary for diagnostics,
 /// but auto mode deliberately trusts only the standard `COLORTERM` signal.
 pub fn detect_color_mode(
-    preference: ColorPreference,
+    preference: ColorSetting,
     colorterm: Option<&str>,
     _term: Option<&str>,
     no_color: bool,
 ) -> ColorMode {
     match preference {
-        ColorPreference::TrueColor => ColorMode::TrueColor,
-        ColorPreference::Ansi => ColorMode::Ansi,
-        ColorPreference::Auto => {
+        ColorSetting::TrueColor => ColorMode::TrueColor,
+        ColorSetting::Ansi => ColorMode::Ansi,
+        ColorSetting::Auto => {
             let advertised = colorterm.is_some_and(|value| {
                 value.eq_ignore_ascii_case("truecolor") || value.eq_ignore_ascii_case("24bit")
             });
@@ -1130,24 +1122,19 @@ mod tests {
     #[test]
     fn auto_detection_requires_a_truecolor_advertisement() {
         assert_eq!(
-            detect_color_mode(
-                ColorPreference::Auto,
-                Some("truecolor"),
-                Some("xterm"),
-                false
-            ),
+            detect_color_mode(ColorSetting::Auto, Some("truecolor"), Some("xterm"), false),
             ColorMode::TrueColor
         );
         assert_eq!(
-            detect_color_mode(ColorPreference::Auto, Some("24BIT"), None, false),
+            detect_color_mode(ColorSetting::Auto, Some("24BIT"), None, false),
             ColorMode::TrueColor
         );
         assert_eq!(
-            detect_color_mode(ColorPreference::Auto, None, Some("xterm-truecolor"), false),
+            detect_color_mode(ColorSetting::Auto, None, Some("xterm-truecolor"), false),
             ColorMode::Ansi
         );
         assert_eq!(
-            detect_color_mode(ColorPreference::Auto, Some("yes"), Some("xterm"), false),
+            detect_color_mode(ColorSetting::Auto, Some("yes"), Some("xterm"), false),
             ColorMode::Ansi
         );
     }
@@ -1155,16 +1142,11 @@ mod tests {
     #[test]
     fn forced_detection_ignores_environment_capability() {
         assert_eq!(
-            detect_color_mode(ColorPreference::TrueColor, None, Some("dumb"), true),
+            detect_color_mode(ColorSetting::TrueColor, None, Some("dumb"), true),
             ColorMode::TrueColor
         );
         assert_eq!(
-            detect_color_mode(
-                ColorPreference::Ansi,
-                Some("truecolor"),
-                Some("xterm"),
-                false
-            ),
+            detect_color_mode(ColorSetting::Ansi, Some("truecolor"), Some("xterm"), false),
             ColorMode::Ansi
         );
     }
@@ -1172,12 +1154,7 @@ mod tests {
     #[test]
     fn no_color_disables_auto_truecolor() {
         assert_eq!(
-            detect_color_mode(
-                ColorPreference::Auto,
-                Some("truecolor"),
-                Some("xterm"),
-                true
-            ),
+            detect_color_mode(ColorSetting::Auto, Some("truecolor"), Some("xterm"), true),
             ColorMode::Ansi
         );
     }

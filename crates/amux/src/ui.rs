@@ -7,9 +7,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow};
-use settings::{ChatInSetting, ColorSetting, InstallationConfig, ThemeSetting, UiSettings};
+use settings::{ChatInSetting, InstallationConfig, ThemeSetting, UiSettings};
 use tui::{
-    AttachFn, AttachReturn, ColorPreference, TerminalColors, Theme, TuiConfig, detect_color_mode,
+    AttachFn, AttachReturn, TerminalColors, Theme, TuiConfig, detect_color_mode,
     query_terminal_colors,
 };
 use wire::Agent;
@@ -134,13 +134,8 @@ pub fn resolve_theme(
     env: &ColorEnv,
     terminal: Option<TerminalColors>,
 ) -> Theme {
-    let preference = match settings.color {
-        ColorSetting::Auto => ColorPreference::Auto,
-        ColorSetting::TrueColor => ColorPreference::TrueColor,
-        ColorSetting::Ansi => ColorPreference::Ansi,
-    };
     let mode = detect_color_mode(
-        preference,
+        settings.color,
         env.colorterm.as_deref(),
         env.term.as_deref(),
         env.no_color,

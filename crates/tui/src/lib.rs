@@ -39,6 +39,5 @@ pub use app::{App, Flow, Tone, TuiConfig};
 pub use run::{AttachFn, AttachReturn, run};
 pub use terminal::{RESTORE_BYTES, TerminalGuard, query_terminal_colors, write_osc52};
 pub use theme::{
-    ColorMode, ColorPreference, TerminalColors, Theme, ThemeName, Token, Tokens, detect_color_mode,
-    nearest_ansi,
+    ColorMode, TerminalColors, Theme, ThemeName, Token, Tokens, detect_color_mode, nearest_ansi,
 };

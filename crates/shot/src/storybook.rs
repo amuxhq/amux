@@ -23,7 +23,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
 use serde::{Deserialize, Serialize};
 use shot::stories::{self, Scene, Story};
-use tui::{ColorMode, ColorPreference, TerminalColors, TerminalGuard, Theme};
+use tui::{ColorMode, TerminalColors, TerminalGuard, Theme};
 
 #[derive(Debug, Parser)]
 #[command(about = "Step through the terminal client's named screens, or capture them")]
@@ -180,7 +180,7 @@ fn browse(story: Option<String>, watch: bool) -> anyhow_free::Result {
     // Asked before the screen is taken over, as the client itself asks.
     let terminal_colors = tui::query_terminal_colors(Duration::from_millis(250));
     let mode = tui::detect_color_mode(
-        ColorPreference::Auto,
+        settings::ColorSetting::Auto,
         std::env::var("COLORTERM").ok().as_deref(),
         std::env::var("TERM").ok().as_deref(),
         std::env::var_os("NO_COLOR").is_some(),

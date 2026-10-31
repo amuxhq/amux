@@ -729,15 +729,7 @@ impl ProfileRuntime {
         if let Some(edge) = self.edge.get() {
             return Ok(edge.clone());
         }
-        let edge = crate::edge::Edge::start(
-            &self.dir,
-            self.profile,
-            options,
-            self.clock.clone(),
-            Arc::downgrade(self),
-            self.analytics.clone(),
-        )
-        .await?;
+        let edge = crate::edge::Edge::start(self, options).await?;
         let started = self.edge.get_or_init(|| edge.clone());
         if Arc::ptr_eq(started, &edge) {
             edge.begin(options).await;

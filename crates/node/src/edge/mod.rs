@@ -306,23 +306,19 @@ pub struct Edge {
 
 impl Edge {
     /// Loads the profile's identity, trust and account, and serves what the
-    /// options ask for. `runtime` is what trusted peers reach.
+    /// options ask for. `live` is what trusted peers reach; the edge holds
+    /// it weakly.
     pub(crate) async fn start(
-        dir: &Path,
-        host: HostId,
+        live: &Arc<ProfileRuntime>,
         options: &EdgeOptions,
-        clock: Arc<dyn Clock>,
-        runtime: Weak<ProfileRuntime>,
-        analytics: analytics::Analytics,
     ) -> Result<Arc<Self>, EdgeError> {
-        let mut identity = crate::identity::load_or_create_device_identity_in(dir, host)?;
+        let runtime = Arc::downgrade(live);
+        let (dir, clock, analytics) = (live.dir(), live.clock().clone(), live.analytics().clone());
+        let mut identity = crate::identity::load_or_create_device_identity_in(dir, live.profile())?;
         identity.liveness = options.liveness;
         // The core holds the trust store; the edge reads it as the core
         // publishes it.
-        let (trust, pair_mode): (SharedTrustStore, _) = match runtime.upgrade() {
-            Some(runtime) => (runtime.driver().trust(), runtime.driver().pair_window()),
-            None => (Arc::default(), Arc::default()),
-        };
+        let (trust, pair_mode) = (live.driver().trust(), live.driver().pair_window());
         let account = Account::open(dir).map_err(EdgeError::Account)?;
         let own = runtime.clone();
         account.on_change(Box::new(move || {
@@ -346,11 +342,9 @@ impl Edge {
         ));
         // The daemon forwards between its own links with a relay core of
         // its own, whose dumps go where the profile's do.
-        if let Some(runtime) = runtime.upgrade() {
-            links
-                .relaying()
-                .report_to(runtime.reports.clone(), runtime.analytics().clone());
-        }
+        links
+            .relaying()
+            .report_to(live.reports.clone(), live.analytics().clone());
         let channels = Arc::new(ChannelPool::new(links));
         let connections = ConnectionManager::new(channels.clone(), analytics.clone());
         let (incoming_streams_tx, incoming_streams_rx) = mpsc::channel(64);

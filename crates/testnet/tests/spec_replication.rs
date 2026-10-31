@@ -206,7 +206,7 @@ async fn backoff_armed(net: &Net) {
 /// with everything the link carried beside it, than the origin's rows hold.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_replica_is_carried_compressed() {
-    let output = (0..40)
+    let output = (0..80)
         .map(|at| {
             let lines: String = (0..20)
                 .map(|line| {
@@ -228,7 +228,7 @@ async fn a_replica_is_carried_compressed() {
     let net = Net::start_with(topology, options(200, |_, _| {}))
         .await
         .unwrap();
-    wait_origin_says(&net, "worker", "Finished in 4.07s").await;
+    wait_origin_says(&net, "worker", "Finished in 2.27s").await;
     net.current("laptop", "worker").await.unwrap();
 
     let rows: usize = origin_rows(&net, "worker")

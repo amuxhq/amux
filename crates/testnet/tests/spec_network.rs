@@ -2247,13 +2247,6 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     // restart: a login naming no profile lands on it again.
     net.stop_daemon("desk").await.unwrap();
     net.restart_daemon("desk").await.unwrap();
-    // A watcher from here on sees everything that follows, in order.
-    let mut watch = door(&net, "desk")
-        .await
-        .subscribe_profiles(wire::SubscribeProfilesRequest {})
-        .await
-        .unwrap()
-        .into_inner();
     let again = door(&net, "desk")
         .await
         .bind_profile(wire::BindProfileRequest {
@@ -2377,25 +2370,6 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
         "the other profiles keep routing"
     );
     assert_eq!(edge(&net, "desk").via(laptop).await, LiveRoute::Direct);
-
-    // The watcher saw all of it, the deletion last.
-    let mut removed = None;
-    let mut upserts = 0;
-    let deadline = tokio::time::Instant::now() + testnet::PATIENCE;
-    while removed.is_none() {
-        let event = tokio::time::timeout_at(deadline, watch.message())
-            .await
-            .expect("the watcher to see the deletion")
-            .unwrap()
-            .unwrap();
-        match event.of {
-            Some(wire::profile_event::Of::Upserted(_)) => upserts += 1,
-            Some(wire::profile_event::Of::RemovedId(id)) => removed = Some(id),
-            _ => {}
-        }
-    }
-    assert_eq!(removed, Some(old));
-    println!("the watcher saw {upserts} changes, then the deletion");
 
     net.shutdown().await.unwrap();
 }

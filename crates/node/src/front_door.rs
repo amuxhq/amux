@@ -2,23 +2,20 @@
 //! profiles, finds each one's client socket, creates, names, deletes and
 //! signs them in, and manages the installation.
 
-use std::pin::Pin;
-
 use agent_dir::local_socket::LocalListener;
-use futures_util::Stream;
 use tokio::task::JoinHandle;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 use wire::installation_service_server::{InstallationService, InstallationServiceServer};
 use wire::{
-    BindProfileRequest, CaughtUp, CreateProfileRequest, DeleteProfileRequest, Empty, ErrorCode,
-    ListProfilesResponse, RenameProfileRequest, profile_event,
+    BindProfileRequest, CreateProfileRequest, DeleteProfileRequest, Empty, ErrorCode,
+    ListProfilesResponse, RenameProfileRequest,
 };
 
 use crate::Tier;
 use crate::edge::{Cloud, Relay, RelayCarrier};
 use crate::grpc::{self, status, wire_error};
-use crate::registry::{ProfileEvent, ProfileRefusal, ProfileState, Registry, SignIn};
+use crate::registry::{ProfileRefusal, ProfileState, Registry, SignIn};
 
 /// A profile as the front door describes it.
 pub(crate) fn info(state: ProfileState) -> wire::Profile {
@@ -103,12 +100,8 @@ fn profile_id(bytes: &[u8]) -> Result<Uuid, Status> {
         .map_err(|_| failed(ErrorCode::InvalidArgument, "a profile id is 16 bytes"))
 }
 
-type Events = Pin<Box<dyn Stream<Item = Result<wire::ProfileEvent, Status>> + Send>>;
-
 #[tonic::async_trait]
 impl InstallationService for FrontDoor {
-    type SubscribeProfilesStream = Events;
-
     async fn list_profiles(
         &self,
         _request: Request<wire::ListProfilesRequest>,
@@ -116,40 +109,6 @@ impl InstallationService for FrontDoor {
         Ok(Response::new(ListProfilesResponse {
             profiles: self.registry.list()?.into_iter().map(info).collect(),
         }))
-    }
-
-    async fn subscribe_profiles(
-        &self,
-        _request: Request<wire::SubscribeProfilesRequest>,
-    ) -> Result<Response<Self::SubscribeProfilesStream>, Status> {
-        let mut watch = self.registry.subscribe()?;
-        let opening = std::mem::take(&mut watch.listed)
-            .into_iter()
-            .map(|state| profile_event::Of::Upserted(info(state)))
-            .chain(std::iter::once(profile_event::Of::CaughtUp(CaughtUp {
-                revision: 0,
-            })))
-            .map(|of| Ok(wire::ProfileEvent { of: Some(of) }))
-            .collect::<Vec<_>>();
-        let live = futures_util::stream::unfold(Some(watch), |watch| async move {
-            let mut watch = watch?;
-            match watch.next().await? {
-                Ok(event) => {
-                    let of = match event {
-                        ProfileEvent::Upserted(state) => profile_event::Of::Upserted(info(*state)),
-                        ProfileEvent::Removed(id) => {
-                            profile_event::Of::RemovedId(id.as_bytes().to_vec())
-                        }
-                    };
-                    Some((Ok(wire::ProfileEvent { of: Some(of) }), Some(watch)))
-                }
-                Err(behind) => Some((Err(failed(ErrorCode::Aborted, behind.to_string())), None)),
-            }
-        });
-        Ok(Response::new(Box::pin(futures_util::StreamExt::chain(
-            futures_util::stream::iter(opening),
-            live,
-        ))))
     }
 
     async fn create_profile(

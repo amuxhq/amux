@@ -714,14 +714,11 @@ service manager and waits for it.
 
 ### The front door
 
-`InstallationService` lists, watches, creates, binds, renames and deletes
+`InstallationService` lists, creates, binds, renames and deletes
 profiles. A bind names its profile or lets the installation pick the one
 already bound to that account, else one that holds nothing, else a new one.
 A call about one profile names it by id, and profile and host ids travel as
-their 16 bytes; the CLI reads and prints their text form. `SubscribeProfiles`
-sends every profile, `CaughtUp`, then each change in the order it happened;
-a subscriber that falls behind is ended with `ABORTED` and subscribes again.
-It also answers `GetInstallation` (the daemon's version) and
+their 16 bytes; the CLI reads and prints their text form. It also answers `GetInstallation` (the daemon's version) and
 `Shutdown`. The rules behind these calls are `node::Registry`'s; the front
 door (`crates/node/src/front_door.rs`) converts.
 

@@ -14,9 +14,6 @@ service InstallationService {
   rpc GetInstallation(GetInstallationRequest) returns (Installation);
   rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
   rpc ListProfiles(ListProfilesRequest) returns (ListProfilesResponse);
-  // Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh
-  // subscription.
-  rpc SubscribeProfiles(SubscribeProfilesRequest) returns (stream ProfileEvent);
   rpc CreateProfile(CreateProfileRequest) returns (Profile);
   // Names a profile, or lets the installation pick or create one.
   rpc BindProfile(BindProfileRequest) returns (Profile);
@@ -88,16 +85,6 @@ enum RelayCarrier {
 message ListProfilesRequest {}
 
 message ListProfilesResponse { repeated Profile profiles = 1; }
-
-message SubscribeProfilesRequest {}
-
-message ProfileEvent {
-  oneof of {
-    Profile upserted = 1;
-    bytes removed_id = 2;
-    CaughtUp caught_up = 3;
-  }
-}
 
 message CreateProfileRequest { optional string label = 1; }
 

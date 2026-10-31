@@ -562,7 +562,6 @@ mod tests {
                 "GetInstallation",
                 "Shutdown",
                 "ListProfiles",
-                "SubscribeProfiles",
                 "CreateProfile",
                 "BindProfile",
                 "RenameProfile",

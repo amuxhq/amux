@@ -10411,45 +10411,6 @@ impl ::prost::Name for ListProfilesResponse {
         "type.googleapis.com/amux.v1.ListProfilesResponse".into()
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SubscribeProfilesRequest {}
-impl ::prost::Name for SubscribeProfilesRequest {
-    const NAME: &'static str = "SubscribeProfilesRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SubscribeProfilesRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.SubscribeProfilesRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProfileEvent {
-    #[prost(oneof = "profile_event::Of", tags = "1, 2, 3")]
-    pub of: ::core::option::Option<profile_event::Of>,
-}
-/// Nested message and enum types in `ProfileEvent`.
-pub mod profile_event {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Of {
-        #[prost(message, tag = "1")]
-        Upserted(super::Profile),
-        #[prost(bytes, tag = "2")]
-        RemovedId(::prost::alloc::vec::Vec<u8>),
-        #[prost(message, tag = "3")]
-        CaughtUp(super::CaughtUp),
-    }
-}
-impl ::prost::Name for ProfileEvent {
-    const NAME: &'static str = "ProfileEvent";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProfileEvent".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ProfileEvent".into()
-    }
-}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateProfileRequest {
     #[prost(string, optional, tag = "1")]
@@ -10734,34 +10695,6 @@ pub mod installation_service_client {
                 .insert(GrpcMethod::new("amux.v1.InstallationService", "ListProfiles"));
             self.inner.unary(req, path, codec).await
         }
-        /// Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh
-        /// subscription.
-        pub async fn subscribe_profiles(
-            &mut self,
-            request: impl tonic::IntoRequest<super::SubscribeProfilesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::ProfileEvent>>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.InstallationService/SubscribeProfiles",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("amux.v1.InstallationService", "SubscribeProfiles"),
-                );
-            self.inner.server_streaming(req, path, codec).await
-        }
         pub async fn create_profile(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateProfileRequest>,
@@ -10879,21 +10812,6 @@ pub mod installation_service_server {
             request: tonic::Request<super::ListProfilesRequest>,
         ) -> std::result::Result<
             tonic::Response<super::ListProfilesResponse>,
-            tonic::Status,
-        >;
-        /// Server streaming response type for the SubscribeProfiles method.
-        type SubscribeProfilesStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::ProfileEvent, tonic::Status>,
-            >
-            + std::marker::Send
-            + 'static;
-        /// Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh
-        /// subscription.
-        async fn subscribe_profiles(
-            &self,
-            request: tonic::Request<super::SubscribeProfilesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<Self::SubscribeProfilesStream>,
             tonic::Status,
         >;
         async fn create_profile(
@@ -11128,57 +11046,6 @@ pub mod installation_service_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.InstallationService/SubscribeProfiles" => {
-                    #[allow(non_camel_case_types)]
-                    struct SubscribeProfilesSvc<T: InstallationService>(pub Arc<T>);
-                    impl<
-                        T: InstallationService,
-                    > tonic::server::ServerStreamingService<
-                        super::SubscribeProfilesRequest,
-                    > for SubscribeProfilesSvc<T> {
-                        type Response = super::ProfileEvent;
-                        type ResponseStream = T::SubscribeProfilesStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::SubscribeProfilesRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as InstallationService>::subscribe_profiles(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = SubscribeProfilesSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

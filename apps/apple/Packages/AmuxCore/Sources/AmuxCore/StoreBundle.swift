@@ -54,8 +54,6 @@ public final class StoreBundle {
     /// Told how many machines this account has paired and how many of its
     /// agents need the person, each time the fleet moves.
     @ObservationIgnored public var saw: (@MainActor (_ hosts: Int, _ attention: Int) -> Void)?
-    /// Whether a re-read of a relay link still coming up is scheduled.
-    @ObservationIgnored private var settling = false
     /// What moved in the fleet while the launch's first frame was going up,
     /// applied once it is up.
     @ObservationIgnored private var held: FleetDelta?
@@ -147,28 +145,13 @@ public final class StoreBundle {
         saw?(fleet.machines.filter(\.trusted).count, fleet.needYou)
         applied += 1
         keepSessions()
-        if delta.hosts != nil {
-            Task { await refreshAccount() }
-            if hosts.rosterBehind { Task { await refreshRoster() } }
-        }
+        if delta.hosts != nil, hosts.rosterBehind { Task { await refreshRoster() } }
     }
 
-    /// Reads the account and its relay link again.
-    public func refreshAccount() async {
-        guard let profile, case .success(let account) = await profile.account() else { return }
+    /// The account and its relay link, as the profile list carries them.
+    public func show(account: AccountView) {
         hosts.show(account)
         fleet.relay(account.relay)
-        // The relay link settles without the host list moving, so while it
-        // is still coming up it is read again until it says where it landed.
-        guard account.relay == .connecting || account.relay == .retrying,
-              !settling else { return }
-        settling = true
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1))
-            guard let self, self.profile === profile else { return }
-            self.settling = false
-            await self.refreshAccount()
-        }
     }
 
     /// Reads this phone's identity and the machines it trusts again.

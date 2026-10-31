@@ -1579,23 +1579,6 @@ pub unsafe extern "C" fn amux_profile_roster(profile: *const AmuxProfile) -> u64
     })
 }
 
-/// The account the profile is bound to; the ticket answers
-/// `{"Ok": AccountView}` or `{"Err": ..}`.
-///
-/// # Safety
-/// `profile` is from `amux_profile_open`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_profile_account(profile: *const AmuxProfile) -> u64 {
-    guard(0, || {
-        // SAFETY: the caller's contract.
-        let Some(profile) = (unsafe { live_profile(profile) }) else {
-            return 0;
-        };
-        let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
-        profile.act(async move { Answered::from(embedded.account(id)) })
-    })
-}
-
 /// Starts an agent from a `NewAgent` as JSON; the ticket answers
 /// `{"Ok": AgentKey}` or `{"Err": ..}`.
 ///

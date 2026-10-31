@@ -512,11 +512,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
         fingerprint.as_str()
     );
 
-    // Never signed in: the account says so and lends no bearer.
-    // SAFETY: the runtime is live.
-    phone.started(unsafe { amux_profile_account(phone.profile) });
-    let account = phone.result();
-    assert_eq!(account["Ok"]["binding"], "Unbound", "{account}");
+    // Never signed in: the profile lends no bearer.
     // SAFETY: the runtime is live.
     phone.started(unsafe { amux_runtime_access_token(phone.runtime, phone.id.as_ptr()) });
     assert!(phone.result()["Err"].is_string());

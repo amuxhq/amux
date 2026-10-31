@@ -166,7 +166,6 @@ link: reaches and authenticates the machine, answering its name and
 fingerprint), `amux_profile_confirm_pair` and `amux_profile_abandon_pair`
 (the person's decision), `amux_profile_unpair`, `amux_profile_roster` (this
 device's identity in the profile and the machines it trusts),
-`amux_profile_account` (the binding and the relay link),
 `amux_profile_create_agent`, `amux_profile_directories`,
 `amux_profile_agent_act` (rename, stop, delete), `amux_profile_dump` (with
 `for_report`, the narrower dump a person's report carries) and

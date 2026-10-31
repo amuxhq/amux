@@ -16,7 +16,7 @@ public final class HostsStore {
     /// This phone's identity and the machines it trusts, by fingerprint.
     public private(set) var roster: Roster?
     public private(set) var localNetwork: LocalNetworkPermission = .unknown
-    /// The account this profile is bound to, as last read.
+    /// The account this profile is bound to, as the profile list carries it.
     public private(set) var account: AccountView?
 
     @ObservationIgnored private var departures: [HostId: Date] = [:]

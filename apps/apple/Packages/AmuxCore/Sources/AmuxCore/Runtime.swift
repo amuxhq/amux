@@ -413,10 +413,6 @@ public final class Profile: @unchecked Sendable {
         await act(Roster.self) { amux_profile_roster($0) }
     }
 
-    public func account() async -> Result<AccountView, RuntimeFailure> {
-        await act(AccountView.self) { amux_profile_account($0) }
-    }
-
     /// A bearer for the profile's account service.
     public func accessToken() async -> Result<Bearer, RuntimeFailure> {
         await runtime.accessToken(id)

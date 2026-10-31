@@ -295,6 +295,9 @@ public final class RuntimeCoordinator {
                 failure = error.description
             }
         }
+        // The list moves whenever the profile's relay link does, so the
+        // account it carries is the one to draw.
+        if let view = profiles.first(where: { $0.id == id }) { stores.show(account: view.account) }
         listSources()
     }
 
@@ -361,7 +364,6 @@ public final class RuntimeCoordinator {
             return bound.map { _ in Nothing() }
         }
         registry.select(AccountId(view.subject))
-        await stores.refreshAccount()
         return .success(Nothing())
     }
 
@@ -371,7 +373,6 @@ public final class RuntimeCoordinator {
         guard let runtime = await started(),
               let entry = registry.accounts.first(where: { $0.id == account }) else { return }
         _ = await runtime.signOut(entry.profile)
-        await stores.refreshAccount()
     }
 
     /// Takes an account off this phone: its profile — its key, the machines

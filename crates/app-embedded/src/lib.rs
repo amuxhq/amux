@@ -651,11 +651,6 @@ impl EmbeddedRuntime {
         failed.map_or(Ok(report), Err)
     }
 
-    /// The account a profile is bound to, and its relay link.
-    pub fn account(&self, profile: ProfileId) -> Result<AccountView, EmbeddedError> {
-        Ok(self.profile(profile)?.account)
-    }
-
     /// A bearer for the account service, refreshed by the profile when it
     /// is about to expire.
     pub async fn access_token(&self, profile: ProfileId) -> Result<Bearer, EmbeddedError> {

@@ -954,12 +954,11 @@ impl Install {
                 text: "Name the color of the attached image in one word. Then read square.png \
                        in the working directory with the Read tool and say whether it is the \
                        same image."
-                        .into(),
-                    attachments: vec![wire::Attachment {
-                        of: Some(wire::attachment::Of::Image(blob)),
-                    }],
-                }),
-            ),
+                    .into(),
+                attachments: vec![wire::Attachment {
+                    of: Some(wire::attachment::Of::Image(blob)),
+                }],
+            })),
         )
         .await?;
         self.settle(&agent, &follow, "the image to be read", |ask| {

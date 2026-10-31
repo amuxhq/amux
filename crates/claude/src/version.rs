@@ -29,7 +29,10 @@ async fn probe_command(mut command: Command) -> Result<Version, String> {
         .map_err(|_| "Claude version probe timed out".to_owned())?
         .map_err(|error| format!("could not run Claude version probe: {error}"))?;
     if !output.status.success() {
-        return Err(format!("Claude version probe failed with {}", output.status));
+        return Err(format!(
+            "Claude version probe failed with {}",
+            output.status
+        ));
     }
     let raw = String::from_utf8(output.stdout)
         .map_err(|error| format!("Claude version output was not UTF-8: {error}"))?;

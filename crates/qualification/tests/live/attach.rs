@@ -427,7 +427,7 @@ impl Install {
             "app",
             &dir,
             self,
-            &["attach", name],
+            &["attach", name, "--in", "native"],
             &project,
         )?);
         // The app is ready for a prompt once its composer is drawn and it
@@ -509,7 +509,7 @@ impl Install {
             return Err(format!("amux's chat holds prompts {sent:?}, not the one"));
         }
         super::judge(
-            &self.recorded(scenario)?.shape(Kind::Codex),
+            &self.captured(scenario)?.shape(Kind::Codex),
             &live.shape(Kind::Codex),
         )?;
 

@@ -1,10 +1,10 @@
 {
-  "about": "A file moved with apply_patch: the change names its new path.",
+  "about": "A file moved and edited in one apply_patch hunk: the change names its new path beside its diff.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../codex-specs/fixtures/runtime/file_moved/io.jsonl",
+    "path": "../../../codex-specs/fixtures/live/file_moved/io.jsonl",
     "format": "codex_io"
   }
 }

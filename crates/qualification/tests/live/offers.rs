@@ -67,7 +67,7 @@ fn windows(kind: Kind, log: &Log) -> Vec<String> {
 impl Install {
     /// Creates the scenario's agent and waits until it takes input, signed
     /// in; None with the reason when it is not.
-    async fn ready_agent(
+    pub(super) async fn ready_agent(
         &self,
         scenario: Scenario,
         config: Option<CodexCreateConfig>,

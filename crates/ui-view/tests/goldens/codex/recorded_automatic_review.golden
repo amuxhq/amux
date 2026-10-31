@@ -1,36 +1,63 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 11 recorded 10: input stdin-4
+## 23 recorded 22: input 0x84ff2c4862884296aa061efd32b6e7d4
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 25 recorded 24: fact Rpc method=item/started
-  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 27 recorded 26: fact Rpc method=item/completed
+## 67 recorded 66: fact Rpc method=item/started
+  composer Send activity=Some(Running { key: "exec-7885f783-3150-41fe-8f91-81bcff3c1e54" }) queue=[] underway=[] refused=[]
+## 68 recorded 67: fact Rpc method=item/autoApprovalReview/started
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 48 recorded 47: fact Rpc method=item/started
-  composer Send activity=Some(Running { key: "exec-b283e140-65f5-4684-9498-73e4c2de1ce0" }) queue=[] underway=[] refused=[]
-## 49 recorded 48: fact Rpc method=item/autoApprovalReview/started
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 60 recorded 59: fact Rpc method=item/started
-  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 62 recorded 61: fact Rpc method=item/completed
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 74 recorded 73: fact Rpc method=turn/completed
+## 94 recorded 93: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 prompt:737464696e2d34 Prompt { text: [Text("Run this exact shell command and no substitute: touch reviewed.txt. Then say DONE.")], steered: false }
-     3 rs_0f339e74503e57f8016ab72f064e7887d284c5821bf2ed5fbe Thinking { text: "", open: false, duration_ms: Some(3171) }
-     4 msg_0f339e74503e57f8016ab72f06e49487d2bd368a73fabdac32 Prose { text: [Text("I’ll run the exact command now.")], streaming: false, working_note: true }
-     5 exec-b283e140-65f5-4684-9498-73e4c2de1ce0 Command { command: "touch reviewed.txt", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-b283e140-65f5-4684-9498-73e4c2de1ce0..exec-b283e140-65f5-4684-9498-73e4c2de1ce0 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other:…
-     6 review:1db1dab2-2fed-4674-872a-20952bdfa1db AutoReview { status: Approved, status_word: "approved", risk: "low", rationale: "The user explicitly authorized the exact touch command, which only creates or updates a single workspace file.", subject: "exec-b283e140-65f5-4684-9498-73e4c2de1ce0" }
-     7 rs_0f339e74503e57f8016ab72f0c0f9887d29ef65aae080be9df Thinking { text: "", open: false, duration_ms: Some(2778) }
-     8 msg_0f339e74503e57f8016ab72f0c4acc87d292a26f115be10720 Prose { text: [Text("DONE")], streaming: false, working_note: false }
-     9 turn:1 TurnEnd { duration_ms: Some(9263), failed: false }
+     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     3 prompt:84ff2c4862884296aa061efd32b6e7d4 Prompt { text: [Text("Run exactly this shell command once, with your shell tool, and nothing else: curl -sI https://example.com. The sandbox has no network, so request escalated permissions for it. Then reply with its status line.")], steered: false }
+     4 msg_09ec161390ef28f8016ae5d79f541081919753f56400f462fc Prose { text: [Text("I’ll run the command once with escalated permissions and return its status line.\n")], streaming: false, working_note: true }
+     5 exec-7885f783-3150-41fe-8f91-81bcff3c1e54 Command { command: "curl -sI https://example.com", state: Succeeded, exit_code: Some(0), output_head: ["HTTP/2 200 ", "date: Sat, 31 Oct 2026 11:57:22 GMT", "content-type: text/html; charset=utf-8"], more_lines: 9, output_trimmed: false, output_tail: ["HTTP/2 200 ", "date: Sat, 31 Oct 2026 11:57:22 GMT", "content-type: text/html; charset=utf-8", "serv…
+     6 review:9c47dc8f-be63-4075-8c2c-535253234ab0 AutoReview { status: Approved, status_word: "approved", risk: "low", rationale: "Auto-review returned a low-risk allow decision.", subject: "exec-7885f783-3150-41fe-8f91-81bcff3c1e54" }
+     7 msg_09ec161390ef28f8016ae5d7a492f48191be9002c539a8d6d6 Prose { text: [Text("HTTP/2 200")], streaming: false, working_note: false }
+     8 turn:1 TurnEnd { duration_ms: Some(8908), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 13095, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 15125, window_tokens: Some(475000), percent: Some(3), near_full: false }) sign-in None
 == settings
-  model* unlisted gpt-5.6-luna "GPT-5.6 Luna" efforts=[]
-  permission* unlisted custom "" "" unsettable
-  changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  model* gpt-6.1-sol "GPT-6.1-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-astra "GPT-6-Astra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6.1-terra "GPT-6.1 Terra" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-sol "GPT-6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6-luna "GPT-6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  model  gpt-5.6-sol "GPT-5.6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-5.6-terra "GPT-5.6-Terra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-5.6-luna "GPT-5.6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  effort* low (default)
+  effort  medium
+  effort  high
+  effort  xhigh
+  effort  max
+  effort  ultra
+  permission  "read-only" "Read only"
+  permission  "default" "Default" normal
+  permission* "auto" "Auto"
+  permission  "full-access" "Full access" never_asks
+  mode  "default" "Default" normal
+  mode  "plan" "Plan"
+  changes: model Pick · effort Pick · permission Pick · mode Pick
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
-  controls: model=Some("GPT-5.6 Luna") effort=None permission=None mode=None
+  command /compact source="codex" hint="" "Summarize the conversation to free up context"
+  command /clear source="codex" hint="" "Start a new conversation"
+  command /review source="codex" hint="[instructions]" "Review the uncommitted changes, or what the instructions say"
+  command /init source="codex" hint="" "Write an AGENTS.md with instructions for Codex"
+  command /plan source="codex" hint="[prompt]" "Switch to plan mode"
+  command /autopilot source="user" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested."
+  command /delegate source="user" hint="" "Resolve or diagnose agent staffing by mapping a requested role and effort through the operator-owned roster to a mind and dispatch specification. Use when an agent or driver will dispatch work, or when a binding cannot launch. Do not use merely because ordinary work is being discussed or performed locally."
+  command /frontend-design source="user" hint="" "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.…
+  command /gardening source="user" hint="" "Review and improve an operator's Linear backlog with them. Use when the operator asks to garden, clean up, shape, deduplicate, or reassess tracked work. Do not invoke merely because Linear is available or ordinary work reveals a possible follow-up."
+  command /handoff source="user" hint="" "Independently verify and present finished work when an ordinary diff and focused checks are not enough to judge it, including third-party branches or pull requests. Use compact proof for easily judged behavior and a decision page for consequential or difficult work. Do not invoke at project start or impose a page on ordinary small changes."
+  command /intake source="user" hint="" "Align and confirm a durable acceptance contract for consequential work that must cross contexts. Use after the operator commits to work when several requirements, boundaries, or success demonstrations remain unsettled. Skip for exploration, one or two locally resolvable questions, and already-confirmed requirements."
+  command /imagegen source="system" hint="" "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the …
+  command /openai-docs source="system" hint="" "Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge—including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex—and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not u…
+  command /review-agent source="system" hint="" "Perform a read-only, defect-first review of a specified code change and return every actionable finding. Use when another agent delegates review of uncommitted changes, a base-branch diff, a commit, or custom review instructions."
+  command /skill-creator source="system" hint="" "Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources."
+  command /skill-installer source="system" hint="" "Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos)."
+  controls: model=Some("GPT-6.1-Sol") effort=Some("low") permission=Some("auto") mode=None

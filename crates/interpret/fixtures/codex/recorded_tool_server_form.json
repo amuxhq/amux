@@ -1,10 +1,10 @@
 {
-  "about": "A tool-server call needing approval, a form the server elicits, and a form cancelled.",
+  "about": "A tool server's tool called twice, each call approved: the form the first call elicits is accepted, the link the second elicits is cancelled.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../codex-specs/fixtures/runtime/tool_server_form/io.jsonl",
+    "path": "../../../codex-specs/fixtures/live/tool_server_form/io.jsonl",
     "format": "codex_io"
   }
 }

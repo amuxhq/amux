@@ -1,5 +1,5 @@
 {
-  "about": "A live run at Codex 0.160.0, driven by amux: one turn, then the provider's usage windows are read.",
+  "about": "A live run, driven by amux: one turn, then the provider's usage windows are read.",
   "spec": {
     "created_at_ms": 0
   },

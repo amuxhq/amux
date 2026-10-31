@@ -4,7 +4,7 @@
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../codex-specs/fixtures/runtime/two_assistant_messages/io.jsonl",
+    "path": "../../../codex-specs/fixtures/live/two_assistant_messages/io.jsonl",
     "format": "codex_io"
   }
 }

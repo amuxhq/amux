@@ -1,44 +1,72 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 11 recorded 10: input stdin-4
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 27 recorded 26: fact Rpc method=item/started
-  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 29 recorded 28: fact Rpc method=item/completed
+## 22 recorded 21: input 0x9c1a6f29f82a4faf87bbbab79fd50c4e
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 61 recorded 60: fact Rpc method=item/permissions/requestApproval
   ask 0 -> "ask:0" 1/1 Open
     choices GrantForTurn*, GrantForSession, Deny { stops: false }
-    body Access { reason: "Network access is needed to run the requested curl check against example.com.", read: [], write: [], network: true, hosts: [] }
+    body Access { reason: "Run curl -sI https://example.com and report its status line.", read: [], write: [], network: true, hosts: [] }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 62 recorded 61: input stdin-5
+## 63 recorded 62: input stdin-9
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 70 recorded 69: fact Rpc method=item/started
-  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
+## 71 recorded 70: fact Rpc method=item/started
+  composer Send activity=Some(Running { key: "exec-c1430556-68e8-499e-8b32-6864423b2962" }) queue=[] underway=[] refused=[]
 ## 72 recorded 71: fact Rpc method=item/completed
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 74 recorded 73: fact Rpc method=item/started
-  composer Send activity=Some(Running { key: "exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0" }) queue=[] underway=[] refused=[]
-## 78 recorded 77: fact Rpc method=item/completed
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 100 recorded 99: fact Rpc method=turn/completed
+## 92 recorded 91: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 prompt:737464696e2d34 Prompt { text: [Text("Use your request_permissions tool to ask me for network access. Once granted, run `curl -sI https://example.com` and reply with its status line.")], steered: false }
-     3 warning:2 Error { error_kind: "warning", message: "Under-development features enabled: request_permissions_tool. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in /private<MACHINE_PATH>", attempts: 0, gave_up: true } attention
-     4 rs_0267f61d4441067f016ab72ebb880487d2977d5737e6630637 Thinking { text: "", open: false, duration_ms: Some(7016) }
-     5 msg_0267f61d4441067f016ab72ebbdec887d29ba73d64e8a3818b Prose { text: [Text("I’ll request network access, then run the requested header check.")], streaming: false, working_note: true }
-     6 ask:0 Ask(Grant { reason: "Network access is needed to run the requested curl check against example.com.", read: [], write: [], network: true, hosts: [], granted: Some(Granted { read: [], write: [], network: true, for_session: false }), resolution: Answered })
-     7 rs_0267f61d4441067f016ab72ec0b23887d2be569947ad83f017 Thinking { text: "", open: false, duration_ms: Some(2443) }
-     8 exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0 Command { command: "curl -sI https://example.com", state: Succeeded, exit_code: Some(0), output_head: ["HTTP/2 200 ", "date: Sat, 26 Sep 2026 02:32:33 GMT", "content-type: text/html"], more_lines: 8, output_trimmed: false, output_tail: ["HTTP/2 200 ", "date: Sat, 26 Sep 2026 02:32:33 GMT", "content-type: text/html", "server: cloudflare", "last-modifie…
-     9 msg_0267f61d4441067f016ab72ec30e7487d281dfeb0bf02e2447 Prose { text: [Text("HTTP/2 200")], streaming: false, working_note: false }
-    10 turn:1 TurnEnd { duration_ms: Some(14566), failed: false }
+     2 warning:2 Error { error_kind: "warning", message: "Under-development features enabled: request_permissions_tool. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in <MACHINE_PATH>", attempts: 0, gave_up: true } attention
+     3 warning:3 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     4 prompt:9c1a6f29f82a4faf87bbbab79fd50c4e Prompt { text: [Text("Use your request_permissions tool to ask me for network access. Once granted, run `curl -sI https://example.com` and reply with its status line.")], steered: false }
+     5 msg_0457a67687b0968f016ae5d79719b8819180a359baa7e2c622 Prose { text: [Text("I’ll request network access, then run the curl command once it’s granted.")], streaming: false, working_note: true }
+     6 ask:0 Ask(Grant { reason: "Run curl -sI https://example.com and report its status line.", read: [], write: [], network: true, hosts: [], granted: Some(Granted { read: [], write: [], network: true, for_session: false }), resolution: Answered })
+     7 exec-c1430556-68e8-499e-8b32-6864423b2962 Command { command: "curl -sI https://example.com", state: Succeeded, exit_code: Some(0), output_head: ["HTTP/2 200 ", "date: Sat, 31 Oct 2026 11:57:13 GMT", "content-type: text/html; charset=utf-8"], more_lines: 9, output_trimmed: false, output_tail: ["HTTP/2 200 ", "date: Sat, 31 Oct 2026 11:57:13 GMT", "content-type: text/html; charset=utf-8", "serv…
+     8 msg_0457a67687b0968f016ae5d79b24748191881e5726a550d1ec Prose { text: [Text("HTTP/2 200")], streaming: false, working_note: false }
+     9 turn:1 TurnEnd { duration_ms: Some(9911), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 13088, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 15273, window_tokens: Some(475000), percent: Some(3), near_full: false }) sign-in None
 == settings
-  model* unlisted gpt-5.6-luna "GPT-5.6 Luna" efforts=[]
-  changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  model* gpt-6.1-sol "GPT-6.1-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-astra "GPT-6-Astra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6.1-terra "GPT-6.1 Terra" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-sol "GPT-6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6-luna "GPT-6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  model  gpt-5.6-sol "GPT-5.6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-5.6-terra "GPT-5.6-Terra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-5.6-luna "GPT-5.6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  effort* low (default)
+  effort  medium
+  effort  high
+  effort  xhigh
+  effort  max
+  effort  ultra
+  permission  "read-only" "Read only"
+  permission  "default" "Default" normal
+  permission  "auto" "Auto"
+  permission  "full-access" "Full access" never_asks
+  mode  "default" "Default" normal
+  mode  "plan" "Plan"
+  changes: model Pick · effort Pick · permission Pick · mode Pick
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
-  controls: model=Some("GPT-5.6 Luna") effort=None permission=None mode=None
+  command /compact source="codex" hint="" "Summarize the conversation to free up context"
+  command /clear source="codex" hint="" "Start a new conversation"
+  command /review source="codex" hint="[instructions]" "Review the uncommitted changes, or what the instructions say"
+  command /init source="codex" hint="" "Write an AGENTS.md with instructions for Codex"
+  command /plan source="codex" hint="[prompt]" "Switch to plan mode"
+  command /autopilot source="user" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested."
+  command /delegate source="user" hint="" "Resolve or diagnose agent staffing by mapping a requested role and effort through the operator-owned roster to a mind and dispatch specification. Use when an agent or driver will dispatch work, or when a binding cannot launch. Do not use merely because ordinary work is being discussed or performed locally."
+  command /frontend-design source="user" hint="" "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.…
+  command /gardening source="user" hint="" "Review and improve an operator's Linear backlog with them. Use when the operator asks to garden, clean up, shape, deduplicate, or reassess tracked work. Do not invoke merely because Linear is available or ordinary work reveals a possible follow-up."
+  command /handoff source="user" hint="" "Independently verify and present finished work when an ordinary diff and focused checks are not enough to judge it, including third-party branches or pull requests. Use compact proof for easily judged behavior and a decision page for consequential or difficult work. Do not invoke at project start or impose a page on ordinary small changes."
+  command /intake source="user" hint="" "Align and confirm a durable acceptance contract for consequential work that must cross contexts. Use after the operator commits to work when several requirements, boundaries, or success demonstrations remain unsettled. Skip for exploration, one or two locally resolvable questions, and already-confirmed requirements."
+  command /imagegen source="system" hint="" "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the …
+  command /openai-docs source="system" hint="" "Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge—including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex—and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not u…
+  command /review-agent source="system" hint="" "Perform a read-only, defect-first review of a specified code change and return every actionable finding. Use when another agent delegates review of uncommitted changes, a base-branch diff, a commit, or custom review instructions."
+  command /skill-creator source="system" hint="" "Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources."
+  command /skill-installer source="system" hint="" "Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos)."
+  controls: model=Some("GPT-6.1-Sol") effort=Some("low") permission=None mode=None

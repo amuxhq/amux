@@ -23,7 +23,7 @@ pub fn corpus(kind: Kind) -> &'static Corpus {
     static PTY: OnceLock<Corpus> = OnceLock::new();
     let (cell, root) = match kind {
         Kind::ClaudeSdk => (&SDK, "../claude-specs/fixtures/live/sdk"),
-        Kind::Codex => (&CODEX, "../codex-specs/fixtures/runtime"),
+        Kind::Codex => (&CODEX, "../codex-specs/fixtures/live"),
         Kind::ClaudePty => (&PTY, "../claude-specs/fixtures/pty"),
     };
     cell.get_or_init(|| {

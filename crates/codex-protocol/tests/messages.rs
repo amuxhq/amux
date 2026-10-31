@@ -6,7 +6,9 @@ use std::path::Path;
 use codex_protocol::client::{
     ClientInfo, InitializeParams, ModelListParams, ThreadStartParams, TurnStartParams,
 };
-use codex_protocol::items::{CommandAction, ThreadItem, ToolStatus, UserInput, WebSearchAction};
+use codex_protocol::items::{
+    CollabAgentTool, CommandAction, ThreadItem, ToolStatus, UserInput, WebSearchAction,
+};
 use codex_protocol::server::{
     CommandDecision, Decision, Persist, ServerNotification as N, ServerRequest as R, ThreadResponse,
 };
@@ -24,7 +26,7 @@ fn recorded(spec: &str, needles: &[&str]) -> ServerMessage {
 
 fn recorded_line(spec: &str, needles: &[&str]) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../codex-specs/fixtures/runtime")
+        .join("../codex-specs/fixtures/live")
         .join(spec)
         .join("io.jsonl");
     let text = std::fs::read_to_string(&path).expect("recording");
@@ -106,11 +108,11 @@ fn a_permissions_request_reads_the_access_asked_for() {
 
 #[test]
 fn a_question_reads_its_options() {
-    let R::RequestUserInput(ask) = request(recorded("plan_mode", &["requestUserInput"])) else {
+    let R::RequestUserInput(ask) = request(recorded("questions", &["requestUserInput"])) else {
         panic!("not a question");
     };
     let question = &ask.questions[0];
-    assert_eq!(question.id, "color");
+    assert_eq!(question.id, "colour");
     assert_eq!(question.is_other, Some(true));
     assert_eq!(question.is_secret, Some(false));
     assert_eq!(question.options.as_ref().map(Vec::len), Some(2));
@@ -173,7 +175,7 @@ fn a_failed_turn_reads_its_error_kind() {
     };
     assert_eq!(done.turn.status, TurnStatus::Failed);
     let error = done.turn.error.expect("error");
-    assert_eq!(error.codex_error_info.expect("info").kind(), "other");
+    assert_eq!(error.codex_error_info.expect("info").kind(), "modelNotFound");
     assert!(error.message.contains("not supported"));
 }
 
@@ -209,7 +211,7 @@ fn rate_limits_and_token_usage_read_their_numbers() {
 #[test]
 fn thread_settings_read_mode_effort_and_sandbox() {
     let N::ThreadSettingsUpdated(update) =
-        notification(recorded("plan_mode", &["thread/settings/updated"]))
+        notification(recorded("mode", &["thread/settings/updated"]))
     else {
         panic!("not settings");
     };
@@ -256,12 +258,14 @@ fn completed_items_read_their_outcomes() {
         Some(WebSearchAction::Search(ref action)) if action.query.as_deref() == Some("capital city of Australia")
     ));
 
-    let ThreadItem::CollabAgentToolCall(spawn) = completed_item("subagent", "collabAgentToolCall")
+    // Codex 0.166 reports the spawn as sub-agent activity; the wait for it
+    // is still a collab call.
+    let ThreadItem::CollabAgentToolCall(wait) = completed_item("subagent", "collabAgentToolCall")
     else {
         panic!("not a subagent call");
     };
-    assert_eq!(spawn.receiver_thread_ids.len(), 1);
-    assert_eq!(spawn.reasoning_effort, Some(ReasoningEffort::Medium));
+    assert_eq!(wait.tool, CollabAgentTool::Wait);
+    assert_eq!(wait.status, ToolStatus::Completed);
 
     let ThreadItem::FileChange(change) = completed_item("file_changes", "fileChange") else {
         panic!("not a file change");
@@ -273,12 +277,12 @@ fn completed_items_read_their_outcomes() {
 fn a_thread_start_answer_reads_as_the_thread_response() {
     let ServerMessage::Response {
         result: Ok(result), ..
-    } = recorded("turn_round_trip", &[r#""id":2,"result""#])
+    } = recorded("turn_round_trip", &[r#""id":"agent-thread","result""#])
     else {
         panic!("not a response");
     };
     let thread: ThreadResponse = codex_protocol::result(&result).expect("a thread response");
-    assert_eq!(thread.model, "gpt-5.6-luna");
+    assert!(!thread.model.is_empty());
     assert!(!thread.thread.id.is_empty());
 }
 

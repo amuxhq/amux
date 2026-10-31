@@ -1,0 +1,24 @@
+{
+  "spec": "file_changes",
+  "recorded": {
+    "provider": "codex",
+    "version": "0.166.0",
+    "model": "gpt-6.1-sol",
+    "at": "2026-10-31T11:58:08.186786Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:1d96d8cdf04c2fb9fff6d0936825fc3e5187c5a320814443e3178085012650d9",
+    "spawn.jsonl": "sha256:4c5fcab8a128a4aa6482301bf17ae7a554e62438622bef5369e13c2c0232a8fe"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 46,
+    "personal_identifiers": 2
+  },
+  "session_ids": [
+    "01a191d0-f91a-7983-b51a-4406baa7e042"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

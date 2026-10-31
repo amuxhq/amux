@@ -1,0 +1,10 @@
+{
+  "about": "Codex's own app attached beside amux before any turn: its prompt reads as another client's, and the approval it leads to, answered from amux, closes for both.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "../../../codex-specs/fixtures/live/attach/io.jsonl",
+    "format": "codex_io"
+  }
+}

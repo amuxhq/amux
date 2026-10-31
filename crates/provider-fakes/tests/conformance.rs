@@ -99,44 +99,6 @@ mod claude_pty {
     });
 }
 
-mod codex {
-    use super::*;
-
-    recordings!(Kind::Codex, "codex-specs/fixtures/runtime", {
-        access_grant => "access_grant",
-        approval_allow => "approval_allow",
-        approval_deny => "approval_deny",
-        approval_scopes => "approval_scopes",
-        automatic_review => "automatic_review",
-        background_terminal => "background_terminal",
-        compaction => "compaction",
-        exploring => "exploring",
-        failing_command => "failing_command",
-        file_changes => "file_changes",
-        file_moved => "file_moved",
-        image => "image",
-        initialize_and_start => "initialize_and_start",
-        inject_busy => "inject_busy",
-        inject_drain => "inject_drain",
-        inject_idle => "inject_idle",
-        interrupt => "interrupt",
-        plan_mode => "plan_mode",
-        reasoning_summary => "reasoning_summary",
-        signed_out => "signed_out",
-        subagent => "subagent",
-        tool_server_form => "tool_server_form",
-        turn_error => "turn_error",
-        turn_retries => "turn_retries",
-        turn_round_trip => "turn_round_trip",
-        two_assistant_messages => "two_assistant_messages",
-        two_clients_approval => "two_clients_approval",
-        two_clients_join_fresh => "two_clients_join_fresh",
-        two_clients_prompt => "two_clients_prompt",
-        two_clients_steer => "two_clients_steer",
-        web_search => "web_search",
-    });
-}
-
 /// Headless Claude's corpus: captures from live runs, driven by amux's own
 /// interpreter.
 mod claude_sdk {
@@ -187,15 +149,44 @@ mod claude_pty_live {
 
 // Unix only: these were recorded over Codex's socket, which amux uses only on
 // Unix; a Windows host speaks to Codex over stdio.
+/// Codex's corpus: captures from live runs, driven by amux's own
+/// interpreter.
 #[cfg(unix)]
-mod codex_live {
+mod codex {
     use super::*;
 
     recordings!(Kind::Codex, "codex-specs/fixtures/live", {
+        access_grant => "access_grant",
+        approval_allow => "approval_allow",
+        approval_deny => "approval_deny",
+        approval_scopes => "approval_scopes",
+        attach => "attach",
+        automatic_review => "automatic_review",
+        background_terminal => "background_terminal",
+        compaction => "compaction",
+        exploring => "exploring",
+        failing_command => "failing_command",
+        file_changes => "file_changes",
+        file_moved => "file_moved",
+        image => "image",
+        inject_drain => "inject_drain",
+        inject_idle => "inject_idle",
+        interrupt => "interrupt",
         mode => "mode",
         permission => "permission",
         plan => "plan",
         questions => "questions",
+        reasoning_summary => "reasoning_summary",
+        resume => "resume",
+        signed_out => "signed_out",
+        steer_folded => "steer_folded",
+        subagent => "subagent",
+        tool_server_form => "tool_server_form",
+        turn_error => "turn_error",
+        turn_retries => "turn_retries",
+        turn_round_trip => "turn_round_trip",
+        two_assistant_messages => "two_assistant_messages",
         usage => "usage",
+        web_search => "web_search",
     });
 }

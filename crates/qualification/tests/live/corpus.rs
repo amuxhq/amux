@@ -21,8 +21,8 @@ use super::asks::{Answer, questions, settled};
 use super::{Follow, Install, Log, Scenario, TURN, Verdict, expect_outcome, judge};
 
 /// A 32×32 solid red PNG, attached to a prompt and left in the project
-/// for Claude to read back.
-const SQUARE_PNG: &[u8] = include_bytes!("../../../claude-specs/assets/square.png");
+/// for the provider to read back.
+pub(super) const SQUARE_PNG: &[u8] = include_bytes!("../../../claude-specs/assets/square.png");
 
 /// The tool the form-asking tool server offers (`claude-probe` run as
 /// one, see its `__tool-server` mode).
@@ -122,7 +122,7 @@ impl Install {
     }
 
     /// A prompt sent and the `n`th turn ended as it should.
-    async fn turn(
+    pub(super) async fn turn(
         &self,
         scenario: Scenario,
         follow: &Follow,
@@ -134,7 +134,7 @@ impl Install {
     }
 
     /// The scenario's own traffic, replayed, has the committed shape.
-    fn judged(&self, scenario: Scenario, follow: &Follow) -> Result<Verdict, String> {
+    pub(super) fn judged(&self, scenario: Scenario, follow: &Follow) -> Result<Verdict, String> {
         self.note_model(follow);
         judge(
             &self.captured(scenario)?.shape(self.kind),
@@ -145,7 +145,7 @@ impl Install {
 
     /// Asks are answered by `answer` until the session settles after a
     /// turn, and the turns that ended all completed.
-    async fn settle(
+    pub(super) async fn settle(
         &self,
         agent: &[u8],
         follow: &Follow,
@@ -162,7 +162,7 @@ impl Install {
     }
 
     /// Sends an input and returns the id it was sent with.
-    async fn send_input(&self, agent: &[u8], of: wire::KindInput) -> Result<Vec<u8>, String> {
+    pub(super) async fn send_input(&self, agent: &[u8], of: wire::KindInput) -> Result<Vec<u8>, String> {
         let id = uuid::Uuid::new_v4().as_bytes().to_vec();
         let response = self
             .client

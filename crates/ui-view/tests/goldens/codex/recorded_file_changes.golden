@@ -1,41 +1,97 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 11 recorded 10: input stdin-4
+## 23 recorded 22: input 0x12f39456441e428aad50828972369aa5
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 28 recorded 27: fact Rpc method=item/started
-  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 30 recorded 29: fact Rpc method=item/completed
+## 66 recorded 65: fact Rpc method=item/started
+  composer Send activity=Some(Running { key: "exec-5ff2f133-cc87-467f-aa15-7c73d982419d" }) queue=[] underway=[] refused=[]
+## 68 recorded 67: fact Rpc method=item/fileChange/requestApproval
+  ask 0 -> "exec-5ff2f133-cc87-467f-aa15-7c73d982419d" 1/1 Open
+    choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }, DenyAndStop
+    body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 0, lines: [Line(PatchLine { number: Some(1), kind: Added, text: "one" })], line: Some(1), reason: "", created: Some(true) }
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 70 recorded 69: input stdin-9
+  ask none
+  composer Send activity=Some(Running { key: "exec-5ff2f133-cc87-467f-aa15-7c73d982419d" }) queue=[] underway=[] refused=[]
+## 74 recorded 73: fact Rpc method=item/completed
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 60 recorded 59: fact Rpc method=item/started
-  composer Send activity=Some(Running { key: "exec-8e77da47-ed05-4328-8c00-28d7e42ef310" }) queue=[] underway=[] refused=[]
-## 62 recorded 61: fact Rpc method=item/completed
+## 81 recorded 80: fact Rpc method=item/started
+  composer Send activity=Some(Running { key: "exec-7c6ab08f-68df-428a-aeec-65458706ef7c" }) queue=[] underway=[] refused=[]
+## 84 recorded 83: fact Rpc method=item/fileChange/requestApproval
+  ask 1 -> "exec-7c6ab08f-68df-428a-aeec-65458706ef7c" 1/1 Open
+    choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }, DenyAndStop
+    body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 1, lines: [Hunk { old_start: 1, new_start: 1 }, Line(PatchLine { number: Some(1), kind: Removed, text: "one" }), Line(PatchLine { number: Some(1), kind: Added, text: "two" })], line: Some(1), reason: "", created: Some(false) }
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 86 recorded 85: input stdin-10
+  ask none
+  composer Send activity=Some(Running { key: "exec-7c6ab08f-68df-428a-aeec-65458706ef7c" }) queue=[] underway=[] refused=[]
+## 90 recorded 89: fact Rpc method=item/completed
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 69 recorded 68: fact Rpc method=item/started
-  composer Send activity=Some(Running { key: "exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8" }) queue=[] underway=[] refused=[]
-## 71 recorded 70: fact Rpc method=item/completed
+## 98 recorded 97: fact Rpc method=item/started
+  composer Send activity=Some(Running { key: "exec-f4ca4732-ccb1-44aa-b77e-a1eb9c472fc7" }) queue=[] underway=[] refused=[]
+## 100 recorded 99: fact Rpc method=item/fileChange/requestApproval
+  ask 2 -> "exec-f4ca4732-ccb1-44aa-b77e-a1eb9c472fc7" 1/1 Open
+    choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }, DenyAndStop
+    body Edit { path: "<MACHINE_PATH>", files: 1, added: 0, removed: 1, lines: [Line(PatchLine { number: Some(1), kind: Removed, text: "old" })], line: None, reason: "", created: Some(false) }
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 102 recorded 101: input stdin-11
+  ask none
+  composer Send activity=Some(Running { key: "exec-f4ca4732-ccb1-44aa-b77e-a1eb9c472fc7" }) queue=[] underway=[] refused=[]
+## 106 recorded 105: fact Rpc method=item/completed
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 79 recorded 78: fact Rpc method=item/started
-  composer Send activity=Some(Running { key: "exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754" }) queue=[] underway=[] refused=[]
-## 81 recorded 80: fact Rpc method=item/completed
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 102 recorded 101: fact Rpc method=turn/completed
+## 123 recorded 122: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 prompt:737464696e2d34 Prompt { text: [Text("Use apply_patch for every change, one patch per step: first create notes.txt containing the line one; then change that line to two; then delete old.txt. Then reply DONE.")], steered: false }
-     3 rs_0fdbb478bf498617016ab7291b4b0887d2ac0f0e8cde625b47 Thinking { text: "", open: false, duration_ms: Some(3812) }
-     4 msg_0fdbb478bf498617016ab7291c43e887d2acdd24a661bb1de1 Prose { text: [Text("I’ll make the three requested changes as separate patches in order.")], streaming: false, working_note: true }
-     5 exec-8e77da47-ed05-4328-8c00-28d7e42ef310 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=2] collapsed
-     6 diff:01a0db78-83d5-7ff0-820e-122e9a43ee0f Hidden run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3] collapsed
-     7 exec-d949ae90-3ccd-40eb-8921-6c7ce431fdf8 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=1] collapsed
-     8 exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Deleted, added: 0, removed: 1, line: None }], state: Succeeded } run[exec-8e77da47-ed05-4328-8c00-28d7e42ef310..exec-b3a8e2c5-6374-4b0a-abc3-9ae32663a754 x3 recent=0 RunCounts { commands: 0, edits: 3, reads: 0, searches: 0, subagents: 0, other: 0 }]
-     9 msg_0fdbb478bf498617016ab72921bbac87d2838294812ce8b3c3 Prose { text: [Text("DONE")], streaming: false, working_note: false }
-    10 turn:1 TurnEnd { duration_ms: Some(10348), failed: false }
+     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     3 prompt:12f39456441e428aad50828972369aa5 Prompt { text: [Text("Use apply_patch for every change, one patch per step: first create notes.txt containing the line one; then change that line to two; then delete old.txt. Then reply DONE.")], steered: false }
+     4 msg_076027208a1cfec3016ae5d74cee8c8191a5ae67f9d1898b35 Prose { text: [Text("I’ll make the three changes in order, using a separate patch for each step.")], streaming: false, working_note: true }
+     5 exec-5ff2f133-cc87-467f-aa15-7c73d982419d FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[exec-5ff2f133-cc87-467f-aa15-7c73d982419d..exec-f4ca4732-ccb1-44aa-b77e-a1eb9c472fc7 x3 recent=2] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false } collapsed
+     6 diff:01a191d0-f958-7960-823f-61a05a76e06f Hidden run[exec-5ff2f133-cc87-467f-aa15-7c73d982419d..exec-f4ca4732-ccb1-44aa-b77e-a1eb9c472fc7 x3] collapsed
+     7 exec-7c6ab08f-68df-428a-aeec-65458706ef7c FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[exec-5ff2f133-cc87-467f-aa15-7c73d982419d..exec-f4ca4732-ccb1-44aa-b77e-a1eb9c472fc7 x3 recent=1] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false } collapsed
+     8 exec-f4ca4732-ccb1-44aa-b77e-a1eb9c472fc7 FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Deleted, added: 0, removed: 1, line: None }], state: Succeeded } run[exec-5ff2f133-cc87-467f-aa15-7c73d982419d..exec-f4ca4732-ccb1-44aa-b77e-a1eb9c472fc7 x3 recent=0 RunCounts { commands: 0, edits: 3, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, gr…
+     9 msg_076027208a1cfec3016ae5d75410648191ab8a202f2ea155eb Prose { text: [Text("DONE")], streaming: false, working_note: false }
+    10 turn:1 TurnEnd { duration_ms: Some(10080), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 12922, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 15563, window_tokens: Some(475000), percent: Some(3), near_full: false }) sign-in None
 == settings
-  model* unlisted gpt-5.6-luna "GPT-5.6 Luna" efforts=[]
-  permission* unlisted custom "" "" unsettable
-  changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  model* gpt-6.1-sol "GPT-6.1-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-astra "GPT-6-Astra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6.1-terra "GPT-6.1 Terra" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-sol "GPT-6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6-luna "GPT-6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  model  gpt-5.6-sol "GPT-5.6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-5.6-terra "GPT-5.6-Terra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-5.6-luna "GPT-5.6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  effort* low (default)
+  effort  medium
+  effort  high
+  effort  xhigh
+  effort  max
+  effort  ultra
+  permission* "read-only" "Read only"
+  permission  "default" "Default" normal
+  permission  "auto" "Auto"
+  permission  "full-access" "Full access" never_asks
+  mode  "default" "Default" normal
+  mode  "plan" "Plan"
+  changes: model Pick · effort Pick · permission Pick · mode Pick
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
-  controls: model=Some("GPT-5.6 Luna") effort=None permission=None mode=None
+  command /compact source="codex" hint="" "Summarize the conversation to free up context"
+  command /clear source="codex" hint="" "Start a new conversation"
+  command /review source="codex" hint="[instructions]" "Review the uncommitted changes, or what the instructions say"
+  command /init source="codex" hint="" "Write an AGENTS.md with instructions for Codex"
+  command /plan source="codex" hint="[prompt]" "Switch to plan mode"
+  command /autopilot source="user" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested."
+  command /delegate source="user" hint="" "Resolve or diagnose agent staffing by mapping a requested role and effort through the operator-owned roster to a mind and dispatch specification. Use when an agent or driver will dispatch work, or when a binding cannot launch. Do not use merely because ordinary work is being discussed or performed locally."
+  command /frontend-design source="user" hint="" "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.…
+  command /gardening source="user" hint="" "Review and improve an operator's Linear backlog with them. Use when the operator asks to garden, clean up, shape, deduplicate, or reassess tracked work. Do not invoke merely because Linear is available or ordinary work reveals a possible follow-up."
+  command /handoff source="user" hint="" "Independently verify and present finished work when an ordinary diff and focused checks are not enough to judge it, including third-party branches or pull requests. Use compact proof for easily judged behavior and a decision page for consequential or difficult work. Do not invoke at project start or impose a page on ordinary small changes."
+  command /intake source="user" hint="" "Align and confirm a durable acceptance contract for consequential work that must cross contexts. Use after the operator commits to work when several requirements, boundaries, or success demonstrations remain unsettled. Skip for exploration, one or two locally resolvable questions, and already-confirmed requirements."
+  command /imagegen source="system" hint="" "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the …
+  command /openai-docs source="system" hint="" "Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge—including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex—and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not u…
+  command /review-agent source="system" hint="" "Perform a read-only, defect-first review of a specified code change and return every actionable finding. Use when another agent delegates review of uncommitted changes, a base-branch diff, a commit, or custom review instructions."
+  command /skill-creator source="system" hint="" "Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources."
+  command /skill-installer source="system" hint="" "Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos)."
+  controls: model=Some("GPT-6.1-Sol") effort=Some("low") permission=Some("read-only") mode=None

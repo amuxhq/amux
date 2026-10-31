@@ -1,20 +1,21 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 17 recorded 16: input 0xff822a81aa6d4fa3821574e670bd8c3d
+## 23 recorded 22: input 0xe0b8589a0d71470ab6567509d0847f2a
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 50 recorded 49: fact Rpc method=turn/completed
+## 51 recorded 50: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 prompt:ff822a81aa6d4fa3821574e670bd8c3d Prompt { text: [Text("Reply with the single word pong and nothing else. Do not plan anything.")], steered: false }
-     3 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
-     4 msg_07968efaa2c25d91016ac5c009ac4c819198cbf64bca95be6f Prose { text: [Text("pong")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(3798), failed: false }
+     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     3 prompt:e0b8589a0d71470ab6567509d0847f2a Prompt { text: [Text("Reply with the single word pong and nothing else. Do not plan anything.")], steered: false }
+     4 msg_0b8ec0e134962224016ae5d71bed7c8191889daa8692cbd2f1 Prose { text: [Text("pong")], streaming: false, working_note: false }
+     5 turn:1 TurnEnd { duration_ms: Some(3991), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 18016, window_tokens: Some(258400), percent: Some(6), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 16908, window_tokens: Some(475000), percent: Some(3), near_full: false }) sign-in None
 == settings
   model* gpt-6.1-sol "GPT-6.1-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
   model  gpt-6-astra "GPT-6-Astra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6.1-terra "GPT-6.1 Terra" efforts=[low,medium,high,xhigh,max,ultra] default=low
   model  gpt-6-sol "GPT-6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=medium
   model  gpt-6-luna "GPT-6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
   model  gpt-5.6-sol "GPT-5.6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low

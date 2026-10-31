@@ -25,7 +25,7 @@ use tonic::{Code, Status};
 use wire::{
     Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, ExitCause, HostEntry, HostRef, Kind,
     Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, SendMessageRequest,
-    StopAgentRequest, attachment, create_agent_request, host_ref, inventory_event,
+    StopAgentRequest, attachment, create_agent_request, inventory_event,
 };
 
 use crate::dir;
@@ -384,9 +384,7 @@ impl Server {
         };
         let request = CreateAgentRequest {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-            host: host.map(|name| HostRef {
-                of: Some(host_ref::Of::Name(name)),
-            }),
+            host: host.map(HostRef::named),
             name,
             parent: None,
             cwd,

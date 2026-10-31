@@ -16,7 +16,7 @@ use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
     BeginPairRequest, BindProfileRequest, Empty, HostEntry, HostRef, PairingIdentity,
     PairingWindow, PendingPair, RouteKind, StartPairingRequest, TrustSshPeerRequest, UnpairRequest,
-    begin_pair_request, host_ref, pairing_window, peer_reachability, start_pairing_request,
+    begin_pair_request, pairing_window, peer_reachability, start_pairing_request,
 };
 
 type Door = InstallationServiceClient<Channel>;
@@ -698,11 +698,9 @@ fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry], free: bool) -> String
 
 /// Stops trusting a paired host, asking first unless forced.
 pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
-    let reference = HostRef {
-        of: Some(match Uuid::parse_str(peer) {
-            Ok(id) => host_ref::Of::HostId(id.as_bytes().to_vec()),
-            Err(_) => host_ref::Of::Name(peer.to_owned()),
-        }),
+    let reference = match Uuid::parse_str(peer) {
+        Ok(id) => HostRef::id(id.as_bytes().to_vec()),
+        Err(_) => HostRef::named(peer),
     };
     let entry = admin
         .get_peer(wire::GetPeerRequest {

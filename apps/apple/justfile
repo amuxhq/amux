@@ -215,12 +215,6 @@ measured:
 script-tests:
     {{bounded}} 120 {{python}} -m unittest discover -s apps/apple/Tools/tests -p '*_test.py' -t apps/apple/Tools/tests
 
-# Read-only toward the supplied design checkout; all experimental variants and
-# captures are generated in a fresh ignored output directory.
-# Measure iteration against a design checkout, read-only.
-design-benchmark *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 900 {{python}} -B apps/apple/Tools/ios-design-benchmark.py "$@"
-
 # Version, tag, archive, export, validate and upload the iPhone app, then push
 # the tag and main (--no-upload and --no-push stop short). --preflight reports
 # its inputs and stops; --rehearse archives and exports the would-be release without writing

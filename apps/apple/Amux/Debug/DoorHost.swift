@@ -30,8 +30,6 @@ final class DoorHost {
     /// The appearance the driver asked for, worn over whatever the app or
     /// the phone would choose; nothing until it asks.
     private(set) var appearance: Appearance?
-    private(set) var design: Design = .app
-    private(set) var designVariant: DesignVariant = .production
     private(set) var typeSize: DynamicTypeSize = .large
     private(set) var reduceMotion = false
     private(set) var reduceTransparency = false
@@ -118,13 +116,6 @@ final class DoorHost {
         case .appearance(let appearance):
             await wear(appearance)
             events.append(.appearance(appearance))
-            return .ack
-        case .designVariant(let name):
-            guard let variant = DesignVariant(name: name) else {
-                return .error("no design variant named \(name ?? "nil")")
-            }
-            designVariant = variant
-            design = variant.design
             return .ack
         case .dynamicType(let name):
             guard let size = DynamicTypeSize(doorName: name) else {
@@ -925,8 +916,8 @@ enum Launch {
     }
 }
 
-/// The root a debug build draws: the app, under the appearance, type size and
-/// design the door was asked for, reporting every element it declares.
+/// The root a debug build draws: the app, under the appearance and type size
+/// the door was asked for, reporting every element it declares.
 struct DrivenRoot<Content: View>: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @State private var host = DoorHost.shared
@@ -939,8 +930,6 @@ struct DrivenRoot<Content: View>: View {
     var body: some View {
         content
             .preferredColorScheme(host.worn?.colorScheme)
-            .environment(\.design, host.design)
-            .modifier(DesignVariantLayout(variant: host.designVariant))
             .dynamicTypeSize(host.typeSize)
             .transformEnvironment(\.reducesMotion) { $0 = $0 || host.reduceMotion }
             .transformEnvironment(\.reducesTransparency) { $0 = $0 || host.reduceTransparency }

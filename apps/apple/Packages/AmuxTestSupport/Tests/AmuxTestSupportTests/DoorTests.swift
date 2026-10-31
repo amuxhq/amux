@@ -42,8 +42,6 @@ final class DoorTests: XCTestCase {
             .dynamicType("accessibility3"),
             .assist(motion: true, transparency: true),
             .states,
-            .designVariant("context-band"),
-            .designVariant(nil),
             .settle,
             .query,
             .capture(path: "/tmp/home.png"),

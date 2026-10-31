@@ -1,11 +1,6 @@
 {
   "version": 1,
   "files": {
-    "apps/apple/Amux/Debug/DesignVariant.swift": [
-      {"literal": "\"tight-gutter\"", "context": "case tightGutter = \"tight-gutter\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"large-title\"", "context": "case largeTitle = \"large-title\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"context-band\"", "context": "case contextBand = \"context-band\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
-    ],
     "apps/apple/Amux/Debug/DoorHost.swift": [
       {"literal": "\"nothing scrolls there\"", "context": "guard let list = found else { return .error(\"nothing scrolls there\") }", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"up\"", "context": "case \"up\": y = max(top, list.contentOffset.y - page)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
@@ -39,8 +34,6 @@
       {"literal": "\"\\(identifier) does not take text\"", "context": "return .error(\"\\(identifier) does not take text\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"\\(identifier) would not empty\"", "context": "guard !input.hasText else { return .error(\"\\(identifier) would not empty\") }", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"\\(identifier) does not take a paste\"", "context": "return .error(\"\\(identifier) does not take a paste\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"nil\"", "context": "return .error(\"no design variant named \\(name ?? \"nil\")\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"no design variant named \\(name ?? \"nil\")\"", "context": "return .error(\"no design variant named \\(name ?? \"nil\")\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"forgetSession \\(id)\"", "context": "case .forgetSession(let id): \"forgetSession \\(id)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"signIn hint \\(account.email)\"", "context": "case .signIn(.returning(let account)): \"signIn hint \\(account.email)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"signIn select\"", "context": "case .signIn(.adding): \"signIn select\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
@@ -850,8 +843,6 @@
       {"literal": "\"accessibility3\"", "context": "\"accessibility3\": .accessibility3, \"accessibility4\": .accessibility4,", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"accessibility4\"", "context": "\"accessibility3\": .accessibility3, \"accessibility4\": .accessibility4,", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"accessibility5\"", "context": "\"accessibility5\": .accessibility5,", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"designVariant\"", "context": "case \"designVariant\":", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"designVariant\"", "context": "try fields.encode(\"designVariant\", forKey: .kind)", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"localNetwork\"", "context": "case \"localNetwork\":", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"localNetwork\"", "context": "try fields.encode(\"localNetwork\", forKey: .kind)", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"refreshEntitlement\"", "context": "case \"refreshEntitlement\": self = .refreshEntitlement", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},

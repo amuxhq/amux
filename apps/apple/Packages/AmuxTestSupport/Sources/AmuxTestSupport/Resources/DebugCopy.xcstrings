@@ -133,18 +133,6 @@
         }
       }
     },
-    "3 HOSTS" : {
-      "comment" : "English app copy. Used in DesignVariant.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "3 HOSTS"
-          }
-        }
-      }
-    },
     "3 specs updated, all green." : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",
@@ -1293,18 +1281,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Initialize a new CLAUDE.md file"
-          }
-        }
-      }
-    },
-    "LOCAL FLEET" : {
-      "comment" : "English app copy. Used in DesignVariant.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "LOCAL FLEET"
           }
         }
       }

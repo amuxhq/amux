@@ -131,8 +131,6 @@ public enum DoorRequest: Sendable, Equatable {
     /// whatever has been built today without a second list of it to keep in
     /// step.
     case states
-    /// Select one of the Debug-only layouts compiled together for a design round.
-    case designVariant(String?)
     /// Wait until the screen has stopped changing. A capture that does not
     /// wait for this photographs a frame mid-animation.
     case settle
@@ -666,8 +664,6 @@ extension DoorRequest: Codable {
                 transparency: try fields.decode(Bool.self, forKey: .transparency))
         case "geometry":
             self = .geometry(on: try fields.decode(Bool.self, forKey: .on))
-        case "designVariant":
-            self = .designVariant(try fields.decodeIfPresent(String.self, forKey: .name))
         case "settle": self = .settle
         case "query": self = .query
         case "capture":
@@ -842,9 +838,6 @@ extension DoorRequest: Codable {
         case .geometry(let on):
             try fields.encode("geometry", forKey: .kind)
             try fields.encode(on, forKey: .on)
-        case .designVariant(let name):
-            try fields.encode("designVariant", forKey: .kind)
-            try fields.encodeIfPresent(name, forKey: .name)
         case .settle:
             try fields.encode("settle", forKey: .kind)
         case .query:

@@ -119,8 +119,8 @@ The recipes a build or change usually needs:
 | `just warm` | `just build` and `just test-build` |
 | `just ci` | The whole check sequence; see [CI](CI.md) |
 
-[Testing](TESTING.md) covers the test recipes (`test-store`, `test-ui`,
-`test-tui`, `spec`, `journey`, `live`, `perf`, `tests-list`) in detail.
+[Testing](TESTING.md) covers the test recipes (`suite`, `test-tui`,
+`spec`, `journey`, `live`, `perf`, `tests-list`) in detail.
 
 ## Generated code
 

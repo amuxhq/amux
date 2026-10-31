@@ -30,7 +30,7 @@ class TestsCatalogTest(unittest.TestCase):
         errors = []
         catalog.validate_cargo_recipe("links", "just suite links", selectors, errors)
         catalog.validate_cargo_recipe("links", "just suite stories", selectors, errors)
-        catalog.validate_cargo_recipe("links", "just test-store", selectors, errors)
+        catalog.validate_cargo_recipe("links", "just test-tui", selectors, errors)
 
         self.assertEqual(errors, ["links: recipe runs suite 'stories', not its own"])
 

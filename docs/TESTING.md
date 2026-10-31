@@ -174,8 +174,8 @@ just test                                  # every ordinary workspace target
 just suite many-daemon-protocol-spec       # one suite of tests/catalog.toml, on `just test`'s build
 just suite link-stories relaunch           # the same, then a test-name filter
 just test-crate interpret -- codex::       # one crate, then nextest arguments
-just test-store                            # the store's reader and writer suite, retention and SQLite file
-just test-ui                               # the client model spec
+just suite sqlite-store-contract           # the store's reader and writer suite, retention and SQLite file
+just suite client-model-spec               # the client model spec
 just test-tui                              # terminal presentation and goldens
 just offline-test                          # workspace tests with isolated config and no network (Linux, sudo)
 just journey terminal reach-host           # one terminal journey

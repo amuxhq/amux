@@ -67,18 +67,10 @@ flaky *ARGS: nextest
 nextest:
     @cargo nextest --version >/dev/null 2>&1 || { echo "cargo-nextest is not installed: brew install cargo-nextest, or cargo install --locked cargo-nextest@0.9.150 (.config/nextest.toml requires it)" >&2; exit 1; }
 
-# Exercise the profile store: its reader and writer suite, retention and the SQLite file.
-test-store *ARGS: nextest
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo nextest run --locked -p store "$@"
-
 # Cross-compile every store test target and run it on the leased, booted iOS
 # simulator, after proving the store's integration binary carries SQLite itself.
 test-store-ios:
     scripts/with iphone -- {{bounded}} 2300 scripts/py -B apps/apple/Tools/ios-store-test.py
-
-# Exercise the pure store-backed reducer lifecycle and recorded UI specs.
-test-ui *ARGS: nextest
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo nextest run --locked -p ui-state "$@"
 
 # Compile every ordinary workspace test target without running it.
 test-build:

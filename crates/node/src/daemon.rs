@@ -166,9 +166,9 @@ impl Installation {
                 None => analytics::Analytics::off(),
             },
             auto_reports: self.auto_reports.clone(),
-            worktrees: Arc::new(crate::worktree::GitWorktrees::new(
+            worktrees: crate::worktree::GitWorktrees::new(
                 self.data_dir.join(crate::worktree::WORKTREES),
-            )),
+            ),
         }))
     }
 

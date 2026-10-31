@@ -118,7 +118,7 @@ pub use runtime::{
 };
 pub use serve::{MAX_PAGE, ServeError};
 pub use telemetry::Telemetry;
-pub use worktree::{GitWorktrees, MakeWorktree, WORKTREES};
+pub use worktree::{GitWorktrees, WORKTREES};
 
 /// Internals the testnet harness assembles topologies from. Hidden and
 /// unstable: reachable only for test infrastructure, never for products.

@@ -145,7 +145,8 @@ enum Pause {
     /// whatever refused the link is asked again at once.
     ShortLink,
     /// The host dials this one itself, having just paired with it as the
-    /// joiner or said goodbye as it stopped: a dial from here too would
+    /// joiner, arrived where a peer of this one is, or said goodbye as it
+    /// stopped: a dial from here too would
     /// cross its dial, and of two crossed links one is turned away, with
     /// whatever the dial carried, a returning host's catch-up among it.
     /// Its link coming or an attempt's deadline passing ends it.
@@ -187,9 +188,9 @@ impl Reach {
     }
 
     /// Whether a link is expected from `host` itself, which dials this
-    /// host: it just paired with it as the joiner, or said goodbye as it
-    /// stopped. This host does not dial it meanwhile, so a call waits for
-    /// that link.
+    /// host: it just paired with it as the joiner, arrived where a peer of
+    /// this one is, or said goodbye as it stopped. This host does not dial
+    /// it meanwhile, so a call waits for that link.
     pub fn expecting(&self, host: HostId) -> bool {
         self.hosts
             .get(&host)
@@ -519,6 +520,23 @@ impl Daemon {
         if self.routing.reach.listening && self.wanted(host) && !linked {
             self.expect_link(host, out);
         }
+    }
+
+    /// A peer says `host`, which nothing reached, has just arrived there.
+    /// The newcomer was handed the peer's list of who was there, this host
+    /// among them, and dials each it trusts, so this host waits as long as
+    /// an attempt may take for that link rather than cross it, and dials
+    /// once the wait is over if none came: the newcomer may be unable to
+    /// reach this host where this host can reach it. An attempt this host
+    /// had out to it, retrying while it was gone, is dropped: it reached
+    /// nothing through the peer, where the host was not, and its next
+    /// retransmit there would cross the newcomer's dial.
+    pub(crate) fn expect_arrival(&mut self, host: HostId, out: &mut Vec<Output>) {
+        if !self.wanted(host) {
+            return;
+        }
+        self.abandon(host, out);
+        self.expect_link(host, out);
     }
 
     fn cut_pause(&mut self, host: HostId, out: &mut Vec<Output>) {

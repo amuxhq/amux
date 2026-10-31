@@ -33,7 +33,11 @@ pairing the joiner dials and the offerer waits up to ten seconds for that
 link, a call on the offerer meanwhile waiting with it, so the two dials do
 not cross; a host that closed its link saying goodbye as it stopped is left
 the same ten seconds to dial back as it starts again, so its first dial and
-the catch-up it carries are not turned away by a dial from here; an attempt
+the catch-up it carries are not turned away by a dial from here; a host a
+peer announces as just arrived, reached by nothing before, is likewise left
+the same ten seconds to dial, an attempt out to it dropped, since the
+peer's list of who was there named this host to it, while a host named in
+a peer's list is dialled from here; an attempt
 that ends without a link otherwise is followed by a pause (one second doubling to thirty) that a new path or a call
 wanting the host cuts short, and a host whose link dropped within a second
 waits out the rest of that second before the next; a host that refused

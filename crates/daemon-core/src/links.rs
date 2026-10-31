@@ -302,6 +302,22 @@ impl Daemon {
             return;
         };
         let (peer, kind) = (entry.peer, entry.kind);
+        let other = |host: &HostId| Some(*host) != own && *host != peer;
+        // Reached by nothing before, a host announced has just arrived
+        // where the peer is, and dials this host itself: the peer's list of
+        // who was there named this one. Heard first, before what the frame
+        // says of the host has it dialled.
+        if let Some(Body::NeighborUp(up)) = &frame.body
+            && let Some(host) = up
+                .host
+                .as_ref()
+                .filter(|host| !is_relay(host))
+                .and_then(|host| HostId::from_slice(&host.host_id))
+                .filter(other)
+            && self.routing.links.routes_to(host).is_empty()
+        {
+            self.expect_arrival(host, out);
+        }
         if let Some(body) = &frame.body {
             self.catalogue_frame(link, peer, body, out);
             self.addressed(link, peer, kind, body, out);
@@ -310,7 +326,6 @@ impl Daemon {
             return;
         };
         let mut claims = entry.claims.clone();
-        let other = |host: &HostId| Some(*host) != own && *host != peer;
         match frame.body {
             Some(Body::Hello(hello)) => {
                 claims = hosts(&hello.neighbors).filter(other).collect();

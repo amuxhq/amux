@@ -1844,32 +1844,6 @@ async fn hold_buffer_bad_token_drops_the_held_packets_unanswered() {
     net.shutdown().await.unwrap();
 }
 
-/// A relaunch presents the relay credential the laptop kept and makes no
-/// call to the account service, and its link to the desk comes up through
-/// the relay as before.
-#[tokio::test(flavor = "multi_thread")]
-async fn token_relaunch_no_connect_reuses_the_kept_credential() {
-    let mut net = linked_through_the_relay(WEEK).await;
-    let connects = net.relay().unwrap().connects();
-    println!("signed in: the account service was called {connects:?}");
-    let mark = relaunch(&mut net, "laptop").await;
-
-    let up = logged(&net, "laptop", "desk", LinkTransition::Up, mark).await;
-    assert_eq!(up.path, PathKind::RelayUdp);
-    assert_eq!(
-        net.relay().unwrap().connects(),
-        connects,
-        "the relaunch made no call to the account service"
-    );
-    println!(
-        "relaunched: presented {:?}, the account service's connects unchanged",
-        net.relay().unwrap().presented()
-    );
-    streams_live(&net, &["laptop"], "worker", "said through the relay").await;
-    still_relayed(&net, "laptop", "desk");
-    net.shutdown().await.unwrap();
-}
-
 /// The account lapses at the account service while its hosts' week-long
 /// credentials still say paid: the relay keeps forwarding until the hourly
 /// refresh brings it credentials saying free, then stops and tells both

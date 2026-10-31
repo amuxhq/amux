@@ -16,10 +16,7 @@ final class DeepLinkTests: XCTestCase {
         """)!
 
     func testAPairingLinkReadsAsTheOfferTheHostWrote() throws {
-        let parsed = try XCTUnwrap(DeepLink(link))
-        guard case .pair(let invitation) = parsed else {
-            return XCTFail("expected a pairing invitation, got \(parsed)")
-        }
+        let invitation = try XCTUnwrap(PairingInvitation(link: link))
         XCTAssertEqual(invitation.host, HostId("3a1f9d2c-0000-4000-8000-000000000001"))
         XCTAssertEqual(invitation.cloudURL, "https://amux.sh")
         XCTAssertEqual(invitation.secret, Array(UInt8(1)...UInt8(32)))
@@ -36,9 +33,7 @@ final class DeepLinkTests: XCTestCase {
         """)!
 
     func testAnInvitationWithAnAddressNeedsNoAccount() throws {
-        guard case .pair(let invitation)? = DeepLink(nearby) else {
-            return XCTFail("expected a pairing invitation")
-        }
+        let invitation = try XCTUnwrap(PairingInvitation(link: nearby))
         XCTAssertEqual(invitation.addrs, ["192.0.2.4:9001"])
         XCTAssertNil(invitation.cloudURL)
         XCTAssertFalse(invitation.needsAnAccount)
@@ -48,19 +43,14 @@ final class DeepLinkTests: XCTestCase {
     /// network has not. There is nothing here to dial, so there is nothing to
     /// do about it without an account.
     func testAnInvitationWithNoAddressNeedsAnAccount() throws {
-        guard case .pair(let invitation)? = DeepLink(link) else {
-            return XCTFail("expected a pairing invitation")
-        }
+        let invitation = try XCTUnwrap(PairingInvitation(link: link))
         XCTAssertEqual(invitation.addrs, [])
         XCTAssertTrue(invitation.needsAnAccount)
     }
 
     func testAPairingLinkPairsWithNobodyAndAsksInstead() throws {
         let router = Router()
-        let parsed = try XCTUnwrap(router.open(link))
-        guard case .pair(let invitation) = parsed else {
-            return XCTFail("expected a pairing invitation, got \(parsed)")
-        }
+        let invitation = try XCTUnwrap(router.open(link))
 
         // The link raises a sheet that names the machine and waits. Trust is
         // committed by the person looking at the fingerprint, never by the
@@ -69,36 +59,9 @@ final class DeepLinkTests: XCTestCase {
         XCTAssertEqual(router.path, [])
     }
 
-    func testAnInvitationDoesNotPrintItsSecret() {
-        guard case .pair(let invitation)? = DeepLink(link) else {
-            return XCTFail("expected a pairing invitation")
-        }
+    func testAnInvitationDoesNotPrintItsSecret() throws {
+        let invitation = try XCTUnwrap(PairingInvitation(link: link))
         XCTAssertEqual(invitation.description, "invitation from 3a1f9d2c-0000-4000-8000-000000000001")
-    }
-
-    func testASignInCallbackIsNotNavigation() throws {
-        let router = Router()
-        let callback = URL(string: "amux://callback?code=abc&state=xyz")!
-
-        let parsed = try XCTUnwrap(router.open(callback))
-
-        guard case .signInCallback(let url) = parsed else {
-            return XCTFail("expected a sign-in callback, got \(parsed)")
-        }
-        XCTAssertEqual(url, callback)
-        XCTAssertEqual(router.path, [])
-        XCTAssertEqual(router.tab, .agents)
-    }
-
-    func testACallbackIsHeldUntilItIsCollectedAndThenOnlyOnce() {
-        let router = Router()
-        let callback = URL(string: "amux://callback?code=abc")!
-        router.open(callback)
-
-        XCTAssertNotNil(router.held)
-        XCTAssertNil(router.takeHeld { if case .pair = $0 { true } else { false } })
-        XCTAssertNotNil(router.takeHeld())
-        XCTAssertNil(router.takeHeld())
     }
 
     func testALinkThatCannotBeReadIsRefusedRatherThanShown() {
@@ -108,6 +71,8 @@ final class DeepLinkTests: XCTestCase {
             "https://amux.sh/pair?payload=abc",
             // This app's scheme, nothing it knows how to do.
             "amux://unknown",
+            // A sign-in callback: the sign-in's own browser session takes it.
+            "amux://callback?code=abc&state=xyz",
             // A pairing link with no offer in it.
             "amux://pair",
             // An offer that is not base64.
@@ -118,12 +83,11 @@ final class DeepLinkTests: XCTestCase {
             "amux://pair?payload=eyJob3N0X2lkIjoibm90LWEtdXVpZCIsImNsb3VkX3VybCI6IiIsInNlY3JldCI6W119",
         ] {
             let url = URL(string: text)!
-            XCTAssertNil(DeepLink(url), "\(text) should not read as a link")
+            XCTAssertNil(PairingInvitation(link: url), "\(text) should not read as a link")
             XCTAssertNil(router.open(url), "\(text) should lead nowhere")
         }
         XCTAssertEqual(router.path, [])
         XCTAssertEqual(router.tab, .agents)
-        XCTAssertNil(router.held)
     }
 
     func testBase64AsAURLCarriesIt() {
@@ -145,10 +109,7 @@ final class DeepLinkTests: XCTestCase {
     /// for. The base64 around it belongs to the URL and is undone here.
     func testAColdLaunchedLinkKeepsTheOfferItArrivedWith() throws {
         let router = Router()
-        let parsed = try XCTUnwrap(router.open(link))
-        guard case .pair(let invitation) = parsed else {
-            return XCTFail("expected a pairing invitation, got \(parsed)")
-        }
+        let invitation = try XCTUnwrap(router.open(link))
 
         XCTAssertEqual(router.pairing, .link(invitation))
         let encoded = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?

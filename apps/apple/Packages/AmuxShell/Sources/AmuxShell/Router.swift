@@ -70,12 +70,6 @@ public final class Router {
         }
     }
 
-    /// A link that is not navigation, kept until whatever it answers comes
-    /// for it. A sign-in callback can arrive before the sign-in that started
-    /// it is listening — during a cold start the system hands the link over
-    /// before the first frame — and dropping it would strand the sign-in.
-    public private(set) var held: DeepLink?
-
     private weak var loader: (any RouteLoader)?
 
     public init(loader: (any RouteLoader)? = nil) {
@@ -190,25 +184,11 @@ public final class Router {
     ///
     /// A pairing link becomes a confirmation page and pairs with nobody: the
     /// machine on the other end is named and its fingerprint shown, and trust
-    /// is committed only when the person says so. A sign-in callback is not
-    /// navigation; it is held for the sign-in that started it to collect.
+    /// is committed only when the person says so. Any other link is refused.
     @discardableResult
-    public func open(_ url: URL) -> DeepLink? {
-        guard let link = DeepLink(url) else { return nil }
-        switch link {
-        case .pair(let invitation):
-            pairing = .link(invitation)
-        case .signInCallback:
-            held = link
-        }
-        return link
-    }
-
-    /// Takes the held link, if it is the kind asked for, and forgets it. A link
-    /// is acted on once.
-    public func takeHeld(_ isWanted: (DeepLink) -> Bool = { _ in true }) -> DeepLink? {
-        guard let held, isWanted(held) else { return nil }
-        self.held = nil
-        return held
+    public func open(_ url: URL) -> PairingInvitation? {
+        guard let invitation = PairingInvitation(link: url) else { return nil }
+        pairing = .link(invitation)
+        return invitation
     }
 }

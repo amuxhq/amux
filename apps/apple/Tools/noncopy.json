@@ -664,9 +664,8 @@
     ],
     "apps/apple/Packages/AmuxShell/Sources/AmuxShell/DeepLink.swift": [
       {"literal": "\"amux\"", "context": "public static let scheme = \"amux\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"pair\"", "context": "case \"pair\":", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"payload\"", "context": ".queryItems?.first(where: { $0.name == \"payload\" })?.value,", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"callback\"", "context": "case \"callback\":", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"pair\"", "context": "guard url.scheme == Self.scheme, url.host == \"pair\",", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"payload\"", "context": ".queryItems?.first(where: { $0.name == \"payload\" })?.value", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"host_id\"", "context": "case hostID = \"host_id\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"cloud_url\"", "context": "case cloudURL = \"cloud_url\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"-\"", "context": "var standard = text.replacingOccurrences(of: \"-\", with: \"+\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
@@ -679,7 +678,7 @@
       {"literal": "\"/\"", "context": ".replacingOccurrences(of: \"/\", with: \"_\")", "reason": "Pairing link syntax, not interface copy.", "count": 1},
       {"literal": "\"_\"", "context": ".replacingOccurrences(of: \"/\", with: \"_\")", "reason": "Pairing link syntax, not interface copy.", "count": 1},
       {"literal": "\"=\"", "context": ".replacingOccurrences(of: \"=\", with: \"\")", "reason": "Pairing link syntax, not interface copy.", "count": 1},
-      {"literal": "\"\\(DeepLink.scheme)://pair?payload=\\(encoded)\"", "context": "return \"\\(DeepLink.scheme)://pair?payload=\\(encoded)\"", "reason": "Pairing link syntax, not interface copy.", "count": 1}
+      {"literal": "\"\\(Self.scheme)://pair?payload=\\(encoded)\"", "context": "return \"\\(Self.scheme)://pair?payload=\\(encoded)\"", "reason": "Pairing link syntax, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxShell/Sources/AmuxShell/Route.swift": [
       {"literal": "\"conversation\"", "context": "case .conversation: \"conversation\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},

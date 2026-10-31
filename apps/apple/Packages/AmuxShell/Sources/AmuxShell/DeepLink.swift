@@ -51,7 +51,7 @@ public struct PairingInvitation: Hashable, Sendable, CustomStringConvertible {
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
-        return "\(DeepLink.scheme)://pair?payload=\(encoded)"
+        return "\(Self.scheme)://pair?payload=\(encoded)"
     }
 
     /// The invitation is a secret, so it prints as the machine it came from
@@ -60,41 +60,23 @@ public struct PairingInvitation: Hashable, Sendable, CustomStringConvertible {
     public var description: String { "invitation from \(host)" }
 }
 
-/// A link the app was opened with.
-///
-/// Parsing one is not acting on one. A pairing link becomes a page asking the
-/// person to confirm; a sign-in callback is not navigation at all and is
-/// handed back to whoever started the sign-in.
-public enum DeepLink: Hashable, Sendable {
-    case pair(PairingInvitation)
-    case signInCallback(URL)
-
-    /// The scheme both the CLI's pairing links and the sign-in callback use.
+extension PairingInvitation {
+    /// The scheme the CLI's pairing links use.
     public static let scheme = "amux"
 
-    /// Reads a link, or refuses it.
+    /// Reads a pairing link, or refuses it.
     ///
     /// Everything about the link is checked here rather than on the page it
     /// leads to: a malformed invitation must not become a confirmation screen
     /// that cannot say who it is confirming.
-    public init?(_ url: URL) {
-        guard url.scheme == Self.scheme else { return nil }
-        switch url.host ?? "" {
-        case "pair":
-            guard let payload = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "payload" })?.value,
-                let invitation = PairingInvitation(payload: payload)
-            else { return nil }
-            self = .pair(invitation)
-        case "callback":
-            self = .signInCallback(url)
-        default:
-            return nil
-        }
+    public init?(link url: URL) {
+        guard url.scheme == Self.scheme, url.host == "pair",
+            let payload = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "payload" })?.value
+        else { return nil }
+        self.init(payload: payload)
     }
-}
 
-extension PairingInvitation {
     /// Reads the payload the `amux pair --qr` link carries: the JSON the host
     /// wrote, in URL-safe base64 without padding.
     init?(payload: String) {

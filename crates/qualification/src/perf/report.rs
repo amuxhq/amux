@@ -146,17 +146,12 @@ pub struct Baselines {
     pub machine_model: String,
     profile: String,
     features: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reference_state: Option<String>,
+    pub reference_state: String,
     pub medians: BTreeMap<String, Option<f64>>,
 }
 
 impl Baselines {
-    pub fn read(
-        path: &Path,
-        machine: &Machine,
-        reference_state: Option<&str>,
-    ) -> Result<Option<Self>, PerfError> {
+    pub fn read(path: &Path, machine: &Machine) -> Result<Option<Self>, PerfError> {
         if !path.is_file() {
             return Ok(None);
         }
@@ -184,12 +179,11 @@ impl Baselines {
                 value.features
             )));
         }
-        if value.reference_state.as_deref() != reference_state {
+        if value.reference_state != DESKTOP_REFERENCE_STATE {
             return Err(PerfError::Baseline(format!(
-                "{} records reference state {}, but this run uses {}",
+                "{} records reference state {}, but this run uses {DESKTOP_REFERENCE_STATE}",
                 path.display(),
-                display_reference_state(value.reference_state.as_deref()),
-                display_reference_state(reference_state),
+                value.reference_state,
             )));
         }
         Ok(Some(value))
@@ -213,10 +207,6 @@ impl Baselines {
             medians,
         })
     }
-}
-
-fn display_reference_state(reference_state: Option<&str>) -> &str {
-    reference_state.unwrap_or("unspecified")
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -246,10 +236,6 @@ impl Machine {
     pub fn baseline_path(&self) -> PathBuf {
         Path::new(BASELINE_ROOT).join(format!("{}.json", self.model))
     }
-
-    pub fn soak_baseline_path(&self) -> PathBuf {
-        Path::new(BASELINE_ROOT).join(format!("{}-soak.json", self.model))
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -270,7 +256,6 @@ pub struct Report {
     pub features: &'static str,
     pub verdicts: Vec<Verdict>,
     pub runs: Vec<MetricRun>,
-    reference_state: Option<&'static str>,
 }
 
 impl Report {
@@ -279,31 +264,6 @@ impl Report {
         runs: Vec<MetricRun>,
         baselines: Option<&Baselines>,
         recording: bool,
-    ) -> Result<Self, PerfError> {
-        Self::evaluate_mode(
-            machine,
-            runs,
-            baselines,
-            recording,
-            Some(DESKTOP_REFERENCE_STATE),
-        )
-    }
-
-    pub fn evaluate_soak(
-        machine: Machine,
-        runs: Vec<MetricRun>,
-        baselines: Option<&Baselines>,
-        recording: bool,
-    ) -> Result<Self, PerfError> {
-        Self::evaluate_mode(machine, runs, baselines, recording, None)
-    }
-
-    fn evaluate_mode(
-        machine: Machine,
-        runs: Vec<MetricRun>,
-        baselines: Option<&Baselines>,
-        recording: bool,
-        reference_state: Option<&'static str>,
     ) -> Result<Self, PerfError> {
         let metric_names = runs
             .iter()
@@ -376,7 +336,6 @@ impl Report {
             features: "bundled,perf",
             verdicts,
             runs,
-            reference_state,
         })
     }
 
@@ -389,9 +348,7 @@ impl Report {
             "machine: {} ({}) · OS: {} · profile: {} · features: {}",
             self.machine.name, self.machine.model, self.machine.os, self.profile, self.features
         );
-        if let Some(reference_state) = self.reference_state {
-            println!("reference state: {reference_state}");
-        }
+        println!("reference state: {DESKTOP_REFERENCE_STATE}");
         println!("metric | median | measured | budget | baseline | drift | verdict");
         for (run, verdict) in self.runs.iter().zip(&self.verdicts) {
             let unit = run.metric.unit.name();
@@ -457,7 +414,7 @@ impl Report {
             machine_model: self.machine.model.clone(),
             profile: self.profile.to_owned(),
             features: self.features.to_owned(),
-            reference_state: self.reference_state.map(str::to_owned),
+            reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: self
                 .runs
                 .iter()
@@ -590,15 +547,7 @@ mod tests {
     };
 
     fn run(unit: Unit, statistic: Statistic, values: &[f64]) -> MetricRun {
-        named_run("fixture", unit, statistic, values)
-    }
-
-    fn named_run(
-        name: &'static str,
-        unit: Unit,
-        statistic: Statistic,
-        values: &[f64],
-    ) -> MetricRun {
+        let name = "fixture";
         MetricRun {
             metric: Metric {
                 name,
@@ -637,7 +586,7 @@ mod tests {
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
             features: "bundled,perf".to_owned(),
-            reference_state: Some(DESKTOP_REFERENCE_STATE.to_owned()),
+            reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([("fixture".to_owned(), Some(10.0))]),
         };
         let report = Report::evaluate(
@@ -660,7 +609,7 @@ mod tests {
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
             features: "bundled,perf".to_owned(),
-            reference_state: Some(DESKTOP_REFERENCE_STATE.to_owned()),
+            reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([
                 ("fixture".to_owned(), Some(10.0)),
                 ("other".to_owned(), Some(20.0)),
@@ -689,7 +638,7 @@ mod tests {
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
             features: "bundled,perf".to_owned(),
-            reference_state: Some(DESKTOP_REFERENCE_STATE.to_owned()),
+            reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([("fixture".to_owned(), Some(10.0))]),
         };
         let report = Report::evaluate(
@@ -721,7 +670,7 @@ mod tests {
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
             features: "bundled,perf".to_owned(),
-            reference_state: Some(DESKTOP_REFERENCE_STATE.to_owned()),
+            reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([("fixture".to_owned(), Some(0.001))]),
         };
         let report = Report::evaluate(
@@ -743,7 +692,7 @@ mod tests {
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
             features: "bundled,perf".to_owned(),
-            reference_state: Some(DESKTOP_REFERENCE_STATE.to_owned()),
+            reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([("fixture".to_owned(), Some(0.001))]),
         };
         let metric_run = run(Unit::Percent, Statistic::Median, &[0.9]).ceiling_only();
@@ -756,9 +705,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("Mac14,6.json");
         report.write_baseline(&path).unwrap();
-        let recorded = Baselines::read(&path, &machine(), Some(DESKTOP_REFERENCE_STATE))
-            .unwrap()
-            .unwrap();
+        let recorded = Baselines::read(&path, &machine()).unwrap().unwrap();
         assert_eq!(recorded.medians["fixture"], None);
     }
 
@@ -769,7 +716,7 @@ mod tests {
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
             features: "bundled,perf".to_owned(),
-            reference_state: Some(DESKTOP_REFERENCE_STATE.to_owned()),
+            reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([("fixture".to_owned(), Some(0.6))]),
         };
         let report = Report::evaluate(
@@ -787,9 +734,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("Mac14,6.json");
         report.write_baseline(&path).unwrap();
-        let recorded = Baselines::read(&path, &machine(), Some(DESKTOP_REFERENCE_STATE))
-            .unwrap()
-            .unwrap();
+        let recorded = Baselines::read(&path, &machine()).unwrap().unwrap();
         assert_eq!(recorded.medians["fixture"], None);
     }
 
@@ -800,7 +745,7 @@ mod tests {
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
             features: "bundled,perf".to_owned(),
-            reference_state: Some(DESKTOP_REFERENCE_STATE.to_owned()),
+            reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([("fixture".to_owned(), Some(10.0))]),
         };
         let report = Report::evaluate(
@@ -817,40 +762,6 @@ mod tests {
     }
 
     #[test]
-    fn soak_baseline_records_null_for_slope_rows() {
-        let report = Report::evaluate_soak(
-            machine(),
-            vec![
-                named_run("slope", Unit::MegabytesPerMinute, Statistic::Worst, &[0.2]),
-                named_run("peak", Unit::Megabytes, Statistic::Peak, &[12.0]),
-            ],
-            None,
-            true,
-        )
-        .unwrap();
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("Mac14,6-soak.json");
-        report.write_baseline(&path).unwrap();
-        let baseline = Baselines::read(&path, &machine(), None).unwrap().unwrap();
-        assert_eq!(baseline.reference_state, None);
-        assert_eq!(baseline.medians["slope"], None);
-        assert_eq!(baseline.medians["peak"], Some(12.0));
-    }
-
-    #[test]
-    fn fast_and_soak_baselines_have_distinct_paths() {
-        let machine = machine();
-        assert_eq!(
-            machine.baseline_path(),
-            Path::new(BASELINE_ROOT).join("Mac14,6.json")
-        );
-        assert_eq!(
-            machine.soak_baseline_path(),
-            Path::new(BASELINE_ROOT).join("Mac14,6-soak.json")
-        );
-    }
-
-    #[test]
     fn perf_baseline_round_trips_by_hardware_model() {
         let report = Report::evaluate(
             machine(),
@@ -862,13 +773,8 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("Mac14,6.json");
         report.write_baseline(&path).unwrap();
-        let read = Baselines::read(&path, &machine(), Some(DESKTOP_REFERENCE_STATE))
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            read.reference_state.as_deref(),
-            Some(DESKTOP_REFERENCE_STATE)
-        );
+        let read = Baselines::read(&path, &machine()).unwrap().unwrap();
+        assert_eq!(read.reference_state, DESKTOP_REFERENCE_STATE);
         assert_eq!(read.medians["fixture"], Some(2.0));
     }
 
@@ -884,10 +790,12 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("Mac14,6.json");
         report.write_baseline(&path).unwrap();
+        let mut recorded: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        recorded["reference_state"] = "idle machine".into();
+        std::fs::write(&path, serde_json::to_vec(&recorded).unwrap()).unwrap();
 
-        let error = Baselines::read(&path, &machine(), Some("idle machine"))
-            .unwrap_err()
-            .to_string();
+        let error = Baselines::read(&path, &machine()).unwrap_err().to_string();
         assert!(error.contains(DESKTOP_REFERENCE_STATE), "{error}");
         assert!(error.contains("idle machine"), "{error}");
     }
@@ -918,7 +826,7 @@ mod tests {
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
             features: "bundled,perf".to_owned(),
-            reference_state: Some(DESKTOP_REFERENCE_STATE.to_owned()),
+            reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::new(),
         };
         let error = Report::evaluate(
@@ -938,7 +846,7 @@ mod tests {
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
             features: "bundled,perf".to_owned(),
-            reference_state: Some(DESKTOP_REFERENCE_STATE.to_owned()),
+            reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::from([("fixture".to_owned(), None)]),
         };
         let passing = Report::evaluate(
@@ -972,7 +880,7 @@ mod tests {
             machine_model: "Mac14,6".to_owned(),
             profile: "release".to_owned(),
             features: "bundled,perf".to_owned(),
-            reference_state: Some(DESKTOP_REFERENCE_STATE.to_owned()),
+            reference_state: DESKTOP_REFERENCE_STATE.to_owned(),
             medians: BTreeMap::new(),
         };
         let report = Report::evaluate(

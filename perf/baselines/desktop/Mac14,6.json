@@ -2,7 +2,7 @@
   "schema_version": 1,
   "machine_model": "Mac14,6",
   "profile": "release",
-  "features": "bundled,perf",
+  "features": "perf",
   "reference_state": "one busy core (cluster warmer)",
   "medians": {
     "flood agent process memory": 3.4848098754882812,

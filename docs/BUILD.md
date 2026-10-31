@@ -85,11 +85,9 @@ debugger needs file and line information. On Apple targets,
 so a profile that does carry debug information keeps it in one dSYM per
 binary instead of leaving every incremental object beside its Cargo unit.
 
-Desktop builds name the `bundled` feature explicitly, which compiles SQLite
-into the binary; the recipes pass `--features bundled` so a command that
-disables default features cannot silently switch SQLite linkage. The same
-config file's `LIBSQLITE3_FLAGS` compiles the bundled SQLite without the
-extensions the store never uses (full-text search, R-trees, JSON, statistics
+The store always compiles SQLite into the binary (rusqlite's `bundled`
+feature). The same config file's `LIBSQLITE3_FLAGS` compiles that SQLite
+without the extensions the store never uses (full-text search, R-trees, JSON, statistics
 tables, loadable extensions).
 
 ## Recipes

@@ -69,7 +69,7 @@ def run_tests(env: dict[str, str]) -> tuple[list[str], float]:
     subprocess.run(["cargo", "llvm-cov", "clean", "--workspace"], cwd=ROOT, env=env, check=True)
     command = [
         "cargo", "nextest", "run", "--locked", "--workspace", "--all-targets",
-        "--features", "bundled", "--no-fail-fast",
+        "--no-fail-fast",
     ]
     started = time.monotonic()
     process = subprocess.Popen(

@@ -6,13 +6,7 @@ license.workspace = true
 publish = false
 autotests = false
 
-# `store` is a dependency only so `bundled` can name its feature.
-[package.metadata.cargo-shear]
-ignored = ["store"]
-
 [features]
-default = []
-bundled = ["store/bundled"]
 # The release perf binary. The workloads themselves build without it, so
 # their smoke runs in the ordinary test lane.
 perf = []
@@ -51,7 +45,6 @@ rcgen = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-store = { workspace = true }
 testnet = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

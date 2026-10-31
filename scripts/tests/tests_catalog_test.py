@@ -37,19 +37,19 @@ class TestsCatalogTest(unittest.TestCase):
     def test_a_suite_selects_its_modules_and_targets_and_nothing_else(self):
         suite = {
             "cargo": [
-                {"package": "amux", "kind": "bin", "targets": ["amux"], "features": ["bundled"]},
-                {"package": "amux", "modules": ["process", "attach"], "features": ["bundled"]},
-                {"package": "patience", "kind": "lib", "targets": ["patience"]},
+                {"package": "amux", "kind": "bin", "targets": ["amux"]},
+                {"package": "amux", "modules": ["process", "attach"]},
+                {"package": "tui", "kind": "lib", "targets": ["tui"], "features": ["fixtures"]},
             ]
         }
 
         self.assertEqual(
             suites.selection(suite),
             [
-                "--workspace", "--features", "bundled", "-E",
+                "--workspace", "--features", "tui/fixtures", "-E",
                 "(package(amux) & kind(bin) & binary(/^(amux)$/))"
                 " | (binary_id(amux::integration) & test(/^(attach|process)::/))"
-                " | (package(patience) & kind(lib))",
+                " | (package(tui) & kind(lib))",
             ],
         )
 

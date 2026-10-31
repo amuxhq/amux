@@ -50,7 +50,7 @@ ALLOWED_LOCAL = {
     # interpret only for the dump path's per-kind redactor: the one stated
     # exception to "the daemon interprets nothing".
     "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "version-stamp", "wire"},
-    "amux": {"agent", "agent-dir", "analytics", "claude", "client", "log-file", "node", "settings", "store", "tui", "wire"},
+    "amux": {"agent", "agent-dir", "analytics", "claude", "client", "log-file", "node", "settings", "tui", "wire"},
     # The version stamp a release tool can rewrite in a built binary, and the
     # release manifest the tool signs and the daemon verifies; the xtask
     # shares both without building the daemon.
@@ -140,7 +140,7 @@ SUPPORT_ALLOWED_LOCAL = {
     },
     # Qualification owns environment-dependent provider and performance
     # checks while reusing the network harness rather than shipping it.
-    "qualification": {"node", "provider-fakes", "store", "testnet", "wire"},
+    "qualification": {"node", "provider-fakes", "testnet", "wire"},
     "claude-specs": {"claude", "claude-protocol", "pty-host", "redaction", "replay-support"},
     "codex-specs": {"codex", "codex-protocol", "pty-host", "redaction", "replay-support"},
     # The fake providers speak each protocol from its recordings, and check

@@ -59,10 +59,10 @@ def walk(seed: int | None, seeds: int | None, filters: list[str]) -> tuple[int, 
         env["TESTNET_SEED"] = str(seed)
     if seeds is not None:
         env["TESTNET_SEEDS"] = str(seeds)
-    # The workspace scope and features `just test` builds with, so the stories
+    # The workspace scope `just test` builds with, so the stories
     # reuse its build: naming the package instead unifies the dependencies'
     # features differently and rebuilds every workspace crate beneath it.
-    command = ["cargo", "nextest", "run", "--locked", "--no-fail-fast", "--workspace", "--features", "bundled"]
+    command = ["cargo", "nextest", "run", "--locked", "--no-fail-fast", "--workspace"]
     command += ["-E", " | ".join(selections.filterset(selector) for suite in suites for selector in suite["cargo"])]
     # Each story's output whole as it ends, unindented, so its walked line
     # reads as the story printed it; the stories still run side by side.

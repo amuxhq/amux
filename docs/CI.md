@@ -321,7 +321,7 @@ or the whole workspace, as the Windows test job compiles it:
 CC_x86_64_pc_windows_msvc=/tmp/winstub/cc \
 CXX_x86_64_pc_windows_msvc=/tmp/winstub/cc \
 AR_x86_64_pc_windows_msvc=/tmp/winstub/ar \
-cargo check --locked --workspace --all-targets --features bundled \
+cargo check --locked --workspace --all-targets \
   --target x86_64-pc-windows-msvc --keep-going
 ```
 

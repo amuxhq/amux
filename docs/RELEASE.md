@@ -603,7 +603,7 @@ only a preview deployment, and a bad preview is fixed by cutting the next
 version.
 
 `just release-check` builds the shipping binary under the `release` profile —
-`cargo build --release -p amux --bins --no-default-features --features bundled`,
+`cargo build --release -p amux --bins`,
 whole-program optimised (fat LTO, one codegen unit) with line tables — and
 runs [`scripts/release-policy-check.sh`](../scripts/release-policy-check.sh)
 on it, which fails if its SQLite linkage breaks policy

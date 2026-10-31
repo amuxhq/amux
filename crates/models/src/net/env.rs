@@ -104,15 +104,8 @@ impl Debug for Core {
     }
 }
 
-/// An agent's journal: each segment's start offset and its bytes.
-pub type Journal = BTreeMap<u64, Vec<u8>>;
-
-/// The journal's end: the offset one past its last byte.
-pub fn journal_end(journal: &Journal) -> u64 {
-    journal
-        .last_key_value()
-        .map_or(0, |(start, bytes)| start + bytes.len() as u64)
-}
+use crate::held::Dir;
+pub use crate::held::{Journal, journal_end};
 
 /// Appends a framed step as the journal writer does: an empty step writes
 /// nothing, and a frame that would take a non-empty segment past its size
@@ -2863,70 +2856,6 @@ fn with_scratch<R>(f: impl FnOnce(&mut Scratch) -> R) -> R {
         static SCRATCH: RefCell<Scratch> = RefCell::new(Scratch { hosts: HashMap::new() });
     }
     SCRATCH.with(|scratch| f(&mut scratch.borrow_mut()))
-}
-
-/// A directory holding one host's agents' journals, laid out only where
-/// they differ from what a step starts from.
-struct Dir {
-    dir: tempfile::TempDir,
-    holds: BTreeMap<AgentId, Journal>,
-}
-
-impl Dir {
-    fn new() -> Self {
-        Self {
-            dir: tempfile::tempdir().expect("a directory for agents"),
-            holds: BTreeMap::new(),
-        }
-    }
-
-    fn path(&self) -> &Path {
-        self.dir.path()
-    }
-
-    fn lay_out(&mut self, journals: &BTreeMap<AgentId, Journal>) {
-        if self.holds == *journals {
-            return;
-        }
-        let agents: BTreeSet<AgentId> = self.holds.keys().chain(journals.keys()).copied().collect();
-        for agent in agents {
-            let (held, wanted) = (self.holds.get(&agent), journals.get(&agent));
-            if held == wanted {
-                continue;
-            }
-            let dir = daemon_core::ingest::journal_dir(self.dir.path(), agent);
-            let _ = std::fs::remove_dir_all(&dir);
-            if let Some(journal) = wanted {
-                std::fs::create_dir_all(&dir).expect("the journal directory");
-                for (start, bytes) in journal {
-                    std::fs::write(journal::segment_path(&dir, *start), bytes)
-                        .expect("a segment is written");
-                }
-            }
-        }
-        self.holds = journals.clone();
-    }
-
-    /// Drops from `journals` the segments a step reclaimed.
-    fn reclaimed(&mut self, journals: &mut BTreeMap<AgentId, Journal>) {
-        let mut changed = false;
-        for (agent, journal) in journals.iter_mut() {
-            if journal.len() <= 1 {
-                continue;
-            }
-            let dir = daemon_core::ingest::journal_dir(self.dir.path(), *agent);
-            let left: BTreeSet<u64> = journal::segments(&dir)
-                .unwrap_or_default()
-                .into_iter()
-                .collect();
-            let before = journal.len();
-            journal.retain(|start, _| left.contains(start));
-            changed |= journal.len() != before;
-        }
-        if changed {
-            self.holds = journals.clone();
-        }
-    }
 }
 
 #[cfg(test)]

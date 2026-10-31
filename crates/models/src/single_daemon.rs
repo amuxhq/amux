@@ -35,7 +35,6 @@
 //! so after the removal only a resumed link can reach the core.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
@@ -52,6 +51,7 @@ use daemon_core::{
 use store::{AgentKey, AgentRow, Dump, Sqlite};
 use wire::{Item, Step, session_event};
 
+use crate::held::{Journal, journal_end};
 use crate::{Machine, Property};
 
 const OWN: &[u8; 16] = b"own-host-0000000";
@@ -178,15 +178,6 @@ impl SingleDaemon {
             ..Self::ci()
         }
     }
-}
-
-/// The journal's segment files: each one's start offset and its bytes.
-type Journal = BTreeMap<u64, Vec<u8>>;
-
-fn journal_end(journal: &Journal) -> u64 {
-    journal
-        .last_key_value()
-        .map_or(0, |(start, bytes)| start + bytes.len() as u64)
 }
 
 /// The installation's generation record, as the drive holds it.

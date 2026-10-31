@@ -43,7 +43,7 @@ use daemon_core::payload::{
 };
 use daemon_core::trust::TrustStore;
 use daemon_core::{
-    AgentId, CallId, Daemon, FromShell, HostId, Input, LinkId, Output, Route, Settings, Standing,
+    AgentId, CallId, Daemon, HostId, Input, LinkId, Output, Route, Settings, Standing,
     StartOptions, StepBudget, TimerId,
 };
 use prost::Message as _;
@@ -737,10 +737,10 @@ impl Transition<'_> {
                 store::Record::Append(append) => session_event::Of::Append(append),
                 store::Record::Snapshot(snapshot) => session_event::Of::Snapshot(snapshot),
             };
-            let answered = self.origin(Input::FromShell(FromShell::Session {
+            let answered = self.origin(Input::ShellSession {
                 agent: agent(),
                 event: Arc::new(SessionEvent { of: Some(of) }),
-            }));
+            });
             self.carry(answered);
         }
         Ok(())

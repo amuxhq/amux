@@ -55,7 +55,7 @@ pub use ids::{
 };
 pub use ingest::Journals;
 pub use io::{
-    FromShell, IngestEnd, Ingested, Input, Job, Output, ParentSays, Recorded, Settings, ShellWork,
+    IngestEnd, Ingested, Input, Job, Output, ParentSays, Recorded, Settings, ShellWork,
     SourcePolicy,
 };
 pub use links::LinkRegistry;
@@ -262,7 +262,7 @@ impl Daemon {
                 id: TimerId::Source(host, agent),
             } => self.source_due(host, agent, out),
             Input::Configure(settings) => self.settings = settings,
-            Input::FromShell(change) => self.shell_changed(change, out),
+            Input::ShellSession { agent, event } => self.publish_session(&agent, event, out),
             Input::LinkUp {
                 link,
                 peer,

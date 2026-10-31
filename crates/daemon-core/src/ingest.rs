@@ -555,10 +555,10 @@ mod tests {
         // store never committed.
         let out = step(
             &mut rig.daemon,
-            Input::FromShell(crate::FromShell::Session {
+            Input::ShellSession {
                 agent: AgentKey::new(OWN, AGENT.0),
                 event: Arc::new(ahead),
-            }),
+            },
         );
         let dumps = dumps_in(&out);
         let [crate::DumpReason::Violation(violation)] = dumps[..] else {

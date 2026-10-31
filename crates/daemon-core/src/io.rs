@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use store::AgentKey;
-use wire::{InventoryEvent, SessionEvent};
+use wire::SessionEvent;
 
 use crate::families::Ended;
 use crate::ids::{
@@ -244,10 +244,16 @@ pub enum Input {
     Entropy([u8; 32]),
     /// The settings the profile runs under now.
     Configure(Settings),
-    /// What the profile's shell changed outside a step, for the core's
-    /// subscribers. Each kind goes as the write behind it moves into the
-    /// core.
-    FromShell(FromShell),
+    /// One of an agent's session events the profile's shell committed
+    /// under the store it lends the core, handed over while the store is
+    /// still as that commit left it, so subscribers read it in commit order
+    /// and an opening never reads it twice or misses it.
+    ShellSession {
+        #[serde(with = "codec::agent_key")]
+        agent: AgentKey,
+        #[serde(with = "codec::shared")]
+        event: Arc<SessionEvent>,
+    },
     /// A link up moved onto a path of another kind: its packets now go
     /// straight to the peer or through a forwarder. Calls take the same
     /// link; how the host reads says the new path.
@@ -313,7 +319,7 @@ impl Input {
             Input::JobDone { .. } => "JobDone",
             Input::Entropy(_) => "Entropy",
             Input::Configure(_) => "Configure",
-            Input::FromShell(_) => "FromShell",
+            Input::ShellSession { .. } => "ShellSession",
             Input::LinkCarried { .. } => "LinkCarried",
         }
     }
@@ -364,34 +370,6 @@ impl Default for Settings {
             reply_patience_ms: 30_000,
         }
     }
-}
-
-/// A change the profile's shell committed under the store it lends the
-/// core, handed to the core while the store is still as that commit left
-/// it, so subscribers read it in commit order and an opening never reads
-/// it twice or misses it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum FromShell {
-    /// One of an agent's session events.
-    Session {
-        #[serde(with = "codec::agent_key")]
-        agent: AgentKey,
-        #[serde(with = "codec::shared")]
-        event: Arc<SessionEvent>,
-    },
-    /// An agent's row as the inventory carries it.
-    Row {
-        #[serde(with = "codec::agent_key")]
-        agent: AgentKey,
-        #[serde(with = "codec::shared")]
-        event: Arc<InventoryEvent>,
-    },
-    /// Nothing about the agent, its session or its row, reaches a
-    /// subscriber until [`FromShell::Unmute`]; its streams stay open. A
-    /// delete mutes the agent it stops, so no subscriber reads the stop as
-    /// an exit it could resume from before the removal arrives.
-    Mute(#[serde(with = "codec::agent_key")] AgentKey),
-    Unmute(#[serde(with = "codec::agent_key")] AgentKey),
 }
 
 /// Everything the daemon wants done. The driver encodes, sends, arms,
@@ -933,7 +911,7 @@ mod tests {
             },
             Input::PeerAnswer {
                 call: CallId(12),
-                answer: Answer::Inventory(InventoryEvent {
+                answer: Answer::Inventory(wire::InventoryEvent {
                     of: Some(wire::inventory_event::Of::CaughtUp(
                         wire::CaughtUp::default(),
                     )),
@@ -948,8 +926,8 @@ mod tests {
             },
             Input::Started,
             Input::Policy(SourcePolicy::OnDemand),
-            Input::FromShell(FromShell::Session {
-                agent: agent.clone(),
+            Input::ShellSession {
+                agent,
                 event: Arc::new(SessionEvent {
                     of: Some(wire::session_event::Of::Item(wire::Item {
                         key: "k".into(),
@@ -957,8 +935,7 @@ mod tests {
                         ..Default::default()
                     })),
                 }),
-            }),
-            Input::FromShell(FromShell::Mute(agent)),
+            },
             Input::ClientCall {
                 call: CallId(13),
                 request: ClientRequest::CreateAgent(Box::new(crate::Create {

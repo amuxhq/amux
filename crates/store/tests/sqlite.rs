@@ -285,7 +285,6 @@ fn trusted(host: &[u8], name: &str) -> store::TrustedHost {
         host_id: host.to_vec(),
         pubkey: vec![7; 32],
         name: name.into(),
-        paired_at_ms: 1_700_000_000_000,
         on_account: false,
         signed_in: None,
         platform: 0,

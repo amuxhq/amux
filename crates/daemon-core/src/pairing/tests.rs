@@ -384,7 +384,6 @@ fn a_commit_that_lands_after_the_window_closed_is_undone() {
         old_key.clone(),
         "the joiner's old key".into(),
         None,
-        chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
     )
     .unwrap();
     offerer.daemon.trust_for_test(old);

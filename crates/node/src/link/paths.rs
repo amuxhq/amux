@@ -680,8 +680,7 @@ mod tests {
                     peer.host_id,
                     peer.public_key().to_vec(),
                     "peer".to_string(),
-                    None,
-                    chrono::Utc::now(),
+                    None
                 )
                 .unwrap(),
             PairingUpdate::Inserted

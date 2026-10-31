@@ -963,7 +963,6 @@ dependencies = [
 name = "daemon-core"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "core-ring",
  "curve25519-dalek",
  "journal",

@@ -731,8 +731,8 @@ impl Rows<'_> {
 
     pub(crate) fn trusted_hosts(&self) -> Result<Vec<TrustedHost>, StoreError> {
         let mut read = self.conn.prepare_cached(
-            "SELECT host_id, pubkey, name, paired_at_ms, on_account, signed_in, platform, ssh, \
-             direct, listed FROM trusted_hosts ORDER BY host_id",
+            "SELECT host_id, pubkey, name, on_account, signed_in, platform, ssh, direct, listed \
+             FROM trusted_hosts ORDER BY host_id",
         )?;
         let hosts = read
             .query_map([], |row| {
@@ -740,13 +740,12 @@ impl Rows<'_> {
                     host_id: row.get(0)?,
                     pubkey: row.get(1)?,
                     name: row.get(2)?,
-                    paired_at_ms: row.get(3)?,
-                    on_account: row.get(4)?,
-                    signed_in: row.get(5)?,
-                    platform: row.get(6)?,
-                    ssh: row.get(7)?,
-                    direct: row.get(8)?,
-                    listed: row.get(9)?,
+                    on_account: row.get(3)?,
+                    signed_in: row.get(4)?,
+                    platform: row.get(5)?,
+                    ssh: row.get(6)?,
+                    direct: row.get(7)?,
+                    listed: row.get(8)?,
                 })
             })?
             .collect::<Result<_, _>>()?;
@@ -755,19 +754,17 @@ impl Rows<'_> {
 
     pub(crate) fn put_trusted_host(&self, host: &TrustedHost) -> Result<(), StoreError> {
         self.conn.execute(
-            "INSERT INTO trusted_hosts (host_id, pubkey, name, paired_at_ms, on_account, \
+            "INSERT INTO trusted_hosts (host_id, pubkey, name, on_account, \
              signed_in, platform, ssh, direct, listed) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
              ON CONFLICT (host_id) DO UPDATE SET pubkey = excluded.pubkey, \
-             name = excluded.name, paired_at_ms = excluded.paired_at_ms, \
-             on_account = excluded.on_account, signed_in = excluded.signed_in, \
+             name = excluded.name, on_account = excluded.on_account, signed_in = excluded.signed_in, \
              platform = excluded.platform, ssh = excluded.ssh, direct = excluded.direct, \
              listed = excluded.listed",
             params![
                 host.host_id,
                 host.pubkey,
                 host.name,
-                host.paired_at_ms,
                 host.on_account,
                 host.signed_in,
                 host.platform,

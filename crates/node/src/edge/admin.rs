@@ -111,23 +111,7 @@ pub(crate) fn peer_entry_to_wire(host_id: HostId, entry: &TrustEntry) -> wire::P
         host_id: host_id.as_bytes().to_vec(),
         name: entry.name.clone(),
         pubkey: entry.pubkey.clone(),
-        paired_at_ms: entry.paired_at.timestamp_millis(),
-        reachabilities: entry
-            .on_account
-            .then_some(wire::peer_reachability::Kind::Cloud(wire::Empty {}))
-            .into_iter()
-            .chain(entry.ssh.as_ref().map(|ssh| {
-                wire::peer_reachability::Kind::SshTarget(wire::SshTarget {
-                    target: ssh.clone(),
-                })
-            }))
-            .chain((!entry.direct.is_empty()).then(|| {
-                wire::peer_reachability::Kind::Direct(wire::DirectReachability {
-                    addrs: entry.direct.iter().map(ToString::to_string).collect(),
-                })
-            }))
-            .map(|kind| wire::PeerReachability { kind: Some(kind) })
-            .collect(),
+        ssh_target: entry.ssh.clone().map(|target| wire::SshTarget { target }),
     }
 }
 

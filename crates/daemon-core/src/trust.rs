@@ -21,7 +21,6 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::net::SocketAddr;
 use std::time::Instant;
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use store::{Durability, Sqlite, TrustedHost};
 use uuid::Uuid;
@@ -54,7 +53,6 @@ pub enum Reachability {
 pub struct TrustEntry {
     pub pubkey: Vec<u8>,
     pub name: String,
-    pub paired_at: DateTime<Utc>,
     /// The account's relay reaches the host: it paired through the relay,
     /// or the relay has claimed it since. A launch's first flight then goes
     /// through the relay too, before the relay has said anything.
@@ -192,7 +190,6 @@ impl TrustStore {
                     TrustEntry {
                         pubkey,
                         name: Uuid::from_bytes(host.0).to_string(),
-                        paired_at: DateTime::<Utc>::UNIX_EPOCH,
                         on_account: false,
                         direct: Vec::new(),
                         ssh: None,
@@ -258,7 +255,6 @@ impl TrustStore {
         pubkey: Vec<u8>,
         name: String,
         reachability: impl Into<Option<Reachability>>,
-        paired_at: DateTime<Utc>,
     ) -> Result<PairingUpdate, TrustError> {
         let reachability = reachability.into();
         validate_pubkey(&pubkey)?;
@@ -271,7 +267,6 @@ impl TrustStore {
         match self.entries.get_mut(&host_id) {
             Some(entry) if entry.pubkey == pubkey => {
                 entry.name = name;
-                entry.paired_at = paired_at;
                 if let Some(reachability) = reachability {
                     entry.reached(reachability);
                 }
@@ -282,10 +277,8 @@ impl TrustStore {
                 Ok(PairingUpdate::PubkeyReplacementRequired)
             }
             None => {
-                self.entries.insert(
-                    host_id,
-                    TrustEntry::paired(pubkey, name, paired_at, reachability),
-                );
+                self.entries
+                    .insert(host_id, TrustEntry::paired(pubkey, name, reachability));
                 Ok(PairingUpdate::Inserted)
             }
         }
@@ -297,7 +290,6 @@ impl TrustStore {
         pubkey: Vec<u8>,
         name: String,
         reachability: impl Into<Option<Reachability>>,
-        paired_at: DateTime<Utc>,
     ) -> Result<PairingUpdate, TrustError> {
         let reachability = reachability.into();
         validate_pubkey(&pubkey)?;
@@ -308,21 +300,18 @@ impl TrustStore {
         match self.entries.get_mut(&host_id) {
             Some(entry) if entry.pubkey == pubkey => {
                 entry.name = name;
-                entry.paired_at = paired_at;
                 if let Some(reachability) = reachability {
                     entry.reached(reachability);
                 }
                 Ok(PairingUpdate::Updated)
             }
             Some(entry) => {
-                *entry = TrustEntry::paired(pubkey, name, paired_at, reachability);
+                *entry = TrustEntry::paired(pubkey, name, reachability);
                 Ok(PairingUpdate::ReplacedPubkey)
             }
             None => {
-                self.entries.insert(
-                    host_id,
-                    TrustEntry::paired(pubkey, name, paired_at, reachability),
-                );
+                self.entries
+                    .insert(host_id, TrustEntry::paired(pubkey, name, reachability));
                 Ok(PairingUpdate::Inserted)
             }
         }
@@ -403,7 +392,6 @@ impl TrustEntry {
             host_id: host_id.as_bytes().to_vec(),
             pubkey: self.pubkey.clone(),
             name: self.name.clone(),
-            paired_at_ms: self.paired_at.timestamp_millis(),
             on_account: self.on_account,
             signed_in: self.signed_in,
             platform: self.platform as i32,
@@ -419,8 +407,6 @@ impl TrustEntry {
         let entry = TrustEntry {
             pubkey: row.pubkey.clone(),
             name: row.name.clone(),
-            paired_at: DateTime::<Utc>::from_timestamp_millis(row.paired_at_ms)
-                .unwrap_or(DateTime::<Utc>::UNIX_EPOCH),
             on_account: row.on_account,
             direct: serde_json::from_str(&row.direct).map_err(|error| error.to_string())?,
             ssh: row.ssh.clone(),
@@ -432,16 +418,10 @@ impl TrustEntry {
     }
 
     /// A host just paired, reached as `reachability`.
-    fn paired(
-        pubkey: Vec<u8>,
-        name: String,
-        paired_at: DateTime<Utc>,
-        reachability: Option<Reachability>,
-    ) -> TrustEntry {
+    fn paired(pubkey: Vec<u8>, name: String, reachability: Option<Reachability>) -> TrustEntry {
         let mut entry = TrustEntry {
             pubkey,
             name,
-            paired_at,
             on_account: false,
             direct: Vec::new(),
             ssh: None,
@@ -703,8 +683,6 @@ impl Daemon {
 
     fn start_trust_change(&mut self, queued: Queued, out: &mut Vec<Output>) {
         let mut staged = self.trust.store.clone();
-        let paired_at = DateTime::<Utc>::from_timestamp_millis(self.timers.now_ms as i64)
-            .unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
         let changed = match &queued.change {
             TrustChange::Pair {
                 host,
@@ -712,13 +690,7 @@ impl Daemon {
                 name,
                 reachability,
             } => staged
-                .upsert_paired_peer(
-                    *host,
-                    pubkey.clone(),
-                    name.clone(),
-                    reachability.clone(),
-                    paired_at,
-                )
+                .upsert_paired_peer(*host, pubkey.clone(), name.clone(), reachability.clone())
                 .map(TrustChanged::Paired),
             TrustChange::Remove { host } => staged
                 .remove(*host)
@@ -875,15 +847,12 @@ impl Daemon {
         else {
             unreachable!("only a pairing replaces a key");
         };
-        let paired_at = DateTime::<Utc>::from_timestamp_millis(self.timers.now_ms as i64)
-            .unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
         let mut replaced = self.trust.store.clone();
         match replaced.replace_paired_peer_after_teardown(
             host,
             pubkey.clone(),
             name.clone(),
             reachability.clone(),
-            paired_at,
         ) {
             Ok(update) => self.commit_trust(queued, replaced, TrustChanged::Paired(update), out),
             Err(error) => {

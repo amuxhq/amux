@@ -760,23 +760,22 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
     net.shutdown().await.unwrap();
 }
 
-/// The direct addresses `host` keeps for `peer`.
-fn stored_addrs(net: &Net, host: &str, peer: &str) -> Vec<String> {
+/// The direct addresses `host` keeps for `peer`, as its store holds them.
+async fn stored_addrs(net: &Net, host: &str, peer: &str) -> Vec<String> {
     let peer = host_id(net, peer);
-    edge(net, host)
-        .list_peers()
+    let hosts = net
+        .runtime(host)
         .unwrap()
-        .into_iter()
+        .read_store(|store| store.trusted_hosts())
+        .await
+        .unwrap()
+        .unwrap();
+    let direct = &hosts
+        .iter()
         .find(|entry| entry.host_id == peer.as_bytes())
         .expect("a paired host")
-        .reachabilities
-        .into_iter()
-        .filter_map(|reachability| match reachability.kind {
-            Some(wire::peer_reachability::Kind::Direct(direct)) => Some(direct.addrs),
-            _ => None,
-        })
-        .flatten()
-        .collect()
+        .direct;
+    serde_json::from_str(direct).expect("addresses as the daemon writes them")
 }
 
 /// Pairing with a host under an id this host already trusts replaces the
@@ -924,7 +923,7 @@ async fn discovery_advertises_a_listener_and_finds_a_paired_host_at_its_new_addr
     // The dialler stores an address once its link is established, just
     // after routing already names the link.
     until("the phone to store the desk's address", || async {
-        let stored = stored_addrs(&net, "phone", "desk");
+        let stored = stored_addrs(&net, "phone", "desk").await;
         (stored == vec![first.to_string()])
             .then_some(())
             .ok_or_else(|| format!("stored: {stored:?}"))
@@ -955,7 +954,7 @@ async fn discovery_advertises_a_listener_and_finds_a_paired_host_at_its_new_addr
         "the found address was dialled before the stale one timed out"
     );
     until("the phone to store the desk's new address", || async {
-        let stored = stored_addrs(&net, "phone", "desk");
+        let stored = stored_addrs(&net, "phone", "desk").await;
         (stored == vec![second.to_string()])
             .then_some(())
             .ok_or_else(|| format!("stored: {stored:?}"))

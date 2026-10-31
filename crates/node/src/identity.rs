@@ -721,7 +721,6 @@ mod tests {
     use std::sync::{Arc, Barrier};
     use std::time::Duration;
 
-    use chrono::{DateTime, Utc};
     use daemon_core::trust::PairingUpdate;
     use rustls::pki_types::{CertificateDer, UnixTime};
     use tempfile::TempDir;
@@ -740,7 +739,6 @@ mod tests {
             TrustEntry {
                 pubkey: pubkey.to_vec(),
                 name: "peer".to_string(),
-                paired_at: DateTime::<Utc>::from_timestamp(200, 0).unwrap(),
                 on_account: true,
                 direct: Vec::new(),
                 ssh: None,
@@ -838,7 +836,6 @@ mod tests {
                 peer.public_key().to_vec(),
                 "peer".to_string(),
                 Reachability::Cloud,
-                DateTime::<Utc>::from_timestamp(200, 0).unwrap(),
             )
             .unwrap();
 
@@ -885,7 +882,6 @@ mod tests {
                 peer.public_key().to_vec(),
                 "peer".to_string(),
                 Reachability::Cloud,
-                DateTime::<Utc>::from_timestamp(200, 0).unwrap(),
             )
             .unwrap();
         verifier
@@ -900,8 +896,7 @@ mod tests {
                     peer.host_id,
                     rotated_peer.public_key().to_vec(),
                     "peer-rotated".to_string(),
-                    Reachability::Cloud,
-                    DateTime::<Utc>::from_timestamp(300, 0).unwrap(),
+                    Reachability::Cloud
                 )
                 .unwrap(),
             PairingUpdate::PubkeyReplacementRequired
@@ -925,7 +920,6 @@ mod tests {
                 rotated_peer.public_key().to_vec(),
                 "peer-rotated".to_string(),
                 Reachability::Cloud,
-                DateTime::<Utc>::from_timestamp(300, 0).unwrap(),
             )
             .unwrap();
         assert!(

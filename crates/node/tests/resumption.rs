@@ -77,21 +77,19 @@ impl Linked {
         );
         // A resumed dial goes where the last link worked, which the
         // laptop writes down once the link is up.
-        let desk_ref = wire::HostRef {
-            of: Some(wire::host_ref::Of::HostId(
-                desk_edge.host_id().as_bytes().to_vec(),
-            )),
-        };
+        let desk_id = desk_edge.host_id().as_bytes().to_vec();
         until("the laptop to remember where the desk answered", || {
-            let reachabilities = linked
-                .laptop_edge
-                .peer_entry(desk_ref.clone())
-                .map(|entry| entry.reachabilities.len());
+            let desk_id = desk_id.clone();
+            let laptop = linked.laptop_runtime.clone();
             async move {
-                match reachabilities {
-                    Ok(0) => Err("none yet".to_owned()),
-                    Ok(_) => Ok(()),
-                    Err(status) => Err(status.to_string()),
+                let hosts = laptop
+                    .read_store(|store| store.trusted_hosts())
+                    .await
+                    .map_err(|error| error.to_string())?
+                    .map_err(|error| error.to_string())?;
+                match hosts.iter().find(|host| host.host_id == desk_id) {
+                    Some(host) if host.direct != "[]" => Ok(()),
+                    _ => Err("none yet".to_owned()),
                 }
             }
         })

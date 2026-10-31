@@ -12190,48 +12190,6 @@ impl ::prost::Name for SshTarget {
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PeerReachability {
-    #[prost(oneof = "peer_reachability::Kind", tags = "1, 2, 3")]
-    pub kind: ::core::option::Option<peer_reachability::Kind>,
-}
-/// Nested message and enum types in `PeerReachability`.
-pub mod peer_reachability {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Kind {
-        #[prost(message, tag = "1")]
-        Cloud(super::Empty),
-        #[prost(message, tag = "2")]
-        SshTarget(super::SshTarget),
-        #[prost(message, tag = "3")]
-        Direct(super::DirectReachability),
-    }
-}
-impl ::prost::Name for PeerReachability {
-    const NAME: &'static str = "PeerReachability";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PeerReachability".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.PeerReachability".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct DirectReachability {
-    #[prost(string, repeated, tag = "1")]
-    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-}
-impl ::prost::Name for DirectReachability {
-    const NAME: &'static str = "DirectReachability";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.DirectReachability".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.DirectReachability".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Peer {
     #[prost(bytes = "vec", tag = "1")]
     pub host_id: ::prost::alloc::vec::Vec<u8>,
@@ -12239,10 +12197,9 @@ pub struct Peer {
     pub name: ::prost::alloc::string::String,
     #[prost(bytes = "vec", tag = "3")]
     pub pubkey: ::prost::alloc::vec::Vec<u8>,
-    #[prost(int64, tag = "4")]
-    pub paired_at_ms: i64,
-    #[prost(message, repeated, tag = "5")]
-    pub reachabilities: ::prost::alloc::vec::Vec<PeerReachability>,
+    /// Where the host is reached over SSH, when it paired that way.
+    #[prost(message, optional, tag = "4")]
+    pub ssh_target: ::core::option::Option<SshTarget>,
 }
 impl ::prost::Name for Peer {
     const NAME: &'static str = "Peer";

@@ -132,24 +132,12 @@ message SshTarget {
   string target = 1;
 }
 
-message PeerReachability {
-  oneof kind {
-    Empty cloud = 1;
-    SshTarget ssh_target = 2;
-    DirectReachability direct = 3;
-  }
-}
-
-message DirectReachability {
-  repeated string addrs = 1;
-}
-
 message Peer {
   bytes host_id = 1;
   string name = 2;
   bytes pubkey = 3;
-  int64 paired_at_ms = 4;
-  repeated PeerReachability reachabilities = 5;
+  // Where the host is reached over SSH, when it paired that way.
+  optional SshTarget ssh_target = 4;
 }
 
 message GetDeviceIdentityRequest {}

@@ -16,7 +16,7 @@ use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
     BeginPairRequest, BindProfileRequest, Empty, HostEntry, HostRef, PairingIdentity,
     PairingWindow, PendingPair, RouteKind, StartPairingRequest, TrustSshPeerRequest, UnpairRequest,
-    begin_pair_request, pairing_window, peer_reachability, start_pairing_request,
+    begin_pair_request, pairing_window, start_pairing_request,
 };
 
 type Door = InstallationServiceClient<Channel>;
@@ -624,10 +624,7 @@ fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry], free: bool) -> String
             },
             None => "not listed",
         };
-        let ssh = peer.reachabilities.iter().find_map(|way| match &way.kind {
-            Some(peer_reachability::Kind::SshTarget(target)) => Some(target.target.clone()),
-            _ => None,
-        });
+        let ssh = peer.ssh_target.as_ref().map(|target| target.target.clone());
         rows.push([
             peer.name.clone(),
             host(&peer.host_id),

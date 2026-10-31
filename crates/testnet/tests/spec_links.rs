@@ -52,7 +52,7 @@ async fn ipv6_only_hosts_link_and_stream_a_session() {
     // Pairing dials the desk's listener at the IPv6 address its window
     // names, and the link comes up on the address pairing used.
     let peer = pair(&net, "laptop", "desk").await;
-    println!("the laptop paired with the desk: {:?}", peer.reachabilities);
+    println!("the laptop paired with the desk: {peer:?}");
     until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     let desk = host_id(&net, "desk");
     let logged = net.link_log("laptop").unwrap();
@@ -198,19 +198,19 @@ async fn pair_over_ssh_from_the_cli_trusts_both_ends_and_links() {
     let desk_seen = peers("laptop").await;
     assert_eq!(desk_seen.len(), 1);
     assert_eq!(desk_seen[0].host_id, desk.as_bytes());
-    assert!(
-        desk_seen[0].reachabilities.iter().any(|way| matches!(
-            &way.kind,
-            Some(wire::peer_reachability::Kind::SshTarget(ssh))
-                if ssh.target == desk_target
-        )),
+    assert_eq!(
+        desk_seen[0]
+            .ssh_target
+            .as_ref()
+            .map(|ssh| ssh.target.as_str()),
+        Some(desk_target.as_str()),
         "the laptop remembers where it reached the desk: {desk_seen:?}"
     );
     let laptop_seen = peers("desk").await;
     assert_eq!(laptop_seen.len(), 1);
     assert_eq!(laptop_seen[0].host_id, laptop.as_bytes());
     assert!(
-        laptop_seen[0].reachabilities.is_empty(),
+        laptop_seen[0].ssh_target.is_none(),
         "the desk did not dial, so it holds no way there: {laptop_seen:?}"
     );
     until_via(&net, "laptop", "desk", LiveRoute::Ssh).await;
@@ -1077,20 +1077,20 @@ fn undiscovered(name: &str) -> HostDecl {
 /// Waits until the laptop has written down an address the desk answered
 /// at, which its next launch's first flight goes to.
 async fn remembers_where_the_desk_answered(net: &Net) {
-    let desk = wire::HostRef {
-        of: Some(wire::host_ref::Of::HostId(
-            host_id(net, "desk").as_bytes().to_vec(),
-        )),
-    };
+    let desk = host_id(net, "desk").as_bytes().to_vec();
     until("the laptop to remember where the desk answered", || {
-        let remembered = edge(net, "laptop")
-            .peer_entry(desk.clone())
-            .map(|entry| entry.reachabilities.len());
+        let desk = desk.clone();
         async move {
-            match remembered {
-                Ok(0) => Err("nowhere yet".to_owned()),
-                Ok(_) => Ok(()),
-                Err(status) => Err(status.to_string()),
+            let hosts = net
+                .runtime("laptop")
+                .map_err(|error| error.to_string())?
+                .read_store(|store| store.trusted_hosts())
+                .await
+                .map_err(|error| error.to_string())?
+                .map_err(|error| error.to_string())?;
+            match hosts.iter().find(|host| host.host_id == desk) {
+                Some(host) if host.direct != "[]" => Ok(()),
+                _ => Err("nowhere yet".to_owned()),
             }
         }
     })

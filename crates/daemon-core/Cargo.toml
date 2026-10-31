@@ -8,7 +8,6 @@ publish = false
 
 [dependencies]
 core-ring = { workspace = true }
-chrono = { workspace = true }
 curve25519-dalek = { workspace = true }
 postcard = { workspace = true }
 journal = { workspace = true }

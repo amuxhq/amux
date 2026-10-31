@@ -965,7 +965,6 @@ mod tests {
                     peer.public_key().to_vec(),
                     "peer".to_string(),
                     None,
-                    chrono::Utc::now(),
                 )
                 .unwrap();
         }

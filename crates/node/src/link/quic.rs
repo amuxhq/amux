@@ -1476,7 +1476,6 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    use chrono::Utc;
     use daemon_core::trust::PairingUpdate;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -1552,8 +1551,7 @@ mod tests {
                     peer.host_id,
                     peer.public_key().to_vec(),
                     "peer".to_string(),
-                    None,
-                    Utc::now(),
+                    None
                 )
                 .unwrap(),
             PairingUpdate::Inserted
@@ -2077,7 +2075,6 @@ mod tests {
                 replacement.public_key().to_vec(),
                 "peer".to_string(),
                 None,
-                Utc::now(),
             )
             .unwrap();
         assert!(

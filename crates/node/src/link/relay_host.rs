@@ -206,7 +206,6 @@ impl RelayHost {
                 peer.identity.public_key().to_vec(),
                 "relay-host".to_owned(),
                 None,
-                chrono::Utc::now(),
             )
             .map_err(|error| tonic::Status::internal(error.to_string()))?;
         Ok(())

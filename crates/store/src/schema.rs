@@ -83,7 +83,6 @@ CREATE TABLE trusted_hosts (
   host_id             BLOB    PRIMARY KEY, -- a paired host, never this one
   pubkey              BLOB    NOT NULL,  -- its pinned Ed25519 key
   name                TEXT    NOT NULL,  -- what it is called here
-  paired_at_ms        INTEGER NOT NULL,
   on_account          INTEGER NOT NULL,  -- the account's relay reaches it
   signed_in           INTEGER,           -- NULL: the host never said
   platform            INTEGER NOT NULL,  -- amux.v1.Platform, last it said one

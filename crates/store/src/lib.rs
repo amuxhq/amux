@@ -39,7 +39,6 @@ pub struct TrustedHost {
     pub host_id: Vec<u8>,
     pub pubkey: Vec<u8>,
     pub name: String,
-    pub paired_at_ms: i64,
     pub on_account: bool,
     pub signed_in: Option<bool>,
     /// The wire integer of `amux.v1.Platform`.

@@ -35,7 +35,6 @@ pub enum Call {
     SendInput(SendInputRequest, Reply<SendInputResponse>),
     Resume(ResumeAgentRequest, Reply<Agent>),
     GetBlob(GetBlobRequest, Reply<GetBlobResponse>),
-    PutBlob(PutBlobRequest, Reply<BlobRef>),
     Stop(StopAgentRequest, Reply<()>),
     Dump(DumpRequest, Reply<DumpResponse>),
 }
@@ -50,7 +49,6 @@ impl std::fmt::Debug for Call {
             Call::SendInput(request, _) => write!(f, "SendInput({request:?})"),
             Call::Resume(request, _) => write!(f, "Resume({request:?})"),
             Call::GetBlob(request, _) => write!(f, "GetBlob({request:?})"),
-            Call::PutBlob(request, _) => write!(f, "PutBlob({:?})", request.name),
             Call::Stop(request, _) => write!(f, "Stop({request:?})"),
             Call::Dump(request, _) => write!(f, "Dump({request:?})"),
         }
@@ -161,8 +159,8 @@ impl Client for FakeRuntime {
         unimplemented!("send_message")
     }
 
-    async fn put_blob(&self, request: PutBlobRequest) -> Result<BlobRef, RpcError> {
-        self.call(|reply| Call::PutBlob(request, reply)).await
+    async fn put_blob(&self, _: PutBlobRequest) -> Result<BlobRef, RpcError> {
+        unimplemented!("put_blob")
     }
 
     async fn get_blob(&self, request: GetBlobRequest) -> Result<GetBlobResponse, RpcError> {

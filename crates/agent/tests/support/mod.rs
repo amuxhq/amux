@@ -360,7 +360,6 @@ impl Agent {
             other => panic!("the first frame is a Hello, not {other:?}"),
         }
         Daemon {
-            kind: self.kind,
             reader,
             writer,
             nudges: 0,
@@ -599,7 +598,6 @@ pub enum Verdict {
 
 /// A stand-in daemon on ctl.sock.
 pub struct Daemon {
-    kind: Kind,
     reader: ReadHalf<LocalStream>,
     writer: WriteHalf<LocalStream>,
     /// Nudges read so far.

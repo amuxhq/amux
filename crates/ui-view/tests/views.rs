@@ -21,19 +21,6 @@ const KINDS: [Kind; 3] = [Kind::ClaudePty, Kind::ClaudeSdk, Kind::Codex];
 /// The window's cap: more rows than any case here delivers.
 const CAP: usize = 200;
 
-fn agent(kind: Kind) -> wire::Agent {
-    wire::Agent {
-        agent_id: b"agent".to_vec(),
-        host_id: b"host".to_vec(),
-        kind: kind as i32,
-        name: "worker".into(),
-        lifecycle: wire::Lifecycle::Live as i32,
-        phase: Phase::Working as i32,
-        incarnation: 1,
-        ..wire::Agent::default()
-    }
-}
-
 fn event(of: session_event::Of) -> Msg {
     Msg::Event(SessionEvent { of: Some(of) })
 }
@@ -150,8 +137,20 @@ fn page(state: &mut SessionState, items: Vec<Item>, exhausted: bool) {
     });
 }
 
-fn all_rows(state: &SessionState, opts: &ChatOptions) -> Vec<Row> {
-    chat_rows(state, 0..=u64::MAX, opts)
+use crate::support::{agent, all_rows};
+
+/// The rows of the held items whose orders fall in `orders`.
+fn rows_in(
+    state: &SessionState,
+    orders: std::ops::RangeInclusive<u64>,
+    tools: ToolRows,
+) -> Vec<Row> {
+    let keys: Vec<Key> = state
+        .transcript()
+        .range(orders)
+        .map(|held| held.item.key.clone())
+        .collect();
+    chat_rows_for(state, &keys, tools)
 }
 
 /// One step of the walk: an item at the head, a revision of a held order or a
@@ -202,22 +201,20 @@ proptest! {
     /// A walk of live items, revisions and pages; after every step the row
     /// invariants hold.
     #[test]
-    fn row_ids_never_move_and_rows_by_keys_equal_rows_by_range(
+    fn row_ids_never_move_and_rows_by_keys_equal_the_whole_chats(
         kind in prop::sample::select(KINDS.to_vec()),
         steps in vec(step(), 0..=58),
     ) {
-        let mut state = SessionState::new(agent(kind), CAP);
+        let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
         state.update(snapshot(kind, Phase::Working, vec![], vec![]));
         let start = 40;
         let mut head = start;
         state.update(event(session_event::Of::Item(read(kind, head, 1))));
         state.update(caught_up());
         let open = HashSet::new();
-        let opts = ChatOptions {
-            tools: ToolRows::Collapse { open: &open },
-        };
+        let opts = ToolRows::Collapse { open: &open };
         for (revision, step) in (2..).zip(steps) {
-            let before: Vec<Key> = all_rows(&state, &opts)
+            let before: Vec<Key> = all_rows(&state, opts)
                 .into_iter()
                 .map(|row| row.id)
                 .collect();
@@ -251,7 +248,7 @@ proptest! {
                     kind, order, revision, tool,
                 ))));
             }
-            let rows = all_rows(&state, &opts);
+            let rows = all_rows(&state, opts);
             let after: Vec<Key> = rows.iter().map(|row| row.id.clone()).collect();
             // Ids keep their relative order; new ids arrive only at the edges.
             let kept: Vec<&Key> = after.iter().filter(|id| before.contains(id)).collect();
@@ -265,20 +262,20 @@ proptest! {
                     "nothing inserted between held rows"
                 );
             }
-            // Rows for keys are the same rows as by range.
+            // Rows for some keys are the same rows as for every key.
             let keys: Vec<Key> = after
                 .iter()
                 .zip(step.picks.iter().chain(std::iter::repeat(&false)))
                 .filter(|(_, picked)| **picked)
                 .map(|(key, _)| key.clone())
                 .collect();
-            let by_keys = chat_rows_for(&state, &keys, &opts);
-            let by_range: Vec<Row> = rows
+            let by_keys = chat_rows_for(&state, &keys, opts);
+            let of_all: Vec<Row> = rows
                 .iter()
                 .filter(|row| keys.contains(&row.id))
                 .cloned()
                 .collect();
-            prop_assert_eq!(by_keys, by_range);
+            prop_assert_eq!(by_keys, of_all);
             // open_below only for the oldest run, and only while older
             // history exists.
             let transcript = state.transcript();
@@ -301,7 +298,7 @@ proptest! {
 #[test]
 fn a_folded_run_draws_at_its_newest_step_and_opens_by_any_step() {
     for kind in KINDS {
-        let mut state = SessionState::new(agent(kind), CAP);
+        let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
         state.update(snapshot(kind, Phase::Working, vec![], vec![]));
         for order in 1..=3 {
             state.update(event(session_event::Of::Item(item(
@@ -313,13 +310,11 @@ fn a_folded_run_draws_at_its_newest_step_and_opens_by_any_step() {
         }
         state.update(event(session_event::Of::Item(item(kind, 9, 9, None))));
         let none = HashSet::new();
-        let opts = ChatOptions {
-            tools: ToolRows::Collapse { open: &none },
-        };
-        let rows = chat_rows(&state, 2..=5, &opts);
+        let opts = ToolRows::Collapse { open: &none };
+        let rows = rows_in(&state, 2..=5, opts);
         let orders: Vec<u64> = rows.iter().map(|row| row.order).collect();
         assert_eq!(orders, vec![2, 3, 4, 5], "a range is its own rows");
-        let rows = chat_rows(&state, 1..=9, &opts);
+        let rows = rows_in(&state, 1..=9, opts);
         let last = rows.iter().find(|row| row.order == 8).unwrap();
         let run = last.run.as_ref().unwrap();
         assert!(run.is_last() && !last.collapsed);
@@ -328,29 +323,15 @@ fn a_folded_run_draws_at_its_newest_step_and_opens_by_any_step() {
         assert!(rows[3..7].iter().all(|row| row.collapsed));
         // Opened by one of its steps.
         let open: HashSet<Key> = ["k6".to_owned()].into();
-        let opts = ChatOptions {
-            tools: ToolRows::Collapse { open: &open },
-        };
+        let opts = ToolRows::Collapse { open: &open };
         assert!(
-            chat_rows(&state, 4..=8, &opts)
+            rows_in(&state, 4..=8, opts)
                 .iter()
                 .all(|row| !row.collapsed)
         );
-        let hidden = chat_rows(
-            &state,
-            1..=9,
-            &ChatOptions {
-                tools: ToolRows::Hide,
-            },
-        );
+        let hidden = rows_in(&state, 1..=9, ToolRows::Hide);
         assert!(hidden.iter().filter(|row| row.collapsed).count() == 5);
-        let shown = chat_rows(
-            &state,
-            1..=9,
-            &ChatOptions {
-                tools: ToolRows::ShowAll,
-            },
-        );
+        let shown = rows_in(&state, 1..=9, ToolRows::ShowAll);
         assert!(shown.iter().all(|row| !row.collapsed));
     }
 }
@@ -371,7 +352,7 @@ fn attachments_keep_their_positions() {
             text: "x\ny".into(),
         })),
     };
-    let tokens = composer_tokens("see \u{FFFC} and \u{FFFC}.", &[image.clone(), text.clone()]);
+    let tokens = segments("see \u{FFFC} and \u{FFFC}.", &[image.clone(), text.clone()]);
     assert_eq!(
         tokens,
         vec![
@@ -387,13 +368,13 @@ fn attachments_keep_their_positions() {
         Segment::Attachment(AttachmentView::Text { lines: 2, .. })
     ));
     for kind in KINDS {
-        let mut state = SessionState::new(agent(kind), CAP);
+        let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
         let mut prompt = item(kind, 1, 1, None);
         prompt.body = body(kind, None, false);
         prompt.text = "\u{FFFC}first".into();
         prompt.attachments = vec![image.clone()];
         state.update(event(session_event::Of::Item(prompt)));
-        let rows = all_rows(&state, &ChatOptions::default());
+        let rows = all_rows(&state, ToolRows::ShowAll);
         assert_eq!(
             rows[0].kind,
             RowKind::Prompt {
@@ -860,7 +841,7 @@ fn queued(id: &[u8], steer: bool, from_agent: Option<&str>) -> wire::QueuedInput
 /// The authored story each kind's golden tells.
 fn authored(kind: Kind) -> String {
     let mut out = String::new();
-    let mut state = SessionState::new(agent(kind), CAP);
+    let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
     let unanswerable = wire::Ask {
         key: "menu-1".into(),
         body: Some(wire::ask::Body::Unanswerable(wire::UnanswerableAsk {
@@ -896,7 +877,7 @@ fn authored(kind: Kind) -> String {
         let _ = writeln!(out, "## {label}");
         let _ = writeln!(out, "  composer {:?}", composer(state, 10_000));
         let _ = writeln!(out, "  queue {:?}", queue_rows(state));
-        let _ = writeln!(out, "  underway {:?}", prompts_underway(state, |_| false));
+        let _ = writeln!(out, "  underway {:?}", prompts_underway(state));
         let _ = writeln!(out, "  refused {:?}", refused_prompts(state));
         match ask_card(state) {
             Some(card) => {
@@ -941,7 +922,7 @@ fn authored(kind: Kind) -> String {
     ));
     state.update(Msg::Entry(wire::Agent {
         phase: Phase::NeedsYou as i32,
-        ..agent(kind)
+        ..agent(kind, Phase::Working)
     }));
     state.update(caught_up());
     show(
@@ -990,7 +971,7 @@ fn authored(kind: Kind) -> String {
     state.update(Msg::Entry(wire::Agent {
         lifecycle: wire::Lifecycle::Exited as i32,
         exit_cause: wire::ExitCause::Killed as i32,
-        ..agent(kind)
+        ..agent(kind, Phase::Working)
     }));
     show(
         "exited: the ask is dismissed and the composer offers Resume",
@@ -1000,7 +981,7 @@ fn authored(kind: Kind) -> String {
     state.update(event(session_event::Of::Detached(wire::Detached {})));
     state.update(Msg::Entry(wire::Agent {
         incarnation: 2,
-        ..agent(kind)
+        ..agent(kind, Phase::Working)
     }));
     show(
         "resumed but detached: drafting continues, sending waits",
@@ -1047,22 +1028,18 @@ fn authored_view_goldens() {
 #[test]
 fn a_sent_prompt_the_queue_lists_is_drawn_once() {
     for kind in KINDS {
-        let mut state = SessionState::new(agent(kind), CAP);
+        let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
         state.update(snapshot(kind, Phase::Starting, vec![], vec![]));
         state.update(caught_up());
         state.update(Msg::Send(prompt_input(kind, b"r1", "resumed")));
-        assert_eq!(
-            prompts_underway(&state, |_| false).len(),
-            1,
-            "sending until it lands"
-        );
+        assert_eq!(prompts_underway(&state).len(), 1, "sending until it lands");
         state.update(snapshot(
             kind,
             Phase::NeedsYou,
             vec![],
             vec![queued(b"r1", false, None)],
         ));
-        assert!(prompts_underway(&state, |_| false).is_empty());
+        assert!(prompts_underway(&state).is_empty());
         assert_eq!(queue_rows(&state).len(), 1);
     }
 }
@@ -1073,7 +1050,7 @@ fn a_sent_prompt_the_queue_lists_is_drawn_once() {
 #[test]
 fn a_refused_send_now_leaves_the_prompt_queued() {
     let kind = Kind::ClaudePty;
-    let mut state = SessionState::new(agent(kind), CAP);
+    let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
     state.update(snapshot(
         kind,
         Phase::Working,
@@ -1107,13 +1084,13 @@ fn a_refused_send_now_leaves_the_prompt_queued() {
     assert!(!rows[0].steered);
     assert!(rows[0].can_send_now);
     assert!(rows[0].can_withdraw);
-    assert!(prompts_underway(&state, |_| false).is_empty());
+    assert!(prompts_underway(&state).is_empty());
 }
 
 #[test]
 fn unknown_renders_one_way() {
     for kind in KINDS {
-        let mut state = SessionState::new(agent(kind), CAP);
+        let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
         state.update(snapshot(kind, Phase::Starting, vec![], vec![]));
         assert_eq!(overview(&state, None), Overview::default());
         assert_eq!((context(&state), sign_in(&state)), (None, None));
@@ -1274,7 +1251,7 @@ fn settings_offering(
 }
 
 fn settings_with(kind: Kind, body: Vec<u8>, catalogue: wire::Catalogue) -> SettingsView {
-    let mut state = SessionState::new(agent(kind), CAP);
+    let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
     state.set_catalogue(b"offered".to_vec(), catalogue);
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: kind as i32,
@@ -1686,7 +1663,7 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
                 ..Default::default()
             }
         };
-        let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
+        let mut state = SessionState::new(agent(Kind::ClaudeSdk, Phase::Working), CAP);
         state.set_catalogue(b"offered".to_vec(), catalogue);
         state.update(event(session_event::Of::Snapshot(wire::Snapshot {
             kind: Kind::ClaudeSdk as i32,
@@ -1722,7 +1699,7 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
     );
 
     let custom = |snapshot: wire::CodexSnapshot| {
-        let mut state = SessionState::new(agent(Kind::Codex), CAP);
+        let mut state = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
         let (permissions, modes) = offered_controls(Kind::Codex);
         state.set_catalogue(
             b"offered".to_vec(),
@@ -1757,7 +1734,7 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
 
     // Terminal Claude offers no models: the interpreter's tidied name names
     // the reported one, in the list as beside the composer.
-    let mut state = SessionState::new(agent(Kind::ClaudePty), CAP);
+    let mut state = SessionState::new(agent(Kind::ClaudePty, Phase::Working), CAP);
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: Kind::ClaudePty as i32,
         body: wire::ClaudeSnapshot {
@@ -1979,7 +1956,7 @@ fn tool_item(
 #[test]
 fn a_landed_edit_shows_its_numbered_patch_head_and_a_run_its_newest_subjects() {
     use serde_json::json;
-    let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
+    let mut state = SessionState::new(agent(Kind::ClaudeSdk, Phase::Working), CAP);
     let edit = json!({"file_path": "src/retry.rs", "old_string": "x", "new_string": "y"});
     let patch = json!({"structuredPatch": [{
         "oldStart": 20, "newStart": 20,
@@ -2037,7 +2014,7 @@ fn a_landed_edit_shows_its_numbered_patch_head_and_a_run_its_newest_subjects() {
     assert_eq!(patch_head(&state, &"k1".to_owned(), 3), None, "not an edit");
 
     // Codex's patch is a unified diff, numbered from its hunk header.
-    let mut codex = SessionState::new(agent(Kind::Codex), CAP);
+    let mut codex = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
     let change = |state: ToolState| {
         Item {
         key: "change".into(),
@@ -2084,7 +2061,7 @@ fn a_landed_edit_shows_its_numbered_patch_head_and_a_run_its_newest_subjects() {
 /// and the lines after them keep their numbers.
 #[test]
 fn a_patch_head_keeps_hunk_lines_that_look_like_file_headers() {
-    let mut codex = SessionState::new(agent(Kind::Codex), CAP);
+    let mut codex = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
     let patch = "diff --git a/q.sql b/q.sql\n--- a/q.sql\n+++ b/q.sql\n@@ -3,2 +3,2 @@\n--- old note\n+++ new note\n select 1;\ndiff --git a/r.sql b/r.sql\n--- a/r.sql\n+++ b/r.sql\n@@ -10 +10 @@\n-a\n+b\n";
     let change = Item {
         key: "change".into(),
@@ -2261,7 +2238,7 @@ fn an_agent_message_carries_its_attachments_as_chips() {
         wire::ClaudeSnapshot::default(),
         vec![message],
     );
-    let rows = all_rows(&state, &ChatOptions::default());
+    let rows = all_rows(&state, ToolRows::ShowAll);
     let RowKind::AgentMessage { text, from, .. } = &rows[0].kind else {
         panic!("{:?}", rows[0].kind);
     };
@@ -2604,7 +2581,7 @@ fn changed_files_group_by_folder_with_root_files_first() {
 
 #[test]
 fn the_overview_holds_the_changes_it_is_given() {
-    let mut state = SessionState::new(agent(Kind::Codex), CAP);
+    let mut state = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
     state.update(snapshot(Kind::Codex, Phase::Idle, vec![], vec![]));
     assert_eq!(overview(&state, None).changes, None);
     let diff = wire::Diff::default();
@@ -2629,23 +2606,20 @@ fn the_overview_holds_the_changes_it_is_given() {
 #[test]
 fn prompts_on_their_way_follow_the_sending_rules() {
     let kind = Kind::Codex;
-    let mut state = SessionState::new(agent(kind), CAP);
+    let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
     state.update(snapshot(kind, Phase::Idle, vec![], vec![]));
     state.update(caught_up());
-    assert!(sends_to_feed(&state), "an idle agent with nothing queued");
     state.update(Msg::Send(prompt_input(kind, b"p1", "first")));
-    let feed = |id: &[u8]| id == b"p1";
-    let underway = prompts_underway(&state, feed);
+    let underway = prompts_underway(&state);
     assert_eq!(underway.len(), 1);
     assert_eq!(underway[0].lands, Lands::Feed);
     assert_eq!(underway[0].underway, Underway::Sending { waiting: false });
 
     state.update(snapshot(kind, Phase::Working, vec![], vec![]));
-    assert!(!sends_to_feed(&state), "a working agent queues the next");
     state.update(Msg::Send(prompt_input(kind, b"p2", "second")));
     state.update(Msg::Sent(b"p1".to_vec(), InputOutcome::Lost));
     state.update(Msg::Connection(ui_state::Connection::Reconnecting));
-    let underway = prompts_underway(&state, feed);
+    let underway = prompts_underway(&state);
     assert_eq!(
         underway
             .iter()
@@ -2673,14 +2647,14 @@ fn prompts_on_their_way_follow_the_sending_rules() {
         }),
     ));
     assert!(
-        prompts_underway(&state, feed)
+        prompts_underway(&state)
             .iter()
             .any(|prompt| prompt.input_id == b"p3" && prompt.underway == Underway::Held),
         "one its host could not take is held"
     );
     state.update(snapshot(kind, Phase::Working, vec![], vec![]));
     state.update(caught_up());
-    let underway = prompts_underway(&state, feed);
+    let underway = prompts_underway(&state);
     assert_eq!(
         underway
             .iter()
@@ -3025,15 +2999,13 @@ fn a_codex_command_that_dropped_output_is_marked_trimmed() {
         at_ms: order as i64 * 1000,
         ..Item::default()
     };
-    let mut state = SessionState::new(agent(Kind::Codex), CAP);
+    let mut state = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
     state.update(snapshot(Kind::Codex, Phase::Idle, vec![], vec![]));
     state.update(event(session_event::Of::Item(command(1, 4096))));
     state.update(event(session_event::Of::Item(command(2, 0))));
     state.update(caught_up());
-    let opts = ChatOptions {
-        tools: ToolRows::ShowAll,
-    };
-    let trimmed: Vec<bool> = all_rows(&state, &opts)
+    let opts = ToolRows::ShowAll;
+    let trimmed: Vec<bool> = all_rows(&state, opts)
         .into_iter()
         .filter_map(|row| match row.kind {
             RowKind::Command { output_trimmed, .. } => Some(output_trimmed),
@@ -3050,7 +3022,7 @@ fn edit_ask_path(kind: Kind, cwd: &str, file: &str) -> String {
     let mut state = SessionState::new(
         wire::Agent {
             cwd: cwd.into(),
-            ..agent(kind)
+            ..agent(kind, Phase::Working)
         },
         CAP,
     );
@@ -3137,7 +3109,7 @@ fn card_of(kind: Kind, claude: Vec<wire::Ask>, codex: Vec<wire::CodexAsk>) -> As
     let mut state = SessionState::new(
         wire::Agent {
             cwd: QA_CWD.into(),
-            ..agent(kind)
+            ..agent(kind, Phase::Working)
         },
         CAP,
     );
@@ -3331,7 +3303,7 @@ fn a_file_step_inside_the_agents_folder_is_named_relative_to_it() {
     let mut state = SessionState::new(
         wire::Agent {
             cwd: QA_CWD.into(),
-            ..agent(Kind::ClaudeSdk)
+            ..agent(Kind::ClaudeSdk, Phase::Working)
         },
         CAP,
     );
@@ -3349,7 +3321,7 @@ fn a_file_step_inside_the_agents_folder_is_named_relative_to_it() {
         ToolState::Succeeded,
     ))));
     state.update(caught_up());
-    let paths: Vec<String> = all_rows(&state, &ChatOptions::default())
+    let paths: Vec<String> = all_rows(&state, ToolRows::ShowAll)
         .into_iter()
         .filter_map(|row| match row.kind {
             RowKind::FileChange { files, .. } => Some(files[0].path.clone()),
@@ -3371,7 +3343,7 @@ fn an_exited_agents_unfinished_step_is_not_drawn_running() {
         wire::Agent {
             lifecycle: wire::Lifecycle::Exited as i32,
             exit_cause: wire::ExitCause::Stopped as i32,
-            ..agent(Kind::ClaudeSdk)
+            ..agent(Kind::ClaudeSdk, Phase::Working)
         },
         CAP,
     );
@@ -3387,7 +3359,7 @@ fn an_exited_agents_unfinished_step_is_not_drawn_running() {
         "python3 -c 'import time; time.sleep(40)'",
     ))));
     state.update(caught_up());
-    let phases: Vec<CallPhase> = all_rows(&state, &ChatOptions::default())
+    let phases: Vec<CallPhase> = all_rows(&state, ToolRows::ShowAll)
         .iter()
         .filter_map(Row::call_phase)
         .collect();
@@ -3401,7 +3373,7 @@ fn an_exited_agents_unfinished_step_is_not_drawn_running() {
 /// Claude's own view does; an explore row carries only its verb and subject.
 #[test]
 fn an_explore_step_keeps_its_failure_reason_and_its_result() {
-    let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
+    let mut state = SessionState::new(agent(Kind::ClaudeSdk, Phase::Working), CAP);
     state.update(snapshot(
         Kind::ClaudeSdk,
         Phase::Idle,
@@ -3440,7 +3412,7 @@ fn an_explore_step_keeps_its_failure_reason_and_its_result() {
     state.update(event(session_event::Of::Item(search)));
     state.update(event(session_event::Of::Item(fetch)));
     state.update(caught_up());
-    let rows = format!("{:?}", all_rows(&state, &ChatOptions::default()));
+    let rows = format!("{:?}", all_rows(&state, ToolRows::ShowAll));
     for outcome in ["No such tool available", "Received 577 bytes"] {
         assert!(
             rows.contains(outcome),
@@ -3470,7 +3442,7 @@ fn the_review_document_reads_gits_quoted_paths() {
 /// `[31mRED[0m` and cut `aaa\rbbb` to `aaa…`.
 #[test]
 fn command_output_keeps_no_colour_codes_and_loses_no_words_after_a_return() {
-    let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
+    let mut state = SessionState::new(agent(Kind::ClaudeSdk, Phase::Working), CAP);
     state.update(snapshot(
         Kind::ClaudeSdk,
         Phase::Idle,
@@ -3486,7 +3458,7 @@ fn command_output_keeps_no_colour_codes_and_loses_no_words_after_a_return() {
     item.body = body.encode_to_vec();
     state.update(event(session_event::Of::Item(item)));
     state.update(caught_up());
-    let output: Vec<String> = all_rows(&state, &ChatOptions::default())
+    let output: Vec<String> = all_rows(&state, ToolRows::ShowAll)
         .into_iter()
         .filter_map(|row| match row.kind {
             RowKind::Command { output_head, .. } => Some(output_head),
@@ -3510,7 +3482,7 @@ fn codex_session(phase: Phase, items: Vec<Item>) -> SessionState {
         wire::Agent {
             cwd: QA_CWD.into(),
             phase: phase as i32,
-            ..agent(Kind::Codex)
+            ..agent(Kind::Codex, Phase::Working)
         },
         CAP,
     );
@@ -3556,16 +3528,11 @@ fn a_patch_that_failed_does_not_say_it_created_its_file() {
         }),
     );
     let state = codex_session(Phase::Idle, vec![patch]);
-    let rows: Vec<String> = all_rows(
-        &state,
-        &ChatOptions {
-            tools: ToolRows::ShowAll,
-        },
-    )
-    .into_iter()
-    .filter(|row| matches!(row.kind, RowKind::FileChange { .. }))
-    .map(|row| format!("{:?}", row.kind))
-    .collect();
+    let rows: Vec<String> = all_rows(&state, ToolRows::ShowAll)
+        .into_iter()
+        .filter(|row| matches!(row.kind, RowKind::FileChange { .. }))
+        .map(|row| format!("{:?}", row.kind))
+        .collect();
     assert!(
         !rows.is_empty() && rows.iter().all(|row| !row.contains("Created")),
         "the failed patch's step reads as a created file: {rows:?}"
@@ -3662,7 +3629,7 @@ fn a_turn_ended_by_reply_instead_is_not_drawn_as_stopped() {
         }),
     );
     let state = codex_session(Phase::Working, vec![question, turn]);
-    let kinds: Vec<String> = all_rows(&state, &ChatOptions::default())
+    let kinds: Vec<String> = all_rows(&state, ToolRows::ShowAll)
         .into_iter()
         .map(|row| format!("{:?}", row.kind))
         .collect();
@@ -3941,7 +3908,7 @@ fn codexs_commands_are_amuxs_table_its_skills_and_the_clients_own() {
 /// else from when its step was written.
 #[test]
 fn a_steps_time_leaves_out_the_wait_for_approval() {
-    let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
+    let mut state = SessionState::new(agent(Kind::ClaudeSdk, Phase::Working), CAP);
     state.update(snapshot(
         Kind::ClaudeSdk,
         Phase::Idle,
@@ -3962,7 +3929,7 @@ fn a_steps_time_leaves_out_the_wait_for_approval() {
         state.update(event(session_event::Of::Item(item)));
     }
     state.update(caught_up());
-    let times: Vec<Option<i64>> = all_rows(&state, &ChatOptions::default())
+    let times: Vec<Option<i64>> = all_rows(&state, ToolRows::ShowAll)
         .into_iter()
         .filter_map(|row| match row.kind {
             RowKind::Command { duration_ms, .. } => Some(duration_ms),
@@ -3987,7 +3954,7 @@ fn terminal_claude_switched_to_another_conversation_says_so_until_it_is_back() {
             ..wire::Snapshot::default()
         }))
     };
-    let mut state = SessionState::new(agent(Kind::ClaudePty), CAP);
+    let mut state = SessionState::new(agent(Kind::ClaudePty, Phase::Working), CAP);
     state.update(snapshot(true));
     assert!(composer(&state, 0).switched_away);
     assert_eq!(
@@ -4007,7 +3974,7 @@ fn terminal_claude_switched_to_another_conversation_says_so_until_it_is_back() {
 /// counting beside a header that said the host is away.
 #[test]
 fn a_chat_whose_host_is_away_counts_no_working_time() {
-    let mut state = SessionState::new(agent(Kind::Codex), CAP);
+    let mut state = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: Kind::Codex as i32,
         phase: Phase::Working as i32,
@@ -4023,7 +3990,7 @@ fn a_chat_whose_host_is_away_counts_no_working_time() {
 }
 
 fn session_offering(kind: Kind, catalogue: wire::Catalogue) -> SessionState {
-    let mut state = SessionState::new(agent(kind), CAP);
+    let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
     state.set_catalogue(b"offered".to_vec(), catalogue);
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: kind as i32,
@@ -4234,7 +4201,7 @@ fn a_job_offers_its_own_stop_where_the_kind_can_stop_one() {
             }
             .encode_to_vec(),
         };
-        let mut state = SessionState::new(agent(kind), CAP);
+        let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
         state.update(snapshot(kind, Phase::Idle, body, vec![]));
         overview(&state, None)
             .jobs

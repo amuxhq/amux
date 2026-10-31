@@ -29,8 +29,8 @@ pub use attachments::PLACEHOLDER;
 pub use composer::{
     CONTEXT_NEAR_FULL_PERCENT, CommandMatch, ComposerView, ContextView, Lands, PASTE_CHARS,
     PASTE_LINES, QueuedRow, RefusedPrompt, SentPrompt, SignInView, Underway, command_matches,
-    composer, composer_tokens, context, pastes_as_attachment, prompts_underway, queue_rows,
-    refused_prompts, sends_to_feed, sign_in, switched_away, waiting,
+    composer, context, pastes_as_attachment, prompts_underway, queue_rows, refused_prompts,
+    sign_in, switched_away,
 };
 pub use fleet::{
     ActivityLine, AskSubject, AskSummary, ExitCause, FamilyHeader, FleetCard, FleetFilter,
@@ -49,10 +49,9 @@ pub use overview::{
 };
 pub use review::{DiffLine, FileStatus, Hunk, LineKind, ReviewDoc, ReviewFile, review_doc};
 pub use rows::{
-    AnswerView, AskRow, CallPhase, ChatOptions, ChildAction, Decision, DecisionView, EditLine,
-    ExploreVerb, FileChangeView, FileRow, Granted, OUTPUT_HEAD_LINES, PatchHead, PatchLine,
-    PermissionGrant, PlanVerdict, Resolution, Row, RowKind, ToolRows, chat_rows, chat_rows_for,
-    patch_head,
+    AnswerView, AskRow, CallPhase, ChildAction, Decision, DecisionView, EditLine, ExploreVerb,
+    FileChangeView, FileRow, Granted, OUTPUT_HEAD_LINES, PatchHead, PatchLine, PermissionGrant,
+    PlanVerdict, Resolution, Row, RowKind, ToolRows, chat_rows_for, patch_head,
 };
 pub use run::{LIVE_STEPS, Run, RunCounts, keep_open_runs, run_is_open, toggle_run};
 pub use segments::{AttachmentView, Segment, segments};

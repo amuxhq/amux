@@ -1,8 +1,8 @@
 //! The terminal client against served hosts: a testnet of real daemons and
 //! agent processes on the fake providers, observed through a client
 //! service the way a terminal subscribes. Drafts across leaving a chat and
-//! the client closing, prompts held while a host is out of reach, and
-//! chats on agents a far host deleted or stopped linking.
+//! the client closing, and chats on agents a far host deleted or stopped
+//! linking.
 //!
 //! Unix only: every served host here runs terminal Claude agents, which
 //! Windows does not host (see docs/ARCHITECTURE.md, "Windows, as a stated

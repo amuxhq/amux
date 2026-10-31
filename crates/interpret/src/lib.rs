@@ -29,7 +29,7 @@ pub mod testkind;
 
 pub use claude_common::{FileStep, HOOK_ANSWER_FIELD, NOTEBOOK_OLD_SOURCE, file_step, tool_input};
 pub use golden::{
-    EndRules, FixtureInput, FixtureScript, GoldenReport, Replayed, UPDATE_GOLDENS_ENV,
+    Committer, EndRules, FixtureInput, FixtureScript, GoldenReport, Replayed, UPDATE_GOLDENS_ENV,
     check_invariants, claude_pty_input, claude_sdk_input, codex_input, fixture_script, render_item,
     render_steps, replay, run_golden, run_until,
 };

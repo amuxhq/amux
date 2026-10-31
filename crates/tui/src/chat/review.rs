@@ -724,21 +724,7 @@ impl ReviewPage {
         };
         // The way out stays on the line, however narrow.
         let mut line = Line::from(Span::raw("  "));
-        let fitted = text::fit_hints(keys, width.saturating_sub(4));
-        for (i, &at) in fitted.shown.iter().enumerate() {
-            let (key, action) = keys[at];
-            if fitted.mark == Some(i) {
-                push(&mut line, " …", theme.faint(), width);
-            }
-            if i > 0 {
-                push(&mut line, " ".repeat(fitted.gap), theme.faint(), width);
-            }
-            push(&mut line, key, theme.emphasis(), width);
-            push(&mut line, format!(" {action}"), theme.faint(), width);
-        }
-        if fitted.mark == Some(fitted.shown.len()) {
-            push(&mut line, " …", theme.faint(), width);
-        }
+        text::push_hints(&mut line, keys, width.saturating_sub(4), theme);
         line
     }
 

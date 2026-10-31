@@ -555,8 +555,8 @@ only with all of its callers:
 | What | Where | Run |
 |---|---|---|
 | Behaviour: keys, effects, layout, paging, asks, the queue, home, the review page | `crates/tui/src/tests.rs` | `just test-tui` |
-| Component goldens in light and dark: every row kind as the feed draws it, each ask in its box, the queue, the composer's states and the row above it, the sign-in box, the review page | `crates/tui/tests/golden.rs`, `crates/tui/tests/golden/` | `just test-tui`; rewrite with `UPDATE_GOLDENS=1 just test-tui` |
-| Against served hosts: drafts across leaving a chat and the client closing, held prompts, chats on agents a far host deleted or stopped linking | `crates/tui/tests/served.rs` | `just test-tui` |
+| Component goldens, text and style classes: every row kind as the feed draws it, each ask in its box, the queue, the composer's states and the row above it, the sign-in box, the review page | `crates/tui/tests/golden.rs`, `crates/tui/tests/golden/` | `just test-tui`; rewrite with `UPDATE_GOLDENS=1 just test-tui` |
+| Against served hosts: drafts across leaving a chat and the client closing, chats on agents a far host deleted or stopped linking | `crates/tui/tests/served.rs` | `just test-tui` |
 | PNG renderings of the components | [`crates/shot`](../crates/shot/README.md) | `just shot -- render --out DIR` |
 | The storybook: exactly the terminal stories of `tests/stories.json`, in its order, each drawing at every size in both palettes | `crates/shot/src/stories.rs` | `just test-crate shot` |
 | Raw attach, the CLI and the binary against real daemons | `crates/amux/tests/` | `just test-crate amux` |

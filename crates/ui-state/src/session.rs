@@ -627,6 +627,7 @@ impl SessionState {
             }
             Msg::Send(input) => {
                 let id = input.input_id.clone();
+                let to_feed = self.phase() == PhaseView::Idle && self.queue().is_empty();
                 outcome.session = self.inputs.push(input);
                 if outcome.session
                     && let Some(sent) = self.inputs.get_mut(&id)
@@ -642,6 +643,11 @@ impl SessionState {
                     && sent.what.holds()
                 {
                     sent.state = InputState::Held;
+                }
+                if outcome.session
+                    && let Some(sent) = self.inputs.get_mut(&id)
+                {
+                    sent.in_feed = to_feed && sent.state == InputState::Sent;
                 }
                 // A reflection can beat the optimistic row only on a resend
                 // of a known id, which the push refuses.

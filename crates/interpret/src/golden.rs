@@ -39,7 +39,7 @@
 //! yields the same items and final snapshot as the uninterrupted run, and a
 //! resume re-emits only known keys at their current content.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -48,8 +48,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use wire::{
     AgentSpec, ClaudeAnswer, CodexAnswer, Envelope, Input, Item, Phase, PromptInput,
-    SendInputResponse, SendQueuedNow, Sender, Snapshot, Step, WithdrawQueued, claude_answer,
-    claude_pty_input, claude_sdk_input, codex_input, send_input_response, sender,
+    SendInputResponse, SendQueuedNow, Sender, SessionEvent, Snapshot, Step, WithdrawQueued,
+    claude_answer, claude_pty_input, claude_sdk_input, codex_input, send_input_response, sender,
+    session_event,
 };
 
 use crate::serde_pb::{from_hex, to_hex};
@@ -276,6 +277,54 @@ impl GoldenReport {
             violations: Vec::new(),
             failures: vec![failure],
         }
+    }
+}
+
+/// Commits interpreter steps the way the owning daemon does: an order once
+/// per new key, a revision per record: what a replay's steps read as in a
+/// client's session.
+#[derive(Clone, Default)]
+pub struct Committer {
+    pub revision: u64,
+    next_order: u64,
+    orders: HashMap<String, u64>,
+    revisions: HashMap<String, u64>,
+}
+
+impl Committer {
+    pub fn commit(&mut self, step: &Step) -> Vec<SessionEvent> {
+        let event = |of| SessionEvent { of: Some(of) };
+        let mut out = Vec::new();
+        for item in &step.items {
+            self.revision += 1;
+            let order = *self.orders.entry(item.key.clone()).or_insert_with(|| {
+                self.next_order += 1;
+                self.next_order
+            });
+            self.revisions.insert(item.key.clone(), self.revision);
+            let mut item = item.clone();
+            item.order = order;
+            item.revision = self.revision;
+            out.push(event(session_event::Of::Item(item)));
+        }
+        for append in &step.appends {
+            self.revision += 1;
+            let base = self
+                .revisions
+                .insert(append.key.clone(), self.revision)
+                .unwrap_or(0);
+            let mut append = append.clone();
+            append.base_revision = base;
+            append.revision = self.revision;
+            out.push(event(session_event::Of::Append(append)));
+        }
+        if let Some(snapshot) = &step.snapshot {
+            self.revision += 1;
+            let mut snapshot = snapshot.clone();
+            snapshot.revision = self.revision;
+            out.push(event(session_event::Of::Snapshot(snapshot)));
+        }
+        out
     }
 }
 

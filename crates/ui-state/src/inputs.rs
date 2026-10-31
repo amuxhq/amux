@@ -131,6 +131,10 @@ pub struct SentInput {
     /// The session's count of words that the host can be reached, as this
     /// input last left: a word since then sends it again if it is held.
     pub(crate) left_at: u64,
+    /// Sent to an idle agent with nothing queued and not held: a prompt on
+    /// its way draws at the feed's end rather than in the queue, and keeps
+    /// that place as the agent starts on it.
+    pub in_feed: bool,
 }
 
 /// Every input this client sent during this open, in sending order. Nothing
@@ -172,6 +176,7 @@ impl Inputs {
             input,
             seen_queued: false,
             left_at: 0,
+            in_feed: false,
         });
         true
     }

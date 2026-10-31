@@ -13,7 +13,7 @@
 ## 9 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.020Z","type":"user","uuid":"u2"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 11 input {"id":"p3","prompt":{"text":"/compact"}}
-  composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 51], text: [Text("/compact")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
+  composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 51], text: [Text("/compact")], lands: Feed, underway: Sending { waiting: false } }] refused=[]
 ## 12 fact {"channel":"transcript","json":{"message":{"content":"/compact","role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.030Z","type":"user","uuid":"u3"}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 13 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"compact","transcript_path":"/t/s1.jsonl"}}

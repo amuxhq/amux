@@ -44,7 +44,7 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
             agent: agent, name: "a", kind: .claudeSdk, phase: .needsYou,
             composer: ComposerView(mode: .send, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: current,
             hasOlder: false, arrivalsHeld: false, queue: [], underway: underway, refused: [], askInput: nil, context: nil, ended: nil, git: nil,
-            signIn: nil, waiting: nil)
+            signIn: nil)
     }
     func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> { .failure(RuntimeFailure("no")) }
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { nil }

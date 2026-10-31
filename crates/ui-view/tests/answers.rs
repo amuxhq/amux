@@ -11,8 +11,9 @@ use std::path::{Path, PathBuf};
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
-use interpret::{Checkpoint, Effect, Event, Interpreter, decode_checkpoint, encode_checkpoint};
-use support::Committer;
+use interpret::{
+    Checkpoint, Committer, Effect, Event, Interpreter, decode_checkpoint, encode_checkpoint,
+};
 use ui_state::{InputOutcome, Msg, SessionState};
 use ui_view::{
     Answer, AskBody, AskCard, CardState, Changeable, QuestionResponse, SettingChange, answer_input,
@@ -26,18 +27,6 @@ fn fixtures(kind: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../interpret/fixtures")
         .join(kind)
-}
-
-fn agent(kind: Kind) -> wire::Agent {
-    wire::Agent {
-        agent_id: b"agent".to_vec(),
-        host_id: b"host".to_vec(),
-        kind: kind as i32,
-        lifecycle: wire::Lifecycle::Live as i32,
-        phase: wire::Phase::NeedsYou as i32,
-        incarnation: 1,
-        ..wire::Agent::default()
-    }
 }
 
 /// One interpreter and the session its emission builds, in step.
@@ -55,7 +44,7 @@ impl<S: Checkpoint + Clone> Driven<S> {
         let (interpreter, first) = I::initial(spec);
         let mut driven = Driven {
             interpreter,
-            session: SessionState::new(agent(kind), support::CAP),
+            session: SessionState::new(support::agent(kind, wire::Phase::NeedsYou), support::CAP),
             committer: Committer::default(),
             held: 0,
         };

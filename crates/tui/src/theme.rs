@@ -209,21 +209,14 @@ fn computed(rgb: (u8, u8, u8)) -> Token {
     Token::new(rgb, nearest_ansi(rgb))
 }
 
-/// The provenance of a resolved palette.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ThemeName {
-    Dark,
-    Light,
-    /// A palette derived from what the terminal reported about itself.
-    Adopted,
-}
-
 /// A complete palette resolved in one terminal colour mode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Theme {
     pub tokens: Tokens,
     pub mode: ColorMode,
-    pub name: ThemeName,
+    /// Derived from what the terminal reported about itself, rather than
+    /// one of the two palettes amux ships.
+    pub adopted: bool,
 }
 
 impl Default for Theme {
@@ -266,7 +259,7 @@ impl Theme {
                 diff_meta: Token::new((110, 118, 134), Color::DarkGray),
             },
             mode,
-            name: ThemeName::Dark,
+            adopted: false,
         }
     }
 
@@ -301,7 +294,7 @@ impl Theme {
                 diff_meta: Token::new((117, 122, 136), Color::Black),
             },
             mode,
-            name: ThemeName::Light,
+            adopted: false,
         }
     }
 
@@ -381,7 +374,7 @@ impl Theme {
         Self {
             tokens,
             mode,
-            name: ThemeName::Adopted,
+            adopted: true,
         }
     }
 
@@ -471,7 +464,7 @@ impl Theme {
     /// paint an exact shade of it, where a highlight falls back to weight
     /// and a mark rather than borrowing a colour of its own.
     pub(crate) fn row_surface(self) -> Option<Style> {
-        (self.name == ThemeName::Adopted && self.mode == ColorMode::TrueColor)
+        (self.adopted && self.mode == ColorMode::TrueColor)
             .then(|| Style::default().bg(self.color(self.tokens.user_surface)))
     }
 
@@ -1207,7 +1200,7 @@ mod tests {
                         ratio >= READABLE_TRIM,
                         "{} {:?} {:?} paints {:?} at {ratio:.1}:1, {:?} on {:?}",
                         state.name(),
-                        theme.name,
+                        theme.tokens.background.rgb,
                         theme.mode,
                         cell.symbol(),
                         cell.fg,
@@ -1272,7 +1265,7 @@ mod tests {
     fn a_terminal_palette_borrows_its_ground_and_text_and_takes_its_own_hues() {
         for (name, terminal) in terminal_schemes() {
             let theme = Theme::from_terminal(terminal, ColorMode::TrueColor);
-            assert_eq!(theme.name, ThemeName::Adopted);
+            assert!(theme.adopted);
             for token in [theme.tokens.background, theme.tokens.text] {
                 assert_eq!(
                     token.resolve(ColorMode::TrueColor),
@@ -1452,7 +1445,7 @@ mod tests {
                 assert!(
                     ratio >= 4.5,
                     "{:?} text on {name} is only {ratio:.1}:1",
-                    theme.name
+                    theme.tokens.background.rgb
                 );
             }
             for (fg, bg, name) in [
@@ -1468,7 +1461,11 @@ mod tests {
                 ),
             ] {
                 let ratio = contrast(fg, bg);
-                assert!(ratio >= 4.5, "{:?} {name} is only {ratio:.1}:1", theme.name);
+                assert!(
+                    ratio >= 4.5,
+                    "{:?} {name} is only {ratio:.1}:1",
+                    theme.tokens.background.rgb
+                );
             }
         }
     }
@@ -1482,13 +1479,25 @@ mod tests {
             let panel = theme.tokens.panel.rgb;
             let added = theme.tokens.diff_added_bg.rgb;
             let removed = theme.tokens.diff_removed_bg.rgb;
-            assert_ne!(added, panel, "{:?} added tint is the panel", theme.name);
-            assert_ne!(removed, panel, "{:?} removed tint is the panel", theme.name);
-            assert_ne!(added, removed, "{:?} tints are the same", theme.name);
+            assert_ne!(
+                added, panel,
+                "{:?} added tint is the panel",
+                theme.tokens.background.rgb
+            );
+            assert_ne!(
+                removed, panel,
+                "{:?} removed tint is the panel",
+                theme.tokens.background.rgb
+            );
+            assert_ne!(
+                added, removed,
+                "{:?} tints are the same",
+                theme.tokens.background.rgb
+            );
             assert_ne!(
                 theme.tokens.user_surface.rgb, panel,
                 "{:?} user surface is the panel",
-                theme.name
+                theme.tokens.background.rgb
             );
         }
     }
@@ -1532,7 +1541,7 @@ mod tests {
                 assert!(
                     !BORROWED.contains(&token.rgb),
                     "{:?} still carries a borrowed colour {:?}",
-                    theme.name,
+                    theme.tokens.background.rgb,
                     token.rgb
                 );
             }

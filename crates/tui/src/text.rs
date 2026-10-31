@@ -6,6 +6,8 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::theme::Theme;
+
 /// Display width in terminal cells: CJK and emoji two, combining marks zero.
 pub(crate) fn str_width(text: &str) -> usize {
     unicode_width::UnicodeWidthStr::width(text)
@@ -106,6 +108,41 @@ pub(crate) fn fit_hints(pairs: &[(&str, &str)], room: usize) -> Fitted {
         shown,
         mark,
     }
+}
+
+/// Draws a key legend after what `line` holds, laid out by [`fit_hints`]
+/// in `room` columns: the key is what you press, so it reads first, bright
+/// and bold; its action recedes. Returns, for each pair drawn, its index in
+/// `pairs` and the columns it covers, so a click can press it.
+pub(crate) fn push_hints(
+    line: &mut Line<'static>,
+    pairs: &[(&str, &str)],
+    room: usize,
+    theme: Theme,
+) -> Vec<(usize, (usize, usize))> {
+    let fitted = fit_hints(pairs, room);
+    let cut = |line: &mut Line<'static>| line.spans.push(Span::styled(" …", theme.faint()));
+    let mut spots = Vec::new();
+    for (i, &at) in fitted.shown.iter().enumerate() {
+        if fitted.mark == Some(i) {
+            cut(line);
+        }
+        if i > 0 {
+            line.spans
+                .push(Span::styled(" ".repeat(fitted.gap), theme.faint()));
+        }
+        let (key, action) = pairs[at];
+        let from = line_width(line);
+        line.spans
+            .push(Span::styled(key.to_owned(), theme.emphasis()));
+        line.spans
+            .push(Span::styled(format!(" {action}"), theme.faint()));
+        spots.push((at, (from, line_width(line))));
+    }
+    if fitted.mark == Some(fitted.shown.len()) {
+        cut(line);
+    }
+    spots
 }
 
 /// Columns between tab stops in an agent's code.

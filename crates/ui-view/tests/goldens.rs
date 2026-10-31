@@ -17,12 +17,11 @@ use std::path::{Path, PathBuf};
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
-use interpret::{Interpreter, Replayed, replay};
-use support::Committer;
+use interpret::{Committer, Interpreter, Replayed, replay};
 use ui_state::{InputOutcome, Msg, SessionState};
 use ui_view::{
-    ChatOptions, ToolRows, ask_card, chat_rows, composer, context, overview, prompts_underway,
-    queue_rows, refused_prompts, settings, sign_in,
+    ToolRows, ask_card, composer, context, overview, prompts_underway, queue_rows, refused_prompts,
+    settings, sign_in,
 };
 use wire::{Kind, SessionEvent, session_event};
 
@@ -40,19 +39,6 @@ fn goldens(kind: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/goldens")
         .join(kind)
-}
-
-fn agent(kind: Kind) -> wire::Agent {
-    wire::Agent {
-        agent_id: b"agent".to_vec(),
-        host_id: b"host".to_vec(),
-        kind: kind as i32,
-        name: "worker".into(),
-        lifecycle: wire::Lifecycle::Live as i32,
-        phase: wire::Phase::NeedsYou as i32,
-        incarnation: 1,
-        ..wire::Agent::default()
-    }
 }
 
 fn clip(line: String) -> String {
@@ -186,13 +172,11 @@ fn describe_card(card: Option<&ui_view::AskCard>) -> String {
 
 /// Replays a fixture's emission through the session and renders the views.
 fn render(kind: Kind, frames: &[Replayed]) -> String {
-    let mut state = SessionState::new(agent(kind), support::CAP);
+    let mut state = SessionState::new(support::agent(kind, wire::Phase::NeedsYou), support::CAP);
     let mut committer = Committer::default();
     let mut out = String::new();
     let open = HashSet::new();
-    let opts = ChatOptions {
-        tools: ToolRows::Collapse { open: &open },
-    };
+    let tools = ToolRows::Collapse { open: &open };
     let mut last_card = None;
     let mut last_composer = String::new();
     for (index, frame) in frames.iter().enumerate() {
@@ -243,7 +227,7 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
             composer(&state, at).mode,
             state.activity(at).map(|activity| activity.kind),
             queue_rows(&state),
-            prompts_underway(&state, |_| false),
+            prompts_underway(&state),
             refused_prompts(&state)
         );
         if composing != last_composer {
@@ -258,8 +242,7 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
         }
     }
     let _ = writeln!(out, "== chat");
-    let head = state.transcript().head().unwrap_or(0);
-    for row in chat_rows(&state, 0..=head, &opts) {
+    for row in crate::support::all_rows(&state, tools) {
         let _ = writeln!(out, "  {}", describe_row(&row));
     }
     let _ = writeln!(out, "== overview {:?}", overview(&state, None));

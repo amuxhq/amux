@@ -1,7 +1,7 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 4 input {"id":"p1","prompt":{"text":"test it"}}
-  composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 49], text: [Text("test it")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
+  composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 49], text: [Text("test it")], lands: Feed, underway: Sending { waiting: false } }] refused=[]
 ## 5 fact {"channel":"transcript","json":{"message":{"content":"test it","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 6 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"cargo test"},"tool_name":"Bash","tool_use_id":"t1"}}

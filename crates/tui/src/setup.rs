@@ -1012,14 +1012,6 @@ impl Picker {
             Shape::List => vec![("enter", "pick"), ("↑↓", "move"), ("esc", "back")],
         }
     }
-
-    pub fn hint(&self) -> String {
-        self.hints()
-            .iter()
-            .map(|(key, action)| format!("{key} {action}"))
-            .collect::<Vec<_>>()
-            .join(" · ")
-    }
 }
 
 /// A flyover as drawn: where it is, where its choices are, and where the

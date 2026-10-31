@@ -12,7 +12,7 @@ use std::collections::HashSet;
 
 use ratatui::text::Line;
 use ui_state::{Fold, ItemClass, Key, SessionState};
-use ui_view::{ChatOptions, LIVE_STEPS, Row, RunCounts, ToolRows, chat_rows_for};
+use ui_view::{LIVE_STEPS, Row, RunCounts, ToolRows, chat_rows_for};
 
 use super::feed::{self, Header, LineHits, Placement};
 use super::rows::{RowFacts, RowState, row_lines};
@@ -151,10 +151,8 @@ pub struct Frame<'a> {
 }
 
 impl Frame<'_> {
-    fn options(&self) -> ChatOptions<'_> {
-        ChatOptions {
-            tools: self.tools.rows(self.open_runs),
-        }
+    fn options(&self) -> ToolRows<'_> {
+        self.tools.rows(self.open_runs)
     }
 
     /// The row drawn at one held order, as shown, with whether its subagent
@@ -162,7 +160,7 @@ impl Frame<'_> {
     fn shown(&self, state: &SessionState, order: u64) -> Option<(Row, bool)> {
         let held = state.transcript().at(order)?;
         let row =
-            chat_rows_for(state, std::slice::from_ref(&held.item.key), &self.options()).pop()?;
+            chat_rows_for(state, std::slice::from_ref(&held.item.key), self.options()).pop()?;
         let child_open = row
             .parent
             .as_ref()
@@ -216,7 +214,7 @@ impl Frame<'_> {
         if self.asking == Some(&held.item.key) {
             return None;
         }
-        let in_run = chat_rows_for(state, std::slice::from_ref(&held.item.key), &self.options())
+        let in_run = chat_rows_for(state, std::slice::from_ref(&held.item.key), self.options())
             .pop()
             .filter(|row| row.run.is_some());
         let (placement, row, toggle) = match in_run {
@@ -368,7 +366,7 @@ impl Frame<'_> {
 
     /// What the run whose newest step is `last` did.
     fn counts(&self, state: &SessionState, last: &Key) -> RunCounts {
-        chat_rows_for(state, std::slice::from_ref(last), &EVERYTHING)
+        chat_rows_for(state, std::slice::from_ref(last), ToolRows::ShowAll)
             .pop()
             .and_then(|row| row.run)
             .and_then(|run| run.counts)
@@ -595,8 +593,3 @@ fn after(state: &SessionState, order: u64) -> impl DoubleEndedIterator<Item = &u
         })
         .filter(move |_| !empty)
 }
-
-/// Every row whole: the layout decides what of a run draws.
-const EVERYTHING: ChatOptions<'static> = ChatOptions {
-    tools: ToolRows::ShowAll,
-};

@@ -974,6 +974,15 @@ impl Session {
         self.inner.apply(Msg::Discard(id.to_vec()));
     }
 
+    /// Sends a not-confirmed input again under a new id, forgetting the
+    /// old one; None when this client sent no such input.
+    pub async fn resend(&self, id: &[u8]) -> Option<Sent> {
+        let mut input = self.state().inputs().get(id)?.input.clone();
+        self.discard(id);
+        input.input_id.clear();
+        Some(self.send(input).await)
+    }
+
     async fn act(&self, input: Option<Input>) -> Result<(), InputError> {
         let Some(input) = input else {
             return Err(InputError::Rejected(Refusal::of(
@@ -1059,10 +1068,6 @@ impl Session {
     pub fn history(&self) -> ClientSessionHistory {
         self.inner.history()
     }
-
-    /// Drops the stream. Nothing is flushed: nothing was kept. Results of
-    /// calls still in flight change nothing.
-    pub fn close(self) {}
 }
 
 impl Drop for Session {

@@ -17,6 +17,7 @@ use ui_view::{
     question_answer, reply_answer,
 };
 
+use super::{Keys, keys};
 use crate::editor::Editor;
 use crate::text::{self, push, push_right};
 use crate::theme::Theme;
@@ -1697,8 +1698,11 @@ impl AskUi {
         }
     }
 
-    /// The hint line's words while a boxed question has the keys.
-    pub fn question_hint(&self, card: &AskCard, leader: char) -> Option<String> {
+    /// The hint line's keys while a boxed question has the keys.
+    pub fn question_hint(&self, card: &AskCard, leader: char) -> Option<Keys> {
+        let more = format!("ctrl+{leader}");
+        let more = (more.as_str(), "more");
+        const STOP: (&str, &str) = ("ctrl+x", "interrupt");
         let form = form_questions(&self.fields);
         let questions: &[QuestionView] = match &card.body {
             AskBody::Question(questions) => questions,
@@ -1707,113 +1711,116 @@ impl AskUi {
                 if matches!(card.state, CardState::Open | CardState::Rejected(_)) =>
             {
                 let enter = if self.selected == 2 {
-                    "enter decline"
+                    "decline"
                 } else {
-                    "enter choose"
+                    "choose"
                 };
-                return Some(format!("{enter} · ctrl+x interrupt · ctrl+{leader} more"));
+                return Some(keys(&[("enter", enter), STOP, more]));
             }
-            AskBody::Unanswerable { .. } => {
-                return Some(if self.attach {
-                    "enter open the terminal · ctrl+x interrupt".to_owned()
-                } else {
-                    "ctrl+x interrupt".to_owned()
-                });
+            AskBody::Unanswerable { .. } if self.attach => {
+                return Some(keys(&[("enter", "open the terminal"), STOP]));
             }
+            AskBody::Unanswerable { .. } => return Some(keys(&[STOP])),
             _ => return None,
         };
         if !matches!(card.state, CardState::Open | CardState::Rejected(_)) {
             return None;
         }
-        let several = questions.len() > 1;
-        let tabs = if several { " · ←/→ questions" } else { "" };
         if self.replying {
-            return Some("enter send · esc clear · ctrl+x interrupt".to_owned());
+            return Some(keys(&[("enter", "send"), ("esc", "clear"), STOP]));
         }
         if self.annotating {
-            return Some("enter choose · tab done · esc clear · ctrl+x interrupt".to_owned());
+            return Some(keys(&[
+                ("enter", "choose"),
+                ("tab", "done"),
+                ("esc", "clear"),
+                STOP,
+            ]));
         }
+        let several = questions.len() > 1;
+        let tabs: &[(&str, &str)] = if several {
+            &[("←/→", "questions")]
+        } else {
+            &[]
+        };
+        // Enter's pair, the tabs, then the stop and the way to more.
+        let with_tabs =
+            |enter: &str, rest: &[(&str, &str)]| keys(&[&[("enter", enter)], tabs, rest].concat());
         if self.in_review(questions) {
             if let Some(at) = self.missing(card) {
-                let name = question_name(&questions[at], at);
-                return Some(format!("enter go to {name}{tabs} · ctrl+x interrupt"));
+                let name = format!("go to {}", question_name(&questions[at], at));
+                return Some(with_tabs(&name, &[STOP]));
             }
-            return Some(format!(
-                "enter send{tabs} · ctrl+x interrupt · ctrl+{leader} more"
-            ));
+            return Some(with_tabs("send", &[STOP, more]));
         }
         let form = matches!(card.body, AskBody::Form { .. });
         if self.on_something_else(questions) {
             // Typing: ←/→ are the text's, Tab still changes tabs.
             let enter = match (several, form) {
-                (true, _) => "enter answer",
-                (false, true) => "enter submit",
-                (false, false) => "enter send",
+                (true, _) => "answer",
+                (false, true) => "submit",
+                (false, false) => "send",
             };
-            let tab = if takes_notes(card) {
-                " · tab note"
+            let tab: &[(&str, &str)] = if takes_notes(card) {
+                &[("tab", "note")]
             } else if several {
-                " · tab next"
+                &[("tab", "next")]
             } else {
-                ""
+                &[]
             };
-            return Some(format!("{enter}{tab} · esc clear · ctrl+x interrupt"));
+            return Some(keys(
+                &[&[("enter", enter)], tab, &[("esc", "clear"), STOP]].concat(),
+            ));
         }
         if self.on_other_row(questions) {
             // A draft kept from earlier answers on Enter.
             let enter = if self.other.text().trim().is_empty() {
-                "enter to type"
+                "to type"
             } else {
-                "enter answer"
+                "answer"
             };
-            return Some(format!(
-                "{enter}{tabs} · ctrl+x interrupt · ctrl+{leader} more"
-            ));
+            return Some(with_tabs(enter, &[STOP, more]));
         }
         let rows = QuestionRows::of(&questions[self.step], card);
         if rows.skip == Some(self.selected) {
-            return Some(format!(
-                "enter skip{tabs} · ctrl+x interrupt · ctrl+{leader} more"
-            ));
+            return Some(with_tabs("skip", &[STOP, more]));
         }
         if rows.out == Some(self.selected) {
-            let enter = if form {
-                "enter decline"
-            } else {
-                "enter to type"
-            };
-            return Some(format!(
-                "{enter}{tabs} · ctrl+x interrupt · ctrl+{leader} more"
-            ));
+            let enter = if form { "decline" } else { "to type" };
+            return Some(with_tabs(enter, &[STOP, more]));
         }
-        let note = if takes_notes(card) {
-            " · tab note"
+        let note: &[(&str, &str)] = if takes_notes(card) {
+            &[("tab", "note")]
         } else {
-            ""
+            &[]
         };
         // What Enter does next: send a lone question, or move on to the next
         // unanswered one, or to the review when none is left.
         let others_open =
             (0..questions.len()).any(|at| at != self.step && !self.picks[at].answered());
         let enter = if !several {
-            "enter send"
+            "send"
         } else if others_open {
-            "enter next"
+            "next"
         } else {
-            "enter review"
+            "review"
         };
-        if questions[self.step].multi_select {
+        Some(if questions[self.step].multi_select {
             // Four at most: the stop stays, the leader goes.
-            Some(format!(
-                "space select · {enter}{tabs}{note} · ctrl+x interrupt"
-            ))
+            keys(
+                &[
+                    &[("space", "select"), ("enter", enter)],
+                    tabs,
+                    note,
+                    &[STOP],
+                ]
+                .concat(),
+            )
         } else if several && !note.is_empty() {
-            Some(format!("enter choose{tabs}{note} · ctrl+x interrupt"))
+            with_tabs("choose", &[note, &[STOP]].concat())
         } else {
-            Some(format!(
-                "enter choose{tabs}{note} · ctrl+x interrupt · ctrl+{leader} more"
-            ))
-        }
+            with_tabs("choose", &[note, &[STOP, more]].concat())
+        })
     }
 
     /// The boxed question ask's lines: the tabs (or the lone question's

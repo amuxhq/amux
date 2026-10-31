@@ -15,7 +15,7 @@ use crate::chat::layout::{Anchor, PAGE};
 use crate::chat::{ChatEffect, ChatView};
 use crate::clipboard::ClipboardContent;
 use crate::fixtures::{self, caught_up, draw, text};
-use crate::fleet::FleetEffect;
+use crate::home::FleetEffect;
 use crate::theme::Theme;
 
 const W: u16 = 100;

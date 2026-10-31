@@ -877,7 +877,7 @@ fn authored(kind: Kind) -> String {
         let _ = writeln!(out, "## {label}");
         let _ = writeln!(out, "  composer {:?}", composer(state, 10_000));
         let _ = writeln!(out, "  queue {:?}", queue_rows(state));
-        let _ = writeln!(out, "  underway {:?}", prompts_underway(state, |_| false));
+        let _ = writeln!(out, "  underway {:?}", prompts_underway(state));
         let _ = writeln!(out, "  refused {:?}", refused_prompts(state));
         match ask_card(state) {
             Some(card) => {
@@ -1032,18 +1032,14 @@ fn a_sent_prompt_the_queue_lists_is_drawn_once() {
         state.update(snapshot(kind, Phase::Starting, vec![], vec![]));
         state.update(caught_up());
         state.update(Msg::Send(prompt_input(kind, b"r1", "resumed")));
-        assert_eq!(
-            prompts_underway(&state, |_| false).len(),
-            1,
-            "sending until it lands"
-        );
+        assert_eq!(prompts_underway(&state).len(), 1, "sending until it lands");
         state.update(snapshot(
             kind,
             Phase::NeedsYou,
             vec![],
             vec![queued(b"r1", false, None)],
         ));
-        assert!(prompts_underway(&state, |_| false).is_empty());
+        assert!(prompts_underway(&state).is_empty());
         assert_eq!(queue_rows(&state).len(), 1);
     }
 }
@@ -1088,7 +1084,7 @@ fn a_refused_send_now_leaves_the_prompt_queued() {
     assert!(!rows[0].steered);
     assert!(rows[0].can_send_now);
     assert!(rows[0].can_withdraw);
-    assert!(prompts_underway(&state, |_| false).is_empty());
+    assert!(prompts_underway(&state).is_empty());
 }
 
 #[test]
@@ -2613,20 +2609,17 @@ fn prompts_on_their_way_follow_the_sending_rules() {
     let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
     state.update(snapshot(kind, Phase::Idle, vec![], vec![]));
     state.update(caught_up());
-    assert!(sends_to_feed(&state), "an idle agent with nothing queued");
     state.update(Msg::Send(prompt_input(kind, b"p1", "first")));
-    let feed = |id: &[u8]| id == b"p1";
-    let underway = prompts_underway(&state, feed);
+    let underway = prompts_underway(&state);
     assert_eq!(underway.len(), 1);
     assert_eq!(underway[0].lands, Lands::Feed);
     assert_eq!(underway[0].underway, Underway::Sending { waiting: false });
 
     state.update(snapshot(kind, Phase::Working, vec![], vec![]));
-    assert!(!sends_to_feed(&state), "a working agent queues the next");
     state.update(Msg::Send(prompt_input(kind, b"p2", "second")));
     state.update(Msg::Sent(b"p1".to_vec(), InputOutcome::Lost));
     state.update(Msg::Connection(ui_state::Connection::Reconnecting));
-    let underway = prompts_underway(&state, feed);
+    let underway = prompts_underway(&state);
     assert_eq!(
         underway
             .iter()
@@ -2654,14 +2647,14 @@ fn prompts_on_their_way_follow_the_sending_rules() {
         }),
     ));
     assert!(
-        prompts_underway(&state, feed)
+        prompts_underway(&state)
             .iter()
             .any(|prompt| prompt.input_id == b"p3" && prompt.underway == Underway::Held),
         "one its host could not take is held"
     );
     state.update(snapshot(kind, Phase::Working, vec![], vec![]));
     state.update(caught_up());
-    let underway = prompts_underway(&state, feed);
+    let underway = prompts_underway(&state);
     assert_eq!(
         underway
             .iter()

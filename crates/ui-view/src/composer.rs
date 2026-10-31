@@ -3,9 +3,7 @@
 
 use schemars::JsonSchema;
 use serde::Serialize;
-use ui_state::{
-    Activity, Composer, InputState, InputWhat, PhaseView, Refusal, SessionState, Waiting,
-};
+use ui_state::{Activity, Composer, InputState, InputWhat, Refusal, SessionState, Waiting};
 use wire::{Attachment, SignInState};
 
 use crate::segments::{Segment, segments};
@@ -142,15 +140,9 @@ pub fn queue_rows(state: &SessionState) -> Vec<QueuedRow> {
         .collect()
 }
 
-/// Where a new prompt of this client's lands: at the feed's end, as it
-/// will stand once the agent has it, while the agent is idle with nothing
-/// queued; otherwise in the queue, behind what waits there.
-pub fn sends_to_feed(state: &SessionState) -> bool {
-    state.phase() == PhaseView::Idle && state.queue().is_empty()
-}
-
-/// Where a prompt on its way is drawn: where it was first drawn, which the
-/// client remembers, so a prompt does not jump as the agent starts work.
+/// Where a prompt on its way is drawn: where it was sent to (see
+/// `SentInput::in_feed`), so a prompt does not jump as the agent starts
+/// work.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub enum Lands {
     Feed,
@@ -191,10 +183,9 @@ pub struct RefusedPrompt {
 
 /// This client's prompts on their way, in the order they will land: those
 /// sending first, then those that may not have arrived, which wait last in
-/// the queue for the person. `in_feed` says whether a prompt was first
-/// drawn at the feed's end; a client asks [`sends_to_feed`] when it first
-/// sees one. A prompt the agent's queue lists is its queue row's to draw.
-pub fn prompts_underway(state: &SessionState, in_feed: impl Fn(&[u8]) -> bool) -> Vec<SentPrompt> {
+/// the queue for the person. A prompt the agent's queue lists is its queue
+/// row's to draw.
+pub fn prompts_underway(state: &SessionState) -> Vec<SentPrompt> {
     let listed: Vec<&[u8]> = state
         .queue()
         .iter()
@@ -219,7 +210,7 @@ pub fn prompts_underway(state: &SessionState, in_feed: impl Fn(&[u8]) -> bool) -
         let waiting = Underway::Sending {
             waiting: !caught_up,
         };
-        let place = if in_feed(&sent.id) {
+        let place = if sent.in_feed {
             Lands::Feed
         } else {
             Lands::Queue

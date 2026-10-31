@@ -200,15 +200,6 @@ struct QueuedSpot {
     controls: Vec<(u16, u16)>,
 }
 
-/// When this client's prompt was first drawn on its way, and where: in the
-/// feed (the agent was idle) or in the queue block (it was busy). A prompt
-/// that loses its connection stays where it was until catching up.
-#[derive(Clone, Copy, Debug)]
-struct Sending {
-    at_ms: i64,
-    in_feed: bool,
-}
-
 /// Where the composer's words were drawn, for a click to place the cursor:
 /// the screen cell of the first wrapped line's first column, how many
 /// wrapped lines show, how many are scrolled off above, and the width the
@@ -361,8 +352,9 @@ pub struct ChatView {
     queued_hover: Option<usize>,
     /// The first queued prompt shown, when more wait than show.
     queued_from: usize,
-    /// This client's prompts on their way, as first drawn.
-    sending: HashMap<Vec<u8>, Sending>,
+    /// When each of this client's prompts on their way was first drawn,
+    /// for the clock a pending prompt in the feed shows.
+    sending: HashMap<Vec<u8>, i64>,
     /// Rejected prompts whose words have gone back to the composer.
     rejected_seen: HashSet<Vec<u8>>,
     /// Why the last prompt was not sent, on the composer's edge until the
@@ -515,8 +507,7 @@ impl ChatView {
             .into_iter()
             .map(QueueEntry::Queued)
             .collect();
-        let underway = ui_view::prompts_underway(state, |id| self.in_feed(state, id));
-        for prompt in underway {
+        for prompt in ui_view::prompts_underway(state) {
             if prompt.lands != ui_view::Lands::Queue {
                 continue;
             }
@@ -540,18 +531,10 @@ impl ChatView {
         entries
     }
 
-    /// Whether this client's prompt draws in the feed rather than the queue
-    /// block: where it was first drawn, or, not drawn yet, where it would
-    /// be now.
-    fn in_feed(&self, state: &SessionState, id: &[u8]) -> bool {
-        self.sending
-            .get(id)
-            .map_or_else(|| ui_view::sends_to_feed(state), |sending| sending.in_feed)
-    }
-
-    /// Notes this client's prompts as the frame first sees them: where a
-    /// prompt on its way draws, and, for one the agent refused, its words
-    /// back in the composer (after any draft) and why on the box's edge.
+    /// Notes this client's prompts as the frame first sees them: when a
+    /// prompt on its way was first drawn, and, for one the agent refused,
+    /// its words back in the composer (after any draft) and why on the
+    /// box's edge.
     fn note_sent(&mut self, state: &SessionState, now_ms: i64) {
         for refused in ui_view::refused_prompts(state) {
             if !self.rejected_seen.insert(refused.input_id.clone()) {
@@ -567,7 +550,6 @@ impl ChatView {
             }
             self.not_sent = Some(format!("not sent: {}", refusal_words(&refused.reason)));
         }
-        let to_feed = ui_view::sends_to_feed(state);
         for sent in state.inputs().iter() {
             if !matches!(sent.what, InputWhat::Prompt { .. }) {
                 continue;
@@ -577,11 +559,7 @@ impl ChatView {
                 | InputState::Queued
                 | InputState::Uncertain
                 | InputState::Held => {
-                    self.sending.entry(sent.id.clone()).or_insert(Sending {
-                        at_ms: now_ms,
-                        in_feed: to_feed
-                            && !matches!(sent.state, InputState::Queued | InputState::Held),
-                    });
+                    self.sending.entry(sent.id.clone()).or_insert(now_ms);
                 }
                 InputState::Rejected(_) | InputState::Settled => {}
             }
@@ -2162,20 +2140,20 @@ impl ChatView {
         // with it: a prompt on its way while the agent was idle, then what
         // the agent is doing, where "Worked 6m" stands once the turn ends.
         let mut tail: Vec<Line<'static>> = Vec::new();
-        for prompt in ui_view::prompts_underway(state, |id| self.in_feed(state, id)) {
+        for prompt in ui_view::prompts_underway(state) {
             if prompt.lands != ui_view::Lands::Feed {
                 continue;
             }
             let ui_view::Underway::Sending { waiting } = prompt.underway else {
                 continue;
             };
-            let Some(seen) = self.sending.get(&prompt.input_id) else {
+            let Some(&at_ms) = self.sending.get(&prompt.input_id) else {
                 continue;
             };
             let when = if waiting {
                 format!("waiting for {host}…")
             } else {
-                feed::clock(seen.at_ms)
+                feed::clock(at_ms)
             };
             tail.extend(feed::pending_prompt(&prompt.text, &when, feed_width, theme));
         }

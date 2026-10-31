@@ -227,7 +227,7 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
             composer(&state, at).mode,
             state.activity(at).map(|activity| activity.kind),
             queue_rows(&state),
-            prompts_underway(&state, |_| false),
+            prompts_underway(&state),
             refused_prompts(&state)
         );
         if composing != last_composer {

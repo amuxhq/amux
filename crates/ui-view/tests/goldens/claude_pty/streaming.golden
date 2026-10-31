@@ -9,13 +9,13 @@
 ## 18 fact {"channel":"transcript","json":{"message":{"content":"[Request interrupted by user]","role":"user"},"origin":{"kind":"human"},"promptId":"q1","promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:05.000Z","type":"user","uuid":"u2"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 20 input {"id":"p2","prompt":{"text":"carry on"}}
-  composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 50], text: [Text("carry on")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
+  composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 50], text: [Text("carry on")], lands: Feed, underway: Sending { waiting: false } }] refused=[]
 ## 22 fact {"channel":"transcript","json":{"message":{"content":"carry on","role":"user"},"origin":{"kind":"human"},"promptId":"q2","promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:06.000Z","type":"user","uuid":"u3"}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 25 fact {"channel":"transcript","json":{"durationMs":1100,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:07.100Z","type":"system","uuid":"d2"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 26 input {"id":"p3","prompt":{"text":"and again"}}
-  composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 51], text: [Text("and again")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
+  composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 51], text: [Text("and again")], lands: Feed, underway: Sending { waiting: false } }] refused=[]
 ## 28 fact {"channel":"transcript","json":{"message":{"content":"and again","role":"user"},"origin":{"kind":"human"},"promptId":"q3","promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:08.000Z","type":"user","uuid":"u4"}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 32 fact {"channel":"transcript","json":{"durationMs":1000,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:09.100Z","type":"system","uuid":"d3"}}

@@ -273,6 +273,7 @@ fn input(sent: &SentInput) -> ClientInput {
         rejected,
         seen_queued: sent.seen_queued,
         left_at: sent.left_at,
+        in_feed: sent.in_feed,
     }
 }
 
@@ -298,5 +299,6 @@ fn sent_input(held: ClientInput) -> Result<SentInput, String> {
         input,
         seen_queued: held.seen_queued,
         left_at: held.left_at,
+        in_feed: held.in_feed,
     })
 }

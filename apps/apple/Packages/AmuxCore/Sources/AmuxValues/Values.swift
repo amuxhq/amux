@@ -4152,8 +4152,9 @@ public enum Kind: String, Codable, Hashable, Sendable, CaseIterable {
     case codex = "Codex"
 }
 
-/// Where a prompt on its way is drawn: where it was first drawn, which the
-/// client remembers, so a prompt does not jump as the agent starts work.
+/// Where a prompt on its way is drawn: where it was sent to (see
+/// `SentInput::in_feed`), so a prompt does not jump as the agent starts
+/// work.
 public enum Lands: String, Codable, Hashable, Sendable, CaseIterable {
     case feed = "Feed"
     case queue = "Queue"

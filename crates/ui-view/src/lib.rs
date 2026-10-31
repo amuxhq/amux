@@ -30,7 +30,7 @@ pub use composer::{
     CONTEXT_NEAR_FULL_PERCENT, CommandMatch, ComposerView, ContextView, Lands, PASTE_CHARS,
     PASTE_LINES, QueuedRow, RefusedPrompt, SentPrompt, SignInView, Underway, command_matches,
     composer, composer_tokens, context, pastes_as_attachment, prompts_underway, queue_rows,
-    refused_prompts, sends_to_feed, sign_in, switched_away, waiting,
+    refused_prompts, sign_in, switched_away, waiting,
 };
 pub use fleet::{
     ActivityLine, AskSubject, AskSummary, ExitCause, FamilyHeader, FleetCard, FleetFilter,

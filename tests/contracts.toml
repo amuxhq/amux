@@ -513,7 +513,7 @@ tests = [
   "supervisor-core/lib::tests::a_crash_after_go_restarts_with_backoff_and_never_rolls_back",
   "node/integration::supervisor::a_starting_supervisor_counts_failed_starts_against_prev_and_rolls_back",
   "node/integration::supervisor::a_starting_supervisor_finishes_a_recorded_rollback",
-  "amux/integration::overlap::the_previous_build_reopens_a_store_the_new_one_migrated_before_prepared",
+  "amux/integration::overlap::the_previous_build_reopens_a_store_the_new_one_opened_before_prepared",
 ]
 
 [[contract]]
@@ -1487,7 +1487,7 @@ property = { crate = "models", machine = "supervisor update", sentence = "everyt
 checker = "models/integration::supervisor::every_update_promise_holds_where_a_running_binary_can_be_replaced"
 tests = [
   "node/integration::supervisor::installs_a_newer_signed_release_and_execs_it_keeping_pid_child_pipe_and_lock",
-  "amux/integration::overlap::the_previous_build_reopens_a_store_the_new_one_migrated_before_prepared",
+  "amux/integration::overlap::the_previous_build_reopens_a_store_the_new_one_opened_before_prepared",
 ]
 
 [[contract]]

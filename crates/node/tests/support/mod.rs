@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use node::{Daemon, Launch, ProfileId, ProfileRuntime, StartOptions};
-pub use patience::{PATIENCE, Stuck, holds_for, until};
+pub use patience::{PATIENCE, holds_for, until};
 use provider_fakes::script::{SCRIPT_ENV, Script, Step};
 use wire::{
     AgentRef, ClaudeSdkInput, CreateAgentRequest, Input, Kind, PromptInput, PromptSubmission,

@@ -413,7 +413,7 @@ fn check(
     }
 }
 
-fn run_all<I: Interpreter>(kind: Kind, dir: &str, special: &Special) {
+fn run_all<I: Interpreter>(kind: Kind, dir: &str) {
     let mut failures = Vec::new();
     let mut names: Vec<String> = std::fs::read_dir(fixtures(dir))
         .unwrap()
@@ -428,7 +428,7 @@ fn run_all<I: Interpreter>(kind: Kind, dir: &str, special: &Special) {
     let mut expected = HashSet::new();
     for name in &names {
         let path = fixtures(dir).join(format!("{name}.json"));
-        let frames = special(name, &path).unwrap_or_else(|| replay::<I>(&path));
+        let frames = replay::<I>(&path);
         expected.insert(format!("{name}.golden"));
         failures.extend(check(kind, dir, name, frames));
     }
@@ -444,24 +444,17 @@ fn run_all<I: Interpreter>(kind: Kind, dir: &str, special: &Special) {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-/// A fixture that needs a particular interpreter arm replays through it.
-type Special = dyn Fn(&str, &Path) -> Option<Result<Vec<Replayed>, String>>;
-
-fn none(_: &str, _: &Path) -> Option<Result<Vec<Replayed>, String>> {
-    None
-}
-
 #[test]
 fn claude_pty_view_goldens() {
-    run_all::<ClaudePty>(Kind::ClaudePty, "claude_pty", &none);
+    run_all::<ClaudePty>(Kind::ClaudePty, "claude_pty");
 }
 
 #[test]
 fn claude_sdk_view_goldens() {
-    run_all::<ClaudeSdk>(Kind::ClaudeSdk, "claude_sdk", &none);
+    run_all::<ClaudeSdk>(Kind::ClaudeSdk, "claude_sdk");
 }
 
 #[test]
 fn codex_view_goldens() {
-    run_all::<Codex>(Kind::Codex, "codex", &none);
+    run_all::<Codex>(Kind::Codex, "codex");
 }

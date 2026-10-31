@@ -239,12 +239,12 @@ impl ProfileRuntime {
             Ok(Ok(client)) => Ok(client),
             // On a free account the relay lists the account's hosts and
             // opens no tunnel between them; the host already reads away.
-            Ok(Err(crate::link::ChannelError::Refused(
-                wire::pb::ForwardRefusal::PaymentRequired,
-            ))) => Err(ForwardError::Lapsed {
-                host,
-                name: self.host_name(host),
-            }),
+            Ok(Err(crate::link::ChannelError::Refused(wire::ForwardRefusal::PaymentRequired))) => {
+                Err(ForwardError::Lapsed {
+                    host,
+                    name: self.host_name(host),
+                })
+            }
             // A channel that failed on its link closed the link already;
             // one that found none in time closes the host's links it had
             // to use, not one that came up while it waited. The

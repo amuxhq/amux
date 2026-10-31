@@ -7,13 +7,12 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use uuid::Uuid;
-use wire::pb;
 
 use crate::HostId;
 
 /// What a host's link handshake says it can do: feature flags and the agent
 /// kinds it runs.
-pub type Capabilities = pb::Capabilities;
+pub type Capabilities = wire::Capabilities;
 
 /// A host as its link handshake describes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,7 +25,7 @@ pub struct Host {
     pub signed_in: Option<bool>,
     /// The operating system this machine runs, or unspecified when it
     /// does not say.
-    pub platform: pb::Platform,
+    pub platform: wire::Platform,
 }
 
 /// Local identity of one link: the authenticated peer plus a connection
@@ -111,12 +110,12 @@ impl Route {
 
 impl LiveRoute {
     /// The live route the kind the profile's core reads names.
-    pub(crate) fn from_wire(kind: pb::RouteKind) -> Self {
+    pub(crate) fn from_wire(kind: wire::RouteKind) -> Self {
         match kind {
-            pb::RouteKind::Direct => Self::Direct,
-            pb::RouteKind::Relay => Self::Relay,
-            pb::RouteKind::Ssh => Self::Ssh,
-            pb::RouteKind::Unspecified => Self::Offline,
+            wire::RouteKind::Direct => Self::Direct,
+            wire::RouteKind::Relay => Self::Relay,
+            wire::RouteKind::Ssh => Self::Ssh,
+            wire::RouteKind::Unspecified => Self::Offline,
         }
     }
 }
@@ -141,18 +140,18 @@ pub enum LiveRoute {
 }
 
 impl LiveRoute {
-    pub fn to_wire(self) -> pb::RouteKind {
+    pub fn to_wire(self) -> wire::RouteKind {
         match self {
-            Self::Direct => pb::RouteKind::Direct,
-            Self::Relay => pb::RouteKind::Relay,
-            Self::Ssh => pb::RouteKind::Ssh,
-            Self::Offline => pb::RouteKind::Unspecified,
+            Self::Direct => wire::RouteKind::Direct,
+            Self::Relay => wire::RouteKind::Relay,
+            Self::Ssh => wire::RouteKind::Ssh,
+            Self::Offline => wire::RouteKind::Unspecified,
         }
     }
 }
 
-pub fn host_to_wire(host: &Host) -> pb::Host {
-    pb::Host {
+pub fn host_to_wire(host: &Host) -> wire::Host {
+    wire::Host {
         host_id: host.id.as_bytes().to_vec(),
         name: host.name.clone(),
         version: host.version.clone(),
@@ -162,7 +161,7 @@ pub fn host_to_wire(host: &Host) -> pb::Host {
     }
 }
 
-pub(crate) fn host_from_wire(host: pb::Host) -> Result<Host, String> {
+pub(crate) fn host_from_wire(host: wire::Host) -> Result<Host, String> {
     let platform = host.platform();
     Ok(Host {
         id: uuid_from_bytes("host_id", host.host_id)?,

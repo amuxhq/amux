@@ -2,13 +2,11 @@
 //! debug builds trust, and reading an agent's chat back over its profile's
 //! client socket.
 
-#![allow(dead_code, unused_imports)]
-
 pub mod desk;
 pub mod term;
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -17,7 +15,7 @@ use provider_fakes::Step;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tonic::transport::{Channel as GrpcChannel, Endpoint};
 use wire::installation_service_client::InstallationServiceClient;
-use wire::{Empty, SubscribeSessionRequest, session_event};
+use wire::{SubscribeSessionRequest, session_event};
 
 /// What every test daemon runs with: a scripted local network instead of
 /// real mDNS, which would have macOS ask for Local Network access once per
@@ -152,7 +150,7 @@ pub async fn client(socket: &Path) -> wire::ClientStubs {
     wire::client_stubs(grpc_channel(Path::new(&profile.socket_path)).await.unwrap())
 }
 
-pub use patience::{Stuck, holds_for, until_within};
+pub use patience::{Stuck, until_within};
 
 /// The shared wait, with this crate's [`PATIENCE`].
 pub async fn until<T, E, F>(what: &str, probe: impl FnMut() -> F) -> Result<T, Stuck>

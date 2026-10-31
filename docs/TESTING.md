@@ -286,7 +286,6 @@ production code, and small authored scenarios. Ordinary runs compare and never r
 | View data goldens | `crates/ui-view/tests/goldens` | `UI_VIEW_UPDATE_GOLDENS=1` |
 | Terminal component goldens (text plus style map, both themes) | `crates/tui/tests/golden` | `UPDATE_GOLDENS=1 just test-tui` |
 | Fake-provider scripts and served topologies | `journeys/scripts`, `journeys/topologies` | by hand |
-| Hand-written provider traffic | `journeys/recordings` | by hand |
 | Journey screen goldens: terminal frames and styles, phone element geometry | `journeys/goldens/terminal/<story>`, `journeys/goldens/phone/<story>` | `UPDATE_JOURNEY_GOLDENS=1` |
 | Phone component snapshots | `apps/apple/AmuxComponentSnapshotTests/__Snapshots__` | `just ios component-snapshots -- --record` |
 | Performance baselines | `perf/baselines` | `just perf --baseline` and `just ios perf --baseline`; see [Performance](PERFORMANCE.md) |

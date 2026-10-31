@@ -14,8 +14,8 @@ use uuid::Uuid;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
-    BeginPairRequest, Empty, HostRef, InventoryEvent, PairingWindow, StartPairingRequest,
-    begin_pair_request, host_ref, inventory_event, pairing_window, start_pairing_request,
+    BeginPairRequest, Empty, InventoryEvent, PairingWindow, StartPairingRequest,
+    begin_pair_request, inventory_event, pairing_window, start_pairing_request,
 };
 
 /// A host listening for direct links on loopback and on the net's
@@ -53,12 +53,6 @@ pub async fn door(net: &Net, host: &str) -> InstallationServiceClient<Channel> {
 /// `host`'s profile's administration, on its socket.
 pub async fn admin(net: &Net, host: &str) -> ProfileAdminServiceClient<Channel> {
     net.admin(host).await.expect("the profile's socket answers")
-}
-
-pub fn host_ref(host: Uuid) -> Option<HostRef> {
-    Some(HostRef {
-        of: Some(host_ref::Of::HostId(host.as_bytes().to_vec())),
-    })
 }
 
 /// Waits until each host reaches the other over `via`.
@@ -151,14 +145,6 @@ pub fn qr_window() -> StartPairingRequest {
     StartPairingRequest {
         method: Some(start_pairing_request::Method::Qr(Empty {})),
         ..StartPairingRequest::default()
-    }
-}
-
-/// A reusable demo window holding `pin` for `ttl_seconds`.
-pub fn demo_pin_window(pin: &str, ttl_seconds: u64) -> StartPairingRequest {
-    StartPairingRequest {
-        method: Some(start_pairing_request::Method::DemoPin(pin.to_owned())),
-        ttl_seconds: Some(ttl_seconds),
     }
 }
 

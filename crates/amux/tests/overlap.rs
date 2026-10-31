@@ -220,11 +220,11 @@ async fn a_tui_of_the_previous_build_works_on_after_an_update() {
     desk.run(&["stop", "helper"]).await;
 }
 
-/// The build under test migrates a store the previous build created and is
+/// The build under test opens a store the previous build created and is
 /// killed before it prepared: the rollback case. The previous build opens
 /// the store again and does real work in it.
 #[tokio::test(flavor = "multi_thread")]
-async fn the_previous_build_reopens_a_store_the_new_one_migrated_before_prepared() {
+async fn the_previous_build_reopens_a_store_the_new_one_opened_before_prepared() {
     use std::os::fd::AsRawFd as _;
     use std::os::unix::process::CommandExt as _;
 
@@ -266,7 +266,7 @@ async fn the_previous_build_reopens_a_store_the_new_one_migrated_before_prepared
     desk.run(&["server", "stop"]).await;
 
     // The build under test starts on the same store as a supervisor would
-    // start it, migrates, looks, says prepared, and dies before go.
+    // start it, opens it, looks, says prepared, and dies before go.
     let (daemon_reads, go) = std::io::pipe().unwrap();
     let (prepared, daemon_writes) = std::io::pipe().unwrap();
     let ends = [daemon_reads.as_raw_fd(), daemon_writes.as_raw_fd()];
@@ -306,7 +306,7 @@ async fn the_previous_build_reopens_a_store_the_new_one_migrated_before_prepared
     daemon.wait().unwrap();
     drop(go);
     say(format!(
-        "-- amux {running} migrated and looked, said prepared, and was killed before go"
+        "-- amux {running} opened the store and looked, said prepared, and was killed before go"
     ));
     assert!(!lock_held(&desk.data.join(node::INSTALLATION_LOCK)));
 

@@ -213,11 +213,11 @@ impl Daemon {
         &mut self,
         link: LinkId,
         peer: HostId,
-        body: &wire::pb::message::Body,
+        body: &wire::message::Body,
         out: &mut Vec<Output>,
     ) {
-        use wire::pb::message::Body;
-        use wire::pb::{HelloAck, hello_ack};
+        use wire::message::Body;
+        use wire::{HelloAck, hello_ack};
 
         let own = HostId::from_slice(self.store.own_host());
         let other = |host: HostId| Some(host) != own && host != peer;

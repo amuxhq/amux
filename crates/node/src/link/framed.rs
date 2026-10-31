@@ -578,12 +578,12 @@ mod tests {
             accepted.read_exact(&mut read).await.unwrap();
             assert_eq!(&read, b"across the stream");
 
-            connector.close(wire::pb::LinkCloseReason::UserShutdown);
+            connector.close(wire::LinkCloseReason::UserShutdown);
             assert_eq!(
                 tokio::time::timeout(Duration::from_secs(5), acceptor.closed())
                     .await
                     .expect("the far end hears the close"),
-                wire::pb::LinkCloseReason::UserShutdown
+                wire::LinkCloseReason::UserShutdown
             );
         }
     }

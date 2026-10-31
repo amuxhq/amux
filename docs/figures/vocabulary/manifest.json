@@ -15,7 +15,7 @@
         1000,
         330
       ],
-      "sha256": "43e2bc2286910bb7d4fde78e39a850f308eb0021770e90ec00f0babd3c81f99c"
+      "sha256": "444f7ba0467e1d56a30ce77b389a9e30a51d1d40c51732ce458b082a46d3ea11"
     },
     {
       "fixture": "row_tool_call",
@@ -29,7 +29,7 @@
         1000,
         220
       ],
-      "sha256": "37d3ba69f65cfd001cfdd25c8a86ee30a0cf360c23ee20462d188603ccf501e4"
+      "sha256": "35897110234dde38e05981b1b531e6d1269252c12ae9a1e20a74a1ce4c41c8a4"
     },
     {
       "fixture": "row_command",
@@ -43,7 +43,7 @@
         1000,
         462
       ],
-      "sha256": "72929d1f2b9c52cd9e42f268e4759850a5adc875f24b186fe9e006787f8c00a7"
+      "sha256": "b8ac99976ebdb1f3a9b342dcb85878f461561d64a7095be1099639cb662f91dc"
     },
     {
       "fixture": "row_file_change",
@@ -57,7 +57,7 @@
         1000,
         176
       ],
-      "sha256": "34d2836dd7bab8024642a155c02e608f030e298451ddce80c472f05e939961af"
+      "sha256": "5e951031c961a36d65496cace719fe2bde70537b2f0c16d156699d2f5ac3665d"
     },
     {
       "fixture": "row_ask",
@@ -71,7 +71,7 @@
         1000,
         902
       ],
-      "sha256": "abe64a939726fc130218b0450126e39de952ae54b9fdd0032f32f47cec5adcc6"
+      "sha256": "a07a83c66661cd3a97355434e1083abba7c8275700ed9b9fb1b0e28ff9c249ab"
     },
     {
       "fixture": "row_boundary",
@@ -85,7 +85,7 @@
         1000,
         352
       ],
-      "sha256": "cb8f88e1e2055b2624fe3078047d2257bfe246006e8677034acabdadf6f408c1"
+      "sha256": "707f49c9d6b306a8e910bbf65253a0939370e6eed29e4db48193ae002d422ebe"
     },
     {
       "fixture": "row_agent_message",
@@ -99,7 +99,7 @@
         1000,
         264
       ],
-      "sha256": "2372ba5f5fa41a50b3d01890e193033b18ef5463e81ff0ea9c53c6b587e8f5ec"
+      "sha256": "0066749b342763d14f7918c56867651b136c085aa6aeeba55b363c7c6922e8e1"
     },
     {
       "fixture": "ask_command",
@@ -113,7 +113,7 @@
         1000,
         176
       ],
-      "sha256": "279984d6965285db5f6d8c98f0018480e7f2f5f608e94d6c475ccebb086ec4a2"
+      "sha256": "46dce4fccfd49f40f9a879580f5d0f2dd669e3a24af94a59f744361a0ad685de"
     },
     {
       "fixture": "ask_codex_command",
@@ -127,7 +127,7 @@
         1000,
         154
       ],
-      "sha256": "7822843c3e7aaccb28a56eacac7059fb9900ea19ad9a6f12cadac874a57c7209"
+      "sha256": "6756e2947c71e8c222d7454e8d16ed30e5bb279cc3e666f4db2c3bc5937dd2a1"
     },
     {
       "fixture": "ask_question_single",
@@ -141,7 +141,7 @@
         1000,
         220
       ],
-      "sha256": "869502234c8dc585eecf0b7e8fefedad42e69940dd66cae5af755fa17bc4ee7a"
+      "sha256": "e3428967e216010f2bbed8f9fdf98289ebf18e16510c3d6937df9d131078f138"
     },
     {
       "fixture": "ask_plan",
@@ -155,7 +155,7 @@
         1000,
         110
       ],
-      "sha256": "6998df9f531ab0fb436cb30d59b16ea7458527493b17c246325d7214450e65ee"
+      "sha256": "35e17610d1efaae7b9cab44374cbd642609aab502f8b77f8458357c7b7a0517b"
     },
     {
       "fixture": "ask_form",
@@ -169,7 +169,7 @@
         1000,
         242
       ],
-      "sha256": "c808d467409e3cc0f1d90023bf5f60f87919cc9430219089e30c02da6a5a0e07"
+      "sha256": "3d2cc1a81cb860ae8540d742f9d2d85ce07befd19ed46e0118f752d1d8ed82ca"
     },
     {
       "fixture": "ask_unanswerable",
@@ -183,7 +183,7 @@
         1000,
         132
       ],
-      "sha256": "0bffe5c3207d29f7f316783751dd72f7d02525f00b2f1059323ad75baf1164ac"
+      "sha256": "da841ecb36a4e23fdaec0edc713a4bca2590a6c470d7d1cb22a198597a8d8915"
     }
   ]
 }

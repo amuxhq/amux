@@ -15,7 +15,7 @@ use provider_fakes::{SCRIPT_ENV, Script, Step};
 use tokio::io::{ReadHalf, WriteHalf};
 use tokio::task::JoinHandle;
 use wire::{
-    AgentHello, AgentRef, AgentSpec, ClaudePtyInput, ClaudePtyItem, ClaudeSdkInput, ClaudeSdkItem,
+    AgentRef, AgentSpec, ClaudePtyInput, ClaudePtyItem, ClaudeSdkInput, ClaudeSdkItem,
     ClaudeSdkSnapshot, CodexInput, CodexItem, CtlFrame, EffectiveConfig, Input, Kind, Phase,
     PromptInput, Stop, claude_pty_input, claude_pty_item, claude_sdk_input, claude_sdk_item,
     codex_input, codex_item, ctl_frame, send_input_response,
@@ -36,13 +36,6 @@ const RELEASE: &str = "@release";
 pub fn agent_release() -> PathBuf {
     PathBuf::from(RELEASE)
 }
-
-/// Runs the fake, then stays until the hold file exists: a provider that is
-/// slow to go away after it is asked to finish. The agent asks with the end
-/// of its input and SIGTERM, so the shell traps SIGTERM to outlast it; a
-/// trap with a command is reset in the fake, which keeps the default.
-const HOLD_SCRIPT: &str =
-    r#"trap : TERM; "$0" "$@"; while [ ! -e "$AMUX_TEST_HOLD" ]; do sleep 0.02; done"#;
 
 /// The fake provider binaries and the install path's stand-in.
 pub fn fakes() -> &'static Path {
@@ -71,9 +64,6 @@ pub struct Setup {
     pub initial_prompt: Option<&'static str>,
     /// Whether the agent has a parent, which makes it one-shot.
     pub parent: bool,
-    /// Keep the provider's process alive after the fake exits, until
-    /// [`Agent::unhold`].
-    pub hold: bool,
     /// The facts ring's size; the agent's default when zero.
     pub ring_bytes: u64,
     /// Terminal Claude without a messaging socket.
@@ -103,7 +93,6 @@ impl Setup {
             steps: Vec::new(),
             initial_prompt: None,
             parent: false,
-            hold: false,
             ring_bytes: 0,
             socketless: false,
             replay: None,
@@ -122,7 +111,6 @@ pub struct Agent {
     pub dir: PathBuf,
     pub clock: ManualClock,
     release: PathBuf,
-    hold: PathBuf,
     task: Mutex<Option<JoinHandle<Result<ExitCause, AgentError>>>>,
     reader: Mutex<(journal::Reader, Log)>,
 }
@@ -199,7 +187,6 @@ impl Agent {
             }
         }
         let release = root.path().join("release");
-        let hold = root.path().join("hold");
 
         let script = Script {
             steps: setup.steps,
@@ -221,27 +208,14 @@ impl Agent {
             Kind::Codex => "fake-codex",
             _ => "fake-claude-sdk",
         });
-        let (command, mut provider_args) = match (setup.command, setup.hold) {
-            (Some(command), _) => (command, Vec::new()),
-            (None, true) => (
-                "/bin/sh".to_owned(),
-                vec![
-                    "-c".to_owned(),
-                    HOLD_SCRIPT.to_owned(),
-                    fake.to_str().unwrap().to_owned(),
-                ],
-            ),
-            (None, false) => (fake.to_str().unwrap().to_owned(), Vec::new()),
-        };
-        provider_args.extend(setup.provider_args);
+        let command = setup
+            .command
+            .unwrap_or_else(|| fake.to_str().unwrap().to_owned());
+        let provider_args = setup.provider_args;
         let mut provider_env: std::collections::HashMap<String, String> = [
             (
                 SCRIPT_ENV.to_owned(),
                 script_path.to_str().unwrap().to_owned(),
-            ),
-            (
-                "AMUX_TEST_HOLD".to_owned(),
-                hold.to_str().unwrap().to_owned(),
             ),
             (
                 provider_fakes::INPUT_LOG_ENV.to_owned(),
@@ -337,7 +311,6 @@ impl Agent {
             dir,
             clock,
             release,
-            hold,
             task: Mutex::new(Some(task)),
             reader: Mutex::new((reader, Log::default())),
         }
@@ -385,15 +358,14 @@ impl Agent {
         .await
         .unwrap();
         let (mut reader, writer) = tokio::io::split(stream);
-        let hello = match next_frame(&mut reader).await.of {
-            Some(ctl_frame::Of::Hello(hello)) => hello,
+        match next_frame(&mut reader).await.of {
+            Some(ctl_frame::Of::Hello(_)) => {}
             other => panic!("the first frame is a Hello, not {other:?}"),
-        };
+        }
         Daemon {
             kind: self.kind,
             reader,
             writer,
-            hello,
             nudges: 0,
         }
     }
@@ -473,11 +445,6 @@ impl Agent {
     /// Lets a turn waiting on the release file go on.
     pub fn release(&self) {
         std::fs::write(&self.release, b"").unwrap();
-    }
-
-    /// Lets a held provider process go.
-    pub fn unhold(&self) {
-        std::fs::write(&self.hold, b"").unwrap();
     }
 
     /// The directory is free for the next incarnation: the lock is released
@@ -647,7 +614,6 @@ pub struct Daemon {
     kind: Kind,
     reader: ReadHalf<LocalStream>,
     writer: WriteHalf<LocalStream>,
-    pub hello: AgentHello,
     /// Nudges read so far.
     pub nudges: usize,
 }

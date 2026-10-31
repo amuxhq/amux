@@ -1,14 +1,10 @@
 //! Authored records and a tape that applies messages and prints what the
 //! session looks like after each one.
 
-#![allow(dead_code)]
-
 use proptest::prelude::*;
 use proptest::test_runner::RngSeed;
 use prost::Message;
-use ui_state::{
-    Connection, InputOutcome, ItemClass, Msg, Outcome, RunIndex, SessionState, Transcript,
-};
+use ui_state::{InputOutcome, ItemClass, Msg, Outcome, RunIndex, SessionState, Transcript};
 use wire::{
     Agent, Ask, CodexAsk, Input, Item, Kind, Lifecycle, Phase, QueuedInput, SendInputResponse,
     SessionEvent, Snapshot, ToolClass, ToolState, session_event,
@@ -67,7 +63,6 @@ pub enum Body {
         max: u32,
     },
     Compacting,
-    Boundary,
 }
 
 pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
@@ -112,7 +107,6 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
                 Body::Turn => pty::Kind::Turn(wire::Turn::default()),
                 Body::Retry { attempt, max } => pty::Kind::ApiError(retry(attempt, max)),
                 Body::Compacting => pty::Kind::Compaction(wire::Compaction::default()),
-                Body::Boundary => pty::Kind::Boundary(wire::Boundary::default()),
             };
             wire::ClaudePtyItem { kind: Some(kind) }.encode_to_vec()
         }
@@ -133,7 +127,6 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
                     status: wire::SdkStatus::Compacting as i32,
                     word: "compacting".into(),
                 }),
-                Body::Boundary => sdk::Kind::Boundary(wire::Boundary::default()),
             };
             wire::ClaudeSdkItem { kind: Some(kind) }.encode_to_vec()
         }
@@ -170,7 +163,6 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
                 Body::Retry { attempt, max } => codex::Kind::Error(retry(attempt, max)),
                 // Codex has no compacting status item; a boundary stands in.
                 Body::Compacting => codex::Kind::Boundary(wire::Boundary::default()),
-                Body::Boundary => codex::Kind::Boundary(wire::Boundary::default()),
             };
             wire::CodexItem { kind: Some(kind) }.encode_to_vec()
         }
@@ -384,10 +376,6 @@ pub fn detached() -> Msg {
 
 pub fn lagged() -> Msg {
     event(session_event::Of::Lagged(wire::Lagged {}))
-}
-
-pub fn reconnecting() -> Msg {
-    Msg::Connection(Connection::Reconnecting)
 }
 
 /// A page requested now, under the state's current epoch.

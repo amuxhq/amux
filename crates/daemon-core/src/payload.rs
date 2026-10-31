@@ -3,8 +3,7 @@
 //! Every payload is decoded: the driver turns bytes into these values on the
 //! way in and these values into bytes on the way out, so the core never
 //! sees a stream. Where the protocol already defines the message, the
-//! payload is the generated message type. The rest are the core's own, and
-//! a payload no machine in the core reads carries nothing until one does.
+//! payload is the generated message type. The rest are the core's own.
 
 use std::sync::Arc;
 
@@ -30,24 +29,6 @@ pub type AgentSpec = wire::AgentSpec;
 /// Why a forwarder will not carry a link's packets to a destination.
 pub type ForwardRefusal = wire::ForwardRefusal;
 
-macro_rules! payload {
-    ($($(#[$doc:meta])* $name:ident;)*) => {
-        $(
-            $(#[$doc])*
-            #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-            pub struct $name;
-        )*
-    };
-}
-
-payload! {
-    /// A batch of analytics events to upload.
-    AnalyticsBatch;
-}
-
-/// A host found on the local network: a hint where to dial it, which the
-/// driver keeps. Whether the host is paired rides along until the trust
-/// store moves into the core.
 /// What a push carries: envelope fields only, so producing it interprets
 /// nothing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

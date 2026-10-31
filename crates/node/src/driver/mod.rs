@@ -1344,12 +1344,6 @@ impl CoreThread {
                     let _ = reply.send(false);
                 }
             }
-            output @ (Output::CloseChannel { .. } | Output::LinkControl { .. }) => {
-                tracing::error!(
-                    ?output,
-                    "the daemon core asked for what this driver does not carry out yet"
-                );
-            }
         }
     }
 
@@ -1579,7 +1573,6 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
                 Err(error) => JobResult::Failed(error.to_string()),
             }
         }
-        op @ Job::Upload(_) => JobResult::Failed(format!("this driver does not run {op:?} yet")),
     };
     feed(&inputs, Input::JobDone { job, result }).await;
 }

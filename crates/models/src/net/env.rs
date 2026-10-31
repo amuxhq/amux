@@ -2130,11 +2130,9 @@ impl Transition<'_> {
                 // bookkeeping have no part in a net of cores.
                 Output::OpenChannel { .. }
                 | Output::ChannelRefused { .. }
-                | Output::CloseChannel { .. }
                 | Output::DropRoute { .. }
                 | Output::DialRelay { .. }
                 | Output::Rediscover
-                | Output::LinkControl { .. }
                 | Output::SendFile { .. }
                 | Output::ForgetAgent { .. }
                 | Output::Ingested { .. }
@@ -2232,8 +2230,7 @@ impl Transition<'_> {
             | Job::CheckpointWal
             | Job::TeardownHost { .. }
             | Job::RefreshToken { .. }
-            | Job::SendPush(_)
-            | Job::Upload(_) => JobResult::Done,
+            | Job::SendPush(_) => JobResult::Done,
         })
     }
 
@@ -2867,7 +2864,7 @@ fn job_kind(job: &Job) -> &'static str {
         Job::RefreshToken { .. } => "RefreshToken",
         Job::SendPush(_) => "SendPush",
         Job::NextSpec { .. } => "NextSpec",
-        Job::Upload(_) => "Upload",
+
         Job::KillAgent { .. } => "KillAgent",
         Job::AwaitUnlocked { .. } => "AwaitUnlocked",
         Job::RemoveDir { .. } => "RemoveDir",

@@ -289,7 +289,6 @@ production code, and small authored scenarios. Ordinary runs compare and never r
 | Hand-written provider traffic | `journeys/recordings` | by hand |
 | Journey screen goldens: terminal frames and styles, phone element geometry | `journeys/goldens/terminal/<story>`, `journeys/goldens/phone/<story>` | `UPDATE_JOURNEY_GOLDENS=1` |
 | Phone component snapshots | `apps/apple/AmuxComponentSnapshotTests/__Snapshots__` | `just ios component-snapshots -- --record` |
-| Dump bundles replayed through their four stages | `crates/replay-support/tests/fixtures/bundle`, `crates/replay-support/tests/fixtures/healthy` | a fresh `amux dump` (for `healthy`, through `testnet ctl` on a served net); see [Debugging](DEBUGGING.md) |
 | Performance baselines | `perf/baselines` | `just perf --baseline` and `just ios perf --baseline`; see [Performance](PERFORMANCE.md) |
 
 The recordings and live captures are read by the protocol crates' strict decode tests (every message decodes to a

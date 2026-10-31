@@ -418,17 +418,17 @@ cargo = [
 
 [[suite]]
 name = "dump-bundle-replay"
-contract = "A dump bundle a real daemon wrote replays through its four stages with the models' properties judged at every step: its facts through the interpreter to what the journal holds, the daemon core from its checkpoint through every input since, its store slice through the session model, and that state through the views; `dump-replay` prints one line per stage and a ring the replay does not reproduce fails, naming the step and the property."
-paths = ["crates/replay-support/src/replay.rs", "crates/replay-support/src/bin/dump-replay.rs", "crates/replay-support/tests/bundle.rs", "crates/replay-support/tests/core_replay.rs", "crates/replay-support/tests/fixtures"]
+contract = "A dump bundle a real daemon writes on a testnet net replays through its four stages with the models' properties judged at every step: its facts through the interpreter to what the journal holds, the daemon core from its checkpoint through every input since, its store slice through the session model, and that state through the views; `dump-replay` prints one line per stage and a ring the replay does not reproduce fails, naming the step and the property."
+paths = ["crates/replay-support/src/replay.rs", "crates/replay-support/src/bin/dump-replay.rs", "crates/replay-support/tests/bundle.rs", "crates/replay-support/tests/core_replay.rs", "crates/replay-support/tests/support.rs"]
 recipe = "just suite dump-bundle-replay"
 boundary = "Client model"
 oracle = "Equality between replayed steps and the journaled ones, the models' properties after every replayed step, and the views drawn from the replayed session."
-real = ["recorded dump bundles", "the daemon core", "the store"]
-substituted = ["provider", "network", "the core's drivers"]
-time = "none"
-capabilities = ["Rust toolchain"]
+real = ["a daemon runtime and its agent process on a testnet net", "the dump bundle it writes", "the daemon core", "the store"]
+substituted = ["provider by the scripted fake", "the core's drivers in the replay"]
+time = "driven"
+capabilities = ["desktop"]
 lane = "fast"
-evidence = "crates/replay-support/tests/fixtures"
+evidence = ""
 update = ""
 cargo = [
   { package = "replay-support", kind = "bin", targets = ["dump-replay"], features = [] },
@@ -438,14 +438,14 @@ cargo = [
 [[suite]]
 name = "dump-show"
 contract = "The dump printer prints a bundle's manifest, each agent's row, its journal in the interpreter's emission-golden format beside the facts replayed through the same renderer, its store slice with orders and revisions, its facts lines and checkpoints as written, and names or prints every other file; it refuses a directory that is not a bundle."
-paths = ["crates/replay-support/src/show.rs", "crates/replay-support/src/bin/dump-show.rs", "crates/replay-support/tests/dump_show.rs", "crates/replay-support/tests/fixtures/bundle"]
+paths = ["crates/replay-support/src/show.rs", "crates/replay-support/src/bin/dump-show.rs", "crates/replay-support/tests/dump_show.rs", "crates/replay-support/tests/support.rs"]
 recipe = "just suite dump-show"
 boundary = "Interpreter"
-oracle = "The printed sections of the committed bundle, the journal's rendering against the facts replay's, and the binary's output and exit status."
-real = ["a recorded dump bundle", "built dump-show binary", "temporary files"]
-substituted = ["daemon", "provider", "network"]
-time = "none"
-capabilities = ["Rust toolchain"]
+oracle = "The printed sections of a bundle a testnet daemon wrote, the journal's rendering against the facts replay's, and the binary's output and exit status."
+real = ["a daemon runtime and its agent process on a testnet net", "the dump bundle it writes", "built dump-show binary", "temporary files"]
+substituted = ["provider by the scripted fake"]
+time = "driven"
+capabilities = ["desktop"]
 lane = "tool"
 evidence = "`dump-show BUNDLE [--agent A]` prints the bundle"
 update = ""

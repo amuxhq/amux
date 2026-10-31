@@ -268,9 +268,10 @@ for agent in &bundle.agents {
 
 `final_texts(steps)` reduces a sequence of steps to each item key's final text, which is how two sequences are
 compared when their revisions differ. The simplest way to work on a bundle is a scratch test beside
-`crates/replay-support/tests/bundle.rs` and `core_replay.rs`, which replay the committed bundles in
-`crates/replay-support/tests/fixtures` the same way. A bundle whose interpreter state format has changed
-since it was written will not decode its checkpoint; take a fresh one.
+`crates/replay-support/tests/bundle.rs` and `core_replay.rs`, which replay bundles the same way: a real daemon's
+`amux dump` on a testnet net, written at test time by the build under test, and that bundle with a broken core
+checkpoint or a client session missing a row planted in it (`crates/replay-support/tests/support.rs`). A bundle
+whose interpreter state format has changed since it was written will not decode its checkpoint; take a fresh one.
 
 ### Narrowing a problem to one stage
 

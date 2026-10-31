@@ -32,3 +32,9 @@ zstd.workspace = true
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
+
+[dev-dependencies]
+postcard.workspace = true
+provider-fakes.workspace = true
+testnet.workspace = true
+uuid.workspace = true

@@ -718,12 +718,11 @@ the system.
 
 | Suite | Run it with | What it holds |
 |---|---|---|
-| Provider hosting | `just suite agent-provider-hosting` | Each kind's child is launched, completes its handshake and a turn, continues its own session in a later incarnation, and takes agent messages through its own channel |
+| Provider hosting | `just suite agent-provider-hosting` | Each kind's child is launched, completes its handshake and a turn, continues its own session in a later incarnation, and takes agent messages through its own channel; a Codex thread is named after the agent at start and on rename |
 | Lifecycle | `just suite agent-process-lifecycle` | Grace, drain, abort, kill, a failed journal write and a provider exit, with every deadline driven by the test's clock; the snapshot's git facts at start and after a turn |
 | Raw attach | `just suite agent-terminal-attach` | Two clients share terminal Claude's one terminal; each Codex client gets its own view |
 | Codex attach | `just suite desktop-cli-system codex_attach::` | Codex's own app joins a fresh agent's server; its prompt shows in amux's chat, and an approval is answered from amux, then from the app |
 | Codex attach, live | `just live codex attach` | The same against the real Codex, from amux's client and Codex's app in two terminals: a timed capture of each (`app.cast`, `amux.cast`, raw bytes), a text frame of both per step and a verdict, in `target/live/codex-attach/` |
-| Codex thread name | `just suite agent-codex-thread-name` | The thread is named after the agent at start and on rename |
 | Dump | `just suite agent-dump-redaction` | The dump part carries no planted secret |
 | Tool server | `just suite agent-tool-server` | Tool calls reach a scripted daemon on `tools.sock`, retry across an update window, and come back as the items the interpreter draws |
 

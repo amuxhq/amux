@@ -2,7 +2,7 @@ version = 1
 
 [[suite]]
 name = "desktop-cli-system"
-contract = "The built amux binary hosts agents that outlive a killed daemon and are adopted by the next, attaches terminals to them, closes pairing mode however amux pair ends, words its refusals as sentences, serves the cloud relay, writes its login units, routes stop and update through the supervisor, and keeps overlapping releases working across an update; a terminal test whose wait fails ends instead of hanging."
+contract = "The built amux binary hosts agents that outlive a killed daemon and are adopted by the next, attaches terminals to them, closes pairing mode however amux pair ends, words its refusals as sentences, serves the cloud relay, writes its login units, routes stop and update through the supervisor, and keeps overlapping releases working across an update."
 paths = ["crates/amux/tests"]
 recipe = "just suite desktop-cli-system"
 boundary = "System composition"
@@ -39,11 +39,11 @@ journeys = ["survive-daemon"]
 
 [[suite]]
 name = "agent-provider-hosting"
-contract = "The agent process launches each provider child, completes its handshake and a turn, continues the provider's own session in a later incarnation, and delivers agent messages through each provider's own injection channel."
-paths = ["crates/agent/tests/providers.rs", "crates/agent/tests/replay", "crates/agent/src"]
+contract = "The agent process launches each provider child, completes its handshake and a turn, continues the provider's own session in a later incarnation, delivers agent messages through each provider's own injection channel, and names a Codex thread after the agent at start and on rename, so Codex's own app shows the same name."
+paths = ["crates/agent/tests/providers.rs", "crates/agent/tests/codex_thread_name.rs", "crates/agent/tests/replay", "crates/agent/src"]
 recipe = "just suite agent-provider-hosting"
 boundary = "Provider adapter"
-oracle = "Journaled items and snapshots, provider writes checked byte for byte against recorded input, and re-emitted open items after a restart."
+oracle = "Journaled items and snapshots, provider writes checked byte for byte against recorded input, re-emitted open items after a restart, and the thread/name/set requests the fake Codex logged."
 real = ["agent process library", "provider child processes", "PTYs", "Unix sockets", "journal files"]
 substituted = ["providers by the scripted fakes and recorded replays"]
 time = "real"
@@ -53,24 +53,8 @@ evidence = "crates/agent/tests/replay"
 update = "Cut or rewrite a replay fixture from its claude-specs or codex-specs recording and record the change in crates/agent/tests/replay/README.md."
 cargo = [
   { package = "agent", kind = "lib", targets = ["agent"], features = [] },
-  { package = "agent", modules = ["providers"], features = [] },
+  { package = "agent", modules = ["codex_thread_name", "providers"], features = [] },
 ]
-
-[[suite]]
-name = "agent-codex-thread-name"
-contract = "The agent names its Codex thread with the agent's name straight after starting it and again when the agent is renamed, so Codex's own app shows the same name."
-paths = ["crates/agent/tests/codex_thread_name.rs", "crates/interpret/src/codex", "crates/agent/src"]
-recipe = "just suite agent-codex-thread-name"
-boundary = "Provider adapter"
-oracle = "The thread/name/set requests the fake Codex logged, with the thread and name each carried."
-real = ["agent process library", "provider child processes", "Unix sockets", "journal files"]
-substituted = ["Codex by the scripted fake"]
-time = "real"
-capabilities = ["Unix"]
-lane = "fast"
-evidence = "the fake's input log"
-update = ""
-cargo = [{ package = "agent", modules = ["codex_thread_name"], features = [] }]
 
 [[suite]]
 name = "agent-process-lifecycle"

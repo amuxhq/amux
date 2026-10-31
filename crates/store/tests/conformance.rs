@@ -224,7 +224,6 @@ fn appends_extend_text_and_carry_their_base() {
         ..Default::default()
     };
     let committed = store.commit(&agent, &[(2, step)], CLOCK).unwrap();
-    assert_eq!(committed.skipped_appends, 1);
     assert_eq!(
         committed.records,
         vec![
@@ -1085,37 +1084,5 @@ fn an_inventory_put_keeps_a_replicas_last_activity() {
     assert_eq!(
         (row.phase, row.phase_since_ms),
         (Phase::Working as i32, Some(4_500))
-    );
-}
-
-/// Retention's byte count in SQL and `item_bytes` agree on every row,
-/// whatever its kind, text, attachments and input id.
-#[test]
-fn item_bytes_agrees_with_the_stores_count() {
-    let agent = own("a");
-    let mut store = with_agent(fresh(), &agent);
-    let mut odd = item("é-key", "non-ascii text: ünïcödé");
-    odd.kind = 99;
-    odd.input_id = b"input".to_vec();
-    odd.attachments = vec![wire::Attachment {
-        of: Some(wire::attachment::Of::Image(wire::BlobRef {
-            hash: vec![7; 32],
-            name: "shot.png".into(),
-            mime: "image/png".into(),
-            size: 12,
-        })),
-    }];
-    store
-        .commit(
-            &agent,
-            &[(1, items_step(&[item("plain", "x"), odd]))],
-            CLOCK,
-        )
-        .unwrap();
-    let held = store.page(&agent, None, 10).unwrap().items;
-    assert_eq!(held.len(), 2);
-    assert_eq!(
-        store.pool_bytes(true).unwrap(),
-        held.iter().map(store::item_bytes).sum::<u64>()
     );
 }

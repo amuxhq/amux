@@ -5,11 +5,11 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use rusqlite::{Connection, TransactionBehavior, params};
+use rusqlite::{Connection, TransactionBehavior};
 
-use crate::migrations::{MIGRATIONS, SCHEMA_STAMP, shipped_hash};
 use crate::retention::{self, Sweep};
 use crate::rows::{self, ABSORBED, COMMITTED, Rows};
+use crate::schema::{SCHEMA, SCHEMA_VERSION};
 use crate::{
     Absorb, Absorbed, AgentKey, AgentRow, Append, CommitClock, Committed, Cut, Delivery, Item,
     Marker, Notification, Page, PageEnd, Record, Snapshot, SourceEvent, Step, StoreError,
@@ -25,17 +25,13 @@ pub enum OpenError {
     Sqlite(#[from] rusqlite::Error),
     #[error("{0} is not an amux profile store")]
     Foreign(String),
-    #[error("this store needs a newer amux: its schema stamp is {stamp}, this build knows {known}")]
-    TooNew { stamp: u32, known: u32 },
-    /// The store's recorded history is not this build's: written before
-    /// the release schema, or by a build whose migration text differs, or
-    /// with no history recorded at all (`id` 0). The file is left exactly
-    /// as it is.
+    /// The store was written under another schema version than this
+    /// build's. The file is left exactly as it is.
     #[error(
-        "{path} predates this release's store schema (its migration {id} is not this build's); \
+        "{path} holds store schema {version}, not this build's {SCHEMA_VERSION}; \
          amux leaves it untouched: move it aside to start this profile's store afresh"
     )]
-    OtherHistory { path: String, id: u32 },
+    OtherSchema { path: String, version: u32 },
 }
 
 /// How far a write must reach before it returns. Commits are otherwise not
@@ -56,6 +52,7 @@ pub struct Sqlite {
     /// How many resets each replica row has absorbed since the store
     /// opened: what a replica that was told to forget its block went
     /// through, for the checks that judge it.
+    #[cfg(feature = "explore")]
     pub(crate) resets: HashMap<AgentKey, u64>,
 }
 
@@ -73,8 +70,8 @@ const FLUSH_PATIENCE: std::time::Duration = std::time::Duration::from_secs(2);
 
 impl Sqlite {
     /// Opens or creates the profile store at `path` for the host whose own
-    /// rows it holds, applying any migrations it lacks. A store whose
-    /// recorded history is not this build's is refused and left untouched.
+    /// rows it holds. A store of another schema version is refused and left
+    /// untouched.
     pub fn open(path: &Path, own_host: impl Into<Vec<u8>>) -> Result<Self, OpenError> {
         let conn = Connection::open(path)?;
         Self::with_connection(conn, &path.display().to_string(), own_host.into())
@@ -97,11 +94,12 @@ impl Sqlite {
         // Every statement the rows run is one of a few dozen fixed texts;
         // kept prepared, a commit skips parsing them again for each frame.
         conn.set_prepared_statement_cache_capacity(64);
-        migrate(&mut conn, name)?;
+        create_or_check(&mut conn, name)?;
         Ok(Self {
             conn,
             own_host,
             markers: HashMap::new(),
+            #[cfg(feature = "explore")]
             resets: HashMap::new(),
         })
     }
@@ -200,74 +198,29 @@ impl Sqlite {
     }
 }
 
-/// Checks the store's history and applies the migrations it lacks, all in
-/// one transaction that takes the write lock first, so the history it
-/// checked is the one it migrates.
-fn migrate(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
+/// Gives a fresh file the schema, or checks that the file is a store of
+/// this build's schema version. One transaction that takes the write lock
+/// first, so two openers of a fresh file do not both create it.
+fn create_or_check(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let stamp: u32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    let version: u32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
     let application_id: i32 = tx.pragma_query_value(None, "application_id", |row| row.get(0))?;
-    let fresh = stamp == 0 && application_id == 0;
-    if !fresh && application_id != APPLICATION_ID {
-        return Err(OpenError::Foreign(name.into()));
-    }
-    let recorded: bool = tx.query_row(
-        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'schema_migrations')",
-        [],
-        |row| row.get(0),
-    )?;
-    // An amux store with no history is no store this build wrote: its
-    // tables are not to be made again over whatever it holds.
-    if !fresh && !recorded {
-        return Err(OpenError::OtherHistory {
-            path: name.into(),
-            id: 0,
-        });
-    }
-    let applied = if recorded {
-        let mut statement = tx.prepare("SELECT id, sha256 FROM schema_migrations ORDER BY id")?;
-        statement
-            .query_map([], |row| {
-                Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?))
-            })?
-            .collect::<Result<Vec<_>, _>>()?
-    } else {
-        Vec::new()
-    };
-    // History before the stamp: a store from before the release schema
-    // carries a higher stamp than this build knows, and is the past, not
-    // the future.
-    for (id, hash) in &applied {
-        let index = (*id as usize).wrapping_sub(1);
-        if index < MIGRATIONS.len() && shipped_hash(index) != hash {
-            return Err(OpenError::OtherHistory {
-                path: name.into(),
-                id: *id,
-            });
-        }
-    }
-    let known = MIGRATIONS.len() as u32;
-    if stamp > known {
-        return Err(OpenError::TooNew { stamp, known });
-    }
-    let done = applied.last().map_or(0, |(id, _)| *id);
-    if done as usize >= MIGRATIONS.len() {
+    if version == 0 && application_id == 0 {
+        tx.execute_batch(SCHEMA)?;
+        tx.pragma_update(None, "application_id", APPLICATION_ID)?;
+        tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        tx.commit()?;
         return Ok(());
     }
-    tx.execute_batch(
-        "CREATE TABLE IF NOT EXISTS schema_migrations \
-         (id INTEGER PRIMARY KEY, sha256 TEXT NOT NULL) STRICT;",
-    )?;
-    for (index, text) in MIGRATIONS.iter().enumerate().skip(done as usize) {
-        tx.execute_batch(text)?;
-        tx.execute(
-            "INSERT INTO schema_migrations (id, sha256) VALUES (?1, ?2)",
-            params![index as u32 + 1, shipped_hash(index)],
-        )?;
+    if application_id != APPLICATION_ID {
+        return Err(OpenError::Foreign(name.into()));
     }
-    tx.pragma_update(None, "application_id", APPLICATION_ID)?;
-    tx.pragma_update(None, "user_version", stamp.max(SCHEMA_STAMP))?;
-    tx.commit()?;
+    if version != SCHEMA_VERSION {
+        return Err(OpenError::OtherSchema {
+            path: name.into(),
+            version,
+        });
+    }
     Ok(())
 }
 
@@ -378,10 +331,6 @@ impl Sqlite {
     /// The markers set on agents, read once by a subscriber at join.
     pub fn markers(&self) -> &HashMap<AgentKey, Marker> {
         &self.markers
-    }
-
-    pub fn markers_mut(&mut self) -> &mut HashMap<AgentKey, Marker> {
-        &mut self.markers
     }
 
     pub fn agent(&self, agent: &AgentKey) -> Result<Option<AgentRow>, StoreError> {
@@ -554,6 +503,7 @@ impl Sqlite {
     /// Removes an agent whole: row, items, deliveries and notifications.
     pub fn delete_agent(&mut self, agent: &AgentKey) -> Result<(), StoreError> {
         self.markers.remove(agent);
+        #[cfg(feature = "explore")]
         self.resets.remove(agent);
         self.write(|rows| rows.remove_agent(agent))
     }
@@ -595,11 +545,13 @@ impl Sqlite {
             Absorb::Reset { .. } => Some(None),
             _ => None,
         };
+        #[cfg(feature = "explore")]
         let reset = matches!(what, Absorb::Reset { .. });
         let absorbed = self.write(|rows| absorb(rows, agent, what))?;
         if let Some(marker) = marker {
             self.set_marker(agent, marker);
         }
+        #[cfg(feature = "explore")]
         if reset {
             *self.resets.entry(agent.clone()).or_default() += 1;
         }
@@ -694,6 +646,7 @@ impl Sqlite {
         let sweep = self.write(|rows| retention::sweep_own(rows, budget, chunk, floor_k))?;
         for agent in &sweep.removed {
             self.markers.remove(agent);
+            #[cfg(feature = "explore")]
             self.resets.remove(agent);
         }
         Ok(sweep)
@@ -717,6 +670,7 @@ impl Sqlite {
             .write(|rows| retention::sweep_replicas(rows, budget, floor_k, sourced, last_used))?;
         for agent in &sweep.removed {
             self.markers.remove(agent);
+            #[cfg(feature = "explore")]
             self.resets.remove(agent);
         }
         Ok(sweep)
@@ -774,7 +728,7 @@ fn commit(
             let Some(base_revision) =
                 rows.extend(agent, &append.key, &append.text, revision, None)?
             else {
-                committed.skipped_appends += 1;
+                // The item it extends was never committed: nothing to extend.
                 continue;
             };
             row.next_revision += 1;

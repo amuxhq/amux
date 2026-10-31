@@ -21,7 +21,7 @@ release = { workspace = true }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
 stateright = { workspace = true }
-store = { workspace = true }
+store = { workspace = true, features = ["explore"] }
 supervisor-core = { workspace = true }
 tempfile = { workspace = true }
 ui-state = { workspace = true }

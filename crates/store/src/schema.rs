@@ -1,25 +1,14 @@
-//! The store's schema, as forward-only migrations.
-//!
-//! The first migration is the schema the first release ships. From that
-//! release on, migrations are append-only and additive (a column with a
-//! default, a table, an index), applied together in one transaction with
-//! the history check that chose them, and shipped text is
-//! never edited: the store records each applied migration's hash and refuses
-//! a file whose history disagrees, and a test pins the hash of every shipped
-//! migration. A drop, rename or rewrite ships only after the schema stamp
-//! has been raised past every binary that read the old shape. The same hash
-//! check refuses a store written before the first release, whose history
-//! is a different first migration: no such store is carried forward.
+//! The store's schema. A fresh file is given it whole; any other file must
+//! carry this build's version, or it is refused and left as it is. There
+//! are no migrations: a schema change raises the version, and a store
+//! written under another version is moved aside by the person.
 
-use sha2::{Digest, Sha256};
+/// The version of [`SCHEMA`], kept in the file's `user_version`. Raise it
+/// with every change to the schema.
+pub const SCHEMA_VERSION: u32 = 1;
 
-/// The minimum number of migrations a binary must know to read a store it
-/// writes. Stored as `user_version`; a binary opens any store whose stamp is
-/// at most the migrations it has, so an older binary opens a newer store.
-pub const SCHEMA_STAMP: u32 = 1;
-
-/// Every migration shipped, in order. Append only from the first release.
-pub const MIGRATIONS: &[&str] = &[r#"
+/// The whole schema, run once on a fresh file.
+pub(crate) const SCHEMA: &str = r#"
 -- One profile's store: this host's own agents and the replicas it follows.
 -- Enum-valued columns hold the wire integer and are never interpreted by
 -- the store, so a value this binary does not know is stored and served.
@@ -136,20 +125,4 @@ CREATE TABLE items (
 CREATE UNIQUE INDEX items_by_position ON items (origin_host, agent_id, position);
 CREATE INDEX items_by_revision ON items (origin_host, agent_id, revision);
 CREATE INDEX items_by_input ON items (origin_host, agent_id, input_id) WHERE input_id IS NOT NULL;
-"#];
-
-/// The hash of the migration at `index` in [`MIGRATIONS`], computed once:
-/// every store opened compares its recorded history against them.
-pub(crate) fn shipped_hash(index: usize) -> &'static str {
-    static SHIPPED: std::sync::LazyLock<Vec<String>> =
-        std::sync::LazyLock::new(|| MIGRATIONS.iter().map(|text| migration_hash(text)).collect());
-    &SHIPPED[index]
-}
-
-/// The hex SHA-256 of a migration's text, as recorded when it is applied.
-pub fn migration_hash(text: &str) -> String {
-    Sha256::digest(text.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
+"#;

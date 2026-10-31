@@ -1,7 +1,6 @@
 use journal::synthetic::{SyntheticWriter, cut};
 use journal::{
-    Batch, Frame, Reader, Step, Torn, Writer, encode_frame, is_final, reclaimable, segment_name,
-    segments,
+    Batch, Frame, Reader, Step, Torn, Writer, encode_frame, reclaimable, segment_name, segments,
 };
 use wire::{Item, Snapshot};
 
@@ -44,10 +43,6 @@ fn segments_are_named_by_the_global_offset_of_their_first_byte() {
     assert_eq!(segments(dir.path()).unwrap(), vec![0, 2 * len, 4 * len]);
     assert_eq!(segment_name(0), "0000000000");
     assert!(dir.path().join(segment_name(2 * len)).exists());
-
-    assert!(is_final(dir.path(), 0).unwrap());
-    assert!(is_final(dir.path(), 2 * len).unwrap());
-    assert!(!is_final(dir.path(), 4 * len).unwrap());
 
     let batch = Reader::new(dir.path(), 0).read_to_end().unwrap();
     assert_eq!(keys(&batch), ["a", "b", "c", "d", "e"]);

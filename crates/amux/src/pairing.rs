@@ -987,11 +987,22 @@ mod tests {
         }
     }
 
+    /// A host nobody paired that the neighbors `by` say they reach.
+    fn announced(name: &str, by: Vec<wire::Host>) -> HostEntry {
+        HostEntry {
+            standing: Some(wire::host_entry::Standing::Candidate(wire::Candidate {
+                addrs: Vec::new(),
+                announced_by: by,
+            })),
+            ..HostEntry::candidate_host(vec![3; 16], name, Vec::new())
+        }
+    }
+
     /// A host only the relay announces pairs on Pro; on the free plan the
     /// table says Pro is what pairs it, and where to get it.
     #[test]
     fn a_host_only_the_relay_announces_names_pro_on_the_free_plan() {
-        let nova = HostEntry::announced_host(vec![3; 16], "nova", vec![neighbor("s1", true)]);
+        let nova = announced("nova", vec![neighbor("s1", true)]);
         let pro = peer_table(&[], std::slice::from_ref(&nova), false);
         let row = pro.lines().nth(1).unwrap();
         assert!(row.contains("on your account, through the relay"), "{pro}");
@@ -1009,11 +1020,7 @@ mod tests {
     /// the table names it and the command, never Pro.
     #[test]
     fn a_host_a_paired_host_announces_pairs_through_it_on_any_plan() {
-        let nas = HostEntry::announced_host(
-            vec![3; 16],
-            "nas",
-            vec![neighbor("studio", false), neighbor("s1", true)],
-        );
+        let nas = announced("nas", vec![neighbor("studio", false), neighbor("s1", true)]);
         let table = peer_table(&[], &[nas], true);
         let row = table.lines().nth(1).unwrap();
         assert!(row.contains("through studio"), "{table}");

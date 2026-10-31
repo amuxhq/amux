@@ -475,11 +475,11 @@ cargo = [
 
 [[suite]]
 name = "sqlite-store-contract"
-contract = "The SQLite profile store answers one reader and writer suite, retention trims own and replica rows on a driven clock, and the file keeps its migrations, refuses a store with another history untouched, and keeps its position tripwire, one transaction per commit and its rows across a reopen; a store in memory dumps every row canonically and restores to an equal store."
+contract = "The SQLite profile store answers one reader and writer suite, retention trims own and replica rows on a driven clock, and the file refuses a store of another schema version untouched and keeps its position tripwire, one transaction per commit and its rows across a reopen; a store in memory dumps every row canonically and restores to an equal store."
 paths = ["crates/store/tests"]
 recipe = "just test-store"
 boundary = "Single daemon"
-oracle = "Rows read back from a temp-file store, retention sweep outcomes, SQLite errors, migration hashes and the refused file's bytes."
+oracle = "Rows read back from a temp-file store, retention sweep outcomes, SQLite errors and the refused file's bytes."
 real = ["bundled SQLite", "files"]
 substituted = ["provider", "network", "wall clock"]
 time = "driven"

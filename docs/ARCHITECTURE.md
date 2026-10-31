@@ -430,18 +430,17 @@ time:
 2. Read `generation`. If the boot id changed and the last run did not shut
    down cleanly, bump the counter. Rewrite the file with this boot's id and
    the clean flag cleared, durably, before anything is served.
-3. List the profiles directory. For each profile, open its store and apply pending
-   migrations (forward-only, and additive from the first release on), then
-   look at every
+3. List the profiles directory. For each profile, open its store (creating
+   it when there is none), then look at every
    `agents/<id>/` without writing: try the lock, dial the live ones, read
    their Hello.
 4. **Activate.** Under a supervisor this is one exchange on the pipe it
    handed down: write `prepared`, wait for `go`. Without a supervisor, go
-   at once. Everything before this point is read-only apart from the
-   migration and the generation file, which is what makes rolling back to
-   the previous binary safe. A store written before the release schema is
-   not migrated: its file is named in the error, left as it is, and the
-   daemon does not start.
+   at once. Everything before this point is read-only apart from creating
+   a store that did not exist and the generation file, which is what makes
+   rolling back to the previous binary safe. A store of another schema
+   version is not opened: its file is named in the error, left as it is,
+   and the daemon does not start.
 5. Finish the sweep: resume ingest from each stored cursor, and mark
    exited, with the cause "while the daemon was away", every agent whose
    process is gone.

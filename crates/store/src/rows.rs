@@ -25,8 +25,9 @@ const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent_host
 const ITEM_COLUMNS: &str =
     "key, position, revision, at_ms, producer_version, input_id, text, kind, attachments, body";
 
-/// `crate::item_bytes`, in SQL: byte lengths, not character counts, and the
-/// same fixed allowances.
+/// What one held row costs against a retention budget: the byte lengths
+/// (not character counts) of its variable fields, 4 bytes for its kind and
+/// a fixed 48 for the other integers and the index entries beside them.
 const ITEM_BYTES: &str = "(length(CAST(key AS BLOB)) + length(CAST(text AS BLOB)) + length(body) \
     + IFNULL(length(attachments), 0) + IFNULL(length(input_id), 0) \
     + length(CAST(producer_version AS BLOB)) + 4 + 48)";
@@ -628,9 +629,6 @@ impl Rows<'_> {
             End::TurnEnded(turn) => (Some(turn.text.clone()), None, Some(turn.outcome), turn.last),
             End::Exited(exited) => (None, exited.ended.clone(), None, false),
         };
-        // An upsert naming its columns, never a replace: a replace rewrites
-        // the whole row, so a binary older than a migration that added a
-        // column would reset that column on every write.
         self.conn
             .prepare_cached(
                 "INSERT INTO deliveries (child_id, incarnation, turn_id, parent_incarnation, \
@@ -685,7 +683,6 @@ impl Rows<'_> {
     }
 
     pub(crate) fn put_notification(&self, notification: &Notification) -> Result<(), StoreError> {
-        // An upsert, for the reason `put_delivery` gives.
         self.conn
             .prepare_cached(
                 "INSERT INTO notifications (agent_id, revision, due_at_ms, name, working_on, \
@@ -873,7 +870,7 @@ impl Rows<'_> {
         Ok(())
     }
 
-    /// The bytes own rows (or replica rows) hold, by [`crate::item_bytes`].
+    /// The bytes own rows (or replica rows) hold, by [`ITEM_BYTES`].
     pub(crate) fn pool_bytes(&self, own: bool) -> Result<u64, StoreError> {
         let bytes: i64 = self
             .conn
@@ -884,7 +881,7 @@ impl Rows<'_> {
         Ok(bytes as u64)
     }
 
-    /// The agent's held rows: their total [`crate::item_bytes`] and count.
+    /// The agent's held rows: their total [`ITEM_BYTES`] and count.
     pub(crate) fn agent_bytes(&self, agent: &AgentKey) -> Result<(u64, u64), StoreError> {
         let (bytes, rows): (i64, i64) = self
             .conn
@@ -898,7 +895,7 @@ impl Rows<'_> {
         Ok((bytes as u64, rows as u64))
     }
 
-    /// The oldest held rows' positions and [`crate::item_bytes`], oldest
+    /// The oldest held rows' positions and [`ITEM_BYTES`], oldest
     /// first.
     pub(crate) fn oldest_items(
         &self,

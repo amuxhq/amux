@@ -15,19 +15,21 @@
 use prost::Message as _;
 pub use wire::{Append, Attachment, Item, Snapshot, Step};
 
-mod migrations;
 mod rows;
+mod schema;
 mod sqlite;
 
 mod blobs;
+#[cfg(feature = "explore")]
 mod explore;
 pub mod redact;
 mod retention;
 
 pub use blobs::BlobLru;
+#[cfg(feature = "explore")]
 pub use explore::{BlockOrders, Dump};
-pub use migrations::{MIGRATIONS, SCHEMA_STAMP, migration_hash};
 pub use retention::{Sweep, SweepStep};
+pub use schema::SCHEMA_VERSION;
 pub use sqlite::{Durability, OpenError, Sqlite};
 
 /// A paired host as the store keeps it. The two address lists are JSON the
@@ -198,9 +200,6 @@ pub struct Committed {
     pub records: Vec<Record>,
     /// The journal offset the row is now committed through.
     pub cursor: u64,
-    /// Appends naming a key the store does not hold; the item they extend
-    /// was never committed, so there is nothing to extend.
-    pub skipped_appends: usize,
 }
 
 /// A record from a peer source.
@@ -348,28 +347,6 @@ pub enum StoreError {
     #[error("the store is closed")]
     Closed,
 }
-
-/// What one held row costs against a retention budget: its envelope's
-/// variable fields, the kind's integer, and a fixed allowance for the other
-/// integers and the index entries beside them. The store's SQL counts the
-/// same bytes, so the two agree on every row.
-pub fn item_bytes(item: &Item) -> u64 {
-    (item.key.len()
-        + item.text.len()
-        + item.body.len()
-        + encode_attachments(&item.attachments).len()
-        + item.input_id.len()
-        + item.producer_version.len()) as u64
-        + KIND_BYTES
-        + ITEM_OVERHEAD_BYTES
-}
-
-/// What [`item_bytes`] counts for a row's kind: a fixed 4 bytes, whatever
-/// integer it holds.
-pub const KIND_BYTES: u64 = 4;
-
-/// The fixed per-row allowance in [`item_bytes`] besides the kind.
-pub const ITEM_OVERHEAD_BYTES: u64 = 48;
 
 /// Encodes an attachment list for its column.
 pub(crate) fn encode_attachments(attachments: &[Attachment]) -> Vec<u8> {

@@ -235,18 +235,13 @@ impl Profile {
         self.cloud.as_ref()?.standing.as_ref()
     }
 
-    /// What the profile's relay link is doing, while it is signed in.
-    pub fn relay_state(&self) -> Option<&relay_link::State> {
-        match self.standing()? {
-            cloud_standing::Standing::SignedIn(link) => link.state.as_ref(),
-            _ => None,
-        }
-    }
-
     /// The profile's relay link, while it is signed in and connected.
     pub fn relay_connected(&self) -> Option<&RelayConnected> {
-        match self.relay_state()? {
-            relay_link::State::Connected(connected) => Some(connected),
+        match self.standing()? {
+            cloud_standing::Standing::SignedIn(RelayLink {
+                state: Some(relay_link::State::Connected(connected)),
+                ..
+            }) => Some(connected),
             _ => None,
         }
     }
@@ -307,20 +302,6 @@ impl HostEntry {
             })),
             ..Self::default()
         }
-    }
-
-    /// A host nobody paired that the neighbors `announced_by` say they
-    /// reach.
-    pub fn announced_host(
-        host_id: impl Into<Vec<u8>>,
-        name: impl Into<String>,
-        announced_by: Vec<Host>,
-    ) -> Self {
-        let mut entry = Self::candidate_host(host_id, name, Vec::new());
-        if let Some(host_entry::Standing::Candidate(candidate)) = &mut entry.standing {
-            candidate.announced_by = announced_by;
-        }
-        entry
     }
 
     /// The host's id, as its handshake gave it.

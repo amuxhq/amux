@@ -2,7 +2,7 @@
 //!
 //! There is no "started by an update" or "recovering from a crash" mode.
 //! Every start takes the installation lock; rewrites the generation file,
-//! bumping the counter after an unclean reboot; opens and migrates each
+//! bumping the counter after an unclean reboot; opens or creates each
 //! profile's store; looks at every agent directory without writing; tells
 //! the supervisor it is prepared and waits for go, or goes at once with no
 //! supervisor; and only then finishes the sweep, which is the first write
@@ -137,8 +137,8 @@ impl Drop for Hosted {
 }
 
 impl Installation {
-    /// Opens a profile's store and its runtime. Writes nothing but the
-    /// store's migrations.
+    /// Opens a profile's store and its runtime. Writes nothing but a
+    /// store that did not exist.
     fn open(&self, profile: ProfileId) -> Result<Arc<ProfileRuntime>, StartError> {
         let dir = profiles::profile_dir(&self.data_dir, profile);
         // The profile's id is its host id, the one its peers know it by.
@@ -415,7 +415,7 @@ impl Drop for Daemon {
 }
 
 /// Starts the daemon for one installation. With a pipe, writes `prepared`
-/// once the stores are migrated and the agent directories looked at, and
+/// once the stores are open and the agent directories looked at, and
 /// waits for `go` before anything else is written.
 pub async fn start(
     options: StartOptions,

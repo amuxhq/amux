@@ -1,7 +1,7 @@
 //! The supervisor pipe: the one thing a daemon knows about being
 //! supervised.
 //!
-//! The daemon writes `prepared` once it has migrated its stores and looked
+//! The daemon writes `prepared` once it has opened its stores and looked
 //! at every agent directory without writing, and waits for `go`. Before
 //! `go` nothing it did needs undoing if the supervisor rolls the binary
 //! back; after it the daemon is ordinary running. End of file on the pipe

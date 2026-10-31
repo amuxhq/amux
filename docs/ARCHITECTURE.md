@@ -730,8 +730,8 @@ The allowed sets encode the layering above:
 | `ios-tools` | `app-runtime`, `model`, `ui-view`, `wire` | generates the Swift mirrors |
 
 The phone bridge (`app-embedded`, `app-ffi`) links `node` on purpose: it
-hosts the runtime in process. `just embedded-check` and `just mobile-check`
-build that provider-free graph for the host and for iOS.
+hosts the runtime in process. `just mobile-check` checks
+that provider-free graph for iOS.
 
 ### The rustls patch
 

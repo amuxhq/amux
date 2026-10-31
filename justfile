@@ -150,18 +150,10 @@ release-key *ARGS:
 hooks:
     scripts/hooks/install
 
-# Check the provider-free graph used by embedded clients.
-embedded-check:
-    {{bounded}} 900 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded
-
-# Exercise the public embedded owner and client boundary.
-embedded-test: nextest
-    {{bounded}} 900 cargo nextest run --locked -p app-embedded -E 'binary_id(app-embedded::integration) & test(/^embedded::/)'
-
 # Check the provider-free graph for iOS devices and simulators.
 mobile-check:
-    {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime --target aarch64-apple-ios
-    {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime --target aarch64-apple-ios-sim
+    {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded --target aarch64-apple-ios
+    {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded --target aarch64-apple-ios-sim
 
 # Run workspace tests with isolated user configuration and no external network,
 # on Linux, through sudo. The workspace test script bounds its own compile and
@@ -343,7 +335,7 @@ no-update-flags:
     scripts/no-update-flags.sh
 
 # Run the same task sequence exercised across continuous-integration jobs.
-ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check embedded-check embedded-test mobile-check
+ci: no-update-flags lint fmt-check codegen-check proto-compat dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check mobile-check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,

@@ -116,7 +116,7 @@ The recipes a build or change usually needs:
 | `just fmt`, `just fmt-check` | Format, or check formatting, with the pinned nightly |
 | `just protobuf` | Regenerates the committed protobuf output |
 | `just codegen-check` | Fails if the committed protobuf output is stale |
-| `just embedded-check`, `just mobile-check` | Check the provider-free client graph on the desktop and for iOS |
+| `just mobile-check` | Check the provider-free client graph for iOS |
 | `just warm` | `just build` and `just test-build` |
 | `just ci` | The whole check sequence; see [CI](CI.md) |
 

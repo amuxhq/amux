@@ -111,15 +111,25 @@ fn the_rest_of_a_bundle_prints_and_an_unreadable_fact_hides_nothing() {
     std::fs::create_dir_all(dir.join("client/fleet")).unwrap();
     std::fs::write(dir.join("client/fleet/state.txt"), "fleet open\n").unwrap();
     std::fs::write(agent.join("part/dump-errors"), "checkpoint 3: gone\n").unwrap();
-    // The first git event becomes one no build reads; the lines around it
-    // and the later git events print as they were.
+    // A fact in the middle becomes one no build reads; the lines around it
+    // and the facts after it print as they were. How many git events the
+    // run leaves in the bundle depends on timing, so any fact with a line
+    // before and after it will do; the first git event is taken if there is
+    // one.
     let facts = agent.join("part/facts/0000000000");
     let written = std::fs::read_to_string(&facts).unwrap();
     let mut lines: Vec<&str> = written.lines().collect();
     let git = "{\"event\":\"git\"}";
-    let first = lines.iter().position(|line| *line == git).unwrap();
-    let later = lines.iter().rposition(|line| *line == git).unwrap();
-    assert!(0 < first && first < later, "two git events, after a line");
+    let later = lines.len() - 1;
+    let first = lines
+        .iter()
+        .position(|line| *line == git)
+        .filter(|at| 0 < *at && *at < later)
+        .unwrap_or(1);
+    assert!(
+        0 < first && first < later,
+        "a fact with lines before and after it"
+    );
     lines[first] = "{\"event\":\"unreadable\"}";
     std::fs::write(&facts, lines.join("\n") + "\n").unwrap();
 

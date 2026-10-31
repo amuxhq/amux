@@ -1517,11 +1517,6 @@ impl State {
         } else if let Some(Ok(usage)) = response.result::<ContextUsage>() {
             self.context_tokens = Some(usage.total_tokens);
             self.context_window = Some(usage.max_tokens);
-            self.context_breakdown = usage
-                .categories
-                .into_iter()
-                .map(|category| (category.name, category.tokens))
-                .collect();
         }
     }
 }

@@ -776,7 +776,6 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
         known: true,
         used_tokens: 171_000,
         window_tokens: Some(200_000),
-        breakdown: vec![],
     };
     match kind {
         Kind::ClaudePty => wire::ClaudePtySnapshot {

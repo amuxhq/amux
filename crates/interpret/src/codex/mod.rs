@@ -686,7 +686,6 @@ impl State {
                     known: true,
                     used_tokens,
                     window_tokens: self.context_window,
-                    breakdown: Vec::new(),
                 },
             }),
             model: self.model.clone(),

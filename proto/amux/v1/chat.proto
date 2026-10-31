@@ -634,12 +634,6 @@ message ContextMeter {
   bool known = 1;
   uint64 used_tokens = 2;
   optional uint64 window_tokens = 3;
-  repeated ContextShare breakdown = 4;
-}
-
-message ContextShare {
-  string category = 1;
-  uint64 tokens = 2;
 }
 
 enum UsageState {

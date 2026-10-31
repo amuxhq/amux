@@ -1,5 +1,5 @@
 {
-  "about": "Usage limits, tool-server health and sign-in are strip fields: a blocked limit, a failed server, a failed sign-in and background task counts reach the snapshot; context usage fills the meter with its breakdown and the window.",
+  "about": "Usage limits, tool-server health and sign-in are strip fields: a blocked limit, a failed server, a failed sign-in and background task counts reach the snapshot; context usage fills the meter and the window.",
   "spec": {
     "created_at_ms": 1800000000000
   },

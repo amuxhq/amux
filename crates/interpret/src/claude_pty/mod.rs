@@ -693,7 +693,6 @@ impl State {
                 known: true,
                 used_tokens,
                 window_tokens: None,
-                breakdown: Vec::new(),
             },
         };
         ClaudePtySnapshot {

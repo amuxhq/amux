@@ -2627,7 +2627,7 @@ impl ::prost::Name for TaskListEntry {
         "type.googleapis.com/amux.v1.TaskListEntry".into()
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ContextMeter {
     #[prost(bool, tag = "1")]
     pub known: bool,
@@ -2635,8 +2635,6 @@ pub struct ContextMeter {
     pub used_tokens: u64,
     #[prost(uint64, optional, tag = "3")]
     pub window_tokens: ::core::option::Option<u64>,
-    #[prost(message, repeated, tag = "4")]
-    pub breakdown: ::prost::alloc::vec::Vec<ContextShare>,
 }
 impl ::prost::Name for ContextMeter {
     const NAME: &'static str = "ContextMeter";
@@ -2646,23 +2644,6 @@ impl ::prost::Name for ContextMeter {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.ContextMeter".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ContextShare {
-    #[prost(string, tag = "1")]
-    pub category: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "2")]
-    pub tokens: u64,
-}
-impl ::prost::Name for ContextShare {
-    const NAME: &'static str = "ContextShare";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ContextShare".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ContextShare".into()
     }
 }
 /// How full one usage window is; the same for every provider.

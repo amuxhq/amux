@@ -24,7 +24,6 @@ pub fn context_meter() -> ContextMeter {
         known: false,
         used_tokens: 0,
         window_tokens: None,
-        breakdown: Vec::new(),
     }
 }
 

@@ -91,14 +91,13 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
         known: true,
         used_tokens: 71_000,
         window_tokens: Some(100_000),
-        breakdown: vec![],
     };
     let bodies = [
         (
             Kind::ClaudePty,
             wire::ClaudePtySnapshot {
                 tasks: Some(tasks.clone()),
-                context: Some(context.clone()),
+                context: Some(context),
                 model: Some("opus".into()),
                 permission: Some("plan".into()),
                 usage: Some(claude_usage.clone()),
@@ -113,7 +112,7 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
             Kind::ClaudeSdk,
             wire::ClaudeSdkSnapshot {
                 tasks: Some(tasks.clone()),
-                context: Some(context.clone()),
+                context: Some(context),
                 model: Some("opus".into()),
                 effort: Some("high".into()),
                 permission: Some("plan".into()),
@@ -129,7 +128,7 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
             Kind::Codex,
             wire::CodexSnapshot {
                 plan: Some(tasks.clone()),
-                context: Some(context.clone()),
+                context: Some(context),
                 model: Some("opus".into()),
                 effort: Some("high".into()),
                 permission: Some("plan".into()),

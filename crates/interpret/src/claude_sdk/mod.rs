@@ -33,9 +33,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
     AgentSpec, Ask, AskClosed, Attachment, ClaudeAnswer, ClaudeSdkItem, ClaudeSdkSnapshot,
-    ClaudeUsage, ContextMeter, ContextShare, DecisionOutcome, Envelope, Input, KindInput,
-    OfferedCommand, OfferedModel, Refusal, SignIn, Step, ToolCall, ToolDecision, ToolServerHealth,
-    ToolState, claude_answer, claude_sdk_input, claude_sdk_item, tool_decision,
+    ClaudeUsage, ContextMeter, DecisionOutcome, Envelope, Input, KindInput, OfferedCommand,
+    OfferedModel, Refusal, SignIn, Step, ToolCall, ToolDecision, ToolServerHealth, ToolState,
+    claude_answer, claude_sdk_input, claude_sdk_item, tool_decision,
 };
 
 use crate::claude_answers::{self, Answer, AnswerShape, Decided, REJECTED, ToolDecisionState};
@@ -230,7 +230,6 @@ pub struct State {
     active_tasks: BTreeMap<String, TaskState>,
     context_tokens: Option<u64>,
     context_window: Option<u64>,
-    context_breakdown: Vec<(String, u64)>,
     #[serde(with = "serde_pb::opt_msg")]
     usage: Option<ClaudeUsage>,
     #[serde(with = "serde_pb::opt_msg")]
@@ -317,7 +316,6 @@ impl State {
             active_tasks: BTreeMap::new(),
             context_tokens: None,
             context_window: None,
-            context_breakdown: Vec::new(),
             usage: None,
             servers: None,
             tools_withheld: false,
@@ -361,14 +359,6 @@ impl State {
                 known: true,
                 used_tokens,
                 window_tokens: self.context_window,
-                breakdown: self
-                    .context_breakdown
-                    .iter()
-                    .map(|(category, tokens)| ContextShare {
-                        category: category.clone(),
-                        tokens: *tokens,
-                    })
-                    .collect(),
             },
         };
         ClaudeSdkSnapshot {
@@ -1390,16 +1380,11 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
             snapshot.permission.as_deref().unwrap_or("?"),
             if context.known {
                 format!(
-                    "{}/{}{}",
+                    "{}/{}",
                     context.used_tokens,
                     context
                         .window_tokens
                         .map_or("?".to_owned(), |window| window.to_string()),
-                    if context.breakdown.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" ({} categories)", context.breakdown.len())
-                    }
                 )
             } else {
                 "?".into()

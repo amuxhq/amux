@@ -140,10 +140,9 @@ the real net under `just test` in each Test job, then on the simulated net
 under `just sim` in the Linux job beside them, every core in one process, a
 few seeds per story. A failing seed is printed with the
 `just sim --seed N <story>` that reruns it. The
-nightly workflow's seeds job runs `just nightly --seeds 2000 --bounds none`:
-2000 seeds per story and a report of every failing seed, without the models,
-which its matrix already checks. Locally, `just nightly --seeds N` walks the
-seeds and then runs `just models-nightly`.
+nightly workflow's seeds job walks 2000 seeds per story the same way
+(`just sim --seeds 2000`, under a bound of its own); the models are its
+matrix's.
 
 ### The iOS gate
 

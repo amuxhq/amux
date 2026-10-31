@@ -304,13 +304,7 @@ models-nightly *MODELS: nextest
 # story. `--seed N` reruns one seed (a failure prints its command), `--seeds N`
 # walks N, and names after them narrow the run to matching stories.
 sim *ARGS: nextest
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 scripts/py scripts/sim.py sim "$@"
-
-# The nightly run: walk `--seeds N` seeds per simulated story, then check the
-# protocol models at `--bounds nightly` (the default), `ci` or `none`, and
-# print a report of seeds walked, time and failing seeds.
-nightly *ARGS: nextest
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 14400 scripts/py scripts/sim.py nightly "$@"
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 scripts/py scripts/sim.py "$@"
 
 # Run every workspace test under cargo-llvm-cov and write line coverage per
 # crate, with the commit it measured, to target/coverage/coverage.md. Needs

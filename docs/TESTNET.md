@@ -65,8 +65,8 @@ Stories that need any of those run on the real net only.
 
 `testnet::modes::run_story(topology, real, simulated)` runs a story on the net `TESTNET_MODE` names: `real` (or
 nothing) once, `simulated` under each seed, a few by default, `TESTNET_SEEDS=N` for N of them, `TESTNET_SEED=N` for
-exactly one. `just sim` runs every story the catalogue gives a simulated mode, and `just nightly --seeds N` walks
-thousands of seeds per story and reports each failing one; see [Testing](TESTING.md#two-modes-of-the-many-daemons-harness).
+exactly one. `just sim` runs every story the catalogue gives a simulated mode, and `just sim --seeds N` walks N seeds
+per story, as the nightly workflow does with thousands; see [Testing](TESTING.md#two-modes-of-the-many-daemons-harness).
 
 ## Topologies
 

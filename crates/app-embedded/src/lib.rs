@@ -120,17 +120,6 @@ pub enum EmbeddedError {
     Rebind(ProfileId, io::Error),
 }
 
-/// What a network change did across every profile.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct NetworkChangeReport {
-    /// The profiles whose link socket was bound afresh.
-    pub profiles_rebound: usize,
-    /// The path machines told, one per peer of every profile.
-    pub machines_told: usize,
-    /// The device's interface addresses now.
-    pub addrs: Vec<std::net::IpAddr>,
-}
-
 /// One installation with every profile it hosts, in process.
 pub struct EmbeddedRuntime {
     // Held for its shutdown and to find a profile's runtime.
@@ -565,16 +554,6 @@ impl EmbeddedRuntime {
         Ok(self.edge(profile)?.abandon_pair(token).await?)
     }
 
-    /// Pairs in one step, trusting whoever the secret reaches.
-    pub async fn pair(
-        &self,
-        profile: ProfileId,
-        request: &PairRequest,
-    ) -> Result<wire::Peer, EmbeddedError> {
-        let pending = self.begin_pair(profile, request).await?;
-        self.confirm_pair(profile, &pending.token).await
-    }
-
     /// A profile's identity and the machines it trusts, sorted by name.
     pub fn roster(&self, profile: ProfileId) -> Result<Roster, EmbeddedError> {
         let edge = self.edge(profile)?;
@@ -630,25 +609,17 @@ impl EmbeddedRuntime {
     /// QUIC connections, and every path machine probes its paths again.
     /// Every profile is told even when one fails to rebind; the first
     /// failure is the answer.
-    pub async fn network_changed(&self) -> Result<NetworkChangeReport, EmbeddedError> {
-        let mut report = NetworkChangeReport::default();
+    pub async fn network_changed(&self) -> Result<(), EmbeddedError> {
         let mut failed = None;
         for runtime in self.hosted() {
             let Some(edge) = runtime.edge() else {
                 continue;
             };
-            match edge.network_changed() {
-                Ok(change) => {
-                    report.profiles_rebound += usize::from(change.rebound);
-                    report.machines_told += change.machines_told;
-                    report.addrs = change.addrs;
-                }
-                Err(error) => {
-                    failed.get_or_insert(EmbeddedError::Rebind(runtime.profile(), error));
-                }
+            if let Err(error) = edge.network_changed() {
+                failed.get_or_insert(EmbeddedError::Rebind(runtime.profile(), error));
             }
         }
-        failed.map_or(Ok(report), Err)
+        failed.map_or(Ok(()), Err)
     }
 
     /// A bearer for the account service, refreshed by the profile when it

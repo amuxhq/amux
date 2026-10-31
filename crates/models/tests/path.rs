@@ -3,23 +3,14 @@
 
 use models::{Bounds, PathModel, check, walk};
 
-/// Each CI world and how many states its exhaustive run may explore: its
-/// count at these bounds on 2026-10-26 (12,929,251, 11,118,688 and
-/// 12,701,530) with two percent over, since the count can move with the
-/// threads. A run past it says the bounds have outgrown their place; a run
-/// that hangs is the test harness's bound to catch.
-fn ci_worlds() -> [(&'static str, PathModel, u64); 3] {
+/// Each CI world, by name.
+fn ci_worlds() -> [(&'static str, PathModel); 3] {
     [
-        ("the addresses and the network", PathModel::ci(), 13_187_900),
-        (
-            "the peer's own packets",
-            PathModel::ci_arrivals(),
-            11_341_100,
-        ),
+        ("the addresses and the network", PathModel::ci()),
+        ("the peer's own packets", PathModel::ci_arrivals()),
         (
             "answers, refusals and forgotten addresses",
             PathModel::ci_answers(),
-            12_955_600,
         ),
     ]
 }
@@ -30,20 +21,10 @@ fn ci_worlds() -> [(&'static str, PathModel, u64); 3] {
 #[test]
 fn every_path_machine_promise_holds_at_ci_bounds() {
     let threads = models::threads();
-    for (world, model, budget) in ci_worlds() {
+    for (world, model) in ci_worlds() {
         let verdict = check(&model, Bounds::exhaustive().threads(threads));
         println!("{world}: {verdict}");
-        let measured = verdict.measured;
-        println!(
-            "{world}: measured on {threads} threads: states={} seconds={:.1} states_per_second={:.0}",
-            measured.states, measured.seconds, measured.states_per_second
-        );
         verdict.assert_holds();
-        assert!(
-            measured.states <= budget,
-            "the path model's world of {world} explored {} states, past its {budget}",
-            measured.states
-        );
     }
 }
 

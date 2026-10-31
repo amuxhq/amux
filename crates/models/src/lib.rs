@@ -329,22 +329,6 @@ pub struct Measured {
     /// Distinct states explored.
     pub states: u64,
     pub seconds: f64,
-    pub states_per_second: f64,
-}
-
-impl Measured {
-    fn new(states: u64, seconds: f64) -> Self {
-        let states_per_second = if seconds > 0.0 {
-            states as f64 / seconds
-        } else {
-            0.0
-        };
-        Self {
-            states,
-            seconds,
-            states_per_second,
-        }
-    }
 }
 
 /// A path from the initial state to the state that decided a property.
@@ -412,14 +396,10 @@ impl Verdict {
 
 impl Display for Verdict {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Measured {
-            states,
-            seconds,
-            states_per_second,
-        } = self.measured;
+        let Measured { states, seconds } = self.measured;
         writeln!(
             f,
-            "{states} states to depth {} in {seconds:.3}s ({states_per_second:.0} states per second)",
+            "{states} states to depth {} in {seconds:.3}s",
             self.depth
         )?;
         for judged in &self.properties {
@@ -521,7 +501,10 @@ fn judge<M: Machine>(model: &M, checker: &impl Checker<Adapter<M>>, started: Ins
         .collect();
     Verdict {
         properties: judged,
-        measured: Measured::new(checker.unique_state_count() as u64, seconds),
+        measured: Measured {
+            states: checker.unique_state_count() as u64,
+            seconds,
+        },
         depth: checker.max_depth(),
     }
 }

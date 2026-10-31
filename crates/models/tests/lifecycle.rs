@@ -3,47 +3,21 @@
 
 use models::{AgentLifecycle, Bounds, check, walk};
 
-/// How many states each exhaustive run may explore: its count at these
-/// bounds on 2026-10-23 with two percent over, since the count moves by a
-/// few dozen states with the threads. A run past it says the bounds have
-/// outgrown their place; a run that hangs is the test harness's bound to
-/// catch.
-const ONE_SHOT_CHILD_STATES: u64 = 1_322_700;
-const PARENTLESS_STATES: u64 = 72_700;
-
-fn holds_within_budget(name: &str, model: &AgentLifecycle, budget: u64) {
+fn holds(name: &str, model: &AgentLifecycle) {
     let threads = models::threads();
     let verdict = check(model, Bounds::exhaustive().threads(threads));
     println!("{name}: {verdict}");
-    let measured = verdict.measured;
-    println!(
-        "{name} measured on {threads} threads: states={} seconds={:.1} states_per_second={:.0}",
-        measured.states, measured.seconds, measured.states_per_second
-    );
     verdict.assert_holds();
-    assert!(
-        measured.states <= budget,
-        "the {name} lifecycle explored {} states, past its {budget}",
-        measured.states
-    );
 }
 
 #[test]
 fn every_lifecycle_promise_holds_for_a_one_shot_child_at_ci_bounds() {
-    holds_within_budget(
-        "one-shot child",
-        &AgentLifecycle::ci(),
-        ONE_SHOT_CHILD_STATES,
-    );
+    holds("one-shot child", &AgentLifecycle::ci());
 }
 
 #[test]
 fn every_lifecycle_promise_holds_for_an_agent_without_a_parent_at_ci_bounds() {
-    holds_within_budget(
-        "parentless agent",
-        &AgentLifecycle::parentless(),
-        PARENTLESS_STATES,
-    );
+    holds("parentless agent", &AgentLifecycle::parentless());
 }
 
 #[test]

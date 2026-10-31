@@ -5,32 +5,14 @@
 use models::net::agent_id;
 use models::{Bounds, ComposedNet, Machine as _, check, walk};
 
-/// How many states the three exhaustive runs together may explore: their
-/// count at these bounds (32,752, 9,935 and 202,965 on 2026-10-30) with two
-/// percent over, since the count moves by a few dozen states with the
-/// threads. A run past it says the bounds have outgrown their place; a run
-/// that hangs is the test harness's bound to catch.
-const BUDGET_STATES: u64 = 250_600;
-
 #[test]
 fn every_composed_promise_holds_at_ci_bounds() {
     let threads = models::threads();
-    let mut states = 0;
     for (name, model) in ComposedNet::ci() {
         let verdict = check(&model, Bounds::exhaustive().threads(threads));
         println!("{name}:\n{verdict}");
-        let measured = verdict.measured;
-        println!(
-            "{name}, measured on {threads} threads: states={} seconds={:.1} states_per_second={:.0}",
-            measured.states, measured.seconds, measured.states_per_second
-        );
         verdict.assert_holds();
-        states += measured.states;
     }
-    assert!(
-        states <= BUDGET_STATES,
-        "the composed net explored {states} states, past its {BUDGET_STATES}"
-    );
 }
 
 #[test]

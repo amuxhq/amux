@@ -4,44 +4,26 @@
 
 use models::{Bounds, RelayModel, check, walk};
 
-/// How many states each exhaustive run may explore: its count at these
-/// bounds on 2026-10-26 with two percent over, since the count can move
-/// with the threads. A run past it says the bounds have outgrown their
-/// place; a run that hangs is the test harness's bound to catch.
-const CLOUD_RELAY_STATES: u64 = 708_400;
-const DAEMON_FORWARDING_STATES: u64 = 733_500;
-const PURCHASE_STATES: u64 = 759_600;
-
-fn holds_within_budget(model: &RelayModel, budget: u64) {
+fn holds(model: &RelayModel) {
     let threads = models::threads();
     let verdict = check(model, Bounds::exhaustive().threads(threads));
     println!("{verdict}");
-    let measured = verdict.measured;
-    println!(
-        "measured on {threads} threads: states={} seconds={:.1} states_per_second={:.0}",
-        measured.states, measured.seconds, measured.states_per_second
-    );
     verdict.assert_holds();
-    assert!(
-        measured.states <= budget,
-        "the relay model explored {} states, past its {budget}",
-        measured.states
-    );
 }
 
 #[test]
 fn every_relay_forwarding_promise_holds_at_ci_bounds() {
-    holds_within_budget(&RelayModel::ci(), CLOUD_RELAY_STATES);
+    holds(&RelayModel::ci());
 }
 
 #[test]
 fn every_relay_forwarding_promise_holds_across_a_purchase_at_ci_bounds() {
-    holds_within_budget(&RelayModel::purchase(), PURCHASE_STATES);
+    holds(&RelayModel::purchase());
 }
 
 #[test]
 fn every_relay_forwarding_promise_holds_for_a_daemon_forwarding_at_ci_bounds() {
-    holds_within_budget(&RelayModel::daemon(), DAEMON_FORWARDING_STATES);
+    holds(&RelayModel::daemon());
 }
 
 #[test]

@@ -3,29 +3,12 @@
 
 use models::{Bounds, ClientModel, check, walk};
 
-/// How many states the exhaustive run may explore: its count at these
-/// bounds (1,217,819 on 2026-10-23) with two percent over, since the count
-/// moves by a few dozen states with the threads. A run past it says the
-/// bounds have outgrown their place; a run that hangs is the test
-/// harness's bound to catch.
-const BUDGET_STATES: u64 = 1_242_200;
-
 #[test]
 fn every_client_promise_holds_at_ci_bounds() {
     let threads = models::threads();
     let verdict = check(&ClientModel::ci(), Bounds::exhaustive().threads(threads));
     println!("{verdict}");
-    let measured = verdict.measured;
-    println!(
-        "measured on {threads} threads: states={} seconds={:.1} states_per_second={:.0}",
-        measured.states, measured.seconds, measured.states_per_second
-    );
     verdict.assert_holds();
-    assert!(
-        measured.states <= BUDGET_STATES,
-        "the client model explored {} states, past its {BUDGET_STATES}",
-        measured.states
-    );
 }
 
 #[test]

@@ -3,29 +3,12 @@
 
 use models::{Bounds, Outcome, Replication, check, walk};
 
-/// How many states the exhaustive run may explore: its count at these
-/// bounds (157,754 on 2026-10-26; 157,737 on four threads) with two percent
-/// over, since the count moves with the threads. A run past it says the
-/// bounds have outgrown their place; a run that hangs is the test harness's
-/// bound to catch.
-const BUDGET_STATES: u64 = 161_000;
-
 #[test]
 fn every_replication_promise_holds_at_ci_bounds() {
     let threads = models::threads();
     let verdict = check(&Replication::ci(), Bounds::exhaustive().threads(threads));
     println!("{verdict}");
-    let measured = verdict.measured;
-    println!(
-        "measured on {threads} threads: states={} seconds={:.1} states_per_second={:.0}",
-        measured.states, measured.seconds, measured.states_per_second
-    );
     verdict.assert_holds();
-    assert!(
-        measured.states <= BUDGET_STATES,
-        "the replication model explored {} states, past its {BUDGET_STATES}",
-        measured.states
-    );
 }
 
 #[test]

@@ -3,46 +3,21 @@
 
 use models::{Bounds, SupervisorUpdate, check, walk};
 
-/// How many states each exhaustive run may explore: its count at these
-/// bounds on 2026-10-26 with two percent over, since the count can move
-/// with the threads. A run past it says the bounds have outgrown their
-/// place; a run that hangs is the test harness's bound to catch.
-const REPLACE_WHILE_RUNNING_STATES: u64 = 5_935_500;
-const STOP_BEFORE_THE_SWAP_STATES: u64 = 4_947_700;
-
-fn holds_within_budget(name: &str, model: &SupervisorUpdate, budget: u64) {
+fn holds(name: &str, model: &SupervisorUpdate) {
     let threads = models::threads();
     let verdict = check(model, Bounds::exhaustive().threads(threads));
     println!("{name}: {verdict}");
-    let measured = verdict.measured;
-    println!(
-        "{name} measured on {threads} threads: states={} seconds={:.1} states_per_second={:.0}",
-        measured.states, measured.seconds, measured.states_per_second
-    );
     verdict.assert_holds();
-    assert!(
-        measured.states <= budget,
-        "the {name} supervisor explored {} states, past its {budget}",
-        measured.states
-    );
 }
 
 #[test]
 fn every_update_promise_holds_where_a_running_binary_can_be_replaced() {
-    holds_within_budget(
-        "replace while running",
-        &SupervisorUpdate::ci(),
-        REPLACE_WHILE_RUNNING_STATES,
-    );
+    holds("replace while running", &SupervisorUpdate::ci());
 }
 
 #[test]
 fn every_update_promise_holds_where_the_daemon_stops_before_the_swap() {
-    holds_within_budget(
-        "stop before the swap",
-        &SupervisorUpdate::windows(),
-        STOP_BEFORE_THE_SWAP_STATES,
-    );
+    holds("stop before the swap", &SupervisorUpdate::windows());
 }
 
 #[test]

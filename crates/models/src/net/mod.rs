@@ -87,7 +87,9 @@ pub fn agent_spec(
         incarnation: 1,
         bootstrap: prompt.map(|text| wire::Bootstrap {
             of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
-                input_id: b"first".to_vec(),
+                // The id testnet's nets give a first prompt, which its
+                // stories tell apart from what an agent is sent after.
+                input_id: b"testnet-first".to_vec(),
                 prompt: Some(wire::PromptInput {
                     text: text.to_owned(),
                     attachments: Vec::new(),

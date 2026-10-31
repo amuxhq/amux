@@ -385,27 +385,14 @@ impl SimNet {
         }
         let agent = AgentId(sim.ids.bytes());
         let host_id = sim.net.host_id(h);
-        let spec = wire::AgentSpec {
-            agent_id: agent.0.to_vec(),
-            kind: FakeKind::ClaudeSdk.wire() as i32,
-            cwd: cwd.clone(),
+        let spec = models::net::agent_spec(
+            agent,
+            &cwd,
             parent,
-            config: Some(wire::EffectiveConfig {
-                grace_ms: AGENT_GRACE_MS,
-                // A seed's run is a function of the seed alone.
-                step_budget_micros: agent_core::StepBudget::UNLIMITED.micros,
-                ..wire::EffectiveConfig::default()
-            }),
-            created_at_ms: sim.net.now_ms() as i64,
-            incarnation: 1,
-            bootstrap: decl.prompt.as_deref().map(|text| wire::Bootstrap {
-                of: Some(wire::bootstrap::Of::Prompt(submission(
-                    b"testnet-first",
-                    text,
-                ))),
-            }),
-            ..wire::AgentSpec::default()
-        };
+            decl.prompt.as_deref(),
+            AGENT_GRACE_MS,
+            sim.net.now_ms(),
+        );
         let create = Create {
             agent,
             cwd,

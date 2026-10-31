@@ -29,8 +29,8 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use daemon_core::payload::{
-    Answer, CallError, CarrierKind, ClientRequest, JobResult, MessageFrom, MessageRefusal,
-    PeerFailure, PeerReply, PeerRequest, Response, Status,
+    Answer, CarrierKind, ClientRequest, JobResult, MessageFrom, PeerFailure, PeerReply,
+    PeerRequest, Response, Status,
 };
 use daemon_core::{
     AgentId, CallId, Create, Daemon, Ended, Fingerprint, HostId, Input, Job, LinkId, Output,
@@ -38,7 +38,7 @@ use daemon_core::{
 };
 use prost::Message as _;
 use store::{AgentKey, Sqlite};
-use wire::{ErrorCode, InventoryEvent, Item, Lifecycle, Step, inventory_event};
+use wire::{InventoryEvent, Item, Lifecycle, Step, inventory_event};
 
 use crate::held::{Dir, Held, Journal, Slot};
 use crate::{Machine, Property};
@@ -1333,21 +1333,10 @@ impl<'a> Transition<'a> {
 /// What the parent's driver sends back for a message call that ended with
 /// `status`: the reply, or the error code a refusal travels as.
 fn reply_of(status: &Status) -> Reply {
-    let code = match status {
-        Status::Ok => return Reply::Accepted,
-        Status::Failed(CallError::NoAgent)
-        | Status::Failed(CallError::Message(MessageRefusal::NoAgent | MessageRefusal::Stale)) => {
-            ErrorCode::NotFound
-        }
-        Status::Failed(CallError::Message(MessageRefusal::Unavailable)) => ErrorCode::Unavailable,
-        Status::Failed(CallError::Message(MessageRefusal::Lost)) => ErrorCode::Aborted,
-        Status::Failed(CallError::Message(MessageRefusal::Rejected(_))) => {
-            ErrorCode::FailedPrecondition
-        }
-        Status::Failed(CallError::Message(MessageRefusal::OtherHost)) => ErrorCode::Unimplemented,
-        Status::Failed(_) => ErrorCode::Internal,
-    };
-    Reply::Refused(code as i32)
+    match status {
+        Status::Ok => Reply::Accepted,
+        Status::Failed(error) => Reply::Refused(crate::net::wire_error(error).code),
+    }
 }
 
 /// This thread's stores and agents' directories, one of each per host.

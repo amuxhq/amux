@@ -21,19 +21,6 @@ const KINDS: [Kind; 3] = [Kind::ClaudePty, Kind::ClaudeSdk, Kind::Codex];
 /// The window's cap: more rows than any case here delivers.
 const CAP: usize = 200;
 
-fn agent(kind: Kind) -> wire::Agent {
-    wire::Agent {
-        agent_id: b"agent".to_vec(),
-        host_id: b"host".to_vec(),
-        kind: kind as i32,
-        name: "worker".into(),
-        lifecycle: wire::Lifecycle::Live as i32,
-        phase: Phase::Working as i32,
-        incarnation: 1,
-        ..wire::Agent::default()
-    }
-}
-
 fn event(of: session_event::Of) -> Msg {
     Msg::Event(SessionEvent { of: Some(of) })
 }
@@ -150,7 +137,7 @@ fn page(state: &mut SessionState, items: Vec<Item>, exhausted: bool) {
     });
 }
 
-use crate::support::all_rows;
+use crate::support::{agent, all_rows};
 
 /// The rows of the held items whose orders fall in `orders`.
 fn rows_in(
@@ -218,7 +205,7 @@ proptest! {
         kind in prop::sample::select(KINDS.to_vec()),
         steps in vec(step(), 0..=58),
     ) {
-        let mut state = SessionState::new(agent(kind), CAP);
+        let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
         state.update(snapshot(kind, Phase::Working, vec![], vec![]));
         let start = 40;
         let mut head = start;
@@ -311,7 +298,7 @@ proptest! {
 #[test]
 fn a_folded_run_draws_at_its_newest_step_and_opens_by_any_step() {
     for kind in KINDS {
-        let mut state = SessionState::new(agent(kind), CAP);
+        let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
         state.update(snapshot(kind, Phase::Working, vec![], vec![]));
         for order in 1..=3 {
             state.update(event(session_event::Of::Item(item(
@@ -381,7 +368,7 @@ fn attachments_keep_their_positions() {
         Segment::Attachment(AttachmentView::Text { lines: 2, .. })
     ));
     for kind in KINDS {
-        let mut state = SessionState::new(agent(kind), CAP);
+        let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
         let mut prompt = item(kind, 1, 1, None);
         prompt.body = body(kind, None, false);
         prompt.text = "\u{FFFC}first".into();
@@ -854,7 +841,7 @@ fn queued(id: &[u8], steer: bool, from_agent: Option<&str>) -> wire::QueuedInput
 /// The authored story each kind's golden tells.
 fn authored(kind: Kind) -> String {
     let mut out = String::new();
-    let mut state = SessionState::new(agent(kind), CAP);
+    let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
     let unanswerable = wire::Ask {
         key: "menu-1".into(),
         body: Some(wire::ask::Body::Unanswerable(wire::UnanswerableAsk {
@@ -935,7 +922,7 @@ fn authored(kind: Kind) -> String {
     ));
     state.update(Msg::Entry(wire::Agent {
         phase: Phase::NeedsYou as i32,
-        ..agent(kind)
+        ..agent(kind, Phase::Working)
     }));
     state.update(caught_up());
     show(
@@ -984,7 +971,7 @@ fn authored(kind: Kind) -> String {
     state.update(Msg::Entry(wire::Agent {
         lifecycle: wire::Lifecycle::Exited as i32,
         exit_cause: wire::ExitCause::Killed as i32,
-        ..agent(kind)
+        ..agent(kind, Phase::Working)
     }));
     show(
         "exited: the ask is dismissed and the composer offers Resume",
@@ -994,7 +981,7 @@ fn authored(kind: Kind) -> String {
     state.update(event(session_event::Of::Detached(wire::Detached {})));
     state.update(Msg::Entry(wire::Agent {
         incarnation: 2,
-        ..agent(kind)
+        ..agent(kind, Phase::Working)
     }));
     show(
         "resumed but detached: drafting continues, sending waits",
@@ -1041,7 +1028,7 @@ fn authored_view_goldens() {
 #[test]
 fn a_sent_prompt_the_queue_lists_is_drawn_once() {
     for kind in KINDS {
-        let mut state = SessionState::new(agent(kind), CAP);
+        let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
         state.update(snapshot(kind, Phase::Starting, vec![], vec![]));
         state.update(caught_up());
         state.update(Msg::Send(prompt_input(kind, b"r1", "resumed")));
@@ -1067,7 +1054,7 @@ fn a_sent_prompt_the_queue_lists_is_drawn_once() {
 #[test]
 fn a_refused_send_now_leaves_the_prompt_queued() {
     let kind = Kind::ClaudePty;
-    let mut state = SessionState::new(agent(kind), CAP);
+    let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
     state.update(snapshot(
         kind,
         Phase::Working,
@@ -1107,7 +1094,7 @@ fn a_refused_send_now_leaves_the_prompt_queued() {
 #[test]
 fn unknown_renders_one_way() {
     for kind in KINDS {
-        let mut state = SessionState::new(agent(kind), CAP);
+        let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
         state.update(snapshot(kind, Phase::Starting, vec![], vec![]));
         assert_eq!(overview(&state, None), Overview::default());
         assert_eq!((context(&state), sign_in(&state)), (None, None));
@@ -1268,7 +1255,7 @@ fn settings_offering(
 }
 
 fn settings_with(kind: Kind, body: Vec<u8>, catalogue: wire::Catalogue) -> SettingsView {
-    let mut state = SessionState::new(agent(kind), CAP);
+    let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
     state.set_catalogue(b"offered".to_vec(), catalogue);
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: kind as i32,
@@ -1680,7 +1667,7 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
                 ..Default::default()
             }
         };
-        let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
+        let mut state = SessionState::new(agent(Kind::ClaudeSdk, Phase::Working), CAP);
         state.set_catalogue(b"offered".to_vec(), catalogue);
         state.update(event(session_event::Of::Snapshot(wire::Snapshot {
             kind: Kind::ClaudeSdk as i32,
@@ -1716,7 +1703,7 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
     );
 
     let custom = |snapshot: wire::CodexSnapshot| {
-        let mut state = SessionState::new(agent(Kind::Codex), CAP);
+        let mut state = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
         let (permissions, modes) = offered_controls(Kind::Codex);
         state.set_catalogue(
             b"offered".to_vec(),
@@ -1751,7 +1738,7 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
 
     // Terminal Claude offers no models: the interpreter's tidied name names
     // the reported one, in the list as beside the composer.
-    let mut state = SessionState::new(agent(Kind::ClaudePty), CAP);
+    let mut state = SessionState::new(agent(Kind::ClaudePty, Phase::Working), CAP);
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: Kind::ClaudePty as i32,
         body: wire::ClaudeSnapshot {
@@ -1973,7 +1960,7 @@ fn tool_item(
 #[test]
 fn a_landed_edit_shows_its_numbered_patch_head_and_a_run_its_newest_subjects() {
     use serde_json::json;
-    let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
+    let mut state = SessionState::new(agent(Kind::ClaudeSdk, Phase::Working), CAP);
     let edit = json!({"file_path": "src/retry.rs", "old_string": "x", "new_string": "y"});
     let patch = json!({"structuredPatch": [{
         "oldStart": 20, "newStart": 20,
@@ -2031,7 +2018,7 @@ fn a_landed_edit_shows_its_numbered_patch_head_and_a_run_its_newest_subjects() {
     assert_eq!(patch_head(&state, &"k1".to_owned(), 3), None, "not an edit");
 
     // Codex's patch is a unified diff, numbered from its hunk header.
-    let mut codex = SessionState::new(agent(Kind::Codex), CAP);
+    let mut codex = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
     let change = |state: ToolState| {
         Item {
         key: "change".into(),
@@ -2078,7 +2065,7 @@ fn a_landed_edit_shows_its_numbered_patch_head_and_a_run_its_newest_subjects() {
 /// and the lines after them keep their numbers.
 #[test]
 fn a_patch_head_keeps_hunk_lines_that_look_like_file_headers() {
-    let mut codex = SessionState::new(agent(Kind::Codex), CAP);
+    let mut codex = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
     let patch = "diff --git a/q.sql b/q.sql\n--- a/q.sql\n+++ b/q.sql\n@@ -3,2 +3,2 @@\n--- old note\n+++ new note\n select 1;\ndiff --git a/r.sql b/r.sql\n--- a/r.sql\n+++ b/r.sql\n@@ -10 +10 @@\n-a\n+b\n";
     let change = Item {
         key: "change".into(),
@@ -2598,7 +2585,7 @@ fn changed_files_group_by_folder_with_root_files_first() {
 
 #[test]
 fn the_overview_holds_the_changes_it_is_given() {
-    let mut state = SessionState::new(agent(Kind::Codex), CAP);
+    let mut state = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
     state.update(snapshot(Kind::Codex, Phase::Idle, vec![], vec![]));
     assert_eq!(overview(&state, None).changes, None);
     let diff = wire::Diff::default();
@@ -2623,7 +2610,7 @@ fn the_overview_holds_the_changes_it_is_given() {
 #[test]
 fn prompts_on_their_way_follow_the_sending_rules() {
     let kind = Kind::Codex;
-    let mut state = SessionState::new(agent(kind), CAP);
+    let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
     state.update(snapshot(kind, Phase::Idle, vec![], vec![]));
     state.update(caught_up());
     assert!(sends_to_feed(&state), "an idle agent with nothing queued");
@@ -3019,7 +3006,7 @@ fn a_codex_command_that_dropped_output_is_marked_trimmed() {
         at_ms: order as i64 * 1000,
         ..Item::default()
     };
-    let mut state = SessionState::new(agent(Kind::Codex), CAP);
+    let mut state = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
     state.update(snapshot(Kind::Codex, Phase::Idle, vec![], vec![]));
     state.update(event(session_event::Of::Item(command(1, 4096))));
     state.update(event(session_event::Of::Item(command(2, 0))));
@@ -3042,7 +3029,7 @@ fn edit_ask_path(kind: Kind, cwd: &str, file: &str) -> String {
     let mut state = SessionState::new(
         wire::Agent {
             cwd: cwd.into(),
-            ..agent(kind)
+            ..agent(kind, Phase::Working)
         },
         CAP,
     );
@@ -3129,7 +3116,7 @@ fn card_of(kind: Kind, claude: Vec<wire::Ask>, codex: Vec<wire::CodexAsk>) -> As
     let mut state = SessionState::new(
         wire::Agent {
             cwd: QA_CWD.into(),
-            ..agent(kind)
+            ..agent(kind, Phase::Working)
         },
         CAP,
     );
@@ -3323,7 +3310,7 @@ fn a_file_step_inside_the_agents_folder_is_named_relative_to_it() {
     let mut state = SessionState::new(
         wire::Agent {
             cwd: QA_CWD.into(),
-            ..agent(Kind::ClaudeSdk)
+            ..agent(Kind::ClaudeSdk, Phase::Working)
         },
         CAP,
     );
@@ -3363,7 +3350,7 @@ fn an_exited_agents_unfinished_step_is_not_drawn_running() {
         wire::Agent {
             lifecycle: wire::Lifecycle::Exited as i32,
             exit_cause: wire::ExitCause::Stopped as i32,
-            ..agent(Kind::ClaudeSdk)
+            ..agent(Kind::ClaudeSdk, Phase::Working)
         },
         CAP,
     );
@@ -3393,7 +3380,7 @@ fn an_exited_agents_unfinished_step_is_not_drawn_running() {
 /// Claude's own view does; an explore row carries only its verb and subject.
 #[test]
 fn an_explore_step_keeps_its_failure_reason_and_its_result() {
-    let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
+    let mut state = SessionState::new(agent(Kind::ClaudeSdk, Phase::Working), CAP);
     state.update(snapshot(
         Kind::ClaudeSdk,
         Phase::Idle,
@@ -3462,7 +3449,7 @@ fn the_review_document_reads_gits_quoted_paths() {
 /// `[31mRED[0m` and cut `aaa\rbbb` to `aaa…`.
 #[test]
 fn command_output_keeps_no_colour_codes_and_loses_no_words_after_a_return() {
-    let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
+    let mut state = SessionState::new(agent(Kind::ClaudeSdk, Phase::Working), CAP);
     state.update(snapshot(
         Kind::ClaudeSdk,
         Phase::Idle,
@@ -3502,7 +3489,7 @@ fn codex_session(phase: Phase, items: Vec<Item>) -> SessionState {
         wire::Agent {
             cwd: QA_CWD.into(),
             phase: phase as i32,
-            ..agent(Kind::Codex)
+            ..agent(Kind::Codex, Phase::Working)
         },
         CAP,
     );
@@ -3928,7 +3915,7 @@ fn codexs_commands_are_amuxs_table_its_skills_and_the_clients_own() {
 /// else from when its step was written.
 #[test]
 fn a_steps_time_leaves_out_the_wait_for_approval() {
-    let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
+    let mut state = SessionState::new(agent(Kind::ClaudeSdk, Phase::Working), CAP);
     state.update(snapshot(
         Kind::ClaudeSdk,
         Phase::Idle,
@@ -3974,7 +3961,7 @@ fn terminal_claude_switched_to_another_conversation_says_so_until_it_is_back() {
             ..wire::Snapshot::default()
         }))
     };
-    let mut state = SessionState::new(agent(Kind::ClaudePty), CAP);
+    let mut state = SessionState::new(agent(Kind::ClaudePty, Phase::Working), CAP);
     state.update(snapshot(true));
     assert!(composer(&state, 0).switched_away);
     assert_eq!(
@@ -3994,7 +3981,7 @@ fn terminal_claude_switched_to_another_conversation_says_so_until_it_is_back() {
 /// counting beside a header that said the host is away.
 #[test]
 fn a_chat_whose_host_is_away_counts_no_working_time() {
-    let mut state = SessionState::new(agent(Kind::Codex), CAP);
+    let mut state = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: Kind::Codex as i32,
         phase: Phase::Working as i32,
@@ -4010,7 +3997,7 @@ fn a_chat_whose_host_is_away_counts_no_working_time() {
 }
 
 fn session_offering(kind: Kind, catalogue: wire::Catalogue) -> SessionState {
-    let mut state = SessionState::new(agent(kind), CAP);
+    let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
     state.set_catalogue(b"offered".to_vec(), catalogue);
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: kind as i32,
@@ -4221,7 +4208,7 @@ fn a_job_offers_its_own_stop_where_the_kind_can_stop_one() {
             }
             .encode_to_vec(),
         };
-        let mut state = SessionState::new(agent(kind), CAP);
+        let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
         state.update(snapshot(kind, Phase::Idle, body, vec![]));
         overview(&state, None)
             .jobs

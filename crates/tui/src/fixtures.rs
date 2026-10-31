@@ -4,6 +4,7 @@
 
 use std::path::Path;
 
+pub use interpret::Committer;
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
@@ -15,7 +16,7 @@ use ui_state::{InputOutcome, Msg, SessionState};
 use wire::Kind;
 
 use crate::chat::ChatView;
-pub use crate::sessions::{Committer, agent, caught_up};
+pub use crate::sessions::{agent, caught_up};
 use crate::theme::Theme;
 
 /// The session after each frame of one fixture, with its label and the

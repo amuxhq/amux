@@ -17,8 +17,7 @@ use std::path::{Path, PathBuf};
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
-use interpret::{Interpreter, Replayed, replay};
-use support::Committer;
+use interpret::{Committer, Interpreter, Replayed, replay};
 use ui_state::{InputOutcome, Msg, SessionState};
 use ui_view::{
     ToolRows, ask_card, composer, context, overview, prompts_underway, queue_rows, refused_prompts,
@@ -40,19 +39,6 @@ fn goldens(kind: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/goldens")
         .join(kind)
-}
-
-fn agent(kind: Kind) -> wire::Agent {
-    wire::Agent {
-        agent_id: b"agent".to_vec(),
-        host_id: b"host".to_vec(),
-        kind: kind as i32,
-        name: "worker".into(),
-        lifecycle: wire::Lifecycle::Live as i32,
-        phase: wire::Phase::NeedsYou as i32,
-        incarnation: 1,
-        ..wire::Agent::default()
-    }
 }
 
 fn clip(line: String) -> String {
@@ -186,7 +172,7 @@ fn describe_card(card: Option<&ui_view::AskCard>) -> String {
 
 /// Replays a fixture's emission through the session and renders the views.
 fn render(kind: Kind, frames: &[Replayed]) -> String {
-    let mut state = SessionState::new(agent(kind), support::CAP);
+    let mut state = SessionState::new(support::agent(kind, wire::Phase::NeedsYou), support::CAP);
     let mut committer = Committer::default();
     let mut out = String::new();
     let open = HashSet::new();

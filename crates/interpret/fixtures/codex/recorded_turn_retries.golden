@@ -1,31 +1,43 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=? sign_in=? background=?
-## 5 recorded 4: fact Rpc method=account/updated
-snapshot STARTING queue=[] working_on=- at=1790390775846 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
-## 7 recorded 6: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"nev…
-effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a0db9b-309a-7312-9cdd-9a19ac57a8e2\"}}"
+## 5 recorded 4: fact Rpc "{\"id\":\"agent-thread\",\"result\":{\"activePermissionProfile\":{\"extends\":n…
+effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
-item boundary:1 boundary final at=1790390775987 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on=- at=1790390775987 asks=[] thread=01a0db9b-309a-7312-9cdd-9a19ac57a8e2 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never context=? plan=? usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+item boundary:1 boundary final at=1793447526697 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1793447526697 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae turn=- model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=? sign_in=? background=?
+## 8 recorded 7: fact Rpc method=mcpServer/startupStatus/updated
+snapshot IDLE queue=[] working_on=- at=1793447526698 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae turn=- model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
+## 9 recorded 8: fact Rpc method=mcpServer/startupStatus/updated
+snapshot IDLE queue=[] working_on=- at=1793447526698 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae turn=- model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
 ## 11 recorded 10: fact Rpc method=mcpServer/startupStatus/updated
-snapshot IDLE queue=[] working_on=- at=1790390775989 asks=[] thread=01a0db9b-309a-7312-9cdd-9a19ac57a8e2 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
-## 12 recorded 11: input stdin-4
-effect reply stdin-4 accepted
-effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"737464696e2d34\",\"input\":[{\"text\":\"Reply with exactly CODEX_SPEC_UNREACHABLE.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a0db9b-309a-7312-9cdd-9a19ac57a8e2\"}}"
-item prompt:737464696e2d34 prompt final input=stdin-4 at=1790390775989 text="Reply with exactly CODEX_SPEC_UNREACHABLE."
-snapshot WORKING queue=[] working_on="Reply with exactly CODEX_SPEC_UNREACHABLE." at=1790390775989 asks=[] thread=01a0db9b-309a-7312-9cdd-9a19ac57a8e2 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
-## 14 recorded 13: fact Rpc "{\"id\":\"amux-1\",\"result\":{\"turn\":{\"completedAt\":null,\"durationMs\":nu…
-snapshot WORKING queue=[] working_on="Reply with exactly CODEX_SPEC_UNREACHABLE." at=1790390775992 asks=[] thread=01a0db9b-309a-7312-9cdd-9a19ac57a8e2 turn=01a0db9b-30b6-7653-91ca-94bfbbd5b898 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
-## 19 recorded 18: fact Rpc method=mcpServer/startupStatus/updated
-snapshot WORKING queue=[] working_on="Reply with exactly CODEX_SPEC_UNREACHABLE." at=1790390776358 asks=[] thread=01a0db9b-309a-7312-9cdd-9a19ac57a8e2 turn=01a0db9b-30b6-7653-91ca-94bfbbd5b898 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
-## 25 recorded 24: fact Rpc method=error
-item error:01a0db9b-30b6-7653-91ca-94bfbbd5b898 error final at=1790390777270 text="" responseStreamDisconnected "Connection failed: error sending request" retry=true 1/2
-## 27 recorded 26: fact Rpc method=error
-item error:01a0db9b-30b6-7653-91ca-94bfbbd5b898 error final at=1790390778055 text="" responseStreamDisconnected "Connection failed: error sending request" retry=true 2/2
-## 31 recorded 30: fact Rpc method=error
-item error:01a0db9b-30b6-7653-91ca-94bfbbd5b898 error final at=1790390779009 text="" httpConnectionFailed "Connection failed: error sending request" retry=false 0/0
-## 33 recorded 32: fact Rpc method=turn/completed
-item turn:1 turn final at=1790390779011 text="" #1 TURN_OUTCOME_FAILED started=1790390775994
-snapshot IDLE queue=[] working_on="Reply with exactly CODEX_SPEC_UNREACHABLE." at=1790390779011 asks=[] thread=01a0db9b-309a-7312-9cdd-9a19ac57a8e2 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
+snapshot IDLE queue=[] working_on=- at=1793447526700 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae turn=- model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+## 13 recorded 12: fact Rpc "{\"id\":\"amux-skills\",\"result\":{\"data\":[{\"cwd\":\"<MACHINE_PATH>\",\"err…
+effect catalogue 54087522 models=[] commands=5 skills=46 permissions=[read-only,default,auto,full-access] modes=[default,plan]
+snapshot catalogue 54087522
+snapshot IDLE queue=[] working_on=- at=1793447526704 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae turn=- model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+## 18 recorded 17: fact Rpc method=deprecationNotice
+item warning:2 error final at=1793447526710 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
+## 21 recorded 20: input 0x6de81ad2ebab47c5a7a00144749caff1
+effect reply 0x6de81ad2ebab47c5a7a00144749caff1 accepted
+effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"6de81ad2ebab47c5a7a00144749caff1\",\"input\":[{\"text\":\"Reply with exactly UNREACHABLE.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae\"}}"
+item prompt:6de81ad2ebab47c5a7a00144749caff1 prompt final input=0x6de81ad2ebab47c5a7a00144749caff1 at=1793447526794 text="Reply with exactly UNREACHABLE."
+snapshot WORKING queue=[] working_on="Reply with exactly UNREACHABLE." at=1793447526794 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae turn=- model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+## 23 recorded 22: fact Rpc "{\"id\":\"amux-1\",\"result\":{\"turn\":{\"completedAt\":null,\"durationMs\":nu…
+snapshot WORKING queue=[] working_on="Reply with exactly UNREACHABLE." at=1793447526800 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae turn=01a191cd-818d-7383-bd80-522ef88b0add model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+## 29 recorded 28: fact Rpc "{\"id\":\"amux-models-1\",\"result\":{\"data\":[{\"additionalSpeedTiers\":[\"fa…
+effect catalogue f843ee81 models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},gpt-6-astra{low*/medium/high/xhigh/max/ultra},gpt-6-sol{low/medium*/high/xhigh/max/ultra},gpt-6-luna{low/medium*/high/xhigh/max},gpt-5.6-sol{low*/medium/high/xhigh/max/ultra},gpt-6.1-terra{low*/medium/high/xhigh/max/ultra},gpt-5.6-terra{low/medium*/high/xhigh/max/ultra},gpt-5.6-luna{low/medium*/high/xhigh/max},gpt-5.5{low/medium*/high/xhigh}] commands=5 skills=46 permissions=[read-only,default,auto,full-access] modes=[default,plan]
+snapshot catalogue f843ee81
+snapshot WORKING queue=[] working_on="Reply with exactly UNREACHABLE." at=1793447527328 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae turn=01a191cd-818d-7383-bd80-522ef88b0add model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+## 35 recorded 34: fact Rpc method=mcpServer/startupStatus/updated
+snapshot WORKING queue=[] working_on="Reply with exactly UNREACHABLE." at=1793447527944 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae turn=01a191cd-818d-7383-bd80-522ef88b0add model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+## 37 recorded 36: fact Rpc method=error
+item error:01a191cd-818d-7383-bd80-522ef88b0add error final at=1793447527991 text="" responseStreamDisconnected "Connection failed: error sending request" retry=true 1/2
+## 39 recorded 38: fact Rpc method=error
+item error:01a191cd-818d-7383-bd80-522ef88b0add error final at=1793447528774 text="" responseStreamDisconnected "Connection failed: error sending request" retry=true 2/2
+## 42 recorded 41: fact Rpc method=error
+item error:01a191cd-818d-7383-bd80-522ef88b0add error final at=1793447529837 text="" httpConnectionFailed "Connection failed: error sending request" retry=false 0/0
+## 44 recorded 43: fact Rpc method=turn/completed
+item turn:1 turn final at=1793447529842 text="" #1 TURN_OUTCOME_FAILED started=1793447526803
+snapshot IDLE queue=[] working_on="Reply with exactly UNREACHABLE." at=1793447529842 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae turn=- model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=[]
 turn_end 1 last=-

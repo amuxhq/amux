@@ -1,40 +1,72 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 10 recorded 9: input stdin-4
+## 22 recorded 21: input 0x13038aef24d24324b20ea3385966b63a
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 25 recorded 24: fact Rpc method=item/started
-  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 27 recorded 26: fact Rpc method=item/completed
+## 52 recorded 51: fact Rpc method=item/started
+  composer Send activity=Some(Running { key: "exec-8cf92672-f662-4d36-8e26-d5dbe1de89c5" }) queue=[] underway=[] refused=[]
+## 53 recorded 52: fact Rpc method=item/completed
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 62 recorded 61: fact Rpc method=item/started
-  composer Send activity=Some(Running { key: "exec-04fc10c0-1c2a-47f2-b330-a59bbe7c8861" }) queue=[] underway=[] refused=[]
-## 64 recorded 63: fact Rpc method=item/completed
+## 58 recorded 57: fact Rpc method=item/started
+  composer Send activity=Some(Running { key: "exec-9c17d222-cea1-43cf-8e39-cde02e77353b" }) queue=[] underway=[] refused=[]
+## 60 recorded 59: fact Rpc method=item/completed
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 70 recorded 69: fact Rpc method=item/started
-  composer Send activity=Some(Running { key: "exec-cb55466e-35bc-4581-9e00-9023c4cb14ba" }) queue=[] underway=[] refused=[]
-## 72 recorded 71: fact Rpc method=item/completed
+## 65 recorded 64: fact Rpc method=item/started
+  composer Send activity=Some(Running { key: "exec-00b283e3-d856-4428-9728-56149bc36992" }) queue=[] underway=[] refused=[]
+## 67 recorded 66: fact Rpc method=item/completed
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 78 recorded 77: fact Rpc method=item/started
-  composer Send activity=Some(Running { key: "exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751" }) queue=[] underway=[] refused=[]
-## 80 recorded 79: fact Rpc method=item/completed
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 97 recorded 96: fact Rpc method=turn/completed
+## 81 recorded 80: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 prompt:737464696e2d34 Prompt { text: [Text("Run these three shell commands separately, one tool call each: `cat config.txt`, `ls`, and `grep -n VALUE config.txt`. Then reply DONE.")], steered: false }
-     3 rs_079a4a6430ea5e73016ab72905b1fc87d28d476d9e8e83d53b Thinking { text: "", open: false, duration_ms: Some(2596) }
-     4 msg_079a4a6430ea5e73016ab729060c0c87d2a6482aa392d60126 Prose { text: [Text("I’ll run the three commands as separate shell calls, in the order requested.")], streaming: false, working_note: true }
-     5 exec-04fc10c0-1c2a-47f2-b330-a59bbe7c8861 Explore { verb: Read, subject: "cat config.txt", state: Succeeded, result: "" } run[exec-04fc10c0-1c2a-47f2-b330-a59bbe7c8861..exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751 x3 recent=2] collapsed
-     6 exec-cb55466e-35bc-4581-9e00-9023c4cb14ba Explore { verb: List, subject: "ls", state: Succeeded, result: "config.txt\nold.txt\nsquare.png" } run[exec-04fc10c0-1c2a-47f2-b330-a59bbe7c8861..exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751 x3 recent=1] collapsed
-     7 exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751 Explore { verb: Search, subject: "grep -n VALUE config.txt", state: Succeeded, result: "1:VALUE=1" } run[exec-04fc10c0-1c2a-47f2-b330-a59bbe7c8861..exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751 x3 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 1, subagents: 0, other: 1 }]
-     8 msg_079a4a6430ea5e73016ab72910119087d2a2f37c9799d0640f Prose { text: [Text("DONE")], streaming: false, working_note: false }
-     9 turn:1 TurnEnd { duration_ms: Some(12854), failed: false }
+     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     3 prompt:13038aef24d24324b20ea3385966b63a Prompt { text: [Text("Run these three shell commands separately, one tool call each: `cat config.txt`, `ls`, and `grep -n VALUE config.txt`. Then reply DONE.")], steered: false }
+     4 msg_055a36b02660a1c6016ae5d745b7388191a028d7cd220635a0 Prose { text: [Text("I’ll run the three commands separately.")], streaming: false, working_note: true }
+     5 exec-8cf92672-f662-4d36-8e26-d5dbe1de89c5 Explore { verb: Read, subject: "cat config.txt", state: Succeeded, result: "" } run[exec-8cf92672-f662-4d36-8e26-d5dbe1de89c5..exec-00b283e3-d856-4428-9728-56149bc36992 x3 recent=2] collapsed
+     6 exec-9c17d222-cea1-43cf-8e39-cde02e77353b Explore { verb: List, subject: "ls", state: Succeeded, result: "config.txt" } run[exec-8cf92672-f662-4d36-8e26-d5dbe1de89c5..exec-00b283e3-d856-4428-9728-56149bc36992 x3 recent=1] collapsed
+     7 exec-00b283e3-d856-4428-9728-56149bc36992 Explore { verb: Search, subject: "grep -n VALUE config.txt", state: Succeeded, result: "1:VALUE=1" } run[exec-8cf92672-f662-4d36-8e26-d5dbe1de89c5..exec-00b283e3-d856-4428-9728-56149bc36992 x3 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 1, subagents: 0, other: 1 }]
+     8 msg_055a36b02660a1c6016ae5d749c2448191b0a301f6d562d2b8 Prose { text: [Text("DONE")], streaming: false, working_note: false }
+     9 turn:1 TurnEnd { duration_ms: Some(6522), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 13035, window_tokens: Some(258400), percent: Some(5), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 15616, window_tokens: Some(475000), percent: Some(3), near_full: false }) sign-in None
 == settings
-  model* unlisted gpt-5.6-luna "GPT-5.6 Luna" efforts=[]
-  permission* unlisted custom "" "" unsettable
-  changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  model* gpt-6.1-sol "GPT-6.1-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-astra "GPT-6-Astra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6.1-terra "GPT-6.1 Terra" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-sol "GPT-6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6-luna "GPT-6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  model  gpt-5.6-sol "GPT-5.6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-5.6-terra "GPT-5.6-Terra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-5.6-luna "GPT-5.6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  effort* low (default)
+  effort  medium
+  effort  high
+  effort  xhigh
+  effort  max
+  effort  ultra
+  permission* "read-only" "Read only"
+  permission  "default" "Default" normal
+  permission  "auto" "Auto"
+  permission  "full-access" "Full access" never_asks
+  mode  "default" "Default" normal
+  mode  "plan" "Plan"
+  changes: model Pick · effort Pick · permission Pick · mode Pick
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
-  controls: model=Some("GPT-5.6 Luna") effort=None permission=None mode=None
+  command /compact source="codex" hint="" "Summarize the conversation to free up context"
+  command /clear source="codex" hint="" "Start a new conversation"
+  command /review source="codex" hint="[instructions]" "Review the uncommitted changes, or what the instructions say"
+  command /init source="codex" hint="" "Write an AGENTS.md with instructions for Codex"
+  command /plan source="codex" hint="[prompt]" "Switch to plan mode"
+  command /autopilot source="user" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested."
+  command /delegate source="user" hint="" "Resolve or diagnose agent staffing by mapping a requested role and effort through the operator-owned roster to a mind and dispatch specification. Use when an agent or driver will dispatch work, or when a binding cannot launch. Do not use merely because ordinary work is being discussed or performed locally."
+  command /frontend-design source="user" hint="" "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.…
+  command /gardening source="user" hint="" "Review and improve an operator's Linear backlog with them. Use when the operator asks to garden, clean up, shape, deduplicate, or reassess tracked work. Do not invoke merely because Linear is available or ordinary work reveals a possible follow-up."
+  command /handoff source="user" hint="" "Independently verify and present finished work when an ordinary diff and focused checks are not enough to judge it, including third-party branches or pull requests. Use compact proof for easily judged behavior and a decision page for consequential or difficult work. Do not invoke at project start or impose a page on ordinary small changes."
+  command /intake source="user" hint="" "Align and confirm a durable acceptance contract for consequential work that must cross contexts. Use after the operator commits to work when several requirements, boundaries, or success demonstrations remain unsettled. Skip for exploration, one or two locally resolvable questions, and already-confirmed requirements."
+  command /imagegen source="system" hint="" "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the …
+  command /openai-docs source="system" hint="" "Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge—including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex—and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not u…
+  command /review-agent source="system" hint="" "Perform a read-only, defect-first review of a specified code change and return every actionable finding. Use when another agent delegates review of uncommitted changes, a base-branch diff, a commit, or custom review instructions."
+  command /skill-creator source="system" hint="" "Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources."
+  command /skill-installer source="system" hint="" "Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos)."
+  controls: model=Some("GPT-6.1-Sol") effort=Some("low") permission=Some("read-only") mode=None

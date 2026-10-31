@@ -4,7 +4,7 @@
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../codex-specs/fixtures/runtime/background_terminal/io.jsonl",
+    "path": "../../../codex-specs/fixtures/live/background_terminal/io.jsonl",
     "format": "codex_io"
   }
 }

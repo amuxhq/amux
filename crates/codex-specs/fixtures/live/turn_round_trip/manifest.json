@@ -1,0 +1,24 @@
+{
+  "spec": "turn_round_trip",
+  "recorded": {
+    "provider": "codex",
+    "version": "0.166.0",
+    "model": "gpt-6.1-sol",
+    "at": "2026-10-31T11:58:08.394696Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:5ed62d7c594a0e3efe26507867fa7369958758f6af8683fba0a6b5f5fac0740f",
+    "spawn.jsonl": "sha256:639b880a353035135c71a583f6485e4d50f97713beda2f3cd8c472da0e0529bb"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 40,
+    "personal_identifiers": 2
+  },
+  "session_ids": [
+    "01a191cf-68dc-7721-8b2d-9b42c449f138"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

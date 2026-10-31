@@ -1,0 +1,10 @@
+{
+  "about": "Two messages queued while a command runs: the one sent now steers the running turn and is answered by it; the one left queued runs as its own turn once the first ends.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "../../../codex-specs/fixtures/live/steer_folded/io.jsonl",
+    "format": "codex_io"
+  }
+}

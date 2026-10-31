@@ -218,26 +218,6 @@ cargo = [
 ]
 
 [[suite]]
-name = "codex-recorded-adapter"
-contract = "Every registered Codex provider recording replays strictly with complete corpus provenance."
-paths = ["crates/codex-specs/src/client", "crates/codex-specs/tests/spec_replay.rs", "crates/codex-specs/fixtures"]
-recipe = "just suite codex-recorded-adapter"
-boundary = "Provider adapter"
-oracle = "Strict replay consumption, expected writes, and recording manifest validation."
-real = ["recorded provider bytes"]
-substituted = ["live Codex process", "wall clock"]
-time = "driven"
-capabilities = ["Rust toolchain"]
-lane = "fast"
-evidence = "crates/codex-specs/fixtures"
-update = "Run `codex-probe record` for the spec and review its manifest."
-cargo = [
-  { package = "codex-specs", kind = "lib", targets = ["codex_specs"], features = [] },
-  { package = "codex-specs", kind = "bin", targets = ["codex-probe"], features = [] },
-  { package = "codex-specs", modules = ["spec_replay"], features = [] },
-]
-
-[[suite]]
 name = "claude-protocol"
 contract = "Every line of every headless Claude recording, in both directions, and every transcript row and hook payload of every terminal Claude recording decodes as a known type; an unknown type is kept whole in production and refused by the strict check."
 paths = ["crates/claude-protocol"]
@@ -268,7 +248,7 @@ substituted = ["live Codex process"]
 time = "none"
 capabilities = ["Rust toolchain"]
 lane = "fast"
-evidence = "crates/codex-specs/fixtures/runtime, crates/codex-specs/fixtures/live"
+evidence = "crates/codex-specs/fixtures/live"
 update = "A failing line is provider drift or a wrong type: fix the type in crates/codex-protocol/src, never a live recording."
 cargo = [
   { package = "codex-protocol", kind = "lib", targets = ["codex_protocol"], features = [] },
@@ -307,7 +287,7 @@ substituted = ["live providers"]
 time = "real"
 capabilities = ["Unix PTY"]
 lane = "fast"
-evidence = "crates/claude-specs/fixtures"
+evidence = "crates/claude-specs/fixtures, crates/codex-specs/fixtures/live"
 update = ""
 cargo = [{ package = "provider-fakes", modules = ["conformance", "scripted"], features = [] }]
 
@@ -775,8 +755,8 @@ cargo = [{ package = "qualification", targets = ["claude_sdk_live"], features = 
 
 [[suite]]
 name = "codex-live-compatibility"
-contract = "A real Codex session still initializes, responds, takes a native decision, interrupts and resumes through app-server with the structure its recorded interpreter fixtures show, and Codex's own app attached to a fresh agent prompts it while amux answers the approval."
-paths = ["crates/qualification/tests/codex_live.rs", "crates/qualification/tests/live"]
+contract = "A real Codex session still initializes, responds, takes a native decision, interrupts and resumes through app-server, and plays every scenario of the Codex corpus, with the structure its recorded interpreter fixtures show; Codex's own app attached to a fresh agent prompts it while amux answers the approval."
+paths = ["crates/qualification/tests/codex_live.rs", "crates/qualification/tests/live", "crates/codex-specs/src"]
 recipe = "just live codex all"
 boundary = "Provider adapter"
 oracle = "Item classes, asks, decisions, phase changes and turn ends the daemon committed, compared with the matching probe recording's interpreter fixture."
@@ -786,8 +766,11 @@ time = "real"
 capabilities = ["Unix", "Codex credentials", "network", "may spend provider credits"]
 lane = "qualification"
 evidence = "the printed verdict table; attach writes a timed capture of both terminals, a frame per step and its verdict to target/live/codex-attach/; AMUX_LIVE_KEEP=1 keeps the installation under /tmp"
-update = "Capture through codex-probe and graduate the recording deliberately."
-cargo = [{ package = "qualification", targets = ["codex_live"], features = ["live"] }]
+update = "Join a passing run's capture into the Codex corpus with codex-probe join, deliberately."
+cargo = [
+  { package = "qualification", targets = ["codex_live"], features = ["live"] },
+  { package = "codex-specs", kind = "bin", targets = ["codex-probe"], features = [] },
+]
 
 [[suite]]
 name = "flood-workload-smoke"

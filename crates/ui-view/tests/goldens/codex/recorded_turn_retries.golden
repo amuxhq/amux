@@ -1,25 +1,98 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 12 recorded 11: input stdin-4
+## 21 recorded 20: input 0x6de81ad2ebab47c5a7a00144749caff1
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 25 recorded 24: fact Rpc method=error
+## 37 recorded 36: fact Rpc method=error
   composer Send activity=Some(Retrying { attempt: 1, max_attempts: 2, retry_at_ms: None }) queue=[] underway=[] refused=[]
-## 27 recorded 26: fact Rpc method=error
+## 39 recorded 38: fact Rpc method=error
   composer Send activity=Some(Retrying { attempt: 2, max_attempts: 2, retry_at_ms: None }) queue=[] underway=[] refused=[]
-## 31 recorded 30: fact Rpc method=error
+## 42 recorded 41: fact Rpc method=error
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 33 recorded 32: fact Rpc method=turn/completed
+## 44 recorded 43: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 prompt:737464696e2d34 Prompt { text: [Text("Reply with exactly CODEX_SPEC_UNREACHABLE.")], steered: false }
-     3 error:01a0db9b-30b6-7653-91ca-94bfbbd5b898 Error { error_kind: "httpConnectionFailed", message: "Connection failed: error sending request", attempts: 0, gave_up: true } attention
-     4 turn:1 TurnEnd { duration_ms: Some(3017), failed: true }
+     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     3 prompt:6de81ad2ebab47c5a7a00144749caff1 Prompt { text: [Text("Reply with exactly UNREACHABLE.")], steered: false }
+     4 error:01a191cd-818d-7383-bd80-522ef88b0add Error { error_kind: "httpConnectionFailed", message: "Connection failed: error sending request", attempts: 0, gave_up: true } attention
+     5 turn:1 TurnEnd { duration_ms: Some(3039), failed: true }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings
-  model* unlisted gpt-5.6-luna "GPT-5.6 Luna" efforts=[]
-  permission* unlisted custom "" "" unsettable
-  changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  model* gpt-6.1-sol "GPT-6.1-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-astra "GPT-6-Astra" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-sol "GPT-6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6-luna "GPT-6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  model  gpt-5.6-sol "GPT-5.6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6.1-terra "GPT-6.1 Terra" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-5.6-terra "GPT-5.6-Terra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-5.6-luna "GPT-5.6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  model  gpt-5.5 "GPT-5.5" efforts=[low,medium,high,xhigh] default=medium
+  effort* low (default)
+  effort  medium
+  effort  high
+  effort  xhigh
+  effort  max
+  effort  ultra
+  permission* "read-only" "Read only"
+  permission  "default" "Default" normal
+  permission  "auto" "Auto"
+  permission  "full-access" "Full access" never_asks
+  mode  "default" "Default" normal
+  mode  "plan" "Plan"
+  changes: model Pick · effort Pick · permission Pick · mode Pick
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
-  controls: model=Some("GPT-5.6 Luna") effort=None permission=None mode=None
+  command /compact source="codex" hint="" "Summarize the conversation to free up context"
+  command /clear source="codex" hint="" "Start a new conversation"
+  command /review source="codex" hint="[instructions]" "Review the uncommitted changes, or what the instructions say"
+  command /init source="codex" hint="" "Write an AGENTS.md with instructions for Codex"
+  command /plan source="codex" hint="[prompt]" "Switch to plan mode"
+  command /autopilot source="user" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested."
+  command /delegate source="user" hint="" "Resolve or diagnose agent staffing by mapping a requested role and effort through the operator-owned roster to a mind and dispatch specification. Use when an agent or driver will dispatch work, or when a binding cannot launch. Do not use merely because ordinary work is being discussed or performed locally."
+  command /frontend-design source="user" hint="" "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.…
+  command /gardening source="user" hint="" "Review and improve an operator's Linear backlog with them. Use when the operator asks to garden, clean up, shape, deduplicate, or reassess tracked work. Do not invoke merely because Linear is available or ordinary work reveals a possible follow-up."
+  command /google-drive:google-docs source="user" hint="" "Create and edit native Google Docs through connected tools."
+  command /google-drive:google-drive source="user" hint="" "Use connected Google Drive as the single entrypoint for Drive, Docs, Sheets, and Slides work. Use when the user wants to find, fetch, organize, share, export, copy, or delete Drive files, or summarize and edit Google Docs, Google Sheets, and Google Slides through one unified Google Drive plugin."
+  command /google-drive:google-drive-comments source="user" hint="" "Write, reply to, and resolve Google Drive comments on Docs, Sheets, Slides, and Drive files with evidence-backed location context. Use when the user asks to leave comments, review a file with comments, respond to comment threads, or resolve Drive comments."
+  command /google-drive:google-sheets source="user" hint="" "Analyze and edit connected Google Sheets with range precision. Use when the user wants to create Google Sheets, find a spreadsheet, inspect tabs or ranges, search rows, plan formulas, create or repair charts, clean or restructure tables, write concise summaries, or make explicit cell-range updates."
+  command /google-drive:google-slides source="user" hint="" "Route Google Slides authoring requests and derive a design system from a native template or reference deck. Use this skill when the user provides an existing native Google Slides deck as a template, reference, or prior-period source, or asks to edit, update, repair, restyle, or clean up an existing native Google Slides deck. Use the Presentations skill instead for net-new presentation creation wh…
+  command /handoff source="user" hint="" "Independently verify and present finished work when an ordinary diff and focused checks are not enough to judge it, including third-party branches or pull requests. Use compact proof for easily judged behavior and a decision page for consequential or difficult work. Do not invoke at project start or impose a page on ordinary small changes."
+  command /intake source="user" hint="" "Align and confirm a durable acceptance contract for consequential work that must cross contexts. Use after the operator commits to work when several requirements, boundaries, or success demonstrations remain unsettled. Skip for exploration, one or two locally resolvable questions, and already-confirmed requirements."
+  command /openai-templates:artifact-template-analytics-dashboard source="user" hint="" "Create a spreadsheet using the Analytics Dashboard template and its retained reference file. Use when the user selects or names Analytics Dashboard. Monitor acquisition, engagement, retention, revenue, and conversion funnel KPIs with charts."
+  command /openai-templates:artifact-template-business-review source="user" hint="" "Create a presentation using the Business Review template and its retained reference file. Use when the user selects or names Business Review. Review business performance, KPIs, segment results, strategic priorities, decisions, and outlook."
+  command /openai-templates:artifact-template-design-report source="user" hint="" "Create a document using the Design Report template and its retained reference file. Use when the user selects or names Design Report. Produce design reports with an executive summary, key findings, implications, recommendations, and appendix."
+  command /openai-templates:artifact-template-experiment-analysis source="user" hint="" "Create a document using the Experiment Analysis template and its retained reference file. Use when the user selects or names Experiment Analysis. Analyze experiments with hypotheses, methodology, results, interpretation, limitations, and next steps."
+  command /openai-templates:artifact-template-financial-budget source="user" hint="" "Create a spreadsheet using the Financial Budget template and its retained reference file. Use when the user selects or names Financial Budget. Model actuals, budget and scenario forecasts, variances, cash runway, and departmental plans."
+  command /openai-templates:artifact-template-investment-committee-memo source="user" hint="" "Create a document using the Investment Committee Memo template and its retained reference file. Use when the user selects or names Investment Committee Memo. Prepare investment committee memos with the thesis, transaction details, financial analysis, risks, and recommendation."
+  command /openai-templates:artifact-template-legal-memorandum source="user" hint="" "Create a document using the Legal Memorandum template and its retained reference file. Use when the user selects or names Legal Memorandum. Draft legal memoranda with the issue, brief answer, relevant facts, analysis, and conclusion."
+  command /openai-templates:artifact-template-market-trends-report source="user" hint="" "Create a presentation using the Market Trends Report template and its retained reference file. Use when the user selects or names Market Trends Report. Communicate market or industry trends, supporting evidence, implications, and recommended responses."
+  command /openai-templates:artifact-template-minimal-letterhead source="user" hint="" "Create a document using the Minimal Letterhead template and its retained reference file. Use when the user selects or names Minimal Letterhead. Write professional business letters with sender, recipient, message, and signature fields in a minimal letterhead layout."
+  command /openai-templates:artifact-template-operating-calendar source="user" hint="" "Create a spreadsheet using the Operating Calendar template and its retained reference file. Use when the user selects or names Operating Calendar. Plan annual and monthly operating milestones, campaigns, launches, deadlines, and recurring events."
+  command /openai-templates:artifact-template-operating-review source="user" hint="" "Create a presentation using the Operating Review template and its retained reference file. Use when the user selects or names Operating Review. Run weekly operating reviews with scorecards, functional updates, risks, decisions, and action items."
+  command /openai-templates:artifact-template-project-kickoff source="user" hint="" "Create a presentation using the Project Kickoff template and its retained reference file. Use when the user selects or names Project Kickoff. Align teams on project goals, scope, roles, milestones, risks, and the working model."
+  command /openai-templates:artifact-template-project-tracker source="user" hint="" "Create a spreadsheet using the Project Tracker template and its retained reference file. Use when the user selects or names Project Tracker. Manage workstreams, tasks, owners, status, priority, dates, launch pulse, and a Gantt schedule."
+  command /openai-templates:artifact-template-sales-pipeline source="user" hint="" "Create a spreadsheet using the Sales Pipeline template and its retained reference file. Use when the user selects or names Sales Pipeline. Track opportunities, stages, owners, deal sizes, probabilities, forecasts, next steps, and risks."
+  command /openai-templates:artifact-template-simple-dark-mode source="user" hint="" "Create a presentation using the Simple Dark Mode template and its retained reference file. Use when the user selects or names Simple Dark Mode. Create clean dark-mode presentations with bold typography, simple sections, charts, and imagery."
+  command /openai-templates:artifact-template-simple-light-mode source="user" hint="" "Create a presentation using the Simple Light Mode template and its retained reference file. Use when the user selects or names Simple Light Mode. Create clean light-mode presentations with spacious typography, simple sections, charts, and imagery."
+  command /openai-templates:artifact-template-strategy-memorandum source="user" hint="" "Create a document using the Strategy Memorandum template and its retained reference file. Use when the user selects or names Strategy Memorandum. Present strategic context, choices, rationale, risks, milestones, and a clear recommendation."
+  command /openai-templates:artifact-template-system-design source="user" hint="" "Create a document using the System Design template and its retained reference file. Use when the user selects or names System Design. Document system architecture, requirements, components, data flows, APIs, tradeoffs, and operational considerations."
+  command /openai-templates:artifact-template-team-alignment source="user" hint="" "Create a presentation using the Team Alignment template and its retained reference file. Use when the user selects or names Team Alignment. Facilitate team offsites and planning with context, goals, priorities, decisions, and action items."
+  command /openai-templates:artifact-template-three-statement-forecast source="user" hint="" "Create a spreadsheet using the Three-Statement Forecast template and its retained reference file. Use when the user selects or names Three-Statement Forecast. Build an integrated income statement, balance sheet, and cash flow forecast with assumptions, checks, and an executive summary."
+  command /pages:maintain-space source="user" hint="" "Reconcile new evidence into existing ChatGPT Pages or a Space when the user requests upkeep. For a direct text correction, use write-page. Do not use for ordinary chat drafts, writing, or advice, or treat a selected Page as a request to save. Schedule future upkeep only when requested."
+  command /pages:manage-schedules source="user" hint="" "Review a ChatGPT Space page and its schedules, recommend useful recurring work, and create, update, or remove scheduled automations."
+  command /pages:organize-space source="user" hint="" "Organize existing ChatGPT Pages and Space structure when the user requests changes to that structure. Do not use for ordinary chat drafts or advice; a selected Page alone does not authorize reorganization. A narrow text edit does not need this workflow."
+  command /pages:write-page source="user" hint="" "Create or edit requested Page/Space content, or use for prose you have already decided to save as a standalone Markdown file, only if the user did not explicitly request a Markdown file. Honor established formats, destinations, and repository documentation. A selected Page alone does not authorize a write."
+  command /plugin-management:plugin-management source="user" hint="" "Discover and suggest relevant plugins, inspect app permissions and dependencies, and manage plugin connections or removal. Use when the user asks about plugins or when a task would materially benefit from an external app, account, service, or data source that available tools cannot access."
+  command /sites:sites source="user" hint="" "Use Sites when the user wants a website built for them (including a landing page, portfolio, dashboard, portal, tracker, hub, game, event registration, or tool), requests changes to a website already built with Sites, wants to publish a website with Sites, or wants to manage Sites hosting."
+  command /sites:sites-remix source="user" hint="" "Remix a Site built with the Sites plugin into a new Site. Use when the user has identified the source Site and asks to remix it."
+  command /work-pets:create-pet source="user" hint="" "Create, repair, validate, preview, upload, or activate an animated v2 pet in ChatGPT Work mode from a character idea, brand cue, or reference image. Use for new ChatGPT Pets, custom mascots, non-pixel styles, and unattached sprite sheets requiring nine animation states plus sixteen look directions. Preserve Library artifacts and Pets MCP lifecycle behavior. Exclude real pets, standalone images, a…
+  command /work-pets:pets source="user" hint="" "List, inspect, select, download, or delete animated pets in ChatGPT Work mode. Use for an explicit pet in ChatGPT or established ChatGPT Pets context. Exclude real-world and other-app pets; clarify before invoking."
+  command /work-pets:update-pet source="user" hint="" "Inspect, validate, preview, repair, or update a custom pet in ChatGPT Work mode, including its name, description, or sprite sheet. Use for a pet in ChatGPT or established ChatGPT Pets context. Exclude real-world and other-app pets; clarify before invoking."
+  command /imagegen source="system" hint="" "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the …
+  command /openai-docs source="system" hint="" "Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge—including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex—and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not u…
+  command /review-agent source="system" hint="" "Perform a read-only, defect-first review of a specified code change and return every actionable finding. Use when another agent delegates review of uncommitted changes, a base-branch diff, a commit, or custom review instructions."
+  command /skill-creator source="system" hint="" "Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources."
+  command /skill-installer source="system" hint="" "Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos)."
+  controls: model=Some("GPT-6.1-Sol") effort=Some("low") permission=Some("read-only") mode=None

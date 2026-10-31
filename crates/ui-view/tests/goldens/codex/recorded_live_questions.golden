@@ -1,42 +1,43 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 16 recorded 15: input 0xff98779ef26e4be0be4a292bc0758421
+## 22 recorded 21: input 0x003e7d5f656d41c29028d65d2d2d3d4e
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 41 recorded 40: fact Rpc method=item/tool/requestUserInput
+## 40 recorded 39: fact Rpc method=item/tool/requestUserInput
   ask 0 -> "ask:0" 1/1 Open
     choices 
     body Question([QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Size", question: "Which size?", multi_select: false, options: [OptionVie…
   composer Send activity=None queue=[] underway=[] refused=[]
-## 43 recorded 42: input stdin-9
+## 42 recorded 41: input stdin-9
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 54 recorded 53: fact Rpc method=item/tool/requestUserInput
+## 50 recorded 49: fact Rpc method=item/tool/requestUserInput
   ask 1 -> "ask:1" 1/1 Open
     choices 
     body Question([QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Circle", preview: "", recommended: false }, OptionView { label: "Square", description: "Square", preview: "", recommended: false }], allow_other: true, secret: false }])
   composer Send activity=None queue=[] underway=[] refused=[]
-## 56 recorded 55: input 0x2737deea7ca544238185bcd0c9b1428c
+## 52 recorded 51: input 0x9ae0ce9f0ea64a848b7de25b4826ae48
   ask none
-  composer Send activity=Some(Working) queue=[QueuedRow { input_id: [39, 55, 222, 234, 124, 165, 68, 35, 129, 133, 188, 208, 201, 177, 66, 140], text: [Text("Never mind the shape. Reply with the single word done and nothing else.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
-## 63 recorded 62: fact Rpc method=turn/completed
+  composer Send activity=Some(Working) queue=[QueuedRow { input_id: [154, 224, 206, 159, 14, 166, 74, 132, 139, 125, 226, 91, 72, 38, 174, 72], text: [Text("Never mind the shape. Reply with the single word done and nothing else.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
+## 59 recorded 58: fact Rpc method=turn/completed
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 85 recorded 84: fact Rpc method=turn/completed
+## 81 recorded 80: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 prompt:ff98779ef26e4be0be4a292bc0758421 Prompt { text: [Text("Use your tool for asking the user questions once, asking me two questions in that one call: 'Which colour?' with the options Red and Blue, and 'Which size?' with the options Small and Large. After I answer, use it once more to ask me one question, 'Which shape?' with the options Circle and Square. Then reply with the single word do…
-     3 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     3 prompt:003e7d5f656d41c29028d65d2d2d3d4e Prompt { text: [Text("Use your tool for asking the user questions once, asking me two questions in that one call: 'Which colour?' with the options Red and Blue, and 'Which size?' with the options Small and Large. After I answer, use it once more to ask me one question, 'Which shape?' with the options Circle and Square. Then reply with the single word do…
      4 ask:0 [Answered: Colour = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView…
      5 ask:1 [Replied: Shape = (skipped) skipped=1 reply="Never mind the shape. Reply with the single word done and nothing else."] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Circle", preview: "", recommended: false }, OptionView { label: "Square", description: "Square", preview: "",…
-     6 turn:1 TurnEnd { duration_ms: Some(6354), failed: false }
-     7 prompt:2737deea7ca544238185bcd0c9b1428c Prompt { text: [Text("Never mind the shape. Reply with the single word done and nothing else.")], steered: false }
-     8 msg_07dffb6507ba6b27016ac5bffecb5c8191bc6456d97fe7f405 Prose { text: [Text("done")], streaming: false, working_note: false }
-     9 turn:2 TurnEnd { duration_ms: Some(1872), failed: false }
+     6 turn:1 TurnEnd { duration_ms: Some(7101), failed: false }
+     7 prompt:9ae0ce9f0ea64a848b7de25b4826ae48 Prompt { text: [Text("Never mind the shape. Reply with the single word done and nothing else.")], steered: false }
+     8 msg_0f54218eddf6a768016ae5d7108c108191a39d499a786fe094 Prose { text: [Text("done")], streaming: false, working_note: false }
+     9 turn:2 TurnEnd { duration_ms: Some(2618), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 18337, window_tokens: Some(258400), percent: Some(7), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 19410, window_tokens: Some(475000), percent: Some(4), near_full: false }) sign-in None
 == settings
   model* gpt-6.1-sol "GPT-6.1-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
   model  gpt-6-astra "GPT-6-Astra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6.1-terra "GPT-6.1 Terra" efforts=[low,medium,high,xhigh,max,ultra] default=low
   model  gpt-6-sol "GPT-6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=medium
   model  gpt-6-luna "GPT-6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
   model  gpt-5.6-sol "GPT-5.6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low

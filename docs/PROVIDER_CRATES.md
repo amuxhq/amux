@@ -10,7 +10,7 @@ own:
 |---|---|---|---|
 | Protocol | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | [`codex-protocol`](../crates/codex-protocol/src/lib.rs) | Every message in both directions, as types, with a decoder and an encoder. Nothing else. |
 | Host | [`claude`](../crates/claude/src/lib.rs) | [`codex`](../crates/codex/src/lib.rs) | Starting the provider and carrying its bytes: launch arguments, the process, the terminal, sockets, the transcript file, the hook command. |
-| Client | the agent process and the [interpreters](INTERPRETERS.md); the terminal driver in [`claude-specs`](../crates/claude-specs/src/driver/pty.rs) | the agent process and the [interpreters](INTERPRETERS.md); the client in [`codex-specs`](../crates/codex-specs/src/client/mod.rs) | Deciding what to send and what what was received means. |
+| Client | the agent process and the [interpreters](INTERPRETERS.md); the terminal driver in [`claude-specs`](../crates/claude-specs/src/driver/pty.rs) | the agent process and the [interpreters](INTERPRETERS.md) | Deciding what to send and what what was received means. |
 
 ## Protocol
 
@@ -69,30 +69,20 @@ client is the agent process with its interpreters: the interpreters read
 provider facts and decide what to write, and the agent process carries those
 writes. The [interpreters page](INTERPRETERS.md) describes them.
 
-The recording tools are clients too:
-
-- The client in `codex-specs` (`Codex` and `Thread`) starts `codex
-  app-server` on stdio, pairs each request with the line that answers it,
-  and routes notifications and Codex's own requests to the thread they
-  name. It drives a live Codex for the Codex
-  [specifications](../crates/codex-specs/src/specs.rs) and the
-  `codex-probe` recorder.
-- The terminal driver in `claude-specs` runs Claude in a terminal and reads
-  its hooks and transcript for the terminal Claude specifications and
-  `claude-probe`.
-
-Both replay their recordings strictly: the bytes they write must equal the
-recorded ones, so a client that sends something different fails its
-specification. Headless Claude has no recording client of its own: amux's
-agent process drives it in the live lane, and those captures are its
-corpus.
+The terminal driver in `claude-specs` is a client too: it runs Claude in a
+terminal and reads its hooks and transcript for the terminal Claude
+specifications and `claude-probe`. It replays its recordings strictly: the
+bytes it writes must equal the recorded ones, so a driver that sends
+something different fails its specification. Headless Claude and Codex have
+no recording client of their own: amux's agent process drives them in the
+live lane, and those captures are their corpora.
 
 ## Who checks what
 
 | Check | Where | What it holds |
 |---|---|---|
 | Recording corpus | `codex-protocol/tests/corpus.rs`, `claude-protocol/tests/stream_corpus.rs` and `pty_corpus.rs` | Every recorded line decodes strictly (and, for Codex, encodes back to the same JSON), and every recorded answer reads strictly as the response type of the request it answers. |
-| Specification replay | `codex-specs/tests/spec_replay.rs`, `claude-specs/tests/spec_replay.rs` | The clients, on the protocol types, send exactly what the recordings show. |
+| Specification replay | `claude-specs/tests/spec_replay.rs` | The terminal driver, on the protocol types, sends exactly what the recordings show. |
 | Fakes' shape check | [`provider-fakes/src/shape.rs`](../crates/provider-fakes/src/shape.rs) | Every frame a fake provider composes has a recorded shape and decodes strictly with its protocol crate. The fakes never use the host crates, so a host bug cannot hide behind code the fakes share. |
 | Dependency policy | `scripts/check-dependency-policy.py` | The protocol crates stay pure, and only the crates listed there use them. |
 | Typed provider check | [`scripts/typed-provider-check.py`](../scripts/typed-provider-check.py) | The interpreters, the agent's provider handshake and Claude's messaging socket build and read no provider JSON by hand; each place that keeps a tool payload as JSON is listed with its reason. |

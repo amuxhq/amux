@@ -1,5 +1,5 @@
 {
-  "about": "A live run at Codex 0.160.0, driven by amux: codex made read-only from amux.",
+  "about": "A live run, driven by amux: codex made read-only from amux.",
   "spec": {
     "created_at_ms": 0
   },

@@ -52,7 +52,7 @@ fn root(kind: Kind) -> PathBuf {
     let corpus = match kind {
         Kind::ClaudeSdk => "claude-specs/fixtures/live/sdk",
         Kind::ClaudePty => "claude-specs/fixtures/pty",
-        Kind::Codex => "codex-specs/fixtures/runtime",
+        Kind::Codex => "codex-specs/fixtures/live",
     };
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -270,8 +270,14 @@ async fn stdio(scenario: &Scenario) -> Result<(), String> {
     let process = first_process(scenario);
     let dir = tempfile::tempdir().unwrap();
     let (path, gate) = script(scenario, dir.path());
+    // A Codex recording was taken over its socket; the run speaks to the
+    // fake over stdio.
+    let mut argv = process.argv.clone();
+    if let Some(at) = argv.iter().position(|arg| arg == "--listen") {
+        argv[at + 1] = "stdio://".into();
+    }
     let mut child = tokio::process::Command::new(binary(scenario.kind))
-        .args(&process.argv)
+        .args(&argv)
         .env(SCRIPT_ENV, &path)
         // Keeps a fake Claude's transcript out of the person's own
         // `~/.claude`, where it would otherwise write it as Claude does.
@@ -342,6 +348,7 @@ async fn stdio(scenario: &Scenario) -> Result<(), String> {
                 catch_up(scenario.kind, &mut lines, &mut fake, recorded.len(), SYNC).await;
                 let mut frame: Value = serde_json::from_slice(&event.bytes).unwrap();
                 answer_the_fake(scenario.kind, &mut frame, &fake, &recorded);
+                name_the_fakes_thread(scenario.kind, &mut frame, &fake, &recorded);
                 let mut line = serde_json::to_vec(&frame).unwrap();
                 line.push(b'\n');
                 let _ = stdin.as_mut().unwrap().write_all(&line).await;
@@ -363,12 +370,23 @@ async fn stdio(scenario: &Scenario) -> Result<(), String> {
     drop(stdin.take());
     drain(scenario.kind, &mut lines, &mut fake, END).await;
     let _ = tokio::time::timeout(END, child.wait()).await;
-    let fake: Vec<String> = fake.into_iter().map(|(kind, _)| kind).collect();
-    let recorded: Vec<String> = recorded.into_iter().map(|(kind, _)| kind).collect();
+    let fake = from_the_first_turn(scenario.kind, fake);
+    let recorded = from_the_first_turn(scenario.kind, recorded);
     if fake != recorded {
         return Err(mismatch("frames", &fake, &recorded));
     }
     Ok(())
+}
+
+/// The kinds of the frames compared. Codex answers the agent's handshake
+/// requests as each finishes, not in the order they were asked, so a Codex
+/// session is compared from its first turn.
+fn from_the_first_turn(kind: Kind, frames: Vec<(String, Value)>) -> Vec<String> {
+    let kinds = frames.into_iter().map(|(kind, _)| kind);
+    match kind {
+        Kind::Codex => kinds.skip_while(|kind| kind != "turn/started").collect(),
+        _ => kinds.collect(),
+    }
 }
 
 /// Point a recorded answer at the fake's request: the provider's request
@@ -396,6 +414,29 @@ fn answer_the_fake(
             *slot = id_of(fake_frame).clone();
             return;
         }
+    }
+}
+
+/// Point a recorded request at the fake's thread: the fake starts a thread
+/// of its own id where the recording's host started the recorded one.
+fn name_the_fakes_thread(
+    kind: Kind,
+    input: &mut Value,
+    fake: &[(String, Value)],
+    recorded: &[(String, Value)],
+) {
+    let thread = |frames: &[(String, Value)]| {
+        frames
+            .iter()
+            .find_map(|(_, frame)| frame["result"]["thread"]["id"].as_str().map(str::to_owned))
+    };
+    if kind != Kind::Codex {
+        return;
+    }
+    if let (Some(recorded), Some(fake)) = (thread(recorded), thread(fake))
+        && input["params"]["threadId"] == recorded.as_str()
+    {
+        input["params"]["threadId"] = json!(fake);
     }
 }
 
@@ -733,14 +774,7 @@ mod codex {
     async fn approval_allow() {
         conforms(scenario(
             "approval_allow",
-            json!([
-                thinking(),
-                text(),
-                permission(),
-                thinking(),
-                text(),
-                "turn_end"
-            ]),
+            json!([permission(), text(), "turn_end"]),
         ))
         .await;
     }
@@ -749,9 +783,9 @@ mod codex {
     async fn access_grant() {
         conforms(scenario(
             "access_grant",
-            json!([thinking(), text(),
+            json!([text(),
                    {"ask": {"grant": {"reason": "Write outside", "paths": ["/tmp/x"]}}},
-                   thinking(), bash(None), text(), "turn_end"]),
+                   bash(None), text(), "turn_end"]),
         ))
         .await;
     }
@@ -760,7 +794,7 @@ mod codex {
     async fn tool_server_form() {
         conforms(scenario(
             "tool_server_form",
-            json!([thinking(), text(), thinking(),
+            json!([text(),
                    {"ask": {"form": {"server": "spec", "message": "Confirm the word BLUE.",
                                      "schema": {"type": "object", "properties": {}}}}},
                    {"ask": {"link": {"server": "spec", "message": "Open the page to confirm.",
@@ -771,11 +805,15 @@ mod codex {
     }
 
     #[tokio::test]
-    async fn plan_mode() {
+    async fn plan() {
+        let read = json!({"tool": {"name": "Read", "class": "exploration",
+                                   "input": {"command": "cat README.md"},
+                                   "outcome": {"output": "CURRENT"}}});
         conforms(scenario(
-            "plan_mode",
-            json!([thinking(), question(), thinking(),
-                   {"ask": {"plan": {"markdown": "## Write the color"}}}, "turn_end"]),
+            "plan",
+            json!([text(), read, {"ask": {"plan": {"markdown": "## Change the line"}}},
+                   "turn_end",
+                   text(), permission(), bash(None), bash(None), text(), "turn_end"]),
         ))
         .await;
     }

@@ -2,13 +2,13 @@
   "spec": "permission",
   "recorded": {
     "provider": "codex",
-    "version": "0.160.0",
+    "version": "0.166.0",
     "model": "gpt-6.1-sol",
-    "at": "2026-10-07T04:03:27.768430Z"
+    "at": "2026-10-31T11:58:08.317954Z"
   },
   "content": {
-    "io.jsonl": "sha256:eeb91ea283430ccad9e2cb2963d98d0e47f8368364323570e6eeceb03812cef1",
-    "spawn.jsonl": "sha256:957f38443f38f84751ed83701f69065c7a3511b86cc6d9027ddbf98b8a73a119"
+    "io.jsonl": "sha256:c529fcdcb7fffcc72c0f7e050533a7d08e8c3b58911160513a653861c3ed1137",
+    "spawn.jsonl": "sha256:4c5fcab8a128a4aa6482301bf17ae7a554e62438622bef5369e13c2c0232a8fe"
   },
   "redaction": {
     "secrets": 0,
@@ -16,7 +16,7 @@
     "personal_identifiers": 2
   },
   "session_ids": [
-    "01a11476-0b40-75a2-848d-469eb42e9fa3"
+    "01a191d0-28f9-7212-a48e-3d3518822d53"
   ],
   "provider_extra": {
     "driven_by": "amux's interpreter, in the live qualification lane"

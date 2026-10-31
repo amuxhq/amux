@@ -1,5 +1,5 @@
-//! The Codex interpreter against the recorded app-server sessions in
-//! codex-specs and authored facts for what no recording shows.
+//! The Codex interpreter against the app-server sessions the live lane
+//! recorded in codex-specs and authored facts for what no recording shows.
 
 use std::path::{Path, PathBuf};
 
@@ -60,29 +60,25 @@ goldens! {
     recorded_file_changes => "recorded_file_changes",
     recorded_file_moved => "recorded_file_moved",
     recorded_image => "recorded_image",
-    recorded_initialize_and_start => "recorded_initialize_and_start",
-    recorded_inject_busy => "recorded_inject_busy",
     recorded_inject_drain => "recorded_inject_drain",
     recorded_inject_idle => "recorded_inject_idle",
     recorded_interrupt => "recorded_interrupt",
-    recorded_plan_mode => "recorded_plan_mode",
     recorded_reasoning_summary => "recorded_reasoning_summary",
     recorded_signed_out => "recorded_signed_out",
     recorded_subagent => "recorded_subagent",
     recorded_tool_server_form => "recorded_tool_server_form",
     recorded_turn_error => "recorded_turn_error",
     recorded_turn_retries => "recorded_turn_retries",
+    recorded_steer_folded => "recorded_steer_folded",
     recorded_turn_round_trip => "recorded_turn_round_trip",
     recorded_two_assistant_messages => "recorded_two_assistant_messages",
-    recorded_two_clients_prompt => "recorded_two_clients_prompt",
-    recorded_two_clients_approval => "recorded_two_clients_approval",
-    recorded_two_clients_steer => "recorded_two_clients_steer",
     recorded_web_search => "recorded_web_search",
     recorded_live_plan => "recorded_live_plan",
     recorded_live_questions => "recorded_live_questions",
     recorded_live_usage => "recorded_live_usage",
     recorded_live_permission => "recorded_live_permission",
     recorded_live_mode => "recorded_live_mode",
+    recorded_live_attach => "recorded_live_attach",
 }
 
 #[test]

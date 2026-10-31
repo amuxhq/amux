@@ -12,12 +12,11 @@
 //! empty turn after an inject is the interpreter's own kick and is left out
 //! too.
 //!
-//! A recording of two clients on one server marks each line with the
-//! client it went to or came from. Only amux's lines are read: what the
-//! other client caused reaches amux as what Codex tells it. amux's prompts
-//! and steers carry their input id in hex as Codex's client message id, and
-//! the inputs read here take that id back, so the interpreter's echo
-//! matching sees what it would live.
+//! A recording holds amux's own client's lines alone: what another client
+//! of the same server caused reaches amux as what Codex tells it. amux's
+//! prompts and steers carry their input id in hex as Codex's client message
+//! id, and the inputs read here take that id back, so the interpreter's
+//! echo matching sees what it would live.
 //!
 //! The interpreter numbers its requests `amux-<n>`, so the ids of the
 //! host's requests it stands in for are renumbered the same way, in order,
@@ -52,14 +51,7 @@ struct Recorded {
     /// The JSON-RPC line; an exit has none.
     #[serde(default)]
     line: Option<String>,
-    /// The client a two-client recording's line belongs to.
-    #[serde(default)]
-    transport_id: Option<String>,
 }
-
-/// The transport amux's own client is recorded under when two share a
-/// server; a recording of one client marks none.
-const AMUX: &str = "amux";
 
 /// A recorded line, read in the direction it went.
 enum Line {
@@ -80,10 +72,7 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
             serde_json::from_str::<Recorded>(line)
                 .map_err(|error| format!("line {}: {error}", index + 1))
         })
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .filter(|recorded| recorded.transport_id.as_deref().is_none_or(|id| id == AMUX))
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let parsed = |recorded: &Recorded| {
         let line = recorded.line.as_deref()?.as_bytes();
         Some(if recorded.dir == "stdout" {

@@ -1,0 +1,24 @@
+{
+  "spec": "inject_drain",
+  "recorded": {
+    "provider": "codex",
+    "version": "0.166.0",
+    "model": "gpt-6.1-sol",
+    "at": "2026-10-31T11:58:08.248031Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:8ab3db04e98d7e48392539118ac96a1d42e2262cafef5e51c0507aaf766fe545",
+    "spawn.jsonl": "sha256:4c5fcab8a128a4aa6482301bf17ae7a554e62438622bef5369e13c2c0232a8fe"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 42,
+    "personal_identifiers": 2
+  },
+  "session_ids": [
+    "01a191d0-958f-7ea2-8d5e-9ce812ccc97b"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

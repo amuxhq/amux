@@ -587,11 +587,27 @@ impl Engine {
             }
             // Read with its turns, the loaded thread is written to disk.
             "thread/read" if self.thread.as_deref() == params["threadId"].as_str() => {
+                // Read with its turns, Codex warns that full-history reads
+                // are deprecated, as it has since 0.160.
                 if params["includeTurns"] == true {
                     self.persisted = true;
+                    self.notify(
+                        "deprecationNotice",
+                        json!({ "details": null, "summary": FULL_HISTORY_DEPRECATED }),
+                    )
+                    .await;
                 }
                 let thread = self.thread_value();
-                self.respond(client, &id, json!({ "thread": thread })).await;
+                let read_state = json!({
+                    "firstUnread": null,
+                    "revision": format!("initial:{}", self.thread_id()),
+                });
+                self.respond(
+                    client,
+                    &id,
+                    json!({ "readState": read_state, "thread": thread }),
+                )
+                .await;
             }
             "thread/compact/start" => {
                 self.respond(client, &id, json!({})).await;
@@ -702,29 +718,34 @@ impl Engine {
         })
     }
 
-    /// Codex 0.160.0 answers a resume as it answers a start, with the
-    /// thread's history cursors and its collaboration mode besides.
+    /// Codex 0.166.0 answers a resume as it answers a start, with the
+    /// cursors that page the thread's history back, its collaboration mode
+    /// and its reasoning effort besides.
     fn resume_result(&self, params: &Value) -> Value {
         let mut result = self.thread_result(params);
-        let fields = result.as_object_mut().expect("an object");
-        for cursor in [
-            "initialTurnsPage",
-            "itemsBackwardsCursor",
-            "turnsBackwardsCursor",
-        ] {
-            fields.insert(cursor.into(), Value::Null);
-        }
-        fields.insert(
-            "collaborationMode".into(),
+        let thread = self.thread_id();
+        let cursor = |scope: &str, ordinal: u64| {
             json!({
-                "mode": "default",
-                "settings": {
-                    "developer_instructions": null,
-                    "model": self.model,
-                    "reasoning_effort": null,
-                },
-            }),
-        );
+                "requestedThreadId": thread,
+                "rolloutOrdinal": ordinal,
+                "includeAnchor": true,
+                "scope": {"kind": scope},
+            })
+            .to_string()
+        };
+        result["initialTurnsPage"] = Value::Null;
+        result["itemsBackwardsCursor"] = json!(cursor("itemsByCreatedAtOrdinal", 1));
+        result["turnsBackwardsCursor"] = json!(cursor("turns", 1));
+        result["reasoningEffort"] = json!("medium");
+        result["thread"]["reasoningEffort"] = json!("medium");
+        result["collaborationMode"] = json!({
+            "mode": "default",
+            "settings": {
+                "developer_instructions": null,
+                "model": self.model,
+                "reasoning_effort": "medium",
+            },
+        });
         result
     }
 
@@ -814,6 +835,7 @@ impl Engine {
             "id": turn,
             "items": items,
             "itemsView": if done && status == "completed" { "summary" } else { "notLoaded" },
+            "rootTurnId": turn,
             "startedAt": now_ms() / 1000,
             "status": status,
         })
@@ -824,14 +846,22 @@ impl Engine {
         crate::claude::numbered(prefix, self.next_item)
     }
 
+    /// Reports an item started or completed, with the times Codex 0.166
+    /// puts on the item itself.
     async fn item(&mut self, turn: &str, phase: &str, item: &Value) {
         let thread = self.thread_id();
-        let mut params = json!({ "item": item, "threadId": thread, "turnId": turn });
+        let mut item = item.clone();
+        let started = item["startedAtMs"].as_i64().unwrap_or_else(now_ms);
+        item["startedAtMs"] = json!(started);
+        let mut params = json!({ "threadId": thread, "turnId": turn });
         if phase == "item/started" {
+            item["completedAtMs"] = Value::Null;
             params["startedAtMs"] = json!(now_ms());
         } else {
+            item["completedAtMs"] = json!(now_ms());
             params["completedAtMs"] = json!(now_ms());
         }
+        params["item"] = item;
         self.notify(phase, params).await;
     }
 
@@ -1650,6 +1680,11 @@ fn token_usage() -> Value {
     });
     json!({ "last": tally, "total": tally, "modelContextWindow": 258400 })
 }
+
+/// What Codex says of a thread read with its turns.
+const FULL_HISTORY_DEPRECATED: &str = "Full-history hydration is deprecated for paginated \
+     threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and \
+     `thread/items/list`.";
 
 fn now_ms() -> i64 {
     std::time::SystemTime::now()

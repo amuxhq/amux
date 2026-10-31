@@ -4,7 +4,7 @@
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../codex-specs/fixtures/runtime/failing_command/io.jsonl",
+    "path": "../../../codex-specs/fixtures/live/failing_command/io.jsonl",
     "format": "codex_io"
   }
 }

@@ -28,6 +28,7 @@
 mod asks;
 mod attach;
 mod capture;
+mod codex_corpus;
 mod corpus;
 mod offers;
 
@@ -108,10 +109,29 @@ pub enum Scenario {
     Image,
     SignInProblem,
     SteerFolded,
+    ApprovalDeny,
+    InjectIdle,
+    InjectDrain,
+    TwoAssistantMessages,
+    ReasoningSummary,
+    Exploring,
+    FileChanges,
+    FileMoved,
+    Compaction,
+    TurnError,
+    TurnRetries,
+    SignedOut,
+    WebSearch,
+    Subagent,
+    BackgroundTerminal,
+    ToolServerForm,
+    AccessGrant,
+    AutomaticReview,
+    ApprovalScopes,
 }
 
 /// Every scenario, in the order a run takes them.
-pub const SCENARIOS: [Scenario; 35] = [
+pub const SCENARIOS: [Scenario; 54] = [
     Scenario::Initialize,
     Scenario::Respond,
     Scenario::Decide,
@@ -147,6 +167,25 @@ pub const SCENARIOS: [Scenario; 35] = [
     Scenario::Image,
     Scenario::SignInProblem,
     Scenario::SteerFolded,
+    Scenario::ApprovalDeny,
+    Scenario::InjectIdle,
+    Scenario::InjectDrain,
+    Scenario::TwoAssistantMessages,
+    Scenario::ReasoningSummary,
+    Scenario::Exploring,
+    Scenario::FileChanges,
+    Scenario::FileMoved,
+    Scenario::Compaction,
+    Scenario::TurnError,
+    Scenario::TurnRetries,
+    Scenario::SignedOut,
+    Scenario::WebSearch,
+    Scenario::Subagent,
+    Scenario::BackgroundTerminal,
+    Scenario::ToolServerForm,
+    Scenario::AccessGrant,
+    Scenario::AutomaticReview,
+    Scenario::ApprovalScopes,
 ];
 
 impl Scenario {
@@ -187,6 +226,25 @@ impl Scenario {
             Scenario::Image => "image",
             Scenario::SignInProblem => "sign_in_problem",
             Scenario::SteerFolded => "steer_folded",
+            Scenario::ApprovalDeny => "approval_deny",
+            Scenario::InjectIdle => "inject_idle",
+            Scenario::InjectDrain => "inject_drain",
+            Scenario::TwoAssistantMessages => "two_assistant_messages",
+            Scenario::ReasoningSummary => "reasoning_summary",
+            Scenario::Exploring => "exploring",
+            Scenario::FileChanges => "file_changes",
+            Scenario::FileMoved => "file_moved",
+            Scenario::Compaction => "compaction",
+            Scenario::TurnError => "turn_error",
+            Scenario::TurnRetries => "turn_retries",
+            Scenario::SignedOut => "signed_out",
+            Scenario::WebSearch => "web_search",
+            Scenario::Subagent => "subagent",
+            Scenario::BackgroundTerminal => "background_terminal",
+            Scenario::ToolServerForm => "tool_server_form",
+            Scenario::AccessGrant => "access_grant",
+            Scenario::AutomaticReview => "automatic_review",
+            Scenario::ApprovalScopes => "approval_scopes",
         }
     }
 
@@ -199,7 +257,8 @@ impl Scenario {
     /// Whether `kind` has what the scenario exercises: terminal Claude
     /// reports no usage; only Codex has amux-set permissions and modes and
     /// an app of its own to attach; the rest record headless Claude's
-    /// corpus (corpus.rs).
+    /// corpus (corpus.rs) or Codex's (codex_corpus.rs), a failing command,
+    /// an image and a message sent into the running turn both.
     fn applies(self, kind: Kind) -> bool {
         match self {
             Scenario::Initialize
@@ -211,8 +270,32 @@ impl Scenario {
             | Scenario::Questions
             | Scenario::Catalogue
             | Scenario::HostCatalogue => true,
-            Scenario::Usage => kind != Kind::ClaudePty,
-            Scenario::Permission | Scenario::Mode | Scenario::Attach => kind == Kind::Codex,
+            Scenario::Usage
+            | Scenario::FailingCommand
+            | Scenario::Image
+            | Scenario::SteerFolded => kind != Kind::ClaudePty,
+            Scenario::Permission
+            | Scenario::Mode
+            | Scenario::Attach
+            | Scenario::ApprovalDeny
+            | Scenario::InjectIdle
+            | Scenario::InjectDrain
+            | Scenario::TwoAssistantMessages
+            | Scenario::ReasoningSummary
+            | Scenario::Exploring
+            | Scenario::FileChanges
+            | Scenario::FileMoved
+            | Scenario::Compaction
+            | Scenario::TurnError
+            | Scenario::TurnRetries
+            | Scenario::SignedOut
+            | Scenario::WebSearch
+            | Scenario::Subagent
+            | Scenario::BackgroundTerminal
+            | Scenario::ToolServerForm
+            | Scenario::AccessGrant
+            | Scenario::AutomaticReview
+            | Scenario::ApprovalScopes => kind == Kind::Codex,
             _ => kind == Kind::ClaudeSdk,
         }
     }
@@ -544,6 +627,9 @@ struct Install {
     replay: fn(&Path) -> Result<Vec<Replayed>, String>,
     model: Mutex<Option<String>>,
     capture: capture::Capture,
+    /// Codex's scratch home, holding the operator's login (codex_corpus.rs
+    /// writes a config into it for a scenario's start).
+    codex_home: Option<PathBuf>,
     /// Each scenario's agent, as it was created.
     agents: Mutex<Vec<(Scenario, Vec<u8>)>>,
 }
@@ -588,8 +674,12 @@ impl Install {
                 .iter()
                 .map(|(key, value)| ((*key).to_owned(), (*value).into())),
         );
-        if driver.kind == Kind::Codex {
-            env.push(("CODEX_HOME".into(), seed_codex_home(&path)?.into()));
+        let codex_home = match driver.kind {
+            Kind::Codex => Some(seed_codex_home(&path)?),
+            _ => None,
+        };
+        if let Some(home) = &codex_home {
+            env.push(("CODEX_HOME".into(), home.clone().into()));
         }
         let (capture, proxied) =
             capture::Capture::install(&path, driver.kind, driver.tag(), driver.command)?;
@@ -646,6 +736,7 @@ impl Install {
             replay: driver.replay,
             model: Mutex::new(None),
             capture,
+            codex_home,
             agents: Mutex::new(Vec::new()),
         })
     }
@@ -1036,13 +1127,39 @@ impl Install {
             Scenario::ElicitationCancelled => self.elicitation_cancelled().await,
             Scenario::ElicitationLinkAccepted => self.elicitation_link_accepted().await,
             Scenario::FailedToolServer => self.failed_tool_server().await,
+            Scenario::FailingCommand if self.kind == Kind::Codex => {
+                self.codex_failing_command().await
+            }
             Scenario::FailingCommand => self.failing_command().await,
             Scenario::TaskList => self.task_list().await,
             Scenario::BackgroundShell => self.background_shell().await,
             Scenario::SubagentTask => self.subagent_task().await,
+            Scenario::Image if self.kind == Kind::Codex => self.codex_image().await,
             Scenario::Image => self.image().await,
             Scenario::SignInProblem => self.sign_in_problem().await,
+            Scenario::SteerFolded if self.kind == Kind::Codex => {
+                self.codex_steer_folded().await
+            }
             Scenario::SteerFolded => self.steer_folded().await,
+            Scenario::ApprovalDeny => self.approval_deny().await,
+            Scenario::InjectIdle => self.inject_idle().await,
+            Scenario::InjectDrain => self.inject_drain().await,
+            Scenario::TwoAssistantMessages => self.two_assistant_messages().await,
+            Scenario::ReasoningSummary => self.reasoning_summary().await,
+            Scenario::Exploring => self.exploring().await,
+            Scenario::FileChanges => self.file_changes().await,
+            Scenario::FileMoved => self.file_moved().await,
+            Scenario::Compaction => self.compaction().await,
+            Scenario::TurnError => self.turn_error().await,
+            Scenario::TurnRetries => self.turn_retries().await,
+            Scenario::SignedOut => self.signed_out().await,
+            Scenario::WebSearch => self.web_search().await,
+            Scenario::Subagent => self.subagent().await,
+            Scenario::BackgroundTerminal => self.background_terminal().await,
+            Scenario::ToolServerForm => self.tool_server_form().await,
+            Scenario::AccessGrant => self.access_grant().await,
+            Scenario::AutomaticReview => self.automatic_review().await,
+            Scenario::ApprovalScopes => self.approval_scopes().await,
         }
     }
 
@@ -1598,6 +1715,10 @@ fn item_token(kind: Kind, item: &Item) -> Option<String> {
             Codex::Prompt(_) => Some("prompt".into()),
             Codex::Steer(_) => Some("steer".into()),
             Codex::Work(work) => Some(tool(work.state, work.decision.as_ref())),
+            // Codex answers amux's read of a fresh thread's history with a
+            // deprecation notice whenever it gets to it, before or after the
+            // first prompt; it says nothing about what the scenario did.
+            Codex::Error(error) if error.error_kind == "deprecationNotice" => None,
             Codex::Error(_) => Some("error".into()),
             Codex::AgentMessage(_) => Some("agent message".into()),
             Codex::Ask(item) => Some(ask(&item)),

@@ -292,7 +292,6 @@ async fn a_prompt_held_for_an_unreachable_host_is_kept_in_the_draft_until_it_goe
     net.settle("far").await.unwrap();
     let client: Arc<dyn Client> = Arc::new(client::InProcess::new(net.client("desk").unwrap()));
     let fleet = Fleet::connect(client.clone(), SystemClock).await.unwrap();
-    fleet.keep_held_prompts();
     let far = net.agent("far").unwrap().id;
     let agent = until_within(PATIENCE, fleet.changed(), || {
         fleet.state().find(far.as_bytes()).map(ui_state::agent_key)

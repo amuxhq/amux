@@ -362,7 +362,6 @@ fn plain(error: InputError) -> String {
 
 impl App {
     pub fn new(client: Arc<dyn Client>, fleet: Fleet, config: TuiConfig) -> App {
-        fleet.keep_held_prompts();
         let (events, receiver) = mpsc::unbounded_channel();
         let home = Home::new(Place {
             version: config.version.clone(),

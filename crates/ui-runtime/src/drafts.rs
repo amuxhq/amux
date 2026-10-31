@@ -6,15 +6,13 @@
 //! save to it sent before, so a chat that reopens at once finds what was left
 //! in it, an emptied one empty.
 //!
-//! When the fleet keeps held prompts ([`Drafts::keep_held`]), the words of
-//! each prompt the agent's session holds for a host that cannot be reached
-//! are kept too, oldest first and ahead of the composer's: a held prompt
+//! The words of each prompt the agent's session holds for a host that cannot
+//! be reached are kept too, oldest first and ahead of the composer's: a held prompt
 //! lives only as long as the client, and a client killed before the host is
 //! back would otherwise lose it. They leave the kept draft as the prompt goes
 //! or is taken back into the composer.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use client::Client;
@@ -23,8 +21,6 @@ use ui_state::AgentKey;
 #[derive(Default)]
 pub(crate) struct Drafts {
     agents: Mutex<HashMap<AgentKey, Arc<Saves>>>,
-    /// Whether held prompts are kept in the drafts.
-    keep_held: AtomicBool,
 }
 
 #[derive(Default)]
@@ -109,10 +105,6 @@ impl Drafts {
             .clone()
     }
 
-    pub(crate) fn keep_held(&self) {
-        self.keep_held.store(true, Ordering::Release);
-    }
-
     pub(crate) fn keep(&self, client: Arc<dyn Client>, agent: &AgentKey, draft: wire::Draft) {
         let saves = self.saves(agent);
         saves.words().typed = draft;
@@ -121,9 +113,6 @@ impl Drafts {
 
     /// The prompts the agent's session holds now, each time they change.
     pub(crate) fn held(&self, client: Arc<dyn Client>, agent: &AgentKey, held: Vec<wire::Draft>) {
-        if !self.keep_held.load(Ordering::Acquire) {
-            return;
-        }
         let saves = self.saves(agent);
         saves.words().held = held;
         saves.save(client, agent);

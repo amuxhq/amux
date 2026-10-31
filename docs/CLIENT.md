@@ -232,8 +232,7 @@ Cancel. Held inputs live as long as the client, so a held prompt's words are in 
 moment it is held, ahead of what is typed, until it goes or is cancelled back into the composer: a client that
 closes, even killed, finds them in the draft when the chat opens again. A chat reopened while the prompt is still
 held reads only what was typed, the prompt showing held. A held answer is dropped with the client. The fleet driver
-keeps held prompts so for a client that asks it to (`Fleet::keep_held_prompts`), as the terminal does; the phone's
-chat model still writes them into the draft it hands over itself. A rejection with the refusal `REFUSAL_EXITED`
+keeps held prompts so for every client. A rejection with the refusal `REFUSAL_EXITED`
 flips the composer to Resume for that incarnation, so a send that raced the exit keeps its draft.
 
 ### The fleet state

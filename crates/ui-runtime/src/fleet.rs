@@ -520,22 +520,14 @@ impl Fleet {
         Ok(session)
     }
 
-    /// From now on, keeps the words of each prompt a session holds for an
-    /// unreachable host in its agent's draft, ahead of the composer's, from
-    /// the moment it is held until it goes or is taken back: a held prompt
-    /// lives only as long as the client, and one killed before the host is
-    /// back finds the words in the draft. A chat reopened while the prompt
-    /// is still held reads only the composer's words, the prompt being
-    /// shown held. Off by default, for a client that keeps held prompts in
-    /// the draft it hands over itself, as the phone's chat model does.
-    pub fn keep_held_prompts(&self) {
-        self.inner.drafts.keep_held();
-    }
-
     /// Keeps the composer's draft for an agent with this machine's daemon,
     /// so it outlives the chat and the client; an empty one is kept too, so
     /// the chat reopens empty. Saves to one agent go in order, and one
-    /// overtaken before it is sent is never sent.
+    /// overtaken before it is sent is never sent. The words of each prompt
+    /// the agent's session holds for an unreachable host are kept ahead of
+    /// the composer's, from the moment it is held until it goes or is taken
+    /// back: a held prompt lives only as long as the client, and one killed
+    /// before the host is back finds the words in the draft.
     pub fn keep_draft(&self, agent: &AgentKey, draft: wire::Draft) {
         self.inner
             .drafts

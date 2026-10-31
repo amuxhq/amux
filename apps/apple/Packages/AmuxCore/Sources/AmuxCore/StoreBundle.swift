@@ -232,10 +232,7 @@ public final class StoreBundle {
 
     /// Which chat sessions exist, after every move of the fleet. A shown
     /// chat keeps its own; a chat viewed within the retention keeps its
-    /// own; a chat a push is bringing current keeps its own until it is; a
-    /// chat holding a prompt for a host that cannot be reached keeps its
-    /// own until the prompt goes, since only the open chat takes it back out
-    /// of the kept draft;
+    /// own; a chat a push is bringing current keeps its own until it is;
     /// nothing else is opened or kept, not even for an agent that
     /// needs the person, because the runtime keeps every listed agent's
     /// rows current without a session and a chat opens from those rows.
@@ -244,7 +241,7 @@ public final class StoreBundle {
         let retention = Double(sessionRetention.components.seconds)
             + Double(sessionRetention.components.attoseconds) / 1e18
         for (agent, open) in models
-        where !shown.contains(agent) && !warming.contains(agent) && !open.model.holdsPrompts {
+        where !shown.contains(agent) && !warming.contains(agent) {
             if let last = viewed[agent], at.timeIntervalSince(last) < retention { continue }
             models.removeValue(forKey: agent)
             viewed.removeValue(forKey: agent)

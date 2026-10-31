@@ -193,16 +193,7 @@ public final class ChatModel {
     /// Told the draft as it stands each time it changes, so it can be kept
     /// past the session and the app: the phone's drafts live with its own
     /// daemon.
-    /// It carries the words of prompts held for a host that cannot be
-    /// reached too, ahead of what is typed: a held prompt goes back to the
-    /// draft if the phone closes before the host is back.
     @ObservationIgnored public var keeping: (@MainActor (Draft) -> Void)?
-    /// The prompts the chat holds for a host that cannot be reached, oldest
-    /// first, each as the draft it came from.
-    @ObservationIgnored private var heldDrafts: [(id: [UInt8], draft: Draft)] = []
-    /// Whether the chat holds a prompt for a host that cannot be reached:
-    /// its words are in the kept draft until it goes.
-    public var holdsPrompts: Bool { !heldDrafts.isEmpty }
     /// Attachments still being stored.
     public private(set) var uploading = 0
     /// A send or resume on its way.
@@ -440,7 +431,6 @@ public final class ChatModel {
                 frame.refused = []
             }
             self.frame = frame
-            keepHeld(frame)
         }
         if let moved = delta.ask {
             ask = moved.card
@@ -859,38 +849,16 @@ public final class ChatModel {
     }
 
     private func keepDraft() {
-        var kept = (words: draft, attachments: attachments)
-        for held in heldDrafts.reversed() {
-            kept = Self.restoring(held.draft, onto: kept)
-        }
-        keeping?(Draft(words: kept.words, attachments: kept.attachments))
+        keeping?(Draft(words: draft, attachments: attachments))
     }
 
-    /// Keeps the draft again when the prompts held for an unreachable host
-    /// changed: one newly held joins it, one released and sent, or taken
-    /// back into the composer, leaves it.
-    private func keepHeld(_ frame: ChatFrame) {
-        let held = frame.underway.filter { $0.underway == .held }.map(\.inputId)
-        guard held != heldDrafts.map(\.id) else { return }
-        heldDrafts = held.compactMap { id in source.draft(of: id).map { (id: id, draft: $0) } }
-        keepDraft()
-    }
-
-    private func restore(_ sent: Draft) {
-        (draft, attachments) = Self.restoring(sent, onto: (draft, attachments))
-    }
-
-    /// A draft's words and attachments put back ahead of what the composer
+    /// Puts a draft's words and attachments back ahead of what the composer
     /// holds.
-    private static func restoring(
-        _ sent: Draft, onto composer: (words: String, attachments: [DraftAttachment])
-    ) -> (words: String, attachments: [DraftAttachment]) {
+    private func restore(_ sent: Draft) {
         let words = sent.words
         let joined =
-            if composer.words.isEmpty { words } else if words.isEmpty { composer.words } else {
-                words + "\n" + composer.words
-            }
-        return (joined, (sent.attachments ?? []) + composer.attachments)
+            if draft.isEmpty { words } else if words.isEmpty { draft } else { words + "\n" + draft }
+        (draft, attachments) = (joined, (sent.attachments ?? []) + attachments)
     }
 
     /// Whether an attachment this large may be stored. One over the limit is

@@ -11,9 +11,6 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     let agent: AgentKey
     var closed = false
     var current = true
-    /// Prompts on their way, as the frame lists them, and their drafts.
-    var underway: [SentPrompt] = []
-    var drafts: [[UInt8]: Draft] = [:]
     /// What the profile's daemon kept for the agent as the chat opened, and
     /// where the chat keeps its draft from then on.
     var kept: Draft?
@@ -43,7 +40,7 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
         ChatFrame(
             agent: agent, name: "a", kind: .claudeSdk, phase: .needsYou,
             composer: ComposerView(mode: .send, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: current,
-            hasOlder: false, arrivalsHeld: false, queue: [], underway: underway, refused: [], askInput: nil, context: nil, ended: nil, git: nil,
+            hasOlder: false, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil, context: nil, ended: nil, git: nil,
             signIn: nil)
     }
     func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> { .failure(RuntimeFailure("no")) }
@@ -56,7 +53,7 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     func sendNow(_ input: [UInt8]) async -> ActOutcome? { nil }
     func resend(_ input: [UInt8]) async -> SendOutcome? { nil }
     func discard(_ input: [UInt8]) {}
-    func draft(of input: [UInt8]) -> Draft? { drafts[input] }
+    func draft(of input: [UInt8]) -> Draft? { nil }
     func interrupt() async -> ActOutcome? { nil }
     func stopJob(_ key: String) async -> ActOutcome? { nil }
     func change(_ setting: SettingChange) async -> ActOutcome? { nil }
@@ -193,35 +190,6 @@ final class StoreBundleSessionTests: XCTestCase {
         let warmed = await warming.value
         XCTAssertTrue(warmed)
         XCTAssertTrue(opened[0].closed, "once current it is kept or closed like any other chat")
-    }
-
-    /// A chat holding a prompt for a host that cannot be reached stays open
-    /// past its retention, until the prompt is sent: the prompt is in the
-    /// kept draft while it is held, and only the open chat takes it out
-    /// again once it goes. Closed under it, the chat's draft would keep words
-    /// the fleet's session went on to send.
-    func testAChatHoldingAPromptStaysOpenUntilItIsSent() throws {
-        let stores = bundle(account: "held-\(UUID().uuidString)")
-        let agent = Cards.key(2)
-        stores.fleet.show(Cards.view([Cards.row(2, "idle")]), hosts: [Cards.host()])
-        let model = try stores.chat(agent)
-        let session = sessions(for: agent)[0]
-        session.drafts[[1]] = Draft(words: "Run the tests.", attachments: [])
-        session.underway = [
-            SentPrompt(inputId: [1], text: [.text("Run the tests.")], lands: .feed, underway: .held)
-        ]
-        model.apply(session.moved())
-        stores.leave(agent)
-
-        clock = Cards.now.addingTimeInterval(301)
-        stores.keepSessions()
-        XCTAssertTrue(stores.holds(agent), "a chat holding a prompt stays open")
-
-        session.underway[0].underway = .sending(waiting: false)
-        model.apply(session.moved())
-        stores.keepSessions()
-        XCTAssertFalse(stores.holds(agent), "once the prompt is sent the chat closes as usual")
-        XCTAssertNil(daemon[agent], "and the kept draft no longer holds it")
     }
 
     /// A half-typed message outlives its chat's session: the phone keeps

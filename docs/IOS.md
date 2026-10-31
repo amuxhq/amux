@@ -118,8 +118,8 @@ thread. A chat is a `ChatModel` over an open `Chat`:
   A prompt held for a host that cannot be reached is kept in the draft too,
   ahead of what is typed, from the moment it is held until it is released
   and sent, so a phone that closes first finds its words back in the
-  composer. A chat holding one stays open past its retention until it goes,
-  as only the open chat takes it back out of the kept draft. Drafts never
+  composer; the runtime's fleet keeps it so for every client, whether or
+  not the chat is open (docs/CLIENT.md). Drafts never
   leave the device, and removing an account deletes its profile and its
   drafts with it. The daemon forgets a deleted agent's draft, wherever it
   was deleted, and nothing typed into its chat while the page leaves is

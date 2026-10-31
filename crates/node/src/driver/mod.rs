@@ -51,7 +51,6 @@ pub(crate) use links::{CoreLinks, Wanted, core_error};
 pub use stepped::Cores;
 use store::Sqlite;
 pub use streams::{InventorySubscription, Subscription};
-use tokio::runtime::Handle;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 use wire::{GetItemRequest, ListItemsRequest};
@@ -838,7 +837,7 @@ impl CoreThread {
                 request: runtime.client_request(self.daemon.store(), ask),
             }),
             Some(Arriving::Peer(from, call, request)) => {
-                let request = runtime.peer_request(*request);
+                let request = *request;
                 let stream = match &request {
                     PeerRequest::SubscribeInventory => Some("inventory"),
                     PeerRequest::SubscribeSession(_) => Some("session"),
@@ -1643,7 +1642,6 @@ impl ProfileRuntime {
         match ask {
             Ask::SubscribeSession { agent_id, tail } => {
                 self.used(store, &agent_id);
-                self.run_join_hook();
                 ClientRequest::SubscribeSession { agent_id, tail }
             }
             Ask::ListItems(request) => {
@@ -1653,25 +1651,6 @@ impl ProfileRuntime {
             Ask::GetItem(request) => ClientRequest::GetItem(request),
             Ask::SubscribeInventory => ClientRequest::SubscribeInventory,
             Ask::Ready(request) => request,
-        }
-    }
-
-    /// Completes a paired host's call from what the shell owns, as
-    /// [`ProfileRuntime::client_request`] does a client's.
-    fn peer_request(&self, request: PeerRequest) -> PeerRequest {
-        match request {
-            PeerRequest::SubscribeSession(request) => {
-                self.run_join_hook();
-                PeerRequest::SubscribeSession(request)
-            }
-            request => request,
-        }
-    }
-
-    fn run_join_hook(&self) {
-        let hook = self.join_hook.lock().unwrap().clone();
-        if let Some(hook) = hook {
-            Handle::current().block_on(hook());
         }
     }
 }

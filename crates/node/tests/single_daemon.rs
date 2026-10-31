@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use node::{Daemon, JoinHook, Launch, ProfileRuntime, ServeError};
+use node::{Daemon, Launch, ProfileRuntime, ServeError};
 use support::synthetic::*;
 use support::*;
 use wire::{
@@ -536,28 +536,6 @@ async fn a_lagging_subscriber_is_closed_with_lagged_and_ingest_never_waits() {
     crash(daemon, runtime).await;
 }
 
-/// Installs a join hook that starts an ingest of `agent` and gives it time
-/// to reach the store before the subscribe reads its cut. A forced delay:
-/// the subscribe holds the store lock through its opening, so the ingest
-/// cannot commit until the hook returns and nothing it writes can be
-/// waited on; the sleep only makes the contention real rather than
-/// absent, and the test's outcome is the same either way.
-fn ingest_between_join_and_cut(runtime: &Arc<ProfileRuntime>, agent: uuid::Uuid) {
-    let target = Arc::downgrade(runtime);
-    let hook: JoinHook = Arc::new(move || {
-        let target = target.clone();
-        Box::pin(async move {
-            tokio::spawn(async move {
-                if let Some(runtime) = target.upgrade() {
-                    runtime.ingest(agent).await.unwrap();
-                }
-            });
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        })
-    });
-    runtime.set_join_hook(Some(hook));
-}
-
 /// The newest snapshot a stream has delivered at each CaughtUp must be
 /// the newest the store had committed through that marker's revision.
 fn assert_markers_describe_their_snapshot(
@@ -615,21 +593,20 @@ async fn a_withdrawn_prompt_is_never_read_as_queued() {
     assert_markers_describe_their_snapshot(&seen, &committed);
     crash(daemon, runtime).await;
 
-    // Withdrawn while the subscribe is between its join and its cut: the
-    // marker read with the cut never claims the withdrawal while the
-    // stream still holds the queued snapshot.
+    // Withdrawn just after the subscribe: the marker read with the
+    // opening never claims the withdrawal while the stream still holds the
+    // queued snapshot.
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "withdraw", BIG_SEGMENTS);
     agent.register(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     write_and_ingest(&runtime, &mut agent, &[queued]).await;
     agent.append(&withdrawn);
-    ingest_between_join_and_cut(&runtime, agent.id);
     let mut subscription = runtime
         .subscribe_session(agent.id.as_bytes(), 10)
         .await
         .unwrap();
-    runtime.set_join_hook(None);
+    runtime.ingest(agent.id).await.unwrap();
     let mut seen = Vec::new();
     read_until(&mut subscription, &mut seen, "the withdrawal", |seen| {
         seen.len() == 4

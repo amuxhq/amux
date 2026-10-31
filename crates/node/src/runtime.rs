@@ -50,10 +50,6 @@ use crate::{HostId, spec};
 
 pub type AgentId = Uuid;
 
-/// What [`ProfileRuntime::set_join_hook`] installs.
-pub type JoinHook =
-    Arc<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>;
-
 /// How long between looks at a directory whose process is starting,
 /// stopping or not answering: short, because a start and a resume wait on
 /// it, and each look is one lock attempt and one dial.
@@ -398,9 +394,6 @@ pub struct ProfileRuntime {
     launch: Mutex<Launch>,
     /// The profile's core thread, which owns the store.
     driver: crate::driver::Driver,
-    /// For tests: awaited by a subscribe on the core thread before the
-    /// core reads its cut.
-    pub(crate) join_hook: Mutex<Option<JoinHook>>,
     /// Counts the store's writes, own commits and absorbed replica rows
     /// alike, so a waiter wakes on the write it is waiting for instead of
     /// polling: a message waiting for its acceptance item, a test fencing
@@ -698,7 +691,6 @@ impl ProfileRuntime {
                 core = Some(thread);
                 driver
             },
-            join_hook: Mutex::new(None),
             commits: watch::Sender::new(0),
             ingested_frames: AtomicU64::new(0),
             push,
@@ -830,14 +822,6 @@ impl ProfileRuntime {
         self.read_store(read)
             .await
             .unwrap_or(Err(StoreError::Closed))
-    }
-
-    /// For tests: runs `hook` inside every subscribe between joining the
-    /// agent's channel and reading the cut, so a test can try to commit in
-    /// that window.
-    #[doc(hidden)]
-    pub fn set_join_hook(&self, hook: Option<JoinHook>) {
-        *self.join_hook.lock().unwrap() = hook;
     }
 
     /// Replaces what the next spawn or resume starts with.

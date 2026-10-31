@@ -284,7 +284,6 @@ dependencies = [
  "serde",
  "testnet",
  "tokio",
- "tracing",
  "ui-runtime",
  "ui-state",
  "ui-view",

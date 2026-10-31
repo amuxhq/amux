@@ -1286,7 +1286,7 @@ async fn retention_sweep() {
         "retention",
         vec![text("done"), provider_fakes::script::Step::TurnEnd],
     );
-    launch.tail_rows = K;
+    launch.core.tail_rows = K;
     launch.retention_chunk_bytes = 6 * 1024;
     launch.retention_interval_ms = 60_000;
     let options = StartOptions {
@@ -1658,10 +1658,8 @@ async fn a_subscribes_opening_reaches_its_reader_whole() {
     for row in 0..ROWS {
         agent.append(&item(&format!("k{row}"), "a row"));
     }
-    let launch = Launch {
-        tail_rows: ROWS,
-        ..quiet_launch()
-    };
+    let mut launch = quiet_launch();
+    launch.core.tail_rows = ROWS;
     let (daemon, runtime) = start(&install, "boot-1", launch).await;
     runtime.ingest(agent.id).await.unwrap();
     for opening in 0..20 {

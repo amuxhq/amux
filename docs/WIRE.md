@@ -177,7 +177,7 @@ message PeerSubscribeSessionRequest {
 
 A client sends one integer, `tail`: how many of the newest rows it wants. It
 never sends a revision. The runtime caps the tail at K, the rows a replica
-keeps (200, `TAIL_ROWS` in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs)).
+keeps (200, `Settings.tail_rows` in [`crates/daemon-core/src/io.rs`](../crates/daemon-core/src/io.rs)).
 The tail is a minimum: a client that cannot fill its screen pages older at once
 with `ListItems`. `after` exists only on the peer service's request: it is how a
 peer's source resumes toward an origin, with the revision it holds, a cap, and

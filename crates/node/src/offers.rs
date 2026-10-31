@@ -340,7 +340,7 @@ impl ProfileRuntime {
             .spawn()
             .map_err(|error| CatalogueError::Helper(error.to_string()))?;
         let pid = child.id();
-        let deadline = Duration::from_millis(u64::try_from(launch.start_deadline_ms).unwrap_or(0));
+        let deadline = Duration::from_millis(launch.core.start_deadline_ms);
         let output = match tokio::time::timeout(deadline, child.wait_with_output()).await {
             Ok(output) => output.map_err(|error| CatalogueError::Helper(error.to_string()))?,
             Err(_) => {
@@ -351,7 +351,7 @@ impl ProfileRuntime {
                 return Err(CatalogueError::Helper(format!(
                     "asking {} took longer than {}ms",
                     provider_word(provider),
-                    launch.start_deadline_ms
+                    launch.core.start_deadline_ms
                 )));
             }
         };

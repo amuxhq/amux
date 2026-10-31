@@ -1614,12 +1614,12 @@ impl Net {
         if let Some(mib) = self.facts_ring_mib {
             launch.agent.facts_ring_mib = mib;
         }
-        launch.stop_deadline_ms = 15_000;
+        launch.core.stop_deadline_ms = 15_000;
         if !own.decl.repositories.is_empty() {
             launch.repository_roots = vec![own.dir.join(REPOSITORIES)];
         }
         if let Some(k) = own.decl.tail_rows {
-            launch.tail_rows = k;
+            launch.core.tail_rows = k;
         }
         if let Some(hook) = &self.launch_hook {
             hook(&host.name, &mut launch);

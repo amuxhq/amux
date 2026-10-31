@@ -304,7 +304,7 @@ async fn start(k: u32) -> Result<Net> {
         NetOptions {
             clock: ClockMode::Wall,
             launch: Some(Arc::new(move |_: &str, launch: &mut Launch| {
-                launch.tail_rows = k;
+                launch.core.tail_rows = k;
             })),
             ..NetOptions::default()
         },

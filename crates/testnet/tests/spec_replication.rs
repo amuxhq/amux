@@ -48,7 +48,7 @@ fn turns(turns: usize, per_turn: usize) -> Vec<Step> {
 fn options(k: u32, more: impl Fn(&str, &mut Launch) + Send + Sync + 'static) -> NetOptions {
     NetOptions {
         launch: Some(Arc::new(move |host: &str, launch: &mut Launch| {
-            launch.tail_rows = k;
+            launch.core.tail_rows = k;
             more(host, launch);
         })),
         ..NetOptions::default()

@@ -789,19 +789,7 @@ impl CoreThread {
             | Fed::Read(_)
             | Fed::Capture { .. } => None,
         };
-        let launch = runtime.launch();
-        let settings = Settings {
-            notify_delay_ms: launch.notify_delay_ms,
-            push_retry_ms: launch.push_retry_ms.max(0) as u64,
-            checkpoint_interval_ms: launch.checkpoint_interval_ms.max(0) as u64,
-            tail_rows: launch.tail_rows,
-            source_backoff_ms: launch.source_backoff_ms.max(0) as u64,
-            source_backoff_max_ms: launch.source_backoff_max_ms.max(0) as u64,
-            start_deadline_ms: launch.start_deadline_ms.max(0) as u64,
-            stop_deadline_ms: launch.stop_deadline_ms.max(0) as u64,
-            delivery_retry_ms: launch.delivery_retry_ms.max(0) as u64,
-            reply_patience_ms: launch.reply_patience_ms.max(0) as u64,
-        };
+        let settings = runtime.core_settings();
         if self.settings != Some(settings) {
             self.settings = Some(settings);
             self.step(&runtime, Input::Configure(settings), &mut out);

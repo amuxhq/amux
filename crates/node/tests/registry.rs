@@ -1224,7 +1224,7 @@ async fn the_stop_deadline_kills_an_agent_adopted_from_an_earlier_daemon() {
     let install = Install::new();
     let never = install.path("never");
     let mut launch = install.launch("held", vec![wait_for(&never)]);
-    launch.stop_deadline_ms = 2_000;
+    launch.core.stop_deadline_ms = 2_000;
     let daemon = install.start("boot-1", launch.clone()).await;
     let runtime = runtime(&daemon, &install);
     let id = id_of(
@@ -1640,7 +1640,7 @@ async fn a_codex_resume_after_a_kill_waits_for_the_old_server_instead_of_racing_
         log.to_string_lossy().into_owned(),
     );
     // The agent will not answer its stop: the daemon kills it at once.
-    launch.stop_deadline_ms = 500;
+    launch.core.stop_deadline_ms = 500;
     let daemon = install.start("boot-1", launch).await;
     let runtime = runtime(&daemon, &install);
     let id = id_of(
@@ -1762,7 +1762,7 @@ async fn a_codex_server_that_ignores_terminate_does_not_hold_its_thread_from_the
         log.to_string_lossy().into_owned(),
     );
     // The agent will not answer its stop: the daemon kills it at once.
-    launch.stop_deadline_ms = 500;
+    launch.core.stop_deadline_ms = 500;
     let daemon = install.start("boot-1", launch).await;
     let runtime = runtime(&daemon, &install);
     let id = id_of(

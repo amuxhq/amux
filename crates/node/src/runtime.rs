@@ -2023,15 +2023,7 @@ fn last_settings(body: Option<&[u8]>, kind: Kind) -> spec::Settings {
         return spec::Settings::default();
     };
     match kind {
-        Kind::ClaudeSdk => wire::ClaudeSdkSnapshot::decode(body)
-            .map(|snapshot| spec::Settings {
-                model: snapshot.model,
-                permission: snapshot.permission,
-                mode: None,
-                effort: snapshot.effort,
-            })
-            .unwrap_or_default(),
-        Kind::ClaudePty => wire::ClaudePtySnapshot::decode(body)
+        Kind::ClaudeSdk | Kind::ClaudePty => wire::ClaudeSnapshot::decode(body)
             .map(|snapshot| spec::Settings {
                 model: snapshot.model,
                 permission: snapshot.permission,

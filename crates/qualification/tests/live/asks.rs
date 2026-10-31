@@ -370,15 +370,14 @@ pub(super) fn settled(kind: Kind, log: &Log) -> bool {
 
 /// Every plan's verdict, in order.
 fn plans(kind: Kind, log: &Log) -> Vec<wire::PlanVerdict> {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     log.ordered()
         .into_iter()
         .filter_map(|item| match ItemBody::decode(kind, &item.body) {
-            ItemBody::ClaudePty(Pty::Plan(plan))
-            | ItemBody::ClaudeSdk(Sdk::Plan(plan))
-            | ItemBody::Codex(Codex::Plan(plan)) => Some(plan.verdict()),
+            ItemBody::Claude(Claude::Plan(plan)) | ItemBody::Codex(Codex::Plan(plan)) => {
+                Some(plan.verdict())
+            }
             _ => None,
         })
         .collect()
@@ -386,15 +385,12 @@ fn plans(kind: Kind, log: &Log) -> Vec<wire::PlanVerdict> {
 
 /// How each closed question was closed, in order.
 fn question_records(kind: Kind, log: &Log) -> Vec<wire::AskClosed> {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     log.ordered()
         .into_iter()
         .filter_map(|item| match ItemBody::decode(kind, &item.body) {
-            ItemBody::ClaudePty(Pty::Ask(ask))
-            | ItemBody::ClaudeSdk(Sdk::Ask(ask))
-            | ItemBody::Codex(Codex::Ask(ask)) => Some(ask),
+            ItemBody::Claude(Claude::Ask(ask)) | ItemBody::Codex(Codex::Ask(ask)) => Some(ask),
             _ => None,
         })
         .filter(|ask| matches!(ask.ask, Some(wire::ask_item::Ask::Question(_))))

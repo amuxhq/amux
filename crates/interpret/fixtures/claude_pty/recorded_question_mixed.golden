@@ -1,27 +1,27 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1793308991828 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on=- at=1793308991828 asks=[] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" mode=? context=? tasks=? background=?
+snapshot IDLE queue=[] working_on=- at=1793308991828 asks=[] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
-snapshot IDLE queue=[] working_on=- at=1793308991855 asks=[] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" mode=auto context=? tasks=? background=?
+snapshot IDLE queue=[] working_on=- at=1793308991855 asks=[] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=auto context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 13 recorded 11: fact Transcript type=user uuid=0e502880-0c45-47b6-98c3-516f3a1b1c3c
 item 0e502880-0c45-47b6-98c3-516f3a1b1c3c prompt final at=1793308992079 text="Use one AskUserQuestion call containing two questions: first a single-select Color question with Red and Blue; second a multi-select Tools question with Hammer, Saw, and Drill. Then repeat both answers."
-snapshot WORKING queue=[] working_on=- at=1793308992079 asks=[] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" mode=auto context=? tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308992079 asks=[] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=auto context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 37 recorded 35: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01C8ihUEtjyeFHaaxcgLAX9M
-snapshot WORKING queue=[] working_on=- at=1793308994961 asks=[] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" mode=auto context=? tasks=? background=? running=toolu_01C8ihUEtjyeFHaaxcgLAX9M AskUserQuestion since=1793308994961
+snapshot WORKING queue=[] working_on=- at=1793308994961 asks=[] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=auto context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01C8ihUEtjyeFHaaxcgLAX9M AskUserQuestion since=1793308994961
 ## 39 recorded 37: fact Hook hook_event_name=PermissionRequest
-snapshot NEEDS_YOU queue=[] working_on=- at=1793308994988 asks=[ask:1->- question:2+other,3m+other] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" mode=auto context=? tasks=? background=? running=toolu_01C8ihUEtjyeFHaaxcgLAX9M AskUserQuestion since=1793308994961
+snapshot NEEDS_YOU queue=[] working_on=- at=1793308994988 asks=[ask:1->- question:2+other,3m+other] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=auto context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01C8ihUEtjyeFHaaxcgLAX9M AskUserQuestion since=1793308994961
 ## 43 recorded 41: fact Transcript type=assistant uuid=59a0c20e-0933-4a99-8f66-a579ed84bb15
 item toolu_01C8ihUEtjyeFHaaxcgLAX9M ask final at=1793308995171 text="" question×2 open
-snapshot NEEDS_YOU queue=[] working_on=- at=1793308999010 asks=[ask:1->toolu_01C8ihUEtjyeFHaaxcgLAX9M question:2+other,3m+other] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" mode=auto context=46858 tasks=? background=? running=toolu_01C8ihUEtjyeFHaaxcgLAX9M AskUserQuestion since=1793308994961
+snapshot NEEDS_YOU queue=[] working_on=- at=1793308999010 asks=[ask:1->toolu_01C8ihUEtjyeFHaaxcgLAX9M question:2+other,3m+other] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=auto context=46858/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01C8ihUEtjyeFHaaxcgLAX9M AskUserQuestion since=1793308994961
 ## 45 recorded 43: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01C8ihUEtjyeFHaaxcgLAX9M
-snapshot NEEDS_YOU queue=[] working_on=- at=1793308999011 asks=[ask:1->toolu_01C8ihUEtjyeFHaaxcgLAX9M question:2+other,3m+other] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" mode=auto context=46858 tasks=? background=?
+snapshot NEEDS_YOU queue=[] working_on=- at=1793308999011 asks=[ask:1->toolu_01C8ihUEtjyeFHaaxcgLAX9M question:2+other,3m+other] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=auto context=46858/? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 47 recorded 45: fact Transcript type=user uuid=757dc84f-293a-439e-8be4-68f08856349f
 item toolu_01C8ihUEtjyeFHaaxcgLAX9M ask final at=1793308995171 text="" question×2 ASK_OUTCOME_ANSWERED answered 2 of 2 [Blue; Hammer+Drill]
-snapshot WORKING queue=[] working_on=- at=1793308999012 asks=[] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" mode=auto context=46858 tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308999012 asks=[] session=ad9f54fe-42fa-4da9-936c-4f27a46a0352 model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=auto context=46858/? tasks=? active=[] usage=? servers=? sign_in=? background=?

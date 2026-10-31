@@ -39,7 +39,7 @@ fn event(of: session_event::Of) -> Msg {
 }
 
 fn body(kind: Kind, tool: Option<(&str, bool)>, text: bool) -> Vec<u8> {
-    use wire::{claude_pty_item as pty, claude_sdk_item as sdk, codex_item as codex};
+    use wire::{claude_item as pty, claude_item as sdk, codex_item as codex};
     let class = |explore: bool| if explore { ToolClass::Read } else { ToolClass::Consequential } as i32;
     match (kind, tool) {
         (Kind::Codex, Some((name, explore))) => wire::CodexItem {
@@ -76,30 +76,30 @@ fn body(kind: Kind, tool: Option<(&str, bool)>, text: bool) -> Vec<u8> {
                 ..Default::default()
             };
             if kind == Kind::ClaudePty {
-                wire::ClaudePtyItem {
+                wire::ClaudeItem {
                     kind: Some(pty::Kind::Tool(tool)),
                 }
                 .encode_to_vec()
             } else {
-                wire::ClaudeSdkItem {
+                wire::ClaudeItem {
                     kind: Some(sdk::Kind::Tool(tool)),
                 }
                 .encode_to_vec()
             }
         }
-        (Kind::ClaudePty, None) if text => wire::ClaudePtyItem {
+        (Kind::ClaudePty, None) if text => wire::ClaudeItem {
             kind: Some(pty::Kind::Message(wire::Text { complete: true })),
         }
         .encode_to_vec(),
-        (Kind::ClaudePty, None) => wire::ClaudePtyItem {
+        (Kind::ClaudePty, None) => wire::ClaudeItem {
             kind: Some(pty::Kind::Prompt(wire::Prompt {})),
         }
         .encode_to_vec(),
-        (_, None) if text => wire::ClaudeSdkItem {
+        (_, None) if text => wire::ClaudeItem {
             kind: Some(sdk::Kind::Message(wire::Text { complete: true })),
         }
         .encode_to_vec(),
-        (_, None) => wire::ClaudeSdkItem {
+        (_, None) => wire::ClaudeItem {
             kind: Some(sdk::Kind::Prompt(wire::Prompt {})),
         }
         .encode_to_vec(),
@@ -778,7 +778,7 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
         window_tokens: Some(200_000),
     };
     match kind {
-        Kind::ClaudePty => wire::ClaudePtySnapshot {
+        Kind::ClaudePty => wire::ClaudeSnapshot {
             asks,
             tasks: Some(tasks),
             context: Some(context),
@@ -791,7 +791,7 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
             ..Default::default()
         }
         .encode_to_vec(),
-        Kind::ClaudeSdk => wire::ClaudeSdkSnapshot {
+        Kind::ClaudeSdk => wire::ClaudeSnapshot {
             asks,
             tasks: Some(tasks),
             context: Some(context),
@@ -1360,7 +1360,7 @@ fn command(name: &str) -> wire::OfferedCommand {
 fn settings_mark_the_current_model_effort_and_permission() {
     let view = settings_offering(
         Kind::ClaudeSdk,
-        wire::ClaudeSdkSnapshot {
+        wire::ClaudeSnapshot {
             model: Some("sonnet".into()),
             effort: Some("high".into()),
             permission: Some("plan".into()),
@@ -1438,7 +1438,7 @@ fn settings_mark_the_current_model_effort_and_permission() {
 fn a_reported_value_outside_the_offer_is_shown_as_current() {
     let view = settings_offering(
         Kind::ClaudeSdk,
-        wire::ClaudeSdkSnapshot {
+        wire::ClaudeSnapshot {
             model: Some("claude-haiku-4-5-20251001".into()),
             effort: Some("max".into()),
             permission: Some("dontAsk".into()),
@@ -1579,7 +1579,7 @@ fn codex_offers_permissions_and_modes_and_settings_outside_them_read_custom() {
 fn an_offered_alias_is_marked_for_the_model_id_it_resolves_to() {
     let view = settings_offering(
         Kind::ClaudeSdk,
-        wire::ClaudeSdkSnapshot {
+        wire::ClaudeSnapshot {
             model: Some("id-sonnet".into()),
             ..Default::default()
         }
@@ -1608,7 +1608,7 @@ fn terminal_claude_shows_what_it_reports_and_says_how_to_type_a_change() {
     let (permissions, _) = offered_controls(Kind::ClaudePty);
     let view = settings_with(
         Kind::ClaudePty,
-        wire::ClaudePtySnapshot {
+        wire::ClaudeSnapshot {
             model: Some("claude-sonnet-5".into()),
             permission: Some("acceptEdits".into()),
             ..Default::default()
@@ -1690,7 +1690,7 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
         state.set_catalogue(b"offered".to_vec(), catalogue);
         state.update(event(session_event::Of::Snapshot(wire::Snapshot {
             kind: Kind::ClaudeSdk as i32,
-            body: wire::ClaudeSdkSnapshot {
+            body: wire::ClaudeSnapshot {
                 model: Some("id-sonnet".into()),
                 model_name: Some("Sonnet 5".into()),
                 permission: Some(permission.into()),
@@ -1760,7 +1760,7 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
     let mut state = SessionState::new(agent(Kind::ClaudePty), CAP);
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: Kind::ClaudePty as i32,
-        body: wire::ClaudePtySnapshot {
+        body: wire::ClaudeSnapshot {
             model: Some("claude-sonnet-5".into()),
             model_name: Some("Sonnet 5".into()),
             permission: Some("plan".into()),
@@ -1957,8 +1957,8 @@ fn tool_item(
         order,
         revision: order,
         kind: Kind::ClaudeSdk as i32,
-        body: wire::ClaudeSdkItem {
-            kind: Some(wire::claude_sdk_item::Kind::Tool(wire::ToolCall {
+        body: wire::ClaudeItem {
+            kind: Some(wire::claude_item::Kind::Tool(wire::ToolCall {
                 name: name.into(),
                 input: Some(interpret::tool_input(name, "", &input, "")),
                 patch: interpret::file_step(name, "", &outcome.to_string()).patch,
@@ -2126,14 +2126,14 @@ fn a_patch_head_keeps_hunk_lines_that_look_like_file_headers() {
     );
 }
 
-fn sdk_item(order: u64, revision: u64, kind: wire::claude_sdk_item::Kind, text: &str) -> Item {
+fn sdk_item(order: u64, revision: u64, kind: wire::claude_item::Kind, text: &str) -> Item {
     Item {
         key: format!("k{order}"),
         order,
         revision,
         text: text.into(),
         kind: Kind::ClaudeSdk as i32,
-        body: wire::ClaudeSdkItem { kind: Some(kind) }.encode_to_vec(),
+        body: wire::ClaudeItem { kind: Some(kind) }.encode_to_vec(),
         at_ms: order as i64 * 1000,
         ..Item::default()
     }
@@ -2143,7 +2143,7 @@ fn said(order: u64, revision: u64, text: &str, complete: bool) -> Item {
     sdk_item(
         order,
         revision,
-        wire::claude_sdk_item::Kind::Message(wire::Text { complete }),
+        wire::claude_item::Kind::Message(wire::Text { complete }),
         text,
     )
 }
@@ -2152,7 +2152,7 @@ fn running(order: u64, revision: u64, command: &str) -> Item {
     sdk_item(
         order,
         revision,
-        wire::claude_sdk_item::Kind::Tool(wire::ToolCall {
+        wire::claude_item::Kind::Tool(wire::ToolCall {
             name: "Bash".into(),
             state: ToolState::Running as i32,
             class: ToolClass::Consequential as i32,
@@ -2169,11 +2169,7 @@ fn running(order: u64, revision: u64, command: &str) -> Item {
 }
 
 /// A caught-up session on `entry` with a headless Claude snapshot and items.
-fn session_on(
-    entry: &wire::Agent,
-    body: wire::ClaudeSdkSnapshot,
-    items: Vec<Item>,
-) -> SessionState {
+fn session_on(entry: &wire::Agent, body: wire::ClaudeSnapshot, items: Vec<Item>) -> SessionState {
     let mut state = SessionState::new(entry.clone(), CAP);
     state.update(snapshot(
         Kind::ClaudeSdk,
@@ -2216,7 +2212,7 @@ fn a_reply_opening_with_an_attachment_still_says_something_on_its_row() {
     };
     let state = session_on(
         &fleet_entry("a", "h1", Phase::Idle, None, 1),
-        wire::ClaudeSdkSnapshot::default(),
+        wire::ClaudeSnapshot::default(),
         vec![reply],
     );
     let said = session_line(&state, 5_000)
@@ -2247,7 +2243,7 @@ fn an_agent_message_carries_its_attachments_as_chips() {
         ..sdk_item(
             1,
             1,
-            wire::claude_sdk_item::Kind::AgentMessage(wire::AgentMessage {
+            wire::claude_item::Kind::AgentMessage(wire::AgentMessage {
                 envelope_id: b"envelope".to_vec(),
                 from: Some(wire::Sender {
                     value: Some(wire::sender::Value::Agent(wire::AgentSender {
@@ -2262,7 +2258,7 @@ fn an_agent_message_carries_its_attachments_as_chips() {
     };
     let state = session_on(
         &fleet_entry("a", "h1", Phase::Idle, None, 1),
-        wire::ClaudeSdkSnapshot::default(),
+        wire::ClaudeSnapshot::default(),
         vec![message],
     );
     let rows = all_rows(&state, &ChatOptions::default());
@@ -2349,7 +2345,7 @@ fn each_row_says_what_its_state_calls_for() {
     let rows = [
         (
             entry("asker", Phase::NeedsYou),
-            wire::ClaudeSdkSnapshot {
+            wire::ClaudeSnapshot {
                 asks: vec![question],
                 ..Default::default()
             },
@@ -2357,7 +2353,7 @@ fn each_row_says_what_its_state_calls_for() {
         ),
         (
             entry("worker", Phase::Working),
-            wire::ClaudeSdkSnapshot::default(),
+            wire::ClaudeSnapshot::default(),
             vec![
                 said(1, 1, "Running the tests.", true),
                 running(2, 2, "cargo test"),
@@ -2365,7 +2361,7 @@ fn each_row_says_what_its_state_calls_for() {
         ),
         (
             branched,
-            wire::ClaudeSdkSnapshot::default(),
+            wire::ClaudeSnapshot::default(),
             vec![said(
                 1,
                 1,
@@ -2375,7 +2371,7 @@ fn each_row_says_what_its_state_calls_for() {
         ),
         (
             entry("signed-out", Phase::Idle),
-            wire::ClaudeSdkSnapshot {
+            wire::ClaudeSnapshot {
                 sign_in: Some(signed_out),
                 ..Default::default()
             },
@@ -2383,7 +2379,7 @@ fn each_row_says_what_its_state_calls_for() {
         ),
         (
             entry("limited", Phase::Idle),
-            wire::ClaudeSdkSnapshot {
+            wire::ClaudeSnapshot {
                 usage: Some(spent),
                 ..Default::default()
             },
@@ -2391,17 +2387,17 @@ fn each_row_says_what_its_state_calls_for() {
         ),
         (
             entry("starting", Phase::Starting),
-            wire::ClaudeSdkSnapshot::default(),
+            wire::ClaudeSnapshot::default(),
             vec![],
         ),
         (
             ended("finished", wire::ExitCause::Finished, None),
-            wire::ClaudeSdkSnapshot::default(),
+            wire::ClaudeSnapshot::default(),
             vec![said(1, 1, "All done.", true)],
         ),
         (
             fleet_entry("b", "far", Phase::Working, None, 1),
-            wire::ClaudeSdkSnapshot::default(),
+            wire::ClaudeSnapshot::default(),
             vec![running(1, 1, "make")],
         ),
     ];
@@ -2518,7 +2514,7 @@ fn rows_hold_their_order_while_an_agent_streams() {
         fleet.update(msg);
     }
     let key = ui_state::agent_key(&streamer);
-    let mut state = session_on(&streamer, wire::ClaudeSdkSnapshot::default(), vec![]);
+    let mut state = session_on(&streamer, wire::ClaudeSnapshot::default(), vec![]);
     let view = |fleet: &FleetState, state: &SessionState, now: i64| {
         let lines = HashMap::from([(key.clone(), session_line(state, now))]);
         fleet_view(fleet, b"a", &lines, &HashSet::new(), &|_| true)
@@ -3275,7 +3271,7 @@ fn a_multi_file_patch_ask_names_every_file_and_its_change() {
 fn a_rows_last_said_line_reads_markdown_as_plain_words() {
     let state = session_on(
         &fleet_entry("a", "pl1", Phase::Idle, None, 1),
-        wire::ClaudeSdkSnapshot::default(),
+        wire::ClaudeSnapshot::default(),
         vec![said(
             1,
             1,
@@ -3342,7 +3338,7 @@ fn a_file_step_inside_the_agents_folder_is_named_relative_to_it() {
     state.update(snapshot(
         Kind::ClaudeSdk,
         Phase::Idle,
-        wire::ClaudeSdkSnapshot::default().encode_to_vec(),
+        wire::ClaudeSnapshot::default().encode_to_vec(),
         vec![],
     ));
     state.update(event(session_event::Of::Item(tool_item(
@@ -3382,7 +3378,7 @@ fn an_exited_agents_unfinished_step_is_not_drawn_running() {
     state.update(snapshot(
         Kind::ClaudeSdk,
         Phase::Working,
-        wire::ClaudeSdkSnapshot::default().encode_to_vec(),
+        wire::ClaudeSnapshot::default().encode_to_vec(),
         vec![],
     ));
     state.update(event(session_event::Of::Item(running(
@@ -3409,7 +3405,7 @@ fn an_explore_step_keeps_its_failure_reason_and_its_result() {
     state.update(snapshot(
         Kind::ClaudeSdk,
         Phase::Idle,
-        wire::ClaudeSdkSnapshot::default().encode_to_vec(),
+        wire::ClaudeSnapshot::default().encode_to_vec(),
         vec![],
     ));
     let mut search = tool_item(
@@ -3434,8 +3430,8 @@ fn an_explore_step_keeps_its_failure_reason_and_its_result() {
         ),
         (&mut fetch, ToolClass::Fetch, "Received 577 bytes (200 OK)"),
     ] {
-        let mut body = wire::ClaudeSdkItem::decode(item.body.as_slice()).unwrap();
-        if let Some(wire::claude_sdk_item::Kind::Tool(tool)) = &mut body.kind {
+        let mut body = wire::ClaudeItem::decode(item.body.as_slice()).unwrap();
+        if let Some(wire::claude_item::Kind::Tool(tool)) = &mut body.kind {
             tool.class = class as i32;
             tool.outcome_text = outcome.into();
         }
@@ -3478,12 +3474,12 @@ fn command_output_keeps_no_colour_codes_and_loses_no_words_after_a_return() {
     state.update(snapshot(
         Kind::ClaudeSdk,
         Phase::Idle,
-        wire::ClaudeSdkSnapshot::default().encode_to_vec(),
+        wire::ClaudeSnapshot::default().encode_to_vec(),
         vec![],
     ));
     let mut item = running(1, 1, "printf");
-    let mut body = wire::ClaudeSdkItem::decode(item.body.as_slice()).unwrap();
-    if let Some(wire::claude_sdk_item::Kind::Tool(tool)) = &mut body.kind {
+    let mut body = wire::ClaudeItem::decode(item.body.as_slice()).unwrap();
+    if let Some(wire::claude_item::Kind::Tool(tool)) = &mut body.kind {
         tool.state = ToolState::Succeeded as i32;
         tool.outcome_text = "\u{1b}[31mRED\u{1b}[0m TAB\naaa\rbbb\nline 1\n".into();
     }
@@ -3600,7 +3596,7 @@ fn direction_controls_in_names_are_not_drawn_as_direction_changes() {
     };
     let state = session_on(
         &fleet_entry("a", "h1", Phase::Idle, None, 1),
-        wire::ClaudeSdkSnapshot::default(),
+        wire::ClaudeSnapshot::default(),
         vec![reply],
     );
     let said = session_line(&state, 5_000).last_said.unwrap_or_default();
@@ -3949,15 +3945,15 @@ fn a_steps_time_leaves_out_the_wait_for_approval() {
     state.update(snapshot(
         Kind::ClaudeSdk,
         Phase::Idle,
-        wire::ClaudeSdkSnapshot::default().encode_to_vec(),
+        wire::ClaudeSnapshot::default().encode_to_vec(),
         vec![],
     ));
     // Asked at 1s, allowed and started at 38s, done at 40s; the second
     // says nothing of when it started, so it runs from its item's time.
     for (order, started_at_ms) in [(1, Some(38_000)), (2, None)] {
         let mut item = running(order, 1, "curl -s https://example.com");
-        let mut body = wire::ClaudeSdkItem::decode(item.body.as_slice()).unwrap();
-        if let Some(wire::claude_sdk_item::Kind::Tool(tool)) = &mut body.kind {
+        let mut body = wire::ClaudeItem::decode(item.body.as_slice()).unwrap();
+        if let Some(wire::claude_item::Kind::Tool(tool)) = &mut body.kind {
             tool.state = ToolState::Succeeded as i32;
             tool.started_at_ms = started_at_ms;
             tool.ended_at_ms = Some(item.at_ms + 39_000);
@@ -3981,7 +3977,7 @@ fn terminal_claude_switched_to_another_conversation_says_so_until_it_is_back() {
     let snapshot = |switched_away: bool| {
         event(session_event::Of::Snapshot(wire::Snapshot {
             kind: Kind::ClaudePty as i32,
-            body: wire::ClaudePtySnapshot {
+            body: wire::ClaudeSnapshot {
                 effort: Some("high".into()),
                 switched_away: Some(switched_away),
                 ..Default::default()
@@ -4222,12 +4218,12 @@ fn a_job_offers_its_own_stop_where_the_kind_can_stop_one() {
     };
     let stops = |kind: Kind| {
         let body = match kind {
-            Kind::ClaudeSdk => wire::ClaudeSdkSnapshot {
+            Kind::ClaudeSdk => wire::ClaudeSnapshot {
                 background_jobs: Some(jobs.clone()),
                 ..Default::default()
             }
             .encode_to_vec(),
-            Kind::ClaudePty => wire::ClaudePtySnapshot {
+            Kind::ClaudePty => wire::ClaudeSnapshot {
                 background_jobs: Some(jobs.clone()),
                 ..Default::default()
             }

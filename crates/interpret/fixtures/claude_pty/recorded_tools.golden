@@ -1,48 +1,48 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1793308284507 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on=- at=1793308284507 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=? tasks=? background=?
+snapshot IDLE queue=[] working_on=- at=1793308284507 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
-snapshot IDLE queue=[] working_on=- at=1793308284988 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=?
+snapshot IDLE queue=[] working_on=- at=1793308284988 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 13 recorded 11: fact Transcript type=user uuid=c17768fb-534d-46a3-8191-464715f1e051
 item c17768fb-534d-46a3-8191-464715f1e051 prompt final at=1793308285258 text="First use Read to inspect config.txt. Then use Edit to change its only line from VALUE=1 to VALUE=2. Then use Bash to run exactly: cat config.txt. Do all three in this turn, in that order, then stop."
-snapshot WORKING queue=[] working_on=- at=1793308285258 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308285258 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 35 recorded 33: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_019s8c4Ukpr3AFq6Uh2GDHHR
-snapshot WORKING queue=[] working_on=- at=1793308287015 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=? running=toolu_019s8c4Ukpr3AFq6Uh2GDHHR Read since=1793308287015
+snapshot WORKING queue=[] working_on=- at=1793308287015 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_019s8c4Ukpr3AFq6Uh2GDHHR Read since=1793308287015
 ## 37 recorded 35: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_019s8c4Ukpr3AFq6Uh2GDHHR
-snapshot WORKING queue=[] working_on=- at=1793308287033 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=? tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308287033 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 41 recorded 39: fact Transcript type=assistant uuid=a4601f2e-e2e1-472e-b9b8-d918f111bdae
 item a4601f2e-e2e1-472e-b9b8-d918f111bdae thinking final at=1793308286772 text=""
-snapshot WORKING queue=[] working_on=- at=1793308287205 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34765 tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308287205 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=34765/? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 42 recorded 40: fact Transcript type=assistant uuid=8f5a14b3-8c34-436f-85a3-47ceca16e1a3
 item toolu_019s8c4Ukpr3AFq6Uh2GDHHR tool final at=1793308287280 text="" Read TOOL_STATE_RUNNING read started=1793308287280 input="{\"file_path\":\"<MACHINE_PATH>\"}"
 ## 43 recorded 41: fact Transcript type=user uuid=35bc3840-bc54-4160-8db0-5febcd1f8c2f
 item toolu_019s8c4Ukpr3AFq6Uh2GDHHR tool final at=1793308287280 text="" Read TOOL_STATE_SUCCEEDED read started=1793308287280 ended=1793308287311 input="{\"file_path\":\"<MACHINE_PATH>\"}" out="1\tVALUE=1\n2\t"
 ## 55 recorded 53: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01K2nuhRLYEXNUGBwaPLqobp
-snapshot WORKING queue=[] working_on=- at=1793308288637 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34765 tasks=? background=? running=toolu_01K2nuhRLYEXNUGBwaPLqobp Edit since=1793308288637
+snapshot WORKING queue=[] working_on=- at=1793308288637 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=34765/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01K2nuhRLYEXNUGBwaPLqobp Edit since=1793308288637
 ## 57 recorded 55: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01K2nuhRLYEXNUGBwaPLqobp
-snapshot WORKING queue=[] working_on=- at=1793308288661 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34765 tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308288661 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=34765/? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 61 recorded 59: fact Transcript type=assistant uuid=83420d2e-2a8c-44b1-ab20-812219b12a63
 item 83420d2e-2a8c-44b1-ab20-812219b12a63 thinking final at=1793308288452 text=""
-snapshot WORKING queue=[] working_on=- at=1793308288853 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34983 tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308288853 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=34983/? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 62 recorded 60: fact Transcript type=assistant uuid=9872f19a-751c-4fb3-9aa3-8c56e7ec9251
 item toolu_01K2nuhRLYEXNUGBwaPLqobp tool final at=1793308288899 text="" Edit TOOL_STATE_RUNNING started=1793308288899 input=edit:"<MACHINE_PATH>"x1
 ## 65 recorded 63: fact Transcript type=user uuid=a686d9f3-ffaf-4f52-809a-988ce2425ce8
 item toolu_01K2nuhRLYEXNUGBwaPLqobp tool final at=1793308288899 text="" Edit TOOL_STATE_SUCCEEDED started=1793308288899 ended=1793308288939 line=1 input=edit:"<MACHINE_PATH>"x1 patch=1/2 out="The file /private<MACHINE_PATH> has been updated successfull…"
 ## 70 recorded 68: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01Qpt85U6MQkWhN7ArBUUPXq
-snapshot WORKING queue=[] working_on=- at=1793308290023 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=34983 tasks=? background=? running=toolu_01Qpt85U6MQkWhN7ArBUUPXq Bash since=1793308290023
+snapshot WORKING queue=[] working_on=- at=1793308290023 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=34983/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01Qpt85U6MQkWhN7ArBUUPXq Bash since=1793308290023
 ## 73 recorded 71: fact Transcript type=assistant uuid=1dd62b6c-c295-4a84-87dd-45182baaed95
 item 1dd62b6c-c295-4a84-87dd-45182baaed95 thinking final at=1793308289968 text=""
-snapshot WORKING queue=[] working_on=- at=1793308290191 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=35238 tasks=? background=? running=toolu_01Qpt85U6MQkWhN7ArBUUPXq Bash since=1793308290023
+snapshot WORKING queue=[] working_on=- at=1793308290191 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35238/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01Qpt85U6MQkWhN7ArBUUPXq Bash since=1793308290023
 ## 75 recorded 73: fact Transcript type=assistant uuid=cc0fe994-f053-46ad-a020-aaeefc8b864f
 item toolu_01Qpt85U6MQkWhN7ArBUUPXq tool final at=1793308290286 text="" Bash TOOL_STATE_RUNNING input=shell:"cat config.txt"
 ## 77 recorded 75: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01Qpt85U6MQkWhN7ArBUUPXq
-snapshot WORKING queue=[] working_on=- at=1793308290216 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=35238 tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308290216 asks=[] session=83b55501-d60b-4571-aba0-f4cdc0e4a36e model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35238/? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 79 recorded 77: fact Transcript type=user uuid=d1f9bb8a-dec3-42f3-9d24-85d60ca87cbd
 item toolu_01Qpt85U6MQkWhN7ArBUUPXq tool final at=1793308290286 text="" Bash TOOL_STATE_SUCCEEDED started=1793308290286 ended=1793308290494 input=shell:"cat config.txt" out="VALUE=2"

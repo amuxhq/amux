@@ -114,21 +114,19 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, Ask, AskClosed, Attachment, Boundary, BoundaryKind, ClaudeAnswer, ClaudeGrant,
-    ClaudePtyItem, ClaudePtySnapshot, ContextMeter, DecisionOutcome, Envelope, Input, KindInput,
-    Refusal, RunningCall, Step, SubagentProgress, ToolCall, ToolDecision, ToolState, claude_answer,
-    claude_pty_input, claude_pty_item, tool_decision,
+    AgentSpec, Ask, AskClosed, Attachment, BoundaryKind, ClaudeAnswer, ClaudeGrant, ClaudeSnapshot,
+    DecisionOutcome, Envelope, Input, KindInput, Refusal, RunningCall, Step, SubagentProgress,
+    ToolDecision, claude_answer, claude_item, claude_pty_input, tool_decision,
 };
 
 use crate::claude_answers::{self, AnswerShape, Decided};
 use crate::claude_common::{
-    FileStep, Jobs, Task, Verdict, describe_asks, describe_tasks, describe_tool, file_step,
-    plan_item, question_item, same_json, task_list, tool_input,
+    Jobs, Task, Verdict, agent_message_item, boundary_item, context_meter, item_body, same_json,
+    task_list,
 };
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
-    RedactTarget, SendOutcome, Shared, SnapshotView, Stepped, agent_message_body,
-    agent_message_key, ask_item, claude_pty_input, human, is_send_tool, sent_message, serde_pb,
+    RedactTarget, Shared, SnapshotView, Stepped, ask_item, claude_pty_input, human, serde_pb,
     unknown,
 };
 
@@ -279,52 +277,22 @@ struct Provider {
 }
 
 /// A tool call as its transcript rows report it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-struct Tool {
+type Tool = crate::claude_common::Tool<Call>;
+
+/// What a call's rows and hooks say beside what is drawn.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+struct Call {
     /// Arrival order, so the newest running call can be found.
     seq: u64,
-    at_ms: i64,
-    name: String,
-    server: String,
-    input: String,
-    state: i32,
-    outcome_text: String,
-    outcome_json: String,
-    class: i32,
-    background: bool,
-    decision: Option<Decision>,
-    ended_at_ms: Option<i64>,
-    /// When the call began running, after any wait for approval: its
-    /// PostToolUse hook's time less the duration Claude gives.
-    started_at_ms: Option<i64>,
     /// The assistant message the call's row belongs to.
     message_id: String,
     /// Its tool result row arrived.
     finished: bool,
-    /// Drawn elsewhere than as a tool row: the status tool sets working_on
-    /// and the task tools the task list.
-    hidden: bool,
     /// An Agent call's subagent: the steps it has taken so far.
     subagent: Option<Subagent>,
     /// A subagent launched in the background: the call returned, and the
     /// task notification carries the answer.
     awaiting_notification: bool,
-    /// The body last emitted, so an unchanged revision is not re-emitted.
-    /// Images the tool read, by the blobs that hold them.
-    #[serde(with = "serde_pb::msgs")]
-    images: Vec<Attachment>,
-    /// What amux's attach tool attached, from the element it answered.
-    #[serde(with = "serde_pb::msgs")]
-    attached: Vec<Attachment>,
-    /// An ExitPlanMode call is drawn as its plan, with this verdict.
-    plan: Option<Verdict>,
-    /// An AskUserQuestion call is drawn as its question, closed with this
-    /// record once decided.
-    question: bool,
-    #[serde(with = "serde_pb::opt_msg")]
-    asked: Option<AskClosed>,
-    #[serde(with = "serde_pb::item_body")]
-    emitted: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -618,10 +586,6 @@ pub(super) struct Stream {
     pub(super) landed: bool,
 }
 
-fn item_body(kind: claude_pty_item::Kind) -> Vec<u8> {
-    ClaudePtyItem { kind: Some(kind) }.encode_to_vec()
-}
-
 impl State {
     /// The kind-neutral state: the agent process reads the pending
     /// agent-message set and quiescence from here.
@@ -683,18 +647,10 @@ impl State {
 
     fn body(&self) -> Vec<u8> {
         let tasks = task_list(&self.tasks);
-        let context = match self.context_tokens {
-            None => unknown::context_meter(),
-            Some(used_tokens) => ContextMeter {
-                known: true,
-                used_tokens,
-                window_tokens: None,
-            },
-        };
-        ClaudePtySnapshot {
+        ClaudeSnapshot {
             asks: self.shared.asks().open_asks().to_vec(),
             tasks: Some(tasks),
-            context: Some(context),
+            context: Some(context_meter(self.context_tokens, None)),
             model: self.provider.model.clone(),
             // Terminal Claude lists no models of its own to name it from.
             model_name: self
@@ -721,7 +677,7 @@ impl State {
                     since_ms: running.since_ms,
                 })
                 .collect(),
-            ..unknown::claude_pty()
+            ..unknown::claude()
         }
         .encode_to_vec()
     }
@@ -734,127 +690,12 @@ impl State {
         let Some(tool) = self.tools.get_mut(id) else {
             return;
         };
-        if tool.hidden {
-            return;
-        }
-        if tool.question {
-            let Some(item) = question_item(&tool.input, tool.asked.clone()) else {
-                return;
-            };
-            let body = item_body(claude_pty_item::Kind::Ask(item));
-            if body == tool.emitted {
-                return;
-            }
-            tool.emitted = body.clone();
-            let at_ms = tool.at_ms;
-            return self.shared.item(
-                emit,
-                ItemDraft {
-                    key: id.to_owned(),
-                    body,
-                    at_ms: Some(at_ms),
-                    complete: true,
-                    ..Default::default()
-                },
-            );
-        }
-        if let Some(verdict) = &tool.plan {
-            let Some((text, plan)) = plan_item(&tool.input, verdict) else {
-                return;
-            };
-            let body = item_body(claude_pty_item::Kind::Plan(plan));
-            if body == tool.emitted {
-                return;
-            }
-            tool.emitted = body.clone();
-            let at_ms = tool.at_ms;
-            return self.shared.item(
-                emit,
-                ItemDraft {
-                    key: id.to_owned(),
-                    text,
-                    body,
-                    at_ms: Some(at_ms),
-                    complete: true,
-                    ..Default::default()
-                },
-            );
-        }
-        if is_send_tool(&tool.server, &tool.name) {
-            let (text, message) = sent_message(
-                tool.input.as_bytes(),
-                SendOutcome::of(
-                    wire::ToolState::try_from(tool.state).unwrap_or_default(),
-                    &tool.outcome_text,
-                ),
-            );
-            let body = item_body(claude_pty_item::Kind::AgentMessage(message));
-            if body == tool.emitted {
-                return;
-            }
-            tool.emitted = body.clone();
-            let at_ms = tool.at_ms;
-            // The message's files go as attachments, not their elements.
-            let (text, attachments) = crate::shared::parse_reply(text);
-            return self.shared.item(
-                emit,
-                ItemDraft {
-                    key: id.to_owned(),
-                    text,
-                    attachments,
-                    body,
-                    at_ms: Some(at_ms),
-                    complete: true,
-                    ..Default::default()
-                },
-            );
-        }
-        let step = if tool.state == ToolState::Succeeded as i32 {
-            file_step(&tool.name, &tool.server, &tool.outcome_json)
-        } else {
-            FileStep::default()
-        };
-        let input = serde_json::from_str(&tool.input).unwrap_or(Value::Null);
-        let body = item_body(claude_pty_item::Kind::Tool(ToolCall {
-            name: tool.name.clone(),
-            input: Some(tool_input(&tool.name, &tool.server, &input, "")),
-            state: tool.state,
-            outcome_text: tool.outcome_text.clone(),
-            attachments: tool.images.clone(),
-            class: tool.class,
-            decision: tool.decision.as_ref().map(Decision::to_wire),
-            background: tool.background,
-            parent_key: String::new(),
-            subagent: tool.subagent.as_ref().map(|subagent| SubagentProgress {
-                tool_count: subagent.tool_count,
-                last_tool: subagent.last_tool.clone(),
-                finished: tool.finished,
-            }),
-            server: tool.server.clone(),
-            exit_code: None,
-            ended_at_ms: tool.ended_at_ms,
-            created: step.created,
-            line: step.line,
-            started_at_ms: tool.started_at_ms,
-            patch: step.patch,
-        }));
-        if body == tool.emitted {
-            return;
-        }
-        tool.emitted = body.clone();
-        let at_ms = tool.at_ms;
-        let attachments = tool.attached.clone();
-        self.shared.item(
-            emit,
-            ItemDraft {
-                key: id.to_owned(),
-                body,
-                attachments,
-                at_ms: Some(at_ms),
-                complete: true,
-                ..Default::default()
-            },
-        );
+        let subagent = tool.of.subagent.as_ref().map(|subagent| SubagentProgress {
+            tool_count: subagent.tool_count,
+            last_tool: subagent.last_tool.clone(),
+            finished: tool.of.finished,
+        });
+        tool.emit(&mut self.shared, emit, id, subagent);
     }
 
     // --- asks ------------------------------------------------------------
@@ -917,7 +758,7 @@ impl State {
             } else {
                 match &mut tool.plan {
                     Some(plan) => *plan = decision.plan_verdict(None),
-                    None => tool.decision = Some(decision),
+                    None => tool.decision = Some(decision.to_wire()),
                 }
             }
             self.emit_tool(emit, tool_id);
@@ -1063,11 +904,7 @@ impl State {
             Some(id) => emit.effect(Effect::HookAnswer {
                 id,
                 answer: hook_output(claude_answers::Answer::Permission(
-                    claude_protocol::stream::PermissionResult::Deny {
-                        message: claude_answers::REJECTED.to_owned(),
-                        interrupt: Some(true),
-                        tool_use_id: None,
-                    },
+                    claude_answers::plan_dismissed(),
                 )),
             }),
             None => emit.effect(Effect::Terminal(TerminalInput::Interrupt)),
@@ -1123,7 +960,7 @@ impl State {
             emit,
             ItemDraft {
                 key: ask.item_key.clone(),
-                body: item_body(claude_pty_item::Kind::Ask(item)),
+                body: item_body(claude_item::Kind::Ask(item)),
                 at_ms: Some(ask.opened_at_ms),
                 complete: true,
                 ..Default::default()
@@ -1334,19 +1171,7 @@ impl State {
     fn boundary(&mut self, emit: &mut Emit, kind: BoundaryKind, exit: wire::IncarnationEnd) {
         self.next_boundary += 1;
         let key = format!("boundary:{}", self.next_boundary);
-        self.shared.item(
-            emit,
-            ItemDraft {
-                key,
-                body: item_body(claude_pty_item::Kind::Boundary(Boundary {
-                    kind: kind as i32,
-                    cause: exit.cause,
-                    cause_detail: exit.detail,
-                })),
-                complete: true,
-                ..Default::default()
-            },
-        );
+        self.shared.item(emit, boundary_item(key, kind, exit));
     }
 
     fn emit_slash(&mut self, emit: &mut Emit) {
@@ -1357,7 +1182,7 @@ impl State {
             key: slash.key.clone(),
             text: slash.output.clone().unwrap_or_default(),
             input_id: slash.input_id.clone(),
-            body: item_body(claude_pty_item::Kind::Slash(wire::SlashOutput {
+            body: item_body(claude_item::Kind::Slash(wire::SlashOutput {
                 command: slash.command.clone(),
                 args: slash.args.clone(),
             })),
@@ -1398,38 +1223,24 @@ impl State {
         if self.shared.message_repeated(emit, &envelope.id) {
             return;
         }
-        let words = crate::shared::words(&envelope);
-        let attachments = crate::shared::attachments(&envelope).to_vec();
         self.shared.message_accepted(&envelope.id);
+        let item = agent_message_item(&envelope);
         // Claude shows the model the text as carried, label and all, and
         // that is what its transcript reflects.
         let carried = crate::shared::carried(&envelope);
         self.messages.push(PendingMessage {
             id: envelope.id.clone(),
             text: carried.clone(),
-            words: words.clone(),
+            words: item.text.clone(),
         });
         self.shared.message_handed();
         emit.effect(Effect::Inject {
             id: envelope.id.clone(),
             text: carried,
-            attachments: attachments.clone(),
+            attachments: item.attachments.clone(),
             via: Carrier::MessagingSocket,
         });
-        self.shared.item(
-            emit,
-            ItemDraft {
-                key: agent_message_key(&envelope.id),
-                text: words,
-                attachments,
-                input_id: envelope.id.clone(),
-                body: item_body(claude_pty_item::Kind::AgentMessage(agent_message_body(
-                    &envelope,
-                ))),
-                complete: true,
-                ..Default::default()
-            },
-        );
+        self.shared.item(emit, item);
         self.shared.accept(emit, &envelope.id, true);
     }
 
@@ -1736,8 +1547,8 @@ impl Interpreter for ClaudePty {
 
     fn redact(target: RedactTarget) -> RedactTarget {
         crate::redact::redact_kind::<
-            wire::ClaudePtyItem,
-            wire::ClaudePtySnapshot,
+            wire::ClaudeItem,
+            wire::ClaudeSnapshot,
             wire::ClaudePtyInput,
             State,
         >(target)
@@ -1752,15 +1563,15 @@ impl Interpreter for ClaudePty {
     }
 
     fn unknown_snapshot() -> Vec<u8> {
-        unknown::claude_pty().encode_to_vec()
+        unknown::claude().encode_to_vec()
     }
 
     fn describe_item(body: &[u8]) -> ItemView {
-        describe_item(body)
+        crate::claude_common::describe_item(body)
     }
 
     fn describe_snapshot(body: &[u8]) -> SnapshotView {
-        describe_snapshot(body)
+        crate::claude_common::describe_snapshot(body)
     }
 
     fn fixture_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
@@ -1769,128 +1580,5 @@ impl Interpreter for ClaudePty {
 
     fn recording(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
         recording::read(format, bytes)
-    }
-}
-
-fn describe_item(body: &[u8]) -> ItemView {
-    use claude_pty_item::Kind;
-    let item = ClaudePtyItem::decode(body).unwrap_or_default();
-    let (arm, complete, text) = match item.kind {
-        None => ("none", true, String::new()),
-        Some(Kind::Prompt(_)) => ("prompt", true, String::new()),
-        Some(Kind::Steer(_)) => ("steer", true, String::new()),
-        Some(Kind::Message(text)) => ("message", text.complete, String::new()),
-        Some(Kind::Thinking(thinking)) => ("thinking", thinking.complete, String::new()),
-        Some(Kind::Tool(tool)) => ("tool", true, describe_tool(&tool)),
-        Some(Kind::Turn(turn)) => (
-            "turn",
-            true,
-            format!(
-                "#{} {} started={}",
-                turn.turn_id,
-                wire::TurnOutcome::try_from(turn.outcome)
-                    .map_or("?", |outcome| outcome.as_str_name()),
-                turn.started_at_ms
-            ),
-        ),
-        Some(Kind::Compaction(compaction)) => (
-            "compaction",
-            true,
-            format!(
-                "{}→{}{}",
-                compaction
-                    .tokens_before
-                    .map_or("?".to_owned(), |tokens| tokens.to_string()),
-                compaction
-                    .tokens_after
-                    .map_or("?".to_owned(), |tokens| tokens.to_string()),
-                if compaction.automatic { " auto" } else { "" }
-            ),
-        ),
-        Some(Kind::CompactSummary(_)) => ("compact_summary", true, String::new()),
-        Some(Kind::Interruption(_)) => ("interruption", true, String::new()),
-        Some(Kind::AgentMessage(message)) => (
-            "agent_message",
-            true,
-            crate::shared::describe_agent_message(&message),
-        ),
-        Some(Kind::ApiError(error)) => (
-            "api_error",
-            true,
-            format!(
-                "{} {} retry={} {}/{}",
-                error.error_kind,
-                Value::String(error.message),
-                error.will_retry,
-                error.attempt,
-                error.max_attempts
-            ),
-        ),
-        Some(Kind::Boundary(boundary)) => (
-            "boundary",
-            true,
-            format!(
-                "{}{}",
-                BoundaryKind::try_from(boundary.kind).map_or("?", |kind| kind.as_str_name()),
-                crate::claude_common::describe_cause(&boundary)
-            ),
-        ),
-        Some(Kind::Slash(slash)) => (
-            "slash",
-            true,
-            format!("{} args={}", slash.command, Value::String(slash.args)),
-        ),
-        Some(Kind::Ask(item)) => ("ask", true, ask_item::describe(&item)),
-        Some(Kind::Plan(plan)) => ("plan", plan.complete, crate::shared::describe_plan(&plan)),
-        Some(Kind::Unrecognized(unrecognized)) => (
-            "unrecognized",
-            true,
-            format!(
-                "{} {}",
-                unrecognized.fact_type,
-                Value::String(unrecognized.summary)
-            ),
-        ),
-    };
-    ItemView {
-        arm: arm.into(),
-        complete,
-        text,
-    }
-}
-
-fn describe_snapshot(body: &[u8]) -> SnapshotView {
-    let snapshot = ClaudePtySnapshot::decode(body).unwrap_or_default();
-    let context = snapshot.context.unwrap_or_default();
-    SnapshotView {
-        asks: snapshot
-            .asks
-            .iter()
-            .map(|ask| (ask.key.clone(), ask.item_key.clone()))
-            .collect(),
-        text: format!(
-            "asks=[{}] session={} model={} model_name={} mode={} context={} tasks={} background={}",
-            describe_asks(&snapshot.asks),
-            snapshot.provider_session.as_deref().unwrap_or("?"),
-            snapshot.model.as_deref().unwrap_or("?"),
-            crate::claude_common::describe_model_name(snapshot.model_name.as_deref()),
-            snapshot.permission.as_deref().unwrap_or("?"),
-            if context.known {
-                context.used_tokens.to_string()
-            } else {
-                "?".into()
-            },
-            describe_tasks(&snapshot.tasks.unwrap_or_default()),
-            crate::shared::describe_jobs(snapshot.background_jobs.as_ref())
-        ) + &snapshot
-            .running_calls
-            .iter()
-            .map(|call| {
-                format!(
-                    " running={} {} since={}",
-                    call.tool_use_id, call.tool_name, call.since_ms
-                )
-            })
-            .collect::<String>(),
     }
 }

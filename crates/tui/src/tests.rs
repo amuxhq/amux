@@ -49,9 +49,9 @@ fn typed(view: &mut ChatView, state: &SessionState, words: &str) {
 
 /// A Claude SDK item: a reply, or an exploration Read of `path`.
 fn item(order: u64, read: Option<&str>) -> Item {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
     let body = match read {
-        Some(path) => wire::ClaudeSdkItem {
+        Some(path) => wire::ClaudeItem {
             kind: Some(K::Tool(wire::ToolCall {
                 name: "Read".into(),
                 state: ToolState::Succeeded as i32,
@@ -65,7 +65,7 @@ fn item(order: u64, read: Option<&str>) -> Item {
                 ..Default::default()
             })),
         },
-        None => wire::ClaudeSdkItem {
+        None => wire::ClaudeItem {
             kind: Some(K::Message(wire::Text { complete: true })),
         },
     };
@@ -447,7 +447,7 @@ fn body_name(body: &AskBody) -> &'static str {
 
 /// A Claude SDK chat asking something this build cannot read.
 fn unanswerable() -> SessionState {
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         asks: vec![wire::Ask {
             key: "menu-1".into(),
             body: Some(wire::ask::Body::Unanswerable(wire::UnanswerableAsk {
@@ -2000,14 +2000,14 @@ fn an_agent_that_exited_while_the_daemon_was_away_says_exited_once() {
 /// Thinking is never drawn, with or without a measured time.
 #[test]
 fn thinking_is_never_drawn() {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
     let thinking = |order: u64, at_ms: i64| Item {
         key: format!("t{order}"),
         order,
         revision: order,
         text: "weighing it".into(),
         kind: Kind::ClaudeSdk as i32,
-        body: wire::ClaudeSdkItem {
+        body: wire::ClaudeItem {
             kind: Some(K::Thinking(wire::Thinking { complete: true })),
         }
         .encode_to_vec(),
@@ -3193,10 +3193,10 @@ fn an_opened_run_stays_open_as_its_older_steps_page_in() {
 /// when its run folds; one the agent redid folds with the rest.
 #[test]
 fn a_folded_run_keeps_a_failure_its_turn_left_unresolved() {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
     let command = |order: u64, line: &str, exit: i32| {
         let mut item = item(order, Some("unused"));
-        item.body = wire::ClaudeSdkItem {
+        item.body = wire::ClaudeItem {
             kind: Some(K::Tool(wire::ToolCall {
                 name: "Bash".into(),
                 state: ToolState::Succeeded as i32,
@@ -3217,7 +3217,7 @@ fn a_folded_run_keeps_a_failure_its_turn_left_unresolved() {
     let turn_end = |order: u64| {
         let mut item = item(order, None);
         item.text = String::new();
-        item.body = wire::ClaudeSdkItem {
+        item.body = wire::ClaudeItem {
             kind: Some(K::Turn(wire::Turn::default())),
         }
         .encode_to_vec();
@@ -3255,12 +3255,12 @@ fn a_folded_run_keeps_a_failure_its_turn_left_unresolved() {
 /// unresolved.
 #[test]
 fn tool_steps_switch_between_collapse_show_all_and_hide() {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
 
     use crate::chat::ToolSteps;
     let command = |order: u64, line: &str, exit: i32| {
         let mut item = item(order, Some("unused"));
-        item.body = wire::ClaudeSdkItem {
+        item.body = wire::ClaudeItem {
             kind: Some(K::Tool(wire::ToolCall {
                 name: "Bash".into(),
                 state: ToolState::Succeeded as i32,
@@ -3286,7 +3286,7 @@ fn tool_steps_switch_between_collapse_show_all_and_hide() {
     items.extend(replies(6, 6));
     let mut turn_end = item(7, None);
     turn_end.text = String::new();
-    turn_end.body = wire::ClaudeSdkItem {
+    turn_end.body = wire::ClaudeItem {
         kind: Some(K::Turn(wire::Turn::default())),
     }
     .encode_to_vec();
@@ -3532,7 +3532,7 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
             used_unknown: false,
         })
     };
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         background_jobs: Some(wire::BackgroundJobs {
             known: true,
             jobs: vec![wire::BackgroundJob {
@@ -3621,7 +3621,7 @@ fn a_window_of_unknown_use_reads_a_dash_and_is_never_the_fullest() {
             }),
             ..Default::default()
         };
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         usage: Some(wire::ClaudeUsage {
             state: wire::UsageState::Blocked as i32,
             windows: vec![
@@ -3658,7 +3658,7 @@ fn the_overview_tags_a_subagent_and_a_monitor_and_shows_a_command_as_code() {
         kind: kind as i32,
         ..Default::default()
     };
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         background_jobs: Some(wire::BackgroundJobs {
             known: true,
             jobs: vec![
@@ -3717,14 +3717,14 @@ fn the_overview_tags_a_subagent_and_a_monitor_and_shows_a_command_as_code() {
 
 /// Your message at `order`, as the agent reflected it.
 fn prompt_item(order: u64, words: &str) -> Item {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
     Item {
         key: format!("k{order}"),
         order,
         revision: order,
         text: words.into(),
         kind: Kind::ClaudeSdk as i32,
-        body: wire::ClaudeSdkItem {
+        body: wire::ClaudeItem {
             kind: Some(K::Prompt(wire::Prompt {})),
         }
         .encode_to_vec(),
@@ -4195,7 +4195,7 @@ fn a_job_is_stopped_from_the_pane_behind_a_confirm_card() {
         ..Default::default()
     };
     let shown = |jobs: Vec<wire::BackgroundJob>| {
-        let body = wire::ClaudeSdkSnapshot {
+        let body = wire::ClaudeSnapshot {
             background_jobs: Some(wire::BackgroundJobs { known: true, jobs }),
             ..Default::default()
         }

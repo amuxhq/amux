@@ -1,26 +1,26 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 2 fact {"channel":"agent","json":{"type":"ready"}}
-snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 3 input {"id":"p1","prompt":{"text":"Check the deployment once."}}
 effect reply p1 accepted
 effect terminal prompt "Check the deployment once."
-snapshot IDLE queue=[] working_on="Check the deployment once." at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot IDLE queue=[] working_on="Check the deployment once." at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 4 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
 effect follow "/t/s1.jsonl"
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on="Check the deployment once." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
+snapshot IDLE queue=[] working_on="Check the deployment once." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 5 tick 1800000001000
 ## 6 fact {"channel":"hook","json":{"hook_event_name":"UserPromptSubmit","prompt":"Check the deployment once.","session_id":"s1"}}
 ## 7 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"deploy --check"},"tool_name":"Bash","tool_use_id":"t1"}}
-snapshot WORKING queue=[] working_on="Check the deployment once." at=1800000001000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t1 Bash since=1800000001000
+snapshot WORKING queue=[] working_on="Check the deployment once." at=1800000001000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=? running=t1 Bash since=1800000001000
 ## 8 tick 1800000002000
 ## 9 fact {"channel":"hook","json":{"duration_ms":900,"hook_event_name":"PostToolUse","tool_input":{"command":"deploy --check"},"tool_name":"Bash","tool_response":{"stderr":"","stdout":"ok"},"tool_use_id":"t1"}}
-snapshot WORKING queue=[] working_on="Check the deployment once." at=1800000002000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
+snapshot WORKING queue=[] working_on="Check the deployment once." at=1800000002000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 10 fact {"channel":"transcript","json":{"message":{"content":"Check the deployment once.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
 item u1 prompt final input=p1 at=1800000000010 text="Check the deployment once."
 ## 11 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"command":"deploy --check"},"name":"Bash","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.900Z","type":"assistant","uuid":"a1"}}
@@ -29,16 +29,16 @@ item t1 tool final at=1800000000900 text="" Bash TOOL_STATE_RUNNING started=1800
 item t1 tool final at=1800000000900 text="" Bash TOOL_STATE_SUCCEEDED started=1800000001100 ended=1800000001900 input=shell:"deploy --check" out="ok"
 ## 13 fact {"channel":"transcript","json":{"durationMs":2090,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:02.100Z","type":"system","uuid":"d1"}}
 item turn:1 turn final at=1800000002100 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000010
-snapshot IDLE queue=[] working_on="Check the deployment once." at=1800000002000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
+snapshot IDLE queue=[] working_on="Check the deployment once." at=1800000002000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 turn_end 1 last=-
 ## 14 input {"id":"p2","prompt":{"text":"Sign in to the tracker."}}
 effect reply p2 accepted
 effect terminal prompt "Sign in to the tracker."
-snapshot IDLE queue=[] working_on="Sign in to the tracker." at=1800000002000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
+snapshot IDLE queue=[] working_on="Sign in to the tracker." at=1800000002000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 15 tick 1800000006000
 ## 16 fact {"channel":"hook","json":{"amux_reply":101,"cwd":"/w","hook_event_name":"Elicitation","mcp_server_name":"tracker","message":"tracker needs your input","mode":"form","permission_mode":"default","requested_schema":{"properties":{"repo":{"type":"string"}},"required":["repo"],"type":"object"},"session_id":"s1","transcript_path":"/t/s1.jsonl"}}
 item ask:ask:1 ask final at=1800000006000 text="" form tracker open
-snapshot NEEDS_YOU queue=[] working_on="Sign in to the tracker." at=1800000006000 asks=[ask:1->ask:ask:1 form:tracker "tracker needs your input"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot NEEDS_YOU queue=[] working_on="Sign in to the tracker." at=1800000006000 asks=[ask:1->ask:ask:1 form:tracker "tracker needs your input"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 17 fact {"channel":"transcript","json":{"message":{"content":"Sign in to the tracker.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:05.500Z","type":"user","uuid":"u2"}}
 item u2 prompt final input=p2 at=1800000005500 text="Sign in to the tracker."
 ## 18 input {"id":"i1","interrupt":{}}
@@ -46,28 +46,28 @@ effect terminal interrupt
 effect hook 101 answered {"hookSpecificOutput":{"hookEventName":"Elicitation","action":"cancel"}}
 effect reply i1 accepted
 item ask:ask:1 ask final at=1800000006000 text="" form tracker ASK_OUTCOME_CANCELLED
-snapshot WORKING queue=[] working_on="Sign in to the tracker." at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot WORKING queue=[] working_on="Sign in to the tracker." at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 19 fact {"channel":"transcript","json":{"message":{"content":"[Request interrupted by user]","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:06.100Z","type":"user","uuid":"u3"}}
 item u3 interruption final at=1800000006100 text=""
 item turn:2 turn final at=1800000006100 text="" #2 TURN_OUTCOME_INTERRUPTED started=1800000006000
-snapshot IDLE queue=[] working_on="Sign in to the tracker." at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot IDLE queue=[] working_on="Sign in to the tracker." at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 turn_end 2 last=-
 ## 20 input {"id":"p3","prompt":{"text":"Summarise the log."}}
 effect reply p3 accepted
 effect terminal prompt "Summarise the log."
-snapshot IDLE queue=[] working_on="Summarise the log." at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot IDLE queue=[] working_on="Summarise the log." at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 21 fact {"channel":"transcript","json":{"message":{"content":"<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command finished</summary>\n</task-notification>","role":"user"},"origin":{"kind":"task-notification"},"promptSource":"system","sessionId":"s1","timestamp":"2027-01-15T08:00:06.200Z","type":"user","uuid":"n1"}}
-snapshot WORKING queue=[] working_on="Summarise the log." at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot WORKING queue=[] working_on="Summarise the log." at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 22 fact {"channel":"transcript","json":{"attachment":{"commandMode":"prompt","prompt":"Summarise the log.","type":"queued_command"},"sessionId":"s1","timestamp":"2027-01-15T08:00:06.300Z","type":"attachment","uuid":"q1"}}
 item q1 steer final input=p3 at=1800000006300 text="Summarise the log."
 ## 23 fact {"channel":"transcript","json":{"durationMs":200,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:06.400Z","type":"system","uuid":"d2"}}
 item turn:3 turn final at=1800000006400 text="" #3 TURN_OUTCOME_COMPLETED started=1800000006200
-snapshot IDLE queue=[] working_on="Summarise the log." at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot IDLE queue=[] working_on="Summarise the log." at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 turn_end 3 last=-
 ## 24 input {"id":"p4","prompt":{"text":"Now the errors."}}
 effect reply p4 accepted
 effect terminal prompt "Now the errors."
-snapshot IDLE queue=[] working_on="Now the errors." at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot IDLE queue=[] working_on="Now the errors." at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 25 fact {"channel":"transcript","json":{"message":{"content":"Now the errors.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:06.500Z","type":"user","uuid":"u4"}}
 item u4 prompt final input=p4 at=1800000006500 text="Now the errors."
-snapshot WORKING queue=[] working_on="Now the errors." at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
+snapshot WORKING queue=[] working_on="Now the errors." at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?

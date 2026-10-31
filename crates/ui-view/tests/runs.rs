@@ -30,7 +30,7 @@ enum It {
 }
 
 fn item(order: u64, it: &It) -> Item {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
     let tool = |name: &str, input: String, state: ToolState, reads: bool, exit: Option<i32>| {
         K::Tool(wire::ToolCall {
             name: name.into(),
@@ -112,7 +112,7 @@ fn item(order: u64, it: &It) -> Item {
         revision: order,
         text: text.into(),
         kind: Kind::ClaudeSdk as i32,
-        body: wire::ClaudeSdkItem { kind: Some(kind) }.encode_to_vec(),
+        body: wire::ClaudeItem { kind: Some(kind) }.encode_to_vec(),
         at_ms: order as i64 * 1_000,
         ..Item::default()
     }

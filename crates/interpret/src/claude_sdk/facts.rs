@@ -13,27 +13,23 @@ use claude_protocol::stream::{
 use prost::Message as _;
 use serde::Deserialize;
 use serde_json::Value;
-use wire::claude_sdk_item::Kind;
+use wire::claude_item::Kind;
 use wire::{
     BoundaryKind, ClaudeUsage, ClaudeUsageWindow, DecisionOutcome, FormAsk, HealthState, Limit,
     LinkAsk, PermissionAsk, SignIn, SignInState, TaskState as WireTaskState, ToolServer,
     ToolServerHealth, ToolServerStatus, ToolState, Turn, TurnOutcome, UsageMeter, UsageState,
 };
 
-use super::{AskMeta, Request, State, TaskState, Tool, item_body};
+use super::{AskMeta, Call, Request, State, TaskState, Tool};
 use crate::claude_answers::{AnswerShape, Decided, ToolDecisionState};
 use crate::claude_common::{
-    AnsweredResult, BackgroundInput, JobInput, PLAN_TOOL, QUESTION_TOOL, TASK_TOOLS, Verdict,
-    apply_task_tool, auto_models, blocks_text, claude_limit, compact_json, job_kind, message_text,
-    offered_commands, offered_models, old_source, permission_scopes, plan_ask, plan_mode_write,
-    question_ask, question_ask_text, split_tool_name, tool_class, tool_input, tool_result_images,
-    tool_result_text, without_image_bytes, without_terminal_codes,
+    AnsweredResult, JobInput, PLAN_TOOL, QUESTION_TOOL, auto_models, blocks_text, claude_limit,
+    item_body, job_kind, message_text, offered_commands, offered_models, old_source,
+    permission_scopes, plan_ask, question_ask, question_ask_text, split_tool_name, tool_input,
+    tool_result_text, without_terminal_codes,
 };
 use crate::shared::json_as_written;
-use crate::{
-    Channel, Effect, Emit, Fact, ItemDraft, ask_item, is_attach_tool, is_status_tool,
-    status_working_on,
-};
+use crate::{Channel, Effect, Emit, Fact, ItemDraft, ask_item, is_status_tool, status_working_on};
 
 const INTERRUPTED: &str = "[Request interrupted by user";
 
@@ -584,12 +580,13 @@ impl State {
         if let Some(tool) = self.tools.get_mut(&key) {
             let finished = wire.state != WireTaskState::Running as i32;
             let subagent = tool
+                .of
                 .task
                 .as_ref()
                 .map_or(report.task_type == Some("local_agent"), |task| {
                     task.subagent
                 });
-            tool.task = Some(super::TaskProgress {
+            tool.of.task = Some(super::TaskProgress {
                 subagent,
                 tool_count: wire.tool_count,
                 last_tool: wire.last_tool.clone(),
@@ -696,7 +693,7 @@ impl State {
                 let key = format!("{message}:{index}");
                 if let Some(open) = self.shared.open_item(&key).cloned() {
                     let thinking = matches!(
-                        wire::ClaudeSdkItem::decode(open.body.as_slice()).map(|item| item.kind),
+                        wire::ClaudeItem::decode(open.body.as_slice()).map(|item| item.kind),
                         Ok(Some(Kind::Thinking(_)))
                     );
                     self.close_block(emit, key, open.text, thinking);
@@ -916,34 +913,11 @@ impl State {
         let now = self.shared.now_ms();
         let planning = self.permission_mode.as_deref();
         let tool = self.tools.entry(id.to_owned()).or_insert_with(|| Tool {
-            at_ms: now,
-            class: tool_class(&server, &tool_name) as i32,
-            hidden: status
-                || (server.is_empty() && TASK_TOOLS.contains(&tool_name.as_str()))
-                || plan_mode_write(planning, &server, &tool_name),
-            plan: (server.is_empty() && tool_name == PLAN_TOOL).then(Verdict::default),
-            question: server.is_empty() && tool_name == QUESTION_TOOL,
-            asked: None,
-            name: tool_name,
-            server,
-            input: String::new(),
-            state: ToolState::Running as i32,
-            outcome_text: String::new(),
-            outcome_json: String::new(),
-            background: false,
-            decision: None,
-            ended_at_ms: None,
-            started_at_ms: None,
             parent_key: parent.to_owned(),
-            task: None,
-            images: Vec::new(),
-            attached: Vec::new(),
-            emitted: Vec::new(),
+            ..Tool::running(name, now, planning, Call::default())
         });
         if let Some(input) = input {
-            tool.input = input.to_string();
-            tool.background =
-                BackgroundInput::deserialize(input).is_ok_and(|input| input.run_in_background);
+            tool.set_input(input);
         }
         self.emit_tool(emit, id);
     }
@@ -1028,7 +1002,7 @@ impl State {
             .decision
             .as_ref()
             .is_some_and(|decision| decision.outcome == DecisionOutcome::Denied as i32);
-        if tool.background && tool.task.as_ref().is_some_and(|task| !task.finished) {
+        if tool.background && tool.of.task.as_ref().is_some_and(|task| !task.finished) {
             // The result only tells the model the task was launched, and
             // the call stays open until the task's notification: nothing a
             // reader sees changes, so the item is not sent again for it.
@@ -1048,31 +1022,7 @@ impl State {
         } else {
             output
         };
-        let images = tool_result_images(content);
-        if !images.is_empty() {
-            tool.images = Vec::new();
-            for (image, write) in images {
-                tool.images.push(image);
-                emit.effect(write);
-            }
-        }
-        if is_attach_tool(&tool.server, &tool.name) {
-            // The element names the blob by this host's path; the step
-            // carries the attachment instead.
-            let (text, attached) =
-                crate::shared::parse_reply(std::mem::take(&mut tool.outcome_text));
-            if !attached.is_empty() {
-                tool.outcome_text = text;
-                tool.attached = attached;
-            } else {
-                tool.outcome_text = text;
-                if let Some(result) = result {
-                    tool.outcome_json = compact_json(&without_image_bytes(result));
-                }
-            }
-        } else if let Some(result) = result {
-            tool.outcome_json = compact_json(&without_image_bytes(result));
-        }
+        tool.take_result(emit, content, result);
         // A question nothing here closed: Claude's own record says how.
         if tool.question && tool.asked.is_none() {
             tool.asked = Some(match result.map(AnsweredResult::deserialize) {
@@ -1085,16 +1035,7 @@ impl State {
             });
         }
         tool.ended_at_ms.get_or_insert(now);
-        if tool.server.is_empty() && TASK_TOOLS.contains(&tool.name.as_str()) {
-            let input = serde_json::from_str::<Value>(&tool.input).unwrap_or(Value::Null);
-            let name = tool.name.clone();
-            apply_task_tool(
-                &mut self.tasks,
-                &name,
-                &input,
-                result.unwrap_or(&Value::Null),
-            );
-        }
+        tool.apply_to_tasks(&mut self.tasks, result.unwrap_or(&Value::Null));
         self.emit_tool(emit, id);
     }
 

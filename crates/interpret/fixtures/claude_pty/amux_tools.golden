@@ -1,18 +1,18 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 2 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
 effect follow "/t/s1.jsonl"
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 3 fact {"channel":"transcript","json":{"message":{"content":"go","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.000Z","type":"user","uuid":"u1"}}
 item u1 prompt final at=1800000000000 text="go"
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 4 fact {"channel":"transcript","json":{"message":{"content":[{"id":"st1","input":{"working_on":"Splitting the parser"},"name":"mcp__amux__status","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:01.000Z","type":"assistant","uuid":"a1"}}
-snapshot WORKING queue=[] working_on="Splitting the parser" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
+snapshot WORKING queue=[] working_on="Splitting the parser" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 5 fact {"channel":"transcript","json":{"message":{"content":[{"content":[{"text":"ok","type":"text"}],"tool_use_id":"st1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:01.100Z","toolUseResult":[{"text":"ok","type":"text"}],"type":"user","uuid":"r1"}}
 ## 6 fact {"channel":"transcript","json":{"message":{"content":[{"id":"sn1","input":{"context":"parser","text":"Please review the parser change.\nIt is on branch parser.","to":"reviewer"},"name":"mcp__amux__send","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:02.000Z","type":"assistant","uuid":"a2"}}
 item sn1 agent_message final at=1800000002000 text="Please review the parser change.\nIt is on branch parser." envelope= to="reviewer" SENDING

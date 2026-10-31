@@ -11,7 +11,7 @@
 //! what the daemon committed.
 
 use ui_state::{ItemBody, OpenAsk};
-use wire::claude_sdk_item::Kind as Sdk;
+use wire::claude_item::Kind as Claude;
 use wire::{
     ClaudeSdkInput, Input, Kind, PromptInput, PutBlobRequest, SendInputRequest, claude_answer,
     claude_sdk_input, send_input_response,
@@ -38,11 +38,11 @@ fn sdk(of: claude_sdk_input::Of) -> wire::KindInput {
     wire::KindInput::ClaudeSdk(ClaudeSdkInput { of: Some(of) })
 }
 
-fn sdk_items(log: &Log) -> Vec<Sdk> {
+fn sdk_items(log: &Log) -> Vec<Claude> {
     log.ordered()
         .into_iter()
         .filter_map(|item| match ItemBody::decode(Kind::ClaudeSdk, &item.body) {
-            ItemBody::ClaudeSdk(body) => Some(body),
+            ItemBody::Claude(body) => Some(body),
             _ => None,
         })
         .collect()
@@ -51,7 +51,7 @@ fn sdk_items(log: &Log) -> Vec<Sdk> {
 fn boundaries(log: &Log, kind: wire::BoundaryKind) -> usize {
     sdk_items(log)
         .iter()
-        .filter(|item| matches!(item, Sdk::Boundary(boundary) if boundary.kind() == kind))
+        .filter(|item| matches!(item, Claude::Boundary(boundary) if boundary.kind() == kind))
         .count()
 }
 
@@ -59,7 +59,7 @@ fn tools(log: &Log) -> Vec<wire::ToolCall> {
     sdk_items(log)
         .into_iter()
         .filter_map(|item| match item {
-            Sdk::Tool(call) => Some(call),
+            Claude::Tool(call) => Some(call),
             _ => None,
         })
         .collect()
@@ -70,7 +70,7 @@ fn forms(log: &Log) -> Vec<wire::AskOutcome> {
     sdk_items(log)
         .into_iter()
         .filter_map(|item| match item {
-            Sdk::Ask(ask) => ask.closed.map(|closed| closed.outcome()),
+            Claude::Ask(ask) => ask.closed.map(|closed| closed.outcome()),
             _ => None,
         })
         .collect()
@@ -385,7 +385,7 @@ impl Install {
         let thought = follow.snapshot().ordered().into_iter().any(|item| {
             matches!(
                 ItemBody::decode(Kind::ClaudeSdk, &item.body),
-                ItemBody::ClaudeSdk(Sdk::Thinking(_))
+                ItemBody::Claude(Claude::Thinking(_))
             ) && !item.text.is_empty()
         });
         if !thought {
@@ -594,7 +594,7 @@ impl Install {
         let verdicts: Vec<wire::PlanVerdict> = sdk_items(&follow.snapshot())
             .into_iter()
             .filter_map(|item| match item {
-                Sdk::Plan(plan) => Some(plan.verdict()),
+                Claude::Plan(plan) => Some(plan.verdict()),
                 _ => None,
             })
             .collect();
@@ -1041,7 +1041,7 @@ impl Install {
             .await?;
         if !sdk_items(&follow.snapshot())
             .iter()
-            .any(|item| matches!(item, Sdk::Steer(_)))
+            .any(|item| matches!(item, Claude::Steer(_)))
         {
             return Err("the message sent now reads no steer".into());
         }

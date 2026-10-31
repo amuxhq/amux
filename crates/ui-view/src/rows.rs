@@ -531,10 +531,7 @@ fn asked(state: &SessionState, held: &Held) -> bool {
 /// The subagent call a step belongs to, when it is a subagent's own step.
 pub(crate) fn parent_of(held: &Held) -> Option<Key> {
     match &held.body {
-        ItemBody::ClaudePty(wire::claude_pty_item::Kind::Tool(tool))
-        | ItemBody::ClaudeSdk(wire::claude_sdk_item::Kind::Tool(tool))
-            if !tool.parent_key.is_empty() =>
-        {
+        ItemBody::Claude(wire::claude_item::Kind::Tool(tool)) if !tool.parent_key.is_empty() => {
             Some(tool.parent_key.clone())
         }
         _ => None,
@@ -544,10 +541,7 @@ pub(crate) fn parent_of(held: &Held) -> Option<Key> {
 /// What a step acted on: a redo of a failed step acts on the same.
 pub(crate) fn subject_of(held: &Held) -> String {
     match &held.body {
-        ItemBody::ClaudePty(wire::claude_pty_item::Kind::Tool(tool))
-        | ItemBody::ClaudeSdk(wire::claude_sdk_item::Kind::Tool(tool)) => {
-            read_input(tool).0.to_owned()
-        }
+        ItemBody::Claude(wire::claude_item::Kind::Tool(tool)) => read_input(tool).0.to_owned(),
         ItemBody::Codex(wire::codex_item::Kind::Work(work)) => match &work.of {
             Some(wire::work::Of::Command(command)) => command.command.clone(),
             Some(wire::work::Of::WebSearch(search)) => web_step(search).1,
@@ -668,49 +662,25 @@ fn claude_started(held: &Held, tool: &ToolCall) -> i64 {
 
 /// The row kind, the decision meta, and whether it failed.
 pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Decision>, bool) {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     let item = &held.item;
     let text = || chat_segments(held);
     let plain = |kind| (kind, None, false);
     match &held.body {
-        ItemBody::ClaudePty(kind) => match kind {
-            Pty::Prompt(_) => plain(RowKind::Prompt {
+        ItemBody::Claude(kind) => match kind {
+            Claude::Prompt(_) => plain(RowKind::Prompt {
                 text: text(),
                 steered: false,
             }),
-            Pty::Steer(_) => plain(RowKind::Prompt {
+            Claude::Steer(_) => plain(RowKind::Prompt {
                 text: text(),
                 steered: true,
             }),
-            Pty::Message(m) => plain(prose(held, m.complete, false)),
-            Pty::Thinking(t) => plain(thinking(state, held, t.complete)),
-            Pty::Tool(tool) => claude_tool(state, held, tool),
-            Pty::Turn(turn) => plain(turn_row(state, held, turn)),
-            Pty::Compaction(c) => plain(compaction(c)),
-            Pty::CompactSummary(_) | Pty::Interruption(_) => plain(RowKind::Hidden),
-            Pty::AgentMessage(m) => plain(agent_message(held, m)),
-            Pty::ApiError(e) => error(e),
-            Pty::Boundary(b) => plain(boundary(b)),
-            Pty::Slash(s) => plain(slash(held, s)),
-            Pty::Unrecognized(u) => plain(unrecognized(u)),
-            Pty::Ask(ask) => plain(ask_row(ask)),
-            Pty::Plan(plan) => plain(plan_row(state, held, plan)),
-        },
-        ItemBody::ClaudeSdk(kind) => match kind {
-            Sdk::Prompt(_) => plain(RowKind::Prompt {
-                text: text(),
-                steered: false,
-            }),
-            Sdk::Steer(_) => plain(RowKind::Prompt {
-                text: text(),
-                steered: true,
-            }),
-            Sdk::Message(m) => plain(prose(held, m.complete, false)),
-            Sdk::Thinking(t) => plain(thinking(state, held, t.complete)),
-            Sdk::Tool(tool) => claude_tool(state, held, tool),
-            Sdk::Task(task) => plain(RowKind::Subagent {
+            Claude::Message(m) => plain(prose(held, m.complete, false)),
+            Claude::Thinking(t) => plain(thinking(state, held, t.complete)),
+            Claude::Tool(tool) => claude_tool(state, held, tool),
+            Claude::Task(task) => plain(RowKind::Subagent {
                 description: task.description.clone(),
                 running: task.state() == wire::TaskState::Running,
                 tool_count: task.tool_count,
@@ -718,17 +688,19 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
                 answer: String::new(),
                 duration_ms: None,
             }),
-            Sdk::Turn(turn) => plain(turn_row(state, held, turn)),
-            Sdk::Status(_) => plain(RowKind::Hidden),
-            Sdk::Boundary(b) => plain(boundary(b)),
-            Sdk::AgentMessage(m) => plain(agent_message(held, m)),
-            Sdk::ApiError(e) => error(e),
-            Sdk::Slash(s) => plain(slash(held, s)),
-            Sdk::Unrecognized(u) => plain(unrecognized(u)),
-            Sdk::Plan(plan) => plain(plan_row(state, held, plan)),
-            Sdk::ModelSwitch(m) => plain(model_switch(m)),
-            Sdk::Compaction(c) => plain(compaction(c)),
-            Sdk::Ask(ask) => plain(ask_row(ask)),
+            Claude::Turn(turn) => plain(turn_row(state, held, turn)),
+            Claude::Status(_) | Claude::CompactSummary(_) | Claude::Interruption(_) => {
+                plain(RowKind::Hidden)
+            }
+            Claude::Boundary(b) => plain(boundary(b)),
+            Claude::AgentMessage(m) => plain(agent_message(held, m)),
+            Claude::ApiError(e) => error(e),
+            Claude::Slash(s) => plain(slash(held, s)),
+            Claude::Unrecognized(u) => plain(unrecognized(u)),
+            Claude::Plan(plan) => plain(plan_row(state, held, plan)),
+            Claude::ModelSwitch(m) => plain(model_switch(m)),
+            Claude::Compaction(c) => plain(compaction(c)),
+            Claude::Ask(ask) => plain(ask_row(ask)),
         },
         ItemBody::Codex(kind) => match kind {
             Codex::CommandOutput(s) => plain(slash(held, s)),
@@ -964,7 +936,7 @@ fn thinking_duration(state: &SessionState, held: &Held, complete: bool) -> Optio
 fn is_status(held: &Held) -> bool {
     matches!(
         held.body,
-        ItemBody::ClaudeSdk(wire::claude_sdk_item::Kind::Status(_))
+        ItemBody::Claude(wire::claude_item::Kind::Status(_))
     )
 }
 
@@ -994,8 +966,7 @@ fn turn_row(state: &SessionState, held: &Held, turn: &wire::Turn) -> RowKind {
 /// Whether the turn ending at `end` held a question the person replied to
 /// in their own words instead of answering.
 fn replied_instead(state: &SessionState, end: &Held) -> bool {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     for held in state
         .transcript()
@@ -1003,9 +974,7 @@ fn replied_instead(state: &SessionState, end: &Held) -> bool {
         .rev()
     {
         match &held.body {
-            ItemBody::ClaudePty(Pty::Ask(ask))
-            | ItemBody::ClaudeSdk(Sdk::Ask(ask))
-            | ItemBody::Codex(Codex::Ask(ask))
+            ItemBody::Claude(Claude::Ask(ask)) | ItemBody::Codex(Codex::Ask(ask))
                 if ask
                     .closed
                     .as_ref()
@@ -1013,8 +982,7 @@ fn replied_instead(state: &SessionState, end: &Held) -> bool {
             {
                 return true;
             }
-            ItemBody::ClaudePty(Pty::Turn(_) | Pty::Prompt(_) | Pty::Steer(_))
-            | ItemBody::ClaudeSdk(Sdk::Turn(_) | Sdk::Prompt(_) | Sdk::Steer(_))
+            ItemBody::Claude(Claude::Turn(_) | Claude::Prompt(_) | Claude::Steer(_))
             | ItemBody::Codex(Codex::Turn(_) | Codex::Prompt(_) | Codex::Steer(_)) => {
                 return false;
             }
@@ -1605,8 +1573,7 @@ pub struct PatchHead {
 pub fn patch_head(state: &SessionState, key: &Key, max: usize) -> Option<PatchHead> {
     let held = state.transcript().get(key)?;
     let lines = match &held.body {
-        ItemBody::ClaudePty(wire::claude_pty_item::Kind::Tool(tool))
-        | ItemBody::ClaudeSdk(wire::claude_sdk_item::Kind::Tool(tool)) => {
+        ItemBody::Claude(wire::claude_item::Kind::Tool(tool)) => {
             if !succeeded(tool.state) {
                 return None;
             }

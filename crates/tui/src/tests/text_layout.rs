@@ -22,14 +22,14 @@ fn rows_of(
 
 /// A finished reply of exactly `words`.
 fn reply(order: u64, words: &str) -> Item {
-    use wire::claude_sdk_item::Kind as K;
+    use wire::claude_item::Kind as K;
     Item {
         key: format!("r{order}"),
         order,
         revision: order,
         text: words.into(),
         kind: Kind::ClaudeSdk as i32,
-        body: wire::ClaudeSdkItem {
+        body: wire::ClaudeItem {
             kind: Some(K::Message(wire::Text { complete: true })),
         }
         .encode_to_vec(),
@@ -300,7 +300,7 @@ fn a_long_commands_choices_stay_on_a_short_screen() {
         destination_word: "localSettings".into(),
         ..Default::default()
     };
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         asks: vec![wire::Ask {
             key: "ask-1".into(),
             item_key: "call-1".into(),
@@ -499,7 +499,7 @@ fn an_idle_rows_background_jobs_are_counted_on_it() {
 /// A multi-select question of three options, each with a description, and
 /// Something else, as an agent asks it.
 fn toppings() -> SessionState {
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         asks: vec![wire::Ask {
             key: "q-1".into(),
             item_key: "call-q".into(),
@@ -580,7 +580,7 @@ fn long_question() -> (SessionState, String) {
         questions about whether the choice will be easy to reverse later. Given all of that, \
         which direction should we take for this decision?"
         .to_owned();
-    let body = wire::ClaudeSdkSnapshot {
+    let body = wire::ClaudeSnapshot {
         asks: vec![wire::Ask {
             key: "q-1".into(),
             item_key: "call-q".into(),

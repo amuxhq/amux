@@ -1,37 +1,37 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1793308954877 text="" BOUNDARY_KIND_STARTED
-snapshot IDLE queue=[] working_on=- at=1793308954877 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" mode=? context=? tasks=? background=?
+snapshot IDLE queue=[] working_on=- at=1793308954877 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
-snapshot IDLE queue=[] working_on=- at=1793308954913 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=? tasks=? background=?
+snapshot IDLE queue=[] working_on=- at=1793308954913 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 13 recorded 11: fact Transcript type=user uuid=6355a434-c660-45ed-8774-9420f1fafe9c
 item 6355a434-c660-45ed-8774-9420f1fafe9c prompt final at=1793308955104 text="Plan changing README.md's only line from CURRENT to UPDATED, then call ExitPlanMode. Do not ask questions."
-snapshot WORKING queue=[] working_on=- at=1793308955104 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=? tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308955104 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 48 recorded 46: fact Transcript type=assistant uuid=076832a4-a216-4f10-b0ed-3402ad7cc2df
 item 076832a4-a216-4f10-b0ed-3402ad7cc2df message final at=1793308957107 text="This is a trivial one-line change, so I'll skip exploration/design agents and write the plan directly."
-snapshot WORKING queue=[] working_on=- at=1793308960567 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=48305 tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308960567 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=48305/? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 61 recorded 59: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_0171jBS9EzgN9qgv1vg7XSyY
-snapshot WORKING queue=[] working_on=- at=1793308962222 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=48305 tasks=? background=? running=toolu_0171jBS9EzgN9qgv1vg7XSyY ToolSearch since=1793308962222
+snapshot WORKING queue=[] working_on=- at=1793308962222 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=48305/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_0171jBS9EzgN9qgv1vg7XSyY ToolSearch since=1793308962222
 ## 63 recorded 61: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_0171jBS9EzgN9qgv1vg7XSyY
-snapshot WORKING queue=[] working_on=- at=1793308962234 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=48305 tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308962234 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=48305/? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 67 recorded 65: fact Transcript type=assistant uuid=c8340146-cae4-4a39-b606-298f19555efc
 item toolu_0171jBS9EzgN9qgv1vg7XSyY tool final at=1793308962399 text="" ToolSearch TOOL_STATE_RUNNING search started=1793308962399 input="{\"max_results\":1,\"query\":\"select:ExitPlanMode\"}"
-snapshot WORKING queue=[] working_on=- at=1793308962424 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=48684 tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308962424 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=48684/? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 69 recorded 67: fact Transcript type=user uuid=cc069cbc-2ea3-42b2-895d-2677a5662ec8
 item toolu_0171jBS9EzgN9qgv1vg7XSyY tool final at=1793308962399 text="" ToolSearch TOOL_STATE_SUCCEEDED search started=1793308962399 ended=1793308962435 input="{\"max_results\":1,\"query\":\"select:ExitPlanMode\"}"
 ## 76 recorded 74: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01YHP45y9r7NzLsYDxwXuPxL
 item toolu_01YHP45y9r7NzLsYDxwXuPxL plan final at=1793308963742 text="# Context\n\nThe user wants README.md's single line of content changed from the literal text `CURRENT` to `UPDATED`. This is a trivial, isolated text edit.\n\n# Plan\n\n- Edit `README.md` in the working directory, replacing its only line `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read the file back and confirm it contains exactly one line: `UPDATED`.\n" PLAN_VERDICT_UNDECIDED
-snapshot WORKING queue=[] working_on=- at=1793308963742 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=48684 tasks=? background=? running=toolu_01YHP45y9r7NzLsYDxwXuPxL ExitPlanMode since=1793308963742
+snapshot WORKING queue=[] working_on=- at=1793308963742 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=48684/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01YHP45y9r7NzLsYDxwXuPxL ExitPlanMode since=1793308963742
 ## 78 recorded 76: fact Hook hook_event_name=PermissionRequest
-snapshot NEEDS_YOU queue=[] working_on=- at=1793308963756 asks=[ask:1->toolu_01YHP45y9r7NzLsYDxwXuPxL plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=48684 tasks=? background=? running=toolu_01YHP45y9r7NzLsYDxwXuPxL ExitPlanMode since=1793308963742
+snapshot NEEDS_YOU queue=[] working_on=- at=1793308963756 asks=[ask:1->toolu_01YHP45y9r7NzLsYDxwXuPxL plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=48684/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01YHP45y9r7NzLsYDxwXuPxL ExitPlanMode since=1793308963742
 ## 84 recorded 82: fact Transcript type=assistant uuid=ecaacf8a-bee8-4319-834a-452dde14f077
-snapshot NEEDS_YOU queue=[] working_on=- at=1793308964963 asks=[ask:1->toolu_01YHP45y9r7NzLsYDxwXuPxL plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=49711 tasks=? background=? running=toolu_01YHP45y9r7NzLsYDxwXuPxL ExitPlanMode since=1793308963742
+snapshot NEEDS_YOU queue=[] working_on=- at=1793308964963 asks=[ask:1->toolu_01YHP45y9r7NzLsYDxwXuPxL plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=49711/? tasks=? active=[] usage=? servers=? sign_in=? background=? running=toolu_01YHP45y9r7NzLsYDxwXuPxL ExitPlanMode since=1793308963742
 ## 86 recorded 84: fact Transcript type=user uuid=cbdd9f20-77ed-4a62-926d-74cc7baf11a5
 item toolu_01YHP45y9r7NzLsYDxwXuPxL plan final at=1793308963742 text="# Context\n\nThe user wants README.md's single line of content changed from the literal text `CURRENT` to `UPDATED`. This is a trivial, isolated text edit.\n\n# Plan\n\n- Edit `README.md` in the working directory, replacing its only line `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read the file back and confirm it contains exactly one line: `UPDATED`.\n" PLAN_VERDICT_SENT_BACK note="Also explain why the change is needed"
-snapshot WORKING queue=[] working_on=- at=1793308965104 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=49711 tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1793308965104 asks=[] session=5eabcf2c-b62c-43ea-be9b-82ca6ef6ab6f model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=49711/? tasks=? active=[] usage=? servers=? sign_in=? background=?

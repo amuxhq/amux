@@ -1,6 +1,7 @@
-//! What Claude in a terminal and Claude through the SDK share: the tool
-//! vocabulary, the question and scope shapes, the task list the task tools
-//! keep, and the one-line renderings goldens use.
+//! What Claude in a terminal and Claude through the SDK share: the item
+//! body, a tool call and how it is drawn, the tool vocabulary, the question
+//! and scope shapes, the task list the task tools keep, and the one-line
+//! renderings goldens use.
 
 use std::collections::BTreeMap;
 
@@ -9,18 +10,23 @@ use claude_protocol::stream::{
     ContentBlock, ImageSourceType, MessageContent, PermissionUpdate, PermissionUpdateDestination,
     ToolResultBody, ToolResultContent,
 };
+use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    Ask, Attachment, BackgroundJob, BlobRef, ClaudeGrant, ClaudeUsage, DecisionOutcome, EditInput,
-    HealthState, Limit, NotebookCell, NotebookEditMode, OfferedCommand, OfferedModel,
+    Ask, AskClosed, Attachment, BackgroundJob, BlobRef, Boundary, BoundaryKind, ClaudeGrant,
+    ClaudeItem, ClaudeUsage, ContextMeter, DecisionOutcome, EditInput, Envelope, HealthState,
+    IncarnationEnd, Limit, NotebookCell, NotebookEditMode, OfferedCommand, OfferedModel,
     OfferedPermission, PatchHunk, Question, QuestionAsk, QuestionOption, Replacement,
-    ScopeDestination, ShellInput, TaskList, TaskListEntry, TaskListStatus, ToolCall, ToolClass,
-    ToolInput, ToolServer, ToolServerHealth, ToolServerStatus, ToolState, UsageState, attachment,
-    codex_grant, tool_decision, tool_input,
+    ScopeDestination, ShellInput, SubagentProgress, TaskList, TaskListEntry, TaskListStatus,
+    ToolCall, ToolClass, ToolDecision, ToolInput, ToolServer, ToolServerHealth, ToolServerStatus,
+    ToolState, UsageState, attachment, claude_item, codex_grant, tool_decision, tool_input,
 };
 
-use crate::Effect;
+use crate::{
+    Effect, Emit, ItemDraft, ItemView, Shared, SnapshotView, agent_message_body, agent_message_key,
+    serde_pb,
+};
 
 /// Built-in tools that only look, each by what it looks at: views fold runs
 /// of them together and name each by this verb.
@@ -1646,6 +1652,453 @@ pub(crate) fn amux_tools_withheld(mut health: ToolServerHealth) -> ToolServerHea
     });
     health.state = HealthState::Degraded as i32;
     health
+}
+
+/// A Claude item's body.
+pub(crate) fn item_body(kind: claude_item::Kind) -> Vec<u8> {
+    ClaudeItem { kind: Some(kind) }.encode_to_vec()
+}
+
+/// The context meter: unknown until Claude reports the tokens in use.
+pub(crate) fn context_meter(tokens: Option<u64>, window_tokens: Option<u64>) -> ContextMeter {
+    match tokens {
+        None => crate::unknown::context_meter(),
+        Some(used_tokens) => ContextMeter {
+            known: true,
+            used_tokens,
+            window_tokens,
+        },
+    }
+}
+
+/// A boundary's item, under `key`.
+pub(crate) fn boundary_item(key: String, kind: BoundaryKind, exit: IncarnationEnd) -> ItemDraft {
+    ItemDraft {
+        key,
+        body: item_body(claude_item::Kind::Boundary(Boundary {
+            kind: kind as i32,
+            cause: exit.cause,
+            cause_detail: exit.detail,
+        })),
+        complete: true,
+        ..Default::default()
+    }
+}
+
+/// The item recording that another agent's message arrived.
+pub(crate) fn agent_message_item(envelope: &Envelope) -> ItemDraft {
+    ItemDraft {
+        key: agent_message_key(&envelope.id),
+        text: crate::shared::words(envelope),
+        attachments: crate::shared::attachments(envelope).to_vec(),
+        input_id: envelope.id.clone(),
+        body: item_body(claude_item::Kind::AgentMessage(agent_message_body(
+            envelope,
+        ))),
+        complete: true,
+        ..Default::default()
+    }
+}
+
+/// A tool call as either Claude kind draws it. `T` is what the kind keeps
+/// about the call beside it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Tool<T> {
+    pub(crate) at_ms: i64,
+    pub(crate) name: String,
+    pub(crate) server: String,
+    pub(crate) input: String,
+    pub(crate) state: i32,
+    pub(crate) outcome_text: String,
+    pub(crate) outcome_json: String,
+    pub(crate) class: i32,
+    pub(crate) background: bool,
+    #[serde(with = "serde_pb::opt_msg")]
+    pub(crate) decision: Option<ToolDecision>,
+    pub(crate) ended_at_ms: Option<i64>,
+    /// When the call began running, after any wait for the person's
+    /// approval.
+    pub(crate) started_at_ms: Option<i64>,
+    /// The subagent call this one is a step of; empty on the main thread.
+    pub(crate) parent_key: String,
+    /// Drawn elsewhere than as a tool row: the status tool sets
+    /// working_on, the task tools the task list, and a file written in
+    /// plan mode is part of the plan.
+    pub(crate) hidden: bool,
+    /// Images the tool read, by the blobs that hold them.
+    #[serde(with = "serde_pb::msgs")]
+    pub(crate) images: Vec<Attachment>,
+    /// What amux's attach tool attached, from the element it answered.
+    #[serde(with = "serde_pb::msgs")]
+    pub(crate) attached: Vec<Attachment>,
+    /// An ExitPlanMode call is drawn as its plan, with this verdict.
+    pub(crate) plan: Option<Verdict>,
+    /// An AskUserQuestion call is drawn as its question, closed with this
+    /// record once decided.
+    pub(crate) question: bool,
+    #[serde(with = "serde_pb::opt_msg")]
+    pub(crate) asked: Option<AskClosed>,
+    /// The body last emitted, so an unchanged revision is not re-emitted.
+    #[serde(with = "serde_pb::item_body")]
+    pub(crate) emitted: Vec<u8>,
+    pub(crate) of: T,
+}
+
+impl<T> Tool<T> {
+    /// A call Claude names `name` (server-qualified for a tool server's),
+    /// running. `permission` is the one Claude is in.
+    pub(crate) fn running(name: &str, at_ms: i64, permission: Option<&str>, of: T) -> Self {
+        let (server, name) = split_tool_name(name);
+        let builtin = server.is_empty();
+        Self {
+            at_ms,
+            class: tool_class(&server, &name) as i32,
+            hidden: crate::is_status_tool(&server, &name)
+                || (builtin && TASK_TOOLS.contains(&name.as_str()))
+                || plan_mode_write(permission, &server, &name),
+            plan: (builtin && name == PLAN_TOOL).then(Verdict::default),
+            question: builtin && name == QUESTION_TOOL,
+            name,
+            server,
+            input: String::new(),
+            state: ToolState::Running as i32,
+            outcome_text: String::new(),
+            outcome_json: String::new(),
+            background: false,
+            decision: None,
+            ended_at_ms: None,
+            started_at_ms: None,
+            parent_key: String::new(),
+            images: Vec::new(),
+            attached: Vec::new(),
+            asked: None,
+            emitted: Vec::new(),
+            of,
+        }
+    }
+
+    pub(crate) fn set_input(&mut self, input: &Value) {
+        self.input = input.to_string();
+        self.background =
+            BackgroundInput::deserialize(input).is_ok_and(|input| input.run_in_background);
+    }
+
+    /// Reads what the result carries beside its text, once `outcome_text`
+    /// holds that text: the images the tool read, what amux's attach tool
+    /// attached, and the structured result. The attach tool's element
+    /// names the blob by this host's path, so the step carries the
+    /// attachment instead.
+    pub(crate) fn take_result(
+        &mut self,
+        emit: &mut Emit,
+        content: Option<&ToolResultBody>,
+        result: Option<&Value>,
+    ) {
+        if crate::is_attach_tool(&self.server, &self.name) {
+            let (text, attached) =
+                crate::shared::parse_reply(std::mem::take(&mut self.outcome_text));
+            self.outcome_text = text;
+            if !attached.is_empty() {
+                self.attached = attached;
+            }
+        }
+        let images = tool_result_images(content);
+        if !images.is_empty() {
+            self.images = Vec::new();
+            for (image, write) in images {
+                self.images.push(image);
+                emit.effect(write);
+            }
+        }
+        if let Some(result) = result.filter(|result| !result.is_null() && self.attached.is_empty())
+        {
+            self.outcome_json = compact_json(&without_image_bytes(result));
+        }
+    }
+
+    /// A built-in task tool's call and result applied to the task list.
+    pub(crate) fn apply_to_tasks(&self, tasks: &mut Option<Vec<Task>>, result: &Value) {
+        if self.server.is_empty() {
+            let input = serde_json::from_str::<Value>(&self.input).unwrap_or(Value::Null);
+            apply_task_tool(tasks, &self.name, &input, result);
+        }
+    }
+
+    /// Emits the call's item, keyed `key`, if it is drawn and changed since
+    /// the last emission: a question or a plan as its ask, a message sent
+    /// with amux's tool as that message, anything else as a tool step.
+    pub(crate) fn emit(
+        &mut self,
+        shared: &mut Shared<Ask>,
+        emit: &mut Emit,
+        key: &str,
+        subagent: Option<SubagentProgress>,
+    ) {
+        if self.hidden {
+            return;
+        }
+        let mut draft = ItemDraft {
+            key: key.to_owned(),
+            at_ms: Some(self.at_ms),
+            complete: true,
+            ..Default::default()
+        };
+        let body = if self.question {
+            let Some(item) = question_item(&self.input, self.asked.clone()) else {
+                return;
+            };
+            item_body(claude_item::Kind::Ask(item))
+        } else if let Some(verdict) = &self.plan {
+            let Some((text, plan)) = plan_item(&self.input, verdict) else {
+                return;
+            };
+            draft.text = text;
+            item_body(claude_item::Kind::Plan(plan))
+        } else if crate::is_send_tool(&self.server, &self.name) {
+            let (text, message) = crate::sent_message(
+                self.input.as_bytes(),
+                crate::SendOutcome::of(
+                    ToolState::try_from(self.state).unwrap_or_default(),
+                    &self.outcome_text,
+                ),
+            );
+            // The message's files go as attachments, not their elements.
+            (draft.text, draft.attachments) = crate::shared::parse_reply(text);
+            item_body(claude_item::Kind::AgentMessage(message))
+        } else {
+            let step = if self.state == ToolState::Succeeded as i32 {
+                file_step(&self.name, &self.server, &self.outcome_json)
+            } else {
+                FileStep::default()
+            };
+            let input = serde_json::from_str(&self.input).unwrap_or(Value::Null);
+            draft.attachments = self.attached.clone();
+            item_body(claude_item::Kind::Tool(ToolCall {
+                name: self.name.clone(),
+                input: Some(tool_input(&self.name, &self.server, &input, "")),
+                state: self.state,
+                outcome_text: self.outcome_text.clone(),
+                attachments: self.images.clone(),
+                class: self.class,
+                decision: self.decision.clone(),
+                background: self.background,
+                parent_key: self.parent_key.clone(),
+                subagent,
+                server: self.server.clone(),
+                exit_code: None,
+                ended_at_ms: self.ended_at_ms,
+                created: step.created,
+                line: step.line,
+                started_at_ms: self.started_at_ms,
+                patch: step.patch,
+            }))
+        };
+        if body == self.emitted {
+            return;
+        }
+        self.emitted = body.clone();
+        draft.body = body;
+        shared.item(emit, draft);
+    }
+}
+
+/// A Claude item as the emission goldens print it.
+pub(crate) fn describe_item(body: &[u8]) -> ItemView {
+    use wire::claude_item::Kind;
+    let item = wire::ClaudeItem::decode(body).unwrap_or_default();
+    let (arm, complete, text) = match item.kind {
+        None => ("none", true, String::new()),
+        Some(Kind::Prompt(_)) => ("prompt", true, String::new()),
+        Some(Kind::Steer(_)) => ("steer", true, String::new()),
+        Some(Kind::Message(text)) => ("message", text.complete, String::new()),
+        Some(Kind::Thinking(thinking)) => ("thinking", thinking.complete, String::new()),
+        Some(Kind::Tool(tool)) => ("tool", true, describe_tool(&tool)),
+        Some(Kind::Ask(item)) => ("ask", true, crate::ask_item::describe(&item)),
+        Some(Kind::Plan(plan)) => ("plan", plan.complete, crate::shared::describe_plan(&plan)),
+        Some(Kind::Task(task)) => (
+            "task",
+            true,
+            format!(
+                "{} {} {} tools={} last={} tokens={}",
+                task.task_id,
+                wire::TaskState::try_from(task.state).map_or("?", |state| state.as_str_name()),
+                Value::String(task.description),
+                task.tool_count,
+                or_dash(&task.last_tool),
+                task.tokens,
+            ),
+        ),
+        Some(Kind::Turn(turn)) => (
+            "turn",
+            true,
+            format!(
+                "#{} {} started={}",
+                turn.turn_id,
+                wire::TurnOutcome::try_from(turn.outcome)
+                    .map_or("?", |outcome| outcome.as_str_name()),
+                turn.started_at_ms,
+            ),
+        ),
+        Some(Kind::Status(status)) => (
+            "status",
+            true,
+            format!(
+                "{} {}",
+                wire::SdkStatus::try_from(status.status).map_or("?", |status| status.as_str_name()),
+                status.word
+            ),
+        ),
+        Some(Kind::Boundary(boundary)) => (
+            "boundary",
+            true,
+            format!(
+                "{}{}",
+                wire::BoundaryKind::try_from(boundary.kind).map_or("?", |kind| kind.as_str_name()),
+                describe_cause(&boundary)
+            ),
+        ),
+        Some(Kind::CompactSummary(_)) => ("compact_summary", true, String::new()),
+        Some(Kind::Interruption(_)) => ("interruption", true, String::new()),
+        Some(Kind::AgentMessage(message)) => (
+            "agent_message",
+            true,
+            crate::shared::describe_agent_message(&message),
+        ),
+        Some(Kind::ApiError(error)) => (
+            "api_error",
+            true,
+            format!(
+                "{} {} retry={} {}/{}{}",
+                error.error_kind,
+                Value::String(error.message),
+                error.will_retry,
+                error.attempt,
+                error.max_attempts,
+                error
+                    .retry_at_ms
+                    .map_or(String::new(), |at| format!(" at={at}"))
+            ),
+        ),
+        Some(Kind::Slash(slash)) => (
+            "slash",
+            true,
+            format!("{} args={}", slash.command, Value::String(slash.args)),
+        ),
+        Some(Kind::Unrecognized(unrecognized)) => (
+            "unrecognized",
+            true,
+            format!(
+                "{} {}",
+                unrecognized.fact_type,
+                Value::String(unrecognized.summary)
+            ),
+        ),
+        Some(Kind::ModelSwitch(switch)) => (
+            "model_switch",
+            true,
+            format!(
+                "{} -> {} {}",
+                switch.from,
+                switch.to,
+                Value::String(switch.reason)
+            ),
+        ),
+        Some(Kind::Compaction(compaction)) => (
+            "compaction",
+            true,
+            format!(
+                "{}→{}{}",
+                compaction
+                    .tokens_before
+                    .map_or("?".to_owned(), |tokens| tokens.to_string()),
+                compaction
+                    .tokens_after
+                    .map_or("?".to_owned(), |tokens| tokens.to_string()),
+                if compaction.automatic { " auto" } else { "" }
+            ),
+        ),
+    };
+    ItemView {
+        arm: arm.into(),
+        complete,
+        text,
+    }
+}
+
+/// A Claude snapshot as the emission goldens print it.
+pub(crate) fn describe_snapshot(body: &[u8]) -> SnapshotView {
+    let snapshot = wire::ClaudeSnapshot::decode(body).unwrap_or_default();
+    let context = snapshot.context.unwrap_or_default();
+    let usage = snapshot.usage.unwrap_or_default();
+    let servers = snapshot.servers.unwrap_or_default();
+    let sign_in = snapshot.sign_in.unwrap_or_default();
+    SnapshotView {
+        asks: snapshot
+            .asks
+            .iter()
+            .map(|ask| (ask.key.clone(), ask.item_key.clone()))
+            .collect(),
+        text: format!(
+            "asks=[{}] session={} model={} model_name={} effort={} mode={} context={} tasks={} active=[{}] usage={} servers={} sign_in={} background={}",
+            describe_asks(&snapshot.asks),
+            snapshot.provider_session.as_deref().unwrap_or("?"),
+            snapshot.model.as_deref().unwrap_or("?"),
+            describe_model_name(snapshot.model_name.as_deref()),
+            snapshot.effort.as_deref().unwrap_or("?"),
+            snapshot.permission.as_deref().unwrap_or("?"),
+            if context.known {
+                format!(
+                    "{}/{}",
+                    context.used_tokens,
+                    context
+                        .window_tokens
+                        .map_or("?".to_owned(), |window| window.to_string()),
+                )
+            } else {
+                "?".into()
+            },
+            describe_tasks(&snapshot.tasks.unwrap_or_default()),
+            snapshot
+                .active_tasks
+                .iter()
+                .map(|task| task.task_id.clone())
+                .collect::<Vec<_>>()
+                .join(","),
+            describe_claude_usage(&usage),
+            match wire::HealthState::try_from(servers.state).unwrap_or_default() {
+                wire::HealthState::Unknown => "?".to_owned(),
+                state => format!(
+                    "{}[{}]",
+                    state.as_str_name(),
+                    servers
+                        .servers
+                        .iter()
+                        .map(|server| format!(
+                            "{}:{}",
+                            server.name,
+                            wire::ToolServerStatus::try_from(server.status)
+                                .map_or("?", |status| status.as_str_name())
+                        ))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                ),
+            },
+            match wire::SignInState::try_from(sign_in.state).unwrap_or_default() {
+                wire::SignInState::Unknown => "?".to_owned(),
+                state => format!("{} {}", state.as_str_name(), or_dash(&sign_in.account)),
+            },
+            crate::shared::describe_jobs(snapshot.background_jobs.as_ref())
+        ) + &snapshot
+            .running_calls
+            .iter()
+            .map(|call| {
+                format!(
+                    " running={} {} since={}",
+                    call.tool_use_id, call.tool_name, call.since_ms
+                )
+            })
+            .collect::<String>(),
+    }
 }
 
 #[cfg(test)]

@@ -95,7 +95,7 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
     let bodies = [
         (
             Kind::ClaudePty,
-            wire::ClaudePtySnapshot {
+            wire::ClaudeSnapshot {
                 tasks: Some(tasks.clone()),
                 context: Some(context),
                 model: Some("opus".into()),
@@ -110,7 +110,7 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
         ),
         (
             Kind::ClaudeSdk,
-            wire::ClaudeSdkSnapshot {
+            wire::ClaudeSnapshot {
                 tasks: Some(tasks.clone()),
                 context: Some(context),
                 model: Some("opus".into()),

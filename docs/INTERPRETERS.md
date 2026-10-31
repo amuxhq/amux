@@ -12,6 +12,11 @@ chat shows. There is one per agent kind, in
 | `claude_sdk` | Headless Claude over stream-JSON | [`interpret::claude_sdk`](../crates/interpret/src/claude_sdk/mod.rs) |
 | `codex` | The Codex app server over JSON-RPC | [`interpret::codex`](../crates/interpret/src/codex/mod.rs) |
 
+The two Claude kinds write the same item and snapshot messages and share
+everything about drawing a call, a boundary and an agent message
+([`claude_common`](../crates/interpret/src/claude_common.rs)); they differ
+in how they read their provider and how an answer reaches it.
+
 The interpreters are the only place provider facts are read, and, with the
 client's thin per-kind layer, the only code that decodes an item or snapshot
 body. They run inside [the agent process](AGENT_PROCESS.md), which feeds

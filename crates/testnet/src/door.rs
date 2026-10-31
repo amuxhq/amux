@@ -896,8 +896,9 @@ fn running_model(snapshot: &wire::Snapshot) -> Option<String> {
     use prost::Message;
     let body = snapshot.body.as_slice();
     match wire::Kind::try_from(snapshot.kind).ok()? {
-        wire::Kind::ClaudeSdk => wire::ClaudeSdkSnapshot::decode(body).ok()?.model,
-        wire::Kind::ClaudePty => wire::ClaudePtySnapshot::decode(body).ok()?.model,
+        wire::Kind::ClaudeSdk | wire::Kind::ClaudePty => {
+            wire::ClaudeSnapshot::decode(body).ok()?.model
+        }
         wire::Kind::Codex => wire::CodexSnapshot::decode(body).ok()?.model,
         wire::Kind::Unspecified => None,
     }
@@ -911,10 +912,10 @@ fn item_body(item: &wire::Item) -> String {
     let body = item.body.as_slice();
     let text = match wire::Kind::try_from(item.kind) {
         Ok(wire::Kind::ClaudeSdk) => {
-            wire::ClaudeSdkItem::decode(body).map(|item| format!("{:?}", item.kind))
+            wire::ClaudeItem::decode(body).map(|item| format!("{:?}", item.kind))
         }
         Ok(wire::Kind::ClaudePty) => {
-            wire::ClaudePtyItem::decode(body).map(|item| format!("{:?}", item.kind))
+            wire::ClaudeItem::decode(body).map(|item| format!("{:?}", item.kind))
         }
         Ok(wire::Kind::Codex) => {
             wire::CodexItem::decode(body).map(|item| format!("{:?}", item.kind))
@@ -930,10 +931,10 @@ fn pending_asks(snapshot: &wire::Snapshot) -> Vec<String> {
     use prost::Message;
     let body = snapshot.body.as_slice();
     let asks: Vec<String> = match wire::Kind::try_from(snapshot.kind) {
-        Ok(wire::Kind::ClaudeSdk) => wire::ClaudeSdkSnapshot::decode(body)
+        Ok(wire::Kind::ClaudeSdk) => wire::ClaudeSnapshot::decode(body)
             .map(|snapshot| snapshot.asks.iter().map(|ask| format!("{ask:?}")).collect())
             .unwrap_or_default(),
-        Ok(wire::Kind::ClaudePty) => wire::ClaudePtySnapshot::decode(body)
+        Ok(wire::Kind::ClaudePty) => wire::ClaudeSnapshot::decode(body)
             .map(|snapshot| snapshot.asks.iter().map(|ask| format!("{ask:?}")).collect())
             .unwrap_or_default(),
         Ok(wire::Kind::Codex) => wire::CodexSnapshot::decode(body)

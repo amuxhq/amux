@@ -105,164 +105,21 @@ pub(crate) fn terminal_text(text: &str) -> String {
         .join("\n")
 }
 
-/// One line of markdown as the words it reads: a link is its text, an
-/// image its description, code and emphasis lose their marks, and a
-/// heading, quote or bullet loses its lead. The line a row quotes from a
-/// reply reads as the chat draws that reply.
+/// One line of markdown as the words it reads, through the parser the
+/// chat draws replies with: a link is its text, an image its description,
+/// and code, emphasis and a heading's, quote's or bullet's marks drop. The
+/// line a row quotes from a reply reads as the chat draws that reply.
 pub(crate) fn markdown_words(line: &str) -> String {
-    let mut line = line.trim();
-    let hashes = line.len() - line.trim_start_matches('#').len();
-    if (1..=6).contains(&hashes) && line[hashes..].starts_with(' ') {
-        line = line[hashes..].trim_start();
-    }
-    while let Some(rest) = line.strip_prefix('>') {
-        line = rest.trim_start();
-    }
-    for bullet in ["- ", "* ", "+ "] {
-        if let Some(rest) = line.strip_prefix(bullet) {
-            line = rest.trim_start();
-            break;
-        }
-    }
-    let chars: Vec<char> = line.chars().collect();
+    use pulldown_cmark::{Event, Options, Parser};
+    let options =
+        Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS | Options::ENABLE_STRIKETHROUGH;
     let mut out = String::new();
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        match c {
-            '\\' if chars
-                .get(i + 1)
-                .is_some_and(|next| next.is_ascii_punctuation()) =>
-            {
-                out.push(chars[i + 1]);
-                i += 2;
-            }
-            '`' => {
-                // A code span: its text as written, between runs of the
-                // same number of backticks.
-                let ticks = chars[i..].iter().take_while(|c| **c == '`').count();
-                let open = i + ticks;
-                let close = (open..chars.len()).find(|&at| {
-                    chars[at..].iter().take_while(|c| **c == '`').count() == ticks
-                        && (at == 0 || chars[at - 1] != '`')
-                });
-                match close {
-                    Some(close) => {
-                        let code: String = chars[open..close].iter().collect();
-                        out.push_str(code.trim());
-                        i = close + ticks;
-                    }
-                    None => {
-                        out.extend(&chars[i..open]);
-                        i = open;
-                    }
-                }
-            }
-            '!' if chars.get(i + 1) == Some(&'[') => match link(&chars, i + 1) {
-                Some((text, end)) => {
-                    out.push_str(&markdown_words(&text));
-                    i = end;
-                }
-                None => {
-                    out.push(c);
-                    i += 1;
-                }
-            },
-            '[' => match link(&chars, i) {
-                Some((text, end)) => {
-                    out.push_str(&markdown_words(&text));
-                    i = end;
-                }
-                None => {
-                    out.push(c);
-                    i += 1;
-                }
-            },
-            '<' => {
-                // An autolink: the address itself.
-                let end = chars[i + 1..].iter().position(|c| *c == '>' || *c == ' ');
-                match end.map(|end| i + 1 + end) {
-                    Some(end) if chars[end] == '>' => {
-                        let inner: String = chars[i + 1..end].iter().collect();
-                        if inner.contains("://") || inner.contains('@') {
-                            out.push_str(&inner);
-                            i = end + 1;
-                        } else {
-                            out.push(c);
-                            i += 1;
-                        }
-                    }
-                    _ => {
-                        out.push(c);
-                        i += 1;
-                    }
-                }
-            }
-            '*' | '_' | '~' => {
-                let run = chars[i..].iter().take_while(|next| **next == c).count();
-                let before = i.checked_sub(1).map(|at| chars[at]);
-                let after = chars.get(i + run).copied();
-                let opens = after.is_some_and(|after| !after.is_whitespace());
-                let closes = before.is_some_and(|before| !before.is_whitespace());
-                // Underscores inside a word, as in snake_case, are letters.
-                let inside_word = c == '_'
-                    && before.is_some_and(char::is_alphanumeric)
-                    && after.is_some_and(char::is_alphanumeric);
-                // A lone tilde is a letter; strikethrough takes two.
-                let lone_tilde = c == '~' && run < 2;
-                if (opens || closes) && !inside_word && !lone_tilde {
-                    i += run;
-                } else {
-                    out.extend(&chars[i..i + run]);
-                    i += run;
-                }
-            }
-            c => {
-                out.push(c);
-                i += 1;
-            }
+    for event in Parser::new_ext(line, options) {
+        if let Event::Text(words) | Event::Code(words) = event {
+            out.push_str(&words);
         }
     }
     out
-}
-
-/// A link at `open` (its `[`): its text and the index past its target,
-/// when it is one.
-fn link(chars: &[char], open: usize) -> Option<(String, usize)> {
-    let mut depth = 0;
-    let mut close = None;
-    for (at, c) in chars.iter().enumerate().skip(open) {
-        match c {
-            '[' => depth += 1,
-            ']' => {
-                depth -= 1;
-                if depth == 0 {
-                    close = Some(at);
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-    let close = close?;
-    if chars.get(close + 1) != Some(&'(') {
-        return None;
-    }
-    let mut depth = 0;
-    let end = chars
-        .iter()
-        .enumerate()
-        .skip(close + 1)
-        .find(|(_, c)| {
-            match c {
-                '(' => depth += 1,
-                ')' => depth -= 1,
-                _ => {}
-            }
-            depth == 0
-        })?
-        .0;
-    Some((chars[open + 1..close].iter().collect(), end + 1))
 }
 
 #[cfg(test)]

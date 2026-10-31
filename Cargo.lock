@@ -4437,6 +4437,7 @@ dependencies = [
  "interpret",
  "proptest",
  "prost",
+ "pulldown-cmark",
  "schemars",
  "serde",
  "serde_json",

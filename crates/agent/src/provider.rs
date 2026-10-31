@@ -1299,7 +1299,7 @@ fn claude_launch(
             .chain([format!("Read(/{}/**)", rule_path(&dir.join(dir::BLOBS)))])
             .collect(),
     };
-    let settings = claude::launch::merged_settings(user, &managed).into_value();
+    let settings = claude::launch::merged_settings(user, &managed);
     Ok((args, settings.to_string(), withheld))
 }
 

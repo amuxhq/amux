@@ -57,20 +57,6 @@ pub struct ManagedSettings {
     pub accept_cross_session: bool,
 }
 
-/// Fully merged settings passed as Claude's one managed `--settings` value.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct MergedSettings(Value);
-
-impl MergedSettings {
-    pub fn as_value(&self) -> &Value {
-        &self.0
-    }
-
-    pub fn into_value(self) -> Value {
-        self.0
-    }
-}
-
 /// Read each user `--settings` source relative to `cwd` and merge it in order.
 pub fn load_user_settings(cwd: &Path, sources: &[String]) -> Result<Option<Value>> {
     let mut merged = Value::Object(serde_json::Map::new());
@@ -81,8 +67,9 @@ pub fn load_user_settings(cwd: &Path, sources: &[String]) -> Result<Option<Value
 }
 
 /// Merge managed hooks and settings after user settings so the provider's
-/// routing cannot be replaced accidentally.
-pub fn merged_settings(user: Option<Value>, managed: &ManagedSettings) -> MergedSettings {
+/// routing cannot be replaced accidentally: the result is Claude's one
+/// managed `--settings` value.
+pub fn merged_settings(user: Option<Value>, managed: &ManagedSettings) -> Value {
     let mut merged = user.unwrap_or_else(|| Value::Object(serde_json::Map::new()));
     if !managed.hook_command.is_empty() {
         deep_merge(&mut merged, managed_hook_settings(&managed.hook_command));
@@ -99,7 +86,7 @@ pub fn merged_settings(user: Option<Value>, managed: &ManagedSettings) -> Merged
             serde_json::json!({"permissions": {"allow": managed.permissions_allow}}),
         );
     }
-    MergedSettings(merged)
+    merged
 }
 
 /// Remove and return every user settings source from an argument list.
@@ -243,7 +230,7 @@ mod tests {
             permissions_allow: vec!["Read(/managed/artifacts/**)".into()],
             accept_cross_session: true,
         };
-        let settings = merged_settings(Some(user), &managed).into_value();
+        let settings = merged_settings(Some(user), &managed);
         assert_eq!(settings["theme"], "dark");
         assert_eq!(settings["crossSessionInbound"], "accept");
         assert_eq!(settings["hooks"]["Stop"].as_array().unwrap().len(), 2);

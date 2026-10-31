@@ -123,8 +123,6 @@ pub struct Laid {
     pub top_offset: usize,
     /// The feed shows the newest row at its bottom.
     pub at_bottom: bool,
-    /// Held rows that would draw above the screen.
-    pub held_above: u64,
     /// An older page to ask for, and its size, when the reader is within a
     /// page of the oldest held row and older history exists.
     pub page: Option<u32>,
@@ -179,11 +177,6 @@ impl Frame<'_> {
         Some((shown, child_open))
     }
 
-    /// The row for one held order, or None when it draws nothing here.
-    fn block(&self, state: &SessionState, order: u64) -> Option<Block> {
-        self.feed_block(state, order)
-    }
-
     /// A row drawn on its own, outside the feed's turns: asks closed long
     /// ago, errors, boundaries and the other kinds the feed leaves as rows.
     fn row_block(&self, state: &SessionState, order: u64) -> Option<Block> {
@@ -213,10 +206,11 @@ impl Frame<'_> {
         })
     }
 
-    /// A row of the feed. Inside a run, what draws depends on whether the
-    /// run is open, under way or folded; outside one, text and turn ends
-    /// draw from [`feed`], and the rest keeps its own drawing.
-    fn feed_block(&self, state: &SessionState, order: u64) -> Option<Block> {
+    /// The row for one held order, or None when it draws nothing here.
+    /// Inside a run, what draws depends on whether the run is open, under
+    /// way or folded; outside one, text and turn ends draw from [`feed`],
+    /// and the rest keeps its own drawing.
+    fn block(&self, state: &SessionState, order: u64) -> Option<Block> {
         let transcript = state.transcript();
         let held = transcript.at(order)?;
         if self.asking == Some(&held.item.key) {
@@ -405,8 +399,7 @@ impl Frame<'_> {
             None => self.upward(state, head),
         };
         let top = laid.blocks.first().map_or(oldest, |block| block.order);
-        laid.held_above = self.held_above(state, top);
-        if laid.held_above < LOOKAHEAD && transcript.has_older() {
+        if self.held_above(state, top) < LOOKAHEAD && transcript.has_older() {
             let run_page = laid
                 .blocks
                 .first()

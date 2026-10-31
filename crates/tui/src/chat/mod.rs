@@ -42,7 +42,7 @@ pub use self::layout::ToolSteps;
 use self::layout::{Anchor, Frame, Laid, Toggle};
 use self::review::{ReviewAction, ReviewPage};
 use crate::clipboard::ClipboardContent;
-use crate::editor::{Edit, Editor};
+use crate::editor::Editor;
 use crate::text::{self, push};
 use crate::theme::Theme;
 use crate::wheel::Direction;
@@ -773,7 +773,7 @@ impl ChatView {
             if !self.arm_ask(&card, now_ms, quiet_since) {
                 // Words typed as the ask appears are still the draft's; Enter
                 // neither sends the draft nor answers what was not read.
-                if key.code != KeyCode::Enter && self.editor.key(key) == Edit::Changed {
+                if key.code != KeyCode::Enter && self.editor.key(key) {
                     self.not_sent = None;
                 }
                 return vec![];
@@ -898,7 +898,7 @@ impl ChatView {
                 vec![]
             }
             _ => {
-                if self.editor.key(key) == Edit::Changed {
+                if self.editor.key(key) {
                     self.focus = None;
                     // Editing answers why the last one was not sent.
                     self.not_sent = None;
@@ -933,7 +933,7 @@ impl ChatView {
                             .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
                     {
                         self.tray = None;
-                        if self.editor.key(key) == Edit::Changed {
+                        if self.editor.key(key) {
                             self.not_sent = None;
                         }
                         None

@@ -25,14 +25,6 @@ pub struct Editor {
     pub secret: bool,
 }
 
-/// Whether the editor took the key.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Edit {
-    Changed,
-    Moved,
-    Ignored,
-}
-
 impl Editor {
     pub fn text(&self) -> &str {
         &self.text
@@ -214,18 +206,18 @@ impl Editor {
         (text, removed)
     }
 
-    fn kill_range(&mut self, from: usize, to: usize) -> Edit {
+    fn kill_range(&mut self, from: usize, to: usize) -> bool {
         if from == to {
-            return Edit::Ignored;
+            return false;
         }
         let killed = self.cut(from, to);
         self.kill = Some(killed);
-        Edit::Changed
+        true
     }
 
-    fn yank(&mut self) -> Edit {
+    fn yank(&mut self) -> bool {
         let Some((text, attachments)) = self.kill.clone() else {
-            return Edit::Ignored;
+            return false;
         };
         let mut attachments = attachments.into_iter();
         for c in text.chars() {
@@ -238,7 +230,7 @@ impl Editor {
                 self.cursor += c.len_utf8();
             }
         }
-        Edit::Changed
+        true
     }
 
     fn prev(&self, at: usize) -> usize {
@@ -281,18 +273,18 @@ impl Editor {
     }
 
     /// Moves a line up or down, keeping the column in characters.
-    fn vertical(&mut self, down: bool) -> Edit {
+    fn vertical(&mut self, down: bool) -> bool {
         let start = self.line_start(self.cursor);
         let column = self.text[start..self.cursor].chars().count();
         let target = if down {
             let end = self.line_end(self.cursor);
             if end >= self.text.len() {
-                return Edit::Ignored;
+                return false;
             }
             end + 1
         } else {
             if start == 0 {
-                return Edit::Ignored;
+                return false;
             }
             self.line_start(start - 1)
         };
@@ -305,7 +297,7 @@ impl Editor {
             at = self.next(at);
         }
         self.cursor = at;
-        Edit::Moved
+        false
     }
 
     /// Whether the cursor is on the draft's first line: Up there leaves
@@ -314,18 +306,19 @@ impl Editor {
         self.line_start(self.cursor) == 0
     }
 
-    /// Applies one key. Enter is never the editor's: the caller decides
-    /// whether it sends, submits or advances.
-    pub fn key(&mut self, key: KeyEvent) -> Edit {
+    /// Applies one key, and says whether it changed the text. Enter is
+    /// never the editor's: the caller decides whether it sends, submits or
+    /// advances.
+    pub fn key(&mut self, key: KeyEvent) -> bool {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
             KeyCode::Char('j') if ctrl => {
                 self.insert_str("\n");
-                Edit::Changed
+                true
             }
             KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.insert_str("\n");
-                Edit::Changed
+                true
             }
             KeyCode::Char('b') if ctrl => self.move_to(self.prev(self.cursor)),
             KeyCode::Char('f') if ctrl => self.move_to(self.next(self.cursor)),
@@ -340,33 +333,33 @@ impl Editor {
             KeyCode::Char('d') if ctrl => {
                 let next = self.next(self.cursor);
                 if next == self.cursor {
-                    return Edit::Ignored;
+                    return false;
                 }
                 self.cut(self.cursor, next);
-                Edit::Changed
+                true
             }
             KeyCode::Char('y') if ctrl => self.yank(),
-            KeyCode::Char(_) if ctrl => Edit::Ignored,
+            KeyCode::Char(_) if ctrl => false,
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::ALT) => {
                 let mut buf = [0u8; 4];
                 self.insert_str(c.encode_utf8(&mut buf));
-                Edit::Changed
+                true
             }
             KeyCode::Backspace => {
                 if self.cursor == 0 {
-                    return Edit::Ignored;
+                    return false;
                 }
                 let prev = self.prev(self.cursor);
                 self.cut(prev, self.cursor);
-                Edit::Changed
+                true
             }
             KeyCode::Delete => {
                 let next = self.next(self.cursor);
                 if next == self.cursor {
-                    return Edit::Ignored;
+                    return false;
                 }
                 self.cut(self.cursor, next);
-                Edit::Changed
+                true
             }
             KeyCode::Left if ctrl => self.move_to(self.word_left(self.cursor)),
             KeyCode::Right if ctrl => self.move_to(self.word_right(self.cursor)),
@@ -376,16 +369,16 @@ impl Editor {
             KeyCode::Down => self.vertical(true),
             KeyCode::Home => self.move_to(self.line_start(self.cursor)),
             KeyCode::End => self.move_to(self.line_end(self.cursor)),
-            _ => Edit::Ignored,
+            _ => false,
         }
     }
 
-    fn move_to(&mut self, at: usize) -> Edit {
+    fn move_to(&mut self, at: usize) -> bool {
         if at == self.cursor {
-            return Edit::Ignored;
+            return false;
         }
         self.cursor = at;
-        Edit::Moved
+        false
     }
 }
 
@@ -427,7 +420,7 @@ mod tests {
         for _ in 0..5 {
             editor.key(key(KeyCode::Left));
         }
-        assert_eq!(editor.key(key(KeyCode::Backspace)), Edit::Changed);
+        assert!(editor.key(key(KeyCode::Backspace)));
         assert!(editor.attachments().is_empty());
         assert_eq!(editor.text(), "see  here");
     }
@@ -457,7 +450,7 @@ mod tests {
         editor.insert_str(" words");
         assert!(editor.kill_all());
         assert!(editor.is_empty());
-        assert_eq!(editor.key(ctrl('y')), Edit::Changed);
+        assert!(editor.key(ctrl('y')));
         assert_eq!(editor.text(), format!("keep {PLACEHOLDER} words"));
         assert_eq!(editor.attachments().len(), 1);
 
@@ -495,9 +488,9 @@ mod tests {
         editor.key(ctrl('j'));
         editor.insert_str("second");
         assert!(!editor.on_first_line());
-        assert_eq!(editor.key(key(KeyCode::Up)), Edit::Moved);
+        assert!(!editor.key(key(KeyCode::Up)));
         assert!(editor.on_first_line());
-        assert_eq!(editor.key(key(KeyCode::Up)), Edit::Ignored);
+        assert!(!editor.key(key(KeyCode::Up)));
     }
 
     #[test]

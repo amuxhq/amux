@@ -153,7 +153,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
 tempfile = "3"
 crossterm = "0.29"
-ratatui = { version = "0.30", default-features = false, features = ["crossterm", "serde"] }
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 pulldown-cmark = { version = "0.13", default-features = false }
 # Grammars only (no themes: the terminal's palette colours the tokens), with
 # the pure-Rust regex engine so no C library is linked.

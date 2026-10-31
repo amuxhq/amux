@@ -4,11 +4,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 
 use ratatui::style::{Color, Modifier, Style};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use thiserror::Error;
 
 /// The colour capability selected once at the terminal boundary.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ColorMode {
     TrueColor,
     Ansi,
@@ -24,7 +24,7 @@ pub enum ColorPreference {
 }
 
 /// One semantic colour with truecolor and 16-colour terminal faces.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Token {
     pub rgb: (u8, u8, u8),
     pub ansi: Color,
@@ -36,7 +36,6 @@ pub struct Token {
     /// for it; painting that colour back is an opaque rectangle over the
     /// person's wallpaper, while leaving the cell reset shows the wallpaper.
     /// The same holds for body text under a terminal that recolours it.
-    #[serde(default)]
     pub inherited: bool,
 }
 
@@ -73,7 +72,7 @@ impl Token {
 }
 
 /// The complete semantic vocabulary available to TUI painters.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Tokens {
     pub background: Token,
     pub text: Token,
@@ -224,7 +223,7 @@ fn computed(rgb: (u8, u8, u8)) -> Token {
 }
 
 /// The provenance of a resolved palette.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ThemeName {
     Dark,
     Light,
@@ -266,7 +265,7 @@ pub enum ThemeError {
 }
 
 /// A complete palette resolved in one terminal colour mode.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Theme {
     pub tokens: Tokens,
     pub mode: ColorMode,
@@ -1858,25 +1857,6 @@ mod tests {
     }
 
     // --- the two shipped palettes -------------------------------------
-
-    /// Relative luminance, per WCAG 2.
-    fn luminance(rgb: (u8, u8, u8)) -> f64 {
-        fn channel(value: u8) -> f64 {
-            let value = f64::from(value) / 255.0;
-            if value <= 0.040_45 {
-                value / 12.92
-            } else {
-                ((value + 0.055) / 1.055).powf(2.4)
-            }
-        }
-        0.2126 * channel(rgb.0) + 0.7152 * channel(rgb.1) + 0.0722 * channel(rgb.2)
-    }
-
-    fn contrast(a: (u8, u8, u8), b: (u8, u8, u8)) -> f64 {
-        let (a, b) = (luminance(a), luminance(b));
-        let (lighter, darker) = if a > b { (a, b) } else { (b, a) };
-        (lighter + 0.05) / (darker + 0.05)
-    }
 
     fn rgb(hex: u32) -> (u8, u8, u8) {
         ((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)

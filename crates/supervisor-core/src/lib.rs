@@ -237,11 +237,6 @@ pub enum Output {
     },
     /// The supervisor is done: its daemon has stopped.
     Exit,
-    /// The supervisor cannot go on; the driver ends it with this error.
-    Fail {
-        what: &'static str,
-        why: String,
-    },
     /// Take a dump: the core saw something it must not carry on from.
     Dump {
         reason: DumpReason,
@@ -335,7 +330,6 @@ enum Then {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Checking {
     job: JobId,
-    manual: bool,
     /// The rolled-back build may be installed again.
     retry: bool,
     answers: Vec<AskId>,
@@ -803,7 +797,6 @@ impl Supervisor {
         let job = JobId(self.id());
         self.checking = Some(Checking {
             job,
-            manual,
             retry,
             answers,
             fetching: None,
@@ -832,14 +825,15 @@ impl Supervisor {
     /// rejected version equal to the installed binary with prev present,
     /// which a starting supervisor finishes.
     fn roll_back(&mut self, out: &mut Vec<Output>) {
-        let Some(rejected) = self.installed.path.version.clone() else {
-            out.push(Output::Fail {
-                what: "rolling back",
-                why: "the installed version is not known".into(),
-            });
-            self.exited = true;
-            return;
-        };
+        // Every build that gets a prev beside it is one whose version is
+        // known: this binary, or the release the swap staged. Only a build
+        // found on disk at start is unknown, and it never has a prev.
+        let rejected = self
+            .installed
+            .path
+            .version
+            .clone()
+            .expect("a build with a prev beside it has a known version");
         out.push(Output::WriteRejected {
             version: rejected.clone(),
         });

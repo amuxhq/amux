@@ -526,12 +526,6 @@ impl Driver {
                     self.timers.remove(&id);
                 }
                 Output::Exit => return Ok(Some(Done)),
-                Output::Fail { what, why } => {
-                    return Err(SuperviseError::Files {
-                        what,
-                        error: io::Error::other(why),
-                    });
-                }
                 Output::Dump { reason } => {
                     let now_ms = millis_now(&*self.clock);
                     self.dumps.dump(&reason, now_ms, &self.core, &self.data_dir);

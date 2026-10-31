@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::Extra;
-use crate::items::{ToolOutputContent, UserInput};
+use crate::items::UserInput;
 use crate::macros::{method_enum, string_enum, tagged_enum};
 use crate::server::{CommandDecision, PermissionProfile};
 use crate::thread::{
@@ -25,7 +25,6 @@ method_enum! {
         "thread/unsubscribe" => ThreadUnsubscribe(ThreadIdParams),
         "thread/name/set" => ThreadSetName(ThreadSetNameParams),
         "thread/read" => ThreadRead(ThreadReadParams),
-        "thread/list" => ThreadList(ThreadListParams),
         "thread/compact/start" => ThreadCompactStart(ThreadIdParams),
         "thread/inject_items" => ThreadInjectItems(InjectItemsParams),
         "thread/backgroundTerminals/list" => BackgroundTerminalsList(BackgroundTerminalsListParams),
@@ -97,23 +96,6 @@ pub struct ThreadStartParams {
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<SandboxMode>,
-    /// Tools amux defines for the thread.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dynamic_tools: Option<Vec<DynamicTool>>,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-/// A function tool the thread may call; Codex asks amux to run it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DynamicTool {
-    pub name: String,
-    pub description: String,
-    /// The JSON schema of the tool's arguments.
-    pub input_schema: Value,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub defer_loading: Option<bool>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -155,30 +137,6 @@ pub struct ThreadReadParams {
     pub thread_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_turns: Option<bool>,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-/// Every filter is written, null when unset.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadListParams {
-    #[serde(default)]
-    pub cursor: Option<String>,
-    #[serde(default)]
-    pub limit: Option<i64>,
-    #[serde(default)]
-    pub sort_key: Option<String>,
-    #[serde(default)]
-    pub model_providers: Option<Vec<String>>,
-    #[serde(default)]
-    pub source_kinds: Option<Vec<String>>,
-    #[serde(default)]
-    pub archived: Option<bool>,
-    #[serde(default)]
-    pub cwd: Option<String>,
-    #[serde(default)]
-    pub search_term: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -354,7 +312,6 @@ pub struct AccountReadParams {
 pub enum ClientResponse {
     CommandApproval(CommandApprovalResponse),
     PermissionsApproval(PermissionsApprovalResponse),
-    ToolCall(ToolCallResponse),
     Elicitation(ElicitationResponse),
     UserInput(UserInputResponse),
 }
@@ -381,15 +338,6 @@ string_enum! {
         Turn = "turn",
         Session = "session",
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolCallResponse {
-    pub content_items: Vec<ToolOutputContent>,
-    pub success: bool,
-    #[serde(flatten)]
-    pub extra: Extra,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

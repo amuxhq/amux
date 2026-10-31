@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use codex_protocol::client::{
-    AccountReadParams, Capabilities, ClientInfo, InitializeParams, ThreadListParams,
-    ThreadReadParams, ThreadResumeParams, ThreadSetNameParams, ThreadStartParams,
+    AccountReadParams, Capabilities, ClientInfo, InitializeParams, ThreadReadParams,
+    ThreadResumeParams, ThreadSetNameParams, ThreadStartParams,
 };
 use codex_protocol::server::{
-    AccountReadResponse, InitializeResponse, ThreadListResponse, ThreadReadResponse, ThreadResponse,
+    AccountReadResponse, InitializeResponse, ThreadReadResponse, ThreadResponse,
 };
 use codex_protocol::{ClientNotification, ClientRequest, Extra};
 use tokio::io::{AsyncBufRead, AsyncWrite};
@@ -141,13 +141,6 @@ impl Codex {
             .await?;
         registration.finish_staging().await;
         Ok(Thread::new(self.inner.clone(), session, registration))
-    }
-
-    pub async fn list_threads(
-        &self,
-        params: ThreadListParams,
-    ) -> Result<ThreadListResponse, Error> {
-        self.inner.request(ClientRequest::ThreadList(params)).await
     }
 
     pub async fn rename_thread(&self, thread_id: &str, name: &str) -> Result<(), Error> {

@@ -743,9 +743,9 @@ answer.
   | `item/tool/requestUserInput` | Question |
   | `mcpServer/elicitation/request` | A tool server's form or link, or, when Codex marks it as a tool-call approval, approval of the running tool server call. An approval for amux's own tool server is answered approved at once (for the session when Codex offers it) and opens no ask: amux's own tools never ask, on any kind |
 
-  `item/tool/call` is answered at once that this client hosts no dynamic
-  tools. Any other request is answered with a method-not-found error and
-  drawn as an unrecognized item.
+  Any other request is answered with a method-not-found error and drawn as
+  an unrecognized item; `item/tool/call` would be one, but Codex sends it
+  only for dynamic tools a client declares, and amux declares none.
 - **Turns.** `turn/started` begins one and records its id; `turn/completed`
   ends it with its status (completed, interrupted or failed, with an error
   item when the turn carries one) and dismisses every ask still open. A

@@ -167,15 +167,6 @@ fn an_elicitation_reads_persist_as_a_string_or_a_list() {
 }
 
 #[test]
-fn a_tool_call_reads_its_arguments() {
-    let R::ToolCall(call) = request(recorded("dynamic_tools", &["item/tool/call"])) else {
-        panic!("not a tool call");
-    };
-    assert_eq!(call.tool, "send");
-    assert_eq!(call.arguments["to"], "probe");
-}
-
-#[test]
 fn a_failed_turn_reads_its_error_kind() {
     let N::TurnCompleted(done) = notification(recorded("turn_error", &["turn/completed"])) else {
         panic!("not a turn completion");
@@ -256,13 +247,6 @@ fn completed_items_read_their_outcomes() {
         call.result.expect("result").texts().collect::<Vec<_>>(),
         ["BLUE"]
     );
-
-    let ThreadItem::DynamicToolCall(call) = completed_item("dynamic_tools", "dynamicToolCall")
-    else {
-        panic!("not a dynamic call");
-    };
-    assert_eq!(call.success, Some(true));
-    assert_eq!(call.content_items.map(|items| items.len()), Some(1));
 
     let ThreadItem::WebSearch(search) = completed_item("web_search", "webSearch") else {
         panic!("not a search");
@@ -445,10 +429,6 @@ fn answers_read_back_as_what_they_answer() {
             "permissions",
         ),
         (
-            r#"{"id":0,"result":{"contentItems":[{"text":"sent","type":"inputText"}],"success":true}}"#,
-            "tool",
-        ),
-        (
             r#"{"id":3,"result":{"action":"cancel","content":null}}"#,
             "elicitation",
         ),
@@ -467,7 +447,6 @@ fn answers_read_back_as_what_they_answer() {
         let kind = match response {
             ClientResponse::CommandApproval(_) => "command",
             ClientResponse::PermissionsApproval(_) => "permissions",
-            ClientResponse::ToolCall(_) => "tool",
             ClientResponse::Elicitation(_) => "elicitation",
             ClientResponse::UserInput(_) => "input",
         };

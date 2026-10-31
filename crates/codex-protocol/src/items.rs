@@ -17,7 +17,6 @@ tagged_enum! {
         "commandExecution" => CommandExecution(CommandExecutionItem),
         "fileChange" => FileChange(FileChangeItem),
         "mcpToolCall" => McpToolCall(McpToolCallItem),
-        "dynamicToolCall" => DynamicToolCall(DynamicToolCallItem),
         "collabAgentToolCall" => CollabAgentToolCall(CollabAgentToolCallItem),
         "subAgentActivity" => SubAgentActivity(IdItem),
         "webSearch" => WebSearch(WebSearchItem),
@@ -46,7 +45,6 @@ impl ThreadItem {
             Self::CommandExecution(item) => &item.id,
             Self::FileChange(item) => &item.id,
             Self::McpToolCall(item) => &item.id,
-            Self::DynamicToolCall(item) => &item.id,
             Self::CollabAgentToolCall(item) => &item.id,
             Self::WebSearch(item) => &item.id,
             Self::ImageView(item) => &item.id,
@@ -226,34 +224,6 @@ pub struct McpToolCallError {
     pub message: String,
     #[serde(flatten)]
     pub extra: Extra,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DynamicToolCallItem {
-    pub id: String,
-    /// The namespace amux gave the tool, when it gave one.
-    #[serde(default)]
-    pub namespace: Option<String>,
-    pub tool: String,
-    pub status: ToolStatus,
-    /// The tool's arguments, as the model wrote them.
-    pub arguments: Value,
-    #[serde(default)]
-    pub content_items: Option<Vec<ToolOutputContent>>,
-    #[serde(default)]
-    pub success: Option<bool>,
-    #[serde(default)]
-    pub duration_ms: Option<i64>,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-tagged_enum! {
-    /// What a dynamic tool answers with.
-    pub enum ToolOutputContent {
-        "inputText" => Text(TextContent),
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

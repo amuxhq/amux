@@ -416,17 +416,15 @@ mod tests {
         }
     }
 
-    fn tool_call_json(thread_id: &str) -> String {
+    fn approval_json(thread_id: &str) -> String {
         serde_json::json!({
             "id": 41,
-            "method": "item/tool/call",
+            "method": "item/commandExecution/requestApproval",
             "params": {
                 "threadId": thread_id,
                 "turnId": "turn-1",
-                "callId": "call-1",
-                "tool": "lookup",
-                "namespace": "demo",
-                "arguments": {"key": "value"}
+                "itemId": "item-1",
+                "command": "ls"
             }
         })
         .to_string()
@@ -443,18 +441,16 @@ mod tests {
         let mut rx = registration.take_receiver().await.unwrap();
         let request = serde_json::json!({
             "id": "approval-41",
-            "method": "item/tool/call",
+            "method": "item/commandExecution/requestApproval",
             "params": {
                 "threadId": "thread-1",
                 "turnId": "turn-1",
-                "callId": "call-1",
-                "tool": "lookup",
-                "arguments": {}
+                "itemId": "item-1"
             }
         });
 
         inner.dispatch_line(&request.to_string()).await;
-        let Event::Request { id, .. } = rx.recv().await.expect("tool call event").event else {
+        let Event::Request { id, .. } = rx.recv().await.expect("approval event").event else {
             panic!("unexpected event")
         };
         assert_eq!(id, RequestId::String("approval-41".into()));
@@ -462,23 +458,24 @@ mod tests {
         inner
             .respond(
                 id,
-                ClientResponse::ToolCall(codex_protocol::client::ToolCallResponse {
-                    content_items: Vec::new(),
-                    success: true,
+                ClientResponse::CommandApproval(codex_protocol::client::CommandApprovalResponse {
+                    decision: codex_protocol::server::CommandDecision::Plain(
+                        codex_protocol::server::Decision::Accept,
+                    ),
                     extra: Extra::new(),
                 }),
             )
             .await
             .unwrap();
-        let response = written(stdin_rx.recv().await.expect("tool call response"));
+        let response = written(stdin_rx.recv().await.expect("approval response"));
         assert_eq!(response["id"], "approval-41");
     }
 
     #[tokio::test]
-    async fn unhandled_tool_call_gets_json_rpc_error() {
+    async fn unhandled_approval_gets_json_rpc_error() {
         let (inner, mut stdin_rx) = test_inner();
 
-        inner.dispatch_line(&tool_call_json("missing")).await;
+        inner.dispatch_line(&approval_json("missing")).await;
 
         let response = written(stdin_rx.recv().await.expect("error response"));
         assert_eq!(response["id"], 41);
@@ -509,7 +506,7 @@ mod tests {
 
         tokio::time::timeout(
             std::time::Duration::from_millis(100),
-            inner.dispatch_line(&tool_call_json("thread-1")),
+            inner.dispatch_line(&approval_json("thread-1")),
         )
         .await
         .expect("dispatch blocked on consumer");

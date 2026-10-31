@@ -3,10 +3,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use codex_protocol::client::{
-    CommandApprovalResponse, DynamicTool, InjectedContent, InjectedItem, InjectedMessage,
-    ThreadListParams, ThreadResumeParams, ThreadStartParams, ToolCallResponse, TurnStartParams,
+    CommandApprovalResponse, InjectedContent, InjectedItem, InjectedMessage, ThreadStartParams,
+    TurnStartParams,
 };
-use codex_protocol::items::{MessagePhase, TextContent, ThreadItem, ToolOutputContent};
+use codex_protocol::items::{MessagePhase, TextContent, ThreadItem};
 use codex_protocol::server::{
     CommandDecision, Decision, ErrorNotification, ServerNotification, ServerRequest,
 };
@@ -46,8 +46,6 @@ const REGISTRY: &[SpecEntry] = &[
     entry("approval_allow"),
     entry("approval_deny"),
     entry("interrupt"),
-    entry("thread_list_and_resume"),
-    entry("dynamic_tools"),
     entry("inject_idle"),
     entry("inject_busy"),
     entry("two_assistant_messages"),
@@ -362,8 +360,6 @@ async fn run_scenario(
         "approval_allow" => approval(codex, model, project, true).await,
         "approval_deny" => approval(codex, model, project, false).await,
         "interrupt" => interrupt(codex, model, project).await,
-        "thread_list_and_resume" => thread_list_and_resume(codex, model, project).await,
-        "dynamic_tools" => dynamic_tools(codex, model, project).await,
         "inject_idle" => inject_idle(codex, model, project).await,
         "inject_busy" => inject_busy(codex, model, project).await,
         "two_assistant_messages" => two_assistant_messages(codex, model, project).await,
@@ -565,122 +561,6 @@ async fn interrupt(codex: &Codex, model: &str, project: &Path) -> Result<Scenari
     while turn_started(&next_event(&mut events, "turn start before interrupt").await?).is_none() {}
     thread.interrupt(&turn.id).await.map_err(stringify)?;
     wait_for_completion(&mut events).await?;
-    Ok(report(&thread))
-}
-
-async fn thread_list_and_resume(
-    codex: &Codex,
-    model: &str,
-    project: &Path,
-) -> Result<ScenarioReport, String> {
-    let thread = start_thread(codex, model, project).await?;
-    let original = report(&thread);
-    let mut events = thread.events().await.map_err(stringify)?;
-    thread
-        .say("Reply with exactly CODEX_SPEC_RESUME and nothing else.")
-        .await
-        .map_err(stringify)?;
-    wait_for_completion(&mut events).await?;
-    drop(events);
-    codex
-        .rename_thread(thread.id(), "codex-spec-resume")
-        .await
-        .map_err(stringify)?;
-    let listed = codex
-        .list_threads(ThreadListParams::default())
-        .await
-        .map_err(stringify)?;
-    if !listed.data.iter().any(|item| item.id == thread.id()) {
-        return Err("thread/list omitted the newly started thread".to_string());
-    }
-    let id = thread.id().to_string();
-    drop(thread);
-    let config = thread_config(model, project);
-    let resumed = codex
-        .resume_thread(ThreadResumeParams {
-            thread_id: id.clone(),
-            cwd: config.cwd,
-            model: config.model,
-            approval_policy: config.approval_policy,
-            sandbox: config.sandbox,
-            exclude_turns: None,
-            extra: Extra::new(),
-        })
-        .await
-        .map_err(stringify)?;
-    if resumed.id() != id {
-        return Err("thread/resume changed thread identity".to_string());
-    }
-    Ok(ScenarioReport {
-        server_model: resumed.session().model.clone(),
-        session_ids: original.session_ids,
-    })
-}
-
-async fn dynamic_tools(
-    codex: &Codex,
-    model: &str,
-    project: &Path,
-) -> Result<ScenarioReport, String> {
-    let mut config = thread_config(model, project);
-    config.dynamic_tools = Some(vec![DynamicTool {
-        name: "send".to_string(),
-        description: "Send a short message to another agent.".to_string(),
-        input_schema: serde_json::json!({
-            "type": "object",
-            "properties": {"to": {"type": "string"}, "text": {"type": "string"}},
-            "required": ["to", "text"]
-        }),
-        defer_loading: None,
-        extra: Extra::new(),
-    }]);
-    let thread = codex.start_thread(config).await.map_err(stringify)?;
-    let mut events = thread.events().await.map_err(stringify)?;
-    thread
-        .say("Call the send tool exactly once with to=probe and text=CODEX_SPEC_SENT. Do not use any other tool.")
-        .await
-        .map_err(stringify)?;
-    let mut called = false;
-    loop {
-        let event = next_event(&mut events, "dynamic tool call and completion").await?;
-        if let Some(turn) = turn_completed(&event) {
-            if turn.status != TurnStatus::Completed || !called {
-                return Err("dynamic tool turn completed without the required call".to_string());
-            }
-            break;
-        }
-        let Event::Request {
-            id,
-            request: ServerRequest::ToolCall(call),
-        } = event.event
-        else {
-            continue;
-        };
-        if call.tool != "send" {
-            continue;
-        }
-        if call.arguments != serde_json::json!({"to": "probe", "text": "CODEX_SPEC_SENT"}) {
-            return Err(format!(
-                "dynamic tool arguments differed: {}",
-                call.arguments
-            ));
-        }
-        called = true;
-        thread
-            .respond(
-                id,
-                ClientResponse::ToolCall(ToolCallResponse {
-                    content_items: vec![ToolOutputContent::Text(TextContent {
-                        text: "sent".to_string(),
-                        extra: Extra::new(),
-                    })],
-                    success: true,
-                    extra: Extra::new(),
-                }),
-            )
-            .await
-            .map_err(stringify)?;
-    }
     Ok(report(&thread))
 }
 
@@ -911,9 +791,9 @@ mod tests {
 
     #[test]
     fn registry_names_the_provider_side_of_the_c_suite() {
-        assert_eq!(registry().len(), 33);
+        assert_eq!(registry().len(), 31);
         assert_eq!(registry()[0].name, "initialize_and_start");
-        assert_eq!(registry()[9].name, "two_assistant_messages");
+        assert_eq!(registry()[7].name, "two_assistant_messages");
         assert!(
             registry()
                 .iter()

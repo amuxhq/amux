@@ -56,7 +56,7 @@ mod trust;
 mod window;
 mod worktree;
 
-pub use activation::{ActivationError, ActivationPipe, GO, InheritedPipe, PIPE_ENV, PREPARED};
+pub use activation::{ActivationError, ActivationPipe, InheritedPipe, PIPE_ENV, PREPARED};
 pub use blobs::{BlobError, PATCH_MIME};
 pub use daemon::{Daemon, STOP_TARGET, StartError, StartOptions, start};
 pub use daemon_core::names::word_pairs;
@@ -65,60 +65,46 @@ pub use driver::{
     Subscription,
 };
 pub use dump::{
-    CLIENT_CHECKPOINT, CLIENT_EVENTS, CLIENT_SESSIONS, DAEMON_LOG, DUMP_LOG_BYTES, DUMP_ROWS,
-    DUMP_SEGMENTS, DumpError, MANIFEST, SUPERVISOR_LOG, pack,
+    CLIENT_CHECKPOINT, CLIENT_EVENTS, CLIENT_SESSIONS, DAEMON_LOG, DumpError, MANIFEST,
+    SUPERVISOR_LOG, pack,
 };
 #[cfg(not(target_os = "ios"))]
 pub use edge::mdns_discovery;
 pub use edge::{
-    ACCOUNT_FILE, Cloud, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge,
-    EdgeError, EdgeOptions, FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE,
-    LINK_SOCKET, LanOptions, LoopbackLink, RELAY_TOKEN_FILE, Relay, RelayCarrier, RelayIdentity,
-    RelayQuic, RelayServing, UDP_BLOCKED_MEMORY, interface_addrs, test_interfaces,
+    Cloud, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge, EdgeOptions,
+    JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET, LanOptions, LoopbackLink, Relay,
+    RelayCarrier, RelayIdentity, RelayQuic, RelayServing, UDP_BLOCKED_MEMORY, test_interfaces,
 };
-pub use forward::{ForwardError, HostNameError, Owner};
-pub use front_door::FrontDoor;
+pub use forward::Owner;
 pub use generation::{Generation, boot_id};
 pub use grpc::{ClientApi, status};
 pub use identity::LinkLiveness;
 pub use install::{
-    AGENTS, CORE_RING, GENERATION, INSTALLATION_LOCK, InstallationLock, LockError, PROFILES,
-    REPLICAS, REPORTS, STORE, write_durably,
+    AGENTS, CORE_RING, GENERATION, INSTALLATION_LOCK, LockError, PROFILES, REPLICAS, REPORTS,
+    STORE, write_durably,
 };
-pub use link::{
-    Cursor, PeerChannel, PeerClient, TRUST_REVOKED, forwarder, framed, link_log, paths, socket,
-};
-pub use offers::{CatalogueError, HostCatalogue, PROVIDERS, Provider};
-pub use outbox::{DrainReport, HttpSender, NoopSender, Push, PushError, PushFuture, PushSender};
-pub use pairing::qr::{
-    PAIR_LINK, QrPairingError, QrPairingPayload, encode_qr_pairing_invitation, pair_link,
-    parse_pair_link, parse_qr_pairing_payload,
-};
+pub use link::{Cursor, PeerClient, TRUST_REVOKED, forwarder, framed, link_log, paths, socket};
+pub use offers::{HostCatalogue, PROVIDERS, Provider};
+pub use outbox::{DrainReport, HttpSender, NoopSender, Push, PushFuture, PushSender};
+pub use pairing::qr::{QrPairingError, encode_qr_pairing_invitation, pair_link, parse_pair_link};
 #[cfg(unix)]
 pub use pairing::ssh::relay_stdio_to_unix_socket;
-pub use pairing::ssh::{
-    SshPairingError, exchange_over_ssh, read_ssh_identity, ssh_stdio, write_ssh_identity,
-};
+pub use pairing::ssh::{exchange_over_ssh, read_ssh_identity, ssh_stdio, write_ssh_identity};
 pub use profile_admin::ProfileAdmin;
-pub use profiles::{
-    PROFILE_SOCKET, ProfileEntry, ProfileId, create_profile, create_profile_as, profile_dir,
-};
-pub use registry::{AccountState, ProfileRefusal, ProfileState, Registry, SignIn};
+pub use profiles::{PROFILE_SOCKET, ProfileId, create_profile, create_profile_as, profile_dir};
+pub use registry::{ProfileRefusal, ProfileState, Registry, SignIn};
 pub use relay::RelayError;
 pub use replicas::SourcePolicy;
-pub use reports::{
-    AutoReports, CLIENT_FILES, DUMP_ARCHIVE, NotSent, REPORT_DUMP, REPORT_JSON, REPORT_SCHEMA,
-    ReportError, archive,
-};
+pub use reports::{AutoReports, DUMP_ARCHIVE, NotSent, REPORT_SCHEMA, archive};
 pub use retention::Retention;
 pub use routing::local_kinds;
 pub use runtime::{
-    AGENT_LOG, AgentId, DUMPS_FINISH_WITHIN, FANOUT_CAPACITY, INGEST_BATCH, KEPT_SEGMENTS, Launch,
-    Profile, ProfileRuntime, RegistryError, Stopped, SweepReport, TAIL_ROWS, locked, to_wire,
+    AGENT_LOG, AgentId, DUMPS_FINISH_WITHIN, INGEST_BATCH, KEPT_SEGMENTS, Launch, Profile,
+    ProfileRuntime, RegistryError, Stopped, locked, to_wire,
 };
 pub use serve::{MAX_PAGE, ServeError};
 pub use telemetry::Telemetry;
-pub use worktree::{GitWorktrees, WORKTREES};
+pub use worktree::WORKTREES;
 
 /// Internals the testnet harness assembles topologies from. Hidden and
 /// unstable: reachable only for test infrastructure, never for products.
@@ -150,13 +136,13 @@ pub mod harness {
 pub type HostId = uuid::Uuid;
 
 pub use agent_dir::Clock;
+pub use auth::AuthError;
 pub use auth::claims::Tier;
-pub use auth::oauth::{OAuthError, run_device_flow};
-pub use auth::{AccessToken, AuthError};
+pub use auth::oauth::run_device_flow;
 pub use link::client_tickets::CLIENT_TICKETS_DIR;
 pub use link::resumption::{RELAY_TICKETS, SessionTickets, TICKETS_DIR};
 pub use link::validation::CLIENT_TOKENS_DIR;
 /// This binary's version, as stamped: the one it writes into every spec.
 pub use release::version;
-pub use transport::{TransportError, create_tls_acceptor, relay_quic_server_config};
+pub use transport::{create_tls_acceptor, relay_quic_server_config};
 pub use wire::PROTOCOL_VERSION;

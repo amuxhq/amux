@@ -562,8 +562,8 @@ impl Daemon {
 
     /// The front door's services in process: the installation's profiles,
     /// as its socket serves them.
-    pub fn front_door(&self) -> crate::FrontDoor {
-        crate::FrontDoor::new(self.registry())
+    pub fn front_door(&self) -> crate::front_door::FrontDoor {
+        crate::front_door::FrontDoor::new(self.registry())
     }
 
     /// A profile's administration, called in process as its socket serves

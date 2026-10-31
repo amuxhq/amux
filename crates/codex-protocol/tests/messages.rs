@@ -175,7 +175,10 @@ fn a_failed_turn_reads_its_error_kind() {
     };
     assert_eq!(done.turn.status, TurnStatus::Failed);
     let error = done.turn.error.expect("error");
-    assert_eq!(error.codex_error_info.expect("info").kind(), "modelNotFound");
+    assert_eq!(
+        error.codex_error_info.expect("info").kind(),
+        "modelNotFound"
+    );
     assert!(error.message.contains("not supported"));
 }
 

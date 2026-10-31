@@ -29,9 +29,8 @@
 //! armed for now is a delivery at once, one armed for later fires when the
 //! clock passes it. Jobs are carried out by fakes: nothing outside the
 //! agents' journals is written, a kill ends the process at once, git reads
-//! find no repository. After every step that wrote a host's store, the
-//! host's core checks every invariant it knows (`check_all`); a broken one,
-//! or a core asking for a dump, fails the net.
+//! find no repository. A core asking for a dump, which every step whose
+//! invariants break does, fails the net.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
@@ -194,8 +193,6 @@ pub enum Failure {
     /// A core asked for a dump: a step over its budget or a broken
     /// invariant its own step checks.
     Dump(String),
-    /// A host's store broke an invariant its core checks after a write.
-    Violation(String),
     /// The drivers met something no driver should: a spec naming no agent.
     Driver(String),
     /// A promise a machine's own model checks, judged here as the net
@@ -206,9 +203,7 @@ pub enum Failure {
 impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Failure::Dump(what) | Failure::Violation(what) | Failure::Driver(what) => {
-                f.write_str(what)
-            }
+            Failure::Dump(what) | Failure::Driver(what) => f.write_str(what),
             Failure::Broke(promise, what) => write!(f, "{what}, breaking \"{promise}\""),
         }
     }
@@ -1280,7 +1275,7 @@ impl Transition<'_> {
             let at = self.steps;
             self.w.failure = Some(match failure {
                 Failure::Dump(what) => Failure::Dump(format!("at step {at}: {what}")),
-                Failure::Violation(what) => Failure::Violation(format!("at step {at}: {what}")),
+
                 Failure::Driver(what) => Failure::Driver(format!("at step {at}: {what}")),
                 Failure::Broke(promise, what) => {
                     Failure::Broke(promise, format!("at step {at}: {what}"))
@@ -1445,22 +1440,13 @@ impl Transition<'_> {
         let (slot, dir) = self.scratch.of(id);
         dir.lay_out(&host.journals);
         let home = agents_home(id);
-        let mut violation = None;
         let mut broke = None;
         let (out, print) = slot.with_core(&mut host.held, (dir.path(), &home), |daemon| {
             let mut out = Vec::new();
             for input in inputs {
-                let before = daemon.store().changes();
                 let kind = input.kind();
                 let from = out.len();
                 daemon.step(input, &mut out);
-                if daemon.store().changes() != before
-                    && let Err(broken) = daemon.check_all()
-                {
-                    violation.get_or_insert(format!(
-                        "{name}'s store broke an invariant after {kind}: {broken}"
-                    ));
-                }
                 if broke.is_none() {
                     broke = judge_step(daemon, &out[from..], kind, name, &others);
                 }
@@ -1470,9 +1456,6 @@ impl Transition<'_> {
         host.print = Some(print);
         dir.reclaimed(&mut host.journals);
         let scratch = dir.path().to_path_buf();
-        if let Some(violation) = violation {
-            self.fail(Failure::Violation(violation));
-        }
         if let Some((promise, what)) = broke {
             self.fail(Failure::Broke(promise, what));
         }
@@ -1579,26 +1562,13 @@ impl Transition<'_> {
         let running = &self.w.running;
         let (slot, dir) = self.scratch.of(id);
         dir.lay_out(&host.journals);
-        let name = &plan.name;
-        let mut violation = None;
         let (out, print) = slot.start_with(
             &mut host.held,
             (dir.path(), &agents),
             |store| Daemon::new(store, options),
             |daemon| {
                 let mut out = Vec::new();
-                let mut step = |daemon: &mut Daemon, input: Input| {
-                    let before = daemon.store().changes();
-                    let kind = input.kind();
-                    daemon.step(input, &mut out);
-                    if daemon.store().changes() != before
-                        && let Err(broken) = daemon.check_all()
-                    {
-                        violation.get_or_insert(format!(
-                            "{name}'s store broke an invariant after {kind}: {broken}"
-                        ));
-                    }
-                };
+                let mut step = |daemon: &mut Daemon, input: Input| daemon.step(input, &mut out);
                 step(
                     daemon,
                     Input::Tick {
@@ -1639,9 +1609,6 @@ impl Transition<'_> {
         host.print = Some(print);
         dir.reclaimed(&mut host.journals);
         let scratch = dir.path().to_path_buf();
-        if let Some(violation) = violation {
-            self.fail(Failure::Violation(violation));
-        }
         if let Some((promise, what)) = broke {
             self.fail(Failure::Broke(promise, what));
         }

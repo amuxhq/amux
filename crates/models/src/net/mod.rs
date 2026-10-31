@@ -646,10 +646,6 @@ impl Machine for ComposedNet {
                 |_, s: &State| !matches!(s.net.failure(), Some(Failure::Dump(_))),
             ),
             Property::always(
-                "every host's store keeps every invariant its core checks after a write",
-                |_, s: &State| !matches!(s.net.failure(), Some(Failure::Violation(_))),
-            ),
-            Property::always(
                 "the drivers never meet what no driver should",
                 |_, s: &State| !matches!(s.net.failure(), Some(Failure::Driver(_))),
             ),

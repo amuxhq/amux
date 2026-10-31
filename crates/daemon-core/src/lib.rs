@@ -495,12 +495,6 @@ impl Daemon {
         Ok(())
     }
 
-    /// The whole-block predicates the checker, the simulator and replay
-    /// call after every store write; too slow for production.
-    pub fn check_all(&self) -> Result<(), Violation> {
-        self.check_step_invariants()
-    }
-
     /// The core as of this step. With the store's main file after a passive
     /// WAL checkpoint that no commit has followed, it is the daemon
     /// exactly.

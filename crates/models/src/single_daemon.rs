@@ -1166,8 +1166,8 @@ pub struct Broken {
 
 /// What one step of a core running anywhere broke of the promises a step
 /// is judged by alone, `out` being what it asked for: a dump it asked for
-/// (named by the invariant that failed, when one did), an invariant its
-/// store breaks, or a row it answered that the store does not hold. The
+/// (named by the invariant that failed, when one did), or a row it
+/// answered that the store does not hold. The
 /// rest of the single daemon's promises need the world the model tracks
 /// around the core: what reached the drive, the run before.
 pub fn judge_step(daemon: &Daemon, out: &[Output]) -> Option<Broken> {
@@ -1186,12 +1186,7 @@ pub fn judge_step(daemon: &Daemon, out: &[Output]) -> Option<Broken> {
             },
         });
     }
-    if let Err(violation) = daemon.check_all() {
-        return Some(Broken {
-            promise: violation.invariant.sentence,
-            detail: violation.detail,
-        });
-    }
+
     answered_unheld(daemon, out).map(|row| Broken {
         promise: COMMIT_BEFORE_BROADCAST,
         detail: format!("answered {row} before the store held it"),

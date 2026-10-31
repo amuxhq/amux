@@ -518,17 +518,10 @@ impl InstallationConfig {
         Ok(config)
     }
 
-    /// Checks what parsing alone cannot: the supervisor and updates pair,
-    /// the leader key and the host name.
+    /// Checks what parsing alone cannot: the supervisor and updates pair
+    /// and the host name.
     pub fn validate(&self) -> Result<(), ConfigError> {
         self.updates()?;
-        // Leader key must be ctrl+<a-z>
-        let ch = self.keybinds.leader.char;
-        if !ch.is_ascii_lowercase() {
-            return Err(ConfigError::Invalid(format!(
-                "invalid leader key: byte 0x{ch:02x} is not a lowercase letter (expected ctrl+<a-z>)"
-            )));
-        }
         match &self.host_name {
             Some(host_name) => validate_host_name(host_name),
             None => Ok(()),
@@ -751,14 +744,6 @@ mod tests {
     #[test]
     fn a_yaml_file_is_refused() {
         assert!(installation("host_name: desk\nkeep_awake: off\n").is_err());
-    }
-
-    #[test]
-    fn validate_leader_key_bad_char() {
-        let mut config = InstallationConfig::default();
-        config.keybinds.leader = LeaderKey { char: b'1' };
-        let err = config.validate().unwrap_err();
-        assert!(err.to_string().contains("leader key"));
     }
 
     #[test]

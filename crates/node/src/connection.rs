@@ -175,7 +175,7 @@ impl ConnectionManager {
             .copied()
             .ok_or(ChannelError::NoRoute { host_id: peer })?;
         let opened = self.open_route(peer, route, class).await;
-        if let Err(ChannelError::Refused(wire::pb::ForwardRefusal::PaymentRequired)) = &opened {
+        if let Err(ChannelError::Refused(wire::ForwardRefusal::PaymentRequired)) = &opened {
             self.analytics.record_at_most_every(
                 crate::telemetry::RELAY_REFUSED_EVERY,
                 analytics::Event::RelayRefused,

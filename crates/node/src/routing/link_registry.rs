@@ -16,7 +16,6 @@ use std::sync::Arc;
 
 use daemon_core::payload::CarrierKind;
 use tokio::sync::{Notify, RwLock, mpsc};
-use wire::pb;
 
 use crate::driver::CoreLinks;
 use crate::link::QuicCarrier;
@@ -28,7 +27,7 @@ use crate::routing::wire::{neighbor_down_message, neighbor_up_message};
 use crate::routing::{ConnectRole, Host, RuntimeInstance};
 use crate::{HostId, Tier};
 
-pub(crate) type LinkOutputTx = mpsc::Sender<pb::Message>;
+pub(crate) type LinkOutputTx = mpsc::Sender<wire::Message>;
 
 impl LinkRegistry {
     /// The registry of a host whose own id is `own`: a daemon's links are
@@ -112,8 +111,8 @@ pub struct LinkRegistry {
     relaying: Arc<Relaying>,
     /// The account these links are on, as the forwarding core knows it.
     user: relay_core::UserId,
-    refusals: tokio::sync::broadcast::Sender<(HostId, pb::ForwardRefusal)>,
-    last_refusals: std::sync::Mutex<HashMap<HostId, pb::ForwardRefusal>>,
+    refusals: tokio::sync::broadcast::Sender<(HostId, wire::ForwardRefusal)>,
+    last_refusals: std::sync::Mutex<HashMap<HostId, wire::ForwardRefusal>>,
     /// The profile's path machines, told of every peer link that comes up
     /// or goes on the profile's socket.
     paths: std::sync::OnceLock<std::sync::Weak<PathDriver>>,
@@ -178,7 +177,7 @@ struct LinkWriter {
 }
 
 /// A local request for the link's connect task to close the link. Distinct
-/// from the wire `pb::LinkCloseReason`, which names why a *peer* closed it.
+/// from the wire `wire::LinkCloseReason`, which names why a *peer* closed it.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) enum LinkCloseRequest {
     OutgoingQueueFull,
@@ -467,7 +466,7 @@ impl LinkRegistry {
         &self,
         host: HostId,
         through: daemon_core::LinkId,
-        reason: pb::ForwardRefusal,
+        reason: wire::ForwardRefusal,
     ) {
         self.last_refusals
             .lock()
@@ -492,7 +491,7 @@ impl LinkRegistry {
     /// to it through one comes up. A forwarder repeats a refusal only every
     /// few seconds, so a dial in between hears nothing and this is what it
     /// was refused for.
-    pub(crate) fn last_refusal(&self, host: HostId) -> Option<pb::ForwardRefusal> {
+    pub(crate) fn last_refusal(&self, host: HostId) -> Option<wire::ForwardRefusal> {
         self.last_refusals
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -503,7 +502,7 @@ impl LinkRegistry {
     /// The refusals forwarders send from now on, by the host refused.
     pub(crate) fn forward_refusals(
         &self,
-    ) -> tokio::sync::broadcast::Receiver<(HostId, pb::ForwardRefusal)> {
+    ) -> tokio::sync::broadcast::Receiver<(HostId, wire::ForwardRefusal)> {
         self.refusals.subscribe()
     }
 
@@ -673,7 +672,7 @@ impl LinkRegistry {
             .map(|(link, writer)| (*link, writer.tx.clone()))
     }
 
-    pub(crate) async fn send_link_close_to_all(&self, reason: pb::LinkCloseReason) {
+    pub(crate) async fn send_link_close_to_all(&self, reason: wire::LinkCloseReason) {
         let outgoing = {
             let state = self.state.read().await;
             state
@@ -733,7 +732,7 @@ fn send_to(
     state: &LinkRegistryState,
     new: Option<&NewLink<'_>>,
     to: daemon_core::LinkId,
-    message: pb::Message,
+    message: wire::Message,
 ) {
     match new {
         Some(new) if new.link == to => {
@@ -747,10 +746,10 @@ fn send_to(
     }
 }
 
-fn refresh_credential_message() -> pb::Message {
-    pb::Message {
-        body: Some(pb::message::Body::RefreshCredential(
-            pb::RefreshCredential {},
+fn refresh_credential_message() -> wire::Message {
+    wire::Message {
+        body: Some(wire::message::Body::RefreshCredential(
+            wire::RefreshCredential {},
         )),
     }
 }
@@ -769,7 +768,7 @@ impl LinkRegistryState {
 fn try_send_or_request_close(
     tx: &LinkOutputTx,
     close_tx: &mpsc::Sender<LinkCloseRequest>,
-    message: pb::Message,
+    message: wire::Message,
 ) {
     match tx.try_send(message) {
         Ok(()) => {}
@@ -781,16 +780,16 @@ fn try_send_or_request_close(
     }
 }
 
-fn link_close_message(reason: pb::LinkCloseReason) -> pb::Message {
-    pb::Message {
-        body: Some(pb::message::Body::LinkClose(pb::LinkClose {
+fn link_close_message(reason: wire::LinkCloseReason) -> wire::Message {
+    wire::Message {
+        body: Some(wire::message::Body::LinkClose(wire::LinkClose {
             reason: reason as i32,
             error: None,
         })),
     }
 }
 
-fn try_send_or_spawn(tx: LinkOutputTx, message: pb::Message) {
+fn try_send_or_spawn(tx: LinkOutputTx, message: wire::Message) {
     match tx.try_send(message) {
         Ok(()) => {}
         Err(mpsc::error::TrySendError::Full(message)) => {
@@ -924,7 +923,11 @@ mod tests {
         });
         tokio::time::timeout(
             Duration::from_secs(10),
-            registry.close_forwarded(phone.id, relay.core(), pb::ForwardRefusal::PaymentRequired),
+            registry.close_forwarded(
+                phone.id,
+                relay.core(),
+                wire::ForwardRefusal::PaymentRequired,
+            ),
         )
         .await
         .expect("the link through the relay closes");
@@ -1099,7 +1102,7 @@ mod tests {
     async fn full_outgoing_queue_requests_link_close() {
         let registry = LinkRegistry::new(HostId::nil());
         let (full_tx, _full_rx) = mpsc::channel(1);
-        full_tx.try_send(pb::Message { body: None }).unwrap();
+        full_tx.try_send(wire::Message { body: None }).unwrap();
         let mut close_rx = register(&registry, link(1, 1), host(1), full_tx).await;
 
         let (new_tx, _new_rx) = mpsc::channel(8);
@@ -1115,12 +1118,12 @@ mod tests {
     async fn link_close_notification_is_best_effort_for_full_link_queues() {
         let registry = LinkRegistry::new(HostId::nil());
         let (tx, _rx) = mpsc::channel(1);
-        tx.try_send(pb::Message { body: None }).unwrap();
+        tx.try_send(wire::Message { body: None }).unwrap();
         register(&registry, link(1, 1), host(1), tx).await;
 
         tokio::time::timeout(
             Duration::from_millis(50),
-            registry.send_link_close_to_all(pb::LinkCloseReason::UserShutdown),
+            registry.send_link_close_to_all(wire::LinkCloseReason::UserShutdown),
         )
         .await
         .expect("link close send must not wait on a full queue");
@@ -1133,16 +1136,16 @@ mod tests {
         register(&registry, link(99, 1), host(99), tx).await;
 
         registry
-            .send_link_close_to_all(pb::LinkCloseReason::UserShutdown)
+            .send_link_close_to_all(wire::LinkCloseReason::UserShutdown)
             .await;
 
-        let Some(pb::Message {
-            body: Some(pb::message::Body::LinkClose(close)),
+        let Some(wire::Message {
+            body: Some(wire::message::Body::LinkClose(close)),
         }) = rx.recv().await
         else {
             panic!("expected LinkClose message");
         };
-        assert_eq!(close.reason, pb::LinkCloseReason::UserShutdown as i32);
+        assert_eq!(close.reason, wire::LinkCloseReason::UserShutdown as i32);
         assert!(close.error.is_none());
     }
 

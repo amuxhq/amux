@@ -17,7 +17,6 @@ use core_ring::DumpLimit;
 use daemon_core::DumpReason;
 use daemon_core::payload::ForwardRefusal;
 use relay_core::{Input, Output, Relay};
-use wire::pb;
 
 use super::forwarder::{ForwardLinks, Forwarder, HoldLimits, LinkLimits};
 use super::link_log::PathKind;
@@ -480,8 +479,8 @@ impl ForwardLinks for RelayLinks {
         };
         // A link too far behind to take its refusal hears it again when it
         // next sends there.
-        let _ = tx.try_send(pb::Message {
-            body: Some(pb::message::Body::ForwardRefused(pb::ForwardRefused {
+        let _ = tx.try_send(wire::Message {
+            body: Some(wire::message::Body::ForwardRefused(wire::ForwardRefused {
                 dst: dst.as_bytes().to_vec(),
                 reason: reason as i32,
             })),

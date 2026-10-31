@@ -459,7 +459,7 @@ impl CloudLinkServer {
         }
     }
 
-    pub async fn send_link_close_to_all(&self, reason: wire::pb::LinkCloseReason) {
+    pub async fn send_link_close_to_all(&self, reason: wire::LinkCloseReason) {
         let links = {
             let users = self.inner.accounts.users.read().await;
             users
@@ -851,10 +851,7 @@ mod tests {
             .await
             .expect("the relay told the sender in time")
             .unwrap();
-        assert_eq!(
-            refused,
-            (hosts[1].0, wire::pb::ForwardRefusal::PaymentRequired)
-        );
+        assert_eq!(refused, (hosts[1].0, wire::ForwardRefusal::PaymentRequired));
         assert!(
             answers.try_recv().is_err(),
             "no probe crossed the relay before its refusal"
@@ -949,7 +946,7 @@ mod tests {
             1,
             "the relaunched host presented the token its last process kept"
         );
-        carrier.close(wire::pb::LinkCloseReason::UserShutdown);
+        carrier.close(wire::LinkCloseReason::UserShutdown);
         relay.serving.close();
     }
 
@@ -1075,7 +1072,7 @@ mod tests {
             token: &str,
         ) -> (
             Arc<QuicCarrier>,
-            wire::pb::HelloAccepted,
+            wire::HelloAccepted,
             crate::link::ControlSink,
             crate::link::ControlSource,
         ) {
@@ -1093,8 +1090,8 @@ mod tests {
             let host = local_host(HostId::new_v4(), "test-host", Capabilities::default(), true);
             write_message(
                 &mut sink,
-                &wire::pb::Message {
-                    body: Some(wire::pb::message::Body::Hello(wire::pb::Hello {
+                &wire::Message {
+                    body: Some(wire::message::Body::Hello(wire::Hello {
                         supported_protocol_versions: vec![crate::PROTOCOL_VERSION],
                         host: Some(crate::routing::host_to_wire(&host)),
                         auth_token: Some(token.to_owned()),
@@ -1105,8 +1102,8 @@ mod tests {
             )
             .await
             .unwrap();
-            let Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
-                outcome: Some(wire::pb::hello_ack::Outcome::Accepted(accepted)),
+            let Some(wire::message::Body::HelloAck(wire::HelloAck {
+                outcome: Some(wire::hello_ack::Outcome::Accepted(accepted)),
             })) = read_message(&mut source).await.unwrap().unwrap().body
             else {
                 panic!("the relay accepts the host");
@@ -1122,7 +1119,7 @@ mod tests {
             tokio::time::timeout(patience, async {
                 loop {
                     match read_message(source).await.unwrap()?.body {
-                        Some(wire::pb::message::Body::ObservedAddress(observed)) => {
+                        Some(wire::message::Body::ObservedAddress(observed)) => {
                             return Some(observed.addr);
                         }
                         _ => continue,
@@ -1143,10 +1140,8 @@ mod tests {
                 .unwrap();
             write_message(
                 sink,
-                &wire::pb::Message {
-                    body: Some(wire::pb::message::Body::Addresses(
-                        wire::pb::Addresses::default(),
-                    )),
+                &wire::Message {
+                    body: Some(wire::message::Body::Addresses(wire::Addresses::default())),
                 },
             )
             .await

@@ -401,7 +401,7 @@ impl TunnelDispatcher {
             }
             DispatchTarget::Revoked => {
                 connection.close(
-                    (wire::pb::LinkCloseReason::UserRevoked as u32).into(),
+                    (wire::LinkCloseReason::UserRevoked as u32).into(),
                     b"this host no longer trusts the connecting one",
                 );
                 Ok(())

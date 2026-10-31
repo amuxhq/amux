@@ -14,7 +14,6 @@ use std::time::SystemTime;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{Mutex, mpsc, watch};
 use tokio::task::{JoinHandle, JoinSet};
-use wire::pb;
 
 use super::framed::{FramedKind, StreamOnly};
 use super::quic::LinkEndpoint;
@@ -306,9 +305,9 @@ impl Drop for RelayHost {
             .expect("the links lock is poisoned")
             .abort_all();
         for carrier in self.peers.borrow().values() {
-            carrier.close(pb::LinkCloseReason::UserShutdown);
+            carrier.close(wire::LinkCloseReason::UserShutdown);
         }
-        self.relay.close(pb::LinkCloseReason::UserShutdown);
+        self.relay.close(wire::LinkCloseReason::UserShutdown);
         self.relay_link.abort();
     }
 }

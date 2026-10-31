@@ -16,7 +16,6 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tonic::codegen::http;
 use tonic::transport::{Channel, Endpoint};
-use wire::pb;
 
 use super::{ByteStream, OpenError, QuicCarrier};
 use crate::HostId;
@@ -52,7 +51,7 @@ pub enum ChannelError {
     )]
     NoPairingRoute,
     #[error("the forwarder refused to carry the link: {0:?}")]
-    Refused(pb::ForwardRefusal),
+    Refused(wire::ForwardRefusal),
     #[error("no live link to host {host_id}")]
     LinkUnavailable { host_id: HostId },
     #[error("channel handshake failed: {0}")]
@@ -1606,7 +1605,7 @@ mod tests {
                 .native_carrier(&opened.link)
                 .await
                 .unwrap();
-            carrier.close(pb::LinkCloseReason::UserShutdown);
+            carrier.close(wire::LinkCloseReason::UserShutdown);
             opened.early_data
         }
 

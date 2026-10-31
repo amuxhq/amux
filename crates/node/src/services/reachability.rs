@@ -782,7 +782,7 @@ impl ForwardedDialer {
 /// packets to `peer` first. A dial that times out after a
 /// refusal the forwarder has not repeated yet fails with that refusal.
 async fn refused_or<T>(
-    mut refusals: broadcast::Receiver<(HostId, wire::pb::ForwardRefusal)>,
+    mut refusals: broadcast::Receiver<(HostId, wire::ForwardRefusal)>,
     registry: &crate::routing::LinkRegistry,
     peer: HostId,
     deadline: Duration,

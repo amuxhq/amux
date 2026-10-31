@@ -414,7 +414,7 @@ impl Edge {
                 {
                     Ok(channel) => channel,
                     Err(crate::link::ChannelError::Refused(
-                        wire::pb::ForwardRefusal::PaymentRequired,
+                        wire::ForwardRefusal::PaymentRequired,
                     )) => {
                         unpaid = true;
                         continue;

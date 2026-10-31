@@ -9,7 +9,6 @@ use std::{future, io};
 use daemon_core::payload::CarrierKind;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{mpsc, oneshot, watch};
-use wire::{self, pb};
 
 use super::carrier::{ByteStream, ControlSink, ControlSource, ControlWrite, OpenError};
 use super::early::{Early, EarlyRecv, EarlySend};
@@ -414,7 +413,7 @@ pub struct QuicCarrier {
     /// Asks the control writer to finish its stream, answering once the
     /// peer has acknowledged everything on it.
     finish_control: Mutex<Option<oneshot::Sender<oneshot::Sender<()>>>>,
-    closed: watch::Sender<Option<pb::LinkCloseReason>>,
+    closed: watch::Sender<Option<wire::LinkCloseReason>>,
     /// The neighbors the Hello the dial already wrote listed, until the
     /// link takes them.
     opened: Mutex<Option<Vec<crate::routing::Host>>>,
@@ -443,7 +442,7 @@ impl Drop for CloseUnlessKept {
 /// first answers within a round trip.
 #[derive(Clone, Debug)]
 pub(crate) struct Opening {
-    pub(crate) hello: pb::Message,
+    pub(crate) hello: wire::Message,
     pub(crate) neighbors: Vec<crate::routing::Host>,
     /// The forwarding link the profile's packets for other hosts go out
     /// on through the relay, put on each attempt as it says its Hello:
@@ -951,7 +950,7 @@ impl QuicCarrier {
         self.inbound.lock().await.recv().await
     }
 
-    pub fn close(&self, reason: pb::LinkCloseReason) {
+    pub fn close(&self, reason: wire::LinkCloseReason) {
         self.closed.send_replace(Some(reason));
         let close = {
             let connection = self.connection.clone();
@@ -1040,7 +1039,7 @@ impl QuicCarrier {
         )
     }
 
-    pub fn close_reason(&self) -> Option<pb::LinkCloseReason> {
+    pub fn close_reason(&self) -> Option<wire::LinkCloseReason> {
         let noted = *self.closed.borrow();
         noted.or_else(|| {
             self.connection
@@ -1050,14 +1049,14 @@ impl QuicCarrier {
     }
 
     /// Why the link closed, once it has.
-    pub async fn closed(&self) -> pb::LinkCloseReason {
+    pub async fn closed(&self) -> wire::LinkCloseReason {
         let mut closed = self.closed.subscribe();
         loop {
             if let Some(reason) = *closed.borrow_and_update() {
                 return reason;
             }
             if closed.changed().await.is_err() {
-                return pb::LinkCloseReason::Unspecified;
+                return wire::LinkCloseReason::Unspecified;
             }
         }
     }
@@ -1217,23 +1216,23 @@ pub(crate) fn stream_path(kind: FramedKind) -> PathKind {
 /// refusing this host's certificate once the handshake seemed done (in TLS
 /// 1.3 a client's handshake ends before the server has judged its
 /// certificate) is its word that it no longer trusts this one.
-fn close_reason_from_connection(error: quinn::ConnectionError) -> pb::LinkCloseReason {
+fn close_reason_from_connection(error: quinn::ConnectionError) -> wire::LinkCloseReason {
     if refused_as_revoked(&error) {
-        return pb::LinkCloseReason::UserRevoked;
+        return wire::LinkCloseReason::UserRevoked;
     }
     match error {
         quinn::ConnectionError::ApplicationClosed(close) => {
-            pb::LinkCloseReason::try_from(close.error_code.into_inner() as i32)
-                .unwrap_or(pb::LinkCloseReason::Unspecified)
+            wire::LinkCloseReason::try_from(close.error_code.into_inner() as i32)
+                .unwrap_or(wire::LinkCloseReason::Unspecified)
         }
-        _ => pb::LinkCloseReason::Unspecified,
+        _ => wire::LinkCloseReason::Unspecified,
     }
 }
 
 async fn run_control_stream(
     stream: oneshot::Receiver<Result<(EarlySend, EarlyRecv), quinn::ConnectionError>>,
     writes: mpsc::Receiver<ControlWrite>,
-    reads: mpsc::Sender<io::Result<pb::Message>>,
+    reads: mpsc::Sender<io::Result<wire::Message>>,
     finish: oneshot::Receiver<oneshot::Sender<()>>,
 ) {
     let Ok(Ok((send, recv))) = stream.await else {
@@ -1249,9 +1248,12 @@ async fn run_control_stream(
     }
 }
 
-async fn read_control_messages(mut recv: EarlyRecv, sender: mpsc::Sender<io::Result<pb::Message>>) {
+async fn read_control_messages(
+    mut recv: EarlyRecv,
+    sender: mpsc::Sender<io::Result<wire::Message>>,
+) {
     loop {
-        match read_proto::<pb::Message>(&mut recv, wire::MESSAGE_SIZE_LIMIT).await {
+        match read_proto::<wire::Message>(&mut recv, wire::MESSAGE_SIZE_LIMIT).await {
             Ok(Some(message)) => {
                 if sender.send(Ok(message)).await.is_err() {
                     return;
@@ -1528,7 +1530,7 @@ mod tests {
         // Writing one frame makes the connector-opened control stream visible
         // before any application stream is opened.
         let (mut client_control, _client_source) = client.control();
-        super::super::carrier::write_message(&mut client_control, &pb::Message { body: None })
+        super::super::carrier::write_message(&mut client_control, &wire::Message { body: None })
             .await
             .unwrap();
 
@@ -1620,7 +1622,7 @@ mod tests {
                 client.address_of(dialled.connection.remote_address()),
                 server_addr
             );
-            dialled.close(pb::LinkCloseReason::UserShutdown);
+            dialled.close(wire::LinkCloseReason::UserShutdown);
             accepted.close(0_u32.into(), b"test complete");
         }
     }
@@ -1679,7 +1681,7 @@ mod tests {
 
         client
             .expect("the IPv6 relay candidate was not tried")
-            .close(pb::LinkCloseReason::UserShutdown);
+            .close(wire::LinkCloseReason::UserShutdown);
         assert!(
             started.elapsed() < RELAY_QUIC_HANDSHAKE_TIMEOUT,
             "the IPv6 candidate started before the IPv4 one timed out"
@@ -1728,7 +1730,7 @@ mod tests {
             elapsed >= RELAY_CANDIDATE_STAGGER && elapsed < RELAY_QUIC_HANDSHAKE_TIMEOUT,
             "the second candidate started one stagger in, not after the first timed out: {elapsed:?}"
         );
-        client.close(pb::LinkCloseReason::UserShutdown);
+        client.close(wire::LinkCloseReason::UserShutdown);
         server_connection.close(0_u32.into(), b"test complete");
         drop(blackhole);
     }
@@ -2003,7 +2005,7 @@ mod tests {
             tokio::join!(read_link(&server, 2), resumed_call(&launch, &server));
         assert_eq!(first, EarlyData::None, "the first link has no ticket");
         kept_its_ticket().await;
-        carrier.close(pb::LinkCloseReason::UserShutdown);
+        carrier.close(wire::LinkCloseReason::UserShutdown);
         for relaunch in 1..=2 {
             let relaunched = client();
             let (_, (carrier, early)) =
@@ -2015,7 +2017,7 @@ mod tests {
             );
             assert_eq!(tickets.redeemed(), relaunch);
             kept_its_ticket().await;
-            carrier.close(pb::LinkCloseReason::UserShutdown);
+            carrier.close(wire::LinkCloseReason::UserShutdown);
         }
     }
 
@@ -2135,7 +2137,7 @@ mod tests {
     /// and reads the call's answer. What became of the early data.
     async fn resume_and_call(client: &TicketClient, server: &LinkEndpoint) -> EarlyData {
         let (carrier, early) = resumed_call(client, server).await;
-        carrier.close(pb::LinkCloseReason::UserShutdown);
+        carrier.close(wire::LinkCloseReason::UserShutdown);
         early
     }
 
@@ -2168,16 +2170,16 @@ mod tests {
         (carrier, early)
     }
 
-    fn hello_frame() -> pb::Message {
-        pb::Message {
-            body: Some(pb::message::Body::Hello(pb::Hello {
+    fn hello_frame() -> wire::Message {
+        wire::Message {
+            body: Some(wire::message::Body::Hello(wire::Hello {
                 auth_token: Some("a token".to_owned()),
                 ..Default::default()
             })),
         }
     }
 
-    fn frame_of(message: &pb::Message) -> Vec<u8> {
+    fn frame_of(message: &wire::Message) -> Vec<u8> {
         prost::Message::encode_to_vec(message)
     }
 
@@ -2282,7 +2284,7 @@ mod tests {
         client: &LinkEndpoint,
         server: &LinkEndpoint,
         config: &quinn::ClientConfig,
-    ) -> (EarlyData, bool, pb::Message) {
+    ) -> (EarlyData, bool, wire::Message) {
         let addr = server.local_addr().unwrap();
         let dial = async {
             let opening = Opening {
@@ -2309,7 +2311,7 @@ mod tests {
             let mut byte = [0];
             answer.read_exact(&mut byte).await.unwrap();
             let early = carrier.handshake().await.unwrap();
-            carrier.close(pb::LinkCloseReason::UserShutdown);
+            carrier.close(wire::LinkCloseReason::UserShutdown);
             early
         };
         let relay = async {
@@ -2317,7 +2319,7 @@ mod tests {
             let (send, recv) = connection.accept_bi().await.unwrap();
             let early = recv.is_0rtt();
             let message =
-                read_proto::<pb::Message>(&mut EarlyRecv::plain(recv), wire::MESSAGE_SIZE_LIMIT)
+                read_proto::<wire::Message>(&mut EarlyRecv::plain(recv), wire::MESSAGE_SIZE_LIMIT)
                     .await
                     .unwrap()
                     .unwrap();
@@ -2552,7 +2554,7 @@ mod tests {
                 let mut byte = [0];
                 answer.read_exact(&mut byte).await.unwrap();
                 let early = carrier.handshake().await.unwrap();
-                carrier.close(pb::LinkCloseReason::UserShutdown);
+                carrier.close(wire::LinkCloseReason::UserShutdown);
                 early
             };
             let relay = async {
@@ -2566,7 +2568,7 @@ mod tests {
                     .into_0rtt()
                     .unwrap_or_else(|_| panic!("a server's connection is usable at once"));
                 let (send, recv) = connection.accept_bi().await.unwrap();
-                read_proto::<pb::Message>(&mut EarlyRecv::plain(recv), wire::MESSAGE_SIZE_LIMIT)
+                read_proto::<wire::Message>(&mut EarlyRecv::plain(recv), wire::MESSAGE_SIZE_LIMIT)
                     .await
                     .unwrap()
                     .unwrap();

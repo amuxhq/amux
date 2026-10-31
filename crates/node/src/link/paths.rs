@@ -561,11 +561,11 @@ fn carrier_kind(kind: PathKind) -> CarrierKind {
 }
 
 /// The refusal as a path machine reads it.
-pub(crate) fn refusal(reason: wire::pb::ForwardRefusal) -> ForwardRefusal {
+pub(crate) fn refusal(reason: wire::ForwardRefusal) -> ForwardRefusal {
     match reason {
-        wire::pb::ForwardRefusal::PaymentRequired => ForwardRefusal::PaymentRequired,
-        wire::pb::ForwardRefusal::RateLimited => ForwardRefusal::RateLimited,
-        wire::pb::ForwardRefusal::ShuttingDown => ForwardRefusal::ShuttingDown,
+        wire::ForwardRefusal::PaymentRequired => ForwardRefusal::PaymentRequired,
+        wire::ForwardRefusal::RateLimited => ForwardRefusal::RateLimited,
+        wire::ForwardRefusal::ShuttingDown => ForwardRefusal::ShuttingDown,
         _ => ForwardRefusal::NoRoute,
     }
 }

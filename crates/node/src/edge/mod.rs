@@ -761,7 +761,7 @@ impl Edge {
     /// names, and why the forwarder will not carry links to it.
     pub fn forward_refusals(
         &self,
-    ) -> tokio::sync::broadcast::Receiver<(HostId, wire::pb::ForwardRefusal)> {
+    ) -> tokio::sync::broadcast::Receiver<(HostId, wire::ForwardRefusal)> {
         self.channels.link_registry().forward_refusals()
     }
 

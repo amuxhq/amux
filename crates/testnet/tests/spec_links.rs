@@ -591,7 +591,7 @@ async fn entitlement_free_sees_presence_and_carries_nothing_while_lan_and_ssh_re
         .unwrap();
     assert_eq!(
         (refused, reason),
-        (desk, wire::pb::ForwardRefusal::PaymentRequired)
+        (desk, wire::ForwardRefusal::PaymentRequired)
     );
     let worker = net.agent("worker").unwrap().id;
     let call = open_session(&edge(&net, "phone"), desk, worker)
@@ -721,7 +721,7 @@ async fn entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once()
             .collect();
         assert_eq!(
             heard,
-            vec![(*peer, wire::pb::ForwardRefusal::PaymentRequired)],
+            vec![(*peer, wire::ForwardRefusal::PaymentRequired)],
             "{host} is told once that the plan no longer carries its peer"
         );
         println!("{host} was told once: {heard:?}");
@@ -842,10 +842,7 @@ async fn pairing_relay_free_refused_leaves_the_window_open() {
         .await
         .expect("the relay refuses the tablet's pairing")
         .unwrap();
-    assert_eq!(
-        (to, reason),
-        (desk, wire::pb::ForwardRefusal::PaymentRequired)
-    );
+    assert_eq!((to, reason), (desk, wire::ForwardRefusal::PaymentRequired));
     assert!(edge(&net, "desk").pairing_active(), "the window stays open");
     let worker = net.agent("worker").unwrap().id;
     open_session(&edge(&net, "tablet"), desk, worker)
@@ -1917,7 +1914,7 @@ async fn token_lapse_within_hour_is_noticed_at_the_hourly_refresh() {
             .await
             .unwrap_or_else(|_| panic!("{host} is told at the refresh"))
             .unwrap();
-        assert_eq!(refusal, (*peer, wire::pb::ForwardRefusal::PaymentRequired));
+        assert_eq!(refusal, (*peer, wire::ForwardRefusal::PaymentRequired));
     }
     for (host, peer) in [("desk", "laptop"), ("laptop", "desk")] {
         let id = host_id(&net, peer);

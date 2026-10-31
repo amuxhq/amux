@@ -469,7 +469,7 @@ where
         First::Tcp(Ok(carrier)) => {
             match quic.as_mut().now_or_never() {
                 Some(Ok(late_quic)) => {
-                    late_quic.close(wire::pb::LinkCloseReason::UserShutdown);
+                    late_quic.close(wire::LinkCloseReason::UserShutdown);
                     udp.reached(true);
                 }
                 Some(Err(error)) => {
@@ -480,7 +480,7 @@ where
                     tokio::spawn(async move {
                         match quic.await {
                             Ok(late_quic) => {
-                                late_quic.close(wire::pb::LinkCloseReason::UserShutdown);
+                                late_quic.close(wire::LinkCloseReason::UserShutdown);
                                 udp.reached(true);
                             }
                             Err(error) => {
@@ -522,7 +522,7 @@ where
 
 fn close_ready_loser(result: Option<CloudDialResult>) {
     if let Some(Ok(carrier)) = result {
-        carrier.close(wire::pb::LinkCloseReason::UserShutdown);
+        carrier.close(wire::LinkCloseReason::UserShutdown);
     }
 }
 

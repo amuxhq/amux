@@ -42,11 +42,6 @@ pub use rpc::Code as ErrorCode;
 /// tonic's `Status`, the transport's carrier for it.
 pub use rpc::Status as Error;
 
-pub mod pb {
-    pub use super::amux::v1::*;
-    pub use super::{Error, ErrorCode};
-}
-
 /// Bound for link-control messages and application-stream prefaces.
 pub const MESSAGE_SIZE_LIMIT: usize = 16 * 1024 * 1024;
 /// The largest attachment a person may send: 64 MiB of the file's own

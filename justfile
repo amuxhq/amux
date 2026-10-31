@@ -226,10 +226,6 @@ journey CLIENT NAME *ARGS:
         ;;
     esac
 
-# Generate and verify the complete TUI evidence bundle.
-tui-evidence *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1800 scripts/tui-evidence "$@"
-
 # The world comes up in ~/.local/state/amux-env/<tree>/NAME with the
 # clients its file declares and is held, with the simulator when it has a
 # phone, until Ctrl-C; drive it from that folder with `testnet ctl`.

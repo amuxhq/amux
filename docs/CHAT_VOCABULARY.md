@@ -348,9 +348,8 @@ The pictures on this page are rendered by `amux-shot` from the same components t
 ([`crates/shot/README.md`](../crates/shot/README.md)):
 
 ```sh
-just shot -- render vocabulary --out DIR
+just shot -- render <fixture>... --theme light --out docs/figures/vocabulary
 ```
 
-Copy the light PNGs listed in [the manifest](figures/vocabulary/manifest.json) from `DIR` into
-`docs/figures/vocabulary/`, and update each entry's `sha256`. `just docs-check` verifies every image's hash
+naming each `fixture` [the manifest](figures/vocabulary/manifest.json) lists, then update each entry's `sha256`. `just docs-check` verifies every image's hash
 against the manifest, so a stale or hand-edited rendering fails.

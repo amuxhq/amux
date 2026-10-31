@@ -5,18 +5,17 @@
 pub mod stories;
 
 use std::fs::{self, File};
-use std::io::{self, BufReader, BufWriter};
-use std::path::{Path, PathBuf};
+use std::io::{self, BufWriter};
+use std::path::Path;
 use std::sync::OnceLock;
 
 use fontdue::{Font, FontSettings};
 use ratatui::buffer::{Buffer, Cell};
 use ratatui::style::{Color, Modifier};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use serde::Deserialize;
 use thiserror::Error;
+use tui::Theme;
 use tui::vocabulary::components;
-use tui::{ColorMode, Theme};
 
 /// Pixel width of one terminal cell.
 pub const CELL_WIDTH: u32 = 10;
@@ -45,39 +44,10 @@ pub struct Raster {
     pub pixels: Vec<u8>,
 }
 
-/// One PNG recorded in a directory manifest.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct ManifestEntry {
-    pub state: String,
-    pub theme: String,
-    pub color: String,
-    pub viewport: [u16; 2],
-    pub pixels: [u32; 2],
-    pub file: String,
-    pub sha256: String,
-}
-
-/// One completed render-set invocation.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct ManifestSet {
-    pub name: String,
-    pub files: Vec<String>,
-}
-
-/// The capture record stored beside rendered files.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
-pub struct Manifest {
-    pub entries: Vec<ManifestEntry>,
-    #[serde(default)]
-    pub sets: Vec<ManifestSet>,
-}
-
 #[derive(Debug, Error)]
 pub enum ShotError {
     #[error("UnknownState({0})")]
     UnknownState(String),
-    #[error("UnknownSet({0})")]
-    UnknownSet(String),
     #[error("render error: {0}")]
     Render(String),
     #[error("font error: {0}")]
@@ -86,8 +56,6 @@ pub enum ShotError {
     Encode(String),
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
-    #[error("verification failed: {0}")]
-    Verify(String),
     #[error("not a report's frame: {0}")]
     Frame(String),
 }
@@ -148,77 +116,33 @@ impl Fonts {
     }
 }
 
-/// Render every vocabulary component in `theme` into `dir`, one PNG each
-/// named `<component>.<theme_label>.png`, and record them as the set
-/// `vocabulary`. Returns the entries written.
+/// Render the vocabulary components named in `names` (every one when it is
+/// empty) in `theme` into `dir`, one PNG each named
+/// `<component>.<theme_label>.png`. Returns how many it wrote.
 pub fn render_vocabulary(
     dir: &Path,
     theme: Theme,
     theme_label: &str,
-) -> Result<Vec<ManifestEntry>, ShotError> {
-    fs::create_dir_all(dir)?;
-    let mut entries = Vec::new();
-    for component in components(theme) {
-        let file = format!("{}.{theme_label}.png", component.name);
-        entries.push(render_to_path(
-            component.name,
-            &component.buffer,
-            theme,
-            theme_label,
-            &dir.join(&file),
-        )?);
+    names: &[String],
+) -> Result<usize, ShotError> {
+    let components = components(theme);
+    if let Some(unknown) = names
+        .iter()
+        .find(|name| !components.iter().any(|component| component.name == *name))
+    {
+        return Err(ShotError::UnknownState(unknown.clone()));
     }
-    append_set(
-        dir,
-        &format!("vocabulary.{theme_label}"),
-        entries.iter().map(|entry| entry.file.clone()).collect(),
-    )?;
-    Ok(entries)
-}
-
-/// Every component's name and what it shows, for an index of captures.
-pub fn vocabulary_index() -> Vec<(&'static str, &'static str)> {
-    components(Theme::default())
-        .into_iter()
-        .map(|component| (component.name, component.shows))
-        .collect()
-}
-
-/// Rasterize, encode, and record one capture in the manifest beside `out`.
-pub fn render_to_path(
-    state: &str,
-    buffer: &Buffer,
-    theme: Theme,
-    theme_label: &str,
-    out: &Path,
-) -> Result<ManifestEntry, ShotError> {
-    let raster = rasterize(buffer, theme)?;
-    write_png(&raster, out)?;
-    let bytes = fs::read(out)?;
-    let file = out
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| {
-            ShotError::Io(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "PNG output needs a file name",
-            ))
-        })?
-        .to_string();
-    let entry = ManifestEntry {
-        state: state.to_string(),
-        theme: theme_label.to_string(),
-        color: color_mode_name(theme.mode).to_string(),
-        viewport: [buffer.area.width, buffer.area.height],
-        pixels: [raster.width, raster.height],
-        file,
-        sha256: hex_digest(&bytes),
-    };
-    append_entry(
-        out.parent().unwrap_or_else(|| Path::new(".")),
-        entry.clone(),
-    )?;
-    Ok(entry)
+    fs::create_dir_all(dir)?;
+    let mut written = 0;
+    for component in components {
+        if !names.is_empty() && !names.iter().any(|name| name == component.name) {
+            continue;
+        }
+        let out = dir.join(format!("{}.{theme_label}.png", component.name));
+        write_png(&rasterize(&component.buffer, theme)?, &out)?;
+        written += 1;
+    }
+    Ok(written)
 }
 
 /// A report's `frame.json`, as the terminal client writes it: rows of
@@ -556,202 +480,17 @@ pub fn write_png(raster: &Raster, out: &Path) -> Result<(), ShotError> {
     Ok(())
 }
 
-/// Record a receipt after a complete render-set invocation.
-pub fn append_set(dir: &Path, name: &str, files: Vec<String>) -> Result<(), ShotError> {
-    let mut manifest = read_manifest_or_default(&dir.join("manifest.json"))?;
-    let set = ManifestSet {
-        name: name.to_string(),
-        files,
-    };
-    if let Some(existing) = manifest
-        .sets
-        .iter_mut()
-        .find(|existing| existing.name == name)
-    {
-        *existing = set;
-    } else {
-        manifest.sets.push(set);
-    }
-    write_manifest(dir, &manifest)
-}
-
-fn append_entry(dir: &Path, entry: ManifestEntry) -> Result<(), ShotError> {
-    let mut manifest = read_manifest_or_default(&dir.join("manifest.json"))?;
-    if let Some(existing) = manifest
-        .entries
-        .iter_mut()
-        .find(|existing| existing.file == entry.file)
-    {
-        *existing = entry;
-    } else {
-        manifest.entries.push(entry);
-    }
-    write_manifest(dir, &manifest)
-}
-
-fn read_manifest_or_default(path: &Path) -> Result<Manifest, ShotError> {
-    match fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map_err(|error| ShotError::Verify(format!("{}: {error}", path.display()))),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Manifest::default()),
-        Err(error) => Err(error.into()),
-    }
-}
-
-fn write_manifest(dir: &Path, manifest: &Manifest) -> Result<(), ShotError> {
-    fs::create_dir_all(dir)?;
-    let path = dir.join("manifest.json");
-    let temporary = dir.join("manifest.json.tmp");
-    let mut bytes = serde_json::to_vec_pretty(manifest)
-        .map_err(|error| ShotError::Verify(format!("manifest serialization: {error}")))?;
-    bytes.push(b'\n');
-    fs::write(&temporary, bytes)?;
-    fs::rename(temporary, path)?;
-    Ok(())
-}
-
-/// Verify every manifest and PNG below `dir`.
-pub fn verify(dir: &Path) -> Result<Manifest, ShotError> {
-    let mut manifests = Vec::new();
-    find_manifests(dir, &mut manifests)?;
-    if manifests.is_empty() {
-        return Err(ShotError::Verify(format!(
-            "no manifest.json found below {}",
-            dir.display()
-        )));
-    }
-
-    let mut combined = Manifest::default();
-    for path in manifests {
-        let bytes = fs::read(&path)?;
-        let manifest: Manifest = serde_json::from_slice(&bytes)
-            .map_err(|error| ShotError::Verify(format!("{}: {error}", path.display())))?;
-        let base = path.parent().expect("manifest has a parent");
-        for entry in &manifest.entries {
-            verify_entry(base, entry)?;
-        }
-        for set in &manifest.sets {
-            for file in &set.files {
-                if !manifest.entries.iter().any(|entry| &entry.file == file) {
-                    return Err(ShotError::Verify(format!(
-                        "set `{}` is missing manifest entry `{file}`",
-                        set.name
-                    )));
-                }
-                if !base.join(file).is_file() {
-                    return Err(ShotError::Verify(format!(
-                        "set `{}` is missing file `{file}`",
-                        set.name
-                    )));
-                }
-            }
-        }
-        combined.entries.extend(manifest.entries);
-        combined.sets.extend(manifest.sets);
-    }
-    Ok(combined)
-}
-
-fn find_manifests(path: &Path, manifests: &mut Vec<PathBuf>) -> Result<(), ShotError> {
-    if path.is_file() {
-        if path.file_name().is_some_and(|name| name == "manifest.json") {
-            manifests.push(path.to_path_buf());
-        }
-        return Ok(());
-    }
-    for entry in fs::read_dir(path)? {
-        let entry = entry?;
-        let file_type = entry.file_type()?;
-        if file_type.is_dir() {
-            find_manifests(&entry.path(), manifests)?;
-        } else if entry.file_name() == "manifest.json" {
-            manifests.push(entry.path());
-        }
-    }
-    manifests.sort();
-    Ok(())
-}
-
-fn verify_entry(base: &Path, entry: &ManifestEntry) -> Result<(), ShotError> {
-    let expected_pixels = [
-        u32::from(entry.viewport[0]) * CELL_WIDTH,
-        u32::from(entry.viewport[1]) * CELL_HEIGHT,
-    ];
-    if entry.pixels != expected_pixels {
-        return Err(ShotError::Verify(format!(
-            "{} records pixel size {}x{} instead of {}x{}",
-            entry.file, entry.pixels[0], entry.pixels[1], expected_pixels[0], expected_pixels[1]
-        )));
-    }
-    let path = base.join(&entry.file);
-    let bytes = fs::read(&path)
-        .map_err(|error| ShotError::Verify(format!("{}: {error}", path.display())))?;
-    let digest = hex_digest(&bytes);
-    if digest != entry.sha256 {
-        return Err(ShotError::Verify(format!(
-            "{} has sha256 {digest}, expected {}",
-            path.display(),
-            entry.sha256
-        )));
-    }
-
-    let decoder = png::Decoder::new(BufReader::new(File::open(&path)?));
-    let mut reader = decoder
-        .read_info()
-        .map_err(|error| ShotError::Verify(format!("{}: {error}", path.display())))?;
-    let size = reader
-        .output_buffer_size()
-        .ok_or_else(|| ShotError::Verify(format!("{}: too large to decode", path.display())))?;
-    let mut pixels = vec![0; size];
-    let info = reader
-        .next_frame(&mut pixels)
-        .map_err(|error| ShotError::Verify(format!("{}: {error}", path.display())))?;
-    if [info.width, info.height] != expected_pixels {
-        return Err(ShotError::Verify(format!(
-            "{} is {}x{}, expected {}x{}",
-            path.display(),
-            info.width,
-            info.height,
-            expected_pixels[0],
-            expected_pixels[1]
-        )));
-    }
-    Ok(())
-}
-
-fn color_mode_name(mode: ColorMode) -> &'static str {
-    match mode {
-        ColorMode::TrueColor => "truecolor",
-        ColorMode::Ansi => "ansi",
-    }
-}
-
-fn hex_digest(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut result = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        use std::fmt::Write as _;
-        write!(result, "{byte:02x}").expect("writing to a String cannot fail");
-    }
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
-    use std::fs;
 
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
     use ratatui::style::{Color, Modifier};
-    use tempfile::tempdir;
     use tui::vocabulary::components;
     use tui::{ColorMode, Theme};
 
-    use super::{
-        CELL_HEIGHT, CELL_WIDTH, Fonts, ShotError, rasterize, render_to_path, render_vocabulary,
-        report_frame, verify,
-    };
+    use super::{CELL_HEIGHT, CELL_WIDTH, Fonts, ShotError, rasterize, report_frame};
 
     /// Every non-ASCII glyph the vocabulary draws has a vendored face in
     /// every style, so no capture shows a missing-glyph box for chrome.
@@ -783,40 +522,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn the_vocabulary_renders_one_verified_png_per_component() {
-        let directory = tempdir().unwrap();
-        let theme = Theme::dark(ColorMode::TrueColor);
-        let entries = render_vocabulary(directory.path(), theme, "dark").unwrap();
-        assert_eq!(entries.len(), components(theme).len());
-        let manifest = verify(directory.path()).unwrap();
-        assert_eq!(manifest.entries.len(), entries.len());
-        assert_eq!(manifest.sets.len(), 1);
-        for entry in &entries {
-            let decoder = png::Decoder::new(std::io::BufReader::new(
-                fs::File::open(directory.path().join(&entry.file)).unwrap(),
-            ));
-            let reader = decoder.read_info().unwrap();
-            assert_eq!(
-                [reader.info().width, reader.info().height],
-                [
-                    u32::from(entry.viewport[0]) * CELL_WIDTH,
-                    u32::from(entry.viewport[1]) * CELL_HEIGHT
-                ]
-            );
-        }
-    }
-
-    #[test]
-    fn two_renders_are_byte_identical() {
-        let first = tempdir().unwrap();
-        let second = tempdir().unwrap();
-        let theme = Theme::light(ColorMode::TrueColor);
-        let a = render_vocabulary(first.path(), theme, "light").unwrap();
-        let b = render_vocabulary(second.path(), theme, "light").unwrap();
-        assert_eq!(a, b);
     }
 
     #[test]
@@ -853,20 +558,6 @@ mod tests {
         let brightness = |bytes: Vec<u8>| bytes.into_iter().map(u64::from).sum::<u64>();
         assert!(brightness(region(0)) > brightness(region(3)));
         assert_eq!(&region(4)[..3], &[205, 49, 49]);
-    }
-
-    #[test]
-    fn verify_rejects_a_truncated_png() {
-        let directory = tempdir().unwrap();
-        let output = directory.path().join("row.png");
-        let theme = Theme::dark(ColorMode::TrueColor);
-        let component = components(theme).remove(0);
-        render_to_path(component.name, &component.buffer, theme, "dark", &output).unwrap();
-        let mut bytes = fs::read(&output).unwrap();
-        bytes.truncate(bytes.len() / 2);
-        fs::write(&output, bytes).unwrap();
-        let error = verify(directory.path()).unwrap_err();
-        assert!(error.to_string().contains("verification failed"));
     }
 
     #[test]

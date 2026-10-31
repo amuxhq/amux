@@ -287,7 +287,7 @@ async fn interrupt_and_now_cut_the_running_turn_short() {
     host.prompt(C, "Now instead", Some("now")).await;
     // A preempted turn ends successfully with a terminal reason saying it
     // was cut, without an interruption marker, and its command is
-    // cancelled, as steer_preempted records.
+    // cancelled, as Claude 2.1.292 was recorded doing.
     let cut = host.until(|frame| frame["type"] == "result").await;
     assert_eq!(cut["subtype"], "success");
     assert_eq!(cut["is_error"], false);

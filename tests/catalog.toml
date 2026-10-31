@@ -791,7 +791,7 @@ cargo = [{ package = "qualification", targets = ["claude_pty_live"], features = 
 
 [[suite]]
 name = "claude-sdk-live-compatibility"
-contract = "A real headless Claude session still initializes, responds, takes a native decision, interrupts and resumes with the structure its recorded interpreter fixtures show."
+contract = "A real headless Claude session still initializes, responds, takes a native decision, interrupts and resumes, and plays every scenario of the headless corpus, with the structure its recorded interpreter fixtures show."
 paths = ["crates/qualification/tests/claude_sdk_live.rs", "crates/qualification/tests/live"]
 recipe = "just live claude_sdk all"
 boundary = "Provider adapter"
@@ -802,7 +802,7 @@ time = "real"
 capabilities = ["Unix", "Claude credentials", "network", "may spend provider credits"]
 lane = "qualification"
 evidence = "the printed verdict table; AMUX_LIVE_KEEP=1 keeps the installation under /tmp"
-update = "Capture through claude-probe and graduate the recording deliberately."
+update = "Join a passing run's capture into the headless corpus with claude-probe join, deliberately."
 cargo = [{ package = "qualification", targets = ["claude_sdk_live"], features = ["bundled", "live"] }]
 
 [[suite]]

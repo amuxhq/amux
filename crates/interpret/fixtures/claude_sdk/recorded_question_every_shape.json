@@ -1,10 +1,10 @@
 {
-  "about": "Questions in every shape the tool offers: several questions, multi-select, previews and Other.",
+  "about": "Questions in every shape the tool offers: several questions, multi-select, previews and an answer of the person's own.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/sdk/question_every_shape/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/sdk/question_every_shape/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

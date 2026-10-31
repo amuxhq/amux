@@ -1,10 +1,10 @@
 {
-  "about": "One prompt, thinking text, the reply and the turn footer with its cost; usage limits near the limit, tool-server health and sign-in reach the strip.",
+  "about": "One prompt answered: the prompt, the reply streamed and whole, and the turn footer with its cost; usage limits, tool-server health and sign-in reach the strip.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/sdk/text_turn/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/sdk/text_turn/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

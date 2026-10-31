@@ -1,33 +1,27 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 4 recorded 3: input stdin-2
+## 6 recorded 5: input 0x3ddeaf36359b49ca9f0dec2c4b827104
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 14 recorded 13: fact Stream type=assistant uuid=b5ae27a6-56a5-4f59-93a5-168276ad0821
-  composer Send activity=Some(Running { key: "toolu_01RQkEbfDTojpEbXF8LUHA7N" }) queue=[] underway=[] refused=[]
-## 16 recorded 15: fact Stream type=user uuid=ff66431a-3a29-413f-a486-0c6c430df48c
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 62 recorded 61: fact Stream type=result subtype=success uuid=20acaad2-5c06-482f-a43d-272cb47a0a57
+## 143 recorded 142: fact Stream type=result subtype=success uuid=e20a5ada-67cc-4b8f-b3c5-56a944431a02
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Track this work with your task or todo tool: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop.")], steered: false }
-     3 msg_011CgWLTAoFUdPKfgqCqbuWn:0 Thinking { text: "", open: false, duration_ms: Some(2512) }
-     4 toolu_01RQkEbfDTojpEbXF8LUHA7N Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded, result: "" } run[toolu_01RQkEbfDTojpEbXF8LUHA7N..toolu_01RQkEbfDTojpEbXF8LUHA7N x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-     5 msg_011CgWLTMtzUYjViwM3sqYG3:0 Thinking { text: "", open: false, duration_ms: Some(1643) }
-     6 msg_011CgWLTXyUdGCZAPrYdC7gn:0 Thinking { text: "", open: false, duration_ms: Some(1966) }
-     7 msg_011CgWLTeXcUcVRdHLPd1r4K:0 Thinking { text: "", open: false, duration_ms: Some(1428) }
-     8 msg_011CgWLU6r9cteVrJc7tCdAE:0 Thinking { text: "", open: false, duration_ms: Some(6511) }
-     9 msg_011CgWLU6r9cteVrJc7tCdAE:1 Prose { text: [Text("Done. Created three tasks (Draft, Review, Publish), marked Draft as in_progress, then marked it as completed.")], streaming: false, working_note: false }
-    10 turn:1 TurnEnd { duration_ms: Some(14540), failed: false }
+     2 3ddeaf36-359b-49ca-9f0d-ec2c4b827104 Prompt { text: [Text("Track this work with your task or todo tool: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop.")], steered: false }
+     3 69b67ce0-4390-4b3c-af85-c14159f043a4 Hidden collapsed
+     4 64321aaf-ca6f-48af-90c3-ccf24a8c1c02 Hidden collapsed
+     5 cdd8061a-5b3b-4a13-9154-2f7798fffafa Hidden collapsed
+     6 5516b0ce-1a63-4d4e-a1a2-85119a0f956f Hidden collapsed
+     7 msg_011CgZmmsLxyaGsPZJnsPRnC:0 Prose { text: [Text("Created three tasks (Draft, Review, Publish). Marked Draft in progress, then completed. Review and Publish are still pending, and I've stopped here as asked.")], streaming: false, working_note: false }
+     8 turn:1 TurnEnd { duration_ms: Some(4723), failed: false }
 == overview Overview { tasks: Some(TasksView { done: 1, total: 3, current: "", entries: [TaskLine { subject: "Draft", mark: Done }, TaskLine { subject: "Review", mark: Todo }, TaskLine { subject: "Publish", mark: Todo }] }), jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 26443, window_tokens: Some(200000), percent: Some(13), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 9187, window_tokens: Some(1000000), percent: Some(0), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]
   model  opus "Opus 5.5" efforts=[low,medium,high,xhigh,max]
   model  fable "Fable 5.1" efforts=[low,medium,high,xhigh,max]
   model  sonnet "Sonnet 5.5" efforts=[low,medium,high,xhigh,max]
-  model  haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
-  model* claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
+  model* haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
+  model  claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
   model  claude-sonnet-5 "Sonnet 5" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-5 "Opus 5" efforts=[low,medium,high,xhigh,max]
   model  claude-fable-5 "Fable 5" efforts=[low,medium,high,xhigh,max]
@@ -35,12 +29,18 @@
   model  claude-opus-4-7 "Opus 4.7" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-4-6 "Opus 4.6" efforts=[low,medium,high,max]
   model  claude-sonnet-4-6 "Sonnet 4.6" efforts=[low,medium,high,max]
+  effort  low
+  effort  medium
+  effort* high
+  effort  xhigh
+  effort  max
   permission* "default" "Ask" normal
   permission  "acceptEdits" "Accept edits"
   permission  "plan" "Plan"
-  permission  "auto" "Auto" unsettable
-  changes: model Pick · effort NotOffered · permission Pick · mode NotOffered
+  permission  "auto" "Auto"
+  changes: model Pick · effort Pick · permission Pick · mode NotOffered
   command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
   command /deep-research source="" hint="" "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)"
   command /design source="" hint="consent | revoke" "Grant or revoke Claude agent access to your Design projects"
@@ -55,6 +55,7 @@
   command /fewer-permission-prompts source="" hint="" "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts."
   command /loop source="" hint="[interval] [prompt]" "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace."
   command /schedule source="" hint="" "Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule."
+  command /send-to-project source="" hint="[\"project name\" or id] [message]" "Send this session's work to a Claude Project"
   command /claude-api source="" hint="" "Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration.\nTRIGGER — read BEFORE opening the target file; don't skip because it \"looks like a one-liner\" — whenever: the prompt names Claude/Anthropic in any form (Claude, Anthropic, Fable, Opus, Sonnet, Haiku, `anthropic`, `@anthropic-ai`, `claude-*`, `us…
   command /workflow-authoring source="" hint="" "Reference for writing a Workflow tool script (script API and gotchas, resume, quality patterns, worked examples). Load before authoring a script for a workflow the user already opted into; it does not itself authorize running one."
   command /run source="" hint="" "Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library)."
@@ -74,7 +75,7 @@
   command /workflow-launch-exec source="" hint="" "Execute a server-launched workflow handoff (workflow_launch event sessions only)"
   command /reload-plugins source="" hint="[--force]" "Activate pending plugin changes in the current session"
   command /reload-skills source="" hint="" "Pick up skills added or changed on disk during this session"
-  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~15-25 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
+  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~5-15 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
   command /security-review source="" hint="" "Complete a security review of the pending changes on the current branch"
   command /usage-credits source="" hint="" "Configure usage credits or request them from your admin when you hit a limit"
   command /extra-usage source="" hint="" "Renamed to /usage-credits"
@@ -87,4 +88,4 @@
   command /design-revoke source="" hint="" "Revoke Claude agent access to your Design projects"
   command /list-agents source="" hint="" "List subagents, teammates, and other Claude sessions you can message"
   command /team-onboarding source="" hint="" "Help teammates ramp on Claude Code with a guide from your usage"
-  controls: model=Some("Haiku 4.5") effort=None permission=None mode=None
+  controls: model=Some("Haiku 5.5") effort=Some("high") permission=None mode=None

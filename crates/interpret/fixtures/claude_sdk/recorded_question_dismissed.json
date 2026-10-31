@@ -1,10 +1,10 @@
 {
-  "about": "A question the person dismisses: deny and interrupt, and the rejection Claude writes itself.",
+  "about": "A question left open and the turn interrupted: the question closes with the turn.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/sdk/question_dismissed/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/sdk/question_dismissed/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

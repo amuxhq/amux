@@ -3,21 +3,21 @@
   "spec": "plan",
   "recorded": {
     "provider": "claude",
-    "version": "2.1.292",
-    "model": "claude-haiku-4-5-20251001",
-    "at": "2026-10-07T04:02:10.135191Z"
+    "version": "2.1.314",
+    "model": "claude-haiku-5-5",
+    "at": "2026-10-31T05:36:18.386045Z"
   },
   "content": {
-    "io.jsonl": "sha256:e1085c4788839687e2e3a4ea8599d1c0ab31065dd4db663fdd50e2b1a7ad48e1",
-    "spawn.jsonl": "sha256:f5b4f583463a5d5b4e5e4f718a742241f14fbb5efb2f7ca30c53929053d772e1"
+    "io.jsonl": "sha256:ab9bde20dc3c6e79415272c5b472a3718de165ff0b7cbca93ae4e33c9883389c",
+    "spawn.jsonl": "sha256:dbb82895479a112368eb63b3b0cf1539714d1573b65b75adfc61eda75da57ac2"
   },
   "redaction": {
-    "secrets": 0,
-    "machine_paths": 43,
+    "secrets": 1,
+    "machine_paths": 46,
     "personal_identifiers": 2
   },
   "session_ids": [
-    "513299b0-01fe-4d8c-9f53-1db4e708a4fa"
+    "0b12576d-e7f1-410a-a23f-5c89dcc3aa66"
   ],
   "provider_extra": {
     "driven_by": "amux's interpreter, in the live qualification lane"

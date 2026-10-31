@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "spec": "steer_folded",
+  "recorded": {
+    "provider": "claude",
+    "version": "2.1.314",
+    "model": "claude-haiku-5-5",
+    "at": "2026-10-31T05:32:07.555780Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:a6f0d94fb5cb65ef7ecc9f22ee03ec82aa6e10685745c9056e645cf6d4566493",
+    "spawn.jsonl": "sha256:f56fe3950e773018748f9c25d8f2863ee1d63cfd72891d4c42dcf0b628cec917"
+  },
+  "redaction": {
+    "secrets": 1,
+    "machine_paths": 13,
+    "personal_identifiers": 2
+  },
+  "session_ids": [
+    "a7c0ac0b-abb3-4012-9fcb-2301c0db1c69"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

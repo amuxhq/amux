@@ -1,10 +1,10 @@
 {
-  "about": "A second process resuming the same session is a resumed boundary.",
+  "about": "Stopped and resumed: a second process on the same session is a resumed boundary.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/sdk/resumed/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/sdk/resumed/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

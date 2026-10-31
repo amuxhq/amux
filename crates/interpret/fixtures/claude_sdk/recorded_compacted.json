@@ -1,10 +1,10 @@
 {
-  "about": "/compact: counts on a compaction row, a compacted boundary, and the command output.",
+  "about": "Two turns, then /compact: counts on a compaction row, a compacted boundary, and the command output.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/sdk/compacted/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/sdk/compacted/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

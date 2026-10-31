@@ -1,10 +1,10 @@
 {
-  "about": "AskUserQuestion is an ask; the answer goes back as the chosen labels.",
+  "about": "AskUserQuestion is an ask; the answer goes back as the chosen label.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/sdk/question_asked/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/sdk/question_asked/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

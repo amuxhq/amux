@@ -4,13 +4,14 @@
 //! Stdout lines are facts. What the recording's host wrote to stdin becomes
 //! the inputs that would make this interpreter write the same thing: user
 //! messages are prompts, answers to permission and elicitation requests are
-//! answers (a question refused with words is a reply instead), and model, mode and interrupt requests are those inputs. A user
+//! answers (a question refused with words is a reply instead), and model,
+//! mode, effort and interrupt requests are those inputs. A user
 //! message that carries a uuid gets the input id that makes the interpreter
 //! write that same uuid, so Claude's replay of it correlates. One written
 //! while a turn runs, at default priority, is Claude folding it into that
 //! turn, which this interpreter writes only for a prompt sent now: it becomes
 //! the prompt followed by sending it now. The
-//! host's own handshake and introspection requests are left out; their
+//! host's own handshake and settings requests are left out; their
 //! responses stay in as facts. Time is microseconds since the recording
 //! began, placed on the wall clock the first timestamped line uses.
 
@@ -20,10 +21,10 @@ use claude_protocol::stream::{
 };
 use serde::Deserialize;
 use wire::{
-    ClaudeAnswer, ClaudeSdkInput, FormAction, FormAnswer, Input, Interrupt, PermissionAllow,
-    PermissionAnswer, PermissionDeny, PlanAnswer, PlanChoice, PromptInput, QuestionAnswer,
-    QuestionResponse, ReplyInstead, SendQueuedNow, SetModel, SetPermission, claude_answer,
-    claude_sdk_input, permission_answer,
+    ClaudeAnswer, ClaudeSdkInput, FormAction, FormAnswer, Input, Interrupt, LinkAnswer,
+    PermissionAllow, PermissionAnswer, PermissionDeny, PlanAnswer, PlanChoice, PromptInput,
+    QuestionAnswer, QuestionResponse, ReplyInstead, SendQueuedNow, SetEffort, SetModel,
+    SetPermission, claude_answer, claude_sdk_input, permission_answer,
 };
 
 use crate::claude_common::{AnsweredResult, PLAN_TOOL, QUESTION_TOOL, QuestionInput, message_text};
@@ -148,6 +149,10 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                         value: set.mode.as_str().to_owned(),
                     }))
                 }
+                ControlRequestBody::ApplyFlagSettings(apply) => apply
+                    .settings
+                    .effort_level
+                    .map(|effort| claude_sdk_input::Of::Effort(SetEffort { effort })),
                 _ => None,
             },
             Written::ControlResponse(response) => {
@@ -193,7 +198,7 @@ fn timestamp_ms(line: &Line) -> Option<i64> {
 /// The answer a recorded control response gave to the request it answers.
 fn answer(request: &ControlRequestBody, response: &ControlResponse) -> Option<claude_answer::Of> {
     match request {
-        ControlRequestBody::Elicitation(_) => {
+        ControlRequestBody::Elicitation(asked) => {
             let (action, content) = match response.result::<ElicitationResult>() {
                 Some(Ok(ElicitationResult::Accept { content, .. })) => {
                     (FormAction::Accept, content)
@@ -201,6 +206,12 @@ fn answer(request: &ControlRequestBody, response: &ControlResponse) -> Option<cl
                 Some(Ok(ElicitationResult::Decline { .. })) => (FormAction::Decline, None),
                 _ => (FormAction::Cancel, None),
             };
+            // A link carries no content: the person went to the page.
+            if asked.mode.as_deref() == Some("url") {
+                return Some(claude_answer::Of::Link(LinkAnswer {
+                    action: action as i32,
+                }));
+            }
             Some(claude_answer::Of::Form(FormAnswer {
                 action: action as i32,
                 content_json: content

@@ -15,7 +15,7 @@ use serde_json::Value;
 /// The lines of one recording that contain every needle, in order.
 fn recorded(spec: &str, stdout: bool, needles: &[&str]) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../claude-specs/fixtures/sdk")
+        .join("../claude-specs/fixtures/live/sdk")
         .join(spec)
         .join("io.jsonl");
     std::fs::read_to_string(&path)

@@ -1,52 +1,65 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 4 recorded 3: input stdin-2
+## 6 recorded 5: input 0x349174b5d8004b9488ed04cb5ed4d339
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 18 recorded 17: fact Stream type=result subtype=success uuid=2cfa6991-b1b7-42af-bfa4-baa95f236b69
+## 409 recorded 408: fact Stream type=result subtype=success uuid=081b1ba8-0ed9-4780-a0eb-eb7ad60fe4c0
   composer Send activity=None queue=[] underway=[] refused=[]
-## 20 recorded 19: input stdin-3
+## 413 recorded 412: input 0x8cc2d1b19c4a422c8b43b2e39379ec94
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 32 recorded 31: fact Stream type=result subtype=success uuid=eff7949a-fd91-4404-8db6-df149f53cd97
+## 628 recorded 627: fact Stream type=result subtype=success uuid=89b5de96-6bb4-4bcf-a8fe-bf5d4584ccad
   composer Send activity=None queue=[] underway=[] refused=[]
-## 34 recorded 33: input stdin-4
+## 632 recorded 631: input 0xfad30551c13343d0997e3361cbcbde86
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 36 recorded 35: fact Stream type=system subtype=status uuid=335a34cf-0794-4ca4-8a83-3fa3e1d49ae7
+## 637 recorded 636: fact Stream type=system subtype=status uuid=0f824bf4-6639-415d-bacc-1515a418fa59
   composer Send activity=Some(Compacting) queue=[] underway=[] refused=[]
-## 42 recorded 41: fact Stream type=system subtype=compact_boundary uuid=be835eab-7b1e-4c04-927b-1f6e8dcdb955
+## 645 recorded 644: fact Stream type=system subtype=compact_boundary uuid=343f2fc0-3b5d-49e9-af38-8578cd8d5255
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 45 recorded 44: fact Stream type=result subtype=success uuid=8962e152-536c-4ab9-babf-3257fd381157
+## 650 recorded 649: fact Stream type=result subtype=success uuid=0130ee9f-e063-4a0b-bcc5-d6f3347acbe1
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Write three paragraphs about the history of rope-making.")], steered: false }
-     3 msg_011CgWLA6y5rpxvkBF57axBT:0 Thinking { text: "", open: false, duration_ms: Some(1934) }
-     4 msg_011CgWLA6y5rpxvkBF57axBT:1 Prose { text: [Text("# The History of Rope-Making\n\nRope-making is one of humanity's oldest crafts, dating back at least to the prehistoric era when early humans discovered that twisting plant fibers together created strong, durable cords. Archaeological evidence suggests that twisted plant fibers were used as early as 20,000 years ago, particularly in ancient …
-     5 turn:1 TurnEnd { duration_ms: Some(6661), failed: false }
-     6 73746469-6e2d-4300-8000-000000000000 Prompt { text: [Text("Now three more paragraphs about knots.")], steered: false }
-     7 msg_011CgWLAaouUBb5BJXKUjjYq:0 Thinking { text: "", open: false, duration_ms: Some(1174) }
-     8 msg_011CgWLAaouUBb5BJXKUjjYq:1 Prose { text: [Text("# The History and Significance of Knots\n\nKnots are among humanity's most fundamental discoveries, representing one of the earliest applications of rope and cordage in practical problem-solving. Archaeological evidence suggests that humans have been tying knots for at least 100,000 years, using them to secure bundles, create fishing nets, a…
-     9 turn:2 TurnEnd { duration_ms: Some(6354), failed: false }
-    10 73746469-6e2d-4400-8000-000000000000 Prompt { text: [Text("/compact")], steered: false }
-    11 335a34cf-0794-4ca4-8a83-3fa3e1d49ae7 Hidden collapsed
-    12 be835eab-7b1e-4c04-927b-1f6e8dcdb955 Compaction { tokens_before: Some(25097), tokens_after: Some(4034), automatic: false }
+     2 349174b5-d800-4b94-88ed-04cb5ed4d339 Prompt { text: [Text("Write three short paragraphs about the history of rope-making.")], steered: false }
+     3 5971eb15-18a0-4b81-afc5-38139a3a1aab Hidden collapsed
+     4 msg_011CgZjgf1CH4nLTcUkP7ydn:0 Prose { text: [Text("Rope-making is one of the oldest crafts, with roots reaching back tens of thousands of years. Archaeologists have found twisted plant fibers at sites such as Lascaux, where cave paintings date to roughly 17,000 years ago, and impressions of cord on pottery and clay suggest that people were making string and rope well before the advent of agr…
+     5 turn:1 TurnEnd { duration_ms: Some(4879), failed: false }
+     6 8cc2d1b1-9c4a-422c-8b43-b2e39379ec94 Prompt { text: [Text("Now two short paragraphs about knots.")], steered: false }
+     7 17a02146-3aaa-4c61-8ab1-2553484804f0 Hidden collapsed
+     8 msg_011CgZjh1v35yw1NMpS86xZM:0 Prose { text: [Text("Knots are as old as rope itself, and humans have tied them for practical, ceremonial, and artistic purposes for thousands of years. Ancient Egyptian, Chinese, and Incan cultures all left evidence of knotting, from ceremonial cords to record-keeping systems. The Incas used knotted strings called quipu to record numerical and possibly narrativ…
+     9 turn:2 TurnEnd { duration_ms: Some(2888), failed: false }
+    10 fad30551-c133-43d0-997e-3361cbcbde86 Prompt { text: [Text("/compact")], steered: false }
+    11 0f824bf4-6639-415d-bacc-1515a418fa59 Hidden collapsed
+    12 343f2fc0-3b5d-49e9-af38-8578cd8d5255 Compaction { tokens_before: Some(21378), tokens_after: Some(4266), automatic: false }
     13 boundary:2 Boundary { kind: Compacted, cause: "" }
-    14 261f445f-8fc0-40c3-8cee-fc75d36a06a2 SlashOutput { command: "/compact", args: "", output: "Compacted" }
-    15 turn:3 TurnEnd { duration_ms: Some(11797), failed: false }
+    14 40a7f95c-c764-499e-845c-c1ab7bcf5f52 SlashOutput { command: "/compact", args: "", output: "Compacted" }
+    15 turn:3 TurnEnd { duration_ms: Some(17494), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 4034, window_tokens: Some(200000), percent: Some(2), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 4266, window_tokens: Some(1000000), percent: Some(0), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]
-  model  opus "Opus" efforts=[low,medium,high,xhigh,max]
-  model  claude-fable-5-1[1m] "Fable" efforts=[low,medium,high,xhigh,max]
-  model  sonnet "Sonnet" efforts=[low,medium,high,xhigh,max]
-  model  haiku "Haiku" efforts=[low,medium,high,xhigh,max]
-  model* claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
+  model  opus "Opus 5.5" efforts=[low,medium,high,xhigh,max]
+  model  fable "Fable 5.1" efforts=[low,medium,high,xhigh,max]
+  model  sonnet "Sonnet 5.5" efforts=[low,medium,high,xhigh,max]
+  model* haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
+  model  claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
+  model  claude-sonnet-5 "Sonnet 5" efforts=[low,medium,high,xhigh,max]
+  model  claude-opus-5 "Opus 5" efforts=[low,medium,high,xhigh,max]
+  model  claude-fable-5 "Fable 5" efforts=[low,medium,high,xhigh,max]
+  model  claude-opus-4-8 "Opus 4.8" efforts=[low,medium,high,xhigh,max]
+  model  claude-opus-4-7 "Opus 4.7" efforts=[low,medium,high,xhigh,max]
+  model  claude-opus-4-6 "Opus 4.6" efforts=[low,medium,high,max]
+  model  claude-sonnet-4-6 "Sonnet 4.6" efforts=[low,medium,high,max]
+  effort  low
+  effort  medium
+  effort* high
+  effort  xhigh
+  effort  max
   permission* "default" "Ask" normal
   permission  "acceptEdits" "Accept edits"
   permission  "plan" "Plan"
-  permission  "auto" "Auto" unsettable
-  changes: model Pick · effort NotOffered · permission Pick · mode NotOffered
+  permission  "auto" "Auto"
+  changes: model Pick · effort Pick · permission Pick · mode NotOffered
   command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
   command /deep-research source="" hint="" "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)"
   command /design source="" hint="consent | revoke" "Grant or revoke Claude agent access to your Design projects"
@@ -55,12 +68,13 @@
   command /update-config source="" hint="" "Use this skill to configure the Claude Code harness via settings.json. Automated behaviors (\"from now on when X\", \"each time X\", \"whenever X\", \"before/after X\") require hooks configured in settings.json - the harness executes these, not Claude, so memory/preferences cannot fulfill them. Also use for: permissions (\"allow X\", \"add permission\", \"move permission to\"), env vars (\"set X=…
   command /verify source="" hint="" "Verify that a code change actually does what it's supposed to by exercising it end-to-end and observing behavior — drive the affected flow, not just tests or typecheck. Run before committing nontrivial changes; bootstraps this repo's project verify skill if none exists yet. Don't invoke it on a diff that only touches tests, docs, or other code with no runtime surface to drive (a change to product…
   command /debug source="" hint="[issue description]" "Enable debug logging for this session and help diagnose issues"
-  command /code-review source="" hint="[low|medium|high|xhigh|max] [--fix] [--comment] [<pr#>|<branch>|<path>] [--max-findings <n>|all]" "Review the current diff, or a PR number/branch/path target, for correctness bugs (plus reuse/simplification/efficiency cleanups where the model's recipe covers them) at the effort level given first, before any target (low|medium|high|xhigh|max: from few high-confidence findings to many, some uncertain); with no level given, it reuses the level you typed last. Pass --comment to post findings as in…
+  command /code-review source="" hint="[low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<pr#>|<branch>|<path>] [--max-findings <n>|all]" "Review the current diff, or a PR number/branch/path target, for correctness bugs (plus reuse/simplification/efficiency cleanups where the model's recipe covers them) at the effort level given first, before any target (low|medium|high|xhigh|max: from few high-confidence findings to many, some uncertain; ultra: deep multi-agent review in the cloud); with no level given, it reuses the level you type…
   command /simplify source="" hint="[<target>]" "Review the changed code for reuse, simplification, efficiency, and altitude cleanups, then apply the fixes. Quality only — it does not hunt for bugs; use /code-review for that."
   command /batch source="" hint="<instruction>" "Research and plan a large-scale change, then execute it in parallel across 5–30 isolated worktree agents that each open a PR."
   command /fewer-permission-prompts source="" hint="" "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts."
   command /loop source="" hint="[interval] [prompt]" "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace."
   command /schedule source="" hint="" "Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule."
+  command /send-to-project source="" hint="[\"project name\" or id] [message]" "Send this session's work to a Claude Project"
   command /claude-api source="" hint="" "Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration.\nTRIGGER — read BEFORE opening the target file; don't skip because it \"looks like a one-liner\" — whenever: the prompt names Claude/Anthropic in any form (Claude, Anthropic, Fable, Opus, Sonnet, Haiku, `anthropic`, `@anthropic-ai`, `claude-*`, `us…
   command /workflow-authoring source="" hint="" "Reference for writing a Workflow tool script (script API and gotchas, resume, quality patterns, worked examples). Load before authoring a script for a workflow the user already opted into; it does not itself authorize running one."
   command /run source="" hint="" "Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library)."
@@ -80,6 +94,7 @@
   command /workflow-launch-exec source="" hint="" "Execute a server-launched workflow handoff (workflow_launch event sessions only)"
   command /reload-plugins source="" hint="[--force]" "Activate pending plugin changes in the current session"
   command /reload-skills source="" hint="" "Pick up skills added or changed on disk during this session"
+  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~5-15 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
   command /security-review source="" hint="" "Complete a security review of the pending changes on the current branch"
   command /usage-credits source="" hint="" "Configure usage credits or request them from your admin when you hit a limit"
   command /extra-usage source="" hint="" "Renamed to /usage-credits"
@@ -92,4 +107,4 @@
   command /design-revoke source="" hint="" "Revoke Claude agent access to your Design projects"
   command /list-agents source="" hint="" "List subagents, teammates, and other Claude sessions you can message"
   command /team-onboarding source="" hint="" "Help teammates ramp on Claude Code with a guide from your usage"
-  controls: model=Some("Haiku 4.5") effort=None permission=None mode=None
+  controls: model=Some("Haiku 5.5") effort=Some("high") permission=None mode=None

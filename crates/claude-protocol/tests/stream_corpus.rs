@@ -22,8 +22,8 @@ fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../claude-specs/fixtures")
 }
 
-/// The registered corpus and the live captures beside it.
-const ROOTS: [&str; 2] = ["sdk", "live/sdk"];
+/// The headless corpus: the live lane's captures.
+const ROOT: &str = "live/sdk";
 
 /// One recording's lines: where each came from, whether Claude wrote it,
 /// and the line.
@@ -31,18 +31,14 @@ type Recording = Vec<(String, bool, String)>;
 
 /// Each recording's lines, in the order they were written.
 fn recorded() -> Vec<Recording> {
-    let mut recordings = Vec::new();
-    for root in ROOTS {
-        let mut found: Vec<_> = std::fs::read_dir(fixtures().join(root))
-            .unwrap_or_else(|error| panic!("fixtures/{root}: {error}"))
-            .map(|entry| entry.expect("entry").path().join("io.jsonl"))
-            .filter(|path| path.is_file())
-            .collect();
-        found.sort();
-        recordings.extend(found);
-    }
+    let mut recordings: Vec<_> = std::fs::read_dir(fixtures().join(ROOT))
+        .unwrap_or_else(|error| panic!("fixtures/{ROOT}: {error}"))
+        .map(|entry| entry.expect("entry").path().join("io.jsonl"))
+        .filter(|path| path.is_file())
+        .collect();
+    recordings.sort();
     assert!(
-        recordings.len() >= 36,
+        recordings.len() >= 29,
         "found only {} recordings",
         recordings.len()
     );

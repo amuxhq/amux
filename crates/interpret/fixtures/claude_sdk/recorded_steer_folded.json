@@ -1,10 +1,10 @@
 {
-  "about": "A message written while a tool runs, at default priority, folds into the running turn: the reader turns it into a queued prompt sent now, it reads steered until Claude replays it before the turn's result, and a later-priority message waits its own turn.",
+  "about": "A message queued while a command runs and sent into the running turn reads steered until Claude replays it; another left queued runs as a turn of its own.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/sdk/steer_folded/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/sdk/steer_folded/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

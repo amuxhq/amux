@@ -1,6 +1,5 @@
-//! Every recording in the claude-specs and codex-specs corpora, and the live
-//! captures beside them, plays back through its fake binary, byte for byte,
-//! one test per recording.
+//! Every recording in the claude-specs and codex-specs corpora plays back
+//! through its fake binary, byte for byte, one test per recording.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -54,46 +53,6 @@ macro_rules! recordings {
             assert_eq!(listed, recorded($root), "register each recording under {}", $root);
         }
     };
-}
-
-mod claude_sdk {
-    use super::*;
-
-    recordings!(Kind::ClaudeSdk, "claude-specs/fixtures/sdk", {
-        background_shell => "background_shell",
-        cleared => "cleared",
-        client_id => "client_id",
-        compacted => "compacted",
-        configured_turn => "configured_turn",
-        controls => "controls",
-        effort => "effort",
-        effortful_turn => "effortful_turn",
-        elicitation_accepted => "elicitation_accepted",
-        elicitation_cancelled => "elicitation_cancelled",
-        elicitation_declined => "elicitation_declined",
-        elicitation_link_accepted => "elicitation_link_accepted",
-        failed_tool_server => "failed_tool_server",
-        failing_command => "failing_command",
-        hook_lifecycle => "hook_lifecycle",
-        image => "image",
-        interrupted => "interrupted",
-        introspection => "introspection",
-        multi_turn => "multi_turn",
-        permission_callback => "permission_callback",
-        plan_reviewed => "plan_reviewed",
-        question_asked => "question_asked",
-        question_dismissed => "question_dismissed",
-        question_every_shape => "question_every_shape",
-        resumed => "resumed",
-        side_channel => "side_channel",
-        sign_in_problem => "sign_in_problem",
-        steer_folded => "steer_folded",
-        steer_preempted => "steer_preempted",
-        streamed_turn => "streamed_turn",
-        subagent_task => "subagent_task",
-        task_list => "task_list",
-        text_turn => "text_turn",
-    });
 }
 
 // Unix only: Windows does not host terminal Claude, and ConPTY re-renders the
@@ -180,13 +139,40 @@ mod codex {
     });
 }
 
-/// Captures from a live run, driven by amux's own interpreter.
-mod claude_sdk_live {
+/// Headless Claude's corpus: captures from live runs, driven by amux's own
+/// interpreter.
+mod claude_sdk {
     use super::*;
 
     recordings!(Kind::ClaudeSdk, "claude-specs/fixtures/live/sdk", {
+        background_shell => "background_shell",
+        cleared => "cleared",
+        compacted => "compacted",
+        configured_turn => "configured_turn",
+        controls => "controls",
+        effort => "effort",
+        elicitation_accepted => "elicitation_accepted",
+        elicitation_cancelled => "elicitation_cancelled",
+        elicitation_declined => "elicitation_declined",
+        elicitation_link_accepted => "elicitation_link_accepted",
+        failed_tool_server => "failed_tool_server",
+        failing_command => "failing_command",
+        image => "image",
+        interrupted => "interrupted",
+        multi_turn => "multi_turn",
+        permission_callback => "permission_callback",
         plan => "plan",
+        plan_reviewed => "plan_reviewed",
+        question_asked => "question_asked",
+        question_dismissed => "question_dismissed",
+        question_every_shape => "question_every_shape",
         questions => "questions",
+        resumed => "resumed",
+        sign_in_problem => "sign_in_problem",
+        steer_folded => "steer_folded",
+        subagent_task => "subagent_task",
+        task_list => "task_list",
+        text_turn => "text_turn",
         usage => "usage",
     });
 }

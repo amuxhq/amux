@@ -1,10 +1,10 @@
 {
-  "about": "Model and permission-mode changes sent as control requests reach the snapshot.",
+  "about": "The permission and the model changed from amux, then a turn that creates a file without an ask: both reach the snapshot.",
   "spec": {
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/sdk/controls/io.jsonl",
+    "path": "../../../claude-specs/fixtures/live/sdk/controls/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

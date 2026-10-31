@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "spec": "effort",
+  "recorded": {
+    "provider": "claude",
+    "version": "2.1.314",
+    "model": "claude-sonnet-5-5",
+    "at": "2026-10-31T05:09:51.381994Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:31117796ff37333934cfcdfefb319c738264f109759ab494fbda045786aa3809",
+    "spawn.jsonl": "sha256:65c9db9b8fba127ce829f87be09e9f71691bdc1fc3d8ce45d554ee789a37e9e4"
+  },
+  "redaction": {
+    "secrets": 1,
+    "machine_paths": 13,
+    "personal_identifiers": 2
+  },
+  "session_ids": [
+    "318f11ad-b5f3-4681-8bb2-b14fbc4c7708"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

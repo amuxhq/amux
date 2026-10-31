@@ -29,7 +29,10 @@ pub(super) async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         return post_peer_message().await;
     }
-    if std::env::var_os("CLAUDE_SPEC_MCP_SERVER").is_some()
+    // The tool server the live lane's form scenarios hand Claude; it runs
+    // under the capture proxy's environment, so it is told apart first.
+    if std::env::args().nth(1).as_deref() == Some("__tool-server")
+        || std::env::var_os("CLAUDE_SPEC_MCP_SERVER").is_some()
         || std::env::current_exe()?
             .file_stem()
             .is_some_and(|name| name == "spec-mcp-server")

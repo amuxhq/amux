@@ -194,16 +194,6 @@ string_enum! {
 }
 
 string_enum! {
-    /// How much of its reasoning the model summarises.
-    pub enum ReasoningSummary {
-        Auto = "auto",
-        Concise = "concise",
-        Detailed = "detailed",
-        None = "none",
-    }
-}
-
-string_enum! {
     pub enum ModeKind {
         Plan = "plan",
         Default = "default",

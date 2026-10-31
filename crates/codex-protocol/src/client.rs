@@ -12,8 +12,8 @@ use crate::items::UserInput;
 use crate::macros::{method_enum, string_enum, tagged_enum};
 use crate::server::{CommandDecision, PermissionProfile};
 use crate::thread::{
-    ApprovalsReviewer, AskForApproval, CollaborationMode, ReasoningEffort, ReasoningSummary,
-    SandboxMode, SandboxPolicy,
+    ApprovalsReviewer, AskForApproval, CollaborationMode, ReasoningEffort, SandboxMode,
+    SandboxPolicy,
 };
 
 method_enum! {
@@ -85,12 +85,6 @@ pub struct ThreadStartParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model_provider: Option<String>,
-    /// Codex configuration for this thread, keyed by dotted path, as
-    /// `codex --config` takes it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub config: Option<Extra>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<AskForApproval>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approvals_reviewer: Option<ApprovalsReviewer>,
@@ -108,10 +102,6 @@ pub struct ThreadResumeParams {
     pub cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub approval_policy: Option<AskForApproval>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sandbox: Option<SandboxMode>,
     /// Answer without the turns, for a client that pages them from the
     /// history on disk, as Codex's own app does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -247,8 +237,6 @@ pub struct TurnStartParams {
         skip_serializing_if = "Option::is_none"
     )]
     pub effort: Option<Option<ReasoningEffort>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub summary: Option<ReasoningSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<AskForApproval>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

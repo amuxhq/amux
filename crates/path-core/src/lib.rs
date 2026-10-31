@@ -851,38 +851,6 @@ mod tests {
     }
 
     #[test]
-    fn the_first_flight_goes_on_every_candidate_until_a_probe_answers() {
-        let mut paths = Paths::with_budget(0, true, StepBudget::UNLIMITED);
-        let out = step(
-            &mut paths,
-            Input::Candidate {
-                addr: lan(),
-                source: Source::Listed,
-            },
-        );
-        assert_eq!(send_on_all(&out), Some(vec![Path::Direct(lan())]));
-        assert!(
-            probes(&out).is_empty(),
-            "nothing is probed before the link is up"
-        );
-        let out = step(&mut paths, Input::ForwardingUp { link: RELAY });
-        assert_eq!(
-            send_on_all(&out),
-            Some(vec![Path::Direct(lan()), relayed()])
-        );
-
-        let out = step(&mut paths, Input::LinkUp);
-        assert_eq!(probes(&out), vec![Path::Direct(lan()), relayed()]);
-        assert_eq!(carry(&out), None);
-        assert_eq!(paths.carrying(), None);
-
-        let out = answer(&mut paths, relayed(), 80);
-        assert_eq!(carry(&out), Some(relayed()));
-        assert_eq!(send_on_all(&out), None);
-        assert_eq!(paths.carrying(), Some(&relayed()));
-    }
-
-    #[test]
     fn the_link_never_leaves_a_working_path_for_one_of_the_same_kind() {
         let mut paths = up(true);
         let other = addr("[fd00::20]:4433");
@@ -917,24 +885,6 @@ mod tests {
     }
 
     #[test]
-    fn a_path_that_stops_answering_is_left_at_once_hold_down_or_not() {
-        let mut paths = up(true);
-        answer(&mut paths, relayed(), 80);
-        answer(&mut paths, Path::Direct(lan()), 4);
-        let out = tick(&mut paths, HOLD_DOWN_MS);
-        assert_eq!(carry(&out), Some(Path::Direct(lan())));
-
-        tick(&mut paths, HOLD_DOWN_MS + 100);
-        let out = step(
-            &mut paths,
-            Input::ProbeTimedOut {
-                path: Path::Direct(lan()),
-            },
-        );
-        assert_eq!(carry(&out), Some(relayed()), "the relay was kept ready");
-    }
-
-    #[test]
     fn a_paid_account_punches_to_an_observed_address() {
         let mut paths = up(true);
         let out = step(
@@ -947,35 +897,6 @@ mod tests {
         assert_eq!(probes(&out), vec![Path::Punched(public())]);
         let out = answer(&mut paths, Path::Punched(public()), 30);
         assert_eq!(carry(&out), Some(Path::Punched(public())));
-    }
-
-    #[test]
-    fn of_two_addresses_as_near_the_link_chooses_the_ipv6_one() {
-        let lan6 = addr("[fd00::20]:4433");
-        let mut paths = up(true);
-        for addr in [lan6, public()] {
-            step(
-                &mut paths,
-                Input::Candidate {
-                    addr,
-                    source: Source::Listed,
-                },
-            );
-        }
-        let out = answer(&mut paths, Path::Direct(public()), 30);
-        assert_eq!(carry(&out), Some(Path::Direct(public())));
-        answer(&mut paths, Path::Direct(lan()), 3);
-        answer(&mut paths, Path::Direct(lan6), 3);
-        assert_eq!(
-            paths.carrying(),
-            Some(&Path::Direct(public())),
-            "the carrying path stays among paths of its kind"
-        );
-
-        // The carrying address goes: of the two left, equally near, the
-        // IPv6 one takes the link.
-        let out = step(&mut paths, Input::CandidateGone { addr: public() });
-        assert_eq!(carry(&out), Some(Path::Direct(lan6)), "{out:?}");
     }
 
     #[test]

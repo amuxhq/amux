@@ -3,18 +3,14 @@
 //! failure here is provider drift, or a type that does not match what Claude
 //! writes.
 
-use std::path::{Path, PathBuf};
-
 use claude_protocol::{hooks, transcript};
 use serde_json::Value;
+
+use crate::{differ, fixtures};
 
 /// A row the recorder's transcript tailer adds when it has read the file
 /// to its end; amux's, not Claude's.
 const TAILER_MARKER: &str = "amux.transcript_ready";
-
-fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../claude-specs/fixtures")
-}
 
 /// The registered corpus and the live captures beside it.
 const ROOTS: [&str; 2] = ["pty", "live/pty"];
@@ -186,26 +182,4 @@ fn a_queued_prompt_with_an_image_reads_as_blocks() {
     );
     let again: Value = serde_json::from_slice(&transcript::encode(&decoded)).unwrap();
     assert_eq!(again, row);
-}
-
-/// Where two JSON values differ, as paths with what each side holds.
-fn differ(path: &str, written: &Value, encoded: &Value, out: &mut Vec<String>) {
-    match (written, encoded) {
-        (Value::Object(a), Value::Object(b)) => {
-            for key in a.keys().chain(b.keys().filter(|key| !a.contains_key(*key))) {
-                let inner = format!("{path}.{key}");
-                match (a.get(key), b.get(key)) {
-                    (Some(x), Some(y)) => differ(&inner, x, y, out),
-                    (x, y) => out.push(format!("{inner} written {x:?} encoded {y:?}")),
-                }
-            }
-        }
-        (Value::Array(a), Value::Array(b)) if a.len() == b.len() => {
-            for (index, (x, y)) in a.iter().zip(b).enumerate() {
-                differ(&format!("{path}[{index}]"), x, y, out);
-            }
-        }
-        (a, b) if a != b => out.push(format!("{path} written {a} encoded {b}")),
-        _ => {}
-    }
 }

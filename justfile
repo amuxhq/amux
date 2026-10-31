@@ -74,7 +74,7 @@ test-store *ARGS: nextest
 # Cross-compile every store test target and run it on the leased, booted iOS
 # simulator, after proving the store's integration binary carries SQLite itself.
 test-store-ios:
-    scripts/with iphone -- {{bounded}} 2300 scripts/python -B apps/apple/Tools/ios-store-test.py
+    scripts/with iphone -- {{bounded}} 2300 scripts/py -B apps/apple/Tools/ios-store-test.py
 
 # Exercise the pure store-backed reducer lifecycle and recorded UI specs.
 test-ui *ARGS: nextest
@@ -274,15 +274,15 @@ warm: build test-build
 # protocol models' at their CI bounds, one after another on a four-core machine.
 # Run one catalogued suite's Cargo tests.
 suite NAME *ARGS: nextest
-    {{bounded}} 2400 scripts/python -B scripts/tests-catalog.py run "$@"
+    {{bounded}} 2400 scripts/py -B scripts/tests-catalog.py run "$@"
 
 # Print the suite catalogue with its boundaries, lanes and focused recipes.
 tests-list:
-    scripts/python -B scripts/tests-catalog.py list
+    scripts/py -B scripts/tests-catalog.py list
 
 # Validate every catalogued recipe, target, feature, manifest and baseline.
 tests-check:
-    {{bounded}} 120 scripts/python -B scripts/tests-catalog.py check
+    {{bounded}} 120 scripts/py -B scripts/tests-catalog.py check
 
 # The unit tests of the repository's own scripts. Pure Python; nothing is
 # built. The phone's scripts have theirs in `just ios script-tests`.
@@ -347,7 +347,7 @@ live *ARGS:
 # By hand only, never in CI: `just qa --testers 2 --phone 1 --waves 1`.
 # Run adversarial QA by hand: waves of testers on real agents (docs/QA.md).
 qa *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 86400 scripts/python -B scripts/qa.py "$@"
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 86400 scripts/py -B scripts/qa.py "$@"
 
 # Qualify desktop performance on an enrolled machine. Pass --baseline to
 # record the current release medians after every absolute budget passes.

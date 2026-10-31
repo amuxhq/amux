@@ -22,9 +22,8 @@ shell below, which has it.
 Other tools a full checkout uses:
 
 - [`just`](https://github.com/casey/just) runs every task.
-- Python 3.11 or newer runs the repository scripts. `scripts/python` and
-  `scripts/py` find one even when `python3` on the PATH is the macOS system
-  3.9.
+- Python 3.11 or newer runs the repository scripts. `scripts/py` finds one
+  even when `python3` on the PATH is the macOS system 3.9.
 - Xcode and XcodeGen build the iPhone app (see [the iPhone app](IOS.md)).
 - `tmux` drives the terminal journeys.
 - [`gitleaks`](https://github.com/gitleaks/gitleaks) scans what a push

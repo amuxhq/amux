@@ -40,6 +40,6 @@ fi
     exit 1
 }
 
-scripts/python -B scripts/sqlite_linkage.py "$binary"
+scripts/py -B scripts/sqlite_linkage.py "$binary"
 
 echo "release policy holds"

@@ -9,8 +9,8 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, anyhow};
 use settings::{ChatInSetting, ColorSetting, InstallationConfig, ThemeSetting, UiSettings};
 use tui::{
-    AttachFn, AttachReturn, ColorPreference, TerminalColors, Theme, ThemeError, TuiConfig,
-    detect_color_mode, parse_theme_file, query_terminal_colors, theme_from_file,
+    AttachFn, AttachReturn, ColorPreference, TerminalColors, Theme, TuiConfig, detect_color_mode,
+    query_terminal_colors,
 };
 use wire::Agent;
 
@@ -75,8 +75,7 @@ async fn open(
         ThemeSetting::Terminal => query_terminal_colors(TERMINAL_COLOR_QUERY),
         _ => None,
     };
-    let theme = resolve_theme(&config.ui, &ColorEnv::capture(), terminal)
-        .context("failed to resolve ui.theme")?;
+    let theme = resolve_theme(&config.ui, &ColorEnv::capture(), terminal);
     let tui_config = TuiConfig {
         working_dir: std::env::current_dir()?,
         leader: char::from(config.keybinds.leader.char),
@@ -134,7 +133,7 @@ pub fn resolve_theme(
     settings: &UiSettings,
     env: &ColorEnv,
     terminal: Option<TerminalColors>,
-) -> Result<Theme, ThemeError> {
+) -> Theme {
     let preference = match settings.color {
         ColorSetting::Auto => ColorPreference::Auto,
         ColorSetting::TrueColor => ColorPreference::TrueColor,
@@ -147,15 +146,11 @@ pub fn resolve_theme(
         env.no_color,
     );
     match &settings.theme {
-        ThemeSetting::Terminal => Ok(match terminal {
+        ThemeSetting::Terminal => match terminal {
             Some(colors) => Theme::from_terminal(colors, mode),
             None => Theme::dark(mode),
-        }),
-        ThemeSetting::Dark => Ok(Theme::dark(mode)),
-        ThemeSetting::Light => Ok(Theme::light(mode)),
-        ThemeSetting::File(path) => {
-            let yaml = std::fs::read_to_string(path)?;
-            theme_from_file(&parse_theme_file(&yaml)?, mode)
-        }
+        },
+        ThemeSetting::Dark => Theme::dark(mode),
+        ThemeSetting::Light => Theme::light(mode),
     }
 }

@@ -352,9 +352,10 @@ impl Default for NewAgentSettings {
     }
 }
 
-/// Where the palette comes from: the terminal amux was started in, a
-/// shipped theme name, or a YAML theme file path.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Where the palette comes from: the terminal amux was started in, or a
+/// shipped theme name.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ThemeSetting {
     /// Derived from what the terminal reports about its own colours, with
     /// the shipped dark palette as the fallback for a terminal that does
@@ -363,35 +364,6 @@ pub enum ThemeSetting {
     Terminal,
     Dark,
     Light,
-    File(PathBuf),
-}
-
-impl Serialize for ThemeSetting {
-    fn serialize<S: serde::Serializer>(
-        &self,
-        serializer: S,
-    ) -> std::result::Result<S::Ok, S::Error> {
-        match self {
-            Self::Terminal => serializer.serialize_str("terminal"),
-            Self::Dark => serializer.serialize_str("dark"),
-            Self::Light => serializer.serialize_str("light"),
-            Self::File(path) => path.serialize(serializer),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for ThemeSetting {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> std::result::Result<Self, D::Error> {
-        let value = String::deserialize(deserializer)?;
-        Ok(match value.as_str() {
-            "terminal" => Self::Terminal,
-            "dark" => Self::Dark,
-            "light" => Self::Light,
-            _ => Self::File(PathBuf::from(value)),
-        })
-    }
 }
 
 /// The terminal colour capability preference.
@@ -541,9 +513,6 @@ impl InstallationConfig {
         let base = path.parent().unwrap();
         config.root = absolute_path(&config.root, base)?;
         config.front_door_socket = socket_path(&config.front_door_socket, base)?;
-        if let ThemeSetting::File(theme) = &mut config.ui.theme {
-            *theme = absolute_path(theme, base)?;
-        }
         config.path = Some(path);
         config.validate()?;
         Ok(config)
@@ -779,21 +748,6 @@ mod tests {
         let parsed = installation(&toml::to_string(&config).unwrap()).unwrap();
         assert_eq!(parsed.ui.theme, ThemeSetting::Light);
         assert_eq!(parsed.ui.color, ColorSetting::Ansi);
-    }
-
-    #[test]
-    fn ui_theme_file_path_roundtrip() {
-        let config =
-            installation("[ui]\ntheme = \"themes/forest.yaml\"\ncolor = \"truecolor\"\n").unwrap();
-        assert_eq!(
-            config.ui.theme,
-            ThemeSetting::File(PathBuf::from("themes/forest.yaml"))
-        );
-        assert_eq!(config.ui.color, ColorSetting::TrueColor);
-
-        let parsed = installation(&toml::to_string(&config).unwrap()).unwrap();
-        assert_eq!(parsed.ui.theme, config.ui.theme);
-        assert_eq!(parsed.ui.color, config.ui.color);
     }
 
     #[test]

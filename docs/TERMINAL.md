@@ -315,7 +315,7 @@ so one file serves an older or newer amux; a known key with a bad value is still
 
 ```toml
 [ui]
-theme = "terminal"    # terminal, dark, light, or a path to a base16 or base24 YAML theme file
+theme = "terminal"    # terminal, dark or light
 color = "auto"        # auto, truecolor or ansi
 chat_in = "amux"      # amux, or native: chat in each agent's own interface, Claude Code's or Codex's
 
@@ -334,9 +334,8 @@ permission = "default"
 ```
 
 `theme = "terminal"` asks the terminal for its own colours at startup and derives the palette from them, falling back
-to the shipped dark palette when the terminal does not answer. A theme file's path is resolved beside the config
-file (YAML, as base16 and base24 schemes are published, with the colours under `palette:` or at the top level); its `tokens:` may name any semantic token directly (`attention: "#5f87d7"`). `color = "auto"` reads `COLORTERM`
-and `TERM` to choose truecolor or ANSI, and `NO_COLOR` turns colour off.
+to the shipped dark palette when the terminal does not answer; `dark` and `light` pick a shipped palette. `color =
+"auto"` reads `COLORTERM` and `TERM` to choose truecolor or ANSI, and `NO_COLOR` turns colour off.
 
 ## Keys
 

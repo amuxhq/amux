@@ -78,8 +78,6 @@ pub enum ShotError {
     UnknownState(String),
     #[error("UnknownSet({0})")]
     UnknownSet(String),
-    #[error("theme error: {0}")]
-    Theme(#[from] tui::ThemeError),
     #[error("render error: {0}")]
     Render(String),
     #[error("font error: {0}")]

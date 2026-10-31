@@ -1,11 +1,6 @@
 //! Semantic colour tokens shared by every TUI surface.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::io;
-
 use ratatui::style::{Color, Modifier, Style};
-use serde::Deserialize;
-use thiserror::Error;
 
 /// The colour capability selected once at the terminal boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -229,39 +224,6 @@ pub enum ThemeName {
     Light,
     /// A palette derived from what the terminal reported about itself.
     Adopted,
-    Imported,
-}
-
-/// Whether the imported scheme describes a dark or light palette.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum Variant {
-    Dark,
-    Light,
-}
-
-/// A parsed base16/base24 scheme plus direct semantic overrides.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ThemeFile {
-    pub scheme: Option<String>,
-    pub base: BTreeMap<String, String>,
-    pub tokens: BTreeMap<String, String>,
-    pub variant: Option<Variant>,
-}
-
-/// Failures produced while parsing or resolving an imported theme.
-#[derive(Debug, Error)]
-pub enum ThemeError {
-    #[error("invalid theme YAML: {0}")]
-    Yaml(String),
-    #[error("missing base colour `{0}`")]
-    MissingBase(String),
-    #[error("invalid colour for `{key}`: `{value}`")]
-    BadColor { key: String, value: String },
-    #[error("unknown theme token `{0}`")]
-    UnknownToken(String),
-    #[error("failed to read theme: {0}")]
-    Io(#[from] io::Error),
 }
 
 /// A complete palette resolved in one terminal colour mode.
@@ -363,8 +325,7 @@ impl Theme {
     /// untouched and unpainted, and everything amux needs beyond them is
     /// computed from that pair and repaired until it reads.
     ///
-    /// The repair is the same pass an imported scheme goes through, for the
-    /// same reason: neither a base16 file nor a person's terminal was chosen
+    /// Then the palette is repaired: a person's terminal was not chosen
     /// with amux's screens in mind, and a scheme whose text sits a few steps
     /// off its ground would otherwise leave the composer and the status line
     /// unreadable. Only HSL lightness moves, so the scheme's hues survive.
@@ -421,15 +382,9 @@ impl Theme {
         };
 
         let mut tokens = tokens;
-        // Nothing here was authored by hand, so every mechanical choice is
-        // open to repair. The three borrowed tokens are protected by being
-        // borrowed rather than by being named here: repair leaves the
-        // terminal's own colours alone.
-        make_readable(
-            &mut tokens,
-            &BTreeSet::new(),
-            &Faces::of_terminal(&terminal),
-        );
+        // The three borrowed tokens are protected by being borrowed: repair
+        // leaves the terminal's own colours alone.
+        make_readable(&mut tokens, &Faces::of_terminal(&terminal));
 
         Self {
             tokens,
@@ -644,137 +599,8 @@ impl Theme {
     }
 }
 
-#[derive(Deserialize)]
-struct RawThemeFile {
-    /// The scheme's name: `name` in the tinted-theming layout, `scheme` in
-    /// the older one.
-    name: Option<String>,
-    scheme: Option<String>,
-    variant: Option<Variant>,
-    #[serde(default)]
-    tokens: BTreeMap<String, String>,
-    /// The tinted-theming layout's colours.
-    #[serde(default)]
-    palette: BTreeMap<String, String>,
-    /// The older layout's colours, at the top level, among metadata of any
-    /// shape (`system`, `author`, `description`, ...).
-    #[serde(flatten)]
-    remaining: BTreeMap<String, yaml_serde::Value>,
-}
-
-/// Parse a base16/base24 YAML scheme, in either published layout: the
-/// tinted-theming one, with the colours under `palette:`, or the older one,
-/// with them at the top level. Metadata other than the name and `variant` is
-/// ignored; `base00` through `base17` are retained for validation and
-/// resolution.
-pub fn parse_theme_file(yaml: &str) -> Result<ThemeFile, ThemeError> {
-    let raw: RawThemeFile =
-        yaml_serde::from_str(yaml).map_err(|error| ThemeError::Yaml(error.to_string()))?;
-    let top_level = raw
-        .remaining
-        .into_iter()
-        .filter_map(|(key, value)| match value {
-            yaml_serde::Value::String(value) => Some((key, value)),
-            _ => None,
-        });
-    let base = top_level
-        .chain(raw.palette)
-        .filter_map(|(key, value)| normalize_base_key(&key).map(|key| (key, value)))
-        .collect();
-    Ok(ThemeFile {
-        scheme: raw.name.or(raw.scheme),
-        base,
-        tokens: raw.tokens,
-        variant: raw.variant,
-    })
-}
-
-fn normalize_base_key(key: &str) -> Option<String> {
-    let suffix = key.strip_prefix("base")?;
-    let index = (suffix.len() == 2)
-        .then(|| u8::from_str_radix(suffix, 16).ok())
-        .flatten()
-        .filter(|index| *index <= 0x17)?;
-    Some(format!("base{index:02X}"))
-}
-
-/// Resolve a parsed scheme into every semantic token.
-///
-/// | semantic token | base16 | base24 |
-/// | --- | --- | --- |
-/// | background | 00 | 00 |
-/// | user surface, diff tint fallbacks | 01 | 01 |
-/// | panel | 02 | 02 |
-/// | muted | 03 | 03 |
-/// | diff metadata | 04 | 04 |
-/// | text, diff context | 05 | 05 |
-/// | emphasis | 06 | 06 |
-/// | error, removed foreground | 08 | 12 |
-/// | warning | 09 | 14 |
-/// | success, added foreground | 0B | 13 |
-/// | code | 0C | 17 |
-/// | attention | 0D | 15 |
-/// | focus | 0E | 16 |
-///
-/// base16 has no diff backgrounds, so both tints start from `base01` and are
-/// then tinted with the scheme's own success and error hues.
-///
-/// Direct `tokens:` overrides are applied after this mapping and are taken
-/// literally; everything else is then put through [`make_readable`].
-pub fn theme_from_file(file: &ThemeFile, mode: ColorMode) -> Result<Theme, ThemeError> {
-    for index in 0..=0x0F {
-        mapped_token(file, &format!("base{index:02X}"))?;
-    }
-
-    let base24 = (0x10..=0x17).any(|index| file.base.contains_key(&format!("base{index:02X}")));
-    if base24 {
-        for index in 0x10..=0x17 {
-            mapped_token(file, &format!("base{index:02X}"))?;
-        }
-    }
-
-    let accent_base = |base16, base24_key| if base24 { base24_key } else { base16 };
-    let mut tokens = Tokens {
-        background: mapped_token(file, "base00")?,
-        user_surface: mapped_token(file, "base01")?,
-        panel: mapped_token(file, "base02")?,
-        hairline: mapped_token(file, "base02")?,
-        muted: mapped_token(file, "base03")?,
-        faint: mapped_token(file, "base03")?,
-        diff_meta: mapped_token(file, "base04")?,
-        text: mapped_token(file, "base05")?,
-        diff_context: mapped_token(file, "base05")?,
-        emphasis: mapped_token(file, "base06")?,
-        error: mapped_token(file, accent_base("base08", "base12"))?,
-        diff_removed_fg: mapped_token(file, accent_base("base08", "base12"))?,
-        warning: mapped_token(file, accent_base("base09", "base14"))?,
-        ok: mapped_token(file, accent_base("base0B", "base13"))?,
-        diff_added_fg: mapped_token(file, accent_base("base0B", "base13"))?,
-        code: mapped_token(file, accent_base("base0C", "base17"))?,
-        attention: mapped_token(file, accent_base("base0D", "base15"))?,
-        focus: mapped_token(file, accent_base("base0E", "base16"))?,
-        diff_added_bg: mapped_token(file, "base01")?,
-        diff_removed_bg: mapped_token(file, "base01")?,
-    };
-
-    let mut authored = BTreeSet::new();
-    for (name, value) in &file.tokens {
-        let token = parse_token(name, value)?;
-        set_token(&mut tokens, name, token)?;
-        authored.insert(name.clone());
-    }
-
-    make_readable(&mut tokens, &authored, &Faces::CONVENTIONAL);
-
-    Ok(Theme {
-        tokens,
-        mode,
-        name: ThemeName::Imported,
-    })
-}
-
-/// The contrast an imported palette has to reach before amux paints words
-/// with it. Body copy is held above the WCAG AAA threshold so an imported
+/// The contrast a derived palette has to reach before amux paints words
+/// with it. Body copy is held above the WCAG AAA threshold so a terminal's
 /// scheme still reads like the shipped ones; labels, accents and status
 /// colours are held to AA; rules and hunk metadata are decoration
 /// and only have to be visible.
@@ -786,33 +612,23 @@ const READABLE_TRIM: f64 = 3.0;
 /// one of them is emphasised.
 const SEPARATION: f64 = 1.25;
 
-/// Repair an imported palette so every foreground is legible on the surfaces
+/// Repair a derived palette so every foreground is legible on the surfaces
 /// it can land on.
 ///
-/// A base16 scheme is authored for an editor, where the only thing painted on
-/// `base00` is source code that the scheme's author looked at. amux paints
-/// labels, a composer and a status line as well, and a scheme whose `base05`
-/// sits a few steps above `base00` leaves all of that unreadable — worse once
-/// sixteen-colour degradation rounds both of them to the same terminal face.
-/// Rather than reject such a scheme, lift each foreground away from its
-/// surfaces until it clears the floor above, moving only HSL lightness so the
-/// scheme's own hues and saturation survive exactly. A scheme that is already
-/// readable — which is nearly all of them — comes through untouched.
-///
-/// Tokens named directly under `tokens:` are the user's own word and are
-/// taken literally; only the mechanical base mapping is repaired.
-fn make_readable(tokens: &mut Tokens, authored: &BTreeSet<String>, faces: &Faces) {
-    // base16 has no diff colours, so the mapping falls back to `base01` for
-    // both tints and a hunk reads as one undifferentiated slab. Tint that
-    // surface with the scheme's own success and error hues instead, and give
-    // each tint the saturated terminal face its hue rounds to so a diff still
-    // reads as a diff in sixteen colours.
-    if !authored.contains("diff_added_bg") {
-        tokens.diff_added_bg = tinted(tokens.diff_added_bg, tokens.ok, faces);
-    }
-    if !authored.contains("diff_removed_bg") {
-        tokens.diff_removed_bg = tinted(tokens.diff_removed_bg, tokens.error, faces);
-    }
+/// A terminal's scheme is chosen for whatever the person runs in it. amux
+/// paints labels, a composer and a status line as well, and a scheme whose
+/// text sits a few steps above its ground leaves all of that unreadable —
+/// worse once sixteen-colour degradation rounds both of them to the same
+/// terminal face. Rather than reject such a scheme, lift each foreground away
+/// from its surfaces until it clears the floor above, moving only HSL
+/// lightness so the scheme's own hues and saturation survive exactly. A
+/// scheme that is already readable comes through untouched.
+fn make_readable(tokens: &mut Tokens, faces: &Faces) {
+    // Tint the diff surfaces with the palette's own success and error hues,
+    // and give each tint the saturated terminal face its hue rounds to so a
+    // diff still reads as a diff in sixteen colours.
+    tokens.diff_added_bg = tinted(tokens.diff_added_bg, tokens.ok, faces);
+    tokens.diff_removed_bg = tinted(tokens.diff_removed_bg, tokens.error, faces);
 
     // A scheme's block surfaces are shades of its background, and rounding
     // each one to its own terminal face turns a barely-there shade into a
@@ -820,10 +636,10 @@ fn make_readable(tokens: &mut Tokens, authored: &BTreeSet<String>, faces: &Faces
     // Anything this close to the background is not meant to read as a colour,
     // so let it share the background's face and disappear the way it does in
     // truecolor.
-    if !authored.contains("user_surface") && shade_of(tokens.user_surface, tokens.background) {
+    if shade_of(tokens.user_surface, tokens.background) {
         tokens.user_surface.ansi = tokens.background.ansi;
     }
-    if !authored.contains("panel") && shade_of(tokens.panel, tokens.background) {
+    if shade_of(tokens.panel, tokens.background) {
         tokens.panel.ansi = tokens.background.ansi;
     }
 
@@ -840,76 +656,35 @@ fn make_readable(tokens: &mut Tokens, authored: &BTreeSet<String>, faces: &Faces
     // `on_ground` says the surfaces are the ground and its shades; anything
     // else a foreground is measured against is a tint that already wears a
     // hue of its own.
-    let lift = |token: &mut Token, name: &str, on: &[Token], floor: f64, on_ground: bool| {
-        if authored.contains(name) {
-            return;
-        }
+    let lift = |token: &mut Token, on: &[Token], floor: f64, on_ground: bool| {
         let against: Vec<(Token, f64)> = on.iter().map(|surface| (*surface, floor)).collect();
         *token = readable_token(*token, &against, faces, on_ground);
     };
 
-    lift(&mut tokens.text, "text", &surfaces, READABLE_BODY, true);
-    lift(
-        &mut tokens.diff_context,
-        "diff_context",
-        &hunk,
-        READABLE_BODY,
-        false,
-    );
-    lift(&mut tokens.muted, "muted", &surfaces, READABLE_LABEL, true);
-    lift(&mut tokens.faint, "faint", &surfaces, READABLE_TRIM, true);
-    lift(
-        &mut tokens.attention,
-        "attention",
-        &surfaces,
-        READABLE_LABEL,
-        true,
-    );
-    lift(&mut tokens.focus, "focus", &surfaces, READABLE_LABEL, true);
-    lift(&mut tokens.code, "code", &surfaces, READABLE_LABEL, true);
-    lift(&mut tokens.ok, "ok", &surfaces, READABLE_LABEL, true);
-    lift(
-        &mut tokens.warning,
-        "warning",
-        &surfaces,
-        READABLE_LABEL,
-        true,
-    );
-    lift(&mut tokens.error, "error", &surfaces, READABLE_LABEL, true);
-    lift(
-        &mut tokens.diff_added_fg,
-        "diff_added_fg",
-        &added,
-        READABLE_LABEL,
-        false,
-    );
-    lift(
-        &mut tokens.diff_removed_fg,
-        "diff_removed_fg",
-        &removed,
-        READABLE_LABEL,
-        false,
-    );
-    lift(
-        &mut tokens.diff_meta,
-        "diff_meta",
-        &hunk,
-        READABLE_TRIM,
-        false,
-    );
+    lift(&mut tokens.text, &surfaces, READABLE_BODY, true);
+    lift(&mut tokens.diff_context, &hunk, READABLE_BODY, false);
+    lift(&mut tokens.muted, &surfaces, READABLE_LABEL, true);
+    lift(&mut tokens.faint, &surfaces, READABLE_TRIM, true);
+    lift(&mut tokens.attention, &surfaces, READABLE_LABEL, true);
+    lift(&mut tokens.focus, &surfaces, READABLE_LABEL, true);
+    lift(&mut tokens.code, &surfaces, READABLE_LABEL, true);
+    lift(&mut tokens.ok, &surfaces, READABLE_LABEL, true);
+    lift(&mut tokens.warning, &surfaces, READABLE_LABEL, true);
+    lift(&mut tokens.error, &surfaces, READABLE_LABEL, true);
+    lift(&mut tokens.diff_added_fg, &added, READABLE_LABEL, false);
+    lift(&mut tokens.diff_removed_fg, &removed, READABLE_LABEL, false);
+    lift(&mut tokens.diff_meta, &hunk, READABLE_TRIM, false);
 
     // Emphasis is only emphasis if it out-reads the body it interrupts, and
     // lifting two flat greys to the same floor would land them on the same
     // colour, so hold it away from the repaired text as well.
-    if !authored.contains("emphasis") {
-        let against = [
-            (tokens.background, READABLE_BODY),
-            (tokens.user_surface, READABLE_BODY),
-            (tokens.panel, READABLE_BODY),
-            (tokens.text, SEPARATION),
-        ];
-        tokens.emphasis = readable_token(tokens.emphasis, &against, faces, true);
-    }
+    let against = [
+        (tokens.background, READABLE_BODY),
+        (tokens.user_surface, READABLE_BODY),
+        (tokens.panel, READABLE_BODY),
+        (tokens.text, SEPARATION),
+    ];
+    tokens.emphasis = readable_token(tokens.emphasis, &against, faces, true);
 }
 
 /// Mix a hue into a surface far enough to be seen without turning the
@@ -1026,7 +801,7 @@ fn lift_lightness(rgb: (u8, u8, u8), against: &[(Token, f64)]) -> (u8, u8, u8) {
 /// Choose the sixteen-colour face that keeps the most of a repaired colour.
 ///
 /// Rounding each colour to its nearest RGB neighbour on its own is what made
-/// imported schemes vanish on a monochrome terminal — a whole dark ramp
+/// derived palettes vanish on a monochrome terminal — a whole dark ramp
 /// collapses onto black — and nearest-RGB also throws hues away, because a
 /// half-saturated lavender is closer to grey than to magenta. Score every face
 /// on what it preserves instead: a saturated colour has to stay a coloured
@@ -1168,61 +943,6 @@ fn from_hsl(hue: f64, saturation: f64, lightness: f64) -> (u8, u8, u8) {
     (quantize(red), quantize(green), quantize(blue))
 }
 
-fn require_base<'a>(file: &'a ThemeFile, key: &str) -> Result<&'a str, ThemeError> {
-    file.base
-        .get(key)
-        .map(String::as_str)
-        .ok_or_else(|| ThemeError::MissingBase(key.to_string()))
-}
-
-fn mapped_token(file: &ThemeFile, key: &str) -> Result<Token, ThemeError> {
-    let value = require_base(file, key)?;
-    parse_token(key, value)
-}
-
-fn parse_token(key: &str, value: &str) -> Result<Token, ThemeError> {
-    let hex = value.trim().strip_prefix('#').unwrap_or(value.trim());
-    if hex.len() != 6 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(ThemeError::BadColor {
-            key: key.to_string(),
-            value: value.to_string(),
-        });
-    }
-    let rgb = (
-        u8::from_str_radix(&hex[0..2], 16).expect("validated hex"),
-        u8::from_str_radix(&hex[2..4], 16).expect("validated hex"),
-        u8::from_str_radix(&hex[4..6], 16).expect("validated hex"),
-    );
-    Ok(Token::new(rgb, nearest_ansi(rgb)))
-}
-
-fn set_token(tokens: &mut Tokens, name: &str, token: Token) -> Result<(), ThemeError> {
-    let destination = match name {
-        "background" => &mut tokens.background,
-        "text" => &mut tokens.text,
-        "muted" => &mut tokens.muted,
-        "faint" => &mut tokens.faint,
-        "emphasis" => &mut tokens.emphasis,
-        "attention" => &mut tokens.attention,
-        "user_surface" => &mut tokens.user_surface,
-        "panel" => &mut tokens.panel,
-        "focus" => &mut tokens.focus,
-        "code" => &mut tokens.code,
-        "ok" => &mut tokens.ok,
-        "warning" => &mut tokens.warning,
-        "error" => &mut tokens.error,
-        "diff_added_fg" => &mut tokens.diff_added_fg,
-        "diff_added_bg" => &mut tokens.diff_added_bg,
-        "diff_removed_fg" => &mut tokens.diff_removed_fg,
-        "diff_removed_bg" => &mut tokens.diff_removed_bg,
-        "diff_context" => &mut tokens.diff_context,
-        "diff_meta" => &mut tokens.diff_meta,
-        _ => return Err(ThemeError::UnknownToken(name.to_string())),
-    };
-    *destination = token;
-    Ok(())
-}
-
 /// The sixteen terminal faces at their conventional RGB values, which is the
 /// only ground amux has for reasoning about contrast in a mode where the
 /// terminal, not amux, owns the actual colours.
@@ -1248,23 +968,20 @@ const ANSI_FACES: [(Color, (u8, u8, u8)); 16] = [
 /// The conventional RGB value of one terminal face.
 #[cfg(test)]
 fn ansi_rgb(face: Color) -> (u8, u8, u8) {
-    Faces::CONVENTIONAL.rgb_of_face(face)
+    Faces(ANSI_FACES).rgb_of_face(face)
 }
 
 /// What the sixteen faces actually paint as, for reasoning about contrast
 /// in the mode where the terminal owns the colours.
 ///
-/// An imported scheme has only the conventional values to go on. A palette
-/// derived from a terminal knows exactly what each slot paints as, because
-/// the terminal said so — measuring it against the conventional values would
-/// judge Solarized's yellow-green `Green` as if it were pure green, and pick
-/// a face for its ground that the ground is nothing like.
+/// A palette derived from a terminal knows exactly what each slot paints
+/// as, because the terminal said so — measuring it against the conventional
+/// values would judge Solarized's yellow-green `Green` as if it were pure
+/// green, and pick a face for its ground that the ground is nothing like.
 #[derive(Clone, Copy)]
 struct Faces([(Color, (u8, u8, u8)); 16]);
 
 impl Faces {
-    const CONVENTIONAL: Self = Self(ANSI_FACES);
-
     /// The faces as one terminal reported them.
     fn of_terminal(terminal: &TerminalColors) -> Self {
         let mut faces = ANSI_FACES;
@@ -1341,16 +1058,8 @@ mod tests {
     use super::*;
     use crate::fixtures::Named;
 
-    const BASE16_SAMPLE: &str = include_str!("../tests/themes/base16-sample.yaml");
-    const BASE24_SAMPLE: &str = include_str!("../tests/themes/base24-sample.yaml");
-    const BASE16_PALETTE_SAMPLE: &str = include_str!("../tests/themes/base16-palette-sample.yaml");
-
     fn render_named(state: Named, theme: Theme) -> Buffer {
         state.render(theme)
-    }
-
-    fn render_claude_working(theme: Theme) -> Buffer {
-        render_named(Named::ClaudeWorking, theme)
     }
 
     /// The attention ink on the person's message surface.
@@ -1457,348 +1166,12 @@ mod tests {
         );
     }
 
-    fn hue_and_saturation(rgb: (u8, u8, u8)) -> (f64, f64) {
-        let (hue, saturation, _) = to_hsl(rgb);
-        (hue, saturation)
-    }
-
-    /// Every semantic family comes from the base16 slot the mapping table
-    /// promises. The readability pass may move a colour's lightness, so each
-    /// family is identified by the hue and saturation it kept, which is the
-    /// part of an imported scheme a user would recognise.
-    #[test]
-    fn base16_sample_maps_every_semantic_family() {
-        let file = parse_theme_file(BASE16_SAMPLE).expect("parse base16 fixture");
-        assert_eq!(file.scheme.as_deref(), Some("amux base16 sample"));
-        assert_eq!(file.variant, Some(Variant::Dark));
-        assert_eq!(file.base.len(), 16);
-
-        let theme = theme_from_file(&file, ColorMode::TrueColor).expect("resolve base16 fixture");
-        assert_eq!(theme.name, ThemeName::Imported);
-        assert_eq!(theme.tokens.background.rgb, (0x10, 0x10, 0x10));
-        assert_eq!(theme.tokens.user_surface.rgb, (0x20, 0x20, 0x20));
-        assert_eq!(theme.tokens.panel.rgb, (0x30, 0x30, 0x30));
-        for (token, base, family) in [
-            (theme.tokens.muted, (0x40, 0x40, 0x40), "muted"),
-            (theme.tokens.diff_meta, (0x50, 0x50, 0x50), "diff_meta"),
-            (theme.tokens.text, (0x60, 0x60, 0x60), "text"),
-            (theme.tokens.emphasis, (0x70, 0x70, 0x70), "emphasis"),
-            (theme.tokens.error, (0x90, 0x00, 0x00), "error"),
-            (theme.tokens.warning, (0xa0, 0x60, 0x00), "warning"),
-            (theme.tokens.ok, (0x00, 0x90, 0x00), "ok"),
-            (theme.tokens.code, (0x00, 0x80, 0x90), "code"),
-            (theme.tokens.attention, (0x00, 0x60, 0xa0), "attention"),
-            (theme.tokens.focus, (0x70, 0x40, 0xa0), "focus"),
-        ] {
-            let (hue, saturation) = hue_and_saturation(token.rgb);
-            let (base_hue, base_saturation) = hue_and_saturation(base);
-            assert!(
-                (hue - base_hue).abs() < 1.0 && (saturation - base_saturation).abs() < 0.02,
-                "{family} lost its imported colour: {:?} is not {base:?}",
-                token.rgb
-            );
-        }
-    }
-
-    /// A base24 scheme's extended accents win over the base16 ones it also
-    /// carries, and a direct override wins over both. The two fixtures give
-    /// each family the same hue in both ranges, so the extended slot is
-    /// identified by the saturation only it has.
-    #[test]
-    fn base24_sample_uses_bright_accents_and_applies_overrides_last() {
-        let file = parse_theme_file(BASE24_SAMPLE).expect("parse base24 fixture");
-        assert_eq!(file.variant, Some(Variant::Light));
-        assert_eq!(file.base.len(), 24);
-
-        let theme = theme_from_file(&file, ColorMode::Ansi).expect("resolve base24 fixture");
-        assert_eq!(theme.mode, ColorMode::Ansi);
-        for (token, extended, base16, family) in [
-            (
-                theme.tokens.error,
-                (0xff, 0x40, 0x40),
-                (0xb0, 0x30, 0x30),
-                "error",
-            ),
-            (
-                theme.tokens.ok,
-                (0x20, 0xc0, 0x20),
-                (0x30, 0x80, 0x30),
-                "ok",
-            ),
-            (
-                theme.tokens.warning,
-                (0xd0, 0x90, 0x20),
-                (0xb0, 0x60, 0x20),
-                "warning",
-            ),
-            (
-                theme.tokens.code,
-                (0x30, 0xa0, 0xa0),
-                (0x20, 0x80, 0x80),
-                "code",
-            ),
-            (
-                theme.tokens.focus,
-                (0xa0, 0x60, 0xc0),
-                (0x70, 0x40, 0x90),
-                "focus",
-            ),
-        ] {
-            let (hue, saturation) = hue_and_saturation(token.rgb);
-            let (extended_hue, extended_saturation) = hue_and_saturation(extended);
-            assert!(
-                (hue - extended_hue).abs() < 1.0 && (saturation - extended_saturation).abs() < 0.02,
-                "{family} did not come from the extended range: {:?}",
-                token.rgb
-            );
-            let (_, base16_saturation) = hue_and_saturation(base16);
-            assert!(
-                (saturation - base16_saturation).abs() > 0.02,
-                "{family} is indistinguishable from its base16 slot"
-            );
-        }
-
-        // A token named directly is the user's own word, so it is taken
-        // literally in both faces rather than repaired.
-        assert_eq!(theme.tokens.attention.rgb, (0xab, 0xcd, 0xef));
-        assert_eq!(
-            theme.tokens.attention.ansi,
-            nearest_ansi((0xab, 0xcd, 0xef))
-        );
-    }
-
-    #[test]
-    fn base24_direct_override_reaches_the_rendered_frame() {
-        let file = parse_theme_file(BASE24_SAMPLE).expect("parse base24 fixture");
-        let theme = theme_from_file(&file, ColorMode::TrueColor).expect("resolve base24 fixture");
-        let buffer = render_named(Named::ClaudePermissionAsk, theme);
-
-        assert!(
-            buffer
-                .content()
-                .iter()
-                .any(|cell| cell.fg == Color::Rgb(0xab, 0xcd, 0xef)),
-            "an ask's box should paint its edge from the direct attention override"
-        );
-    }
-
-    /// Schemes published today put their colours under `palette:` and name
-    /// themselves with `name:`; one reads the same as the older layout.
-    #[test]
-    fn a_tinted_theming_scheme_reads_like_the_older_layout() {
-        let palette = parse_theme_file(BASE16_PALETTE_SAMPLE).expect("parse palette fixture");
-        let top_level = parse_theme_file(BASE16_SAMPLE).expect("parse base16 fixture");
-        assert_eq!(palette.scheme.as_deref(), Some("amux base16 sample"));
-        assert_eq!(palette.variant, Some(Variant::Dark));
-        assert_eq!(palette.base, top_level.base);
-        assert_eq!(palette.base.len(), 16);
-    }
-
-    #[test]
-    fn imported_ansi_theme_puts_no_rgb_colours_in_the_rendered_buffer() {
-        let file = parse_theme_file(BASE16_SAMPLE).expect("parse base16 fixture");
-        let theme = theme_from_file(&file, ColorMode::Ansi).expect("resolve ANSI base16 fixture");
-        let buffer = render_claude_working(theme);
-
-        for (index, cell) in buffer.content().iter().enumerate() {
-            assert!(
-                !matches!(cell.fg, Color::Rgb(..)),
-                "cell {index} has RGB foreground {:?}",
-                cell.fg
-            );
-            assert!(
-                !matches!(cell.bg, Color::Rgb(..)),
-                "cell {index} has RGB background {:?}",
-                cell.bg
-            );
-        }
-    }
-
-    #[test]
-    fn direct_token_override_replaces_the_base_mapping() {
-        let mut file = parse_theme_file(BASE16_SAMPLE).expect("parse fixture");
-        file.tokens.insert("diff_added_bg".into(), "#123456".into());
-        let theme = theme_from_file(&file, ColorMode::TrueColor).expect("resolve fixture");
-        assert_eq!(theme.tokens.diff_added_bg.rgb, (0x12, 0x34, 0x56));
-    }
-
-    #[test]
-    fn missing_base_names_the_key() {
-        let mut file = parse_theme_file(BASE16_SAMPLE).expect("parse fixture");
-        file.base.remove("base0F");
-        assert!(matches!(
-            theme_from_file(&file, ColorMode::TrueColor),
-            Err(ThemeError::MissingBase(key)) if key == "base0F"
-        ));
-    }
-
-    #[test]
-    fn partial_base24_extension_names_the_first_missing_key() {
-        let mut file = parse_theme_file(BASE16_SAMPLE).expect("parse fixture");
-        file.base.insert("base10".into(), "#101010".into());
-        assert!(matches!(
-            theme_from_file(&file, ColorMode::TrueColor),
-            Err(ThemeError::MissingBase(key)) if key == "base11"
-        ));
-    }
-
-    #[test]
-    fn bad_base_colour_names_the_key_and_value() {
-        let mut file = parse_theme_file(BASE16_SAMPLE).expect("parse fixture");
-        file.base.insert("base0F".into(), "ultraviolet".into());
-        assert!(matches!(
-            theme_from_file(&file, ColorMode::TrueColor),
-            Err(ThemeError::BadColor { key, value })
-                if key == "base0F" && value == "ultraviolet"
-        ));
-    }
-
-    #[test]
-    fn bad_override_colour_names_the_token_and_value() {
-        let mut file = parse_theme_file(BASE16_SAMPLE).expect("parse fixture");
-        file.tokens.insert("attention".into(), "#xyzxyz".into());
-        assert!(matches!(
-            theme_from_file(&file, ColorMode::TrueColor),
-            Err(ThemeError::BadColor { key, value })
-                if key == "attention" && value == "#xyzxyz"
-        ));
-    }
-
-    #[test]
-    fn unknown_override_names_the_token() {
-        let mut file = parse_theme_file(BASE16_SAMPLE).expect("parse fixture");
-        file.tokens.insert("sparkle".into(), "#123456".into());
-        assert!(matches!(
-            theme_from_file(&file, ColorMode::TrueColor),
-            Err(ThemeError::UnknownToken(key)) if key == "sparkle"
-        ));
-    }
-
-    #[test]
-    fn malformed_yaml_is_a_yaml_error() {
-        assert!(matches!(
-            parse_theme_file("base00: [unterminated"),
-            Err(ThemeError::Yaml(_))
-        ));
-    }
-
-    #[test]
-    fn lowercase_base_keys_are_normalized() {
-        let yaml = BASE16_SAMPLE.replace("base0A", "base0a");
-        let file = parse_theme_file(&yaml).expect("parse lowercase base key");
-        assert!(file.base.contains_key("base0A"));
-        theme_from_file(&file, ColorMode::TrueColor).expect("resolve normalized fixture");
-    }
-
     #[test]
     fn nearest_ansi_uses_named_terminal_colours() {
         assert_eq!(nearest_ansi((1, 2, 3)), Color::Black);
         assert_eq!(nearest_ansi((250, 10, 10)), Color::LightRed);
         assert_eq!(nearest_ansi((10, 240, 245)), Color::LightCyan);
         assert_eq!(nearest_ansi((248, 248, 248)), Color::White);
-    }
-
-    // --- imported palettes ---------------------------------------------
-
-    /// The same scheme with its direct overrides dropped. A token named under
-    /// `tokens:` is the user's own word and is taken literally, so only the
-    /// base mapping carries a readability guarantee.
-    fn imported_mapping(yaml: &str, mode: ColorMode) -> Theme {
-        let mut file = parse_theme_file(yaml).expect("parse imported fixture");
-        file.tokens.clear();
-        theme_from_file(&file, mode).expect("resolve imported fixture")
-    }
-
-    /// Every foreground an imported scheme supplies has to read on every
-    /// surface it can land on, whatever the scheme's author thought was
-    /// enough contrast for an editor.
-    #[test]
-    fn imported_palettes_are_lifted_until_they_read() {
-        for yaml in [BASE16_SAMPLE, BASE24_SAMPLE] {
-            let tokens = imported_mapping(yaml, ColorMode::TrueColor).tokens;
-            let surfaces = [
-                (tokens.background.rgb, "background"),
-                (tokens.user_surface.rgb, "user surface"),
-                (tokens.panel.rgb, "panel"),
-            ];
-            for (fg, floor, family) in [
-                (tokens.text, READABLE_BODY, "text"),
-                (tokens.emphasis, READABLE_BODY, "emphasis"),
-                (tokens.muted, READABLE_LABEL, "muted"),
-                (tokens.attention, READABLE_LABEL, "attention"),
-                (tokens.focus, READABLE_LABEL, "focus"),
-                (tokens.code, READABLE_LABEL, "code"),
-                (tokens.ok, READABLE_LABEL, "ok"),
-                (tokens.warning, READABLE_LABEL, "warning"),
-                (tokens.error, READABLE_LABEL, "error"),
-            ] {
-                for (surface, name) in surfaces {
-                    let ratio = contrast(fg.rgb, surface);
-                    assert!(
-                        ratio >= floor,
-                        "imported {family} on {name} is only {ratio:.1}:1"
-                    );
-                }
-            }
-            for (fg, bg, name) in [
-                (tokens.diff_added_fg, tokens.diff_added_bg, "added"),
-                (tokens.diff_removed_fg, tokens.diff_removed_bg, "removed"),
-            ] {
-                let ratio = contrast(fg.rgb, bg.rgb);
-                assert!(
-                    ratio >= READABLE_LABEL,
-                    "imported diff {name} is only {ratio:.1}:1"
-                );
-            }
-            assert!(
-                contrast(tokens.emphasis.rgb, tokens.text.rgb) >= SEPARATION,
-                "imported emphasis is the same colour as its body text"
-            );
-            assert_ne!(
-                tokens.diff_added_bg.rgb, tokens.diff_removed_bg.rgb,
-                "imported diff tints are the same colour"
-            );
-        }
-    }
-
-    /// The same has to hold once the palette is rounded to sixteen faces,
-    /// which is where an imported dark scheme used to disappear onto black.
-    #[test]
-    fn imported_ansi_faces_read_against_the_surfaces_they_land_on() {
-        for yaml in [BASE16_SAMPLE, BASE24_SAMPLE] {
-            let tokens = imported_mapping(yaml, ColorMode::Ansi).tokens;
-            let surfaces = [tokens.background, tokens.user_surface, tokens.panel];
-            for (fg, family, on) in [
-                (tokens.text, "text", &surfaces[..]),
-                (tokens.emphasis, "emphasis", &surfaces[..]),
-                (tokens.muted, "muted", &surfaces[..]),
-                (tokens.focus, "focus", &surfaces[..]),
-                (tokens.code, "code", &surfaces[..]),
-                (tokens.ok, "ok", &surfaces[..]),
-                (tokens.warning, "warning", &surfaces[..]),
-                (tokens.error, "error", &surfaces[..]),
-                (
-                    tokens.diff_added_fg,
-                    "diff added",
-                    &[tokens.diff_added_bg][..],
-                ),
-                (
-                    tokens.diff_removed_fg,
-                    "diff removed",
-                    &[tokens.diff_removed_bg][..],
-                ),
-            ] {
-                for surface in on {
-                    let ratio = contrast(ansi_rgb(fg.ansi), ansi_rgb(surface.ansi));
-                    assert!(
-                        ratio >= READABLE_TRIM,
-                        "imported {family} reads {ratio:.1}:1 as {:?} on {:?}",
-                        fg.ansi,
-                        surface.ansi
-                    );
-                }
-            }
-        }
     }
 
     /// The palettes are only a claim until something paints with them: walk
@@ -1811,10 +1184,6 @@ mod tests {
             Theme::dark(ColorMode::Ansi),
             Theme::light(ColorMode::TrueColor),
             Theme::light(ColorMode::Ansi),
-            imported_mapping(BASE16_SAMPLE, ColorMode::TrueColor),
-            imported_mapping(BASE16_SAMPLE, ColorMode::Ansi),
-            imported_mapping(BASE24_SAMPLE, ColorMode::TrueColor),
-            imported_mapping(BASE24_SAMPLE, ColorMode::Ansi),
         ] {
             let surface = match theme.mode {
                 ColorMode::TrueColor => theme.tokens.background.rgb,

@@ -5144,9 +5144,6 @@ pub struct CodexSnapshot {
     /// Codex's own approval policy, absent until Codex says.
     #[prost(string, optional, tag = "7")]
     pub approval_policy: ::core::option::Option<::prost::alloc::string::String>,
-    /// Absent while no turn is known to be running.
-    #[prost(string, optional, tag = "11")]
-    pub active_turn: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(message, repeated, tag = "12")]
     pub servers: ::prost::alloc::vec::Vec<ToolServer>,
     #[prost(message, optional, tag = "13")]

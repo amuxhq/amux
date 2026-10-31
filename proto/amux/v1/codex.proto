@@ -186,8 +186,6 @@ message CodexSnapshot {
   optional string mode = 6;
   // Codex's own approval policy, absent until Codex says.
   optional string approval_policy = 7;
-  // Absent while no turn is known to be running.
-  optional string active_turn = 11;
   repeated ToolServer servers = 12;
   CodexUsage usage = 13;
   SignIn sign_in = 14;

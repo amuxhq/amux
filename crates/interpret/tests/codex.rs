@@ -1804,7 +1804,8 @@ fn a_late_turn_start_answer_does_not_reopen_an_ended_turn() {
         agent.rpc(json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "completed"}}}));
         agent.rpc(json!({"id": start["id"], "result": {"turn": {"id": "turn-1"}}}));
         assert_eq!(
-            agent.snapshot.active_turn, None,
+            serde_json::to_value(&agent.state).unwrap()["active_turn"],
+            serde_json::Value::Null,
             "{method}'s late answer reopened the ended turn"
         );
     }

@@ -88,7 +88,6 @@ pub fn codex() -> CodexSnapshot {
         permission: None,
         mode: None,
         approval_policy: None,
-        active_turn: None,
         servers: Vec::new(),
         usage: Some(codex_usage()),
         sign_in: Some(sign_in()),

@@ -705,7 +705,6 @@ impl State {
                 .clone()
                 .filter(|mode| MODES.iter().any(|(value, _)| value == mode)),
             approval_policy: self.approval.clone(),
-            active_turn: self.active_turn.clone(),
             servers: self.servers.clone(),
             usage: Some(self.usage.clone().unwrap_or_else(unknown::codex_usage)),
             sign_in: Some(self.sign_in.clone().unwrap_or_else(unknown::sign_in)),
@@ -2247,7 +2246,7 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
             .map(|ask| (ask.key.clone(), ask.item_key.clone()))
             .collect(),
         text: format!(
-            "asks=[{}] thread={} turn={} model={} model_name={} effort={} permission={} mode={} approval={} context={} plan={} usage={} servers={} sign_in={} background={}",
+            "asks=[{}] thread={} model={} model_name={} effort={} permission={} mode={} approval={} context={} plan={} usage={} servers={} sign_in={} background={}",
             snapshot
                 .asks
                 .iter()
@@ -2255,7 +2254,6 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
                 .collect::<Vec<_>>()
                 .join("; "),
             snapshot.thread_id.as_deref().unwrap_or("?"),
-            snapshot.active_turn.as_deref().unwrap_or("-"),
             snapshot.model.as_deref().unwrap_or("?"),
             crate::claude_common::describe_model_name(snapshot.model_name.as_deref()),
             snapshot.effort.as_deref().unwrap_or("?"),

@@ -397,22 +397,6 @@ impl ReplayClock {
             .clone()
     }
 
-    pub async fn advance_one(&self) -> ReplayAdvance {
-        let Some(controller) = self.controller() else {
-            return ReplayAdvance::Exhausted;
-        };
-        let result = controller.advance_one().await;
-        if let ReplayAdvance::Advanced { event_us } = result {
-            let mut inner = self.inner.lock().expect("replay clock lock");
-            inner.current_us = Some(
-                inner
-                    .current_us
-                    .map_or(event_us, |current| current.max(event_us)),
-            );
-        }
-        result
-    }
-
     pub async fn advance_for(&self, duration: Duration) -> ReplayAdvance {
         let target_us = {
             let mut inner = self.inner.lock().expect("replay clock lock");
@@ -570,26 +554,8 @@ fn write_equals(actual: &str, expected: &str) -> bool {
     }
 }
 
-const CONTROL_RESPONSE: &str = "control_response";
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum WriteOrigin {
-    Caller,
-    Responder,
-}
-
-fn write_origin(line: &str) -> WriteOrigin {
-    match serde_json::from_str::<serde_json::Value>(line) {
-        Ok(value)
-            if value.get("type").and_then(serde_json::Value::as_str) == Some(CONTROL_RESPONSE) =>
-        {
-            WriteOrigin::Responder
-        }
-        _ => WriteOrigin::Caller,
-    }
-}
-
-/// Return the unmatched writes that the recording did not causally order.
+/// Return the unmatched writes that the recording did not causally order:
+/// the first of each transport's before the next read.
 fn concurrent_writes_from(state: &ReplayState, frontier: usize) -> Vec<usize> {
     let mut candidates: Vec<usize> = Vec::new();
     let mut index = frontier;
@@ -598,13 +564,11 @@ fn concurrent_writes_from(state: &ReplayState, frontier: usize) -> Vec<usize> {
             break;
         }
         if !state.matched_writes[index] {
-            let write = &state.expected_writes[index];
-            let origin = write_origin(&write.line);
-            if !candidates.iter().any(|&candidate| {
-                let candidate = &state.expected_writes[candidate];
-                candidate.transport_id == write.transport_id
-                    && write_origin(&candidate.line) == origin
-            }) {
+            let transport = &state.expected_writes[index].transport_id;
+            if !candidates
+                .iter()
+                .any(|&candidate| state.expected_writes[candidate].transport_id == *transport)
+            {
                 candidates.push(index);
             }
         }

@@ -1,5 +1,4 @@
 {
-  "schema_version": 2,
   "spec": "steer_folded",
   "recorded": {
     "provider": "claude",

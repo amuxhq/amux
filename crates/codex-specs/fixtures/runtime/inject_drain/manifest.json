@@ -1,5 +1,4 @@
 {
-  "schema_version": 2,
   "spec": "inject_drain",
   "recorded": {
     "provider": "codex",

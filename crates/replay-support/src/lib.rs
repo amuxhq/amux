@@ -9,9 +9,7 @@ pub mod transport;
 
 use std::path::Path;
 
-pub use manifest::{
-    MANIFEST_SCHEMA_VERSION, Manifest, Recorded, Recording, RecordingError, load_recording,
-};
+pub use manifest::{Manifest, Recorded, Recording, RecordingError, load_recording};
 pub use registry::{RegistryRow, SpecEntry, below_minimum, orphan_recordings, registry_rows};
 pub use sanitize::sanitize;
 pub use transport::{
@@ -74,8 +72,6 @@ fn parse_script(path: &Path) -> Result<Vec<IoEvent>, RecordingError> {
         };
         let transport_id = value
             .get("transport_id")
-            .or_else(|| value.get("spawn_id"))
-            .or_else(|| value.get("process_id"))
             .and_then(|v| v.as_str())
             .map(ToOwned::to_owned);
         let session_id = value

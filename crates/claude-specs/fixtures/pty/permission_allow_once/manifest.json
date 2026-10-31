@@ -1,5 +1,4 @@
 {
-  "schema_version": 2,
   "spec": "permission_allow_once",
   "recorded": {
     "provider": "claude",

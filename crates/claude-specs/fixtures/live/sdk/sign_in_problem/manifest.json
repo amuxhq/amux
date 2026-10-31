@@ -1,5 +1,4 @@
 {
-  "schema_version": 2,
   "spec": "sign_in_problem",
   "recorded": {
     "provider": "claude",

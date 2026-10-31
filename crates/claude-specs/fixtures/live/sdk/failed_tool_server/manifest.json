@@ -1,5 +1,4 @@
 {
-  "schema_version": 2,
   "spec": "failed_tool_server",
   "recorded": {
     "provider": "claude",

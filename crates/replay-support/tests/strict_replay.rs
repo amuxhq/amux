@@ -5,8 +5,8 @@ use std::time::Duration;
 use chrono::DateTime;
 use redaction::RedactionSummary;
 use replay_support::{
-    IoDirection, IoEvent, MANIFEST_SCHEMA_VERSION, Manifest, Recorded, Recording, ReplayAdvance,
-    ReplayController, ReplayTransport, strict_replay,
+    IoDirection, IoEvent, Manifest, Recorded, Recording, ReplayAdvance, ReplayController,
+    ReplayTransport, strict_replay,
 };
 use semver::Version;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
@@ -25,7 +25,6 @@ fn recording(io: Vec<IoEvent>) -> Recording {
     Recording {
         dir: PathBuf::from("synthetic"),
         manifest: Manifest {
-            schema_version: MANIFEST_SCHEMA_VERSION,
             spec: "strict_replay".to_string(),
             recorded: Recorded {
                 provider: "synthetic".to_string(),
@@ -161,7 +160,7 @@ async fn the_clock_delivers_what_falls_due_as_it_advances() {
     let mut slow = replay.transports.remove("slow").unwrap();
 
     assert_eq!(
-        replay.clock.advance_one().await,
+        replay.clock.advance_for(Duration::from_micros(10)).await,
         ReplayAdvance::Advanced { event_us: 10 }
     );
     let mut line = String::new();
@@ -178,52 +177,6 @@ async fn the_clock_delivers_what_falls_due_as_it_advances() {
 
     assert_eq!(replay.clock.current_us(), Some(20));
     replay.controller.finish().unwrap();
-}
-
-#[tokio::test]
-async fn strict_replay_accepts_concurrent_writes_in_either_order() {
-    let script = vec![
-        event(10, IoDirection::Read, r#"{"ask":"handshake"}"#, "session-a"),
-        event(
-            20,
-            IoDirection::Write,
-            r#"{"type":"user","message":"hello"}"#,
-            "session-a",
-        ),
-        event(
-            30,
-            IoDirection::Write,
-            r#"{"type":"control_response","response":{"request_id":"r1"}}"#,
-            "session-a",
-        ),
-        event(40, IoDirection::Read, r#"{"done":true}"#, "session-a"),
-    ];
-    let (mut transport, controller) = session(script);
-
-    controller.advance_one().await;
-    let mut line = String::new();
-    transport.reader.read_line(&mut line).await.unwrap();
-
-    transport
-        .writer
-        .write_all(b"{\"type\":\"control_response\",\"response\":{\"request_id\":\"r1\"}}\n")
-        .await
-        .unwrap();
-    transport
-        .writer
-        .write_all(b"{\"type\":\"user\",\"message\":\"hello\"}\n")
-        .await
-        .unwrap();
-    transport.writer.flush().await.unwrap();
-
-    assert_eq!(
-        controller.advance_one().await,
-        ReplayAdvance::Advanced { event_us: 40 }
-    );
-    line.clear();
-    transport.reader.read_line(&mut line).await.unwrap();
-    assert_eq!(line, "{\"done\":true}\n");
-    controller.finish().unwrap();
 }
 
 #[tokio::test]
@@ -245,7 +198,7 @@ async fn strict_replay_rejects_a_write_that_crosses_a_read() {
 }
 
 #[tokio::test]
-async fn strict_replay_rejects_reordering_writes_from_one_origin() {
+async fn strict_replay_rejects_reordering_writes_on_one_transport() {
     let script = vec![
         event(
             10,
@@ -299,7 +252,7 @@ async fn strict_replay_builds_named_transports_over_a_recording() {
     let mut beta = replay.transports.remove("beta").unwrap();
 
     assert_eq!(
-        replay.clock.advance_one().await,
+        replay.clock.advance_for(Duration::from_micros(10)).await,
         ReplayAdvance::Advanced { event_us: 10 }
     );
     let mut line = String::new();
@@ -307,7 +260,7 @@ async fn strict_replay_builds_named_transports_over_a_recording() {
     assert_eq!(line, "alpha-ready\n");
 
     assert_eq!(
-        replay.clock.advance_one().await,
+        replay.clock.advance_for(Duration::from_micros(10)).await,
         ReplayAdvance::Advanced { event_us: 20 }
     );
     line.clear();
@@ -393,7 +346,10 @@ async fn closing_named_replay_reads_delivers_eof_while_clock_stays_alive() {
         assert_eq!(received, expected);
     }
     assert!(replay.controller.finish().unwrap().is_complete());
-    assert_eq!(replay.clock.advance_one().await, ReplayAdvance::Exhausted);
+    assert_eq!(
+        replay.clock.advance_for(Duration::from_micros(10)).await,
+        ReplayAdvance::Exhausted
+    );
 }
 
 #[tokio::test]

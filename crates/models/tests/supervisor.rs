@@ -1,7 +1,7 @@
 //! The supervisor's updates explored over the real supervisor core at the
-//! bounds `just test` runs, and walked by seed.
+//! bounds `just test` runs.
 
-use models::{Bounds, SupervisorUpdate, check, walk};
+use models::{Bounds, SupervisorUpdate, check};
 
 fn holds(name: &str, model: &SupervisorUpdate) {
     let threads = models::threads();
@@ -18,26 +18,6 @@ fn every_update_promise_holds_where_a_running_binary_can_be_replaced() {
 #[test]
 fn every_update_promise_holds_where_the_daemon_stops_before_the_swap() {
     holds("stop before the swap", &SupervisorUpdate::windows());
-}
-
-#[test]
-fn one_seed_walks_one_update_schedule() {
-    let model = SupervisorUpdate::ci();
-    let bounds = Bounds::depth(30);
-    let first = walk(&model, bounds, 7);
-    let again = walk(&model, bounds, 7);
-    println!("{first}");
-    assert_eq!(
-        first.actions, again.actions,
-        "one seed walked two schedules"
-    );
-    assert_eq!(first.failure, again.failure);
-    assert!(first.failure.is_none(), "{first}");
-    let other = walk(&model, bounds, 8);
-    assert_ne!(
-        first.actions, other.actions,
-        "two seeds walked one schedule"
-    );
 }
 
 /// The nightly bounds, run by hand or by the nightly recipe.

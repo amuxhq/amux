@@ -1,7 +1,7 @@
 //! The agent lifecycle explored over the real agent core at the bounds
-//! `just test` runs, and walked by seed.
+//! `just test` runs.
 
-use models::{AgentLifecycle, Bounds, check, walk};
+use models::{AgentLifecycle, Bounds, check};
 
 fn holds(name: &str, model: &AgentLifecycle) {
     let threads = models::threads();
@@ -18,26 +18,6 @@ fn every_lifecycle_promise_holds_for_a_one_shot_child_at_ci_bounds() {
 #[test]
 fn every_lifecycle_promise_holds_for_an_agent_without_a_parent_at_ci_bounds() {
     holds("parentless agent", &AgentLifecycle::parentless());
-}
-
-#[test]
-fn one_seed_walks_one_lifecycle_schedule() {
-    let model = AgentLifecycle::ci();
-    let bounds = Bounds::depth(30);
-    let first = walk(&model, bounds, 7);
-    let again = walk(&model, bounds, 7);
-    println!("{first}");
-    assert_eq!(
-        first.actions, again.actions,
-        "one seed walked two schedules"
-    );
-    assert_eq!(first.failure, again.failure);
-    assert!(first.failure.is_none(), "{first}");
-    let other = walk(&model, bounds, 8);
-    assert_ne!(
-        first.actions, other.actions,
-        "two seeds walked one schedule"
-    );
 }
 
 /// The nightly bounds, run by hand or by the nightly recipe: twelve million

@@ -392,7 +392,7 @@ verdict does not depend on the number of threads, only which of several
 counterexamples is printed.
 
 A walk is reproducible: one seed walks one schedule on every run, and
-another seed walks another (`one_seed_walks_one_replication_schedule`).
+another seed walks another (the switch's `one_seed_walks_one_schedule`).
 
 Run the models with `just test-crate models`, one with
 `just suite protocol-models <model>::` (each model is a module of the

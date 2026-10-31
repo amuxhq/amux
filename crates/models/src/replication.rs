@@ -96,9 +96,6 @@ pub struct Replication {
     pub losses: u8,
     /// How many times the replica's early data is replayed.
     pub replays: u8,
-    /// Adds the deliberately wrong promise that the block stays empty, to
-    /// show what a failure prints.
-    pub wrong: bool,
 }
 
 impl Replication {
@@ -113,7 +110,6 @@ impl Replication {
             in_flight: 2,
             losses: 1,
             replays: 1,
-            wrong: false,
         }
     }
 
@@ -498,7 +494,7 @@ impl Machine for Replication {
     }
 
     fn properties(&self) -> Vec<Property<Self>> {
-        let mut properties: Vec<Property<Self>> = vec![
+        let properties: Vec<Property<Self>> = vec![
             Property::always("the store never refuses a write", |_, s: &State| {
                 s.refused.is_none()
             }),
@@ -556,12 +552,6 @@ impl Machine for Replication {
                 |model: &Self, s: &State| model.quiet(s) && s.current(),
             ),
         ];
-        if self.wrong {
-            properties.push(Property::always(
-                "the block is never non-empty",
-                |_, s: &State| s.view(|_, replica| replica.block(&agent()).unwrap().is_empty()),
-            ));
-        }
         properties
     }
 }

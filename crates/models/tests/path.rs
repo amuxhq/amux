@@ -28,9 +28,10 @@ fn every_path_machine_promise_holds_at_ci_bounds() {
     }
 }
 
+/// A walk is cheap, so one walks a world with everything in it, past what
+/// the exhaustive worlds can hold.
 #[test]
-fn one_seed_walks_one_path_machine_schedule() {
-    // A walk is cheap, so it walks a world with everything in it.
+fn a_walk_through_a_world_with_everything_breaks_no_path_promise() {
     let model = PathModel {
         forwarding_drops: 1,
         outages: 1,
@@ -39,21 +40,9 @@ fn one_seed_walks_one_path_machine_schedule() {
         framed: true,
         ..PathModel::ci_answers()
     };
-    let bounds = Bounds::depth(40);
-    let first = walk(&model, bounds, 7);
-    let again = walk(&model, bounds, 7);
-    println!("{first}");
-    assert_eq!(
-        first.actions, again.actions,
-        "one seed walked two schedules"
-    );
-    assert_eq!(first.failure, again.failure);
-    assert!(first.failure.is_none(), "{first}");
-    let other = walk(&model, bounds, 8);
-    assert_ne!(
-        first.actions, other.actions,
-        "two seeds walked one schedule"
-    );
+    let walked = walk(&model, Bounds::depth(40), 7);
+    println!("{walked}");
+    assert!(walked.failure.is_none(), "{walked}");
 }
 
 /// The nightly bounds, run by hand or by the nightly recipe.

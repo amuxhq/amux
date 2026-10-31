@@ -1,8 +1,8 @@
 //! The relay's forwarding explored over the real relay core at the bounds
 //! `just test` runs, as the cloud relay and as a daemon forwarding between
-//! its paired hosts, and walked by seed.
+//! its paired hosts.
 
-use models::{Bounds, RelayModel, check, walk};
+use models::{Bounds, RelayModel, check};
 
 fn holds(model: &RelayModel) {
     let threads = models::threads();
@@ -24,26 +24,6 @@ fn every_relay_forwarding_promise_holds_across_a_purchase_at_ci_bounds() {
 #[test]
 fn every_relay_forwarding_promise_holds_for_a_daemon_forwarding_at_ci_bounds() {
     holds(&RelayModel::daemon());
-}
-
-#[test]
-fn one_seed_walks_one_relay_schedule() {
-    let model = RelayModel::ci();
-    let bounds = Bounds::depth(40);
-    let first = walk(&model, bounds, 7);
-    let again = walk(&model, bounds, 7);
-    println!("{first}");
-    assert_eq!(
-        first.actions, again.actions,
-        "one seed walked two schedules"
-    );
-    assert_eq!(first.failure, again.failure);
-    assert!(first.failure.is_none(), "{first}");
-    let other = walk(&model, bounds, 8);
-    assert_ne!(
-        first.actions, other.actions,
-        "two seeds walked one schedule"
-    );
 }
 
 /// The nightly bounds, run by hand or by the nightly recipe.

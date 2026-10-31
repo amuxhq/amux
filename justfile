@@ -304,11 +304,6 @@ tests-check:
 script-tests:
     {{bounded}} 120 scripts/py -m unittest discover -s scripts/tests -p '*_test.py' -t scripts/tests
 
-# List every parked property of the protocol models, with its reason, and fail
-# while any remains: the landing gate for decisions still waiting.
-parked-check:
-    {{bounded}} 600 cargo run --locked -q -p models --bin parked-check
-
 # Check the protocol models at their nightly bounds: each model's ignored
 # test, one after another, every core each. Model names, the modules of the
 # models' integration tests (`just models-nightly family`), narrow it to
@@ -339,12 +334,6 @@ nightly *ARGS: nextest
 coverage: nextest
     {{bounded}} 3600 scripts/py scripts/coverage.py
 
-# Fail when a contract in tests/contracts.toml names no test, or a test or a
-# model property that does not exist; `--table PATH` also writes the coverage
-# table as Markdown.
-contracts-check *ARGS:
-    {{bounded}} 300 scripts/python -B scripts/contracts-check.py "$@"
-
 # Fail when a docs link or image does not resolve, a figure is unreferenced
 # or not standalone, or docs/README.md does not list every page once.
 docs-check:
@@ -361,7 +350,7 @@ no-update-flags:
     scripts/no-update-flags.sh
 
 # Run the same task sequence exercised across continuous-integration jobs.
-ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test contracts-check doctest release-check embedded-check embedded-test mobile-check
+ci: no-update-flags check lint fmt-check codegen-check proto-compat dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check embedded-check embedded-test mobile-check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,

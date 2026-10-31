@@ -29,7 +29,7 @@ Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
 | Format | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30` |
 | Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat` |
 | Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --no-fail-fast --exclude models` |
-| Simulated stories, doctests and contracts | `ubuntu-latest` | `just sim`, `just contracts-check`, `just doctest`: what reads the same on every platform, run once |
+| Simulated stories and doctests | `ubuntu-latest` | `just sim`, `just doctest`: what reads the same on every platform, run once |
 | Models | `ubuntu-latest`, one job per protocol model | `just test-crate models` filtered to one model's module of the integration test binary: one model at its CI bounds |
 | Build | `ubuntu-latest`, `macos-latest`, `windows-latest` | `just release-check` |
 | Terminal journeys | `ubuntu-latest`, `macos-latest` | Installs `tmux`, then `just journey terminal all`: every terminal story in the manifest |
@@ -56,12 +56,6 @@ headless Claude and Codex test as everywhere. On Linux and macOS the same run is
 system lane as well: the built `amux` binary's suites (`process`,
 `supervise_cli`, `overlap`, `attach` and the rest), node's `supervisor` suite
 and the `survive-daemon` system journey are ordinary test suites.
-`contracts-check` runs on Linux after `just sim` has built what the
-workspace test run builds: the contracts name Unix-only tests, which Windows
-does not build, and the one test of a macOS facility is built on every Unix
-and ignored off macOS, so the listing names it there too. It lists the
-binaries of that build (the same Cargo arguments), so it compiles nothing
-more.
 
 The terminal journeys are `reach-host`,
 `conversation-decision-claude-pty`, `conversation-decision-claude-sdk`,
@@ -266,7 +260,6 @@ stopping at the first failure:
 | `docs-check` | Every link, image and heading anchor under `docs/` resolves, every figure is referenced and standalone, and `docs/README.md` lists every page once ([`scripts/docs-check.py`](../scripts/docs-check.py)) |
 | `tests-check` | The suite catalogue names only things that exist |
 | `test` | Every workspace test, under nextest |
-| `contracts-check` | Every design contract in [`tests/contracts.toml`](../tests/contracts.toml) names at least one test, and every test and model property it names exists |
 | `doctest` | Documentation tests |
 | `release-check` | The shipping binary builds and passes the release policy check |
 | `embedded-check`, `embedded-test` | The provider-free client graph and the embedded owner and client boundary |

@@ -1,7 +1,7 @@
 //! The checker on the smallest machine there is: a switch that flips a lamp,
 //! and a fragile lamp that may burn out for good.
 
-use models::{Bounds, Machine, Outcome, Parked, Property, check, walk};
+use models::{Bounds, Machine, Outcome, Property, check, walk};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Lamp {
@@ -175,52 +175,4 @@ fn a_walk_reports_the_seed_and_prefix_of_a_failure() {
     let replayed = walk(&switch, Bounds::depth(12), failing.seed);
     assert_eq!(replayed.actions, failing.actions);
     assert_eq!(replayed.failure, failing.failure);
-}
-
-#[test]
-fn a_parked_property_is_reported_with_its_reason_and_not_explored() {
-    #[derive(Clone)]
-    struct Waiting;
-    const PARKED: Parked = Parked {
-        since: "2026-10-18",
-        counterexample: "Flip, BurnOut",
-        reason: "whether a lamp may burn out waits on a decision",
-    };
-    impl Machine for Waiting {
-        type State = Lamp;
-        type Action = Act;
-        fn init(&self) -> Lamp {
-            Switch { fragile: true }.init()
-        }
-        fn actions(&self, lamp: &Lamp, out: &mut Vec<Act>) {
-            Switch { fragile: true }.actions(lamp, out);
-        }
-        fn next(&self, lamp: &Lamp, act: &Act) -> Option<Lamp> {
-            Switch { fragile: true }.next(lamp, act)
-        }
-        fn properties(&self) -> Vec<Property<Self>> {
-            vec![
-                Property::always("the lamp never burns out", |_, lamp: &Lamp| {
-                    *lamp != Lamp::Burnt
-                })
-                .parked(PARKED),
-                Property::sometimes("the lamp is sometimes lit", |_, lamp: &Lamp| {
-                    *lamp == Lamp::On
-                }),
-            ]
-        }
-    }
-    let verdict = check(&Waiting, Bounds::exhaustive());
-    println!("{verdict}");
-    assert!(verdict.holds(), "a parked property keeps the verdict green");
-    assert_eq!(
-        verdict.outcome("the lamp never burns out"),
-        Some(&Outcome::Parked(PARKED))
-    );
-    assert!(
-        verdict
-            .to_string()
-            .contains("whether a lamp may burn out waits on a decision")
-    );
-    assert!((0..32).all(|seed| walk(&Waiting, Bounds::depth(12), seed).failure.is_none()));
 }

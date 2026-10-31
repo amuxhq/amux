@@ -563,10 +563,10 @@ loss and unclean reboots:
 | single daemon | commit before broadcast; the open is one cut; a segment is reclaimed only below the last checkpoint's cursor; the generation bumps after an unclean reboot, and only then; a checkpoint plus the inputs since reproduces the state |
 | replication | a replica's block is contiguous and agrees with the origin; no row survives from another generation; the cursor is complete |
 
-`cargo run -p models --bin properties` prints each in full. What the models
-do not reach, the files themselves (a torn tail, a frame cut at a byte, a
-store of another schema, the SQLite file on another platform), is held by named tests,
-mapped in [`tests/contracts.toml`](../tests/contracts.toml). The main ones:
+Each is written in full in the models' `src/single_daemon.rs` and
+`src/replication.rs`. What the models do not reach, the files themselves (a
+torn tail, a frame cut at a byte, a store of another schema, the SQLite file
+on another platform), is held by named tests. The main ones:
 
 | Where | What it holds |
 | --- | --- |

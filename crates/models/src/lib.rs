@@ -38,63 +38,6 @@ pub use single_daemon::SingleDaemon;
 pub use socket::SocketModel;
 pub use supervisor::SupervisorUpdate;
 
-/// One property of the protocol's models, as [`properties`] lists it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Listed {
-    /// The model's name: "replication", "single daemon", "composed net", ...
-    pub model: &'static str,
-    pub kind: PropertyKind,
-    pub sentence: &'static str,
-    pub parked: Option<Parked>,
-}
-
-/// Every property of the protocol's models at the bounds `just test` runs,
-/// each once: the composed net's topologies share one list. The contracts
-/// check names a model's property by its model and sentence, read from
-/// here by the `properties` binary.
-pub fn properties() -> Vec<Listed> {
-    fn of<M: Machine>(model: &'static str, machine: &M) -> Vec<Listed> {
-        machine
-            .properties()
-            .into_iter()
-            .map(|property| Listed {
-                model,
-                kind: property.kind,
-                sentence: property.sentence,
-                parked: property.parked,
-            })
-            .collect()
-    }
-    let mut listed = of("replication", &Replication::ci());
-    listed.extend(of("single daemon", &SingleDaemon::ci()));
-    listed.extend(of("presence and routing", &PresenceRouting::ci()));
-    listed.extend(of("family and deliveries", &FamilyDeliveries::ci()));
-    listed.extend(of("agent lifecycle", &AgentLifecycle::ci()));
-    listed.extend(of("supervisor update", &SupervisorUpdate::ci()));
-    listed.extend(of("client", &ClientModel::ci()));
-    listed.extend(of("path machine", &PathModel::ci()));
-    listed.extend(of("relay forwarding", &RelayModel::ci()));
-    listed.extend(of("link socket", &SocketModel::ci()));
-    for (_, model) in ComposedNet::ci() {
-        for property in of("composed net", &model) {
-            if !listed.contains(&property) {
-                listed.push(property);
-            }
-        }
-    }
-    listed
-}
-
-/// Every parked property of the protocol's models: the model, the
-/// property's sentence and why it is parked. The landing gate,
-/// `just parked-check`, fails while this is not empty.
-pub fn parked() -> Vec<(&'static str, &'static str, Parked)> {
-    properties()
-        .into_iter()
-        .filter_map(|listed| Some((listed.model, listed.sentence, listed.parked?)))
-        .collect()
-}
-
 /// How many threads a model's test explores with: every core. The verdict
 /// is the same on any number of threads; only which counterexample is
 /// printed may differ.
@@ -162,23 +105,6 @@ pub struct Property<M: Machine> {
     pub kind: PropertyKind,
     pub sentence: &'static str,
     pub holds: fn(&M, &M::State) -> bool,
-    /// Set while a decision about the property waits: the checker reports
-    /// it with its reason instead of exploring it.
-    pub parked: Option<Parked>,
-}
-
-/// A property whose decision waits, with the counterexample that raised it
-/// and why it waits. The property keeps its sentence and predicate as they
-/// were written; it is never weakened to pass. `just parked-check` fails
-/// while any property is parked.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Parked {
-    /// The date it was parked.
-    pub since: &'static str,
-    /// The path to the failing state, as the checker printed it, in short.
-    pub counterexample: &'static str,
-    /// What decision it waits on.
-    pub reason: &'static str,
 }
 
 impl<M: Machine> Property<M> {
@@ -187,7 +113,6 @@ impl<M: Machine> Property<M> {
             kind: PropertyKind::Always,
             sentence,
             holds,
-            parked: None,
         }
     }
 
@@ -196,7 +121,6 @@ impl<M: Machine> Property<M> {
             kind: PropertyKind::Sometimes,
             sentence,
             holds,
-            parked: None,
         }
     }
 
@@ -205,15 +129,6 @@ impl<M: Machine> Property<M> {
             kind: PropertyKind::Eventually,
             sentence,
             holds,
-            parked: None,
-        }
-    }
-
-    /// Parks the property while a decision about it waits.
-    pub fn parked(self, parked: Parked) -> Self {
-        Self {
-            parked: Some(parked),
-            ..self
         }
     }
 }
@@ -224,7 +139,6 @@ impl<M: Machine> Clone for Property<M> {
             kind: self.kind,
             sentence: self.sentence,
             holds: self.holds,
-            parked: self.parked,
         }
     }
 }
@@ -297,8 +211,6 @@ pub enum Outcome {
     Fails(Counterexample),
     /// A `Sometimes` held in no explored state.
     NeverReached,
-    /// Not explored: the property is parked while a decision waits.
-    Parked(Parked),
 }
 
 /// One property's sentence and outcome.
@@ -320,7 +232,7 @@ impl Verdict {
     pub fn holds(&self) -> bool {
         self.properties
             .iter()
-            .all(|judged| matches!(judged.outcome, Outcome::Holds | Outcome::Parked(_)))
+            .all(|judged| matches!(judged.outcome, Outcome::Holds))
     }
 
     /// The outcome of the property with this sentence.
@@ -347,13 +259,8 @@ impl Display for Verdict {
                 Outcome::Holds => ("holds", None),
                 Outcome::Fails(path) => ("FAILS", Some(path)),
                 Outcome::NeverReached => ("NEVER REACHED", None),
-                Outcome::Parked(_) => ("PARKED", None),
             };
             writeln!(f, "  {mark}: {:?} {}", judged.kind, judged.sentence)?;
-            if let Outcome::Parked(parked) = &judged.outcome {
-                writeln!(f, "    since {}: {}", parked.since, parked.reason)?;
-                writeln!(f, "    counterexample: {}", parked.counterexample)?;
-            }
             if let Some(path) = path {
                 for (step, (action, state)) in path.actions.iter().zip(&path.states).enumerate() {
                     writeln!(f, "    {}. {action}\n       {state}", step + 1)?;
@@ -387,13 +294,6 @@ fn judge<M: Machine>(model: &M, checker: &impl Checker<Adapter<M>>, started: Ins
     let judged = properties
         .iter()
         .map(|property| {
-            if let Some(parked) = property.parked {
-                return Judged {
-                    kind: property.kind,
-                    sentence: property.sentence,
-                    outcome: Outcome::Parked(parked),
-                };
-            }
             let found = checker.discovery(property.sentence);
             let outcome = match (property.kind, found) {
                 (PropertyKind::Sometimes, Some(_)) => Outcome::Holds,
@@ -492,11 +392,7 @@ impl<M: Machine> Display for Walk<M> {
 /// schedule on every run; every property is judged on every state reached.
 pub fn walk<M: Machine>(model: &M, bounds: Bounds, seed: u64) -> Walk<M> {
     let depth = bounds.depth.expect("a walk needs a depth bound");
-    let properties: Vec<_> = model
-        .properties()
-        .into_iter()
-        .filter(|property| property.parked.is_none())
-        .collect();
+    let properties = model.properties();
     let mut chooser = <UniformChooser as Chooser<Adapter<M>>>::new_state(&UniformChooser, seed);
     let mut walk = Walk {
         seed,
@@ -593,12 +489,7 @@ impl<M: Machine> Adapter<M> {
         }
         Self {
             machine: machine.clone(),
-            properties: Arc::new(
-                properties
-                    .into_iter()
-                    .filter(|property| property.parked.is_none())
-                    .collect(),
-            ),
+            properties: Arc::new(properties),
         }
     }
 }

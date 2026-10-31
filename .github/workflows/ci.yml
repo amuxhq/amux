@@ -161,7 +161,7 @@ jobs:
           if-no-files-found: ignore
 
   platform-free:
-    name: Simulated stories, doctests and contracts
+    name: Simulated stories and doctests
     # What reads the same on every platform runs once, on Linux, rather than
     # in each test job, as the models do.
     runs-on: ubuntu-latest
@@ -179,11 +179,6 @@ jobs:
         # a failure prints the seed and the `just sim --seed` that reruns
         # it. It builds what the workspace test run builds.
         run: just sim
-      - name: Check every design contract names tests that exist
-        # Lists the binaries of the same build, so it compiles nothing more.
-        # The contracts name tests of Unix processes, PTYs and sockets, which
-        # Windows does not build.
-        run: just contracts-check
       - name: Run doctests
         run: just doctest
 

@@ -40,7 +40,7 @@ use calls::{CallTable, Carried};
 use core_ring::{DumpLimit, Ring};
 use daemon_core::payload::{
     Answer, BlobRefusal, CallError, ChannelClass, ChannelError, ClientRequest, JobResult,
-    PeerFailure, PeerReply, PeerRequest, PublicKey, Response, Status,
+    PeerFailure, PeerReply, PeerRequest, Response, Status,
 };
 use daemon_core::{
     CallId, ChannelId, Daemon, DrainReport, HostId, IngestEnd, Ingested, Input, Job, JobId, LinkId,
@@ -325,22 +325,16 @@ impl Driver {
         let _ = self.inputs.try_send(Fed::Wake);
     }
 
-    /// Asks the core for a channel to `peer` over `link`, with the key the
-    /// shell pinned for the peer, and waits for its word.
+    /// Asks the core for a channel to `peer` over `link`, and waits for
+    /// its word.
     pub(crate) async fn want_channel(
         &self,
         link: LinkId,
         peer: HostId,
         class: ChannelClass,
-        pin: Option<PublicKey>,
     ) -> Result<Opened, ChannelError> {
         let (reply, word) = oneshot::channel();
-        let want = Input::WantChannel {
-            link,
-            peer,
-            class,
-            pin,
-        };
+        let want = Input::WantChannel { link, peer, class };
         if self
             .inputs
             .send(Fed::Channel { want, reply })

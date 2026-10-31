@@ -360,7 +360,7 @@ impl Edge {
                 .relaying()
                 .report_to(runtime.reports.clone(), runtime.analytics().clone());
         }
-        let channels = Arc::new(ChannelPool::new(links, trust.clone()));
+        let channels = Arc::new(ChannelPool::new(links));
         let connections = ConnectionManager::new(channels.clone(), analytics.clone());
         if let Some(runtime) = runtime.upgrade() {
             runtime

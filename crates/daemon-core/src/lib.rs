@@ -278,12 +278,7 @@ impl Daemon {
             Input::Timer {
                 id: TimerId::Refresh(link),
             } => self.refresh_due(link, out),
-            Input::WantChannel {
-                link,
-                peer,
-                class,
-                pin,
-            } => self.want_channel(link, peer, class, pin, out),
+            Input::WantChannel { link, peer, class } => self.want_channel(link, peer, class, out),
             Input::ChannelOpened { channel } => self.channel_opened(channel),
             Input::ChannelClosed { channel } => self.channel_closed(channel),
             Input::PlanChanged => self.plan_changed(out),

@@ -24,7 +24,6 @@ use crate::driver::CoreLinks;
 use crate::identity::IdentityError;
 use crate::routing::{LinkId, LinkRegistry, Route};
 use crate::transport::{Compressed, channel_from_single_io};
-use crate::trust::SharedTrustStore;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -351,8 +350,6 @@ pub struct ChannelPool {
     opening: std::sync::Mutex<HashMap<ChannelKey, Arc<tokio::sync::Mutex<()>>>>,
     lifetimes: RwLock<HashMap<ChannelKey, Vec<Weak<CancellationToken>>>>,
     links: Arc<LinkRegistry>,
-    /// Where the key the core opens a channel under is pinned.
-    trust_store: SharedTrustStore,
     /// How a link through a forwarder is dialled, once the edge is up.
     forwarded: OnceLock<Arc<dyn ForwardedDial>>,
     /// How a link resuming with a ticket is dialled, once the edge is up.
@@ -385,25 +382,15 @@ impl Drop for Telling {
 }
 
 impl ChannelPool {
-    pub(crate) fn new(links: Arc<LinkRegistry>, trust_store: SharedTrustStore) -> Self {
+    pub(crate) fn new(links: Arc<LinkRegistry>) -> Self {
         Self {
             by_key: RwLock::new(HashMap::new()),
             opening: std::sync::Mutex::new(HashMap::new()),
             lifetimes: RwLock::new(HashMap::new()),
             links,
-            trust_store,
             forwarded: OnceLock::new(),
             resumed: OnceLock::new(),
         }
-    }
-
-    /// The key pinned for `peer`, which the core opens its channels under.
-    fn pinned(&self, peer: HostId) -> Option<Vec<u8>> {
-        self.trust_store
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .pubkey_for_host(peer)
-            .map(<[u8]>::to_vec)
     }
 
     /// Dials links through forwarders with `dial` from now on.
@@ -517,8 +504,7 @@ impl ChannelPool {
         lifetime: Arc<CancellationToken>,
     ) {
         if let Some(core) = self.links.core() {
-            let pinned = self.pinned(key.peer);
-            match core.want_channel(link, key.peer, key.class, pinned).await {
+            match core.want_channel(link, key.peer, key.class).await {
                 Ok(opening) => {
                     core.opened(opening.channel);
                     ended.arm(core.clone(), opening.channel);
@@ -611,10 +597,7 @@ impl ChannelPool {
         // A channel opens at the profile core's word, which refuses a host
         // no key is pinned for.
         let core = self.links.core().ok_or_else(unavailable)?;
-        let telling = match core
-            .want_channel(link, key.peer, key.class, self.pinned(key.peer))
-            .await
-        {
+        let telling = match core.want_channel(link, key.peer, key.class).await {
             Ok(opening) => Telling {
                 core: core.clone(),
                 channel: opening.channel,
@@ -1050,10 +1033,7 @@ mod tests {
 
     #[test]
     fn dropping_a_link_a_route_or_a_host_forgets_their_opener_locks() {
-        let pool = ChannelPool::new(
-            Arc::new(LinkRegistry::new(crate::HostId::nil())),
-            SharedTrustStore::default(),
-        );
+        let pool = ChannelPool::new(Arc::new(LinkRegistry::new(crate::HostId::nil())));
         let host = Uuid::new_v4();
         let relay = Uuid::new_v4();
         let other = Uuid::new_v4();
@@ -1157,6 +1137,7 @@ mod tests {
         use crate::link::{LinkEndpoint, QuicCarrier};
         use crate::routing::{Capabilities, Host, LiveLocalHost};
         use crate::transport::BoxedGrpcIo;
+        use crate::trust::SharedTrustStore;
 
         /// Counts the calls a host answered, by method.
         #[derive(Clone, Default)]
@@ -1469,7 +1450,7 @@ mod tests {
         fn dialler(identity: DeviceIdentity, host: &DeviceIdentity, at: &LoopbackHost) -> Dialler {
             let links = Arc::new(LinkRegistry::new(identity.host_id));
             let trust = trust_for(host);
-            let pool = ChannelPool::new(links.clone(), trust.clone());
+            let pool = ChannelPool::new(links.clone());
             let dial = Arc::new(LoopbackDial {
                 // Handshakes take a fifth of a second, so the early calls
                 // are written before they finish.

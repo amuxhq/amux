@@ -56,8 +56,8 @@ async fn remote_entry_carries_version_and_capabilities() {
 
 /// A link and the channels over it reach the profile's core as decoded
 /// inputs, never as streams: the link coming up, what the peer's handshake
-/// says it reaches, each channel the core said to open with the key the
-/// peer was paired under, and the link going.
+/// says it reaches, each channel the shell asked of the core, and the link
+/// going.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_link_and_its_channels_reach_the_core_as_inputs() {
     use daemon_core::Input;
@@ -126,21 +126,16 @@ async fn a_link_and_its_channels_reach_the_core_as_inputs() {
         )),
         "the desk's answer to the laptop's hello reached the core"
     );
-    let Some((wanted, pin)) = seen.iter().find_map(|input| match input {
-        Input::WantChannel {
-            link,
-            peer,
-            class: ChannelClass::Calls,
-            pin,
-        } if *link == up.0 && *peer == desk_host => Some((link, pin.clone())),
-        _ => None,
-    }) else {
-        panic!("a calls channel was asked of the core: {seen:?}");
-    };
-    assert_eq!(*wanted, up.0);
     assert!(
-        pin.is_some_and(|pin| !pin.0.is_empty()),
-        "the channel was asked with the key the desk was paired under"
+        seen.iter().any(|input| matches!(
+            input,
+            Input::WantChannel {
+                link,
+                peer,
+                class: ChannelClass::Calls,
+            } if *link == up.0 && *peer == desk_host
+        )),
+        "a calls channel was asked of the core: {seen:?}"
     );
 
     link.sever();

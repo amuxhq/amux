@@ -5,7 +5,7 @@ use wire::{Hello, Message, NeighborUp};
 use super::*;
 use crate::ids::{CallId, JobId};
 use crate::io::{Input, Job};
-use crate::payload::{CarrierKind, ChannelClass, ClientRequest, JobResult, PublicKey};
+use crate::payload::{CarrierKind, ChannelClass, ClientRequest, JobResult};
 use crate::trust::{Reachability, TrustStore};
 use crate::{StartOptions, StepBudget};
 
@@ -115,7 +115,6 @@ fn channel(daemon: &mut Daemon, link: u64, peer: HostId) -> ChannelId {
             link: LinkId(link),
             peer,
             class: ChannelClass::Calls,
-            pin: Some(PublicKey(vec![7; 32])),
         },
     );
     let channel = out

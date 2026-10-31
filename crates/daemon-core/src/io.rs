@@ -70,15 +70,13 @@ pub enum Input {
         /// one is set: a purchase then reaches the link within it.
         free_every_ms: Option<u64>,
     },
-    /// The profile's shell wants a channel to `peer` over `link`. Until
-    /// the machines that open channels move into the core, the shell asks,
-    /// and the key it pinned for the peer rides on the request; the core
-    /// answers with [`Output::OpenChannel`] or [`Output::ChannelRefused`].
+    /// The profile's shell wants a channel to `peer` over `link`. The
+    /// core answers with [`Output::OpenChannel`], under the key it pins
+    /// for the peer, or [`Output::ChannelRefused`].
     WantChannel {
         link: LinkId,
         peer: HostId,
         class: ChannelClass,
-        pin: Option<PublicKey>,
     },
     /// A channel the core asked for is open, after the driver's handshake
     /// verified the pin the core gave it.
@@ -815,7 +813,6 @@ mod tests {
                 link: LinkId(1),
                 peer: HostId([1; 16]),
                 class: ChannelClass::Session,
-                pin: Some(PublicKey(vec![7; 32])),
             },
             Input::ChannelOpened {
                 channel: ChannelId(4),

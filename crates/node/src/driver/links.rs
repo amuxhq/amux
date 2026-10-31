@@ -2,8 +2,7 @@
 
 use std::sync::Weak;
 
-use daemon_core::payload::{self, PublicKey};
-use daemon_core::{ChannelId, Input};
+use daemon_core::{ChannelId, Input, payload};
 
 use super::Opened;
 use crate::HostId;
@@ -46,27 +45,20 @@ impl CoreLinks {
         runtime.driver().resumed(up).await
     }
 
-    /// Asks the core for a channel to `peer` over `link`, with the key the
-    /// shell pinned for the peer: the id and key to open it under, or why
-    /// it is not opened.
+    /// Asks the core for a channel to `peer` over `link`: the id to open
+    /// it under, or why it is not opened.
     pub(crate) async fn want_channel(
         &self,
         link: LinkId,
         peer: HostId,
         class: ChannelClass,
-        pin: Option<Vec<u8>>,
     ) -> Result<Opened, payload::ChannelError> {
         let Some(runtime) = self.0.upgrade() else {
             return Err(payload::ChannelError::LinkClosed);
         };
         runtime
             .driver()
-            .want_channel(
-                link.core(),
-                core_host(peer),
-                core_class(class),
-                pin.map(PublicKey),
-            )
+            .want_channel(link.core(), core_host(peer), core_class(class))
             .await
     }
 

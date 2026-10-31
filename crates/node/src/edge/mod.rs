@@ -660,43 +660,6 @@ impl Edge {
         Ok(crate::link::peer_client(self.channel(host).await?))
     }
 
-    /// Brings up a link to `host` on every path the core knows it by,
-    /// resuming with the ticket its last link left and writing `early`
-    /// before the handshake finishes, beside whatever the core dials; see
-    /// [`crate::link::ChannelPool::open_resumed_on`].
-    pub async fn open_resumed(
-        &self,
-        host: HostId,
-        early: Vec<crate::EarlyCall>,
-    ) -> Result<crate::ResumedLink, crate::link::ChannelError> {
-        let core = crate::routing::core_host(host);
-        let plan = self
-            .runtime
-            .upgrade()
-            .ok_or(crate::link::ChannelError::LinkUnavailable { host_id: host })?
-            .driver()
-            .look(move |daemon| daemon.dial_plan(core))
-            .await
-            .unwrap_or_default();
-        let flight = crate::link::channels::Flight {
-            paths: plan
-                .paths
-                .into_iter()
-                .filter_map(|path| match path {
-                    daemon_core::DialPath::Direct(addr) => {
-                        Some(crate::link::socket::Path::Direct(addr))
-                    }
-                    daemon_core::DialPath::Through(link) => {
-                        Some(crate::link::socket::Path::Forwarded(link))
-                    }
-                    daemon_core::DialPath::Ssh(_) => None,
-                })
-                .collect(),
-            through_relay: plan.through_relay,
-        };
-        self.channels.open_resumed_on(host, early, flight).await
-    }
-
     /// The answers the first flights brought, for the calls the core makes
     /// once each host's link is up.
     pub(crate) fn first_flights(&self) -> &first_flight::FirstFlights {

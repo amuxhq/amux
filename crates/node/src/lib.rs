@@ -86,8 +86,7 @@ pub use install::{
     REPLICAS, REPORTS, STORE, write_durably,
 };
 pub use link::{
-    Cursor, EarlyAnswer, EarlyCall, EarlyReply, PeerChannel, PeerClient, ResumedLink,
-    TRUST_REVOKED, forwarder, framed, link_log, paths, socket,
+    Cursor, PeerChannel, PeerClient, TRUST_REVOKED, forwarder, framed, link_log, paths, socket,
 };
 pub use offers::{CatalogueError, HostCatalogue, PROVIDERS, Provider};
 pub use outbox::{DrainReport, HttpSender, NoopSender, Push, PushError, PushFuture, PushSender};

@@ -1484,8 +1484,7 @@ pub unsafe extern "C" fn amux_profile_begin_pair(
 }
 
 /// Trusts the machine a pending pairing reached, named by its token as a
-/// JSON byte array; the ticket answers `{"Ok": {"host_id": [..], "name":
-/// ..}}` or `{"Err": ..}`.
+/// JSON byte array; the ticket answers `{"Ok": null}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// As for `amux_profile_begin_pair`.
@@ -1494,11 +1493,6 @@ pub unsafe extern "C" fn amux_profile_confirm_pair(
     profile: *const AmuxProfile,
     token: *const c_char,
 ) -> u64 {
-    #[derive(Serialize)]
-    struct Paired {
-        host_id: Vec<u8>,
-        name: String,
-    }
     guard(0, || {
         // SAFETY: the caller's contract.
         let Some(profile) = (unsafe { live_profile(profile) }) else {
@@ -1511,10 +1505,7 @@ pub unsafe extern "C" fn amux_profile_confirm_pair(
             let Some(token) = token else {
                 return Answered::Err("the token is not a byte array".into());
             };
-            Answered::from(embedded.confirm_pair(id, &token).await.map(|peer| Paired {
-                host_id: peer.host_id,
-                name: peer.name,
-            }))
+            Answered::from(embedded.confirm_pair(id, &token).await.map(drop))
         })
     })
 }

@@ -1615,7 +1615,7 @@ extension ComponentCatalog {
             store.enter("418207")
             let attempt = store.checking()
             store.reached(.success(CatalogFixtures.pendingLaptop), attempt: attempt)
-            store.paired(.success(CatalogFixtures.pairedLaptop), attempt: attempt)
+            store.paired(.success(CatalogFixtures.pendingLaptop.name), attempt: attempt)
         },
         confirm("link-checking", machine: nil) { _ = $0.checking() },
         confirm("link-refused", machine: nil) { store in
@@ -1853,12 +1853,6 @@ extension CatalogFixtures {
     static let pendingLaptop = PendingPair(
         token: [1, 2, 3], hostId: nearbyLaptop.hostId, name: "laptop", fingerprint: fingerprint(5),
         expiresAtMs: Int64((now.timeIntervalSince1970 + 4 * 60 + 12) * 1000), via: .direct)
-    /// The runtime's answer to a confirmed pairing, which only it makes.
-    static let pairedLaptop = try! JSONDecoder().decode(
-        Paired.self,
-        from: JSONSerialization.data(withJSONObject: [
-            "host_id": nearbyLaptop.hostId.map(Int.init), "name": nearbyLaptop.name,
-        ]))
 }
 
 extension CatalogFixtures {

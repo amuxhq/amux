@@ -386,9 +386,9 @@ public final class Profile: @unchecked Sendable {
         }
     }
 
-    public func confirmPair(_ pending: PendingPair) async -> Result<Paired, RuntimeFailure> {
+    public func confirmPair(_ pending: PendingPair) async -> Result<Nothing, RuntimeFailure> {
         let token = Bridge.json(pending.token)
-        return await act(Paired.self) { live in
+        return await act(Nothing.self) { live in
             token.withCString { amux_profile_confirm_pair(live, $0) }
         }
     }
@@ -525,17 +525,6 @@ public final class Profile: @unchecked Sendable {
         _ type: T.Type, _ start: @escaping @Sendable (OpaquePointer) -> UInt64
     ) async -> Result<T, RuntimeFailure> {
         Bridge.answer(T.self, await loop.answer { [self] _ in call(nil) { start($0) } })
-    }
-}
-
-/// What a pairing trusted.
-public struct Paired: Decodable, Sendable, Equatable {
-    public var hostId: [UInt8]
-    public var name: String
-
-    private enum CodingKeys: String, CodingKey {
-        case hostId = "host_id"
-        case name
     }
 }
 

@@ -456,7 +456,7 @@ fn pair_desk(phone: &Phone, net: &Net, tokio: &tokio::runtime::Runtime) -> Strin
     // SAFETY: the runtime is live; the strings live for the call.
     phone.started(unsafe { amux_profile_confirm_pair(phone.profile, token.as_ptr()) });
     let paired = phone.result();
-    assert_eq!(paired["Ok"]["name"], "desk", "{paired}");
+    assert!(paired.get("Ok").is_some(), "{paired}");
     fingerprint
 }
 

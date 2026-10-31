@@ -109,7 +109,7 @@ public final class RuntimeCoordinator {
     }
     /// Whether somebody is in front of the app, as the app last said.
     @ObservationIgnored public private(set) var active = true
-    @ObservationIgnored private var found: [FoundHost] = []
+    @ObservationIgnored private var found: [Found] = []
     @ObservationIgnored private var permission: LocalNetworkPermission = .unknown
     @ObservationIgnored private var fed: StoreBundle?
     /// The stores on screen as last told to `accountChanged`.
@@ -209,7 +209,7 @@ public final class RuntimeCoordinator {
             networkWatch.start { [weak self] in
                 Task { @MainActor in self?.networkChanged() }
             }
-            if !found.isEmpty { runtime.discovered(found.map(\.found)) }
+            if !found.isEmpty { runtime.discovered(found) }
             if !profiles.isEmpty {
                 registry.show(profiles)
                 place()
@@ -263,7 +263,7 @@ public final class RuntimeCoordinator {
         guard let runtime else { return }
         // A profile made since the browser last reported has not been told
         // what is on the network.
-        if !added.isEmpty, !found.isEmpty { runtime.discovered(found.map(\.found)) }
+        if !added.isEmpty, !found.isEmpty { runtime.discovered(found) }
         registry.show(listed)
         place()
     }
@@ -467,9 +467,9 @@ public final class RuntimeCoordinator {
 
     /// What the browser found, handed over whole to every profile, and to
     /// any runtime started later.
-    public func discovered(_ hosts: [FoundHost]) {
+    public func discovered(_ hosts: [Found]) {
         found = hosts
-        runtime?.discovered(hosts.map(\.found))
+        runtime?.discovered(hosts)
     }
 
     /// A bearer for an account, borrowed from its profile, which alone holds

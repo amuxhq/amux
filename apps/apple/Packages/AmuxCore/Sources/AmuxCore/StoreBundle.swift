@@ -340,7 +340,7 @@ public final class StoreBundle {
         let attempt = pairing.checking()
         Task {
             let paired = await profile.confirmPair(pending)
-            pairing.paired(paired, attempt: attempt)
+            pairing.paired(paired.map { _ in pending.name }, attempt: attempt)
             await refreshRoster()
         }
     }

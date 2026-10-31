@@ -1,22 +1,15 @@
-//! What the golden tests share: where goldens live, the two themes, and
-//! how a drawn buffer is captured and compared.
+//! What the golden tests share: where goldens live and how a drawn buffer
+//! is captured and compared.
 
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 
 use ratatui::buffer::Buffer;
-use tui::{ColorMode, Theme};
+use tui::Theme;
 
 pub fn golden_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
-}
-
-pub fn themes() -> [(&'static str, Theme); 2] {
-    [
-        ("light", Theme::light(ColorMode::TrueColor)),
-        ("dark", Theme::dark(ColorMode::TrueColor)),
-    ]
 }
 
 /// The buffer's text, then its style classes, one character per cell.

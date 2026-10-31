@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::Serialize;
 use ui_state::{Activity, Composer, InputState, InputWhat, Refusal, SessionState, Waiting};
-use wire::{Attachment, SignInState};
+use wire::SignInState;
 
 use crate::segments::{Segment, segments};
 use crate::settings::CommandView;
@@ -83,20 +83,6 @@ pub fn composer(state: &SessionState, now_ms: i64) -> ComposerView {
         mode,
         switched_away: switched_away(state),
     }
-}
-
-/// Why the chat is not current, for a client that words the composer
-/// holding its sends.
-pub fn waiting(state: &SessionState) -> Option<Waiting> {
-    match state.composer() {
-        Composer::Holds(why) => Some(why),
-        Composer::Send | Composer::Resume => None,
-    }
-}
-
-/// The draft as tokens: text runs and attachment chips at their places.
-pub fn composer_tokens(draft: &str, attachments: &[Attachment]) -> Vec<Segment> {
-    segments(draft, attachments)
 }
 
 /// A queued prompt under the composer.

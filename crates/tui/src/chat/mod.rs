@@ -2929,9 +2929,9 @@ impl ChatView {
         }
         if let Some(context) = ui_view::context(state) {
             gap(&mut right);
-            let used = tokens_short(context.used_tokens);
+            let used = text::tokens(context.used_tokens);
             let words = match context.window_tokens {
-                Some(window) => format!("{used} / {}", tokens_short(window)),
+                Some(window) => format!("{used} / {}", text::tokens(window)),
                 None => used,
             };
             let style = if context.near_full {
@@ -3041,22 +3041,6 @@ fn diff_words(state: &SessionState, comparison: Comparison) -> String {
     }
     words.push(']');
     words
-}
-
-/// "41K", "1.2M": a token count at a glance.
-fn tokens_short(count: u64) -> String {
-    match count {
-        0..1_000 => count.to_string(),
-        1_000..1_000_000 => format!("{}K", (count + 500) / 1_000),
-        _ => {
-            let tenths = (count + 50_000) / 100_000;
-            if tenths.is_multiple_of(10) {
-                format!("{}M", tenths / 10)
-            } else {
-                format!("{}.{}M", tenths / 10, tenths % 10)
-            }
-        }
-    }
 }
 
 /// Where the chat stands, only when that is a problem the person should

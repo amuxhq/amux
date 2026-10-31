@@ -352,7 +352,7 @@ fn attachments_keep_their_positions() {
             text: "x\ny".into(),
         })),
     };
-    let tokens = composer_tokens("see \u{FFFC} and \u{FFFC}.", &[image.clone(), text.clone()]);
+    let tokens = segments("see \u{FFFC} and \u{FFFC}.", &[image.clone(), text.clone()]);
     assert_eq!(
         tokens,
         vec![

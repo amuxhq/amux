@@ -640,7 +640,9 @@ async fn closing_drops_the_stream_and_a_late_result_changes_nothing() {
     let session = open.await.unwrap().unwrap();
     assert_eq!(session.blob(b"hash-1"), None);
     let (_, reply) = calls.get_blob().await;
-    session.close();
+    // Dropping the session drops its stream; a call still in flight
+    // changes nothing.
+    drop(session);
     tokio::time::timeout(PATIENCE, async {
         while !feed.is_closed() {
             tokio::task::yield_now().await;

@@ -458,9 +458,9 @@ enum ComponentCatalog {
                 ])),
             composer("resume", height: 200, frame: ScriptedChat.frame(phase: .exited(cause: .failed("code 1")), mode: .resume),
                      draft: "Pick up where you left off and rerun the tests.", settlesLate: true),
-            composer("detached", height: 180, frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false, waiting: .detached),
+            composer("detached", height: 180, frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false),
                      draft: "Also add a test for the new string."),
-            composer("catching-up", height: 160, frame: ScriptedChat.frame(mode: .holds(.catchingUp), caughtUp: false, waiting: .catchingUp)),
+            composer("catching-up", height: 160, frame: ScriptedChat.frame(mode: .holds(.catchingUp), caughtUp: false)),
             composer("strip", height: 280, frame: ScriptedChat.frame(phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 94_000, turnElapsedMs: 94_000)),
                      strip: ScriptedChat.strip(
                         tasks: F.pairingTasks,
@@ -603,13 +603,13 @@ enum ComponentCatalog {
                     card: F.card(.claudeSdk, .command(command: "cargo test -p amux-ui", cwd: "~/src/amux", reason: "", description: "Run the spec suite"), F.sdkPermissionChoices))
             }),
             chat("detached", chat: {
-                ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false, waiting: .detached))
+                ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false))
             }),
             chat("loading", readiness: ("chat.loading", "shown"), chat: {
-                ScriptedChat(rows: [], frame: ScriptedChat.frame(mode: .holds(.catchingUp), caughtUp: false, waiting: .catchingUp))
+                ScriptedChat(rows: [], frame: ScriptedChat.frame(mode: .holds(.catchingUp), caughtUp: false))
             }),
             chat("away", chat: {
-                ScriptedChat(rows: [], frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false, waiting: .detached))
+                ScriptedChat(rows: [], frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false))
             }, subject: F.awaySubject),
             chat("queued", chat: {
                 ScriptedChat(

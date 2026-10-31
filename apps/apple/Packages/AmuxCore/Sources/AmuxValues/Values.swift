@@ -1892,9 +1892,8 @@ public struct ChatFrame: Codable, Hashable, Sendable {
     public var git: Git?
     /// Only a problem; it replaces the composer with a foot card.
     public var signIn: SignInView?
-    public var waiting: Waiting?
 
-    public init(agent: AgentKey, name: String, kind: Kind, phase: PhaseView, composer: ComposerView, controls: ControlsSummary, connection: Connection, caughtUp: Bool, hasOlder: Bool, arrivalsHeld: Bool, queue: [QueuedRow], underway: [SentPrompt], refused: [RefusedPrompt], askInput: [UInt8]?, context: ContextView?, ended: String?, git: Git?, signIn: SignInView?, waiting: Waiting?) {
+    public init(agent: AgentKey, name: String, kind: Kind, phase: PhaseView, composer: ComposerView, controls: ControlsSummary, connection: Connection, caughtUp: Bool, hasOlder: Bool, arrivalsHeld: Bool, queue: [QueuedRow], underway: [SentPrompt], refused: [RefusedPrompt], askInput: [UInt8]?, context: ContextView?, ended: String?, git: Git?, signIn: SignInView?) {
         self.agent = agent
         self.name = name
         self.kind = kind
@@ -1913,7 +1912,6 @@ public struct ChatFrame: Codable, Hashable, Sendable {
         self.ended = ended
         self.git = git
         self.signIn = signIn
-        self.waiting = waiting
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1935,7 +1933,6 @@ public struct ChatFrame: Codable, Hashable, Sendable {
         case ended
         case git
         case signIn = "sign_in"
-        case waiting
     }
 }
 
@@ -3916,8 +3913,7 @@ public enum InputState: Codable, Hashable, Sendable {
     /// was not current, or refused because the agent's host could not be
     /// reached. The client holds it, shown pending with Cancel, and sends
     /// it again under the same id once the host is reachable. It lives only
-    /// as long as this client: closing the client drops it (a held prompt's
-    /// words go back to the draft).
+    /// as long as this client: closing the client drops it.
     case held
 
     private enum Tag: String, CodingKey {

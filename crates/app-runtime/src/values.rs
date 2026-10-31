@@ -5,7 +5,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use model::{AgentKey, Connection, InputState, Key, PhaseView, Refusal, Waiting};
+use model::{AgentKey, Connection, InputState, Key, PhaseView, Refusal};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ui_view::{
@@ -130,7 +130,6 @@ pub struct ChatFrame {
     pub kind: Kind,
     pub phase: PhaseView,
     pub composer: ComposerView,
-    pub waiting: Option<Waiting>,
     /// The model, effort in force, and a permission or mode other than the
     /// normal one, as the composer says them.
     pub controls: ControlsSummary,

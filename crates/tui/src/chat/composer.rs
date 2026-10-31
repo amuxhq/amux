@@ -2,7 +2,7 @@
 //! composer.
 
 use ratatui::text::{Line, Span};
-use ui_view::{Overview, QueuedRow, Segment, composer_tokens};
+use ui_view::{Overview, QueuedRow, Segment, segments};
 use unicode_segmentation::UnicodeSegmentation as _;
 
 use super::rows::chip;
@@ -312,7 +312,7 @@ pub fn cursor_at(editor: &Editor, width: usize, target_row: usize, target_col: u
     let mut row = 0usize;
     let mut used = 0usize;
     let mut at = 0usize;
-    for segment in composer_tokens(editor.text(), editor.attachments()) {
+    for segment in segments(editor.text(), editor.attachments()) {
         match segment {
             Segment::Text(text) => {
                 for grapheme in text.graphemes(true) {
@@ -388,7 +388,7 @@ pub fn editor_lines(
                 *position = (rows.len() - 1, used);
             }
         };
-    for segment in composer_tokens(editor.text(), editor.attachments()) {
+    for segment in segments(editor.text(), editor.attachments()) {
         match segment {
             // A grapheme at a time, so a combining accent stays on its
             // letter and the cursor never stops inside a character.

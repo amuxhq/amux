@@ -175,7 +175,9 @@ final class DoorHost {
             return chatting(agent) { model in
                 model.draft = text
                 guard model.canSend else {
-                    return .sendAttempt(delivered: false, reason: model.frame?.waiting.map { "\($0)" })
+                    var reason: String?
+                    if case .holds(let why)? = model.frame?.composer.mode { reason = "\(why)" }
+                    return .sendAttempt(delivered: false, reason: reason)
                 }
                 model.send()
                 return .sendAttempt(delivered: true, reason: nil)

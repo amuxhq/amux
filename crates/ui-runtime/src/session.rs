@@ -1029,10 +1029,6 @@ impl Session {
     pub fn history(&self) -> ClientSessionHistory {
         self.inner.history()
     }
-
-    /// Drops the stream. Nothing is flushed: nothing was kept. Results of
-    /// calls still in flight change nothing.
-    pub fn close(self) {}
 }
 
 impl Drop for Session {

@@ -161,8 +161,7 @@ pub enum InputState {
     /// was not current, or refused because the agent's host could not be
     /// reached. The client holds it, shown pending with Cancel, and sends
     /// it again under the same id once the host is reachable. It lives only
-    /// as long as this client: closing the client drops it (a held prompt's
-    /// words go back to the draft).
+    /// as long as this client: closing the client drops it.
     Held,
 }
 

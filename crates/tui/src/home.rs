@@ -24,15 +24,43 @@ use ui_view::{
     ActivityLine, AskSubject, AskSummary, ExitCause, FleetRow, FleetSection, FleetView, Offline,
     Reach, SecondLine, SectionKind, SessionLine, StuckReason,
 };
-use wire::{Kind, Lifecycle, SignInState};
+use wire::{Attachment, Kind, Lifecycle, SignInState};
 
 use crate::chat::composer::editor_lines;
 use crate::editor::Editor;
-use crate::fleet::FleetEffect;
 use crate::hosts;
 use crate::setup::{Form, FormHit, FormOutcome, Item as Setting, Pick, Picker, Setup};
 use crate::text::{self, pad_to, push};
 use crate::theme::Theme;
+
+/// What a fleet key asks the event loop to do.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FleetEffect {
+    Open(AgentKey),
+    /// The agent's own interface, raw.
+    Attach(AgentKey),
+    /// Create an agent with its first prompt, and open its chat or stay.
+    Start {
+        setup: Box<Setup>,
+        text: String,
+        attachments: Vec<Attachment>,
+        open: bool,
+    },
+    Rename {
+        agent: AgentKey,
+        name: String,
+    },
+    Stop(AgentKey),
+    /// Takes back a stop held while the agent's host was out of reach.
+    CancelStop(AgentKey),
+    Delete(AgentKey),
+    /// Leave amux.
+    Quit,
+    /// Show the key help.
+    Help,
+    /// Freeze the screen and report a problem with it.
+    Report,
+}
 
 /// Blank columns at each side of the screen.
 const MARGIN: usize = 2;

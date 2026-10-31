@@ -537,7 +537,6 @@ pub(crate) fn frame(state: &SessionState, now_ms: i64, ended: Option<String>) ->
         kind: state.kind(),
         phase: state.phase(),
         composer: ui_view::composer(state, now_ms),
-        waiting: ui_view::waiting(state),
         controls: ui_view::controls(state),
         git: agent.git.clone(),
         context: ui_view::context(state),

@@ -22,8 +22,7 @@ use wire::{Agent, Attachment, DeleteAgentRequest, Diff, RenameAgentRequest};
 use crate::chat::layout::{CAP, PAGE};
 use crate::chat::{ChatEffect, ChatView};
 use crate::clipboard::read_clipboard;
-use crate::fleet::FleetEffect;
-use crate::home::{Home, Place};
+use crate::home::{FleetEffect, Home, Place};
 use crate::text::{self, push};
 use crate::theme::Theme;
 
@@ -1138,16 +1137,10 @@ impl App {
                     }),
                 }
             }),
+            // The card itself says it was rejected, not confirmed or held.
             ChatEffect::Answer(input) => self.spawn(async move {
-                session
-                    .answer(input)
-                    .await
-                    .err()
-                    .and_then(|error| match error {
-                        // The card itself says it was rejected, not
-                        // confirmed or held.
-                        InputError::Rejected(_) | InputError::Uncertain | InputError::Held => None,
-                    })
+                let _ = session.answer(input).await;
+                None
             }),
             ChatEffect::SwitchBack => self.spawn(async move {
                 session.switch_back().await.err().map(|error| {

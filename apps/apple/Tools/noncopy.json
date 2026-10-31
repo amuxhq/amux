@@ -37,7 +37,6 @@
       {"literal": "\"forgetSession \\(id)\"", "context": "case .forgetSession(let id): \"forgetSession \\(id)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"signIn hint \\(account.email)\"", "context": "case .signIn(.returning(let account)): \"signIn hint \\(account.email)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"signIn select\"", "context": "case .signIn(.adding): \"signIn select\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"the view-state recording could not be written\"", "context": "return .failure(PartAbsent(\"the view-state recording could not be written\"))", "reason": "Door reply or wire value for a driver, never drawn.", "count": 1},
       {"literal": "\"the launch named no relay to sign in to\"", "context": "return .error(\"the launch named no relay to sign in to\")", "reason": "Door reply or wire value for a driver, never drawn.", "count": 1},
       {"literal": "\"the fleet to be read\"", "context": "return await until(seconds, \"the fleet to be read\") { self.stores?.applied ?? 0 > 0 }", "reason": "Door reply or wire value for a driver, never drawn.", "count": 1},
       {"literal": "\"a host to go offline\"", "context": "return await until(seconds, \"a host to go offline\") {", "reason": "Door reply or wire value for a driver, never drawn.", "count": 1},
@@ -131,9 +130,6 @@
       {"literal": "\"signed-out\"", "context": "signedOut: StoreBundle(account: AccountId(\"signed-out\")), options: options,", "reason": "Account id, dump reason or trace name recorded for a reader of diagnostics, not interface copy.", "count": 1},
       {"literal": "\"exported from the phone\"", "context": "guard case .success(let directory) = await stores.dump(reason: \"exported from the phone\")", "reason": "Account id, dump reason or trace name recorded for a reader of diagnostics, not interface copy.", "count": 1},
       {"literal": "\"report\"", "context": "switch await running.dump(reason: \"report\", forReport: true) {", "reason": "Account id, dump reason or trace name recorded for a reader of diagnostics, not interface copy.", "count": 1}
-    ],
-    "apps/apple/Amux/Sources/ReportFreeze.swift": [
-      {"literal": "\"this build does not record view state\"", "context": ".failure(PartAbsent(\"this build does not record view state\"))", "reason": "Report bundle absence reason, read by the daemon tooling and never shown on the phone.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/AmuxCloud.swift": [
       {"literal": "\"https://amux.sh\"", "context": "base: URL(string: \"https://amux.sh\")!,", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -288,7 +284,8 @@
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/ReportAssembly.swift": [
       {"literal": "\"report.json\"", "context": "public static let reportFile = \"report.json\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"frame.png\"", "context": "public static let frameFile = \"frame.png\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"trace.jsonl\"", "context": "public static let traceFile = \"trace.jsonl\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"trace\"", "context": "\"trace\": absent(\"the phone records no view trace\"),", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"the phone records no view trace\"", "context": "\"trace\": absent(\"the phone records no view trace\"),", "reason": "Report bundle absence reason, read by the daemon tooling and never shown on the phone.", "count": 1},
       {"literal": "\"build\"", "context": "\"build\": build,", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"git_sha\"", "context": "\"git_sha\": gitSHA,", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"created_at\"", "context": "\"created_at\": rfc3339(createdAt),", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -311,11 +308,7 @@
       {"literal": "\"reason\"", "context": "func absent(_ reason: String) -> Any { [\"absent\": [\"reason\": reason]] }", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"frame\"", "context": "\"frame\": \"present\",", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"present\"", "context": "\"frame\": \"present\",", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"trace\"", "context": "\"trace\": capture.trace == nil", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"present\"", "context": ": \"present\",", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"dump\"", "context": "if let dumpAbsent { declarations[\"dump\"] = absent(dumpAbsent) }", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"trace_kind\"", "context": "if capture.trace != nil { declarations[\"trace_kind\"] = \"native_view\" }", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"native_view\"", "context": "if capture.trace != nil { declarations[\"trace_kind\"] = \"native_view\" }", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
+      {"literal": "\"dump\"", "context": "if let dumpAbsent { declarations[\"dump\"] = absent(dumpAbsent) }", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Runtime.swift": [
       {"literal": "\"amux.core\"", "context": "private let queue = DispatchQueue(label: \"amux.core\", qos: .userInitiated)", "reason": "Dispatch queue label for debugging tools, not app interface copy.", "count": 1},
@@ -901,40 +894,6 @@
       {"literal": "\"cancelled\"", "context": "case \"cancelled\": .cancelled", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"nothingToRestore\"", "context": "case \"nothingToRestore\": .nothingToRestore", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"fails\"", "context": "case \"fails\": .fails(reason)", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
-    ],
-    "apps/apple/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Trace.swift": [
-      {"literal": "\"sheet\"", "context": "case \"sheet\": self = .sheet(try fields.decodeIfPresent(String.self, forKey: .sheet))", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"appearance\"", "context": "case \"appearance\":", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"dynamicType\"", "context": "case \"dynamicType\": self = .dynamicType(try fields.decode(String.self, forKey: .size))", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"no trace event named \\(kind)\"", "context": "forKey: .kind, in: fields, debugDescription: \"no trace event named \\(kind)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"route\"", "context": "try fields.encode(\"route\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"sheet\"", "context": "try fields.encode(\"sheet\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"appearance\"", "context": "try fields.encode(\"appearance\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"dynamicType\"", "context": "try fields.encode(\"dynamicType\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"trace.jsonl\"", "context": "public static let traceFile = \"trace.jsonl\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"home\"", "context": "case .home: \"home\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"hosts\"", "context": "case .hosts: \"hosts\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"settings\"", "context": "case .settings: \"settings\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"conversation \\(agent)\"", "context": "case .conversation(let agent): \"conversation \\(agent)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"review \\(agent)\"", "context": "case .review(let agent): \"review \\(agent)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"route\"", "context": "case \"route\": self = .route(try Self.place(from: fields))", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"frozen\"", "context": "case \"frozen\":", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"account\"", "context": "case \"account\":", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"frozen\"", "context": "try fields.encode(\"frozen\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"account\"", "context": "try fields.encode(\"account\", forKey: .kind)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"home\"", "context": "case \"home\": return .home", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"hosts\"", "context": "case \"hosts\": return .hosts", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"settings\"", "context": "case \"settings\": return .settings", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"screen\"", "context": "case \"screen\": return .screen(try fields.decode(String.self, forKey: .screen))", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"no place named \\(named)\"", "context": "forKey: .place, in: fields, debugDescription: \"no place named \\(named)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"home\"", "context": "case .home: try fields.encode(\"home\", forKey: .place)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"hosts\"", "context": "case .hosts: try fields.encode(\"hosts\", forKey: .place)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"settings\"", "context": "case .settings: try fields.encode(\"settings\", forKey: .place)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"conversation\"", "context": "try fields.encode(\"conversation\", forKey: .place)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"review\"", "context": "try fields.encode(\"review\", forKey: .place)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"screen\"", "context": "try fields.encode(\"screen\", forKey: .place)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"conversation\"", "context": "case \"conversation\": return .conversation(try fields.decode(AgentKey.self, forKey: .agent))", "reason": "Trace wire key, not interface copy.", "count": 1},
-      {"literal": "\"review\"", "context": "case \"review\": return .review(try fields.decode(AgentKey.self, forKey: .agent))", "reason": "Trace wire key, not interface copy.", "count": 1}
     ],
     "apps/apple/Amux/Debug/ComponentCatalog.swift": [
       {"literal": "\"notifications\"", "context": "sheet(\"notifications\") { StoryApp(settingsOpen: true, notifications: .on).settings },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

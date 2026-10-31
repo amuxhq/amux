@@ -12,38 +12,24 @@ final class ReportFreeze: ReportFreezing {
     private let window: () -> UIWindow?
     private let route: () -> String?
     private let dump: () -> Task<Result<URL, PartAbsent>, Never>?
-    private let trace: () -> Result<String, PartAbsent>
     private let runtimeFailure: () -> String?
 
     init(
         window: @escaping () -> UIWindow? = { ReportFreeze.foreground },
         route: @escaping () -> String? = { nil },
         dump: @escaping () -> Task<Result<URL, PartAbsent>, Never>? = { nil },
-        trace: @escaping () -> Result<String, PartAbsent> = { ReportFreeze.untraced },
         runtimeFailure: @escaping () -> String? = { nil }
     ) {
         self.window = window
         self.route = route
         self.dump = dump
-        self.trace = trace
         self.runtimeFailure = runtimeFailure
-    }
-
-    /// A shipping build records no view state: nothing in it could put one
-    /// back.
-    static var untraced: Result<String, PartAbsent> {
-        .failure(PartAbsent("this build does not record view state"))
     }
 
     func freeze() -> ReportCapture? {
         guard let window = window(), let frame = Self.photograph(window) else { return nil }
-        var capture = ReportCapture(
+        return ReportCapture(
             frame: frame, dump: dump(), route: route(), runtimeFailure: runtimeFailure())
-        switch trace() {
-        case .success(let lines): capture.trace = lines
-        case .failure(let absent): capture.traceAbsent = absent.why
-        }
-        return capture
     }
 
     static var foreground: UIWindow? {

@@ -442,17 +442,14 @@ public final class Profile: @unchecked Sendable {
     /// or why it was not sent.
     public func submitReport(_ upload: ReportUpload) async -> Result<ReportSent, RuntimeFailure> {
         let header = String(decoding: upload.header, as: UTF8.self)
-        let (path, frame, trace) = (upload.path, upload.frame, upload.trace)
+        let (path, frame) = (upload.path, upload.frame)
         return await act(ReportSent.self) { live in
             path.withCString { path in
                 header.withCString { header in
-                    Bridge.optional(trace) { trace in
-                        frame.withUnsafeBytes { bytes in
-                            amux_profile_submit_report(
-                                live, path, header,
-                                bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count,
-                                trace)
-                        }
+                    frame.withUnsafeBytes { bytes in
+                        amux_profile_submit_report(
+                            live, path, header,
+                            bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count)
                     }
                 }
             }

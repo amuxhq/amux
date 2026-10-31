@@ -27,7 +27,7 @@ every command goes through `just ios <recipe>` (`just --list ios`).
 | `AmuxDesign` | Light and dark tokens, bundled faces, type scaling, glass, motion and thumb-target geometry |
 | `AmuxFeatures` | The screens, as functions of the state and actions they are handed, plus the registered UIKit leaves |
 | `AmuxShell` | Tabs (Agents, Hosts) and the Settings sheet, routes, deep links, web sign-in and speech dictation |
-| `AmuxTestSupport` | The driving door's protocol, scripted account, App Store and chat stand-ins, and the view-state trace |
+| `AmuxTestSupport` | The driving door's protocol and the scripted account, App Store and chat stand-ins |
 | `apps/apple/Amux` | The app target: entry point, `Composition` (which assembles every store and service), report capture, and under `Debug/` the door server and the component catalogue |
 
 `AmuxCore` links the bridge as the binary target `AmuxApp`, an XCFramework
@@ -355,13 +355,11 @@ top, a sheet included: the app hands them down as `ReportLayers`, every
 surface that can be on top carries `surface()`, and the last of those to
 appear draws them. The app takes the profile's `report` dump the moment the
 frame freezes, and on Send hands the runtime what only it has
-(`ReportAssembly`): a `report.json` declaring the frame and the trace present
-or absent with a reason, the frozen `frame.png` and the view-state
-`trace.jsonl`. The runtime writes them beside the dump and uploads the report
-(`Profile.submitReport`), as it does the terminal's; the dump carries the tail
-of the installation's `runtime.log` redacted. Only a build with the driving
-tools records the trace, so a Release report declares it absent. The build
-stamps its checkout revision into the app, and each report carries it as
+(`ReportAssembly`): a `report.json` declaring the frame present and the
+trace absent (the phone records none), and the frozen `frame.png`. The runtime
+writes them beside the dump and uploads the report (`Profile.submitReport`), as
+it does the terminal's; the dump carries the tail of the installation's
+`runtime.log` redacted. The build stamps its checkout revision into the app, and each report carries it as
 `git_sha`.
 
 A report is sent to the account on screen; with nobody signed in, Send is

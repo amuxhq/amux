@@ -9985,18 +9985,6 @@
         }
       }
     },
-    "the view-state recording was not captured" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxTestSupport/Sources/AmuxTestSupport/ReportAssembly.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "the view-state recording was not captured"
-          }
-        }
-      }
-    },
     "there is nothing on this Apple Account to restore" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxCore/Sources/AmuxCore/Store.swift.",
       "extractionState" : "manual",

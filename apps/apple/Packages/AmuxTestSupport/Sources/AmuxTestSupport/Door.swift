@@ -243,8 +243,8 @@ public enum DoorRequest: Sendable, Equatable {
     case send(agent: String, text: String)
     /// Write the report this app would send into this directory: the frozen
     /// picture of the screen, the shared runtime's own recording, the
-    /// view-state trace, the daemon's state and `report.json` declaring them,
-    /// with the note and the rectangles carried on it.
+    /// daemon's state and `report.json` declaring them, with the note and the
+    /// rectangles carried on it.
     case report(path: String, note: String, marks: [ReportMark])
     /// Tell the app the system has just taken a screenshot of it, the way iOS
     /// tells it.

@@ -49,9 +49,6 @@ final class DoorHost {
     @ObservationIgnored private weak var delegate: AppDelegate?
     /// The background time asked for, while the driver hands over a push.
     @ObservationIgnored private var held: UIBackgroundTaskIdentifier = .invalid
-    /// Where the person went, and what they changed about how the app looks,
-    /// as a report's view-state recording carries it.
-    @ObservationIgnored private var events: [TraceEvent] = []
 
     func adopt(_ delegate: AppDelegate) {
         self.delegate = delegate
@@ -64,22 +61,6 @@ final class DoorHost {
     /// one, else the app's own choice. One preference for both, because the
     /// driven root's outranks the app's beneath it.
     var worn: Appearance? { appearance ?? composition?.appearance }
-
-    // MARK: - The report's recording
-
-    func arrived(at place: Place) {
-        guard events.last != .route(place) else { return }
-        events.append(.route(place))
-    }
-
-    func trace(route: String?) -> Result<String, PartAbsent> {
-        let account = composition?.accounts.selectedAccount
-        let now = Date()
-        let lines = events + [.account(account), .frozen(at: now, ordered: now)]
-        do { return .success(try Trace.lines(lines)) } catch {
-            return .failure(PartAbsent("the view-state recording could not be written"))
-        }
-    }
 
     // MARK: - Requests
 
@@ -113,7 +94,6 @@ final class DoorHost {
         case .measure(let seconds): return await measure(seconds)
         case .appearance(let appearance):
             await wear(appearance)
-            events.append(.appearance(appearance))
             return .ack
         case .dynamicType(let name):
             guard let size = DynamicTypeSize(doorName: name) else {
@@ -121,7 +101,6 @@ final class DoorHost {
             }
             typeSize = size
             DoorWindow.wear(size)
-            events.append(.dynamicType(name))
             return .ack
         case .assist(let motion, let transparency):
             reduceMotion = motion

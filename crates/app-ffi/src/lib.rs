@@ -1415,15 +1415,13 @@ pub unsafe extern "C" fn amux_profile_dump(
 
 /// Writes a person's report around the dump at `dump_path` (empty when
 /// none was taken; a report's own directory to send it again), with its
-/// `report.json`, the frozen frame as PNG and the view-state trace (null
-/// when there is none), and sends it to the account
+/// `report.json` and the frozen frame as PNG, and sends it to the account
 /// the profile is signed in to. The ticket answers `{"Ok": ReportSent}` or
 /// `{"Err": ..}`.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`; `dump_path` and `header` are
-/// NUL-terminated strings or null; `frame` is null or `len` readable bytes;
-/// `trace` is null or a NUL-terminated string.
+/// NUL-terminated strings or null; `frame` is null or `len` readable bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_profile_submit_report(
     profile: *const AmuxProfile,
@@ -1431,7 +1429,6 @@ pub unsafe extern "C" fn amux_profile_submit_report(
     header: *const c_char,
     frame: *const u8,
     len: usize,
-    trace: *const c_char,
 ) -> u64 {
     guard(0, || {
         // SAFETY: the caller's contract.
@@ -1451,12 +1448,9 @@ pub unsafe extern "C" fn amux_profile_submit_report(
             // SAFETY: the caller's contract.
             unsafe { std::slice::from_raw_parts(frame, len) }.to_vec()
         };
-        // SAFETY: the caller's contract.
-        let trace = unsafe { text(trace) }.map(str::to_owned);
         let app = profile.app.clone();
-        profile.act(async move {
-            Answered::from(app.submit_report(dump_path, header, frame, trace).await)
-        })
+        profile
+            .act(async move { Answered::from(app.submit_report(dump_path, header, frame).await) })
     })
 }
 

@@ -1,6 +1,6 @@
 # Claude terminal transcript captures
 
-Two Claude transcripts that no `fixtures/pty` recording covers,
+Two Claude transcripts that no `fixtures/live/pty` capture covers,
 kept as inputs for the interpreter's `claude_pty` tests
 (`crates/interpret/fixtures/claude_pty/recorded_*.json` name them as
 `transcript_rows` recordings):

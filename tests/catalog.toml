@@ -199,22 +199,22 @@ cargo = [
 
 [[suite]]
 name = "claude-recorded-adapter"
-contract = "Recorded terminal Claude traffic replays completely through its specifications and remains tied to its wire provenance, and the capture tools record, sanitize and join captures as the live lane needs."
+contract = "The capture proxy stands in for Claude on the live lane's PATH and reaches the real Claude past a wrapper without finding itself again, and a terminal capture keeps the rows its scenario produced and none of the recording owner's own context: no copies of each API request, nothing they installed, no environment or attribution."
 paths = ["crates/claude-specs/tests", "crates/claude-specs/fixtures"]
 recipe = "just suite claude-recorded-adapter"
 boundary = "Provider adapter"
-oracle = "Strict replay consumption, expected writes, corpus manifests, and provenance assertions."
-real = ["recorded provider bytes"]
-substituted = ["live Claude process", "wall clock"]
+oracle = "Scrubbed rows and the proxy's own exit."
+real = ["recorded provider bytes", "processes on the PATH"]
+substituted = ["live Claude process"]
 time = "driven"
 capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = "crates/claude-specs/fixtures"
-update = "Run `claude-probe record <spec>` and review its manifest."
+update = "Re-record the scenario with `just live <kind> <scenario>` and join its capture with `claude-probe join`."
 cargo = [
   { package = "claude-specs", kind = "lib", targets = ["claude_specs"], features = [] },
   { package = "claude-specs", kind = "bin", targets = ["claude-probe"], features = [] },
-  { package = "claude-specs", modules = ["capture_proxy", "scrub", "spec_replay"], features = [] },
+  { package = "claude-specs", modules = ["capture_proxy", "scrub"], features = [] },
 ]
 
 [[suite]]

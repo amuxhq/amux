@@ -23,7 +23,7 @@ use super::{Follow, Install, Log, Scenario, TURN, Verdict, expect_outcome, judge
 
 /// A 32×32 solid red PNG, attached to a prompt and left in the project
 /// for the provider to read back.
-pub(super) const SQUARE_PNG: &[u8] = include_bytes!("../../../claude-specs/assets/square.png");
+pub(super) const SQUARE_PNG: &[u8] = include_bytes!("square.png");
 
 /// The tool the form-asking tool server offers (`claude-probe` run as
 /// one, see its `__tool-server` mode).

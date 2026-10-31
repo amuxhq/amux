@@ -3,4 +3,3 @@
 
 mod capture_proxy;
 mod scrub;
-mod spec_replay;

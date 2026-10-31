@@ -7,21 +7,15 @@ publish = false
 autotests = false
 
 [dependencies]
-claude = { path = "../claude" }
-claude-protocol.workspace = true
-bytes = { workspace = true }
-chrono = { workspace = true }
 replay-support = { path = "../replay-support" }
 pty-host = { workspace = true }
 redaction = { workspace = true }
 semver = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-tempfile = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true }
-toml = { workspace = true }
-uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

@@ -699,22 +699,14 @@ dependencies = [
 name = "claude-specs"
 version = "0.1.0"
 dependencies = [
- "bytes",
- "chrono",
- "claude",
- "claude-protocol",
  "libc",
  "pty-host",
  "redaction",
  "replay-support",
  "semver",
- "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.20",
  "tokio",
- "toml",
- "uuid",
 ]
 
 [[package]]

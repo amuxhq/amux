@@ -1370,8 +1370,11 @@ async fn relaunch_after_a_kill_over_a_slow_network_loses_no_reply() {
     for launch in 1..=8 {
         net.kill_daemon("laptop").await.unwrap();
         let mark = net.link_log("laptop").unwrap().len();
-        let began = std::time::Instant::now();
         net.restart_daemon("laptop").await.unwrap();
+        // Timed from the daemon running: a lost reply costs a retransmit
+        // past a second, while the start itself is the machine's speed,
+        // which on a loaded runner can take as long.
+        let began = std::time::Instant::now();
         // A resumed link is up before anything comes back; it has heard
         // from the desk once it has caught up.
         let up = logged(&net, "laptop", "desk", LinkTransition::Up, mark).await;

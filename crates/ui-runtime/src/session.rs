@@ -18,7 +18,7 @@ use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 use ui_state::{
     BlobStatus, Connection, InputId, InputOutcome, InputState, Key, Msg, Outcome, Refusal,
-    RefusalReason, SessionState,
+    SessionState,
 };
 use ui_view::SessionLine;
 use wire::dump::{ClientSessionEvents, ClientSessionHistory, ClientTraced, client_traced};
@@ -938,7 +938,7 @@ impl Session {
     async fn act(&self, input: Option<Input>) -> Result<(), InputError> {
         let Some(input) = input else {
             return Err(InputError::Rejected(Refusal::of(
-                RefusalReason::Unsupported,
+                wire::Refusal::Unsupported,
             )));
         };
         let sent = self.send(input).await;

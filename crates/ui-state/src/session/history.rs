@@ -14,9 +14,7 @@ use wire::dump::{
 
 use super::{Arrivals, Msg, SessionState};
 use crate::body::AgentState;
-use crate::inputs::{
-    InputOutcome, InputState, InputWhat, Inputs, Refusal, RefusalReason, SentInput,
-};
+use crate::inputs::{InputOutcome, InputState, InputWhat, Inputs, Refusal, SentInput};
 use crate::transcript::{Held, Transcript};
 use crate::{BlobStatus, Connection};
 
@@ -264,7 +262,7 @@ fn input(sent: &SentInput) -> ClientInput {
         InputState::Rejected(refusal) => (
             ClientInputState::Rejected,
             Some(Rejected {
-                refusal: wire_refusal(refusal.reason) as i32,
+                refusal: refusal.reason as i32,
                 detail: refusal.detail.clone(),
             }),
         ),
@@ -286,7 +284,7 @@ fn sent_input(held: ClientInput) -> Result<SentInput, String> {
         ClientInputState::Uncertain => InputState::Uncertain,
         ClientInputState::Held => InputState::Held,
         ClientInputState::Rejected => InputState::Rejected(held.rejected.as_ref().map_or_else(
-            || Refusal::of(RefusalReason::Unspecified),
+            || Refusal::of(wire::Refusal::Unspecified),
             crate::inputs::refusal,
         )),
     };
@@ -301,20 +299,4 @@ fn sent_input(held: ClientInput) -> Result<SentInput, String> {
         seen_queued: held.seen_queued,
         left_at: held.left_at,
     })
-}
-
-/// The wire's refusal for the client's reason.
-fn wire_refusal(reason: RefusalReason) -> wire::Refusal {
-    match reason {
-        RefusalReason::Unspecified => wire::Refusal::Unspecified,
-        RefusalReason::Exited => wire::Refusal::Exited,
-        RefusalReason::Exiting => wire::Refusal::Exiting,
-        RefusalReason::Draining => wire::Refusal::Draining,
-        RefusalReason::HostUnreachable => wire::Refusal::HostUnreachable,
-        RefusalReason::Unsupported => wire::Refusal::Unsupported,
-        RefusalReason::ClosedAsk => wire::Refusal::ClosedAsk,
-        RefusalReason::NotQueued => wire::Refusal::NotQueued,
-        RefusalReason::ConversationElsewhere => wire::Refusal::ConversationElsewhere,
-        RefusalReason::TooLong => wire::Refusal::TooLong,
-    }
 }

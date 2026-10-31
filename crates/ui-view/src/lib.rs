@@ -63,7 +63,7 @@ pub use settings::{
     slash, typed_setting,
 };
 /// Why an input was refused, which every client words.
-pub use ui_state::{Refusal, RefusalReason};
+pub use ui_state::Refusal;
 /// The most an attachment may hold, which every client checks before it
 /// reads or uploads one.
 pub use wire::ATTACHMENT_SIZE_LIMIT;

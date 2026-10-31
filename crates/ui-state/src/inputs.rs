@@ -1,31 +1,14 @@
 //! What this client sent and what became of each input: the one thing only
 //! the sender can know.
 
-pub use model::{InputId, InputState, Refusal, RefusalReason};
+pub use model::{InputId, InputState, Refusal};
 use wire::{Attachment, Input, Rejected, SendInputResponse};
 
 /// Why an input was refused, from its `Rejected` reply.
 pub fn refusal(rejected: &Rejected) -> Refusal {
     Refusal {
-        reason: refusal_reason(rejected.refusal()),
+        reason: rejected.refusal(),
         detail: rejected.detail.clone(),
-    }
-}
-
-/// The client's value for a wire refusal; a value this build does not know
-/// reads as unspecified.
-pub fn refusal_reason(refusal: wire::Refusal) -> RefusalReason {
-    match refusal {
-        wire::Refusal::Unspecified => RefusalReason::Unspecified,
-        wire::Refusal::ClosedAsk => RefusalReason::ClosedAsk,
-        wire::Refusal::NotQueued => RefusalReason::NotQueued,
-        wire::Refusal::Unsupported => RefusalReason::Unsupported,
-        wire::Refusal::Draining => RefusalReason::Draining,
-        wire::Refusal::Exiting => RefusalReason::Exiting,
-        wire::Refusal::Exited => RefusalReason::Exited,
-        wire::Refusal::HostUnreachable => RefusalReason::HostUnreachable,
-        wire::Refusal::ConversationElsewhere => RefusalReason::ConversationElsewhere,
-        wire::Refusal::TooLong => RefusalReason::TooLong,
     }
 }
 
@@ -215,7 +198,7 @@ mod tests {
         assert_eq!(
             refusal(&rejected),
             Refusal {
-                reason: RefusalReason::Unspecified,
+                reason: wire::Refusal::Unspecified,
                 detail: Some("rate limited".into()),
             }
         );
@@ -223,6 +206,6 @@ mod tests {
             refusal: wire::Refusal::ClosedAsk as i32,
             detail: None,
         };
-        assert_eq!(refusal(&closed), Refusal::of(RefusalReason::ClosedAsk));
+        assert_eq!(refusal(&closed), Refusal::of(wire::Refusal::ClosedAsk));
     }
 }

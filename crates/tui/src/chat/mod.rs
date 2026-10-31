@@ -24,8 +24,7 @@ use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ui_state::{
-    ActivityKind, Composer, InputState, InputWhat, Key, PhaseView, Refusal, RefusalReason,
-    SessionState, Waiting,
+    ActivityKind, Composer, InputState, InputWhat, Key, PhaseView, Refusal, SessionState, Waiting,
 };
 pub use ui_view::Comparison;
 use ui_view::{
@@ -3383,18 +3382,18 @@ pub(crate) fn refusal_words(refusal: &Refusal) -> String {
         return detail.clone();
     }
     match refusal.reason {
-        RefusalReason::Exited => "it had exited",
-        RefusalReason::Exiting => "it was exiting",
-        RefusalReason::Draining => "its host is shutting down",
-        RefusalReason::HostUnreachable => "its host can't be reached",
-        RefusalReason::Unsupported => "this agent can't take it",
-        RefusalReason::ClosedAsk => "the ask had already closed",
-        RefusalReason::NotQueued => "it was no longer queued",
-        RefusalReason::ConversationElsewhere => {
+        wire::Refusal::Exited => "it had exited",
+        wire::Refusal::Exiting => "it was exiting",
+        wire::Refusal::Draining => "its host is shutting down",
+        wire::Refusal::HostUnreachable => "its host can't be reached",
+        wire::Refusal::Unsupported => "this agent can't take it",
+        wire::Refusal::ClosedAsk => "the ask had already closed",
+        wire::Refusal::NotQueued => "it was no longer queued",
+        wire::Refusal::ConversationElsewhere => {
             "Claude's own view switched to another conversation"
         }
-        RefusalReason::TooLong => "it is longer than the agent takes",
-        RefusalReason::Unspecified => "it was refused",
+        wire::Refusal::TooLong => "it is longer than the agent takes",
+        wire::Refusal::Unspecified => "it was refused",
     }
     .to_owned()
 }

@@ -6196,6 +6196,8 @@ impl ::prost::Name for Rejected {
         "type.googleapis.com/amux.v1.Rejected".into()
     }
 }
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[schemars(rename = "RefusalReason")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Refusal {

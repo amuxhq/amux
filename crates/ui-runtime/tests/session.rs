@@ -8,7 +8,7 @@ use support::*;
 use ui_runtime::{
     DriverEvent, InputError, PageError, Session, TRACE_EVENTS, TRANSCRIPT_DUMP, TraceEvent,
 };
-use ui_state::{Composer, Connection, InputOutcome, InputState, Refusal, RefusalReason, Waiting};
+use ui_state::{Composer, Connection, InputOutcome, InputState, Refusal, Waiting};
 use wire::{
     ErrorCode, GetBlobResponse, Input, Kind, ListItemsResponse, SendInputRequest, claude_pty_input,
     claude_sdk_input, codex_input,
@@ -426,7 +426,7 @@ async fn acts_on_the_chat_go_in_the_kinds_own_arm_and_return_the_verdict() {
             let expected = match &verdict {
                 Ok(response) if *response == accepted(false) => Ok(()),
                 Ok(_) => Err(InputError::Rejected(Refusal::of(
-                    RefusalReason::Unsupported,
+                    wire::Refusal::Unsupported,
                 ))),
                 Err(_) => Err(InputError::Uncertain),
             };
@@ -494,7 +494,7 @@ async fn a_send_that_raced_the_exit_is_rejected_and_the_composer_offers_resume()
     let sent = sending.await.unwrap();
     assert_eq!(
         session.state().input_state(&sent.id),
-        Some(InputState::Rejected(Refusal::of(RefusalReason::Exited)))
+        Some(InputState::Rejected(Refusal::of(wire::Refusal::Exited)))
     );
     assert_eq!(session.state().composer(), Composer::Resume);
 }
@@ -519,7 +519,7 @@ async fn a_refused_call_is_a_rejection_never_uncertain() {
     assert_eq!(
         session.state().input_state(&sent.id),
         Some(InputState::Rejected(Refusal {
-            reason: RefusalReason::Unspecified,
+            reason: wire::Refusal::Unspecified,
             detail: Some("no such agent".into()),
         }))
     );

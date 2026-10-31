@@ -10,7 +10,7 @@ use model::AgentKey;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use ui_runtime::{Fleet, InputError, PageError, Session};
-use ui_state::{InputOutcome, InputState, Key, Refusal, RefusalReason, SessionState};
+use ui_state::{InputOutcome, InputState, Key, Refusal, SessionState};
 use ui_view::{
     AskCard, ChatOptions, Comparison, FormValue, Overview, QuestionResponse, Row, SettingChange,
     SettingsView, ToolRows,
@@ -419,7 +419,7 @@ impl Chat {
     async fn answer(&self, input: Option<wire::Input>) -> ActOutcome {
         match input {
             Some(input) => acted(self.session.answer(input).await),
-            None => ActOutcome::Rejected(Refusal::of(RefusalReason::Unsupported)),
+            None => ActOutcome::Rejected(Refusal::of(wire::Refusal::Unsupported)),
         }
     }
 
@@ -429,7 +429,7 @@ impl Chat {
         let kind = self.session.state().kind();
         match ui_view::setting_input(kind, change) {
             Some(input) => acted(self.session.answer(input).await),
-            None => ActOutcome::Rejected(Refusal::of(RefusalReason::Unsupported)),
+            None => ActOutcome::Rejected(Refusal::of(wire::Refusal::Unsupported)),
         }
     }
 
@@ -658,7 +658,7 @@ fn acted(result: Result<(), InputError>) -> ActOutcome {
 
 /// The ask the person answered is no longer the one waiting: it closed.
 fn moved_on() -> ActOutcome {
-    ActOutcome::Rejected(Refusal::of(RefusalReason::ClosedAsk))
+    ActOutcome::Rejected(Refusal::of(wire::Refusal::ClosedAsk))
 }
 
 #[cfg(test)]

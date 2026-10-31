@@ -284,9 +284,12 @@ impl EmbeddedRuntime {
     }
 
     /// The app came to the front: counted for every profile, at most once
-    /// an hour.
+    /// an hour. Revalidate existing paths and recover a lost relay at once.
     pub fn client_opened(&self) {
         for runtime in self.hosted() {
+            if let Some(edge) = runtime.edge() {
+                edge.foreground();
+            }
             runtime.analytics().record_at_most_every(
                 CLIENT_OPENED_EVERY,
                 analytics::Event::ClientOpened {

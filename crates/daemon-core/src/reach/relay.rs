@@ -9,7 +9,10 @@
 //! attempt that fails, is followed by a pause of a second doubling to five
 //! minutes, with jitter, so a fleet that lost the relay together does not
 //! come back together; a clean close, or a link that lived thirty seconds,
-//! starts the count afresh. A kept token the relay refused is replaced at
+//! starts the count afresh. Foreground or a network change allows one
+//! immediate retry of a previously working relay, including a stale link
+//! whose end arrives within the two-second recovery window. Only a new
+//! working link earns another immediate retry. A kept token the relay refused is replaced at
 //! once, and an ending that says the credentials are gone or the versions
 //! do not match is final until the profile signs in again.
 //!
@@ -34,6 +37,10 @@ pub const RELAY_LIVED_MS: u64 = 30_000;
 /// Up to a quarter of the pause either way, and up to five seconds more.
 const JITTER_SHARE: f64 = 0.25;
 const JITTER_EXTRA_MS: f64 = 5_000.0;
+/// A resumed runtime can report the old connection's end after the
+/// lifecycle event. Keep its prompt retry available while paths are
+/// probed; a later failure belongs to ordinary connection recovery.
+pub(super) const RELAY_RECOVERY_WINDOW_MS: u64 = 2_000;
 /// How long a relay host found to drop UDP is dialled over TLS alone, in
 /// policy time.
 pub const UDP_BLOCKED_MS: u64 = 3_600_000;
@@ -76,6 +83,11 @@ pub struct RelayReach {
     paused: bool,
     /// When each relay host was last found to drop UDP, in policy time.
     udp_blocked: BTreeMap<String, u64>,
+    /// Earned by a working link, spent only on an immediate recovery:
+    /// repeated lifecycle notifications cannot bypass failure backoff.
+    recoverable: bool,
+    /// The live attempt may still report its pre-resume failure.
+    recovery_until_ms: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,10 +146,43 @@ impl Daemon {
         relay.wanted = wanted;
         relay.backoff_ms = RELAY_RETRY_FIRST_MS;
         relay.attempt = None;
+        relay.recoverable = false;
+        relay.recovery_until_ms = None;
         if relay.paused {
             relay.paused = false;
             self.cancel(TimerId::RelayRetry, out);
         }
+        self.dial_relay(out);
+    }
+
+    /// Recover once from a previously working connection, in either
+    /// ordering of the lifecycle notification and its loss. An attempt
+    /// already dialing (including a cold start) is left alone.
+    pub(crate) fn recover_relay(&mut self, out: &mut Vec<Output>) {
+        let relay = &mut self.routing.reach.relay;
+        if !relay.wanted || !relay.recoverable {
+            return;
+        }
+        match relay.attempt.as_ref() {
+            Some(attempt) if attempt.linked_since_ms.is_some() => {
+                relay.recovery_until_ms =
+                    Some(self.timers.link_ms.saturating_add(RELAY_RECOVERY_WINDOW_MS));
+            }
+            Some(_) => {}
+            None => self.recover_relay_now(out),
+        }
+    }
+
+    fn recover_relay_now(&mut self, out: &mut Vec<Output>) {
+        let relay = &mut self.routing.reach.relay;
+        relay.recoverable = false;
+        relay.recovery_until_ms = None;
+        relay.backoff_ms = RELAY_RETRY_FIRST_MS;
+        if relay.paused {
+            relay.paused = false;
+            self.cancel(TimerId::RelayRetry, out);
+        }
+        tracing::info!("recovering the relay immediately after foreground or network change");
         self.dial_relay(out);
     }
 
@@ -201,6 +246,8 @@ impl Daemon {
             .filter(|out| out.id == attempt)
         {
             out.linked_since_ms = Some(link_ms);
+            self.routing.reach.relay.recoverable = true;
+            self.routing.reach.relay.recovery_until_ms = None;
         }
     }
 
@@ -215,6 +262,11 @@ impl Daemon {
         let Some(ended) = relay.attempt.take_if(|out| out.id == attempt) else {
             return;
         };
+        let recover = relay.recoverable
+            && relay
+                .recovery_until_ms
+                .take()
+                .is_some_and(|until| link_ms <= until);
         let lived = ended
             .linked_since_ms
             .is_some_and(|since| link_ms.saturating_sub(since) >= RELAY_LIVED_MS);
@@ -230,6 +282,9 @@ impl Daemon {
         }
         if !relay.wanted {
             return;
+        }
+        if recover {
+            return self.recover_relay_now(out);
         }
         let base = relay.backoff_ms.max(RELAY_RETRY_FIRST_MS);
         relay.backoff_ms = base.saturating_mul(2).min(RELAY_RETRY_MAX_MS);

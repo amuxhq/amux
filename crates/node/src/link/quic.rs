@@ -876,7 +876,9 @@ impl QuicCarrier {
         let monitor_connection = connection.clone();
         let monitor_closed = closed.clone();
         tokio::spawn(async move {
-            let reason = close_reason_from_connection(monitor_connection.closed().await);
+            let error = monitor_connection.closed().await;
+            tracing::info!(connection = monitor_connection.stable_id(), %error, "QUIC connection ended");
+            let reason = close_reason_from_connection(error);
             if monitor_closed.borrow().is_none() {
                 monitor_closed.send_replace(Some(reason));
             }

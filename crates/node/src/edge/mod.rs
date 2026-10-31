@@ -777,6 +777,15 @@ impl Edge {
         &self.paths
     }
 
+    /// The app is running again: revalidate its paths and let a lost
+    /// relay recover without a retry pause.
+    pub fn foreground(&self) {
+        tracing::info!(host = %self.host_id(), "the app returned to the foreground");
+        if let Err(error) = self.network_changed() {
+            tracing::warn!(%error, "foreground network recovery failed");
+        }
+    }
+
     /// The host's network changed: the profile's socket is bound afresh
     /// where it is the edge's own, its addresses are listed again to every
     /// peer, and every path machine probes its paths again. The link log
@@ -794,6 +803,9 @@ impl Edge {
             .filter(|_| self.lan_addr.is_some());
         self.local_host.set_listed(own_listed(lan, Some(&addrs)));
         let machines_told = self.paths.network_changed(addrs.clone());
+        if let Some(core) = self.channels.link_registry().core() {
+            core.report(daemon_core::Input::RecoverRelay);
+        }
         crate::link_log::Rebind {
             rebound,
             machines_told,

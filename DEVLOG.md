@@ -1,3 +1,7 @@
+2026-10-31 — **Foreground recovery does not wait out relay backoff.** A phone returning from suspension could discover its old relay connection was gone and deliberately wait up to 6.25 seconds before dialing. Foreground now revalidates paths and, like a network change, tells the core to recover the relay. A previously working relay earns one immediate recovery attempt, whether its loss is reported before the lifecycle event or within the two-second path-probe window after it. Cold-start and in-flight dials are left alone, healthy links stay open, and a failed recovery goes back to normal backoff even under repeated notifications. QUIC endings now log their transport error. The diagnostic fixtures include the new recovery state.
+
+Tests: all 154 daemon-core tests and 456 node, embedded runtime, phone bridge and replay tests pass. A real loopback relay reconnects in 22 ms and 30 ms for the two notification/loss orderings, before the minimum ordinary retry pause of 750 ms. Workspace Clippy, formatting, core purity, documentation and dependency policy checks pass; protocol compatibility has no frozen release baseline yet.
+
 2026-10-31 — **The release tool builds on Windows again.** Making the backup key file readable only by its owner used Unix's file modes unconditionally, so the workspace stopped compiling on Windows and CI's Windows test job failed before running anything. The mode is set, and checked in its test, on Unix only; the tool itself runs on the Mac.
 
 Tests: the workspace type-checks for `x86_64-pc-windows-msvc`; xtask (22) passes.

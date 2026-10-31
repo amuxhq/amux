@@ -3230,3 +3230,71 @@ async fn a_host_behind_the_relay_rebinds_mid_stream_and_its_session_carries_on()
     still_relayed(&net, "laptop", "desk");
     net.shutdown().await.unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn network_recovery_reconnects_the_relay_without_the_retry_pause() {
+    for notification_first in [false, true] {
+        let net = Net::start(Topology::new().relay(&["ada"]).host("phone"))
+            .await
+            .unwrap();
+        net.sign_in("phone", "ada").await.unwrap();
+        let phone = edge(&net, "phone");
+        let relay = net.relay().unwrap();
+        let ups = || {
+            testnet::link_log::captured(phone.host_id())
+                .iter()
+                .filter(|event| {
+                    event.peer == relay.host_id()
+                        && event.event == node::link_log::LinkTransition::Up
+                })
+                .count()
+        };
+        let before = ups();
+        let mut status = phone.subscribe_relay();
+        assert!(matches!(
+            *status.borrow(),
+            Some(node::Relay::Connected { .. })
+        ));
+        if notification_first {
+            phone.network_changed().unwrap();
+        }
+        relay
+            .server()
+            .send_link_close_to_all(wire::LinkCloseReason::UserShutdown)
+            .await;
+        if !notification_first {
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                status.wait_for(|state| !matches!(state, Some(node::Relay::Connected { .. }))),
+            )
+            .await
+            .expect("the old relay link ends")
+            .unwrap();
+        }
+        let began = tokio::time::Instant::now();
+        if !notification_first {
+            phone.network_changed().unwrap();
+        }
+        // The smallest ordinary retry pause is 750 ms. Require an actual
+        // new link, not the old connection's cached Connected status.
+        tokio::time::timeout(Duration::from_millis(700), async {
+            loop {
+                let connected = matches!(*status.borrow(), Some(node::Relay::Connected { .. }));
+                if ups() > before
+                    && connected
+                    && relay.links("ada").await == vec![(phone.host_id(), 1)]
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("recovery must not wait for the retry timer");
+        println!(
+            "relay recovered in {:?}; notification first: {notification_first}",
+            began.elapsed()
+        );
+        net.shutdown().await.unwrap();
+    }
+}

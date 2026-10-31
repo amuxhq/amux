@@ -290,7 +290,10 @@ and Suspending when the app is put away and the system is about to suspend it
 (and when a push that woke it in the background is done). Suspending makes
 every profile's store whole on the drive before it returns, under background
 time the app asks for, so a phone the system ends while suspended opens next
-time on what it last showed.
+time on what it last showed. Foreground also revalidates network paths. A
+previously working relay connection that was lost gets one immediate reconnect
+attempt, without the usual retry pause; if that attempt fails, normal backoff
+resumes. An existing healthy connection and a cold-start dial stay in place.
 
 The same moments drive [product analytics](ANALYTICS.md), which the
 runtime keeps and sends: coming to the front counts the app as opened (at

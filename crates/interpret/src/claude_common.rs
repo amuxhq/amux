@@ -568,7 +568,6 @@ pub(crate) struct Jobs {
     lists: u64,
     /// Whether anything is known about the jobs: a list stated, or a job
     /// launched. Before either they are unknown.
-    #[serde(default)]
     known: bool,
 }
 
@@ -580,13 +579,10 @@ struct Job {
     /// The number of lists stated before the job's call said it started:
     /// a job launched after the newest list is kept until the next one.
     launched_after: u64,
-    #[serde(default)]
     kind: i32,
     /// A stop was sent and Claude has not said the job ended.
-    #[serde(default)]
     stopping: bool,
     /// Claude's refusal of the last stop.
-    #[serde(default)]
     stop_error: String,
 }
 

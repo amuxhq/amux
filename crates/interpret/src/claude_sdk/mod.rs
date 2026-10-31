@@ -99,7 +99,6 @@ struct Tool {
     ended_at_ms: Option<i64>,
     /// When the call began running: the moment it was allowed, when it
     /// waited for the person's approval.
-    #[serde(default)]
     started_at_ms: Option<i64>,
     parent_key: String,
     hidden: bool,
@@ -111,7 +110,7 @@ struct Tool {
     #[serde(with = "serde_pb::msgs")]
     images: Vec<Attachment>,
     /// What amux's attach tool attached, from the element it answered.
-    #[serde(default, with = "serde_pb::msgs")]
+    #[serde(with = "serde_pb::msgs")]
     attached: Vec<Attachment>,
     /// An ExitPlanMode call is drawn as its plan, with this verdict.
     plan: Option<Verdict>,
@@ -133,7 +132,6 @@ struct AskMeta {
     suggestions: Vec<String>,
     shape: AnswerShape,
     /// The subagent that asked; None for the main thread.
-    #[serde(default)]
     agent: Option<String>,
 }
 
@@ -196,7 +194,6 @@ pub struct State {
     never_ask: bool,
     /// The folder Claude was launched in, which it may work in without
     /// being granted it.
-    #[serde(default)]
     cwd: String,
     /// The models the initialize response offers and the commands Claude
     /// last listed: the catalogue.
@@ -209,7 +206,6 @@ pub struct State {
     clients: BTreeMap<String, Client>,
     /// The uuids of the messages amux handed Claude that no result has
     /// answered yet.
-    #[serde(default)]
     unanswered: BTreeSet<String>,
     /// The message being streamed, and its open blocks by index.
     stream: Option<String>,
@@ -240,21 +236,18 @@ pub struct State {
     #[serde(with = "serde_pb::opt_msg")]
     servers: Option<ToolServerHealth>,
     /// Launched without amux's tool server, by organization policy.
-    #[serde(default)]
     tools_withheld: bool,
     #[serde(with = "serde_pb::opt_msg")]
     sign_in: Option<SignIn>,
     /// Claude's background jobs; the shared part publishes them.
     jobs: Jobs,
     /// Tasks Claude marks ambient, its own work rather than the person's.
-    #[serde(default)]
     ambient: std::collections::BTreeSet<String>,
     /// The newest slash command sent, which a local command's output
     /// belongs to; taken by that output.
     slash: Option<String>,
     /// A built-in command's answer drawn before Claude named its command:
     /// its key and text, for the command's replay to name it.
-    #[serde(default)]
     synthetic: Option<(String, String)>,
     /// An interrupt was sent in the running turn.
     interrupted: bool,

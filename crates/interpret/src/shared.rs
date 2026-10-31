@@ -355,13 +355,12 @@ pub struct Shared<A: OpenAsk> {
     /// Agent messages the provider consumed, by envelope id. With the
     /// pending set this is every message the incarnation took, so a second
     /// hand-off of one is answered without a second inject or item.
-    #[serde(default, with = "serde_pb::bytes_set")]
+    #[serde(with = "serde_pb::bytes_set")]
     taken_messages: BTreeSet<Vec<u8>>,
     working_on: Option<String>,
     /// The agent declared its work with the status tool: from then on only
     /// that call changes working_on. Until then it is the first line of
     /// the newest prompt the agent took.
-    #[serde(default)]
     declared: bool,
     turn: TurnCounter,
     /// Prompts handed to the provider and not yet reflected, oldest first:
@@ -386,17 +385,14 @@ pub struct Shared<A: OpenAsk> {
     catalogue: Option<Vec<u8>>,
     /// A submitted prompt starts no turn: the provider's own record of the
     /// prompt does (terminal Claude, where keys typed may never arrive).
-    #[serde(default)]
     turn_on_reflection: bool,
     /// The agent is being stopped: the turn the stop cuts short ends
     /// stopped, however the provider words its end.
-    #[serde(default)]
     stopping: bool,
     /// The incarnation is on its way out, stopped or with its daemon lost:
     /// nothing more is handed to the provider from the queue, so what waits
     /// there stays for the next incarnation rather than going to a
     /// provider about to be closed.
-    #[serde(default)]
     leaving: bool,
 }
 

@@ -584,10 +584,8 @@ pub struct State {
     /// The plan Codex proposed last.
     proposed: Option<Proposed>,
     /// The agent's folder, where a `/clear` starts its thread.
-    #[serde(default)]
     cwd: String,
     /// How many times `/clear` started a thread, which names each request.
-    #[serde(default)]
     clears: u32,
 }
 

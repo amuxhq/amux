@@ -195,10 +195,7 @@ impl fmt::Display for TerminalInput {
 pub(crate) enum AgentFact {
     /// Sent before the provider's first fact, and again after the agent
     /// process relaunches it.
-    Launch {
-        #[serde(default)]
-        version: String,
-    },
+    Launch { version: String },
     /// Claude's terminal first drew with bracketed paste on: its input is
     /// live, so a prompt can be typed. Some versions report their session
     /// start only after the first prompt, so nothing else says a new
@@ -264,25 +261,20 @@ struct Provider {
     relaunched: bool,
     model: Option<String>,
     /// The reasoning effort Claude's newest assistant row ran with.
-    #[serde(default)]
     effort: Option<String>,
     permission_mode: Option<String>,
     /// Launched allowing the never-ask permission.
     never_ask: bool,
     /// The permission Claude was launched in, from its arguments.
-    #[serde(default)]
     launched_permission: Option<String>,
     /// The model Claude was launched with (`--model`), which runs until
     /// Claude names the running one: it starts its session only once a
     /// prompt arrives.
-    #[serde(default)]
     launched_model: Option<String>,
     /// Claude's own view resumed another conversation and still shows one
     /// that is not this agent's.
-    #[serde(default)]
     switched_away: bool,
     /// Launched without amux's tool server, by organization policy.
-    #[serde(default)]
     tools_withheld: bool,
     /// What the host's Claude offers, from the spec: a terminal offers
     /// nothing a program can read.
@@ -308,7 +300,6 @@ struct Tool {
     ended_at_ms: Option<i64>,
     /// When the call began running, after any wait for approval: its
     /// PostToolUse hook's time less the duration Claude gives.
-    #[serde(default)]
     started_at_ms: Option<i64>,
     /// The assistant message the call's row belongs to.
     message_id: String,
@@ -327,7 +318,7 @@ struct Tool {
     #[serde(with = "serde_pb::msgs")]
     images: Vec<Attachment>,
     /// What amux's attach tool attached, from the element it answered.
-    #[serde(default, with = "serde_pb::msgs")]
+    #[serde(with = "serde_pb::msgs")]
     attached: Vec<Attachment>,
     /// An ExitPlanMode call is drawn as its plan, with this verdict.
     plan: Option<Verdict>,
@@ -474,7 +465,7 @@ struct AskMeta {
     /// A form or link left to Claude's own dialog, as the tool server
     /// asked it: the open ask only says it is answered in the terminal,
     /// and its item keeps what was asked.
-    #[serde(default, with = "serde_pb::opt_msg")]
+    #[serde(with = "serde_pb::opt_msg")]
     asked: Option<Ask>,
 }
 
@@ -550,7 +541,6 @@ pub struct State {
     running: Vec<Running>,
     /// When calls whose PostToolUse hook came before their row began
     /// running, by tool-use id, until the row lands.
-    #[serde(default)]
     ran_from: BTreeMap<String, i64>,
     /// The text of each prompt typed through amux and not yet reflected,
     /// by input id: a prompt Claude folds into a running turn is reflected
@@ -562,51 +552,39 @@ pub struct State {
     hook_rows: Vec<HookRow>,
     /// The calls PreToolUse hooks announced, until they end: an ask is
     /// raised for one of them.
-    #[serde(default)]
     announced: Vec<Announced>,
     /// The replies Claude is drawing (MessageDisplay), oldest first, until
     /// the transcript rows they become land.
-    #[serde(default)]
     streams: Vec<Stream>,
     /// Replies whose rows landed before Claude drew a line of them: the
     /// stream that follows for each is already drawn.
-    #[serde(default)]
     unstreamed: u32,
     /// The prompts the running turn answers, and those of the last turns
     /// over. Hooks and rows travel apart, so a reply's last batch can come
     /// after the row that ended its turn, even after the next prompt; a
     /// batch for a prompt whose turn is over draws nothing.
-    #[serde(default)]
     turn_prompts: Vec<String>,
-    #[serde(default)]
     ended_prompts: VecDeque<String>,
     /// A new turn's prompt its `UserPromptSubmit` announced, until the
     /// prompt's row lands, and the reply's batches that came before it:
     /// drawn first, they would sit above the prompt. The hook can come
     /// after the row too: `prompt_seen` is the newest prompt row's.
-    #[serde(default)]
     prompt_unseen: Option<String>,
-    #[serde(default)]
     prompt_seen: Option<String>,
     /// Calls whose PostToolUse came before their row. Claude wrote the row
     /// before the call ran, so a reply drawn after the hook is a later
     /// message's: drawn before the row lands, it would sit above the call.
-    #[serde(default)]
     calls_unseen: Vec<String>,
     /// The batches held while a prompt's or a call's row is owed.
-    #[serde(default)]
     held_displays: Vec<HeldDisplay>,
     /// Why auto mode refused a call whose row has not landed yet, by
     /// tool-use id.
-    #[serde(default)]
     refused: BTreeMap<String, String>,
     /// The step of a `!command` typed in Claude's own view, until its
     /// output row.
-    #[serde(default)]
     bang: Option<String>,
     /// A terminal client shows Claude's own terminal, so a tool server's
     /// form is left to Claude's dialog.
-    #[serde(default)]
     watched: bool,
 }
 

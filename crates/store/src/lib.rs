@@ -349,28 +349,6 @@ pub enum StoreError {
     Closed,
 }
 
-/// What one held row costs against a retention budget: its envelope's
-/// variable fields, the kind's integer, and a fixed allowance for the other
-/// integers and the index entries beside them. The store's SQL counts the
-/// same bytes, so the two agree on every row.
-pub fn item_bytes(item: &Item) -> u64 {
-    (item.key.len()
-        + item.text.len()
-        + item.body.len()
-        + encode_attachments(&item.attachments).len()
-        + item.input_id.len()
-        + item.producer_version.len()) as u64
-        + KIND_BYTES
-        + ITEM_OVERHEAD_BYTES
-}
-
-/// What [`item_bytes`] counts for a row's kind: a fixed 4 bytes, whatever
-/// integer it holds.
-pub const KIND_BYTES: u64 = 4;
-
-/// The fixed per-row allowance in [`item_bytes`] besides the kind.
-pub const ITEM_OVERHEAD_BYTES: u64 = 48;
-
 /// Encodes an attachment list for its column.
 pub(crate) fn encode_attachments(attachments: &[Attachment]) -> Vec<u8> {
     let mut bytes = Vec::new();

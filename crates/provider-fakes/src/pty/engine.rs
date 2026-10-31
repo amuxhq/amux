@@ -11,9 +11,7 @@
 //! transcript and payloads handed to the hook commands `--settings` names
 //! (only the hook events the corpus records). A prompt submitted while a
 //! turn runs is queued and folded into that turn at its next tool
-//! boundary; Ctrl+X Ctrl+S sends it now: the running call moves to the
-//! background and the message joins the turn at once. A turn the user cuts
-//! short runs no Stop hook. An ask runs its PermissionRequest hook while
+//! boundary. A turn the user cuts short runs no Stop hook. An ask runs its PermissionRequest hook while
 //! its menu shows, and takes whichever answer comes first: the hook's
 //! decision or the menu's keys. A tool server's form runs its Elicitation
 //! hook and shows nothing until the hook returns; Escape cancels it and the
@@ -70,7 +68,6 @@ enum Key {
     Down,
     Up,
     ShiftTab,
-    SendNow,
 }
 
 enum In {
@@ -211,8 +208,6 @@ fn decode(bytes: &mut Vec<u8>) -> Vec<Key> {
             [b'\r', ..] | [b'\n', ..] => (Some(Key::Enter), 1),
             [b'\t', ..] => (Some(Key::Tab), 1),
             [b' ', ..] => (Some(Key::Space), 1),
-            [0x18, 0x13, ..] => (Some(Key::SendNow), 2),
-            [0x18] => break,
             _ => {
                 let text = String::from_utf8_lossy(rest);
                 match text.chars().next() {
@@ -312,8 +307,6 @@ enum Cut {
 /// How a held call ended.
 enum Held {
     Ran,
-    /// Ctrl+X Ctrl+S moved it to the background.
-    Backgrounded,
     Interrupted,
 }
 
@@ -337,8 +330,6 @@ struct Engine {
     queue: VecDeque<Queued>,
     busy: bool,
     cut: Option<Cut>,
-    /// Ctrl+X Ctrl+S asked for the first queued prompt to run now.
-    send_now: bool,
     /// The decision of the hook an open ask waits on, which came before
     /// any key answered its menu.
     decided: Option<Value>,
@@ -406,7 +397,6 @@ impl Engine {
             queue: VecDeque::new(),
             busy: false,
             cut: None,
-            send_now: false,
             decided: None,
             parent: None,
             prompt_id: uuid(),
@@ -606,11 +596,6 @@ impl Engine {
                         "sessionId": self.session,
                     });
                     self.row(row);
-                }
-                Key::SendNow => {
-                    if self.busy && !self.queue.is_empty() {
-                        self.send_now = true;
-                    }
                 }
                 Key::Tab | Key::Down | Key::Up => {}
             },
@@ -818,7 +803,6 @@ impl Engine {
         let started = std::time::Instant::now();
         self.busy = true;
         self.cut = None;
-        self.send_now = false;
         self.prompt_id = uuid();
         self.turn_id = uuid();
         self.turns += 1;
@@ -837,9 +821,6 @@ impl Engine {
             self.drain();
             if self.cut.is_some() {
                 break None;
-            }
-            if self.send_now {
-                self.run_now();
             }
             let Some(step) = crate::script::next_step(&mut self.steps) else {
                 break None;
@@ -880,7 +861,6 @@ impl Engine {
                             self.finish_tool(&id, &name, &input, &tool, outcome);
                             self.attach(absorbed);
                         }
-                        Held::Backgrounded => self.background(&id),
                         Held::Interrupted => {
                             self.abandon(&id, &name, &input, &tool);
                             self.interruption_row("[Request interrupted by user for tool use]");
@@ -1212,63 +1192,10 @@ impl Engine {
             if self.cut == Some(Cut::Interrupted) {
                 return Held::Interrupted;
             }
-            if self.send_now {
-                return Held::Backgrounded;
-            }
             if !running || self.closed {
                 return Held::Ran;
             }
             self.pump().await;
-        }
-    }
-
-    /// Ctrl+X Ctrl+S while a call runs: Claude moves the call to the
-    /// background, answers it with a note saying so, and the queued prompt
-    /// joins the running turn. No PostToolUse hook runs for the call.
-    fn background(&mut self, id: &str) {
-        let task = self.ids.next("bg");
-        let output = format!("{}/.tasks/{task}.output", self.cwd);
-        self.dequeue();
-        self.result_row(
-            id,
-            json!(format!(
-                "Command was moved to the background (ID: {task}) so that a message that arrived while it was running can reach you; it was not interrupted. Output is being written to: {output} You will be notified when it completes. To check interim output, use Read on that file path."
-            )),
-            false,
-            json!({
-                "backgroundTaskId": task,
-                "backgroundedToDeliverMessage": true,
-                "interrupted": false,
-                "isImage": false,
-                "noOutputExpected": false,
-                "stderr": "",
-                "stdout": "",
-            }),
-        );
-        self.join_now();
-    }
-
-    /// Ctrl+X Ctrl+S between calls: the queued prompt joins the running
-    /// turn at once.
-    fn run_now(&mut self) {
-        self.dequeue();
-        self.join_now();
-    }
-
-    fn dequeue(&mut self) {
-        let row = json!({
-            "type": "queue-operation",
-            "operation": "dequeue",
-            "sessionId": self.session,
-            "timestamp": timestamp(),
-        });
-        self.row(row);
-    }
-
-    fn join_now(&mut self) {
-        self.send_now = false;
-        if let Some(queued) = self.queue.pop_front() {
-            self.user_row(&queued, "queued");
         }
     }
 
@@ -1760,7 +1687,7 @@ mod tests {
 
     #[test]
     fn keys_decode_as_claudes_own_menus_take_them() {
-        let mut bytes = b"\x1b[200~hi there\x1b[201~\r1\x1b\x1b[B \t\x1b[Z\x18\x13x".to_vec();
+        let mut bytes = b"\x1b[200~hi there\x1b[201~\r1\x1b\x1b[B \t\x1b[Zx".to_vec();
         assert_eq!(
             decode(&mut bytes),
             [
@@ -1772,7 +1699,6 @@ mod tests {
                 Key::Space,
                 Key::Tab,
                 Key::ShiftTab,
-                Key::SendNow,
                 Key::Char('x'),
             ]
         );

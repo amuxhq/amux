@@ -105,7 +105,7 @@ Each dump carries what its trigger replays, and its manifest names that scope:
 | `core` | a daemon core check that broke, or a step over budget | `core/`, own agents' journals from the checkpoint's cursor, and the daemon log |
 | `agent` | an agent core check that broke, or a step over budget | that agent's process part, its journal (at least two segments), row and slice |
 | `transcript` | a chat whose transcript failed its check | that chat's session, and its agent's row and slice |
-| `report` | a person's report, from the terminal or the phone | every agent's row, a slice for each agent with a chat open, the client's sessions, `core/` with own journals from its cursor, and the daemon log |
+| `report` | a person's report, from the terminal or the phone | the daemon and supervisor logs, and no agent's row, slice, journal or session: those hold conversation text |
 
 Some dumps nobody asks for. When the daemon's core breaks one of its cheap invariants, or a step runs over its
 budget, the daemon writes a bundle whose `reason` starts `the daemon core: ` and whose manifest says `automatic`.
@@ -332,7 +332,7 @@ The bundle, in the runtime's `reports/report-<unix ms>-<id>/`, holds:
 | --- | --- |
 | `report.json` | Build and git revision, time, note, marks in points with the frame's size and scale, and every part declared present or absent with a reason |
 | `frame.png` | The frozen screen, without the status bar |
-| `dump/…` | The profile's `report` dump, as above, with the app runtime's client parts |
+| `dump/…` | The profile's `report` dump, as above, with the fleet's structure from the app runtime |
 
 ## Sending reports
 

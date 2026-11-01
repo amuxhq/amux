@@ -4093,7 +4093,8 @@ pub struct DumpRequest {
     /// build that wrote it reads it; a daemon that cannot decode one leaves it
     /// out of the bundle and says so. Unredacted as the client holds it; the
     /// daemon redacts each through its agent's kind before it writes it into the
-    /// bundle, and passes none on to another host.
+    /// bundle, and passes none on to another host. Only a dump of the
+    /// unspecified scope carries them.
     #[prost(bytes = "vec", repeated, tag = "4")]
     pub sessions: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     #[prost(enumeration = "DumpScope", tag = "5")]
@@ -4224,8 +4225,8 @@ pub enum DumpScope {
     Agent = 2,
     /// One chat: the client's session and its agent's row and slice.
     Transcript = 3,
-    /// A person's report: every row, a slice per open chat, the client's
-    /// sessions and the core's part.
+    /// A person's report: the installation's own logs and no agent's records,
+    /// since those hold conversation text.
     Report = 4,
 }
 impl DumpScope {

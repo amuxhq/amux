@@ -119,22 +119,19 @@ pub const SUPERVISOR_LOG: &str = "supervisor.log";
 struct Gather {
     /// The core's checkpoint, the inputs since and the store copy.
     core: bool,
-    slices: Slices,
+    /// Each covered agent's directory and manifest entry; without it, no
+    /// slice, journal or part either.
+    agents: bool,
+    /// The client sessions the request handed in.
+    sessions: bool,
+    /// Each covered agent's store slice beside its row.
+    slices: bool,
     journals: Journals,
     /// The agent process's part: its facts ring, checkpoints, specs and
     /// log tails.
     parts: bool,
     /// The daemon's and the supervisor's log tails.
     logs: bool,
-}
-
-/// Whose store slice a bundle carries. Every covered agent has its row.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Slices {
-    All,
-    /// Only agents a client session in the request is for.
-    Sessions,
-    None,
 }
 
 /// How much of each own agent's journal a bundle carries.
@@ -154,36 +151,50 @@ impl Gather {
         match scope {
             DumpScope::Unspecified => Gather {
                 core: true,
-                slices: Slices::All,
+                agents: true,
+                sessions: true,
+                slices: true,
                 journals: Journals::Tail,
                 parts: true,
                 logs: true,
             },
             DumpScope::Core => Gather {
                 core: true,
-                slices: Slices::None,
+                agents: true,
+                sessions: false,
+                slices: false,
                 journals: Journals::FromCursor,
                 parts: false,
                 logs: true,
             },
             DumpScope::Agent => Gather {
                 core: false,
-                slices: Slices::All,
+                agents: true,
+                sessions: false,
+                slices: true,
                 journals: Journals::Tail,
                 parts: true,
                 logs: false,
             },
             DumpScope::Transcript => Gather {
                 core: false,
-                slices: Slices::All,
+                agents: true,
+                sessions: false,
+                slices: true,
                 journals: Journals::None,
                 parts: false,
                 logs: false,
             },
+            // A person's report carries our own logs and nothing of any
+            // agent's: no store, journal or session, each of which holds
+            // conversation text, and those of agents the person never
+            // looked at.
             DumpScope::Report => Gather {
-                core: true,
-                slices: Slices::Sessions,
-                journals: Journals::FromCursor,
+                core: false,
+                agents: false,
+                sessions: false,
+                slices: false,
+                journals: Journals::None,
                 parts: false,
                 logs: true,
             },
@@ -344,23 +355,18 @@ impl ProfileRuntime {
             None
         };
         let cursors = core.as_ref().map(|core| &core.cursors);
-        let sessions = client_sessions(&request.sessions, &rows, &partial, &mut errors)?;
-        for row in &rows {
+        let sessions = if gather.sessions {
+            client_sessions(&request.sessions, &rows, &partial, &mut errors)?
+        } else {
+            Vec::new()
+        };
+        let covered = if gather.agents { rows.as_slice() } else { &[] };
+        for row in covered {
             // An agent the checkpoint's store does not hold was made since:
             // all of its journal came after.
             let cursor = cursors.map(|cursors| cursors.get(&row.agent.agent).copied().unwrap_or(0));
-            let slice = match gather.slices {
-                Slices::All => true,
-                Slices::Sessions => sessions.iter().any(|session| {
-                    session["agent_id"]
-                        == Uuid::from_slice(&row.agent.agent)
-                            .unwrap_or_default()
-                            .to_string()
-                }),
-                Slices::None => false,
-            };
             let (entry, mut failed) = self
-                .dump_agent(row, dump_id.as_bytes(), &partial, gather, slice, cursor)
+                .dump_agent(row, dump_id.as_bytes(), &partial, gather, cursor)
                 .await?;
             agents.push(entry);
             errors.append(&mut failed);
@@ -487,7 +493,6 @@ impl ProfileRuntime {
         dump_id: &[u8],
         bundle: &Path,
         gather: Gather,
-        slice: bool,
         cursor: Option<u64>,
     ) -> Result<(serde_json::Value, Vec<String>), DumpError> {
         let id = Uuid::from_slice(&row.agent.agent).unwrap_or_default();
@@ -505,7 +510,7 @@ impl ProfileRuntime {
             redacted(kind, RedactTarget::Agent(to_wire(row).encode_to_vec())),
         )?;
         let mut rows = None;
-        if slice {
+        if gather.slices {
             let key = row.agent.clone();
             let cut = self
                 .read_rows(move |store| store.cut(&key, DUMP_ROWS))

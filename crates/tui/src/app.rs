@@ -1575,23 +1575,19 @@ impl App {
         }
     }
 
-    /// The profile's dump with this client's parts, started as the screen
-    /// freezes so it is ready by the time the note is.
+    /// The report's dump with this client's parts, started as the screen
+    /// freezes so it is ready by the time the note is. It carries no
+    /// session: a chat's session holds its conversation.
     fn start_dump(&self) -> crate::report::Dump {
         let client = self.client.clone();
         let parts = [self.fleet.dump_part()];
-        let sessions = self
-            .chat
-            .iter()
-            .map(|chat| chat.session.history().encode_to_vec())
-            .collect();
         tokio::spawn(async move {
             let response = client
                 .dump(wire::DumpRequest {
                     agent_ids: Vec::new(),
                     reason: "report a problem".to_owned(),
                     automatic: false,
-                    sessions,
+                    sessions: Vec::new(),
                     scope: wire::DumpScope::Report.into(),
                     check: String::new(),
                 })

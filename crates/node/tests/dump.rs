@@ -490,8 +490,7 @@ async fn a_dump_of_named_agents_covers_only_them_and_an_unknown_one_is_an_error(
 
 /// Each scope carries what replays the stage its trigger concerns: the
 /// core's part and the journals it reads for the core, one chat's rows for
-/// a transcript, and for a person's report every row but slices only of
-/// the chats the client had open.
+/// a transcript, and for a person's report none of any agent's.
 #[tokio::test(flavor = "multi_thread")]
 async fn each_scope_carries_what_its_stage_replays() {
     let install = Install::new();
@@ -551,16 +550,31 @@ async fn each_scope_carries_what_its_stage_replays() {
     );
     assert!(!has(&transcript, "core/"), "{transcript:?}");
 
-    let (_, report) = dump(wire::DumpScope::Report, Vec::new()).await;
-    assert!(has(&report, "core/checkpoint"), "{report:?}");
+    // A person's report carries no agent's records, even for a chat the
+    // client had open and handed in: only the manifest and our own logs.
+    let open_chat = wire::dump::ClientSessionHistory {
+        agent_id: one.id.as_bytes().to_vec(),
+        ..wire::dump::ClientSessionHistory::default()
+    };
+    let request = DumpRequest {
+        scope: wire::DumpScope::Report.into(),
+        sessions: vec![open_chat.encode_to_vec()],
+        ..DumpRequest::default()
+    };
+    let bundle = runtime.dump(request).await.unwrap();
+    let report: Vec<String> = tree(&bundle).into_iter().map(|(name, _)| name).collect();
     assert!(
-        has(&report, &format!("agents/{}/row.pb", two.id)),
+        report
+            .iter()
+            .all(|file| [MANIFEST, DAEMON_LOG, node::SUPERVISOR_LOG].contains(&file.as_str())),
         "{report:?}"
     );
-    assert!(
-        !report.iter().any(|file| file.ends_with("store.pb")),
-        "no chat was open, so no slice: {report:?}"
-    );
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
+    assert_eq!(manifest["scope"], "report");
+    assert_eq!(manifest["agents"], serde_json::json!([]));
+    assert_eq!(manifest["client"]["sessions"], serde_json::json!([]));
+    assert!(manifest["core"].is_null(), "{manifest}");
 
     kill_all(&runtime).await;
     drop(runtime);

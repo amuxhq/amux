@@ -394,17 +394,21 @@ impl AppRuntime {
         }
     }
 
-    /// Writes a dump of the profile, with every open session for the daemon
-    /// to redact and write and the fleet's part, and returns the bundle's
-    /// directory. One for a person's report carries what reproduces this
-    /// device's screen; one to export carries everything the device holds.
+    /// Writes a dump with the fleet's part and returns the bundle's
+    /// directory. One to export carries everything the device holds, every
+    /// open session included for the daemon to redact and write; one for a
+    /// person's report carries our logs and no session, since a session
+    /// holds its chat's conversation.
     pub async fn dump(&self, reason: &str, for_report: bool) -> Result<PathBuf, RpcError> {
-        let sessions = self
-            .fleet
-            .sessions()
-            .iter()
-            .map(|session| session.history().encode_to_vec())
-            .collect();
+        let sessions = if for_report {
+            Vec::new()
+        } else {
+            self.fleet
+                .sessions()
+                .iter()
+                .map(|session| session.history().encode_to_vec())
+                .collect()
+        };
         let response = self
             .client
             .dump(DumpRequest {

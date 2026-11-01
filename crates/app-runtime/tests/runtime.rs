@@ -544,6 +544,42 @@ async fn a_dump_carries_the_fleet_and_every_open_chat() {
     net.shutdown().await.unwrap();
 }
 
+/// A person's report holds none of a chat's conversation, even one open on
+/// screen: no session, no agent's records, and its words nowhere in it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dump_for_a_report_carries_no_conversation() {
+    let net = Net::start(topology()).await.unwrap();
+    let (runtime, mut host) = open(&net).await;
+    let chat = opened(&runtime, &worker(&net), 50).await;
+    until(&mut host, &chat, "the first turn", |chat| {
+        says(chat, "turn one")
+    })
+    .await;
+    let bundle = runtime.dump("report", true).await.unwrap();
+    assert!(bundle.join("manifest.json").is_file());
+    assert!(bundle.join("client/fleet/state.txt").is_file());
+    assert!(!bundle.join("client/sessions").exists());
+    assert!(!bundle.join("agents").exists());
+    assert!(!bundle.join("core").exists());
+    let mut dirs = vec![bundle.clone()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                dirs.push(path);
+                continue;
+            }
+            let bytes = std::fs::read(&path).unwrap();
+            assert!(
+                !bytes.windows(8).any(|window| window == b"turn one"),
+                "{} holds the chat's words",
+                path.display()
+            );
+        }
+    }
+    net.shutdown().await.unwrap();
+}
+
 /// The host's queue can answer a fleet wake while home is still being
 /// built on the main thread, before it has opened: that answer is
 /// nothing, but it still takes the changes that woke the host, or no

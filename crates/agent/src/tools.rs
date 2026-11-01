@@ -39,6 +39,28 @@ pub const RETRY_WINDOW: Duration = Duration::from_secs(5);
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
 
+/// Every tool this server offers, and whether Claude may run it without
+/// asking. `attach` asks: it reads any file the agent names and copies it
+/// into the blob folder, which Claude may read without asking, so letting it
+/// through unasked would read files the person's own permission rules deny.
+/// Claude's check sees the call before the file is read, as for any read.
+pub(crate) const TOOLS: [(&str, bool); 7] = [
+    (wire::AGENTS_TOOL, true),
+    (wire::HOSTS_TOOL, true),
+    (wire::SEND_TOOL, true),
+    (wire::SPAWN_TOOL, true),
+    (wire::STOP_TOOL, true),
+    (wire::STATUS_TOOL, true),
+    (wire::ATTACH_TOOL, false),
+];
+
+/// The tools Claude may run without asking.
+pub(crate) fn unasked() -> impl Iterator<Item = &'static str> {
+    TOOLS
+        .into_iter()
+        .filter_map(|(name, unasked)| unasked.then_some(name))
+}
+
 const AGENTS: &str = "List the amux fleet: every agent's name, kind, host, whether it is live, \
 what it is doing and working on, its parent, and which one is you.";
 const HOSTS: &str = "List the hosts this fleet trusts: each one's name, whether it is online, \
@@ -813,4 +835,22 @@ fn definitions() -> Value {
             "name": { "type": "string", "description": "The name viewers see; the file's own name when omitted." },
           }), &["path"]) },
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    /// The approval table names exactly the tools the server lists, so a new
+    /// tool cannot be offered without deciding whether it asks first.
+    #[test]
+    fn every_listed_tool_has_an_approval_and_attach_asks() {
+        let listed: Vec<String> = super::definitions()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap().to_owned())
+            .collect();
+        let tabled: Vec<String> = super::TOOLS.iter().map(|(name, _)| (*name).to_owned()).collect();
+        assert_eq!(listed, tabled);
+        assert!(!super::unasked().any(|name| name == wire::ATTACH_TOOL));
+    }
 }

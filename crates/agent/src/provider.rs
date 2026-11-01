@@ -1244,8 +1244,8 @@ fn closed() -> io::Error {
 /// manages Claude's MCP servers, so Claude would refuse to start with it. Every
 /// Claude accepts messages from other sessions at once, so a
 /// bypass-permissions agent does not hold an agent message behind an
-/// approval nobody is there to give, and runs amux's own tools without
-/// asking; terminal Claude also reports its hook events to the agent
+/// approval nobody is there to give, and runs amux's own tools, all but
+/// `attach`, without asking; terminal Claude also reports its hook events to the agent
 /// through the hook binary at the install path.
 fn claude_launch(
     spec: &AgentSpec,
@@ -1292,13 +1292,15 @@ fn claude_launch(
             Vec::new()
         },
         accept_cross_session: true,
-        // The files amux attaches live in the agent's blob folder, outside
-        // the working folder: without this Claude asks to read a file the
-        // person just attached, naming only its hash path. `//` makes the
-        // rule's path absolute.
+        // amux's tools by name, so one that asks first is left out. The
+        // files amux attaches live in the agent's blob folder, outside the
+        // working folder: without the read rule Claude asks to read a file
+        // the person just attached, naming only its hash path. `//` makes
+        // the rule's path absolute.
         permissions_allow: tools
             .iter()
-            .map(|_| format!("mcp__{}__*", interpret::AMUX_TOOL_SERVER))
+            .flat_map(|_| crate::tools::unasked())
+            .map(|tool| format!("mcp__{}__{tool}", interpret::AMUX_TOOL_SERVER))
             .chain([format!("Read(/{}/**)", rule_path(&dir.join(dir::BLOBS)))])
             .collect(),
     };
@@ -1758,6 +1760,42 @@ mod tests {
                 .as_array()
                 .is_some_and(|allow| allow.iter().any(|allowed| *allowed == rule)),
             "the settings do not let Claude read the blobs with {rule}: {settings}"
+        );
+    }
+
+    /// amux's tools are allowed by name, all but `attach`: it reads any file
+    /// the agent names into the blob folder Claude reads unasked, so it goes
+    /// through Claude's own permission check like any other read.
+    #[test]
+    fn claude_asks_before_attaching_and_runs_the_other_tools_unasked() {
+        let dir = std::env::temp_dir().join(format!("amux-allow-{}", std::process::id()));
+        let spec = wire::AgentSpec {
+            cwd: std::env::temp_dir().to_string_lossy().into_owned(),
+            provider_env: [(
+                crate::claude::launch::MANAGED_SETTINGS_PATH_ENV.to_owned(),
+                dir.join("no-managed-settings").display().to_string(),
+            )]
+            .into(),
+            config: Some(wire::EffectiveConfig {
+                install_path: "/opt/amux".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let (_, settings, withheld) = super::claude_launch(&spec, &dir, false).unwrap();
+        assert!(!withheld);
+        let settings: serde_json::Value = serde_json::from_str(&settings).unwrap();
+        let allow: Vec<&str> = settings["permissions"]["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|rule| rule.as_str())
+            .filter(|rule| rule.starts_with("mcp__"))
+            .collect();
+        assert_eq!(
+            allow,
+            ["agents", "hosts", "send", "spawn", "stop", "status"]
+                .map(|tool| format!("mcp__amux__{tool}"))
         );
     }
 

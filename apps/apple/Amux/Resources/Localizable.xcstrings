@@ -3505,14 +3505,14 @@
         }
       }
     },
-    "Includes this screen and the available session and host records." : {
+    "Includes this screen and amux’s own logs, never your conversations." : {
       "comment" : "English app copy. Used in ios/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Report.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Includes this screen and the available session and host records."
+            "value" : "Includes this screen and amux’s own logs, never your conversations."
           }
         }
       }

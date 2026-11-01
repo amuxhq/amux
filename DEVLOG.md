@@ -1,3 +1,7 @@
+2026-11-01 — **The phone's report screen says what a report carries.** A person's report now sends only the screenshot and amux's own logs, so the caption under the note reads "Includes this screen and amux's own logs, never your conversations." instead of promising session and host records.
+
+Tests: the five `report.*` component snapshots that show the caption and the `report/refused` journey golden re-recorded; `just ios lint`.
+
 2026-11-01 — **Pairing says what it grants.** Nothing told a person that a paired machine can start agents in any folder with any permission settings, which is running commands as them. The phone's pairing confirmation now reads "You'll see its agents here and can start new ones, which run on that machine as you. Pair only with your own machines. This invitation expires …"; `amux pair` prints "Whoever enters this PIN can run agents on this machine as you. Enter it only on your own devices." under the PIN, and the same for a QR code; docs/HOW_IT_WORKS.md's paragraph on paired hosts says what a paired host can do, that amux gives it no way to change trust, pair or stop amux but its agents can run any command, and that agents load a folder's own Claude settings and hooks.
 
 Tests: amux `pairing::tests` (14); `just docs-check`; `pair.confirm` component snapshot re-recorded; phone journey goldens `reach-host/pair-confirm` and `local-network/link-confirm` re-recorded.

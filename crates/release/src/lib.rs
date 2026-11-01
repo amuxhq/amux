@@ -11,7 +11,10 @@
 //! place in every rollout is fixed and nothing is stored.
 //!
 //! Shared by the daemon and the release tool, so the tool signs what the
-//! daemon verifies without building the daemon.
+//! daemon verifies without building the daemon. The version a built binary
+//! reports, and re-stamping a copy of it, is [`version_stamp`].
+
+pub mod version_stamp;
 
 use std::collections::BTreeMap;
 

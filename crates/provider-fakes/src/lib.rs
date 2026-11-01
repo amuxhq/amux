@@ -11,7 +11,7 @@
 //! back verbatim ([`PLAYBACK_ENV`]).
 //!
 //! Two properties hold each fake to its provider. Every recording in the
-//! claude-specs and codex-specs corpora plays back through the fake binary
+//! Claude and Codex corpora plays back through the fake binary
 //! over the transport hosts use (Codex's socket on Unix, stdio elsewhere)
 //! byte for byte ([`conformance`]), so the fake's
 //! transports and a recording's expressiveness as a script are the

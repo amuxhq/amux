@@ -4,7 +4,7 @@ messaging socket handles provider JSON by hand.
 
 The interpreters read and write Codex's and Claude's messages through the
 `codex-protocol` and `claude-protocol` crates, the agent process builds its
-handshake from them, and the `claude` crate writes Claude's messaging socket
+handshake from them, and its `claude` module writes Claude's messaging socket
 from them. This check searches those sources for the ways of going around the
 types: building JSON with `json!`, looking a field up by its name
 (`.get("…")`, `["…"]`, `.pointer(…)`, `.remove("…")`, or a path of names
@@ -37,7 +37,7 @@ SOURCES = [
     "crates/interpret/src/claude_common.rs",
     "crates/interpret/src/claude_answers.rs",
     "crates/agent/src/provider.rs",
-    "crates/claude/src/messaging.rs",
+    "crates/agent/src/claude/messaging.rs",
 ]
 
 # What going around the types looks like.

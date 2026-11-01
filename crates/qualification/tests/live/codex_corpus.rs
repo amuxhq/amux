@@ -1,5 +1,5 @@
 //! The Codex corpus: sessions amux drives so that what Codex says in them
-//! is recorded, joined to codex-specs's live captures (`codex-probe join`),
+//! is recorded, joined to the Codex corpus (`codex-probe join`),
 //! and replayed by the interpreter's goldens, the views' goldens, the
 //! fakes' conformance run and the strict decode tests.
 //!

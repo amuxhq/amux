@@ -6,6 +6,12 @@ license.workspace = true
 publish = false
 autotests = false
 
+# Its tests replay bundles a test net writes, in the integration binary:
+# none live in the library.
+[lib]
+test = false
+doctest = false
+
 [dependencies]
 chrono.workspace = true
 core-ring.workspace = true
@@ -15,16 +21,12 @@ journal.workspace = true
 models.workspace = true
 prost.workspace = true
 redaction.workspace = true
-semver = { workspace = true, features = ["serde"] }
-serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 store.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 ui-state.workspace = true
 ui-view.workspace = true
-unicode-width = "0.2"
 wire.workspace = true
 zstd.workspace = true
 

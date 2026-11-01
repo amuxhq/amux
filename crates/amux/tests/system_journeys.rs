@@ -23,7 +23,8 @@ use crate::support;
 #[tokio::test(flavor = "multi_thread")]
 async fn survive_daemon() {
     let running = node::version();
-    let previous = version_stamp::previous(running).expect("a release version to go below");
+    let previous =
+        release::version_stamp::previous(running).expect("a release version to go below");
     let channel = Channel::serve().await;
     let gate_dir = tempfile::tempdir().unwrap();
     let gate = gate_dir.path().join("gate");

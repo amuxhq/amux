@@ -1,5 +1,6 @@
 //! The Codex interpreter against the app-server sessions the live lane
-//! recorded in codex-specs and authored facts for what no recording shows.
+//! recorded in fixtures/codex/live and authored facts for what no recording
+//! shows.
 
 use std::path::{Path, PathBuf};
 

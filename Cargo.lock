@@ -14,11 +14,10 @@ version = "0.1.0"
 dependencies = [
  "agent-core",
  "agent-dir",
+ "anyhow",
  "attachments",
  "base64 0.22.1",
- "claude",
  "claude-protocol",
- "codex",
  "codex-protocol",
  "core-ring",
  "futures-util",
@@ -32,6 +31,7 @@ dependencies = [
  "prost",
  "provider-fakes",
  "pty-host",
+ "semver",
  "serde",
  "serde_json",
  "sha2",
@@ -106,7 +106,6 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "clap",
- "claude",
  "client",
  "crossterm",
  "http-body-util",
@@ -139,7 +138,6 @@ dependencies = [
  "tracing-subscriber",
  "tui",
  "uuid",
- "version-stamp",
  "vt100",
  "wire",
 ]
@@ -232,7 +230,6 @@ dependencies = [
  "app-runtime",
  "client",
  "log-file",
- "model",
  "node",
  "patience",
  "provider-fakes",
@@ -244,6 +241,7 @@ dependencies = [
  "tonic",
  "tracing",
  "tracing-subscriber",
+ "ui-state",
  "ui-view",
  "uuid",
  "wire",
@@ -258,7 +256,6 @@ dependencies = [
  "cbindgen",
  "client",
  "libc",
- "model",
  "node",
  "provider-fakes",
  "serde",
@@ -266,6 +263,7 @@ dependencies = [
  "tempfile",
  "testnet",
  "tokio",
+ "ui-state",
  "ui-view",
  "wire",
 ]
@@ -275,7 +273,6 @@ name = "app-runtime"
 version = "0.2.0"
 dependencies = [
  "client",
- "model",
  "models",
  "prost",
  "provider-fakes",
@@ -673,40 +670,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
-name = "claude"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "claude-protocol",
- "semver",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "claude-protocol"
 version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "claude-specs"
-version = "0.1.0"
-dependencies = [
- "libc",
- "pty-host",
- "redaction",
- "replay-support",
- "semver",
- "serde_json",
- "tempfile",
- "tokio",
 ]
 
 [[package]]
@@ -747,35 +715,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite",
-]
-
-[[package]]
 name = "codex-protocol"
 version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "codex-specs"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "redaction",
- "replay-support",
- "semver",
- "serde_json",
- "tokio",
- "tokio-tungstenite",
 ]
 
 [[package]]
@@ -1834,11 +1778,11 @@ name = "ios-tools"
 version = "0.1.0"
 dependencies = [
  "app-runtime",
- "model",
  "schemars",
  "serde",
  "serde_json",
  "tempfile",
+ "ui-state",
  "ui-view",
  "wire",
 ]
@@ -2087,16 +2031,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "model"
-version = "0.2.0"
-dependencies = [
- "schemars",
- "serde",
- "serde_json",
- "wire",
-]
-
-[[package]]
 name = "models"
 version = "0.1.0"
 dependencies = [
@@ -2200,7 +2134,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
- "version-stamp",
  "webpki-roots",
  "windows-sys 0.61.2",
  "wire",
@@ -2800,6 +2733,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "chrono",
+ "futures-util",
  "hyper-util",
  "interpret",
  "libc",
@@ -2809,17 +2743,22 @@ dependencies = [
  "pty-host",
  "quinn",
  "rcgen",
+ "redaction",
  "rustls",
+ "semver",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "testnet",
  "thiserror 2.0.20",
  "tokio",
  "tokio-rustls",
+ "tokio-tungstenite",
  "tonic",
  "tower",
  "ui-state",
+ "unicode-width 0.2.2",
  "uuid",
  "vt100",
  "wire",
@@ -3155,10 +3094,7 @@ dependencies = [
  "prost",
  "provider-fakes",
  "redaction",
- "semver",
- "serde",
  "serde_json",
- "sha2",
  "store",
  "tempfile",
  "testnet",
@@ -3166,7 +3102,6 @@ dependencies = [
  "tokio",
  "ui-state",
  "ui-view",
- "unicode-width 0.2.2",
  "uuid",
  "wire",
  "zstd",
@@ -4391,9 +4326,11 @@ dependencies = [
 name = "ui-state"
 version = "0.5.0"
 dependencies = [
- "model",
  "proptest",
  "prost",
+ "schemars",
+ "serde",
+ "serde_json",
  "wire",
 ]
 
@@ -4520,10 +4457,6 @@ name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
-
-[[package]]
-name = "version-stamp"
-version = "0.1.0"
 
 [[package]]
 name = "version_check"

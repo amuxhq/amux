@@ -9,7 +9,7 @@ autotests = false
 
 [dependencies]
 app-runtime = { workspace = true }
-model = { workspace = true }
+ui-state = { workspace = true }
 schemars = { workspace = true }
 ui-view = { workspace = true }
 wire = { workspace = true }

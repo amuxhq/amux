@@ -16,8 +16,8 @@
 //! and real effects, never generated prose: the item classes, asks,
 //! decisions, phase changes and turn ends the interpreter records have the
 //! shape it records for the matching probe recording, replayed from the
-//! interpreter fixture that points at the recording in claude-specs or
-//! codex-specs. A scenario with no such recording is judged against its own
+//! interpreter fixture that points at the recording beside it in
+//! crates/interpret/fixtures. A scenario with no such recording is judged against its own
 //! provider traffic replayed through the interpreter.
 //!
 //! The provider runs behind the probes' capture proxies, so every

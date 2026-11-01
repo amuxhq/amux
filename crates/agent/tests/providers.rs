@@ -588,8 +588,8 @@ async fn codex_takes_an_agent_message_as_injected_items() {
     a_message_mid_turn_is_consumed_before_a_one_shot_child_exits(Kind::Codex, false).await;
 }
 
-// Strict replay: each fake plays a real recording from the claude-specs or
-// codex-specs corpus (tests/replay/, its host lines rewritten to what the
+// Strict replay: each fake plays a real recording from the Claude or Codex
+// corpus (tests/replay/, its host lines rewritten to what the
 // agent writes) and checks every byte the agent writes against it. An
 // unexpected write, a missing one, or a write after the recording's end is
 // reported in the provider's log and fails the test; a stdio provider

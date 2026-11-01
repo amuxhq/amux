@@ -50,7 +50,7 @@ fn alive(pid: u32) -> bool {
 #[tokio::test(flavor = "multi_thread")]
 async fn agents_of_the_previous_build_work_on_after_an_update() {
     let running = node::version();
-    let previous = version_stamp::previous(running).unwrap();
+    let previous = release::version_stamp::previous(running).unwrap();
     let channel = Channel::serve().await;
     let gate_dir = tempfile::tempdir().unwrap();
     let gate = gate_dir.path().join("gate");
@@ -132,7 +132,7 @@ async fn agents_of_the_previous_build_work_on_after_an_update() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_tui_of_the_previous_build_works_on_after_an_update() {
     let running = node::version();
-    let previous = version_stamp::previous(running).unwrap();
+    let previous = release::version_stamp::previous(running).unwrap();
     let channel = Channel::serve().await;
     let gate_dir = tempfile::tempdir().unwrap();
     let gate = gate_dir.path().join("gate");
@@ -229,7 +229,7 @@ async fn the_previous_build_reopens_a_store_the_new_one_opened_before_prepared()
     use std::os::unix::process::CommandExt as _;
 
     let running = node::version();
-    let previous = version_stamp::previous(running).unwrap();
+    let previous = release::version_stamp::previous(running).unwrap();
     let gate_dir = tempfile::tempdir().unwrap();
     let gate = gate_dir.path().join("gate");
     std::fs::write(&gate, b"").unwrap();

@@ -39,18 +39,18 @@ journeys = ["survive-daemon"]
 
 [[suite]]
 name = "agent-provider-hosting"
-contract = "The agent process launches each provider child, completes its handshake and a turn, continues the provider's own session in a later incarnation, delivers agent messages through each provider's own injection channel, and names a Codex thread after the agent at start and on rename, so Codex's own app shows the same name."
+contract = "The agent process launches each provider child, completes its handshake and a turn, continues the provider's own session in a later incarnation, delivers agent messages through each provider's own injection channel, and names a Codex thread after the agent at start and on rename, so Codex's own app shows the same name; its Claude host keeps Claude's launch settings, hook forwarding, session files and version probe, and its Codex host its connection to the hosted app server, to their contracts."
 paths = ["crates/agent/tests/providers.rs", "crates/agent/tests/codex_thread_name.rs", "crates/agent/tests/replay", "crates/agent/src"]
 recipe = "just suite agent-provider-hosting"
 boundary = "Provider adapter"
-oracle = "Journaled items and snapshots, provider writes checked byte for byte against recorded input, re-emitted open items after a restart, and the thread/name/set requests the fake Codex logged."
+oracle = "Journaled items and snapshots, provider writes checked byte for byte against recorded input, re-emitted open items after a restart, the thread/name/set requests the fake Codex logged, and the hosts' launch settings, forwarded payloads and decoded protocol messages."
 real = ["agent process library", "provider child processes", "PTYs", "Unix sockets", "journal files"]
 substituted = ["providers by the scripted fakes and recorded replays"]
 time = "real"
 capabilities = ["Unix PTY"]
 lane = "fast"
 evidence = "crates/agent/tests/replay"
-update = "Cut or rewrite a replay fixture from its claude-specs or codex-specs recording and record the change in crates/agent/tests/replay/README.md."
+update = "Cut or rewrite a replay fixture from its recording in crates/interpret/fixtures/<kind>/live and record the change in crates/agent/tests/replay/README.md."
 cargo = [
   { package = "agent", kind = "lib", targets = ["agent"], features = [] },
   { package = "agent", modules = ["codex_thread_name", "providers"], features = [] },
@@ -200,7 +200,7 @@ cargo = [
 [[suite]]
 name = "claude-recorded-adapter"
 contract = "The capture proxy stands in for Claude on the live lane's PATH and reaches the real Claude past a wrapper without finding itself again, and a terminal capture keeps the rows its scenario produced and none of the recording owner's own context: no copies of each API request, nothing they installed, no environment or attribution."
-paths = ["crates/claude-specs/tests", "crates/claude-specs/fixtures"]
+paths = ["crates/qualification/src/bin/claude_probe", "crates/qualification/tests/capture_proxy.rs"]
 recipe = "just suite claude-recorded-adapter"
 boundary = "Provider adapter"
 oracle = "Scrubbed rows and the proxy's own exit."
@@ -209,12 +209,11 @@ substituted = ["live Claude process"]
 time = "driven"
 capabilities = ["Rust toolchain"]
 lane = "fast"
-evidence = "crates/claude-specs/fixtures"
+evidence = "crates/interpret/fixtures/claude_sdk/live, crates/interpret/fixtures/claude_pty/live"
 update = "Re-record the scenario with `just live <kind> <scenario>` and join its capture with `claude-probe join`."
 cargo = [
-  { package = "claude-specs", kind = "lib", targets = ["claude_specs"], features = [] },
-  { package = "claude-specs", kind = "bin", targets = ["claude-probe"], features = [] },
-  { package = "claude-specs", modules = ["capture_proxy", "scrub"], features = [] },
+  { package = "qualification", kind = "bin", targets = ["claude-probe"], features = [] },
+  { package = "qualification", modules = ["capture_proxy"], features = [] },
 ]
 
 [[suite]]
@@ -229,7 +228,7 @@ substituted = ["live Claude process"]
 time = "none"
 capabilities = ["Rust toolchain"]
 lane = "fast"
-evidence = "crates/claude-specs/fixtures/live/sdk and crates/claude-specs/fixtures/live/pty"
+evidence = "crates/interpret/fixtures/claude_sdk/live and crates/interpret/fixtures/claude_pty/live"
 update = "A failing line is provider drift or a wrong type: fix the type in crates/claude-protocol/src, never a live recording."
 cargo = [
   { package = "claude-protocol", kind = "lib", targets = ["claude_protocol"], features = [] },
@@ -248,7 +247,7 @@ substituted = ["live Codex process"]
 time = "none"
 capabilities = ["Rust toolchain"]
 lane = "fast"
-evidence = "crates/codex-specs/fixtures/live"
+evidence = "crates/interpret/fixtures/codex/live"
 update = "A failing line is provider drift or a wrong type: fix the type in crates/codex-protocol/src, never a live recording."
 cargo = [
   { package = "codex-protocol", kind = "lib", targets = ["codex_protocol"], features = [] },
@@ -278,7 +277,7 @@ cargo = [
 [[suite]]
 name = "provider-fake-conformance"
 contract = "Every recording in the Claude and Codex corpora plays back through its fake byte for byte, and each fake's script engine reproduces the ordered frame kinds its provider recorded for the same scenario."
-paths = ["crates/provider-fakes/tests/conformance.rs", "crates/provider-fakes/tests/scripted.rs", "crates/claude-specs/fixtures", "crates/codex-specs/fixtures"]
+paths = ["crates/provider-fakes/tests/conformance.rs", "crates/provider-fakes/tests/scripted.rs", "crates/interpret/fixtures/claude_sdk/live", "crates/interpret/fixtures/claude_pty/live", "crates/interpret/fixtures/codex/live"]
 recipe = "just suite provider-fake-conformance"
 boundary = "Provider adapter"
 oracle = "Byte-for-byte playback and the recorded sequence of frame kinds, one test per recording."
@@ -287,7 +286,7 @@ substituted = ["live providers"]
 time = "real"
 capabilities = ["Unix PTY"]
 lane = "fast"
-evidence = "crates/claude-specs/fixtures, crates/codex-specs/fixtures/live"
+evidence = "crates/interpret/fixtures/claude_sdk/live, crates/interpret/fixtures/claude_pty/live, crates/interpret/fixtures/codex/live"
 update = ""
 cargo = [{ package = "provider-fakes", modules = ["conformance", "scripted"], features = [] }]
 
@@ -348,7 +347,7 @@ cargo = [
 [[suite]]
 name = "recording-manifests"
 contract = "A joined capture's manifest inventories every replay-relevant file by its digest, and a recording whose bytes differ from it or that holds a file it does not list is refused; sanitizing a capture redacts the recording machine's paths, secrets and identifiers wherever they nest and keeps package and version names."
-paths = ["crates/replay-support/src/manifest.rs", "crates/replay-support/src/sanitize.rs"]
+paths = ["crates/qualification/src/recording", "crates/qualification/tests/recording"]
 recipe = "just suite recording-manifests"
 boundary = "Provider adapter"
 oracle = "Typed loading errors and the redacted values."
@@ -359,9 +358,7 @@ capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [
-  { package = "replay-support", kind = "lib", targets = ["replay_support"], features = [] },
-]
+cargo = [{ package = "qualification", modules = ["recording"], features = [] }]
 
 [[suite]]
 name = "dump-bundle-replay"
@@ -477,7 +474,7 @@ cargo = [
 [[suite]]
 name = "daemon-library-units"
 contract = "Daemon-side libraries preserve their local parsing, state, routing, lifecycle, persistence, agent-directory and wire invariants."
-paths = ["crates/agent-dir/src", "crates/analytics/src", "crates/client/src", "crates/log-file/src", "crates/node/src", "crates/release/src", "crates/socket-core/src", "crates/settings/src", "crates/version-stamp/src", "crates/wire/src"]
+paths = ["crates/agent-dir/src", "crates/analytics/src", "crates/client/src", "crates/log-file/src", "crates/node/src", "crates/release/src", "crates/socket-core/src", "crates/settings/src", "crates/wire/src"]
 recipe = "just suite daemon-library-units"
 boundary = "Single daemon"
 oracle = "Value assertions, explicit state transitions, wire round trips, and owned-resource observations."
@@ -496,7 +493,6 @@ cargo = [
   { package = "node", kind = "lib", targets = ["node"], features = [] },
   { package = "release", kind = "lib", targets = ["release"], features = [] },
   { package = "settings", kind = "lib", targets = ["settings"], features = [] },
-  { package = "version-stamp", kind = "lib", targets = ["version_stamp"], features = [] },
   { package = "wire", kind = "lib", targets = ["wire"], features = [] },
 ]
 
@@ -541,11 +537,11 @@ cargo = [{ package = "client", modules = ["seam"], features = [] }]
 
 [[suite]]
 name = "phone-bridge-library-units"
-contract = "The Rust phone bridge preserves its C boundary, mobile lifecycle and callback contracts, and every shared view value has a schema for its Swift mirror."
-paths = ["crates/app-ffi/src", "crates/model/src"]
+contract = "The Rust phone bridge preserves its C boundary, mobile lifecycle and callback contracts."
+paths = ["crates/app-ffi/src"]
 recipe = "just suite phone-bridge-library-units"
 boundary = "Store, effects, bridge"
-oracle = "C-boundary results, callback records, runtime state, and generated schemas."
+oracle = "C-boundary results, callback records and runtime state."
 real = ["embedded runtime", "SQLite", "temporary files"]
 substituted = ["Swift caller", "cloud account", "providers"]
 time = "real"
@@ -555,16 +551,15 @@ evidence = ""
 update = ""
 cargo = [
   { package = "app-ffi", kind = "lib", targets = ["app_ffi"], features = [] },
-  { package = "model", kind = "lib", targets = ["model"], features = [] },
 ]
 
 [[suite]]
 name = "provider-io-library-units"
-contract = "PTY ownership, capture redaction, the connection to a hosted Codex app server and Claude's launch settings, hook forwarding and version probe preserve process, signal, byte, sanitization and protocol contracts."
-paths = ["crates/claude/src", "crates/codex/src", "crates/pty-host/src", "crates/redaction/src"]
+contract = "PTY ownership and capture redaction preserve process, signal, byte and sanitization contracts."
+paths = ["crates/pty-host/src", "crates/redaction/src"]
 recipe = "just suite provider-io-library-units"
 boundary = "Provider adapter"
-oracle = "Process-group observations, byte streams, exit status, exact sanitized values and decoded protocol messages."
+oracle = "Process-group observations, byte streams, exit status and exact sanitized values."
 real = ["PTY child processes"]
 substituted = ["provider programs"]
 time = "real"
@@ -573,8 +568,6 @@ lane = "fast"
 evidence = ""
 update = ""
 cargo = [
-  { package = "claude", kind = "lib", targets = ["claude"], features = [] },
-  { package = "codex", kind = "lib", targets = ["codex"], features = [] },
   { package = "pty-host", kind = "lib", targets = ["pty_host"], features = [] },
   { package = "redaction", kind = "lib", targets = ["redaction"], features = [] },
 ]
@@ -755,7 +748,7 @@ cargo = [{ package = "qualification", targets = ["claude_sdk_live"], features = 
 [[suite]]
 name = "codex-live-compatibility"
 contract = "A real Codex session still initializes, responds, takes a native decision, interrupts and resumes through app-server, and plays every scenario of the Codex corpus, with the structure its recorded interpreter fixtures show; Codex's own app attached to a fresh agent prompts it while amux answers the approval."
-paths = ["crates/qualification/tests/codex_live.rs", "crates/qualification/tests/live", "crates/codex-specs/src"]
+paths = ["crates/qualification/tests/codex_live.rs", "crates/qualification/tests/live", "crates/qualification/src/bin/codex_probe"]
 recipe = "just live codex all"
 boundary = "Provider adapter"
 oracle = "Item classes, asks, decisions, phase changes and turn ends the daemon committed, compared with the matching probe recording's interpreter fixture."
@@ -768,7 +761,7 @@ evidence = "the printed verdict table; attach writes a timed capture of both ter
 update = "Join a passing run's capture into the Codex corpus with codex-probe join, deliberately."
 cargo = [
   { package = "qualification", targets = ["codex_live"], features = ["live"] },
-  { package = "codex-specs", kind = "bin", targets = ["codex-probe"], features = [] },
+  { package = "qualification", kind = "bin", targets = ["codex-probe"], features = [] },
 ]
 
 [[suite]]
@@ -865,11 +858,11 @@ cargo = [
 
 [[suite]]
 name = "client-model-spec"
-contract = "Ordered messages reduce to the documented client model and remain equivalent across replay and checkpoint cuts."
-paths = ["crates/ui-state/tests"]
+contract = "Ordered messages reduce to the documented client model and remain equivalent across replay and checkpoint cuts, and every plain value the views and the phone bridge share has a schema for its Swift mirror."
+paths = ["crates/ui-state/tests", "crates/ui-state/src/model.rs"]
 recipe = "just suite client-model-spec"
 boundary = "Client model"
-oracle = "Explicit state assertions, the window, run-index and changed-key invariants after every message, and replay equality at every checkpoint cut."
+oracle = "Explicit state assertions, the window, run-index and changed-key invariants after every message, replay equality at every checkpoint cut, and generated schemas."
 real = []
 substituted = ["network", "store", "provider", "wall clock"]
 time = "none"

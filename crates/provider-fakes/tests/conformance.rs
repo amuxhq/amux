@@ -1,4 +1,4 @@
-//! Every recording in the claude-specs and codex-specs corpora plays back
+//! Every recording in the Claude and Codex corpora plays back
 //! through its fake binary, byte for byte, one test per recording.
 
 use std::collections::BTreeSet;
@@ -60,7 +60,7 @@ macro_rules! recordings {
 mod claude_sdk {
     use super::*;
 
-    recordings!(Kind::ClaudeSdk, "claude-specs/fixtures/live/sdk", {
+    recordings!(Kind::ClaudeSdk, "interpret/fixtures/claude_sdk/live", {
         background_shell => "background_shell",
         cleared => "cleared",
         compacted => "compacted",
@@ -102,7 +102,7 @@ mod claude_sdk {
 mod claude_pty {
     use super::*;
 
-    recordings!(Kind::ClaudePty, "claude-specs/fixtures/live/pty", {
+    recordings!(Kind::ClaudePty, "interpret/fixtures/claude_pty/live", {
         api_error => "api_error",
         background_shell => "background_shell",
         cleared => "cleared",
@@ -143,7 +143,7 @@ mod claude_pty {
 mod codex {
     use super::*;
 
-    recordings!(Kind::Codex, "codex-specs/fixtures/live", {
+    recordings!(Kind::Codex, "interpret/fixtures/codex/live", {
         access_grant => "access_grant",
         approval_allow => "approval_allow",
         approval_deny => "approval_deny",

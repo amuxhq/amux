@@ -1,6 +1,6 @@
 //! The Claude corpus: sessions amux drives so that what Claude says in them,
-//! headless or in a terminal, is recorded, joined to claude-specs's live
-//! captures (`claude-probe join`), and replayed by the interpreter's
+//! headless or in a terminal, is recorded, joined to the Claude
+//! corpora (`claude-probe join`), and replayed by the interpreter's
 //! goldens, the views' goldens, the fakes' conformance run and the strict
 //! decode tests. What only terminal Claude does is in pty.rs.
 //!

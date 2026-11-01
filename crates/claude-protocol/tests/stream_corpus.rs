@@ -16,7 +16,7 @@ use serde_json::Value;
 use crate::{differ, fixtures};
 
 /// The headless corpus: the live lane's captures.
-const ROOT: &str = "live/sdk";
+const ROOT: &str = "claude_sdk/live";
 
 /// One recording's lines: where each came from, whether Claude wrote it,
 /// and the line.

@@ -62,9 +62,9 @@ package:
 graph-check:
     mkdir -p target/ios
     {{bounded}} 300 cargo tree --locked -p app-ffi --target aarch64-apple-ios-sim -e normal --prefix none --format "{p}" > target/ios/graph-shipping.txt
-    ! grep -E "^(pty-host|codex|agent|testnet|claude-specs|codex-specs|replay-support) v" target/ios/graph-shipping.txt
+    ! grep -E "^(pty-host|agent|testnet|qualification|replay-support) v" target/ios/graph-shipping.txt
     {{bounded}} 300 cargo tree --locked -p app-ffi --features debug-tools --target aarch64-apple-ios-sim -e normal --prefix none --format "{p}" > target/ios/graph-driving.txt
-    ! grep -E "^(pty-host|codex|agent) v" target/ios/graph-driving.txt
+    ! grep -E "^(pty-host|agent) v" target/ios/graph-driving.txt
 
 # The pinned devices every capture and measurement runs on. Creating them is
 # idempotent; they are left booted because every later recipe needs them up.

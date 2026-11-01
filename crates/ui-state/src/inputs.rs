@@ -1,8 +1,9 @@
 //! What this client sent and what became of each input: the one thing only
 //! the sender can know.
 
-pub use model::{InputId, InputState, Refusal};
 use wire::{Attachment, Input, Rejected, SendInputResponse};
+
+pub use crate::model::{InputId, InputState, Refusal};
 
 /// Why an input was refused, from its `Rejected` reply.
 pub fn refusal(rejected: &Rejected) -> Refusal {

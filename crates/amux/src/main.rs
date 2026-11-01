@@ -592,14 +592,17 @@ pub(crate) fn plain(status: tonic::Status) -> anyhow::Error {
 /// agent names in the environment it gives Claude, and prints the agent's
 /// answer, which Claude reads as the hook's decision.
 fn claude_hook() -> std::io::Result<()> {
-    let socket = std::env::var_os(claude::hooks::HOOK_SOCKET_ENV)
+    let socket = std::env::var_os(agent::claude::hooks::HOOK_SOCKET_ENV)
         .map(PathBuf::from)
         .ok_or_else(|| {
-            std::io::Error::other(format!("{} is not set", claude::hooks::HOOK_SOCKET_ENV))
+            std::io::Error::other(format!(
+                "{} is not set",
+                agent::claude::hooks::HOOK_SOCKET_ENV
+            ))
         })?;
     let mut payload = Vec::new();
     std::io::stdin().read_to_end(&mut payload)?;
-    let answer = claude::hooks::forward_from_env(&payload, &socket)?;
+    let answer = agent::claude::hooks::forward_from_env(&payload, &socket)?;
     std::io::stdout().write_all(&answer)
 }
 

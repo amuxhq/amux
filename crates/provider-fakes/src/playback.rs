@@ -1,6 +1,6 @@
 //! Recordings played back verbatim, for conformance.
 //!
-//! A claude-specs or codex-specs recording is the provider's side of a real
+//! A live recording is the provider's side of a real
 //! session: every line or byte run it wrote on each channel the host reads,
 //! and every one the host wrote to it, in the order they happened. Played
 //! back, a fake binary becomes that provider for one of its processes: it

@@ -35,16 +35,31 @@ name = "perf-topology"
 path = "src/bin/perf_topology.rs"
 test = false
 
+# The live lane's probes: each stands in for its provider on the PATH,
+# records what crosses, and joins a passing capture to the provider's
+# corpus. Built by `just live` beside amux and the fakes.
+[[bin]]
+name = "claude-probe"
+path = "src/bin/claude_probe/main.rs"
+
+[[bin]]
+name = "codex-probe"
+path = "src/bin/codex_probe/main.rs"
+
 [dependencies]
 anyhow = { workspace = true }
 chrono = { workspace = true }
 node = { workspace = true }
 provider-fakes = { workspace = true }
+pty-host = { workspace = true }
 quinn = { workspace = true }
 rcgen = { workspace = true }
+redaction = { workspace = true }
 rustls = { workspace = true }
+semver = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 testnet = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -54,7 +69,9 @@ uuid = { workspace = true }
 wire = { workspace = true, features = ["grpc"] }
 
 [target.'cfg(unix)'.dependencies]
+futures-util = { workspace = true }
 libc = { workspace = true }
+tokio-tungstenite = { workspace = true }
 
 [dev-dependencies]
 agent-dir = { workspace = true }
@@ -62,10 +79,10 @@ bytes = { workspace = true }
 hyper-util = { workspace = true }
 interpret = { workspace = true }
 prost = { workspace = true }
-pty-host = { workspace = true }
 tempfile = { workspace = true }
 tower = { workspace = true }
 ui-state = { workspace = true }
+unicode-width = "0.2"
 vt100 = { workspace = true }
 
 [[test]]

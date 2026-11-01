@@ -11,11 +11,10 @@ autotests = false
 log-file = { workspace = true }
 agent-core = { workspace = true }
 agent-dir = { workspace = true }
+anyhow = { workspace = true }
 attachments = { workspace = true }
 base64 = "0.22"
-claude = { workspace = true }
 claude-protocol = { workspace = true }
-codex = { workspace = true }
 codex-protocol = { workspace = true }
 core-ring = { workspace = true }
 git-facts = { workspace = true }
@@ -24,6 +23,7 @@ interpret = { workspace = true }
 journal = { workspace = true }
 prost = { workspace = true }
 pty-host = { workspace = true }
+semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -35,16 +35,16 @@ uuid = { workspace = true }
 wire = { workspace = true, features = ["grpc"] }
 
 [target.'cfg(unix)'.dependencies]
+# Codex's app-server socket speaks WebSocket.
+futures-util = { workspace = true }
 libc = { workspace = true }
+tokio-tungstenite = { workspace = true }
 
 [dev-dependencies]
 futures-util = { workspace = true }
 patience = { workspace = true }
 provider-fakes = { workspace = true }
 tempfile = { workspace = true }
-
-[target.'cfg(unix)'.dev-dependencies]
-tokio-tungstenite = { workspace = true }
 
 [[test]]
 name = "integration"

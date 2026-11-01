@@ -51,7 +51,7 @@ impl RealTools {
             } else {
                 Err(format!(
                     "{} is not built; a real provider records through it \
-                     (cargo build -p claude-specs -p codex-specs --bins, or just qa)",
+                     (cargo build -p qualification --bins, or just qa)",
                     path.display()
                 ))
             }

@@ -14,7 +14,7 @@
     }
   ],
   "recording": {
-    "path": "../../../claude-specs/fixtures/claude-pty/task_tools.rows.jsonl",
+    "path": "transcripts/task_tools.rows.jsonl",
     "format": "transcript_rows"
   },
   "end": {

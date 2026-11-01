@@ -99,8 +99,8 @@ impl FloodOptions {
 /// The pause between one agent's messages in the measured flood: full
 /// rate, the fastest a real provider streams.
 ///
-/// Every recording in the claude-specs (headless and terminal) and
-/// codex-specs corpora peaks at 47 provider frames in any one second, the
+/// Every recording in the Claude (headless and terminal) and Codex
+/// corpora peaks at 47 provider frames in any one second, the
 /// next highest at 40, with median gaps between frames of 20 to 90 ms. A
 /// message every 20 ms is about 25 messages and 46 revisions a second per
 /// agent, at or above any recorded provider, so twenty of them put about

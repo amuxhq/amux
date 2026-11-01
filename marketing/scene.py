@@ -141,7 +141,7 @@ def build() -> None:
     a real provider runs behind; the phone app is `just ios build`'s."""
     subprocess.run(
         [str(ROOT / "scripts/bounded"), "1800", "cargo", "build", "--locked",
-         "-p", "amux", "-p", "testnet", "-p", "provider-fakes", "-p", "claude-specs", "-p", "codex-specs",
+         "-p", "amux", "-p", "testnet", "-p", "provider-fakes", "-p", "qualification",
          "--bins"],
         cwd=ROOT, check=True,
     )

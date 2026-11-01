@@ -132,7 +132,7 @@ fn agent_messages_leave_the_pending_set_when_claude_shows_them_to_the_model() {
     assert!(!state.shared().quiescent());
     let recording = std::fs::read(
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../claude-specs/fixtures/claude-pty/socket_delivery.rows.jsonl"),
+            .join("fixtures/claude_pty/transcripts/socket_delivery.rows.jsonl"),
     )
     .unwrap();
     let mut consumed_after = Vec::new();

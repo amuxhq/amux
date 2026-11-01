@@ -180,8 +180,8 @@ mod tests {
         };
         let state = SessionState::new(agent, 3);
         let mut frame = crate::chat::frame(&state, 0, None);
-        let activity = |since_ms, elapsed_ms| model::Activity {
-            kind: model::ActivityKind::Working,
+        let activity = |since_ms, elapsed_ms| ui_state::Activity {
+            kind: ui_state::ActivityKind::Working,
             since_ms,
             elapsed_ms,
             turn_elapsed_ms: elapsed_ms,

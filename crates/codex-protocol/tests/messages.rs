@@ -26,7 +26,7 @@ fn recorded(spec: &str, needles: &[&str]) -> ServerMessage {
 
 fn recorded_line(spec: &str, needles: &[&str]) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../codex-specs/fixtures/live")
+        .join("../interpret/fixtures/codex/live")
         .join(spec)
         .join("io.jsonl");
     let text = std::fs::read_to_string(&path).expect("recording");

@@ -5,9 +5,9 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use model::{AgentKey, Connection, InputState, Key, PhaseView, Refusal};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use ui_state::{AgentKey, Connection, InputState, Key, PhaseView, Refusal};
 use ui_view::{
     AskCard, ComposerView, ContextView, ControlsSummary, FleetView, FormValue, Overview,
     PLACEHOLDER, QuestionResponse, QueuedRow, Reach, RefusedPrompt, Row, SentPrompt, SettingChange,

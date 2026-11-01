@@ -14,12 +14,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_slice()
     {
         ["internal", "hook", "claude"] => {
-            let socket = std::env::var_os(claude::hooks::HOOK_SOCKET_ENV)
+            let socket = std::env::var_os(agent::claude::hooks::HOOK_SOCKET_ENV)
                 .map(PathBuf::from)
                 .ok_or("CLAUDE_HOOK_SOCKET is not set")?;
             let mut payload = Vec::new();
             std::io::stdin().read_to_end(&mut payload)?;
-            let answer = claude::hooks::forward_from_env(&payload, &socket)?;
+            let answer = agent::claude::hooks::forward_from_env(&payload, &socket)?;
             std::io::stdout().write_all(&answer)?;
             Ok(())
         }

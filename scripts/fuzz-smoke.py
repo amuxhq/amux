@@ -28,11 +28,17 @@ TOOLCHAIN = "+nightly-2026-08-30"
 OUT = ROOT / "target" / "fuzz"
 
 # The seeds per target: line-wise from JSONL captures, or whole files.
+CLAUDE_CAPTURES = [
+    "crates/interpret/fixtures/claude_sdk/live",
+    "crates/interpret/fixtures/claude_pty/live",
+    "crates/interpret/fixtures/claude_pty/transcripts",
+]
+CODEX_CAPTURES = ["crates/interpret/fixtures/codex/live"]
 PROVIDER_LINES = {
-    "claude_decode": ["crates/claude-specs/fixtures"],
-    "codex_decode": ["crates/codex-specs/fixtures"],
-    "redact_value": ["crates/claude-specs/fixtures", "crates/codex-specs/fixtures"],
-    "redact_text": ["crates/claude-specs/fixtures", "crates/codex-specs/fixtures"],
+    "claude_decode": CLAUDE_CAPTURES,
+    "codex_decode": CODEX_CAPTURES,
+    "redact_value": [*CLAUDE_CAPTURES, *CODEX_CAPTURES],
+    "redact_text": [*CLAUDE_CAPTURES, *CODEX_CAPTURES],
 }
 WHOLE_FILES = {
     "journal_frame": ("crates/node/tests/fixtures", "journal"),

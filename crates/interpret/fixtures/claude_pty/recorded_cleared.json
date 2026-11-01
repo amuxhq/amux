@@ -14,7 +14,7 @@
     }
   ],
   "recording": {
-    "path": "../../../claude-specs/fixtures/live/pty/cleared/io.jsonl",
+    "path": "live/cleared/io.jsonl",
     "format": "claude_pty_io"
   }
 }

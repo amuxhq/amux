@@ -494,7 +494,7 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                     Some(wanted) => Some(connect::select(&mut door.clone(), Some(wanted)).await?),
                     None => None,
                 };
-                pairing::login(door, selected.as_ref(), &cloud_url).await
+                pairing::login(door, selected.as_ref(), &cloud_url, &config.host_name()).await
             }
             Command::Logout => {
                 let selected = connect::profile(&config, profile).await?;

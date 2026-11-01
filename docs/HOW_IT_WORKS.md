@@ -117,8 +117,8 @@ it nothing in Work.
   that holds nothing yet, else it creates a new profile named after the
   account. A profile that already has agents or paired hosts asks before it
   is signed in to an account.
-- `amux logout` signs the profile out. Its key, its paired hosts and its
-  agents stay; signing in to the same account later picks up where it left
+- `amux logout` signs the profile out, revoking its sign-in at amux.sh
+  first. Its key, its paired hosts and its agents stay; signing in to the same account later picks up where it left
   off, with no pairing again.
 - `amux profile ls` lists the profiles. `amux profile new`,
   `amux profile rename` and `amux profile rm` manage them. Deleting a

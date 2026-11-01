@@ -41,8 +41,9 @@ the client `cli` with the device flow and the same scopes.
 | Path | Method | Called by | For |
 | --- | --- | --- | --- |
 | `/connect/authorize` | browser | app | Sign-in in the system browser, with a PKCE challenge and a state. Every sign-in sends `prompt=select_account`; signing back into a listed account adds `login_hint=<its address>`. |
-| `/connect/deviceauthorization` | POST | `amux login` | The desktop's device-code sign-in. |
+| `/connect/deviceauthorization` | POST | `amux login` | The desktop's device-code sign-in. Sends `device_name`, the machine's host name, which the approval page shows. |
 | `/connect/token` | POST | app, profile runtime | The app redeems its code here. A profile refreshes here as the client the token was issued to. Refresh tokens rotate: the one that comes back replaces the one spent. |
+| `/connect/revocation` | POST | profile runtime | A sign-out revokes the profile's refresh token here first (`token`, `token_type_hint=refresh_token`, the client it was issued to), so a copy taken earlier stops working. A failure is logged and the sign-out goes ahead. |
 | `/connect/userinfo` | GET | app | Who signed in: `sub`, `email`, `name`. `sub` is the account identifier everything else is keyed by. |
 | `/api/graphql` | POST | app | The access read, below. |
 | `/api/connect` | GET | profile runtime | A relay credential, below. |

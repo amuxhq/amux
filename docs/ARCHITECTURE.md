@@ -589,7 +589,7 @@ bytes, and the agent process speaks the protocol itself.
 
 | Crate | What it is |
 |---|---|
-| [`wire`](../crates/wire/src/lib.rs) | Committed protobuf types for every boundary: the journal's records, the agent spec and control frames, and the client, peer, pairing, profile and installation services. Sources in `proto/` (the public contract) and `crates/wire/proto/` (the dump schema only amux reads). The services and tonic sit behind its `grpc` feature: a crate that only speaks the messages leaves it off and takes no tokio from `wire`. |
+| [`wire`](../crates/wire/src/lib.rs) | Committed protobuf types for every boundary: the journal's records, the agent spec and control frames, and the agent, session, pairing, profile-administration and installation services. Sources in `proto/` (the public contract) and `crates/wire/proto/` (the dump schema only amux reads). The services and tonic sit behind its `grpc` feature: a crate that only speaks the messages leaves it off and takes no tokio from `wire`. |
 | [`model`](../crates/model/src/lib.rs) | Plain values the views and the phone bridge share; the Swift mirrors are generated from them. |
 | [`attachments`](../crates/attachments/src/lib.rs) | Attachments as positioned text, and the `<amux-attachment>` element the model sees. |
 | [`settings`](../crates/settings/src/lib.rs) | Installation, profile and UI settings, and where their files live. |
@@ -696,8 +696,8 @@ workspace crates, and ignores dev-dependencies. Its rules:
    the dependency graph cannot say: no core, and not the ring they record
    into, has tokio anywhere in its graph on any target, and none of their
    sources holds a lock, spawns a task or awaits.
-5. **Every dependency comes from crates.io, but rustls.** The check reads
-   `Cargo.lock`: rustls alone may come from git, and only from the fork
+5. **Every dependency comes from crates.io, but rustls.** The sources
+   table in `deny.toml` holds it, and CI checks it: rustls alone may come from git, and only from the fork
    that carries the patch below, at whatever commit the lockfile pins.
 
 The allowed sets encode the layering above:

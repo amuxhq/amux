@@ -496,7 +496,7 @@ Retention runs when the runtime's background work starts and then every ten
 minutes (`ProfileRuntime::start_retention` in
 [`crates/node/src/retention.rs`](../crates/node/src/retention.rs)). The store
 decides what goes; the daemon then closes the removed agents' streams, tells the
-fleet (`AgentRemoved` with reason `REMOVAL_REASON_RETENTION`) and deletes their
+fleet (`AgentRemoved`) and deletes their
 directories, which takes their blobs with them. A row costs the bytes of the
 envelope's variable fields, 4 bytes for its kind and a fixed 48 bytes a row,
 counted in the store's SQL.

@@ -149,9 +149,8 @@ matrix's.
 The iOS gate is its own workflow so that it runs only when a push or pull
 request touches a path that reaches the phone: `apps/apple`, the three
 `app-*` crates, `ios-tools`, the Cargo manifests, the toolchain pin, the
-phone's loopback topology, the shared runner scripts the gate's recipes call
-(`scripts/bounded`, `py`, `python`, `with`, `no-update-flags.sh`,
-`sqlite_linkage.py`), the `setup-just` action or `ios.yml` itself. The phone's
+shared runner scripts the gate's recipes call (`scripts/bounded`, `py`,
+`no-update-flags.sh`, `sqlite_linkage.py`), the `setup-just` action or `ios.yml` itself. The phone's
 own scripts live in `apps/apple/Tools` and its Rust tools in `ios-tools`, so
 they need no entry of their own; anything shared stays in `scripts/` or
 `xtask` and leaves the gate alone. The root justfile is not on the list: the

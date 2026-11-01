@@ -14,7 +14,8 @@
 //! reports/dump-<unix ms>-<id>/
 //!   manifest.json            what was dumped, when, why, by which daemon, and
 //!                            every file or part that could not be gathered
-//!   daemon.log               the tail of the daemon's own log and its .1,
+//!   daemon.log               the daemon's own log and its .1 for the
+//!                            minute before the dump, at INFO and above,
 //!                            redacted as text
 //!   supervisor.log           the same of the supervisor's, when there is one
 //!   agents/<agent_id>/
@@ -30,8 +31,8 @@
 //!                            (own agents)
 //!     part/...               the agent process's part, as it sent it:
 //!                            facts/<segment>, facts/<segment>.checkpoint,
-//!                            spec.<n>, the tails of agent.log and
-//!                            provider.log, and dump-errors when it had any. An
+//!                            spec.<n>, the minute of agent.log before it,
+//!                            and dump-errors when it had any. An
 //!                            agent with no process has only its specs here,
 //!                            redacted by the daemon
 //!   client/sessions/<agent_id>/
@@ -102,9 +103,9 @@ pub const CLIENT_EVENTS: &str = "events";
 /// store's main file is being checkpointed.
 const CAPTURE_TRIES: u32 = 30;
 const CAPTURE_APART: Duration = Duration::from_millis(100);
-/// How much of each of the installation's logs a dump carries, from its
-/// end: a few thousand lines, which reach back past the minute or so the
-/// core's inputs cover without dwarfing the parts that replay.
+/// The most of each of the installation's logs a dump reads back through
+/// for its window: a log written fast enough to pass this in a minute
+/// sends only its newest lines.
 pub const DUMP_LOG_BYTES: u64 = 1 << 20;
 /// How long an agent process has to send its part.
 const PART_PATIENCE: Duration = Duration::from_secs(10);
@@ -377,12 +378,8 @@ impl ProfileRuntime {
                 (SUPERVISOR_LOG, &self.supervisor_log),
             ] {
                 let Some(path) = path else { continue };
-                match dump_log(path, &partial.join(name)) {
-                    Ok(Some(skipped)) => errors.push(format!(
-                        "{name}: the first {skipped} bytes of the log were left out"
-                    )),
-                    Ok(None) => {}
-                    Err(error) => errors.push(format!("{name}: {error}")),
+                if let Err(error) = dump_log(path, &partial.join(name)) {
+                    errors.push(format!("{name}: {error}"));
                 }
             }
         }
@@ -614,15 +611,16 @@ impl ProfileRuntime {
     }
 }
 
-/// The tail of the log at `path` and its `.1`, redacted, written to `to`.
-/// Returns how many bytes of the log were left out, when it was cut.
-fn dump_log(path: &Path, to: &Path) -> io::Result<Option<u64>> {
-    let Some((tail, skipped)) = log_file::tail(path, DUMP_LOG_BYTES)? else {
-        return Ok(None);
+/// The log at `path` and its `.1` for the minute before now, redacted,
+/// written to `to`. The window is cut by the wall clock the log is stamped
+/// with, whatever clock the core runs on.
+fn dump_log(path: &Path, to: &Path) -> io::Result<()> {
+    let since = log_file::unix_ms_now() - log_file::DUMP_WINDOW_MS;
+    let Some(window) = log_file::window(path, since, DUMP_LOG_BYTES)? else {
+        return Ok(());
     };
-    let text = interpret::redact_text(&String::from_utf8_lossy(&tail));
-    std::fs::write(to, text)?;
-    Ok((skipped > 0).then_some(skipped))
+    let text = interpret::redact_text(&String::from_utf8_lossy(&window));
+    std::fs::write(to, text)
 }
 
 /// One target through the kind's redactor, as the bytes it came back as.

@@ -11,8 +11,10 @@
 //! own one so. A line another handle writes between the copy and the
 //! truncation is lost; nothing else is.
 //!
-//! A dump reads [`tail`]: the newest bytes of `.1` and the live file
-//! together, from a line start, never more than it asks for.
+//! A dump reads [`window`]: the lines of `.1` and the live file together
+//! written in the minute before it, at the level every process logs at by
+//! default, never more than it asks for. [`tail`] is the newest bytes
+//! whatever their time.
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -22,6 +24,10 @@ use std::path::{Path, PathBuf};
 pub const PROCESS_CAP: u64 = 8 << 20;
 /// Each of an agent's logs: its own, and its provider's.
 pub const AGENT_CAP: u64 = 1 << 20;
+
+/// How far back a dump's logs reach: the minute before what it reports,
+/// which is what explains a failure, not the hours a capped log holds.
+pub const DUMP_WINDOW_MS: i64 = 60_000;
 
 /// An open log file, rotated as its writes pass its cap.
 #[derive(Debug)]
@@ -131,6 +137,77 @@ pub fn tail(path: &Path, max: u64) -> io::Result<Option<(Vec<u8>, u64)>> {
     Ok(Some((bytes, skipped)))
 }
 
+/// The lines of the log at `path` and its previous file stamped at or after
+/// `since_ms` (Unix milliseconds) at INFO or above, out of its newest `max`
+/// bytes; `None` when there is no log. A line without a stamp, such as a
+/// panic's, goes with the stamped line before it, and one before any
+/// stamped line in the tail is left out: its time is not known.
+pub fn window(path: &Path, since_ms: i64, max: u64) -> io::Result<Option<Vec<u8>>> {
+    let Some((bytes, _)) = tail(path, max)? else {
+        return Ok(None);
+    };
+    let mut kept = Vec::new();
+    let mut keeping = false;
+    for line in bytes.split_inclusive(|byte| *byte == b'\n') {
+        if let Some((at_ms, level)) = stamp(line) {
+            keeping = at_ms >= since_ms && matches!(level, "INFO" | "WARN" | "ERROR");
+        }
+        if keeping {
+            kept.extend_from_slice(line);
+        }
+    }
+    Ok(Some(kept))
+}
+
+/// Now on the wall clock the logs are stamped with, in Unix milliseconds.
+pub fn unix_ms_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| {
+            i64::try_from(since.as_millis()).unwrap_or(i64::MAX)
+        })
+}
+
+/// A line's time in Unix milliseconds and its level, as the processes'
+/// formatter writes them: `2026-11-01T10:00:00.123456Z  INFO target: …`.
+fn stamp(line: &[u8]) -> Option<(i64, &str)> {
+    let line = std::str::from_utf8(line.get(..line.len().min(64))?).ok()?;
+    let (time, rest) = line.split_once(' ')?;
+    let level = rest.trim_start().split(' ').next()?;
+    let time = time.strip_suffix('Z')?;
+    let (date, clock) = time.split_once('T')?;
+    let mut date = date.splitn(3, '-').map(str::parse::<i64>);
+    let (year, month, day) = (date.next()?.ok()?, date.next()?.ok()?, date.next()?.ok()?);
+    let (clock, fraction) = clock.split_once('.').unwrap_or((clock, ""));
+    let mut clock = clock.splitn(3, ':').map(str::parse::<i64>);
+    let (hour, minute, second) = (
+        clock.next()?.ok()?,
+        clock.next()?.ok()?,
+        clock.next()?.ok()?,
+    );
+    let millis = match fraction.get(..3) {
+        Some(digits) => digits.parse::<i64>().ok()?,
+        None if fraction.is_empty() => 0,
+        None => return None,
+    };
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    // Days since 1970-01-01 of a proleptic Gregorian date.
+    let (y, m) = if month <= 2 {
+        (year - 1, month + 9)
+    } else {
+        (year, month - 3)
+    };
+    let era = y.div_euclid(400);
+    let of_era = y - era * 400;
+    let of_year = (153 * m + 2) / 5 + day - 1;
+    let of_cycle = of_era * 365 + of_era / 4 - of_era / 100 + of_year;
+    let days = era * 146_097 + of_cycle - 719_468;
+    let seconds = days * 86_400 + hour * 3_600 + minute * 60 + second;
+    Some((seconds * 1_000 + millis, level))
+}
+
 /// The newest `max` bytes of one file, and how many came before them.
 fn read_tail(path: &Path, max: u64) -> io::Result<Option<(Vec<u8>, u64)>> {
     let mut file = match File::open(path) {
@@ -208,6 +285,48 @@ mod tests {
         trim(&path, 10).unwrap();
         assert_eq!(read(&path), "after\n");
         trim(&dir.path().join("missing.log"), 10).unwrap();
+    }
+
+    #[test]
+    fn a_stamp_reads_as_unix_milliseconds_and_its_level() {
+        assert_eq!(
+            stamp(b"2026-11-01T10:00:00.123456Z  INFO node: started\n"),
+            Some((1_793_527_200_123, "INFO"))
+        );
+        assert_eq!(
+            stamp(b"1970-01-01T00:00:01Z DEBUG x\n"),
+            Some((1_000, "DEBUG"))
+        );
+        assert_eq!(stamp(b"thread 'main' panicked at src/lib.rs\n"), None);
+    }
+
+    #[test]
+    fn the_window_keeps_the_minute_before_at_info_and_above() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("daemon.log");
+        assert_eq!(window(&path, 0, 1 << 20).unwrap(), None);
+        std::fs::write(
+            previous(&path),
+            "loose line of unknown time\n\
+             1970-01-01T00:00:01.000Z  INFO x: too old\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &path,
+            "1970-01-01T00:01:00.000Z  INFO x: in time\n\
+             a panic's second line\n\
+             1970-01-01T00:01:01.000Z DEBUG x: below the default level\n\
+             its continuation\n\
+             1970-01-01T00:01:02.000Z  WARN x: kept\n",
+        )
+        .unwrap();
+        let kept = window(&path, 60_000, 1 << 20).unwrap().unwrap();
+        assert_eq!(
+            String::from_utf8(kept).unwrap(),
+            "1970-01-01T00:01:00.000Z  INFO x: in time\n\
+             a panic's second line\n\
+             1970-01-01T00:01:02.000Z  WARN x: kept\n"
+        );
     }
 
     #[test]

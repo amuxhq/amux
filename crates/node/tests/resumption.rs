@@ -210,50 +210,10 @@ fn tickets_beneath(dir: &std::path::Path) -> usize {
         .sum()
 }
 
-/// What the process logs of links and of the streams peers open, for a
-/// test that counts what a host saw. Installed once for the whole binary:
-/// a subscriber set per test would race the others' callsites.
-fn captured() -> &'static Arc<std::sync::Mutex<Vec<u8>>> {
-    static LOG: std::sync::OnceLock<Arc<std::sync::Mutex<Vec<u8>>>> = std::sync::OnceLock::new();
-    LOG.get_or_init(|| {
-        use tracing_subscriber::layer::{Layer as _, SubscriberExt as _};
-        use tracing_subscriber::util::SubscriberInitExt as _;
-
-        let log = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let writer = log.clone();
-        let filter = tracing_subscriber::filter::Targets::new()
-            .with_target(node::link_log::TARGET, tracing::Level::INFO)
-            .with_target("node::driver", tracing::Level::DEBUG);
-        tracing_subscriber::registry()
-            .with(
-                tracing_subscriber::fmt::layer()
-                    .with_ansi(false)
-                    .with_writer(move || Captured(writer.clone()))
-                    .with_filter(filter),
-            )
-            .try_init()
-            .expect("the only subscriber this binary installs");
-        log
-    })
-}
-
-struct Captured(Arc<std::sync::Mutex<Vec<u8>>>);
-
-impl std::io::Write for Captured {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(bytes);
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
 /// The lines logged since `from` bytes into the log that hold every one
 /// of `words`.
 fn lines_with(from: usize, words: &[&str]) -> Vec<String> {
-    let log = captured().lock().unwrap();
+    let log = support::captured_log().lock().unwrap();
     String::from_utf8_lossy(&log[from.min(log.len())..])
         .lines()
         .filter(|line| words.iter().all(|word| line.contains(word)))
@@ -279,7 +239,7 @@ fn dual_stack() -> node::EdgeOptions {
 async fn first_flight_on_every_path_reaches_the_host_once() {
     use support::synthetic::{SyntheticAgent, snapshot};
 
-    captured();
+    support::captured_log();
     let desk = Install::new();
     let mut agent = SyntheticAgent::new(&desk, "coder", 1 << 20);
     agent.register(&desk);
@@ -335,7 +295,7 @@ async fn first_flight_on_every_path_reaches_the_host_once() {
             serde_json::json!([format!("127.0.0.1:{port}"), format!("[::1]:{port}")]).to_string();
     });
 
-    let mark = captured().lock().unwrap().len();
+    let mark = support::captured_log().lock().unwrap().len();
     let mut options = laptop.options("boot-1", quiet_launch());
     options.edge = dual_stack();
     let laptop_daemon = node::start(options, None).await.unwrap();

@@ -364,8 +364,8 @@ frame freezes, and on Send hands the runtime what only it has
 (`ReportAssembly`): a `report.json` declaring the frame present and the
 trace absent (the phone records none), and the frozen `frame.png`. The runtime
 writes them beside the dump and uploads the report (`Profile.submitReport`), as
-it does the terminal's; the dump carries the tail of the installation's
-`runtime.log` redacted. The build stamps its checkout revision into the app, and each report carries it as
+it does the terminal's; the dump carries the minute of the installation's
+`runtime.log` before it, redacted. The build stamps its checkout revision into the app, and each report carries it as
 `git_sha`.
 
 A report is sent to the account on screen; with nobody signed in, Send is

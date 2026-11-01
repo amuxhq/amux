@@ -148,7 +148,8 @@ reports/dump-<unix ms>-<id>/
   manifest.json                 dump id, time, reason, scope, the check's id for a check's dump,
                                 profile, host, generation, daemon version, one entry per agent,
                                 and errors
-  daemon.log                    the last 1 MiB of the daemon's log and its .1, redacted
+  daemon.log                    the daemon's log and its .1 for the minute before the dump, at INFO
+                                and above, redacted
   supervisor.log                the same of the supervisor's, when amux runs under one
   agents/<agent id>/
     row.pb                      the inventory row (a wire.Agent)
@@ -159,8 +160,8 @@ reports/dump-<unix ms>-<id>/
     part/facts/<segment>        the agent process's facts ring, redacted line by line
     part/facts/<segment>.checkpoint
     part/spec.<n>               the spec of each incarnation
-    part/agent.log              the tail of the agent's and the provider's logs, each across its .1,
-    part/provider.log           redacted
+    part/agent.log              the agent's own log across its .1 for the minute before, at INFO and
+                                above, redacted; the provider's log never goes
     part/dump-errors            anything the agent process could not read
   core/checkpoint               the daemon core's newest checkpoint
   core/inputs                   every input the core stepped since, and how far each ingest read

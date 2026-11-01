@@ -361,3 +361,14 @@ fn an_agent_restored_from_its_value_steps_as_the_original_does() {
     assert_eq!(again, original);
     assert_eq!(restored.value(), run.agent.value());
 }
+
+/// An exit's words can be the provider's, and `amux ls` prints them as they
+/// are, so they carry no terminal codes.
+#[test]
+fn an_exits_words_carry_no_terminal_codes() {
+    let end =
+        ExitCause::Interpreter("refused \u{1b}]52;c;eA==\u{7}the thread\u{1b}[2J".into()).end();
+    assert_eq!(end.detail.as_deref(), Some("refused the thread"));
+    let end = ExitCause::Unstarted("no \u{9b}31mclaude".into()).end();
+    assert_eq!(end.detail.as_deref(), Some("the provider: no claude"));
+}

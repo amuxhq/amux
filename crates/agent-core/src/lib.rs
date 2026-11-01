@@ -252,7 +252,9 @@ impl ExitCause {
         };
         wire::IncarnationEnd {
             cause: cause as i32,
-            detail,
+            // The words can be the provider's own, and clients print them
+            // as they are.
+            detail: detail.map(|detail| interpret::without_terminal_codes(&detail)),
         }
     }
 

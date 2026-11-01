@@ -1032,7 +1032,9 @@ impl<A: OpenAsk> Shared<A> {
     /// Set from the status tool call; never cleared automatically.
     pub fn set_working_on(&mut self, working_on: Option<String>) {
         self.declared = true;
-        self.working_on = working_on.filter(|text| !text.trim().is_empty());
+        self.working_on = working_on
+            .map(|text| without_terminal_codes(&text))
+            .filter(|text| !text.trim().is_empty());
     }
 
     /// A prompt handed to the provider: what the agent works on, until it
@@ -1041,7 +1043,9 @@ impl<A: OpenAsk> Shared<A> {
         if self.declared {
             return;
         }
-        if let Some(line) = first_line(text).filter(|line| !line.starts_with('/')) {
+        if let Some(line) =
+            first_line(&without_terminal_codes(text)).filter(|line| !line.starts_with('/'))
+        {
             self.working_on = Some(line);
         }
     }
@@ -1049,6 +1053,54 @@ impl<A: OpenAsk> Shared<A> {
     pub fn working_on(&self) -> Option<&str> {
         self.working_on.as_deref()
     }
+}
+
+/// Text an agent or its provider wrote, as a wire field carries it: without
+/// the colour, cursor and link codes a terminal program writes (CSI and OSC
+/// sequences, in their escaped and their one-character C1 forms, and the
+/// other escapes) or any other control character but a newline and a tab.
+/// Clients print these fields as they are, `amux ls` straight to a
+/// terminal, so every field made of a provider's or an agent's words goes
+/// through this one cleaner.
+pub fn without_terminal_codes(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    // CSI: parameters and intermediates, then one final byte.
+    let csi = |chars: &mut std::iter::Peekable<std::str::Chars>| {
+        for c in chars.by_ref() {
+            if ('\u{40}'..='\u{7e}').contains(&c) {
+                break;
+            }
+        }
+    };
+    // OSC: up to BEL or ST, in either form.
+    let osc = |chars: &mut std::iter::Peekable<std::str::Chars>| {
+        while let Some(c) = chars.next() {
+            if c == '\u{7}' || c == '\u{9c}' {
+                break;
+            }
+            if c == '\u{1b}' && chars.peek() == Some(&'\\') {
+                chars.next();
+                break;
+            }
+        }
+    };
+    while let Some(c) = chars.next() {
+        match c {
+            '\u{1b}' => match chars.next() {
+                Some('[') => csi(&mut chars),
+                Some(']') => osc(&mut chars),
+                // A two-character escape.
+                _ => {}
+            },
+            '\u{9b}' => csi(&mut chars),
+            '\u{9d}' => osc(&mut chars),
+            '\n' | '\t' => out.push(c),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// The working_on a status tool call declares: `{"working_on": string |
@@ -1592,6 +1644,20 @@ mod tests {
             ..Default::default()
         };
         Shared::new(&spec, wire::Kind::Unspecified)
+    }
+
+    /// What an agent says it works on is printed by `amux ls` as it is, so
+    /// terminal codes in it, from the status tool or a prompt, never reach
+    /// the field.
+    #[test]
+    fn working_on_carries_no_terminal_codes() {
+        let mut shared = shared();
+        shared.prompted("\u{1b}]52;c;cHduZWQ=\u{7}Fix the \u{9b}2Jparser");
+        assert_eq!(shared.working_on(), Some("Fix the parser"));
+        shared.set_working_on(Some("\u{1b}[31mSplitting\u{1b}[0m\u{8} it".into()));
+        assert_eq!(shared.working_on(), Some("Splitting it"));
+        shared.set_working_on(Some("\u{1b}[2J".into()));
+        assert_eq!(shared.working_on(), None);
     }
 
     #[test]

@@ -24,8 +24,8 @@ use crate::claude_common::{
     AnsweredResult, BangInput, JobInput, PLAN_TOOL, QUESTION_TOOL, TASK_TOOLS, blocks_text,
     item_body, job_kind, message_text, old_source, permission_scopes, plan_ask, plan_mode_write,
     question_ask, question_ask_text, split_tool_name, timestamp_ms, tool_input, tool_result_text,
-    without_terminal_codes,
 };
+use crate::shared::without_terminal_codes;
 use crate::{Channel, Emit, Fact, ItemDraft, ask_item, is_status_tool, status_working_on};
 
 /// How terminal Claude words a call the person refused, on the tool result.

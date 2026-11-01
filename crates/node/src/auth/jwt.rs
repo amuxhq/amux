@@ -131,6 +131,8 @@ pub struct JwtValidator {
     http_client: Client,
     keys: Arc<RwLock<HashMap<String, RsaKey>>>,
     last_fetch: Arc<RwLock<Option<Instant>>>,
+    /// Held while a key set fetch is out, so only one is at a time.
+    fetching: tokio::sync::Mutex<()>,
     clock: Arc<dyn Clock>,
 }
 
@@ -146,6 +148,7 @@ impl JwtValidator {
                 .unwrap_or_default(),
             keys: Arc::new(RwLock::new(HashMap::new())),
             last_fetch: Arc::new(RwLock::new(None)),
+            fetching: tokio::sync::Mutex::new(()),
             clock,
         }
     }
@@ -226,11 +229,34 @@ impl JwtValidator {
         Ok(claims)
     }
 
+    /// Fetches the key set once the cached one is an hour old. While the
+    /// cloud cannot be reached the cached keys stand: the tokens they
+    /// signed are still good, and refusing every one would make an outage
+    /// of the cloud an outage of the relay. While a fetch is out, a
+    /// validation with keys cached uses them rather than queueing behind it.
     async fn ensure_jwks_fresh(&self) -> Result<(), JwtError> {
         if self.is_cache_fresh().await {
             return Ok(());
         }
-        self.refresh_jwks().await
+        let _fetching = match self.fetching.try_lock() {
+            Ok(fetching) => fetching,
+            Err(_) if self.has_keys().await => return Ok(()),
+            Err(_) => self.fetching.lock().await,
+        };
+        if self.is_cache_fresh().await {
+            return Ok(());
+        }
+        match self.refresh_jwks().await {
+            Err(error) if self.has_keys().await => {
+                tracing::warn!(%error, "could not refresh the cloud's signing keys; using the cached ones");
+                Ok(())
+            }
+            fetched => fetched,
+        }
+    }
+
+    async fn has_keys(&self) -> bool {
+        !self.keys.read().await.is_empty()
     }
 
     async fn is_cache_fresh(&self) -> bool {
@@ -468,5 +494,32 @@ mod tests {
             validator.validate(&token, "relay", 9443).await,
             Err(JwtError::Expired)
         ));
+    }
+
+    /// Where nothing answers: a port nothing listens on.
+    const UNREACHABLE: &str = "http://127.0.0.1:9/jwks";
+
+    #[tokio::test]
+    async fn cached_keys_stand_while_the_key_set_cannot_be_fetched() {
+        let mut validator = validator(Arc::new(agent_dir::SystemClock)).await;
+        validator.jwks_url = UNREACHABLE.to_owned();
+        // Due a fetch, as an hour after the last.
+        *validator.last_fetch.write().await = None;
+        validator
+            .validate(&token(claims(FAR_FUTURE)), "relay", 9443)
+            .await
+            .expect("the cached key still checks the token");
+    }
+
+    #[tokio::test]
+    async fn no_cached_keys_and_no_key_set_refuses_the_token() {
+        let mut validator = JwtValidator::new_with_clock(CLOUD, Arc::new(agent_dir::SystemClock));
+        validator.jwks_url = UNREACHABLE.to_owned();
+        assert!(
+            validator
+                .validate(&token(claims(FAR_FUTURE)), "relay", 9443)
+                .await
+                .is_err()
+        );
     }
 }

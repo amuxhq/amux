@@ -200,8 +200,9 @@ impl DeviceIdentity {
         trust_store: SharedTrustStore,
         tickets: &std::sync::Arc<SessionTickets>,
     ) -> Result<quinn::ServerConfig, IdentityError> {
-        let tls = self.server_tls_config(trust_store)?;
-        quic_server_config_issuing(tls, tickets, self.liveness).map_err(IdentityError::TlsConfig)
+        let tls = self.server_tls_config(trust_store.clone())?;
+        quic_server_config_issuing(tls, tickets, Some(trust_store), self.liveness)
+            .map_err(IdentityError::TlsConfig)
     }
 
     pub(crate) fn quic_client_config_for_peer(
@@ -243,17 +244,26 @@ impl DeviceIdentity {
 }
 
 /// A QUIC server configuration from `tls` that issues one session ticket
-/// per link from `tickets` and accepts early data on it. rustls allows
+/// per link from `tickets` and accepts early data on it; where `pinning`
+/// is given, only to a client presenting a certificate it pins
+/// ([`PinnedSessions`](crate::link::resumption::PinnedSessions)). rustls allows
 /// 0-RTT only while no stateless ticketer is set, so the store keeps
 /// every ticket's session; quinn's address-validation tokens come from
 /// the store's secret, so a restarted server still honours them.
 pub(crate) fn quic_server_config_issuing(
     mut tls: ServerConfig,
     tickets: &std::sync::Arc<SessionTickets>,
+    pinning: Option<SharedTrustStore>,
     liveness: LinkLiveness,
 ) -> Result<quinn::ServerConfig, String> {
     tls.alpn_protocols = vec![QUIC_ALPN.to_vec()];
-    tls.session_storage = tickets.clone();
+    tls.session_storage = match pinning {
+        Some(trust) => std::sync::Arc::new(crate::link::resumption::PinnedSessions::new(
+            tickets.clone(),
+            trust,
+        )),
+        None => tickets.clone(),
+    };
     // One ticket per link: the client offers one on its next link, and
     // every ticket issued is an entry the store keeps for a week.
     tls.send_tls13_tickets = 1;

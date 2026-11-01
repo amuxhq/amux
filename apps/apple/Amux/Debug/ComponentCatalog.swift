@@ -574,6 +574,31 @@ enum ComponentCatalog {
         }
     }
 
+    /// Puts the reader of `chat.new-activity` above the newest row: the
+    /// first run opened so the chat is taller than the screen, the list
+    /// moved to its top once it has laid out, and only then a row arriving.
+    private static func readAboveNewActivity(_ model: ChatModel, _ source: ScriptedChat) {
+        if let run = model.cell(for: "c14").row?.run { model.toggleRun(run) }
+        Task { @MainActor in
+            var list: UIScrollView?
+            for _ in 0..<100 {
+                if let window = DoorWindow.current, let found = VisibleTree.list(in: window),
+                   found.contentSize.height > found.bounds.height {
+                    list = found
+                    break
+                }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            guard let list else { return }
+            // An offset set without a drag is not the reader leaving; the
+            // model is told, as the debug door's scroll does.
+            model.reading(atNewest: false)
+            list.setContentOffset(CGPoint(x: list.contentOffset.x, y: -list.adjustedContentInset.top), animated: false)
+            source.append([ScriptedChat.row("n1", 100, .prose(text: [.text("Done. The three arms are one now.")], streaming: false, workingNote: false))])
+            source.deliver(to: model)
+        }
+    }
+
     private static let chat: [ComponentExample] = {
         typealias F = CatalogFixtures
         return [
@@ -625,13 +650,11 @@ enum ComponentCatalog {
                     rows: F.conversation, frame: ScriptedChat.frame(phase: .idle),
                     strip: ScriptedChat.strip(signIn: F.expiredSignIn))
             }),
+            // A list that fits on screen is always at its newest row and
+            // follows arrivals, so the reader is put above it for real.
             chat("new-activity", readiness: ("chat.newActivity", "shown"), chat: {
-                ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .working))
-            }) { model, source in
-                model.reading(atNewest: false)
-                source.append([ScriptedChat.row("n1", 100, .prose(text: [.text("Done. The three arms are one now.")], streaming: false, workingNote: false))])
-                source.deliver(to: model)
-            },
+                ScriptedChat(rows: F.working, frame: ScriptedChat.frame(phase: .working))
+            }) { model, source in readAboveNewActivity(model, source) },
             chat("paging-unreachable", readiness: ("chat.paging", "unreachable"), chat: {
                 let source = ScriptedChat(rows: Array(F.conversation.prefix(3)), frame: ScriptedChat.frame(hasOlder: true))
                 source.paged = .originUnreachable

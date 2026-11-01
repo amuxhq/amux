@@ -369,6 +369,12 @@ impl SessionTickets {
     }
 
     fn take(&self, id: &[u8]) -> Option<Vec<u8>> {
+        self.take_honouring(id, |_| true)
+    }
+
+    /// Takes the session behind ticket `id` out of the store, honouring it
+    /// only where `honour` says so of the session.
+    fn take_honouring(&self, id: &[u8], honour: impl FnOnce(&[u8]) -> bool) -> Option<Vec<u8>> {
         let now_secs = self.now_secs();
         let mut store = lock(&self.state);
         let entry = store.entries.get(id)?;
@@ -391,6 +397,9 @@ impl SessionTickets {
             .ok()?
             .len();
         session.truncate(opened);
+        if !honour(&session) {
+            return None;
+        }
         self.redeemed.fetch_add(1, Ordering::Relaxed);
         Some(session)
     }
@@ -446,6 +455,114 @@ impl rustls::server::StoresServerSessions for SessionTickets {
     /// the week the store honours it; rustls would otherwise say a day.
     fn lifetime(&self) -> u32 {
         TICKET_LIFETIME.as_secs() as u32
+    }
+}
+
+/// A host's tickets, issued and honoured only for a client presenting the
+/// certificate of a host it pins. A client with no certificate is a
+/// stranger or a device pairing, and its tickets would only push paired
+/// hosts' out of the store; a host resuming with a key unpinned since is
+/// one this host no longer trusts, given no new ticket. A ticket whose key
+/// is no longer pinned is dropped as it is offered, and the client is
+/// asked for its certificate, which the handshake then refuses: an
+/// unpaired host's link never reaches the point of naming a peer.
+pub(crate) struct PinnedSessions {
+    tickets: Arc<SessionTickets>,
+    trust: SharedTrustStore,
+}
+
+impl PinnedSessions {
+    pub(crate) fn new(tickets: Arc<SessionTickets>, trust: SharedTrustStore) -> Self {
+        Self { tickets, trust }
+    }
+
+    fn pinned(&self, session: &[u8]) -> bool {
+        let Some(key) = client_key(session) else {
+            return false;
+        };
+        self.trust
+            .read()
+            .is_ok_and(|trust| trust.host_id_for_pubkey(&key).is_some())
+    }
+}
+
+impl std::fmt::Debug for PinnedSessions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("PinnedSessions")
+            .field(&self.tickets)
+            .finish()
+    }
+}
+
+impl rustls::server::StoresServerSessions for PinnedSessions {
+    fn put(&self, id: Vec<u8>, session: Vec<u8>) -> bool {
+        self.pinned(&session)
+            && rustls::server::StoresServerSessions::put(&*self.tickets, id, session)
+    }
+
+    fn get(&self, _id: &[u8]) -> Option<Vec<u8>> {
+        None
+    }
+
+    fn take(&self, id: &[u8]) -> Option<Vec<u8>> {
+        self.tickets
+            .take_honouring(id, |session| self.pinned(session))
+    }
+
+    fn can_cache(&self) -> bool {
+        true
+    }
+
+    fn lifetime(&self) -> u32 {
+        rustls::server::StoresServerSessions::lifetime(&*self.tickets)
+    }
+}
+
+/// The key of the certificate the client presented, read from a session
+/// as rustls encodes it for its store: a flag and the server name it was
+/// given, the protocol version and cipher suite, the secret, the extended
+/// master secret flag, then a flag and the client's certificate chain,
+/// its leaf first. None where the client presented no certificate, or the
+/// session does not read so, which issues and honours nothing.
+fn client_key(session: &[u8]) -> Option<[u8; 32]> {
+    let mut reader = SessionReader(session);
+    if reader.u8()? == 1 {
+        let name = reader.u8()?;
+        reader.skip(name.into())?;
+    }
+    reader.skip(4)?;
+    let secret = reader.u8()?;
+    reader.skip(secret.into())?;
+    reader.skip(1)?;
+    if reader.u8()? != 1 {
+        return None;
+    }
+    reader.u24()?;
+    let leaf = reader.u24()?;
+    let leaf = rustls::pki_types::CertificateDer::from(reader.take(leaf)?);
+    crate::identity::ed25519_public_key_from_certificate(&leaf).ok()
+}
+
+struct SessionReader<'a>(&'a [u8]);
+
+impl<'a> SessionReader<'a> {
+    fn take(&mut self, len: usize) -> Option<&'a [u8]> {
+        let (head, rest) = self.0.split_at_checked(len)?;
+        self.0 = rest;
+        Some(head)
+    }
+
+    fn skip(&mut self, len: usize) -> Option<()> {
+        self.take(len).map(drop)
+    }
+
+    fn u8(&mut self) -> Option<u8> {
+        Some(self.take(1)?[0])
+    }
+
+    fn u24(&mut self) -> Option<usize> {
+        let bytes = self.take(3)?;
+        Some(usize::from(bytes[0]) << 16 | usize::from(bytes[1]) << 8 | usize::from(bytes[2]))
     }
 }
 

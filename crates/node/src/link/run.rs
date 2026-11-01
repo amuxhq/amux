@@ -701,6 +701,20 @@ async fn run_established(
         (LinkRole::Peer, CarrierKind::Relay) => CarrierKind::Direct,
         (LinkRole::Peer, kind) => kind,
     };
+    // A resumed link is refused before it is registered: registering one
+    // displaces the peer's other links and moves its route, which a host
+    // unpaired since its ticket was issued must not do by resuming.
+    if let Some(resumed) = &ctx.resumed {
+        let pinned = match ctx.links.core() {
+            Some(core) => core.pins(peer_host.id, resumed.key.clone()).await,
+            None => false,
+        };
+        if !pinned {
+            refuse_resumed(resumed, &mut sink, peer_host.id).await;
+            carrier.close(wire::LinkCloseReason::UserRevoked);
+            return Ok(());
+        }
+    }
     let (out_tx, mut out_rx) = mpsc::channel(256);
     let registration = ctx
         .links
@@ -759,21 +773,11 @@ async fn run_established(
                 Some(core) => core.resumed(up).await,
                 None => false,
             };
+            // The key may have been unpinned since it was checked above.
             if !taken {
-                tracing::info!(
-                    peer = %peer_host.id,
-                    "refused a resumed link: its ticket names a key not pinned for its peer"
-                );
-                // A close sent while the handshake is finishing goes out in
-                // handshake packets too, where QUIC strips its reason, and
-                // the peer reads that one first: it would hear only that
-                // its connection was lost, perhaps before the LinkClose.
-                // Once the handshake is over the close says why.
                 if let Some(resumed) = &ctx.resumed {
-                    let _ = resumed.handshaken.clone().wait_for(|over| *over).await;
+                    refuse_resumed(resumed, &mut sink, peer_host.id).await;
                 }
-                let _ =
-                    write_message(&mut sink, &link_close(wire::LinkCloseReason::UserRevoked)).await;
                 registered.leave(wire::LinkCloseReason::UserRevoked).await;
                 carrier.close(wire::LinkCloseReason::UserRevoked);
                 return Ok(());
@@ -1311,6 +1315,22 @@ async fn peer_revoked(ctx: &LinkCtx, link: LinkId, peer: HostId) {
     ctx.report(daemon_core::Input::PeerRevoked {
         host: core_host(peer),
     });
+}
+
+/// Tells the peer of a resumed link whose ticket names a key not pinned
+/// for it that this host no longer trusts it, as a full handshake's
+/// verifier would refuse its certificate. The caller closes the link.
+async fn refuse_resumed(resumed: &Resumed, sink: &mut super::ControlSink, peer: HostId) {
+    tracing::info!(
+        %peer,
+        "refused a resumed link: its ticket names a key not pinned for its peer"
+    );
+    // A close sent while the handshake is finishing goes out in handshake
+    // packets too, where QUIC strips its reason, and the peer reads that
+    // one first: it would hear only that its connection was lost, perhaps
+    // before the LinkClose. Once the handshake is over the close says why.
+    let _ = resumed.handshaken.clone().wait_for(|over| *over).await;
+    let _ = write_message(sink, &link_close(wire::LinkCloseReason::UserRevoked)).await;
 }
 
 /// A registered link, taken out of the registry, with the core told it
@@ -1854,6 +1874,41 @@ mod tests {
             wire::LinkCloseReason::AuthExpired
         );
         task.await.unwrap().unwrap();
+    }
+
+    /// A link resuming with a ticket whose key is not pinned for the host
+    /// its Hello names is refused before it is registered, so the host's
+    /// own link is not displaced by it.
+    #[tokio::test]
+    async fn a_refused_resumption_leaves_the_hosts_own_link_up() {
+        let local = host(1);
+        let peer = host(2);
+        let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
+        let (own_connector, own_acceptor) = carrier_pair().await;
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local.clone()), links.clone())
+            .with_authenticated_peer(peer.id);
+        let own = tokio::spawn(run_link(ctx, own_acceptor));
+        let (mut sink, mut source) = own_connector.control();
+        send_hello(&mut sink, &peer, None).await;
+        expect_accepted(&mut source).await;
+
+        let (resuming_connector, resuming_acceptor) = carrier_pair().await;
+        let (_, handshaken) = watch::channel(true);
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local), links.clone())
+            .with_resumed(vec![7; 32], handshaken);
+        let refused = tokio::spawn(run_link(ctx, resuming_acceptor.clone()));
+        let (mut resuming_sink, mut resuming_source) = resuming_connector.control();
+        send_hello(&mut resuming_sink, &peer, None).await;
+        expect_link_close(&mut resuming_source, wire::LinkCloseReason::UserRevoked).await;
+        assert_eq!(
+            resuming_acceptor.closed().await,
+            wire::LinkCloseReason::UserRevoked
+        );
+        refused.await.unwrap().unwrap();
+
+        assert!(linked(&links, peer.id).await, "the host's own link stays");
+        assert!(!own.is_finished());
+        own.abort();
     }
 
     #[tokio::test]

@@ -32,6 +32,13 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: amux-windows-x86_64
+    # The attestation below is signed with this run's identity token and
+    # stored on GitHub, beside the release but out of reach of anyone who
+    # can only edit the release.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -54,6 +61,15 @@ jobs:
       - name: Split symbols
         shell: bash
         run: scripts/release-symbols.sh ${{ matrix.target }} ${{ matrix.artifact }}${{ runner.os == 'Windows' && '.exe' || '' }} out
+
+      # Records the shipped binary's digest as built by this workflow at the
+      # tagged commit. `just deploy` signs a binary only once its attestation
+      # verifies, so swapping a release asset and its checksum afterwards
+      # gets nothing signed.
+      - name: Attest the binary
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: out/${{ matrix.artifact }}${{ runner.os == 'Windows' && '.exe' || '' }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

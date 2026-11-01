@@ -35,14 +35,14 @@ local edge to a fixed list:
 | `app-ffi` | `app-embedded`, `app-runtime`, `client`, `model`, `node`, `ui-view` |
 
 `app-runtime` is also one of the UI crates, which may not reach `node`,
-`store`, `interpret`, `agent`, `codex` or `pty-host` directly or
-through anything else, and no production crate may depend on test support.
+`store`, `interpret`, `agent` or `pty-host` directly or through anything
+else, and no production crate may depend on test support.
 `app-embedded` and `app-ffi` host the runtime in process and are the
 deliberate exception to "no UI crate links the daemon".
 
 What ships on a phone is checked from the other end too. `just ios
 graph-check` walks `cargo tree -p app-ffi` for the iOS simulator target and
-fails if `pty-host`, `codex`, `agent`, `testnet`, `qualification` or
+fails if `pty-host`, `agent`, `testnet`, `qualification` or
 `replay-support` appears, with and without the driving
 tools. `just mobile-check` checks `node`, `client`, `ui-state`,
 `ui-runtime`, `app-runtime` and `app-embedded` for the iOS device and

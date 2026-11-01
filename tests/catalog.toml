@@ -39,11 +39,11 @@ journeys = ["survive-daemon"]
 
 [[suite]]
 name = "agent-provider-hosting"
-contract = "The agent process launches each provider child, completes its handshake and a turn, continues the provider's own session in a later incarnation, delivers agent messages through each provider's own injection channel, and names a Codex thread after the agent at start and on rename, so Codex's own app shows the same name; its Claude host keeps Claude's launch settings, hook forwarding, session files and version probe to their contracts."
+contract = "The agent process launches each provider child, completes its handshake and a turn, continues the provider's own session in a later incarnation, delivers agent messages through each provider's own injection channel, and names a Codex thread after the agent at start and on rename, so Codex's own app shows the same name; its Claude host keeps Claude's launch settings, hook forwarding, session files and version probe, and its Codex host its connection to the hosted app server, to their contracts."
 paths = ["crates/agent/tests/providers.rs", "crates/agent/tests/codex_thread_name.rs", "crates/agent/tests/replay", "crates/agent/src"]
 recipe = "just suite agent-provider-hosting"
 boundary = "Provider adapter"
-oracle = "Journaled items and snapshots, provider writes checked byte for byte against recorded input, re-emitted open items after a restart, and the thread/name/set requests the fake Codex logged."
+oracle = "Journaled items and snapshots, provider writes checked byte for byte against recorded input, re-emitted open items after a restart, the thread/name/set requests the fake Codex logged, and the hosts' launch settings, forwarded payloads and decoded protocol messages."
 real = ["agent process library", "provider child processes", "PTYs", "Unix sockets", "journal files"]
 substituted = ["providers by the scripted fakes and recorded replays"]
 time = "real"
@@ -557,11 +557,11 @@ cargo = [
 
 [[suite]]
 name = "provider-io-library-units"
-contract = "PTY ownership, capture redaction and the connection to a hosted Codex app server preserve process, signal, byte, sanitization and protocol contracts."
-paths = ["crates/codex/src", "crates/pty-host/src", "crates/redaction/src"]
+contract = "PTY ownership and capture redaction preserve process, signal, byte and sanitization contracts."
+paths = ["crates/pty-host/src", "crates/redaction/src"]
 recipe = "just suite provider-io-library-units"
 boundary = "Provider adapter"
-oracle = "Process-group observations, byte streams, exit status, exact sanitized values and decoded protocol messages."
+oracle = "Process-group observations, byte streams, exit status and exact sanitized values."
 real = ["PTY child processes"]
 substituted = ["provider programs"]
 time = "real"
@@ -570,7 +570,6 @@ lane = "fast"
 evidence = ""
 update = ""
 cargo = [
-  { package = "codex", kind = "lib", targets = ["codex"], features = [] },
   { package = "pty-host", kind = "lib", targets = ["pty_host"], features = [] },
   { package = "redaction", kind = "lib", targets = ["redaction"], features = [] },
 ]

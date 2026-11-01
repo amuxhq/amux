@@ -18,7 +18,6 @@ dependencies = [
  "attachments",
  "base64 0.22.1",
  "claude-protocol",
- "codex",
  "codex-protocol",
  "core-ring",
  "futures-util",
@@ -715,17 +714,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fa961b519f0b462e3a3b4a34b64d119eeaca1d59af726fe450bbba07a9fc0a1"
 dependencies = [
  "thiserror 2.0.20",
-]
-
-[[package]]
-name = "codex"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite",
 ]
 
 [[package]]

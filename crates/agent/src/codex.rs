@@ -1,6 +1,8 @@
 //! Codex's app server as one agent hosts it: started listening on a Unix
 //! socket in the agent's folder (stdio on Windows), and one client
-//! connection to it carrying raw messages.
+//! connection to it carrying raw messages. Every message is a
+//! `codex_protocol` type, read and built by the agent and its interpreter;
+//! nothing here is shared with the Claude host.
 //!
 //! On a socket the server outlives any one client, so Codex's own terminal
 //! app can join the same live thread (`codex resume --remote`). Codex's

@@ -30,12 +30,11 @@ ALLOWED_LOCAL = {
     # The pure per-kind step, and the per-kind body redactor beside it.
     "interpret": {"attachments", "claude-protocol", "codex-protocol", "redaction", "wire"},
     # The agent process: its lock, journal and sockets, the interpreter,
-    # and the provider hosts, Claude's in its `claude` module.
+    # and the provider hosts, each in a module of its own (`claude`, `codex`).
     "agent": {
-        "agent-core", "agent-dir", "attachments", "claude-protocol", "codex", "codex-protocol",
-        "core-ring", "git-facts", "interpret", "journal", "log-file", "pty-host", "wire",
+        "agent-core", "agent-dir", "attachments", "claude-protocol", "codex-protocol", "core-ring",
+        "git-facts", "interpret", "journal", "log-file", "pty-host", "wire",
     },
-    "codex": set(),
     # Each provider's messages as types: pure, so the interpreter the phone
     # links can read them. PURE_EXTERNAL below bounds what they may pull in.
     "claude-protocol": set(),
@@ -100,7 +99,7 @@ CORES_ALLOWED_LOCAL = {
 # (app-ffi, app-embedded) hosts the runtime in process and is not one of them.
 UI_CRATES = {"model", "client", "ui-state", "ui-view", "ui-runtime", "tui", "app-runtime"}
 FORBIDDEN_FOR_UI = {
-    "node", "store", "interpret", "agent", "claude-protocol", "codex", "codex-protocol", "pty-host",
+    "node", "store", "interpret", "agent", "claude-protocol", "codex-protocol", "pty-host",
 }
 # The protocol crates hold types and nothing else: no process, socket or
 # async runtime code may come in through a dependency.

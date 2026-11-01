@@ -120,7 +120,7 @@ pub enum ProviderError {
 type Stdin = Arc<tokio::sync::Mutex<Option<ChildStdin>>>;
 /// The agent's connection to its Codex server, shared the same way; None
 /// once closed, or when the server ended before it took a client.
-type CodexSender = Arc<tokio::sync::Mutex<Option<codex::host::Sender>>>;
+type CodexSender = Arc<tokio::sync::Mutex<Option<crate::codex::Sender>>>;
 
 enum Input {
     Stdin(Stdin),
@@ -322,15 +322,16 @@ impl Provider {
         environment(&mut command, spec);
         #[cfg(unix)]
         command.process_group(0);
-        let mut child =
-            codex::host::spawn_server(command, &listen).map_err(|source| ProviderError::Spawn {
+        let mut child = crate::codex::spawn_server(command, &listen).map_err(|source| {
+            ProviderError::Spawn {
                 command: spec.provider_command.clone(),
                 source,
-            })?;
+            }
+        })?;
         let pid = child.id();
         #[cfg(unix)]
         let tether = match &listen {
-            codex::host::Listen::Unix(_) => match pty_host::Tether::new(&child) {
+            crate::codex::Listen::Unix(_) => match pty_host::Tether::new(&child) {
                 Ok(tether) => Some(tether),
                 Err(source) => {
                     let _ = child.start_kill();
@@ -340,14 +341,14 @@ impl Provider {
                     });
                 }
             },
-            codex::host::Listen::Stdio => None,
+            crate::codex::Listen::Stdio => None,
         };
         let connection =
-            match codex::host::Connection::connect(&listen, &mut child, CODEX_LISTEN_WAIT).await {
+            match crate::codex::Connection::connect(&listen, &mut child, CODEX_LISTEN_WAIT).await {
                 Ok(connection) => Some(connection),
                 // A server that ends at its start ends the incarnation as
                 // any provider exit does, with its code.
-                Err(codex::host::ConnectError::Exited(_)) => None,
+                Err(crate::codex::ConnectError::Exited(_)) => None,
                 Err(error) => {
                     let _ = child.start_kill();
                     return Err(ProviderError::Spawn {
@@ -430,7 +431,7 @@ impl Provider {
         });
         let (kill, killed) = oneshot::channel();
         let exited = events.clone();
-        let on_socket = matches!(listen, codex::host::Listen::Unix(_));
+        let on_socket = matches!(listen, crate::codex::Listen::Unix(_));
         tokio::spawn(async move {
             let mut killed = killed;
             let mut on_ended = Some(on_ended);
@@ -1360,7 +1361,7 @@ pub fn codex_view(
     thread: &str,
     size: pty_host::PtySize,
 ) -> Option<pty_host::PtySpawn> {
-    let args = codex::host::attach_args(thread, &codex_listen(dir).ok()?)?;
+    let args = crate::codex::attach_args(thread, &codex_listen(dir).ok()?)?;
     Some(pty_host::PtySpawn {
         command: PathBuf::from(&spec.provider_command),
         args,
@@ -1456,17 +1457,17 @@ fn terminate(child: &tokio::process::Child) {
 
 /// Where this agent's Codex server listens: a socket in its private
 /// folder, which Codex's own app joins to attach; stdio on Windows.
-pub fn codex_listen(dir: &Path) -> io::Result<codex::host::Listen> {
+pub fn codex_listen(dir: &Path) -> io::Result<crate::codex::Listen> {
     #[cfg(unix)]
     {
-        Ok(codex::host::Listen::Unix(socket_address(
+        Ok(crate::codex::Listen::Unix(socket_address(
             &dir.join(dir::PRIVATE).join(dir::CODEX_SOCK),
         )?))
     }
     #[cfg(not(unix))]
     {
         let _ = dir;
-        Ok(codex::host::Listen::Stdio)
+        Ok(crate::codex::Listen::Stdio)
     }
 }
 

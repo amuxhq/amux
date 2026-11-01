@@ -162,12 +162,12 @@ fn claude_signed_in(account: &AccountInfo) -> bool {
 /// Codex's app server lists its models (in pages) and skills before any
 /// thread, and reads the account.
 async fn ask_codex(command: &str) -> Result<(Catalogue, bool), String> {
-    let listen = codex::host::Listen::Stdio;
+    let listen = crate::codex::Listen::Stdio;
     let mut server = tokio::process::Command::new(command);
     server.stderr(Stdio::null()).kill_on_drop(true);
-    let mut child = codex::host::spawn_server(server, &listen)
+    let mut child = crate::codex::spawn_server(server, &listen)
         .map_err(|error| format!("starting {command}: {error}"))?;
-    let (sender, receiver) = codex::host::Connection::connect(&listen, &mut child, Duration::ZERO)
+    let (sender, receiver) = crate::codex::Connection::connect(&listen, &mut child, Duration::ZERO)
         .await
         .map_err(|error| format!("starting {command}: {error}"))?
         .into_split();
@@ -244,8 +244,8 @@ const CODEX_EXIT_WAIT: Duration = Duration::from_secs(2);
 
 /// The probe's one connection to Codex's server, asking one thing at a time.
 struct CodexProbe {
-    sender: codex::host::Sender,
-    receiver: codex::host::Receiver,
+    sender: crate::codex::Sender,
+    receiver: crate::codex::Receiver,
     asked: i64,
 }
 

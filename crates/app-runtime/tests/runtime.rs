@@ -127,23 +127,20 @@ impl Host {
     }
 
     /// One of the host's turns: the next wake naming `chat`, and what it
-    /// brought, if anything drawn moved. Nothing else was queued for the
-    /// chat before this take: however many updates land between turns, the
-    /// host is woken once and hears them all together.
+    /// brought, if anything drawn moved. Every wake for the chat already
+    /// queued is answered by this take too. A second one can be there
+    /// without the runtime waking twice for one batch: an update landing
+    /// between the last turn's drain and its take sent a wake whose batch
+    /// that take carried off, and the next update woke the host again. One
+    /// wake per take is the coalescer's own promise, tested beside it.
     async fn turn(&mut self, chat: &Chat) -> Option<ChatDelta> {
         let wanted = Wake::Chat(chat.id());
         self.next(wanted).await;
-        let mut queued = Vec::new();
         while let Ok(wake) = self.wakes.try_recv() {
-            queued.push(wake);
-        }
-        assert!(
-            !queued.contains(&wanted),
-            "a second wake for the chat before its take: {queued:?}"
-        );
-        for wake in queued {
-            // Another wake's turn is still owed; keep it for its taker.
-            self.held.push(wake);
+            if wake != wanted {
+                // Another wake's turn is still owed; keep it for its taker.
+                self.held.push(wake);
+            }
         }
         chat.delta()
     }

@@ -28,7 +28,7 @@ Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
 | Check and Clippy | `ubuntu-latest` | `just lint` |
 | Format | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30` |
 | Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat` |
-| Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --no-fail-fast --exclude models` |
+| Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --profile ci --exclude models` |
 | Simulated stories and doctests | `ubuntu-latest` | `just sim`, `just doctest`: what reads the same on every platform, run once |
 | Models | `ubuntu-latest`, one job per protocol model | `just test-crate models` filtered to one model's module of the integration test binary: one model at its CI bounds |
 | Build | `ubuntu-latest`, `macos-latest`, `windows-latest` | `just release-check` |

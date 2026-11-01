@@ -152,7 +152,7 @@ mobile-check:
 # run phases. The protocol models are pure computation that would take most of
 # the run's bound, and run in their own CI job, as they do for the test jobs.
 offline-test: nextest
-    scripts/offline-check.sh scripts/workspace-test.sh --lib --tests --no-fail-fast --exclude models
+    scripts/offline-check.sh scripts/workspace-test.sh --lib --tests --exclude models
 
 # Build the product with the full-debug profile.
 full-debug:

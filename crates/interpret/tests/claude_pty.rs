@@ -80,6 +80,7 @@ goldens! {
     a_tool_servers_form_or_link_is_answered_through_its_hook => "elicitation",
     replies_stream_as_claude_draws_them => "streaming",
     another_conversations_hooks_are_let_go => "switched_away_hooks",
+    hooks_naming_another_session_are_let_go => "foreign_session_hooks",
     a_form_answered_before_its_calls_row_lands_on_its_own_key => "form_answered_before_its_row",
     a_form_is_left_to_claudes_dialog_while_someone_watches_its_terminal => "form_left_to_terminal",
     a_refusal_claude_made_on_its_own_lands_on_the_call => "permission_denied",

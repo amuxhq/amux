@@ -541,15 +541,22 @@ A hook reaches the agent like this:
 3. The command always exits 0, even when it could not deliver: Claude reads a
    hook's exit code as a verdict, and 2 would block the action.
 4. The agent reads one connection at a time, in the order Claude ran its
-   hooks. Messaging credentials go to the provider, which uses them to hand
-   agent messages to Claude; the payload Claude wrote becomes a hook fact,
-   which the interpreter decodes with `claude_protocol::hooks`.
+   hooks. Anything Claude runs can reach the socket, so a payload is held to
+   what Claude writes, and dropped otherwise: its `session_id` is a UUID,
+   and a `transcript_path` it names is that session's `<id>.jsonl` in
+   Claude's project folder for the working folder or a sibling git
+   worktree. Messaging credentials go to the provider, which uses them to
+   hand agent messages to Claude; the payload Claude wrote becomes a hook
+   fact, which the interpreter decodes with `claude_protocol::hooks`. Once a
+   session has started, the interpreter ignores any hook but a
+   `SessionStart` that names another session.
 5. A `PermissionRequest` or `Elicitation` connection is held open: Claude
    waits on it for amux's decision. The agent numbers it and adds the
    number to the payload as `amux_reply`; the interpreter's answer
    (`Effect::HookAnswer`) is written on the connection with that number,
    which then closes. An empty answer closes it with no decision, so Claude
-   carries on with its own dialog. Every other connection is closed as soon
+   carries on with its own dialog. At most 64 are held at once; a payload
+   past that is dropped. Every other connection is closed as soon
    as it is read, so Claude waits on it no longer than the delivery takes.
    If the agent goes away, the connection closes, and Claude falls back to
    its own dialog as it does for an empty answer.

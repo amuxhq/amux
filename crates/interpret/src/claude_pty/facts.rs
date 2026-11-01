@@ -255,13 +255,17 @@ impl State {
         let Some(common) = payload.common() else {
             return;
         };
-        // While Claude's own view shows another conversation, only its
-        // next session start concerns this agent. A hook that conversation
-        // waits on is let go at once, so Claude shows its own dialog.
-        if self.provider.switched_away
-            && !matches!(payload, Payload::SessionStart(_))
-            && self.provider.session.as_deref() != Some(common.session_id.as_str())
-        {
+        // Once a session has started, only its hooks and the next session
+        // start concern this agent: another session's are Claude's own view
+        // showing another conversation, or not Claude's at all. A hook such a
+        // session waits on is let go at once, so Claude shows its own dialog.
+        let ours = self.provider.session.as_deref();
+        let foreign = if self.provider.switched_away {
+            ours != Some(common.session_id.as_str())
+        } else {
+            ours.is_some_and(|ours| !common.session_id.is_empty() && ours != common.session_id)
+        };
+        if foreign && !matches!(payload, Payload::SessionStart(_)) {
             let held = match payload {
                 Payload::PermissionRequest(request) => hook_number(&request.extensions),
                 Payload::Elicitation(elicitation) => hook_number(&elicitation.extensions),

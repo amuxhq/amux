@@ -1535,15 +1535,7 @@ fn claude_session(spec: &AgentSpec, dir: &Path) -> io::Result<(String, bool)> {
 /// CLAUDE_CONFIG_DIR, as the spec or this process sets it, else ~/.claude;
 /// with neither known, the session is taken to have one.
 fn session_file(spec: &AgentSpec, session: &str) -> crate::claude::history::SessionFile {
-    const CONFIG_DIR: &str = "CLAUDE_CONFIG_DIR";
-    let configured = spec
-        .provider_env
-        .get(CONFIG_DIR)
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os(CONFIG_DIR).map(PathBuf::from));
-    let Some(config) = configured
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".claude")))
-    else {
+    let Some(config) = crate::claude::history::config_root(&spec.provider_env) else {
         return crate::claude::history::SessionFile::Conversation;
     };
     crate::claude::history::session_file(&config, Path::new(&spec.cwd), session)

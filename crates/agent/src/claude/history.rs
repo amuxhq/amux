@@ -9,24 +9,7 @@ fn find_session_file(config_root: &Path, working_dir: &Path, session_id: &str) -
     if !valid_session_id(session_id) {
         return None;
     }
-    let mut worktrees = vec![absolute_path(working_dir).ok()?];
-    if let Ok(output) = Command::new("git")
-        .arg("-C")
-        .arg(working_dir)
-        .args(["worktree", "list", "--porcelain"])
-        .output()
-        && output.status.success()
-    {
-        worktrees.extend(
-            String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .filter_map(|line| line.strip_prefix("worktree "))
-                .map(PathBuf::from),
-        );
-    }
-    worktrees.sort();
-    worktrees.dedup();
-
+    let worktrees = worktrees(working_dir)?;
     let projects = config_root.join("projects");
     if let Some(path) = worktrees.into_iter().find_map(|worktree| {
         let path = projects
@@ -51,6 +34,99 @@ fn find_session_file(config_root: &Path, working_dir: &Path, session_id: &str) -
         }
     }
     found
+}
+
+/// The working folder and its sibling git worktrees, whose projects
+/// `--resume` searches first.
+fn worktrees(working_dir: &Path) -> Option<Vec<PathBuf>> {
+    let mut worktrees = vec![absolute_path(working_dir).ok()?];
+    if let Ok(output) = Command::new("git")
+        .arg("-C")
+        .arg(working_dir)
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+        && output.status.success()
+    {
+        worktrees.extend(
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .filter_map(|line| line.strip_prefix("worktree "))
+                .map(PathBuf::from),
+        );
+    }
+    worktrees.sort();
+    worktrees.dedup();
+    Some(worktrees)
+}
+
+/// Where Claude keeps CLAUDE_CONFIG_DIR's contents: as the agent's
+/// environment or this process sets it, else `~/.claude`.
+pub fn config_root(provider_env: &std::collections::HashMap<String, String>) -> Option<PathBuf> {
+    const CONFIG_DIR: &str = "CLAUDE_CONFIG_DIR";
+    provider_env
+        .get(CONFIG_DIR)
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os(CONFIG_DIR).map(PathBuf::from))
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".claude")))
+}
+
+/// The project folders the transcripts of a working folder's sessions are
+/// in: its own, and its sibling worktrees', which a resume also reaches.
+#[derive(Debug)]
+pub struct ProjectFolders {
+    /// `<config>/projects`, as given and as the file system resolves it.
+    projects: Vec<PathBuf>,
+    slugs: Vec<String>,
+}
+
+/// The longest project folder name Claude writes whole; a longer one is cut
+/// to this and given a hash of the path after a hyphen.
+const SLUG_MOST: usize = 200;
+
+impl ProjectFolders {
+    pub fn of(config_root: &Path, working_dir: &Path) -> Self {
+        let projects = config_root.join("projects");
+        let mut resolved = vec![projects.clone()];
+        resolved.extend(std::fs::canonicalize(&projects).ok());
+        resolved.dedup();
+        Self {
+            projects: resolved,
+            slugs: worktrees(working_dir)
+                .unwrap_or_default()
+                .iter()
+                .map(|worktree| project_slug(worktree))
+                .collect(),
+        }
+    }
+
+    /// Whether `transcript` is the file Claude keeps session `session` in,
+    /// in one of these folders.
+    pub fn hold(&self, transcript: &Path, session: &str) -> bool {
+        use std::path::Component;
+        if !transcript.is_absolute()
+            || transcript
+                .components()
+                .any(|part| matches!(part, Component::ParentDir | Component::CurDir))
+            || transcript.file_name() != Some(std::ffi::OsStr::new(&format!("{session}.jsonl")))
+        {
+            return false;
+        }
+        let Some(folder) = transcript.parent() else {
+            return false;
+        };
+        let (Some(name), Some(projects)) = (folder.file_name(), folder.parent()) else {
+            return false;
+        };
+        let name = name.to_string_lossy();
+        self.projects.iter().any(|known| known == projects)
+            && self.slugs.iter().any(|slug| {
+                *slug == name
+                    || (slug.len() > SLUG_MOST
+                        && name
+                            .strip_prefix(&slug[..SLUG_MOST])
+                            .is_some_and(|hash| hash.starts_with('-')))
+            })
+    }
 }
 
 /// What Claude would make of a session id at launch.
@@ -107,7 +183,7 @@ fn has_conversation(path: &Path) -> bool {
         .any(|row| row.kind == "user" || row.kind == "assistant")
 }
 
-fn valid_session_id(session_id: &str) -> bool {
+pub fn valid_session_id(session_id: &str) -> bool {
     uuid::Uuid::parse_str(session_id).is_ok()
 }
 
@@ -189,6 +265,42 @@ mod tests {
             session_file(&config, &work, session),
             SessionFile::Conversation
         );
+    }
+
+    /// A hook's transcript is accepted only as this session's file in the
+    /// working folder's own project, under any name a long path is cut to.
+    #[test]
+    fn project_folders_hold_only_this_folders_transcripts() {
+        let root = TempDir::new().unwrap();
+        let config = root.path().join("claude");
+        let work = root.path().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        let folders = ProjectFolders::of(&config, &work);
+        let session = "44444444-4444-4444-4444-444444444444";
+        let project = config.join("projects").join(project_slug(&work));
+        let ours = project.join(format!("{session}.jsonl"));
+        assert!(folders.hold(&ours, session));
+        assert!(!folders.hold(&ours, "55555555-5555-5555-5555-555555555555"));
+        assert!(!folders.hold(&project.join("other.jsonl"), session));
+        assert!(!folders.hold(
+            &config.join("projects/elsewhere").join(format!("{session}.jsonl")),
+            session
+        ));
+        assert!(!folders.hold(Path::new(&format!("/home/me/.ssh/{session}.jsonl")), session));
+        assert!(!folders.hold(
+            &project.join("..").join("x").join(format!("{session}.jsonl")),
+            session
+        ));
+
+        let long = root.path().join("d".repeat(240));
+        std::fs::create_dir_all(&long).unwrap();
+        let folders = ProjectFolders::of(&config, &long);
+        let slug = project_slug(&long);
+        let cut = config
+            .join("projects")
+            .join(format!("{}-1x2y3z", &slug[..SLUG_MOST]))
+            .join(format!("{session}.jsonl"));
+        assert!(folders.hold(&cut, session));
     }
 
     #[test]

@@ -17,7 +17,7 @@
 //! them.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use agent_core::{
@@ -181,8 +181,14 @@ pub(crate) async fn run<I: Interpreter>(
     let mut tasks = vec![tokio::spawn(accept(ctl, connections_tx))];
     let hook_answers = HookAnswers::default();
     if let Some(hooks) = hooks {
+        let gate = HookGate {
+            folders: crate::claude::history::config_root(&spec.provider_env).map(|config| {
+                crate::claude::history::ProjectFolders::of(&config, Path::new(&spec.cwd))
+            }),
+        };
         tasks.push(tokio::spawn(hook_payloads(
             hooks,
+            gate,
             provider_tx.clone(),
             hook_answers.clone(),
         )));
@@ -699,14 +705,53 @@ async fn accept(mut listener: LocalListener, connections: mpsc::Sender<LocalStre
     }
 }
 
+/// What a hook payload must say before it is read as terminal Claude's.
+/// The hooks socket is reachable by anything Claude runs, so a payload is
+/// held to what Claude itself writes: a session id Claude makes (a UUID),
+/// and a transcript in Claude's projects folder for this working folder,
+/// named by that session. Whether the session is this agent's is the
+/// interpreter's to judge, since a clear moves it on.
+struct HookGate {
+    /// None when Claude's config folder is unknown: no transcript passes.
+    folders: Option<crate::claude::history::ProjectFolders>,
+}
+
+impl HookGate {
+    fn admits(&self, payload: &[u8]) -> bool {
+        let Ok(serde_json::Value::Object(fields)) = serde_json::from_slice(payload) else {
+            return false;
+        };
+        let Some(session) = fields
+            .get("session_id")
+            .and_then(serde_json::Value::as_str)
+            .filter(|session| crate::claude::history::valid_session_id(session))
+        else {
+            return false;
+        };
+        match fields
+            .get("transcript_path")
+            .and_then(serde_json::Value::as_str)
+            .filter(|path| !path.is_empty())
+        {
+            None => true,
+            Some(path) => self
+                .folders
+                .as_ref()
+                .is_some_and(|folders| folders.hold(Path::new(path), session)),
+        }
+    }
+}
+
 /// Each connection on hooks.sock carries one hook payload. The hook binary
 /// wraps the payload with the messaging socket's credentials when Claude
 /// gave it them; they go to the provider, and only the payload Claude wrote
 /// becomes a fact. Payloads are read one connection at a time, in the order
 /// Claude ran its hooks; a connection Claude waits on for a decision is
-/// held for the interpreter's answer, and any other is closed at once.
+/// held for the interpreter's answer, and any other is closed at once. A
+/// payload the gate refuses is dropped, its connection with it.
 async fn hook_payloads(
     mut listener: LocalListener,
+    gate: HookGate,
     events: mpsc::Sender<ProviderEvent>,
     answers: HookAnswers,
 ) {
@@ -717,7 +762,14 @@ async fn hook_payloads(
         }
         let (payload, messaging) =
             crate::claude::hooks::unwrap_forwarded(&bytes).unwrap_or((bytes, None));
-        let payload = answers.hold(payload, stream);
+        if !gate.admits(&payload) {
+            eprintln!("amux agent: dropped a hook payload that is not this Claude's");
+            continue;
+        }
+        let Some(payload) = answers.hold(payload, stream) else {
+            eprintln!("amux agent: dropped a hook payload past the held connections' limit");
+            continue;
+        };
         if let Some(messaging) = messaging
             && events
                 .send(ProviderEvent::Messaging(messaging))
@@ -739,6 +791,46 @@ async fn hook_payloads(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The hooks socket admits only what Claude writes: a UUID session and,
+    /// when it names one, that session's transcript in this folder's
+    /// project.
+    #[test]
+    fn the_hook_gate_admits_only_payloads_claude_could_have_written() {
+        let config = std::env::temp_dir().join(format!("amux-gate-{}", std::process::id()));
+        let work = std::env::temp_dir();
+        let gate = HookGate {
+            folders: Some(crate::claude::history::ProjectFolders::of(&config, &work)),
+        };
+        let session = "66666666-6666-6666-6666-666666666666";
+        let slug: String = std::fs::canonicalize(&work)
+            .unwrap()
+            .to_string_lossy()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect();
+        let transcript = config
+            .join("projects")
+            .join(slug)
+            .join(format!("{session}.jsonl"));
+        let payload = |session: &str, transcript: &str| {
+            serde_json::to_vec(&serde_json::json!({
+                "hook_event_name": "PreToolUse",
+                "session_id": session,
+                "transcript_path": transcript,
+            }))
+            .unwrap()
+        };
+        let ours = transcript.display().to_string();
+        assert!(gate.admits(&payload(session, &ours)));
+        assert!(gate.admits(&payload(session, "")));
+        assert!(!gate.admits(&payload("--dangerously-skip-permissions", &ours)));
+        assert!(!gate.admits(&payload(session, "/etc/passwd")));
+        assert!(!gate.admits(b"{\"hook_event_name\":\"Stop\"}"));
+        assert!(!gate.admits(b"not json"));
+        let unknown = HookGate { folders: None };
+        assert!(!unknown.admits(&payload(session, &ours)));
+    }
 
     fn daemon() -> (Daemon, mpsc::UnboundedReceiver<CtlFrame>) {
         let (frames, sent) = mpsc::unbounded_channel();

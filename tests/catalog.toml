@@ -474,7 +474,7 @@ cargo = [
 [[suite]]
 name = "daemon-library-units"
 contract = "Daemon-side libraries preserve their local parsing, state, routing, lifecycle, persistence, agent-directory and wire invariants."
-paths = ["crates/agent-dir/src", "crates/analytics/src", "crates/client/src", "crates/log-file/src", "crates/node/src", "crates/release/src", "crates/socket-core/src", "crates/settings/src", "crates/version-stamp/src", "crates/wire/src"]
+paths = ["crates/agent-dir/src", "crates/analytics/src", "crates/client/src", "crates/log-file/src", "crates/node/src", "crates/release/src", "crates/socket-core/src", "crates/settings/src", "crates/wire/src"]
 recipe = "just suite daemon-library-units"
 boundary = "Single daemon"
 oracle = "Value assertions, explicit state transitions, wire round trips, and owned-resource observations."
@@ -493,7 +493,6 @@ cargo = [
   { package = "node", kind = "lib", targets = ["node"], features = [] },
   { package = "release", kind = "lib", targets = ["release"], features = [] },
   { package = "settings", kind = "lib", targets = ["settings"], features = [] },
-  { package = "version-stamp", kind = "lib", targets = ["version_stamp"], features = [] },
   { package = "wire", kind = "lib", targets = ["wire"], features = [] },
 ]
 

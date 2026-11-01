@@ -43,7 +43,6 @@ members = [
     "crates/ui-state",
     "crates/ui-view",
     "crates/release",
-    "crates/version-stamp",
     "crates/wire",
     "crates/xtask",
 ]
@@ -70,7 +69,6 @@ app-runtime = { path = "crates/app-runtime" }
 node = { path = "crates/node" }
 patience = { path = "crates/patience" }
 release = { path = "crates/release" }
-version-stamp = { path = "crates/version-stamp" }
 testnet = { path = "crates/testnet" }
 client = { path = "crates/client" }
 interpret = { path = "crates/interpret" }

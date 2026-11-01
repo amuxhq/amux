@@ -138,7 +138,6 @@ dependencies = [
  "tracing-subscriber",
  "tui",
  "uuid",
- "version-stamp",
  "vt100",
  "wire",
 ]
@@ -2146,7 +2145,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
- "version-stamp",
  "webpki-roots",
  "windows-sys 0.61.2",
  "wire",
@@ -4468,10 +4466,6 @@ name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
-
-[[package]]
-name = "version-stamp"
-version = "0.1.0"
 
 [[package]]
 name = "version_check"

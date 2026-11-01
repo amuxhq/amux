@@ -45,12 +45,11 @@ ALLOWED_LOCAL = {
     # provider in its graph.
     # interpret only for the dump path's per-kind redactor: the one stated
     # exception to "the daemon interprets nothing".
-    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "version-stamp", "wire"},
+    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
     "amux": {"agent", "agent-dir", "analytics", "client", "log-file", "node", "settings", "tui", "wire"},
-    # The version stamp a release tool can rewrite in a built binary, and the
-    # release manifest the tool signs and the daemon verifies; the xtask
+    # The release manifest the tool signs and the daemon verifies, and the
+    # version stamp a release tool can rewrite in a built binary; the xtask
     # shares both without building the daemon.
-    "version-stamp": set(),
     "release": set(),
     "xtask": {"release"},
     # The Swift mirrors of the view values are generated from their
@@ -91,7 +90,7 @@ CORES_ALLOWED_LOCAL = {
     "path-core": {"daemon-core"},
     "socket-core": {"path-core"},
     "agent-core": {"core-ring", "interpret", "journal", "wire"},
-    "supervisor-core": {"core-ring", "release", "version-stamp"},
+    "supervisor-core": {"core-ring", "release"},
 }
 # The UI library and the clients built on it reach the daemon only through
 # the client seam: none of them may link, directly or through another crate,

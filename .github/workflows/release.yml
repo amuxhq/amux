@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   # The public halves of the release signing key and its offline backup,
@@ -31,13 +34,15 @@ jobs:
             artifact: amux-windows-x86_64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
         with:
           targets: ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@v2
+      # No Rust cache: a tag's run restores caches main's CI jobs saved, so
+      # whatever those jobs run could reach the binaries this job ships, and
+      # a cache a tag saves is never read by another tag.
 
       - uses: ./.github/actions/setup-just
 
@@ -51,7 +56,7 @@ jobs:
         run: scripts/release-symbols.sh ${{ matrix.target }} ${{ matrix.artifact }}${{ runner.os == 'Windows' && '.exe' || '' }} out
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.artifact }}
           path: out/
@@ -65,7 +70,7 @@ jobs:
 
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: artifacts
 
@@ -76,7 +81,7 @@ jobs:
         run: sha256sum amux-linux-x86_64 amux-macos-arm64 amux-windows-x86_64.exe > checksums.txt
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: |
             amux-linux-x86_64

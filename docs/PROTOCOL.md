@@ -913,10 +913,16 @@ Each agent's `tools.sock` serves the same `AgentService` and
 starts the agent's process, and whatever arrives on it is from that agent, so
 no request carries an agent id or a token claiming one. On that socket:
 
-- `CreateAgent` makes the caller the child's parent.
+- `CreateAgent` makes the caller the child's parent, and takes only the
+  kind's default settings, as the spawn tool sends them: a permission mode,
+  model, effort or provider arguments are refused, being the person's to
+  choose.
 - `SendMessage` stamps the caller as the message's sender.
-- `SendInput` goes only to one of the caller's own direct children; the stop
-  tool's interrupt is the input an agent sends.
+- Every call on a named agent (`SendInput`, `StopAgent`, `RenameAgent`,
+  `ResumeAgent`, `DeleteAgent`, the blob, diff, draft and session reads) goes
+  only to one of the caller's own direct children, refused with
+  `PERMISSION_DENIED` otherwise; the stop tool's interrupt is the input an
+  agent sends. An agent reaches any other agent by messaging it.
 
 [Agent tools](AGENT_TOOLS.md) describes the tool server that dials it.
 

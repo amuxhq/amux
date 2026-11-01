@@ -143,13 +143,20 @@ impl ClientApi {
         }
     }
 
-    /// For a paired host's call on `agent_id`, refuses an agent this host
-    /// does not run. A replica's rows are this host's copy of another
-    /// host's, which that host serves itself, so they are not found here
-    /// rather than passed on.
-    async fn own_for_peer<T>(&self, request: &Request<T>, agent_id: &[u8]) -> Result<(), Status> {
+    /// Whether the caller may act on `agent_id`. A paired host's call is
+    /// refused for an agent this host does not run: a replica's rows are
+    /// this host's copy of another host's, which that host serves itself,
+    /// so they are not found here rather than passed on. An agent's call is
+    /// refused, in `refusal`'s words, unless the target is its own child
+    /// (see [`Self::lineage`]).
+    async fn may_reach<T>(
+        &self,
+        request: &Request<T>,
+        agent_id: &[u8],
+        refusal: &str,
+    ) -> Result<(), Status> {
         if self.peer(request)?.is_none() {
-            return Ok(());
+            return self.lineage(&*self.runtime()?, agent_id, refusal).await;
         }
         match self.runtime()?.is_own(agent_id).await {
             Ok(true) => Ok(()),
@@ -209,10 +216,10 @@ impl ClientApi {
             .ok_or_else(|| Status::unavailable("the profile is no longer running"))
     }
 
-    /// On an agent's tools socket, input and stops go only to the caller's
-    /// own direct children: an agent acts on the agents it started, and
-    /// reaches any other only by messaging it. `refusal` says what was
-    /// refused.
+    /// On an agent's tools socket, every call on a named agent goes only to
+    /// the caller's own direct children: an agent acts on the agents it
+    /// started, and reaches any other only by messaging it. `refusal` says
+    /// what was refused.
     async fn lineage(
         &self,
         runtime: &ProfileRuntime,
@@ -328,6 +335,18 @@ impl AgentService for ClientApi {
         // the person, from its own tools-socket caller.
         self.peer(&request)?;
         let request = request.into_inner();
+        // An agent starts children as its spawn tool does, with the kind's
+        // defaults: a permission mode or provider arguments are the
+        // person's to choose, never another agent's.
+        if self.caller.is_some()
+            && let Some(agent) = &request.agent
+            && Some(agent) != wire::create_agent_request::Agent::defaults(agent.kind()).as_ref()
+        {
+            return Err(status(wire_error(
+                ErrorCode::PermissionDenied,
+                "an agent starts children with their kind's default settings only",
+            )));
+        }
         let runtime = self.runtime()?;
         let host = runtime
             .target_host(&request)
@@ -368,8 +387,12 @@ impl AgentService for ClientApi {
         &self,
         request: Request<RenameAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
-        self.own_for_peer(&request, &request.get_ref().agent_id)
-            .await?;
+        self.may_reach(
+            &request,
+            &request.get_ref().agent_id,
+            "an agent renames only its own children",
+        )
+        .await?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
@@ -386,16 +409,14 @@ impl AgentService for ClientApi {
         &self,
         request: Request<StopAgentRequest>,
     ) -> Result<Response<wire::Empty>, Status> {
-        self.own_for_peer(&request, &request.get_ref().agent_id)
-            .await?;
-        let request = request.into_inner();
-        let runtime = self.runtime()?;
-        self.lineage(
-            &runtime,
-            &request.agent_id,
+        self.may_reach(
+            &request,
+            &request.get_ref().agent_id,
             "an agent stops only its own children",
         )
         .await?;
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             let stopped = runtime.on_peer(host, request).await;
             return match stopped {
@@ -421,8 +442,12 @@ impl AgentService for ClientApi {
         &self,
         request: Request<ResumeAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
-        self.own_for_peer(&request, &request.get_ref().agent_id)
-            .await?;
+        self.may_reach(
+            &request,
+            &request.get_ref().agent_id,
+            "an agent resumes only its own children",
+        )
+        .await?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         let first = match &request.initial_prompt {
@@ -454,8 +479,12 @@ impl AgentService for ClientApi {
         &self,
         request: Request<DeleteAgentRequest>,
     ) -> Result<Response<Empty>, Status> {
-        self.own_for_peer(&request, &request.get_ref().agent_id)
-            .await?;
+        self.may_reach(
+            &request,
+            &request.get_ref().agent_id,
+            "an agent deletes only its own children",
+        )
+        .await?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
@@ -495,8 +524,12 @@ impl AgentService for ClientApi {
         &self,
         request: Request<PutBlobRequest>,
     ) -> Result<Response<BlobRef>, Status> {
-        self.own_for_peer(&request, &request.get_ref().agent_id)
-            .await?;
+        self.may_reach(
+            &request,
+            &request.get_ref().agent_id,
+            "an agent adds files only to its own children",
+        )
+        .await?;
         let request = request.into_inner();
         crate::blobs::within_limit(&request).map_err(|error| status(error.to_wire()))?;
         let runtime = self.runtime()?;
@@ -514,8 +547,12 @@ impl AgentService for ClientApi {
         &self,
         request: Request<GetBlobRequest>,
     ) -> Result<Response<GetBlobResponse>, Status> {
-        self.own_for_peer(&request, &request.get_ref().agent_id)
-            .await?;
+        self.may_reach(
+            &request,
+            &request.get_ref().agent_id,
+            "an agent reads only its own children's files",
+        )
+        .await?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         match runtime.get_blob(request.clone()).await {
@@ -546,8 +583,12 @@ impl AgentService for ClientApi {
         &self,
         request: Request<GetDiffRequest>,
     ) -> Result<Response<wire::Diff>, Status> {
-        self.own_for_peer(&request, &request.get_ref().agent_id)
-            .await?;
+        self.may_reach(
+            &request,
+            &request.get_ref().agent_id,
+            "an agent reads only its own children's changes",
+        )
+        .await?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         // The working tree is on the agent's own host, and so is the patch.
@@ -606,6 +647,12 @@ impl SessionService for ClientApi {
         let from = self.peer(&request)?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
+        self.lineage(
+            &runtime,
+            &request.agent_id,
+            "an agent reads only its own children's chats",
+        )
+        .await?;
         let subscription = match (from, &request.from) {
             // A peer asks for a tail, like a client, or for what came after
             // the revision its replica holds, capped.
@@ -636,6 +683,12 @@ impl SessionService for ClientApi {
         let from = self.peer(&request)?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
+        self.lineage(
+            &runtime,
+            &request.agent_id,
+            "an agent reads only its own children's chats",
+        )
+        .await?;
         match from {
             Some(from) => runtime.peer_list_items(from, request).await,
             None => runtime.list_items(&request).await,
@@ -648,6 +701,12 @@ impl SessionService for ClientApi {
         let from = self.peer(&request)?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
+        self.lineage(
+            &runtime,
+            &request.agent_id,
+            "an agent reads only its own children's chats",
+        )
+        .await?;
         match from {
             Some(from) => runtime.peer_get_item(from, request).await,
             None => runtime.get_item(&request).await,
@@ -660,16 +719,14 @@ impl SessionService for ClientApi {
         &self,
         request: Request<SendInputRequest>,
     ) -> Result<Response<SendInputResponse>, Status> {
-        self.own_for_peer(&request, &request.get_ref().agent_id)
-            .await?;
-        let request = request.into_inner();
-        let runtime = self.runtime()?;
-        self.lineage(
-            &runtime,
-            &request.agent_id,
+        self.may_reach(
+            &request,
+            &request.get_ref().agent_id,
             "an agent sends input only to its own children",
         )
         .await?;
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
         let shape = request.input.as_ref().and_then(InputShape::of);
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             let forwarded = runtime.on_peer(host, request).await;
@@ -717,10 +774,15 @@ impl SessionService for ClientApi {
             )));
         }
         let request = request.into_inner();
+        let runtime = self.runtime()?;
+        self.lineage(
+            &runtime,
+            &request.agent_id,
+            "an agent keeps drafts only for its own children",
+        )
+        .await?;
         let draft = request.draft.unwrap_or_default();
-        self.runtime()?
-            .update_draft(&request.agent_id, &draft)
-            .await;
+        runtime.update_draft(&request.agent_id, &draft).await;
         Ok(Response::new(draft))
     }
 
@@ -735,9 +797,14 @@ impl SessionService for ClientApi {
             )));
         }
         let request = request.into_inner();
-        Ok(Response::new(
-            self.runtime()?.draft(&request.agent_id).await,
-        ))
+        let runtime = self.runtime()?;
+        self.lineage(
+            &runtime,
+            &request.agent_id,
+            "an agent keeps drafts only for its own children",
+        )
+        .await?;
+        Ok(Response::new(runtime.draft(&request.agent_id).await))
     }
 }
 

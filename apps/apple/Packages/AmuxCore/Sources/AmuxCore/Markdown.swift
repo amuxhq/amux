@@ -178,9 +178,15 @@ public struct MarkdownDocument: Equatable, Sendable {
         // A link is underlined rather than coloured. Every colour in this
         // design is either the neutral ramp or the one accent, and the accent
         // means "something is waiting for you"; a link is not that, and the
-        // system's own blue is not a colour this app owns.
-        for run in parsed.runs where run.link != nil {
-            parsed[run.range].underlineStyle = .single
+        // system's own blue is not a colour this app owns. A link this phone
+        // will not open stays as its words.
+        let links = parsed.runs.compactMap { run in run.link.map { (run.range, $0) } }
+        for (range, link) in links {
+            if OpenableLink(link) == nil {
+                parsed[range].link = nil
+            } else {
+                parsed[range].underlineStyle = .single
+            }
         }
         return parsed
     }

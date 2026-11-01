@@ -1572,6 +1572,11 @@
       {"literal": "\"sign-in.dismiss\"", "context": ".accessibilityIdentifier(\"sign-in.dismiss\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"sign-in.keep\"", "context": ".accessibilityIdentifier(\"sign-in.keep\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"sign-in.discard\"", "context": ".accessibilityIdentifier(\"sign-in.discard\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxCore/Sources/AmuxCore/OpenableLink.swift": [
+      {"literal": "\"https\"", "context": "private static let schemes: Set<String> = [\"https\", \"http\", \"mailto\"]", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"http\"", "context": "private static let schemes: Set<String> = [\"https\", \"http\", \"mailto\"]", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"mailto\"", "context": "private static let schemes: Set<String> = [\"https\", \"http\", \"mailto\"]", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
     ]
   }
 }

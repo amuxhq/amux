@@ -762,15 +762,16 @@ private struct AskBodyView: View {
         }
     }
 
-    /// Open the link, then say it is done.
+    /// Open the link, then say it is done. A link that is not a web page or
+    /// an email address has no Open button; its address is still shown.
     private func linkButtons(_ url: String, opensHere: Bool) -> some View {
         let done = card.choices.indices.filter { card.choices[$0].outcome == .openLink }
         let rest = card.choices.indices.filter { !done.contains($0) }
         return VStack(spacing: 8) {
-            if opensHere, let link = URL(string: url), !opened {
+            if opensHere, let link = OpenableLink(string: url), !opened {
                 choiceButton(String(localized: "Open link"), kind: .primary, id: "ask.open") {
                     opened = true
-                    openURL(link)
+                    openURL(link.url)
                 }
             }
             ButtonPair {

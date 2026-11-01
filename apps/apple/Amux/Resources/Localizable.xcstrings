@@ -3505,14 +3505,14 @@
         }
       }
     },
-    "Includes this screen and the available session and host records." : {
+    "Includes this screen and amux’s own logs, never your conversations." : {
       "comment" : "English app copy. Used in ios/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Report.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Includes this screen and the available session and host records."
+            "value" : "Includes this screen and amux’s own logs, never your conversations."
           }
         }
       }
@@ -9829,14 +9829,14 @@
         }
       }
     },
-    "Its agents will be on this phone, and you can start new ones on it. This invitation expires %@." : {
+    "You’ll see its agents here and can start new ones, which run on that machine as you. Pair only with your own machines. This invitation expires %@." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Its agents will be on this phone, and you can start new ones on it. This invitation expires %@."
+            "value" : "You’ll see its agents here and can start new ones, which run on that machine as you. Pair only with your own machines. This invitation expires %@."
           }
         }
       }
@@ -10341,6 +10341,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Signing in…"
+          }
+        }
+      }
+    },
+    "Check this invitation?" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check this invitation?"
+          }
+        }
+      }
+    },
+    "This phone will contact the host that made it to learn its name. Nothing is trusted until you choose Pair." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This phone will contact the host that made it to learn its name. Nothing is trusted until you choose Pair."
+          }
+        }
+      }
+    },
+    "Check Invitation" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check Invitation"
+          }
+        }
+      }
+    },
+    "Not paired" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not paired"
           }
         }
       }

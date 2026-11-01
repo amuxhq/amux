@@ -102,6 +102,33 @@ final class MarkdownTests: XCTestCase {
         XCTAssertEqual(text.runs.compactMap(\.underlineStyle), [.single])
     }
 
+    /// Only web pages and email addresses open; a link to this app or any
+    /// other is its words and nothing more.
+    func testOnlyWebAndMailLinksStayLinks() {
+        let source = """
+            [page](https://example.com) [plain](http://example.com) \
+            [mail](mailto:ada@example.com) [pair](amux://pair?payload=e30) \
+            [call](tel:123) [file](file:///etc/hosts) <amux://pair?payload=e30>
+            """
+        guard case .paragraph(let text) = blocks(source)[0] else {
+            return XCTFail("expected prose")
+        }
+        XCTAssertEqual(
+            text.runs.compactMap(\.link?.absoluteString),
+            ["https://example.com", "http://example.com", "mailto:ada@example.com"])
+        XCTAssertEqual(text.runs.compactMap(\.underlineStyle).count, 3)
+        XCTAssertTrue(String(text.characters).contains("pair"))
+    }
+
+    func testAnOpenableLinkIsAWebPageOrAnEmailAddress() {
+        XCTAssertNotNil(OpenableLink(string: "HTTPS://example.com"))
+        XCTAssertNotNil(OpenableLink(string: "mailto:ada@example.com"))
+        XCTAssertNil(OpenableLink(string: "amux://pair?payload=e30"))
+        XCTAssertNil(OpenableLink(string: "shortcuts://run-shortcut?name=x"))
+        XCTAssertNil(OpenableLink(string: "javascript:alert(1)"))
+        XCTAssertNil(OpenableLink(string: "example.com"))
+    }
+
     /// A stray asterisk must not blank the sentence around it.
     func testMalformedInlineMarkupFallsBackToTheLiteralText() {
         guard case .paragraph(let text) = blocks("a * b")[0] else {

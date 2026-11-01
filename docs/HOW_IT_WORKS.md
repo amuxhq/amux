@@ -187,9 +187,14 @@ public key. From then on, every connection between them starts with both
 sides proving they hold the key the other remembers. Nothing else, not an
 account, not a server, grants that trust.
 
-A paired host can operate your agents in that profile: open their chats,
-send prompts, start, stop and delete them. It cannot change who your machine
-trusts, pair on your behalf, or stop your amux.
+A paired host can do anything with your agents that you could through amux:
+open chats, send prompts, and start, stop and delete agents in any folder
+with any permission settings. That means it can run commands as you, so pair
+only machines you control. amux itself gives it no way to change who your
+machine trusts, pair on your behalf, or stop your amux, though an agent it
+starts can run any command you could. Agents load a folder's own Claude
+settings and hooks, so start agents only in folders whose code you'd be happy
+to run.
 
 ## Reaching a host
 

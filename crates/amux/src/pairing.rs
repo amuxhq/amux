@@ -251,6 +251,13 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
                 .map(|identity| identity.name.as_str())
                 .unwrap_or_default();
             lines.push(format!("Pairing PIN: {}", spaced(pin)));
+            // Pairing gives the other device this machine's agents, so the
+            // person is told what the PIN grants where they read it.
+            lines.push(
+                "Whoever enters this PIN can run agents on this machine as you. Enter it only \
+                 on your own devices."
+                    .to_owned(),
+            );
             lines.push(String::new());
             lines.push(format!(
                 "On the phone: choose {} and enter the PIN, or run `amux pair --qr` here to scan \
@@ -274,6 +281,11 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
             let payload = pair_link(started, secret)?;
             lines.push(terminal_qr(&payload)?);
             lines.push("Scan it with the phone's camera.".to_owned());
+            lines.push(
+                "Whoever scans this code can run agents on this machine as you. Scan it only \
+                 with your own devices."
+                    .to_owned(),
+            );
             if link {
                 lines.push(format!("Pairing link: {payload}"));
             }
@@ -875,6 +887,9 @@ mod tests {
             invitation(&started, false).unwrap(),
             vec![
                 "Pairing PIN: 482 913".to_owned(),
+                "Whoever enters this PIN can run agents on this machine as you. Enter it only \
+                 on your own devices."
+                    .to_owned(),
                 String::new(),
                 "On the phone: choose den mac and enter the PIN, or run `amux pair --qr` here \
                  to scan instead."

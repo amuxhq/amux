@@ -418,6 +418,21 @@ final class RuntimeCoordinatorTests: XCTestCase {
         XCTAssertEqual(changed, 1)
     }
 
+    /// The keys and tokens under the installation never reach a backup;
+    /// the mark is on the directory before the runtime writes anything.
+    func testTheInstallationIsKeptOutOfBackups() async throws {
+        let coordinator = RuntimeCoordinator(
+            registry: AccountRegistry(), support: support, deviceName: "Test Phone",
+            signedOut: StoreBundle(account: AccountId("signed-out")),
+            starter: { _, _ throws(RuntimeFailure) in throw RuntimeFailure("not started") })
+        coordinator.start()
+        _ = await coordinator.started()
+        let values = try coordinator.directory.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        XCTAssertEqual(values.isExcludedFromBackup, true)
+        let beside = try support.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        XCTAssertEqual(beside.isExcludedFromBackup, false)
+    }
+
     func testAStoreThatCannotOpenStopsTheApp() async {
         let registry = AccountRegistry()
         let coordinator = RuntimeCoordinator(

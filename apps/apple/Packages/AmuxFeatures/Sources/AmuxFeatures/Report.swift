@@ -212,7 +212,7 @@ public struct ReportScreen: View {
                 }
                 if case .failed(let why) = model.sending { refusal(why) }
                 note.disabled(model.sealed != nil)
-                guidance("Includes this screen and the available session and host records.")
+                guidance("Includes this screen and amux’s own logs, never your conversations.")
             }
             .padding(.horizontal, design.metrics.gutter)
             .padding(.top, 8)

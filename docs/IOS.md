@@ -159,7 +159,10 @@ five minutes, plus a chat a push is bringing current.
 
 App startup does not require an account. The phone is one installation of
 the daemon with one profile per account, as a desktop is; the daemon's
-profile registry creates, binds, signs out and deletes them.
+profile registry creates, binds, signs out and deletes them. The installation
+directory is excluded from iCloud and computer backups: it holds each
+profile's device key and tokens, which would let whoever has the backup act
+as the phone, so a new or restored phone pairs again.
 
 - With nobody signed in, the installation holds one unbound profile and the
   app shows its fleet. The first sign-in binds that profile, keeping its key,
@@ -262,7 +265,8 @@ pairing with that host.
 Pairing is a sheet raised over whichever tab asked for it. By code, it takes
 the six digits `amux pair` printed in the system's number pad (a code pasted
 as "418 207" fills all six) and tries them once the sixth lands; by link, it
-opens straight onto checking the invitation. Either way the machine's name
+first asks before contacting the machine the link names, since a link can come
+from anywhere and checking it reaches the addresses it carries. Either way the machine's name
 and how it would be reached are shown before anything is trusted, with its
 key's fingerprint underneath, and the sheet closes itself once the machine
 is trusted. Signing in or subscribing from it opens on the tab beneath, and

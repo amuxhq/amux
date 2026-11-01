@@ -159,6 +159,24 @@ public final class RuntimeCoordinator {
         support.appendingPathComponent("installation", isDirectory: true)
     }
 
+    /// Keeps the installation out of iCloud and computer backups.
+    ///
+    /// It holds every profile's device key, refresh token and relay token: a
+    /// backup carrying them is this phone, to every machine it paired, for
+    /// whoever holds the backup, and a phone restored from one would share
+    /// the original's single-use refresh token, signing one of the two out.
+    /// The mark is on the directory, so it covers everything the runtime
+    /// writes inside it later, files it replaces whole included. The rest
+    /// of a profile goes with its key, since a store or a trust list
+    /// restored without the key it was written for describes an identity
+    /// that no longer exists. A new or restored phone pairs again.
+    nonisolated static func keepOutOfBackups(_ directory: URL) throws {
+        var directory = directory
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try directory.setResourceValues(values)
+    }
+
     /// Starts the installation, if it is not running or starting.
     public func start() {
         guard runtime == nil, starting == nil else { return }
@@ -177,6 +195,7 @@ public final class RuntimeCoordinator {
             do {
                 try FileManager.default.createDirectory(
                     at: directory, withIntermediateDirectories: true)
+                try Self.keepOutOfBackups(directory)
                 Signposts.emit(.storeReadBegan)
                 started = .success(try starter(config) { [weak self] listed in
                     self?.profilesMoved(listed, launch: expected)

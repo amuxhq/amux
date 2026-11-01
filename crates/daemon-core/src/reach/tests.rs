@@ -1174,7 +1174,6 @@ fn a_network_change_never_overrides_sign_out_or_a_final_relay_refusal() {
     }
 }
 
-
 /// A phone signed in before it pairs: the relay claims the desk while the
 /// phone does not trust it yet, and says nothing more of it once the
 /// pairing on the same network lands. The relay reaching the desk is kept

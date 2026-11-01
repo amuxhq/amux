@@ -20,7 +20,7 @@ use relay_core::{Input, Output, Relay};
 
 use super::forwarder::{ForwardLinks, Forwarder, HoldLimits, LinkLimits};
 use super::link_log::PathKind;
-use super::socket::{ForwardSink, LinkSocket};
+use super::socket::{ForwardSink, HostKey, LinkSocket};
 use crate::HostId;
 use crate::routing::LinkOutputTx;
 use crate::window::{self, Window};
@@ -174,7 +174,9 @@ impl Relaying {
     /// now on, those held for it first, and refusals are written to `tx`.
     /// A link the far end dialled names its sender's stand-in by `host`, so
     /// the host's packets are known by it whichever address they come from
-    /// next.
+    /// next. On a relay `host` names the account the link signed in to as
+    /// well, so a link claiming another account's host takes nothing of
+    /// that host's.
     ///
     /// `through` says the link reaches a forwarder this host sends through:
     /// the relay, or a paired daemon. Its forwarded packets are this host's
@@ -183,10 +185,11 @@ impl Relaying {
         &self,
         link: daemon_core::LinkId,
         tx: LinkOutputTx,
-        host: HostId,
+        host: impl Into<HostKey>,
         carrier: Arc<dyn Seen>,
         through: Option<PathKind>,
     ) {
+        let host = host.into();
         let (Some(forwarding), Some(stand_in)) = (self.forwarding.get(), carrier.remote_address())
         else {
             return;
@@ -327,7 +330,7 @@ impl Seen for super::QuicCarrier {
 
 struct Entry {
     tx: LinkOutputTx,
-    host: HostId,
+    host: HostKey,
     /// Weak: the connection holds its endpoint and so the socket, whose
     /// forward sink holds these links. The link registry holds it while
     /// the link lives.
@@ -953,6 +956,86 @@ mod tests {
         assert_eq!(
             net.take_sent(),
             vec![(desk_cell, encode_delivered(phone, b"\x40five"))]
+        );
+    }
+
+    /// A relay names each host by its account as well: a link signed in
+    /// to another account claiming the desk's host id is a peer of its
+    /// own, and what the phone forwards to the desk still goes where the
+    /// desk is.
+    #[test]
+    fn a_host_id_claimed_on_another_account_takes_nothing_of_that_host() {
+        use crate::link::socket::{Account, HostKey};
+
+        let relay = HostId::new_v4();
+        let net = Arc::new(Net::default());
+        let socket = LinkSocket::bind(net.clone(), relay).unwrap();
+        let relaying = Relaying::new(relay);
+        relaying.forward_on(socket.clone());
+        let (owner, other) = (relay_core::UserId([1; 16]), relay_core::UserId([2; 16]));
+        let key = |user: relay_core::UserId, host| HostKey {
+            account: Account(user.0),
+            host,
+        };
+        let (desk, phone) = (HostId::new_v4(), HostId::new_v4());
+        let (desk_lan, phone_lan, claimer_lan): (SocketAddr, SocketAddr, SocketAddr) = (
+            "203.0.113.10:6000".parse().unwrap(),
+            "203.0.113.20:6000".parse().unwrap(),
+            "198.51.100.66:7000".parse().unwrap(),
+        );
+        let desk_at = arrive(&net, &socket, desk_lan, QUIC).unwrap();
+        let phone_at = arrive(&net, &socket, phone_lan, QUIC).unwrap();
+        let claimer_at = arrive(&net, &socket, claimer_lan, QUIC).unwrap();
+        // The link registry holds each connection while its link lives.
+        let carriers: Vec<Arc<Dialled>> = [desk_at, phone_at, claimer_at]
+            .into_iter()
+            .map(Dialled::at)
+            .collect();
+        for (link, user, host) in [(1, owner, desk), (2, owner, phone), (3, other, desk)] {
+            link_up(&relaying, link, host, user);
+            let (tx, _rx) = mpsc::channel(8);
+            relaying.admitted(
+                daemon_core::LinkId(link),
+                tx,
+                key(user, host),
+                carriers[link as usize - 1].clone(),
+                None,
+            );
+        }
+
+        assert_eq!(
+            socket.address_of(desk_at),
+            Some(desk_lan),
+            "still the desk's"
+        );
+        assert_eq!(socket.address_of(claimer_at), Some(claimer_lan));
+        assert_eq!(socket.peer_of(claimer_at), Some(desk), "named as it claims");
+        assert_eq!(
+            arrive(
+                &net,
+                &socket,
+                phone_lan,
+                &encode_forwarded(desk, b"\x40one")
+            ),
+            None
+        );
+        assert_eq!(
+            net.take_sent(),
+            vec![(desk_lan, encode_delivered(phone, b"\x40one"))]
+        );
+        assert_eq!(
+            arrive(
+                &net,
+                &socket,
+                desk_lan,
+                &encode_forwarded(phone, b"\x40two")
+            ),
+            None
+        );
+        assert_eq!(
+            net.take_sent(),
+            vec![(phone_lan, encode_delivered(desk, b"\x40two"))],
+            "the desk's packets are still the desk's"
         );
     }
 

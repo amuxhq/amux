@@ -26,11 +26,11 @@ use std::task::{Context, Poll, Waker};
 pub use path_core::{LinkId, Path, PathId};
 use quinn::udp::{RecvMeta, Transmit};
 use quinn::{AsyncUdpSocket, UdpPoller};
-use socket_core::{Again, Arrival, Heard, NoPath, Peer, Peers, Transmit as Sends, Wire, WireTo};
 pub use socket_core::{
-    FORWARD_HEADER, MAX_DATAGRAM, Malformed, PacketKind, encode_delivered, encode_forwarded,
-    encode_probe, encode_probe_answer, parse,
+    Account, FORWARD_HEADER, HostKey, MAX_DATAGRAM, Malformed, PacketKind, encode_delivered,
+    encode_forwarded, encode_probe, encode_probe_answer, parse,
 };
+use socket_core::{Again, Arrival, Heard, NoPath, Peer, Peers, Transmit as Sends, Wire, WireTo};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
@@ -295,7 +295,7 @@ impl LinkSocket {
 
     /// Gives an unnamed sender's stand-in its host once the handshake says
     /// who it is; see [`Peers::name`]. True when the stand-in is the host's.
-    pub fn name(&self, stand_in: SocketAddr, host: HostId) -> bool {
+    pub fn name(&self, stand_in: SocketAddr, host: impl Into<HostKey>) -> bool {
         let now = self.now_ms();
         self.lock().peers.name(stand_in, host, now)
     }
@@ -316,13 +316,13 @@ impl LinkSocket {
     }
 
     /// `peer`'s last link to this relay went; see [`Peers::let_go`].
-    pub fn let_go(&self, peer: HostId) {
+    pub fn let_go(&self, peer: impl Into<HostKey>) {
         self.lock().peers.let_go(peer);
     }
 
     /// `peer` holds a link to this relay again: it is kept until it is let
     /// go.
-    pub fn keep(&self, peer: HostId) {
+    pub fn keep(&self, peer: impl Into<HostKey>) {
         self.lock().peers.keep(peer);
     }
 
@@ -513,7 +513,7 @@ impl LinkSocket {
         let wire = self
             .lock()
             .peers
-            .wire(Peer::Host(peer), path)
+            .wire(Peer::Host(peer.into()), path)
             .map_err(no_path)?;
         self.put(wire, &encode_probe(self.own, nonce))
     }

@@ -333,8 +333,8 @@ their own copies.
 ~/Library/LaunchAgents/sh.amux.supervise.plist
                               the login item `amux init` writes on macOS; ~/.config/systemd/user/amux.service
                               on Linux, and a scheduled task named amux on Windows
-$TMPDIR/amux/amux.sock        the front door, the config's front_door_socket ($XDG_RUNTIME_DIR/amux on Linux,
-                              /tmp/amux-<uid> without either)
+$TMPDIR/amux/amux.sock        the front door, the config's front_door_socket ($XDG_RUNTIME_DIR/amux on Linux;
+                              without either, amux refuses to start until front_door_socket is set)
 $TMPDIR/amux-<uid>/<hash>, <hash>.d
                               short socket addresses for agents whose paths are too long (see above)
 

@@ -14,8 +14,8 @@
 use ui_state::{ItemBody, OpenAsk};
 use wire::claude_item::Kind as Claude;
 use wire::{
-    AgentInput, Input, Kind, PromptInput, PutBlobRequest, SendInputRequest, agent_input, answer,
-    send_input_response,
+    ClaudeSdkInput, Input, Kind, PromptInput, PutBlobRequest, SendInputRequest, claude_answer,
+    claude_sdk_input, send_input_response,
 };
 
 use super::asks::{Answer, questions, settled};
@@ -35,9 +35,8 @@ const TWO_COMMANDS: &str = "Use Bash to run exactly: python3 -c 'import time; ti
      echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. \
      Then reply exactly DONE plus any extra words the user asked for.";
 
-/// The input carrying one arm.
-fn arm(of: agent_input::Of) -> wire::AgentInput {
-    AgentInput { of: Some(of) }
+fn sdk(of: claude_sdk_input::Of) -> wire::KindInput {
+    wire::KindInput::ClaudeSdk(ClaudeSdkInput { of: Some(of) })
 }
 
 /// The session's items: both Claude kinds write the same ones.
@@ -80,7 +79,7 @@ fn forms(log: &Log) -> Vec<wire::AskOutcome> {
 }
 
 fn allow() -> Answer {
-    Answer::Given(answer::Of::Permission(wire::PermissionAnswer {
+    Answer::Claude(claude_answer::Of::Permission(wire::PermissionAnswer {
         of: Some(wire::permission_answer::Of::Allow(wire::PermissionAllow {
             scope: None,
         })),
@@ -99,7 +98,9 @@ fn picked(question: &wire::Question, labels: &[&str]) -> Vec<u32> {
 }
 
 fn question_answer(answers: Vec<wire::QuestionResponse>) -> Answer {
-    Answer::Given(answer::Of::Question(wire::QuestionAnswer { answers }))
+    Answer::Claude(claude_answer::Of::Question(wire::QuestionAnswer {
+        answers,
+    }))
 }
 
 impl Install {
@@ -166,7 +167,7 @@ impl Install {
     pub(super) async fn send_input(
         &self,
         agent: &[u8],
-        of: wire::AgentInput,
+        of: wire::KindInput,
     ) -> Result<Vec<u8>, String> {
         let id = uuid::Uuid::new_v4().as_bytes().to_vec();
         let response = self
@@ -278,7 +279,7 @@ impl Install {
             1,
         )
         .await?;
-        self.input(&agent, arm(agent_input::Of::Clear(wire::Clear {})))
+        self.input(&agent, sdk(claude_sdk_input::Of::Clear(wire::Clear {})))
             .await?;
         follow
             .until(TURN, "a cleared boundary", |log| {
@@ -301,14 +302,14 @@ impl Install {
         };
         self.input(
             &agent,
-            arm(agent_input::Of::Permission(wire::SetPermission {
+            sdk(claude_sdk_input::Of::Permission(wire::SetPermission {
                 value: "acceptEdits".into(),
             })),
         )
         .await?;
         self.input(
             &agent,
-            arm(agent_input::Of::Model(wire::SetModel {
+            sdk(claude_sdk_input::Of::Model(wire::SetModel {
                 model: Some("sonnet".into()),
             })),
         )
@@ -362,7 +363,7 @@ impl Install {
         }
         self.input(
             &agent,
-            arm(agent_input::Of::Effort(wire::SetEffort {
+            sdk(claude_sdk_input::Of::Effort(wire::SetEffort {
                 effort: Some("high".into()),
             })),
         )
@@ -602,7 +603,7 @@ impl Install {
                     }
                     _ => (wire::PlanChoice::Start, None),
                 };
-                Ok(Answer::Given(answer::Of::Plan(wire::PlanAnswer {
+                Ok(Answer::Claude(claude_answer::Of::Plan(wire::PlanAnswer {
                     choice: choice as i32,
                     note,
                 })))
@@ -635,7 +636,7 @@ impl Install {
         scenario: Scenario,
         asked: bool,
         word: &str,
-        answer: answer::Of,
+        answer: claude_answer::Of,
         closed: wire::AskOutcome,
     ) -> Result<Verdict, String> {
         let probe = provider_fakes::binaries::path("claude-probe");
@@ -678,7 +679,7 @@ impl Install {
                 {
                     answer
                         .take()
-                        .map(Answer::Given)
+                        .map(Answer::Claude)
                         .ok_or_else(|| "a second form opened".to_owned())
                 }
                 _ => Ok(allow()),
@@ -704,7 +705,7 @@ impl Install {
             Scenario::ElicitationAccepted,
             true,
             "ALBATROSS",
-            answer::Of::Form(wire::FormAnswer {
+            claude_answer::Of::Form(wire::FormAnswer {
                 action: wire::FormAction::Accept as i32,
                 content_json: br#"{"confirmed":"ALBATROSS"}"#.to_vec(),
             }),
@@ -718,7 +719,7 @@ impl Install {
             Scenario::ElicitationDeclined,
             false,
             "ALBATROSS",
-            answer::Of::Form(wire::FormAnswer {
+            claude_answer::Of::Form(wire::FormAnswer {
                 action: wire::FormAction::Decline as i32,
                 content_json: Vec::new(),
             }),
@@ -732,7 +733,7 @@ impl Install {
             Scenario::ElicitationCancelled,
             false,
             "ALBATROSS",
-            answer::Of::Form(wire::FormAnswer {
+            claude_answer::Of::Form(wire::FormAnswer {
                 action: wire::FormAction::Cancel as i32,
                 content_json: Vec::new(),
             }),
@@ -746,7 +747,7 @@ impl Install {
             Scenario::ElicitationLinkAccepted,
             false,
             "LINK",
-            answer::Of::Link(wire::LinkAnswer {
+            claude_answer::Of::Link(wire::LinkAnswer {
                 action: wire::FormAction::Accept as i32,
             }),
             wire::AskOutcome::Answered,
@@ -950,7 +951,7 @@ impl Install {
             .into_inner();
         self.send_input(
             &agent,
-            arm(agent_input::Of::Prompt(PromptInput {
+            sdk(claude_sdk_input::Of::Prompt(PromptInput {
                 text: "Name the color of the attached image in one word. Then read square.png \
                        in the working directory with the Read tool and say whether it is the \
                        same image."
@@ -1053,7 +1054,7 @@ impl Install {
             })
             .await?;
         let prompt = |text: &str| {
-            arm(agent_input::Of::Prompt(PromptInput {
+            sdk(claude_sdk_input::Of::Prompt(PromptInput {
                 text: text.into(),
                 attachments: Vec::new(),
             }))
@@ -1065,7 +1066,7 @@ impl Install {
             .await?;
         self.input(
             &agent,
-            arm(agent_input::Of::SendNow(wire::SendQueuedNow {
+            sdk(claude_sdk_input::Of::SendNow(wire::SendQueuedNow {
                 queued_input_id: steered,
             })),
         )

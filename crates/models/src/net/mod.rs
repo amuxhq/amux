@@ -114,16 +114,16 @@ pub fn create(name: &str, spec: wire::AgentSpec) -> ClientRequest {
     }))
 }
 
-/// A person's prompt.
+/// A person's prompt to a headless Claude agent.
 pub fn prompt(input_id: &[u8], text: &str) -> wire::Input {
     wire::Input::new(
         input_id.to_vec(),
-        wire::AgentInput {
-            of: Some(wire::agent_input::Of::Prompt(wire::PromptInput {
+        wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
                 text: text.to_owned(),
                 attachments: Vec::new(),
             })),
-        },
+        }),
     )
 }
 

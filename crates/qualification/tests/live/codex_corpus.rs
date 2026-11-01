@@ -17,8 +17,8 @@ use std::path::PathBuf;
 use ui_state::{ItemBody, OpenAsk};
 use wire::codex_item::Kind as Codex;
 use wire::{
-    AgentRef, CodexCreateConfig, Kind, MessageBody, PromptInput, PutBlobRequest,
-    ResolveAgentRequest, codex_ask, work,
+    AgentRef, CodexCreateConfig, CodexInput, Kind, MessageBody, PromptInput, PutBlobRequest,
+    ResolveAgentRequest, codex_answer, codex_ask, codex_input, work,
 };
 
 use super::asks::{Answer, settled};
@@ -83,7 +83,7 @@ fn decisions(log: &Log) -> Vec<wire::DecisionOutcome> {
 }
 
 fn decide(decision: wire::Decision) -> Answer {
-    Answer::Given(wire::answer::Of::Approve(decision as i32))
+    Answer::Codex(codex_answer::Of::Approve(decision as i32))
 }
 
 /// What a scenario changed in Codex's home while it runs: settings in its
@@ -333,11 +333,13 @@ impl Install {
                     .any(|(_, state)| *state == wire::ToolState::Running)
             })
             .await?;
-        let prompt = |text: &str| wire::AgentInput {
-            of: Some(wire::agent_input::Of::Prompt(PromptInput {
-                text: text.into(),
-                attachments: Vec::new(),
-            })),
+        let prompt = |text: &str| {
+            wire::KindInput::Codex(CodexInput {
+                of: Some(codex_input::Of::Prompt(PromptInput {
+                    text: text.into(),
+                    attachments: Vec::new(),
+                })),
+            })
         };
         let steered = self
             .send_input(&agent, prompt("Also append the word BANANA."))
@@ -346,11 +348,11 @@ impl Install {
             .await?;
         self.input(
             &agent,
-            wire::AgentInput {
-                of: Some(wire::agent_input::Of::SendNow(wire::SendQueuedNow {
+            wire::KindInput::Codex(CodexInput {
+                of: Some(codex_input::Of::SendNow(wire::SendQueuedNow {
                     queued_input_id: steered,
                 })),
-            },
+            }),
         )
         .await?;
         expect_outcome(follow.turn_end(2).await?, wire::TurnOutcome::Completed)?;
@@ -568,8 +570,8 @@ impl Install {
             .into_inner();
         self.input(
             &agent,
-            wire::AgentInput {
-                of: Some(wire::agent_input::Of::Prompt(PromptInput {
+            wire::KindInput::Codex(CodexInput {
+                of: Some(codex_input::Of::Prompt(PromptInput {
                     text: "Name the color of the attached image in one word. Then look at \
                            square.png in the working directory with your image viewing tool \
                            and say whether it is the same image."
@@ -578,7 +580,7 @@ impl Install {
                         of: Some(wire::attachment::Of::Image(blob)),
                     }],
                 })),
-            },
+            }),
         )
         .await?;
         self.settle(&agent, &follow, "the image to be looked at", |ask| {
@@ -634,11 +636,11 @@ impl Install {
         };
         self.input(
             &agent,
-            wire::AgentInput {
-                of: Some(wire::agent_input::Of::Model(wire::SetModel {
+            wire::KindInput::Codex(CodexInput {
+                of: Some(codex_input::Of::Model(wire::SetModel {
                     model: Some("amux-live-no-such-model".into()),
                 })),
-            },
+            }),
         )
         .await?;
         self.send(scenario, "Reply with exactly UNREACHABLE.")
@@ -823,14 +825,14 @@ impl Install {
                     OpenAsk::Codex(codex) => match &codex.body {
                         Some(codex_ask::Body::McpForm(_)) => {
                             forms += 1;
-                            Ok(Answer::Given(wire::answer::Of::Form(wire::FormAnswer {
+                            Ok(Answer::Codex(codex_answer::Of::Form(wire::FormAnswer {
                                 action: wire::FormAction::Accept as i32,
                                 content_json: br#"{"confirmed":"BLUE"}"#.to_vec(),
                             })))
                         }
                         Some(codex_ask::Body::McpLink(_)) => {
                             links += 1;
-                            Ok(Answer::Given(wire::answer::Of::Link(wire::LinkAnswer {
+                            Ok(Answer::Codex(codex_answer::Of::Link(wire::LinkAnswer {
                                 action: wire::FormAction::Cancel as i32,
                             })))
                         }
@@ -876,7 +878,7 @@ impl Install {
                     OpenAsk::Codex(codex) => match &codex.body {
                         Some(codex_ask::Body::Access(access)) => {
                             grants += 1;
-                            Ok(Answer::Given(wire::answer::Of::Grant(wire::GrantAnswer {
+                            Ok(Answer::Codex(codex_answer::Of::Grant(wire::GrantAnswer {
                                 read: access.read.clone(),
                                 write: access.write.clone(),
                                 network: access.network,

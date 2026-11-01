@@ -32,8 +32,9 @@ use wire::agent_service_server::AgentService as _;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
-    AgentInput, AgentRef, ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest,
-    DeleteAgentRequest, Input, PromptInput, WithdrawQueued, agent_input, create_agent_request,
+    AgentRef, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
+    CreateAgentRequest, DeleteAgentRequest, Input, PromptInput, WithdrawQueued, claude_pty_input,
+    claude_sdk_input, codex_input, create_agent_request,
 };
 
 use crate::binaries::Binaries;
@@ -1227,7 +1228,8 @@ impl Net {
 
     /// Sends the agent a prompt through its own host.
     pub async fn send(&self, name: &str, text: &str) -> Result<wire::SendInputResponse, NetError> {
-        self.input(name, prompt(Uuid::new_v4().as_bytes(), text))
+        let kind = self.agent(name)?.kind;
+        self.input(name, prompt(kind, Uuid::new_v4().as_bytes(), text))
             .await
     }
 
@@ -3499,26 +3501,44 @@ pub fn submission(id: &[u8], text: &str) -> wire::PromptSubmission {
     }
 }
 
-pub fn prompt(id: &[u8], text: &str) -> Input {
+pub fn prompt(kind: FakeKind, id: &[u8], text: &str) -> Input {
+    let prompt = PromptInput {
+        text: text.to_owned(),
+        attachments: Vec::new(),
+    };
     Input::new(
         id.to_vec(),
-        AgentInput {
-            of: Some(agent_input::Of::Prompt(PromptInput {
-                text: text.to_owned(),
-                attachments: Vec::new(),
-            })),
+        match kind {
+            FakeKind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
+                of: Some(claude_pty_input::Of::Prompt(prompt)),
+            }),
+            FakeKind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
+                of: Some(claude_sdk_input::Of::Prompt(prompt)),
+            }),
+            FakeKind::Codex => wire::KindInput::Codex(CodexInput {
+                of: Some(codex_input::Of::Prompt(prompt)),
+            }),
         },
     )
 }
 
-/// Withdraws a queued prompt.
-pub fn withdraw(id: &[u8], queued: &[u8]) -> Input {
+/// Withdraws a queued prompt, in the kind's own input arm.
+pub fn withdraw(kind: FakeKind, id: &[u8], queued: &[u8]) -> Input {
+    let withdraw = WithdrawQueued {
+        queued_input_id: queued.to_vec(),
+    };
     Input::new(
         id.to_vec(),
-        AgentInput {
-            of: Some(agent_input::Of::Withdraw(WithdrawQueued {
-                queued_input_id: queued.to_vec(),
-            })),
+        match kind {
+            FakeKind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
+                of: Some(claude_pty_input::Of::Withdraw(withdraw)),
+            }),
+            FakeKind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
+                of: Some(claude_sdk_input::Of::Withdraw(withdraw)),
+            }),
+            FakeKind::Codex => wire::KindInput::Codex(CodexInput {
+                of: Some(codex_input::Of::Withdraw(withdraw)),
+            }),
         },
     )
 }

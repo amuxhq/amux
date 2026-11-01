@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
     AgentSpec, Ask, ClaudeItem, ClaudeSnapshot, Envelope, Input, PermissionAsk, Refusal, Step,
-    ToolCall, ToolState, Turn, TurnOutcome, agent_input, claude_item,
+    ToolCall, ToolState, Turn, TurnOutcome, claude_item, claude_sdk_input,
 };
 
 use crate::{
@@ -259,25 +259,25 @@ impl<const FORGET: bool> TestKind<FORGET> {
         let shared = &mut state.shared;
         let id = input.input_id.clone();
         let arm = match input.decode_body() {
-            Some(wire::AgentInput { of: Some(arm) }) => arm,
+            Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput { of: Some(arm) })) => arm,
             _ => return shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
-            agent_input::Of::Prompt(prompt) => {
+            claude_sdk_input::Of::Prompt(prompt) => {
                 if let Some(entry) = shared.admit_prompt(emit, &id, prompt, human()) {
                     emit.effect(write(&entry.text));
                 }
             }
-            agent_input::Of::Withdraw(withdraw) => {
+            claude_sdk_input::Of::Withdraw(withdraw) => {
                 shared.withdraw(emit, &id, &withdraw.queued_input_id)
             }
-            agent_input::Of::Interrupt(_) => {
+            claude_sdk_input::Of::Interrupt(_) => {
                 if shared.is_busy() {
                     emit.effect(Effect::ProviderWrite(br#"{"type":"interrupt"}"#.to_vec()));
                 }
                 shared.accept(emit, &id, false);
             }
-            agent_input::Of::Answer(answer) => {
+            claude_sdk_input::Of::Answer(answer) => {
                 if let Some(ask) = shared.answer(emit, &id, &answer.ask_key) {
                     emit.effect(Effect::ProviderWrite(
                         format!(r#"{{"type":"answer","ask":"{}"}}"#, ask.key).into_bytes(),

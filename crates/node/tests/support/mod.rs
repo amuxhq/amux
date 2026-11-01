@@ -12,8 +12,8 @@ use node::{Daemon, Launch, ProfileId, ProfileRuntime, StartOptions};
 pub use patience::{PATIENCE, holds_for, until};
 use provider_fakes::script::{SCRIPT_ENV, Script, Step};
 use wire::{
-    AgentInput, AgentRef, CreateAgentRequest, Input, Kind, PromptInput, PromptSubmission,
-    agent_input,
+    AgentRef, ClaudeSdkInput, CreateAgentRequest, Input, Kind, PromptInput, PromptSubmission,
+    claude_sdk_input,
 };
 
 /// The amux binary and the fake providers.
@@ -257,8 +257,8 @@ pub fn submission(id: &[u8], text: &str) -> PromptSubmission {
 pub fn sdk_prompt(id: &[u8], text: &str) -> Input {
     Input::new(
         id.to_vec(),
-        AgentInput {
-            of: Some(agent_input::Of::Prompt(PromptInput {
+        ClaudeSdkInput {
+            of: Some(claude_sdk_input::Of::Prompt(PromptInput {
                 text: text.to_owned(),
                 attachments: Vec::new(),
             })),

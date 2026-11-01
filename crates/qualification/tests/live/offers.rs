@@ -7,7 +7,7 @@
 
 use prost::Message as _;
 use wire::{
-    AgentInput, CodexCreateConfig, GetBlobRequest, GetCatalogueRequest, Kind, agent_input,
+    CodexCreateConfig, CodexInput, GetBlobRequest, GetCatalogueRequest, Kind, codex_input,
     inventory_event,
 };
 
@@ -278,7 +278,7 @@ impl Install {
     async fn change(
         &self,
         scenario: Scenario,
-        of: agent_input::Of,
+        of: codex_input::Of,
         read: fn(&ui_state::AgentState) -> Option<String>,
         want: &str,
     ) -> Result<Verdict, String> {
@@ -290,7 +290,8 @@ impl Install {
             Err(verdict) => return Ok(verdict),
         };
         let kind = self.kind;
-        self.input(&agent, AgentInput { of: Some(of) }).await?;
+        self.input(&agent, wire::KindInput::Codex(CodexInput { of: Some(of) }))
+            .await?;
         self.send(
             scenario,
             "Reply with the single word pong and nothing else. Do not plan anything.",
@@ -302,7 +303,7 @@ impl Install {
             &follow,
             "the turn to end",
             |_| {
-                Ok(super::asks::Answer::Given(wire::answer::Of::Plan(
+                Ok(super::asks::Answer::Codex(wire::codex_answer::Of::Plan(
                     wire::PlanAnswer {
                         choice: wire::PlanChoice::KeepPlanning as i32,
                         note: None,
@@ -333,7 +334,7 @@ impl Install {
     pub(super) async fn permission(&self) -> Result<Verdict, String> {
         self.change(
             Scenario::Permission,
-            agent_input::Of::Permission(wire::SetPermission {
+            codex_input::Of::Permission(wire::SetPermission {
                 value: "read-only".into(),
             }),
             |state| state.permission.clone(),
@@ -346,7 +347,7 @@ impl Install {
     pub(super) async fn mode(&self) -> Result<Verdict, String> {
         self.change(
             Scenario::Mode,
-            agent_input::Of::Mode(wire::SetMode {
+            codex_input::Of::Mode(wire::SetMode {
                 value: "plan".into(),
             }),
             |state| state.mode.clone(),

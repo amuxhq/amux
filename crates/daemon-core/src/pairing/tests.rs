@@ -374,21 +374,30 @@ fn a_conversation_past_its_deadline_ends_and_frees_its_attempt() {
 /// The window closing while the joiner's key waits to be written (here
 /// behind the teardown of the key it replaces) undoes the pairing it was
 /// for, and the key it replaced is trusted again.
-#[test]
-fn a_commit_that_lands_after_the_window_closed_is_undone() {
-    let (mut offerer, mut joiner) = (Host::new(OFFERER), Host::new(JOINER));
+/// A host trusted under another key, as an earlier pairing left it.
+fn trusting(host: &mut Host, peer: u8, name: &str) -> Vec<u8> {
     let old_key = vec![99; 32];
     let mut old = crate::trust::TrustStore::default();
     old.upsert_paired_peer(
-        Uuid::from_bytes([JOINER; 16]),
+        Uuid::from_bytes([peer; 16]),
         old_key.clone(),
-        "the joiner's old key".into(),
+        name.into(),
         None,
     )
     .unwrap();
-    offerer.daemon.trust_for_test(old);
-    offerer.step(Input::Started);
-    offerer.take();
+    host.daemon.trust_for_test(old);
+    host.step(Input::Started);
+    host.take();
+    old_key
+}
+
+/// A joiner that proves the secret but claims a host the offerer trusts
+/// under another key is refused, in words naming that host which reach
+/// the joiner's person, and the old key stays.
+#[test]
+fn a_joiner_claiming_a_paired_host_under_another_key_is_refused() {
+    let (mut offerer, mut joiner) = (Host::new(OFFERER), Host::new(JOINER));
+    let old_key = trusting(&mut offerer, JOINER, "laptop");
     let secret = offerer.open_window(WindowMethod::Pin, 5 * MINUTE);
     offerer.respond();
     joiner.initiate(&secret);
@@ -399,58 +408,48 @@ fn a_commit_that_lands_after_the_window_closed_is_undone() {
             token: pending_token(&said).unwrap(),
         },
     );
-    // Carry the joiner's sealed identity by hand and keep the teardown the
-    // offerer's trust change waits on.
-    let sealed = joiner
-        .take()
-        .into_iter()
-        .find_map(|output| match output {
-            Output::Pair { message, .. } => Some(message),
-            _ => None,
-        })
-        .unwrap();
-    let mut out = Vec::new();
-    offerer.daemon.step(
-        Input::PairingMessage {
-            session: SESSION,
-            message: sealed,
-        },
-        &mut out,
+    let (_, said) = converse(&mut offerer, &mut joiner);
+    assert_eq!(
+        call_ended(&said, 9),
+        Some(Status::Failed(CallError::Pairing(PairFailure::new(
+            ErrorCode::AlreadyExists,
+            "Already paired with laptop. Unpair it first."
+        ))))
     );
-    let teardown = out
-        .iter()
-        .find_map(|output| match output {
-            Output::Job {
-                id,
-                op: Job::TeardownHost { .. },
-            } => Some(*id),
-            _ => None,
-        })
-        .expect("the old key's connections are torn down first");
-    offerer.call(2, ClientRequest::CancelPairing);
-    offerer.take();
-    offerer.step(Input::JobDone {
-        job: teardown,
-        result: JobResult::Done,
-    });
-    let out = offerer.take();
-    assert_eq!(failure(&out), Some(PairFailure::invalid_pin()));
-    let kept = |daemon: &Daemon| {
-        daemon
+    assert!(!joiner.trusts(OFFERER), "the joiner wrote nothing");
+    assert_eq!(
+        offerer
+            .daemon
             .trust()
-            .pubkey_for_host(Uuid::from_bytes([JOINER; 16]))
-            .map(<[u8]>::to_vec)
-    };
-    assert_eq!(
-        kept(&offerer.daemon),
-        Some(old_key.clone()),
-        "the commit is undone"
+            .pubkey_for_host(Uuid::from_bytes([JOINER; 16])),
+        Some(old_key.as_slice()),
+        "the offerer keeps the old key"
     );
-    let held = crate::trust::TrustStore::load(offerer.daemon.store());
-    assert_eq!(
-        held.pubkey_for_host(Uuid::from_bytes([JOINER; 16])),
-        Some(old_key.as_slice())
+    assert!(
+        offerer.daemon.pairing().active(),
+        "the window stays open for the real machine"
     );
+}
+
+/// An offerer that claims a host the joiner trusts under another key is
+/// refused before the joiner's person is asked to confirm.
+#[test]
+fn an_offerer_claiming_a_paired_host_under_another_key_is_refused() {
+    let (mut offerer, mut joiner) = (Host::new(OFFERER), Host::new(JOINER));
+    trusting(&mut joiner, OFFERER, "desk");
+    let secret = offerer.open_window(WindowMethod::Pin, 5 * MINUTE);
+    offerer.respond();
+    joiner.initiate(&secret);
+    let (_, said) = converse(&mut offerer, &mut joiner);
+    assert_eq!(pending_token(&said), None, "nobody is asked to confirm");
+    assert_eq!(
+        failure(&said),
+        Some(PairFailure::new(
+            ErrorCode::AlreadyExists,
+            "Already paired with desk. Unpair it first."
+        ))
+    );
+    assert!(!offerer.trusts(JOINER));
 }
 
 #[test]

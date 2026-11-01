@@ -9246,6 +9246,9 @@ pub mod pairing_error {
         Timeout = 4,
         UserRejected = 5,
         SelfPairing = 6,
+        /// The peer claimed a host this one already trusts under another key.
+        /// The detail is the sentence a person is shown, naming that host.
+        AlreadyPaired = 7,
     }
     impl Reason {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -9261,6 +9264,7 @@ pub mod pairing_error {
                 Self::Timeout => "TIMEOUT",
                 Self::UserRejected => "USER_REJECTED",
                 Self::SelfPairing => "SELF_PAIRING",
+                Self::AlreadyPaired => "ALREADY_PAIRED",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -9273,6 +9277,7 @@ pub mod pairing_error {
                 "TIMEOUT" => Some(Self::Timeout),
                 "USER_REJECTED" => Some(Self::UserRejected),
                 "SELF_PAIRING" => Some(Self::SelfPairing),
+                "ALREADY_PAIRED" => Some(Self::AlreadyPaired),
                 _ => None,
             }
         }

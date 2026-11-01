@@ -157,6 +157,16 @@ the public key and a name of at most 256 bytes, with direction and transcript
 in the additional authenticated data. `PairingComplete` commits both stores.
 Every secret failure is the same opaque `INVALID_PIN`.
 
+Pairing never replaces a pinned key. Host ids are not secret (discovery
+advertises them), so a peer that proved the secret but names a host this one
+already trusts under another key is refused: the responder sends
+`ALREADY_PAIRED` with the sentence the joiner's person is shown,
+`Already paired with <name>. Unpair it first.`, and keeps its window open; a
+joiner that meets such a responder refuses before asking its person to
+confirm, with the same words (as a wrong secret, when discovery found the
+machine). SSH pairing refuses the same way. A machine whose key changed is
+unpaired on the other side and paired again.
+
 Before trust exists, an open pairing window lets the dispatcher admit one
 anonymous channel to `PairingService`. SPAKE2 authenticates that exchange and
 creates the pins later channel handshakes check. A window lasts the length

@@ -676,8 +676,9 @@ impl World for SimNet {
     }
 
     async fn send(&self, agent: &str, text: &str) -> Result<wire::SendInputResponse, NetError> {
+        let kind = self.agent_named(agent)?.kind;
         let id = self.sim().ids.bytes::<16>();
-        self.input(agent, prompt(&id, text)).await
+        self.input(agent, prompt(kind, &id, text)).await
     }
 
     async fn input(

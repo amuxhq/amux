@@ -6,7 +6,7 @@
 //! interpreter, and by its effect where it has one.
 
 use wire::claude_item::Kind as Claude;
-use wire::{AgentInput, agent_input, answer};
+use wire::{ClaudePtyInput, claude_answer, claude_pty_input};
 
 use super::asks::{Answer, settled};
 use super::corpus::{claude_items, tools};
@@ -39,11 +39,11 @@ impl Install {
         };
         self.input(
             &agent,
-            AgentInput {
-                of: Some(agent_input::Of::CyclePermissionMode(
+            wire::KindInput::ClaudePty(ClaudePtyInput {
+                of: Some(claude_pty_input::Of::CyclePermissionMode(
                     wire::CyclePermissionMode {},
                 )),
-            },
+            }),
         )
         .await?;
         self.turn(
@@ -161,7 +161,7 @@ impl Install {
                 ui_state::OpenAsk::Claude(claude) => match &claude.body {
                     Some(wire::ask::Body::Permission(permission)) => {
                         asked += 1;
-                        Ok(Answer::Given(answer::Of::Permission(
+                        Ok(Answer::Claude(claude_answer::Of::Permission(
                             wire::PermissionAnswer {
                                 of: Some(answer(permission)?),
                             },

@@ -369,7 +369,7 @@ impl Chat {
             let Some(card) = self.card_for(ask_key) else {
                 return moved_on();
             };
-            let answer = ui_view::question_answer(given);
+            let answer = ui_view::question_answer(&card, given);
             ui_view::answer_input(&card, &answer, "")
         };
         self.answer(input).await
@@ -387,7 +387,7 @@ impl Chat {
             let Some(card) = self.card_for(ask_key) else {
                 return moved_on();
             };
-            let answer = ui_view::reply_answer(text, so_far);
+            let answer = ui_view::reply_answer(&card, text, so_far);
             ui_view::answer_input(&card, &answer, "")
         };
         self.answer(input).await
@@ -397,8 +397,11 @@ impl Chat {
         self.ask_card().filter(|card| card.key == ask_key)
     }
 
-    async fn answer(&self, input: wire::Input) -> ActOutcome {
-        acted(self.session.answer(input).await)
+    async fn answer(&self, input: Option<wire::Input>) -> ActOutcome {
+        match input {
+            Some(input) => acted(self.session.answer(input).await),
+            None => ActOutcome::Rejected(Refusal::of(wire::Refusal::Unsupported)),
+        }
     }
 
     /// Sends a pick from the settings view; the frame shows the new value

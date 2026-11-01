@@ -1627,7 +1627,7 @@ fn choice(outcome: ChoiceOutcome) -> Choice {
         outcome,
         primary: false,
         takes_note: false,
-        answer: wire::Answer::default(),
+        answer: ui_view::Answer::Claude(wire::ClaudeAnswer::default()),
     }
 }
 

@@ -10,7 +10,10 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use ui_state::{ItemBody, OpenAsk};
-use wire::{AgentInput, CodexCreateConfig, Kind, Phase, agent_input, answer};
+use wire::{
+    ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexAnswer, CodexCreateConfig, CodexInput, Kind,
+    Phase, claude_answer, claude_pty_input, claude_sdk_input, codex_answer, codex_input,
+};
 
 use super::{Install, Log, Scenario, TURN, Verdict, expect_outcome, judge};
 
@@ -19,7 +22,8 @@ pub const REPLY: &str = "Never mind the shape. Reply with the single word done a
 
 /// How a scenario answers an ask that opened.
 pub enum Answer {
-    Given(answer::Of),
+    Claude(claude_answer::Of),
+    Codex(codex_answer::Of),
     /// Codex's approval of a command or file change.
     Approve,
 }
@@ -59,15 +63,27 @@ impl Install {
         }
     }
 
-    fn answer_input(&self, ask: &OpenAsk, answer: Answer) -> Result<wire::AgentInput, String> {
+    fn answer_input(&self, ask: &OpenAsk, answer: Answer) -> Result<wire::KindInput, String> {
         let ask_key = ask.key().to_owned();
         Ok(match (self.kind, answer) {
-            (_, Answer::Given(of)) => AgentInput {
-                of: Some(agent_input::Of::Answer(wire::Answer {
+            (Kind::ClaudeSdk, Answer::Claude(of)) => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
+                of: Some(claude_sdk_input::Of::Answer(ClaudeAnswer {
                     ask_key,
                     of: Some(of),
                 })),
-            },
+            }),
+            (Kind::ClaudePty, Answer::Claude(of)) => wire::KindInput::ClaudePty(ClaudePtyInput {
+                of: Some(claude_pty_input::Of::Answer(ClaudeAnswer {
+                    ask_key,
+                    of: Some(of),
+                })),
+            }),
+            (Kind::Codex, Answer::Codex(of)) => wire::KindInput::Codex(CodexInput {
+                of: Some(codex_input::Of::Answer(CodexAnswer {
+                    ask_key,
+                    of: Some(of),
+                })),
+            }),
             (Kind::Codex, Answer::Approve) => self.allow(ask)?,
             _ => return Err(format!("no answer fits {}", super::ask_token(ask))),
         })
@@ -89,7 +105,7 @@ impl Install {
         }
         match ask {
             OpenAsk::Claude(ask) if matches!(ask.body, Some(wire::ask::Body::Permission(_))) => Ok(
-                Answer::Given(answer::Of::Permission(wire::PermissionAnswer {
+                Answer::Claude(claude_answer::Of::Permission(wire::PermissionAnswer {
                     of: Some(wire::permission_answer::Of::Allow(wire::PermissionAllow {
                         scope: None,
                     })),
@@ -104,7 +120,10 @@ impl Install {
     }
 
     fn question_answer(&self, answer: wire::QuestionAnswer) -> Answer {
-        Answer::Given(answer::Of::Question(answer))
+        match self.kind {
+            Kind::Codex => Answer::Codex(codex_answer::Of::Question(answer)),
+            _ => Answer::Claude(claude_answer::Of::Question(answer)),
+        }
     }
 
     fn plan_answer(&self, choice: wire::PlanChoice) -> Answer {
@@ -112,7 +131,10 @@ impl Install {
             choice: choice as i32,
             note: None,
         };
-        Answer::Given(answer::Of::Plan(answer))
+        match self.kind {
+            Kind::Codex => Answer::Codex(codex_answer::Of::Plan(answer)),
+            _ => Answer::Claude(claude_answer::Of::Plan(answer)),
+        }
     }
 
     /// An agent that starts in plan mode: Claude by its own flag, Codex by
@@ -271,7 +293,10 @@ impl Install {
                             text: REPLY.to_owned(),
                             answers_so_far: questions.iter().map(|_| nothing()).collect(),
                         };
-                        Answer::Given(answer::Of::Reply(reply))
+                        match kind {
+                            Kind::Codex => Answer::Codex(codex_answer::Of::Reply(reply)),
+                            _ => Answer::Claude(claude_answer::Of::Reply(reply)),
+                        }
                     }
                 })
             },

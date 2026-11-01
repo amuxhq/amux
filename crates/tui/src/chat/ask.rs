@@ -551,8 +551,13 @@ impl AskUi {
         } else {
             String::new()
         };
-        self.sent = Some(index);
-        AskAction::Answer(Box::new(answer_input(card, &choice.answer, &note)))
+        match answer_input(card, &choice.answer, &note) {
+            Some(input) => {
+                self.sent = Some(index);
+                AskAction::Answer(Box::new(input))
+            }
+            None => AskAction::None,
+        }
     }
 
     /// One key on a boxed ask. ↑/↓ and j/k move, 1–9 answer at once,
@@ -1398,8 +1403,11 @@ impl AskUi {
 
     /// Sends the answers, a skipped question with none.
     fn send_boxed_questions(&mut self, card: &AskCard) -> AskAction {
-        let answer = question_answer(&self.responses());
-        AskAction::Answer(Box::new(answer_input(card, &answer, "")))
+        let answer = question_answer(card, &self.responses());
+        match answer_input(card, &answer, "") {
+            Some(input) => AskAction::Answer(Box::new(input)),
+            None => AskAction::None,
+        }
     }
 
     /// Sends the person's own words instead, with what was answered so far.
@@ -1408,8 +1416,11 @@ impl AskUi {
         if words.is_empty() {
             return AskAction::None;
         }
-        let answer = reply_answer(&words, &self.responses());
-        AskAction::Answer(Box::new(answer_input(card, &answer, "")))
+        let answer = reply_answer(card, &words, &self.responses());
+        match answer_input(card, &answer, "") {
+            Some(input) => AskAction::Answer(Box::new(input)),
+            None => AskAction::None,
+        }
     }
 
     /// Acts on row `at` of the current question: picks an option (toggles
@@ -2870,16 +2881,16 @@ impl AskUi {
         card.choices
             .iter()
             .find(|choice| &choice.outcome == outcome)
-            .map_or(AskAction::None, |choice| {
-                AskAction::Answer(Box::new(answer_input(card, &choice.answer, "")))
-            })
+            .and_then(|choice| answer_input(card, &choice.answer, ""))
+            .map_or(AskAction::None, |input| AskAction::Answer(Box::new(input)))
     }
 
     /// Submits the form with what was given for each field, as the shared
     /// view encodes it.
     fn submit_form(&mut self, card: &AskCard) -> AskAction {
         match form_answer(card, &self.form_values()) {
-            Ok(Some(answer)) => AskAction::Answer(Box::new(answer_input(card, &answer, ""))),
+            Ok(Some(answer)) => answer_input(card, &answer, "")
+                .map_or(AskAction::None, |input| AskAction::Answer(Box::new(input))),
             Ok(None) | Err(_) => AskAction::None,
         }
     }
@@ -3067,13 +3078,13 @@ mod tests {
                 outcome: ChoiceOutcome::Submit,
                 primary: true,
                 takes_note: false,
-                answer: wire::Answer {
-                    of: Some(wire::answer::Of::Form(wire::FormAnswer {
+                answer: ui_view::Answer::Claude(wire::ClaudeAnswer {
+                    of: Some(wire::claude_answer::Of::Form(wire::FormAnswer {
                         action: wire::FormAction::Accept as i32,
                         content_json: vec![],
                     })),
                     ..Default::default()
-                },
+                }),
             }],
             question_note: false,
             question_skip: false,
@@ -3112,13 +3123,13 @@ mod tests {
         let AskAction::Answer(input) = action else {
             panic!("{action:?}");
         };
-        let Some(wire::AgentInput {
-            of: Some(wire::agent_input::Of::Answer(answer)),
-        }) = input.decode_body()
+        let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Answer(answer)),
+        })) = input.decode_body()
         else {
             panic!("{input:?}");
         };
-        let Some(wire::answer::Of::Form(form)) = answer.of else {
+        let Some(wire::claude_answer::Of::Form(form)) = answer.of else {
             panic!("not a form");
         };
         serde_json::from_slice(&form.content_json).unwrap()

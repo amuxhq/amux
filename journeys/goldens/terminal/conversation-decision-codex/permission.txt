@@ -11,11 +11,11 @@
 
 
 
-
-
-
-
   started ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+▌ ✗ deprecationNotice
+▌   Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then
+▌   page with `thread/turns/list` and `thread/items/list`.
 
 
     Check the deployment once.                                                                       hh:mm

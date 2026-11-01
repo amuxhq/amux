@@ -1,9 +1,5 @@
 
-  linker │ /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                          2 / 258K │ [Diff] │ [Home]
-
-
-
-
+  linker │ /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                          2 / 258k │ [Diff] │ [Home]
 
 
 
@@ -13,6 +9,10 @@
 
 
   started ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+▌ ✗ deprecationNotice
+▌   Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then
+▌   page with `thread/turns/list` and `thread/items/list`.
 
 
     Check the relay's error rate.                                                                    hh:mm

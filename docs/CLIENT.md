@@ -190,8 +190,7 @@ The state answers the questions every client asks, so no client re-derives them:
 | Method | Answer |
 |---|---|
 | `can_send()` | Caught up, and the entry does not say exited. Drafting is never gated. |
-| `composer()` | `Send`; `Resume` for an exited agent (the draft becomes the next incarnation's first prompt); or `Holds(Waiting)` with `CatchingUp`, `Detached` or `Reconnecting`: the chat is not current, and a send is held until it is. |
-| `held()` | This client's inputs held until the host is back, drawn pending with Cancel. |
+| `composer()` | `Send`; `Resume` for an exited agent (the draft becomes the next incarnation's first prompt); or `Waiting(Waiting)` with `CatchingUp`, `Detached` or `Reconnecting`: the chat is not current, so nothing sends and the draft stays in the composer. |
 | `phase()` | `PhaseView`: lifecycle from the entry, everything else from the snapshot. |
 | `open_asks()` | The asks to draw, head first. Before CaughtUp an ask is drawn only if the entry says needs-you, so an ask answered on another device does not flash from a cached snapshot and vanish. |
 | `activity(now_ms)` | The activity line, derived from the newest items and the phase (see [the chat vocabulary](CHAT_VOCABULARY.md)). |
@@ -216,23 +215,17 @@ Each input this client sends becomes a `SentInput` with an `InputState`:
 | `Settled` | Accepted and, for a prompt, reflected by an item carrying its input id. |
 | `Rejected(refusal)` | The verdict was a rejection: a `Refusal` holding the typed reason and the provider's own words when it gave any. A rejection never touches the transcript. |
 | `Uncertain` | The connection dropped before a reply. |
-| `Held` | A prompt or answer that certainly never left: sent while the chat was not current, or refused with `REFUSAL_HOST_UNREACHABLE`. The client holds it, shown pending with Cancel. |
 
 An uncertain input is resolved only at the next CaughtUp: found in the snapshot's queue it is queued; found among
 the items it is settled; found in neither it stays uncertain and the person decides to resend or discard it.
 Nothing uncertain is resent automatically: it may have reached the agent (handed to the provider and not yet
 reflected looks the same as never arrived), and agents do not drop a person's input sent twice.
 
-A held input is different: it never left, so the state releases it at the next CaughtUp, or when the agent's host
-entry turns online again while the chat is current. Each one is `Sent` again from that moment and listed in the
-update's `Outcome::resend`, and the driver sends it under its own id. One already reflected or queued is settled
-instead. Only prompts and answers are held: an interrupt, a withdraw, a send-now or a setting sent later would act
-on whatever the agent is doing then, so those are refused at once with the reason. Discarding a held input is its
-Cancel. Held inputs live as long as the client, so a held prompt's words are in the agent's kept draft from the
-moment it is held, ahead of what is typed, until it goes or is cancelled back into the composer: a client that
-closes, even killed, finds them in the draft when the chat opens again. A chat reopened while the prompt is still
-held reads only what was typed, the prompt showing held. A held answer is dropped with the client. The fleet driver
-keeps held prompts so for every client. A rejection with the refusal `REFUSAL_EXITED`
+Nothing is ever sent later on the client's own initiative. While the chat is not current a client sends
+nothing: the words stay in the composer, whose top edge says why, and the daemon-kept draft keeps them as it
+keeps anything typed. A send the daemon refuses with `REFUSAL_HOST_UNREACHABLE` never left either: it is
+`Rejected` like any other refusal, its words go back to the composer, and the composer says the host is away;
+it goes when the person sends it again. A rejection with the refusal `REFUSAL_EXITED`
 flips the composer to Resume for that incarnation, so a send that raced the exit keeps its draft.
 
 ### The fleet state
@@ -281,8 +274,8 @@ host, and from its replica for another host's agent even while that host is away
 | `withdraw(queued)`, `send_now(queued)` | Take a queued prompt back, or steer it into the running turn. |
 | `answer(input)` | Answer an ask with the input `ui_view::answer_input` built. Any open ask can be answered. |
 | `interrupt()` | Interrupt the turn; the agent stays live and idle. |
-| `switch_back()` | Takes terminal Claude's own view back to the agent's conversation after it switched to another; never held. |
-| `rename(name)` | amux's rename, never held: an unreachable host fails it at once with its reason. |
+| `switch_back()` | Takes terminal Claude's own view back to the agent's conversation after it switched to another. |
+| `rename(name)` | amux's rename: an unreachable host fails it at once with its reason. |
 | `discard(id)` | Forget an input that was not confirmed. |
 | `blob(hash)`, `fetch_blob(hash)`, `put_blob(name, mime, bytes)` | Attachment bytes; see [attachments](#attachments). |
 | `working_tree_review()` | The agent's working-tree `Diff` and the patch it names, for a review page. |
@@ -291,8 +284,8 @@ host, and from its replica for another host's agent even while that host is away
 | `trace()`, `history()` | The bounded trace, and the same in the form a dump carries it. |
 | `close()` | Drops the stream. Nothing is flushed; results of calls still in flight change nothing. |
 
-The acts that wait on the agent return `InputError::Rejected(refusal)`, `InputError::Uncertain`, or
-`InputError::Held` (it never left and goes when the host is back) when they do not take effect. `page_older` returns `PageError::OriginUnreachable` when older history is held only by the
+The acts that wait on the agent return `InputError::Rejected(refusal)` or `InputError::Uncertain` when they do
+not take effect. `page_older` returns `PageError::OriginUnreachable` when older history is held only by the
 agent's host and that host cannot be reached; the chat says so rather than showing an empty page.
 
 **The pump.** A background task reads the stream. `Lagged` means the runtime closed the stream because this
@@ -425,12 +418,12 @@ so the first render is correct at once. CaughtUp follows at once
 if the runtime's source for that agent is current, or after the delta if it is catching up; live events follow.
 
 - The header always paints from the inventory entry and host presence.
-- The composer takes a draft at any time, and Send is always offered. While the chat is not current (before
-  CaughtUp, after Detached, or reconnecting to the runtime) the composer is `Holds`: a prompt or answer sent then
-  is held, pending with Cancel, and goes by itself once the chat catches up.
+- The composer takes a draft at any time. While the chat is not current (before CaughtUp, after Detached, or
+  reconnecting to the runtime) the composer is `Waiting`: Send sends nothing, the draft stays where it is, and
+  the composer's edge says why; once the chat catches up the same Send sends it.
 - An agent with no rows yet arrives as a Snapshot with no items. The client shows a loading hint after 300 ms
   (`LOADING_HINT_MS` in the terminal, `loadingHintDelay` on the phone) until the tail lands.
-- Losing the host mid-chat arrives as Detached: the header changes, sends are held, the rows stay. When the
+- Losing the host mid-chat arrives as Detached: the header changes, sending waits, the rows stay. When the
   runtime's source reconnects, the delta or a Reset follows under the same rules; the client does nothing.
 - A deleted agent's session reports `ended()`, and the client closes it to the fleet. The fleet is home: no
   client reopens a chat on its own.
@@ -450,7 +443,8 @@ lands: at the feed's end while the agent is idle with nothing queued, otherwise 
 remembers that place, and `prompts_underway` draws each prompt there until the agent's queue or transcript
 holds it, so it does not jump as the agent starts work. A prompt the connection dropped, which catching up
 found neither queued nor in the transcript, reads "may not have arrived" with resend and discard.
-`refused_prompts` lists the ones the agent refused; the words go back to the composer with the reason.
+`refused_prompts` lists the ones the agent or its host refused; the words go back to the composer with the
+reason, which for a host that could not be reached is that the host is away.
 
 When the entry says exited, the composer is `Resume`: the draft goes through `resume_with` as the next
 incarnation's first prompt, one tap.

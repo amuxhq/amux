@@ -262,14 +262,12 @@ async fn kept_reads(client: &dyn Client, agent: &[u8], wanted: &str) {
     );
 }
 
-/// A prompt held while its agent's host can't be reached is in the agent's
-/// kept draft from the moment it is held, ahead of the composer's words: a
-/// held prompt lives only as long as the client, and one killed before the
-/// host is back finds the words there. A chat reopened meanwhile reads
-/// only the composer's words, the prompt being shown held, and once the
-/// host is back and the prompt goes, the draft is the composer's again.
+/// A prompt sent while its agent's host can't be reached never left: it is
+/// refused at once, never uncertain, and nothing sends it again when the
+/// host is back. Its words are the composer's again, and the draft this
+/// machine keeps keeps them; sent again by the person, it goes once.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_prompt_held_for_an_unreachable_host_is_kept_in_the_draft_until_it_goes() {
+async fn a_prompt_for_an_unreachable_host_is_refused_and_goes_only_when_sent_again() {
     let mut net = Net::start(
         Topology::new()
             .host("desk")
@@ -316,31 +314,47 @@ async fn a_prompt_held_for_an_unreachable_host_is_kept_in_the_draft_until_it_goe
     })
     .await;
     let sent = session.send_prompt("Run the tests.", Vec::new()).await;
-    assert_eq!(
-        session.state().input_state(&sent.id),
-        Some(InputState::Held)
-    );
-    kept_reads(&*client, far.as_bytes(), "Run the tests.").await;
+    let refused = Some(InputState::Rejected(ui_state::Refusal::of(
+        wire::Refusal::HostUnreachable,
+    )));
+    assert_eq!(session.state().input_state(&sent.id), refused);
+    // The composer takes the words back, and the kept draft is its words.
     fleet.keep_draft(
         &agent,
         wire::Draft {
-            text: "Then the lint.".into(),
+            text: "Run the tests.".into(),
             attachments: Vec::new(),
         },
     );
-    kept_reads(&*client, far.as_bytes(), "Run the tests.\nThen the lint.").await;
-    assert_eq!(
-        fleet.kept_draft(&agent).await.map(|draft| draft.text),
-        Some("Then the lint.".to_owned()),
-        "a chat reopened while the prompt is held reads the composer's words alone"
-    );
+    kept_reads(&*client, far.as_bytes(), "Run the tests.").await;
 
     net.restore_link("desk", "laptop").await.unwrap();
     until_within(PATIENCE, session.changed(), || {
-        (says(&session, "Tests pass.") && session.state().held().count() == 0).then_some(())
+        let state = session.state();
+        (state.caught_up() && state.host().is_some_and(|host| host.online().is_some()))
+            .then_some(())
     })
     .await;
-    kept_reads(&*client, far.as_bytes(), "Then the lint.").await;
+    assert_eq!(
+        session.state().input_state(&sent.id),
+        refused,
+        "nothing sent the refused prompt again"
+    );
+    assert!(!says(&session, "Run the tests."));
+    fleet.keep_draft(&agent, wire::Draft::default());
+    session.send_prompt("Run the tests.", Vec::new()).await;
+    until_within(PATIENCE, session.changed(), || {
+        says(&session, "Tests pass.").then_some(())
+    })
+    .await;
+    let prompts = session
+        .state()
+        .transcript()
+        .iter()
+        .filter(|held| held.item.text.contains("Run the tests."))
+        .count();
+    assert_eq!(prompts, 1, "the prompt reached the agent once");
+    kept_reads(&*client, far.as_bytes(), "").await;
     fleet.close(&agent);
     drop(session);
     drop(fleet);

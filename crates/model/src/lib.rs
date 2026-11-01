@@ -67,10 +67,9 @@ pub enum Composer {
     /// The agent has exited: the draft goes through ResumeAgent as the new
     /// incarnation's first prompt, one tap.
     Resume,
-    /// The chat is not current. Drafting continues, and a send is held
-    /// by the client, shown pending with Cancel, until the chat is current
-    /// again and it goes.
-    Holds(Waiting),
+    /// The chat is not current. Drafting continues; a send is refused at
+    /// once and the draft stays in the composer, which says why.
+    Waiting(Waiting),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -157,12 +156,6 @@ pub enum InputState {
     /// and the person decides. Nothing is resent on its own: it may have
     /// reached the agent, and agents do not drop a person's input sent twice.
     Uncertain,
-    /// A prompt or an answer that certainly never left: sent while the chat
-    /// was not current, or refused because the agent's host could not be
-    /// reached. The client holds it, shown pending with Cancel, and sends
-    /// it again under the same id once the host is reachable. It lives only
-    /// as long as this client: closing the client drops it.
-    Held,
 }
 
 /// Why the agent or its host refused an input, as every client tells it.
@@ -209,7 +202,7 @@ mod tests {
     #[test]
     fn values_round_trip_through_their_serialized_form() {
         let values = vec![
-            Composer::Holds(Waiting::Detached),
+            Composer::Waiting(Waiting::Detached),
             Composer::Resume,
             Composer::Send,
         ];

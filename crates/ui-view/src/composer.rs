@@ -77,7 +77,7 @@ pub fn composer(state: &SessionState, now_ms: i64) -> ComposerView {
         // With the host out of reach the phase is the last one heard, not
         // what the agent is doing: no clock counts a turn that may be over.
         activity: match mode {
-            Composer::Holds(Waiting::Detached) => None,
+            Composer::Waiting(Waiting::Detached) => None,
             _ => crate::fleet::activity(state, now_ms),
         },
         mode,
@@ -145,9 +145,6 @@ pub enum Underway {
     /// neither queued nor in the transcript: only the person can say
     /// whether to send it again or discard it.
     MayNotHaveArrived,
-    /// It never left: the agent's host cannot be reached. It goes once the
-    /// host is back; Cancel takes it back into the draft.
-    Held,
 }
 
 /// A prompt of this client's on its way to the agent.
@@ -209,7 +206,6 @@ pub fn prompts_underway(state: &SessionState) -> Vec<SentPrompt> {
             InputState::Uncertain => {
                 unconfirmed.push(prompt(Lands::Queue, Underway::MayNotHaveArrived))
             }
-            InputState::Held => sending.push(prompt(Lands::Queue, Underway::Held)),
             InputState::Rejected(_) | InputState::Settled => {}
         }
     }

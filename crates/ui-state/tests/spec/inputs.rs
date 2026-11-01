@@ -318,11 +318,12 @@ fn send_now_marks_a_queued_prompt_steered_until_its_reflection() {
     }
 }
 
-/// A prompt refused because its host could not be reached certainly never
-/// left: it is held, never uncertain, and goes again under its own id once
-/// the chat has caught up again.
+/// A prompt refused because its host could not be reached never left: it
+/// is refused like any other, never uncertain, and is listed for the
+/// composer to take back. Nothing sends it again, neither catching up nor
+/// the host's word that it is back.
 #[test]
-fn a_host_unreachable_rejection_holds_the_prompt_until_the_chat_catches_up() {
+fn a_host_unreachable_rejection_refuses_the_prompt_and_never_sends_it_again() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Idle, &[]);
         apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "go")));
@@ -330,91 +331,26 @@ fn a_host_unreachable_rejection_holds_the_prompt_until_the_chat_catches_up() {
             &mut state,
             Msg::Sent(b"p1".to_vec(), rejected(wire::Refusal::HostUnreachable)),
         );
-        assert_eq!(state.input_state(b"p1"), Some(InputState::Held));
+        let refused = Some(InputState::Rejected(Refusal::of(
+            wire::Refusal::HostUnreachable,
+        )));
+        assert_eq!(state.input_state(b"p1"), refused);
         assert_eq!(state.not_confirmed().count(), 0);
-        assert_eq!(state.held().count(), 1);
-        let outcome = apply_checked(
+        assert_eq!(state.sending().count(), 0);
+        apply_checked(
+            &mut state,
+            Msg::Host(wire::HostEntry::trusted_host(
+                b"host".to_vec(),
+                "desk",
+                wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+            )),
+        );
+        apply_checked(
             &mut state,
             Msg::Event(wire::SessionEvent {
                 of: Some(wire::session_event::Of::CaughtUp(wire::CaughtUp::default())),
             }),
         );
-        assert_eq!(
-            outcome
-                .resend
-                .iter()
-                .map(|input| input.input_id.clone())
-                .collect::<Vec<_>>(),
-            vec![b"p1".to_vec()],
-            "caught up, the held prompt goes again under its id"
-        );
-        assert_eq!(state.input_state(b"p1"), Some(InputState::Sent));
-    }
-}
-
-fn host(reach: wire::trusted::Reach) -> Msg {
-    Msg::Host(wire::HostEntry::trusted_host(
-        b"host".to_vec(),
-        "desk",
-        reach,
-    ))
-}
-
-fn away() -> wire::trusted::Reach {
-    wire::trusted::Reach::Away(wire::Empty {})
-}
-
-fn online() -> wire::trusted::Reach {
-    wire::trusted::Reach::Online(wire::RouteKind::Direct as i32)
-}
-
-fn resent(outcome: &ui_state::Outcome) -> Vec<Vec<u8>> {
-    outcome
-        .resend
-        .iter()
-        .map(|input| input.input_id.clone())
-        .collect()
-}
-
-/// The host's word that it is back can land while a send to it is still in
-/// flight, and the send then fails as unreachable: the host is online and
-/// the chat current, so the prompt goes again at once instead of waiting
-/// for a return that already happened.
-#[test]
-fn a_prompt_held_after_its_host_came_back_goes_at_once() {
-    for kind in KINDS {
-        let mut state = live(kind, Phase::Idle, &[]);
-        apply_checked(&mut state, host(away()));
-        apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "go")));
-        apply_checked(&mut state, host(online()));
-        let outcome = apply_checked(
-            &mut state,
-            Msg::Sent(b"p1".to_vec(), rejected(wire::Refusal::HostUnreachable)),
-        );
-        assert_eq!(resent(&outcome), vec![b"p1".to_vec()]);
-        assert_eq!(state.input_state(b"p1"), Some(InputState::Sent));
-    }
-}
-
-/// Held while its host read online, a prompt goes at the next word that
-/// the host is online, with no away in between; one that failed under the
-/// newest word waits for it instead of going again at once.
-#[test]
-fn a_prompt_held_while_its_host_read_online_goes_at_its_next_online_word() {
-    for kind in KINDS {
-        let mut state = live(kind, Phase::Idle, &[]);
-        apply_checked(&mut state, host(online()));
-        apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "go")));
-        let outcome = apply_checked(
-            &mut state,
-            Msg::Sent(b"p1".to_vec(), rejected(wire::Refusal::HostUnreachable)),
-        );
-        assert!(outcome.resend.is_empty());
-        assert_eq!(state.input_state(b"p1"), Some(InputState::Held));
-        let outcome = apply_checked(&mut state, host(online()));
-        assert_eq!(resent(&outcome), vec![b"p1".to_vec()]);
-        assert_eq!(state.input_state(b"p1"), Some(InputState::Sent));
-        let outcome = apply_checked(&mut state, host(online()));
-        assert!(outcome.resend.is_empty(), "each held prompt goes once");
+        assert_eq!(state.input_state(b"p1"), refused);
     }
 }

@@ -181,20 +181,14 @@ fn trusted_as(drawn: &Drawn, host_id: &str, name: &str) -> Result<(), String> {
     }
 }
 
-/// `text` is a prompt the client library holds for its host: in the queue,
-/// pending, with what it waits for.
-fn is_held(drawn: &Drawn, text: &str) -> bool {
-    drawn.iter().any(|(name, element)| {
-        name.starts_with("chat.underway.")
-            && element["label"] == text
-            && element["value"]
-                .as_str()
-                .is_some_and(|value| value.starts_with("held · sends when "))
-    })
+/// `text` waits in the composer, unsent, with Send off: what a chat that is
+/// not current does with a message, which nothing sends until the person
+/// does once it is current.
+fn kept_unsent(drawn: &Drawn, text: &str) -> bool {
+    drawn.value("chat.field") == text && !drawn.enabled("chat.send")
 }
 
-/// The chat is current: the empty composer offers to message the agent,
-/// not to hold what is sent.
+/// The chat is current: the empty composer offers to message the agent.
 fn current(drawn: &Drawn, agent: &str) -> bool {
     drawn.label("chat.field") == format!("Message {agent}")
 }
@@ -1085,24 +1079,26 @@ fn send_while_away(journey: &mut PhoneJourney) -> Proved {
         |drawn| labelled(drawn, "out of reach"),
         "the cabin out of reach",
     )?;
-    // Send stays open: the client library holds the prompt, pending with
-    // Cancel, until the cabin can be reached.
-    send(journey, BACKUP)?;
+    // Send is off: the message stays in the composer, unsent, and is still
+    // there after leaving the chat.
+    journey.type_text("chat.field", BACKUP)?;
     journey.wait(
-        |drawn| is_held(drawn, BACKUP) && drawn.value("chat.field").is_empty(),
-        "the prompt held",
+        |drawn| kept_unsent(drawn, BACKUP),
+        "the message kept unsent",
     )?;
-    reopen(journey, &backups, |drawn| is_held(drawn, BACKUP))?;
+    reopen(journey, &backups, |drawn| kept_unsent(drawn, BACKUP))?;
     journey.screen("away", &[])?;
 
-    // The cabin back: the held prompt goes by itself.
+    // The cabin back: the message is still in the composer, and Send sends
+    // it.
     journey.request(restart_daemon("cabin"), None)?;
     journey.wait(
-        |drawn| {
-            labelled(drawn, BACKUP_DONE)
-                && drawn.has("chat.row.turn-end")
-                && !is_held(drawn, BACKUP)
-        },
+        |drawn| drawn.value("chat.field") == BACKUP && drawn.enabled("chat.send"),
+        "Send on again with the message kept",
+    )?;
+    journey.tap("chat.send")?;
+    journey.wait(
+        |drawn| labelled(drawn, BACKUP_DONE) && drawn.has("chat.row.turn-end"),
         "the reply",
     )?;
     let heard = journey.wait_chat(
@@ -1118,9 +1114,9 @@ fn send_while_away(journey: &mut PhoneJourney) -> Proved {
     })?;
     journey.screen("sent", &["chat.row.turn-end"])?;
     Ok(vec![
-        "with the cabin out of reach, Send held the prompt, pending until the cabin is back, and it stayed held across leaving the chat".to_owned(),
+        "with the cabin out of reach, Send was off and the message stayed in the composer, unsent, across leaving the chat".to_owned(),
         format!(
-            "with the cabin back, the held prompt went by itself and the cabin holds {} once",
+            "with the cabin back, Send sent {}, and the cabin holds it once",
             quoted(BACKUP)
         ),
         control,
@@ -1685,7 +1681,7 @@ fn connect(journey: &mut PhoneJourney, account: &str) -> Result<(), String> {
 
 fn keep_authority(journey: &mut PhoneJourney) -> Proved {
     let asked = "Are you there?";
-    let held = "Still there?";
+    let unsent = "Still there?";
     let desk = journey.host_id("desk");
     let guarded = journey.agent_id("guarded");
     let row = format!("home.row.{guarded}");
@@ -1753,38 +1749,46 @@ fn keep_authority(journey: &mut PhoneJourney) -> Proved {
         |drawn| drawn.has("chat.field") && labelled(drawn, "this phone is signed out"),
         "the chat naming the sign-out",
     )?;
-    // Send holds the message, pending until the phone can reach the desk.
-    send(journey, held)?;
-    journey.wait(|drawn| is_held(drawn, held), "the message held")?;
+    // Send is off: the message stays in the composer, unsent.
+    journey.type_text("chat.field", unsent)?;
+    journey.wait(
+        |drawn| kept_unsent(drawn, unsent),
+        "the message kept unsent",
+    )?;
     std::thread::sleep(Duration::from_secs(2));
-    // It stays held across leaving the chat; read with the keyboard down.
+    // It stays across leaving the chat; read with the keyboard down.
     leave_chat(journey)?;
     journey.tap(&row)?;
-    journey.wait(|drawn| is_held(drawn, held), "the message still held")?;
+    journey.wait(|drawn| kept_unsent(drawn, unsent), "the message still kept")?;
     journey.screen("blocked", &[])?;
     let blocked = journey.chat("desk", "guarded", "while-signed-out")?;
-    never_received(&blocked, held)?;
+    never_received(&blocked, unsent)?;
     let control = negative_control(never_received(&blocked, asked))?;
 
-    // Signed in again: the chat is current and the held message goes by
-    // itself, once.
+    // Signed in again: the chat is current, the message still in the
+    // composer, and Send sends it, once.
     connect(journey, "ada")?;
     journey.wait(
         |drawn| {
             !labelled(drawn, "this phone is signed out")
-                && labelled(drawn, "The relay carries us again.")
-                && !is_held(drawn, held)
+                && drawn.value("chat.field") == unsent
+                && drawn.enabled("chat.send")
         },
+        "Send on again with the message kept",
+    )?;
+    journey.tap("chat.send")?;
+    journey.wait(
+        |drawn| labelled(drawn, "The relay carries us again."),
         "the reply after signing in",
     )?;
     let after = journey.wait_chat(
         "desk",
         "guarded",
-        |chat| phase(chat) == "IDLE" && prompts(chat, held).len() == 1,
+        |chat| phase(chat) == "IDLE" && prompts(chat, unsent).len() == 1,
         "sent-after-sign-in",
     )?;
     reflected_once(&after, asked)?;
-    reflected_once(&after, held)?;
+    reflected_once(&after, unsent)?;
     leave_chat(journey)?;
     journey.tap(&row)?;
     journey.wait(
@@ -1795,11 +1799,11 @@ fn keep_authority(journey: &mut PhoneJourney) -> Proved {
     Ok(vec![
         "a second account opened on its own profile, with an empty fleet that knows no desk".to_owned(),
         format!("through the relay the desk received {} once and answered", quoted(asked)),
-        "signed out, the phone named its own sign-out in the hosts tab and the chat, and held the message, across leaving the chat; the desk never received it".to_owned(),
+        "signed out, the phone named its own sign-out in the hosts tab and the chat, and kept the message in the composer with Send off, across leaving the chat; the desk never received it".to_owned(),
         control,
         format!(
-            "signed in again, the held {} went by itself, reached the desk once and was answered",
-            quoted(held)
+            "signed in again, {} was still in the composer; Send sent it, it reached the desk once and was answered",
+            quoted(unsent)
         ),
     ])
 }

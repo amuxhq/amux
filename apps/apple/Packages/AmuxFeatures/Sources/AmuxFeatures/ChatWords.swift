@@ -396,19 +396,19 @@ public enum ChatWords {
                 : String(localized: "Message \(agent)")
         case .resume?:
             return String(localized: "\(agent) has exited · a message resumes it")
-        // Not current: a message sent now is held and goes when the chat is.
-        case .holds(.catchingUp)?:
-            return String(localized: "Catching up · sends once caught up")
-        case .holds(.reconnecting)?:
-            return String(localized: "Reconnecting · sends when \(host) is back")
-        case .holds(.detached)?:
+        // Not current: nothing sends until the chat is, and the draft stays.
+        case .waiting(.catchingUp)?:
+            return String(localized: "Catching up · your draft is kept")
+        case .waiting(.reconnecting)?:
+            return String(localized: "Reconnecting · your draft is kept")
+        case .waiting(.detached)?:
             switch reach {
             case .offline(.revoked):
                 return String(localized: "\(host) no longer trusts this phone · your draft is kept")
             case .offline(.signedOut):
                 return String(localized: "This phone is signed out · your draft is kept")
             default:
-                return String(localized: "\(host) is out of reach · sends when back")
+                return String(localized: "\(host) is out of reach · your draft is kept")
             }
         }
     }
@@ -426,7 +426,6 @@ public enum ChatWords {
         case .sending(waiting: false): String(localized: "sending")
         case .sending(waiting: true): String(localized: "waiting for \(host)…")
         case .mayNotHaveArrived: String(localized: "may not have arrived")
-        case .held: String(localized: "held · sends when \(host) is back")
         }
     }
 

@@ -182,17 +182,6 @@ final class PhoneDecisionsTests: XCTestCase {
             "Switch Back is off screen at accessibility3: \(back.frame)")
     }
 
-    /// A prompt held while its host is away is drawn pending, with Cancel.
-    func testAHeldPromptIsDrawnPendingWithCancel() async throws {
-        let held = SentPrompt(inputId: [7], text: [.text("Run the tests.")], lands: .queue, underway: .held)
-        _ = try await chat(ScriptedChat(
-            rows: CatalogFixtures.conversation,
-            frame: ScriptedChat.frame(phase: .idle, underway: [held])))
-        let row = try XCTUnwrap(element("chat.underway.0"), "the held prompt is not drawn")
-        XCTAssertTrue((row.value ?? "").contains("sends when"), "the held prompt says \(row.value ?? "")")
-        XCTAssertNotNil(element("chat.underway.0.cancel"), "the held prompt has no Cancel")
-    }
-
     // MARK: - Ask cards
 
     /// At a large text size a long question card squeezed into the space

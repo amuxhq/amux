@@ -105,11 +105,6 @@ pub enum ChatEffect {
     },
     /// Takes Claude's own view back to this agent's conversation.
     SwitchBack,
-    /// Takes a held prompt back before it goes; its words return to the
-    /// composer.
-    Cancel {
-        id: Vec<u8>,
-    },
     Page(u32),
     /// Ctrl+V: read the clipboard and attach what it holds.
     Paste,
@@ -357,6 +352,10 @@ pub struct ChatView {
     sending: HashMap<Vec<u8>, i64>,
     /// Rejected prompts whose words have gone back to the composer.
     rejected_seen: HashSet<Vec<u8>>,
+    /// Words stayed in or came back to the composer because they could not
+    /// go: the client saves the draft to this machine's daemon at once, so
+    /// a terminal killed before the next close or quit still has them.
+    draft_owed: bool,
     /// Why the last prompt was not sent, on the composer's edge until the
     /// draft changes or is sent.
     not_sent: Option<String>,
@@ -451,6 +450,7 @@ impl ChatView {
             queued_from: 0,
             sending: HashMap::new(),
             rejected_seen: HashSet::new(),
+            draft_owed: false,
             not_sent: None,
             feed_tail: Vec::new(),
             setting_prefix: false,
@@ -521,11 +521,6 @@ impl ChatView {
                     input_id: prompt.input_id,
                     text: prompt.text,
                 },
-                ui_view::Underway::Held => QueueEntry::Held {
-                    input_id: prompt.input_id,
-                    text: prompt.text,
-                    host: host.to_owned(),
-                },
             });
         }
         entries
@@ -547,6 +542,7 @@ impl ChatView {
                 .map(|sent| &sent.what)
             {
                 self.editor.restore(text, attachments.clone());
+                self.draft_owed = true;
             }
             self.not_sent = Some(format!("not sent: {}", refusal_words(&refused.reason)));
         }
@@ -555,10 +551,7 @@ impl ChatView {
                 continue;
             }
             match &sent.state {
-                InputState::Sent
-                | InputState::Queued
-                | InputState::Uncertain
-                | InputState::Held => {
+                InputState::Sent | InputState::Queued | InputState::Uncertain => {
                     self.sending.entry(sent.id.clone()).or_insert(now_ms);
                 }
                 InputState::Rejected(_) | InputState::Settled => {}
@@ -570,6 +563,12 @@ impl ChatView {
     /// Whether a refused prompt's words have gone back to this composer.
     pub(crate) fn took_back(&self, input_id: &[u8]) -> bool {
         self.rejected_seen.contains(input_id)
+    }
+
+    /// Whether the draft is owed a save since it was last asked; asking
+    /// clears it.
+    pub(crate) fn take_draft_owed(&mut self) -> bool {
+        std::mem::take(&mut self.draft_owed)
     }
 
     pub fn field_text(&self, state: &SessionState) -> bool {
@@ -951,9 +950,6 @@ impl ChatView {
             (QueueEntry::Unconfirmed { input_id, .. }, 1) => Some(ChatEffect::Discard {
                 id: input_id.clone(),
             }),
-            (QueueEntry::Held { input_id, .. }, 0) => Some(ChatEffect::Cancel {
-                id: input_id.clone(),
-            }),
             _ => None,
         }
     }
@@ -968,19 +964,21 @@ impl ChatView {
             return vec![];
         }
         match state.composer() {
+            // Not current, nothing goes: the draft stays in the composer,
+            // whose top edge says why, until it can.
+            Composer::Waiting(_) => {
+                self.draft_owed = true;
+                vec![]
+            }
             // A prompt never goes without a file still on its way into it.
-            Composer::Send | Composer::Holds(_) | Composer::Resume
-                if !self.attaching.is_empty() =>
-            {
+            Composer::Send | Composer::Resume if !self.attaching.is_empty() => {
                 self.send_when_attached = true;
                 vec![ChatEffect::Notice(format!(
                     "Sends once {} is attached",
                     self.attaching.join(", ")
                 ))]
             }
-            // Not current, the client library holds what is sent and sends
-            // it once the chat is current again.
-            Composer::Send | Composer::Holds(_) => {
+            Composer::Send => {
                 if let Some(effects) = self.slash_command(state) {
                     return effects;
                 }
@@ -3076,9 +3074,11 @@ fn problem_words(
             (format!("{ended} · {}", away_words()), theme.warning())
         }
         (_, PhaseView::Exited { cause }) => (exit_words(&cause), theme.faint()),
-        (Composer::Holds(Waiting::Detached), _) => (away_words(), theme.warning()),
-        (Composer::Holds(Waiting::Reconnecting), _) => ("reconnecting".to_owned(), theme.warning()),
-        (Composer::Holds(Waiting::CatchingUp), _) => ("catching up".to_owned(), theme.faint()),
+        (Composer::Waiting(Waiting::Detached), _) => (away_words(), theme.warning()),
+        (Composer::Waiting(Waiting::Reconnecting), _) => {
+            ("reconnecting".to_owned(), theme.warning())
+        }
+        (Composer::Waiting(Waiting::CatchingUp), _) => ("catching up".to_owned(), theme.faint()),
         _ if state.reset_pending() => ("refreshing".to_owned(), theme.faint()),
         _ => return None,
     })
@@ -3262,7 +3262,7 @@ pub(crate) const FREE_PLAN_AWAY: &str = "the free plan does not relay between ho
 /// down, for the box's edge; None when it can.
 fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Option<String> {
     Some(match composer {
-        Composer::Holds(Waiting::Detached) => match reach {
+        Composer::Waiting(Waiting::Detached) => match reach {
             Reach::Offline(Offline::Revoked) => format!("{host} no longer trusts this machine"),
             Reach::Offline(Offline::SignedOut) => {
                 format!("{host} is away · this machine is signed out")
@@ -3272,8 +3272,8 @@ fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Option<String
         },
         // The client talks only to this machine's daemon: reconnecting is
         // that daemon gone, never the agent's host, as home says it.
-        Composer::Holds(Waiting::Reconnecting) => "reconnecting to amux".to_owned(),
-        Composer::Holds(Waiting::CatchingUp) => "catching up".to_owned(),
+        Composer::Waiting(Waiting::Reconnecting) => "reconnecting to amux".to_owned(),
+        Composer::Waiting(Waiting::CatchingUp) => "catching up".to_owned(),
         Composer::Send | Composer::Resume => return None,
     })
 }
@@ -3344,7 +3344,7 @@ pub(crate) fn refusal_words(refusal: &Refusal) -> String {
         wire::Refusal::Exited => "it had exited",
         wire::Refusal::Exiting => "it was exiting",
         wire::Refusal::Draining => "its host is shutting down",
-        wire::Refusal::HostUnreachable => "its host can't be reached",
+        wire::Refusal::HostUnreachable => "its host is away",
         wire::Refusal::Unsupported => "this agent can't take it",
         wire::Refusal::ClosedAsk => "the ask had already closed",
         wire::Refusal::NotQueued => "it was no longer queued",
@@ -3555,8 +3555,8 @@ fn turn_hint(state: &SessionState, editor: &Editor, reach: Reach, leader: char) 
     });
     let more = format!("ctrl+{leader}");
     let mut pairs = Vec::new();
-    // A send now is held, shown pending with Cancel, and goes by itself.
-    let holds = |when| Hint::Keys(keys(&[("enter", when)]));
+    // Not current, Enter sends nothing: the draft stays until it can go.
+    let waits = |until| Hint::Keys(keys(&[("enter", until)]));
     match state.composer() {
         Composer::Send => {
             if working {
@@ -3570,20 +3570,20 @@ fn turn_hint(state: &SessionState, editor: &Editor, reach: Reach, leader: char) 
             pairs.extend(shift_tab);
         }
         Composer::Resume => pairs.push(("enter", "resume")),
-        Composer::Holds(Waiting::Detached) if reach == Reach::Offline(Offline::SignedOut) => {
-            return holds("holds it · it sends once this machine signs in");
+        Composer::Waiting(Waiting::Detached) if reach == Reach::Offline(Offline::SignedOut) => {
+            return waits("can't send until this machine signs in");
         }
-        Composer::Holds(Waiting::Detached) if reach == Reach::Offline(Offline::Revoked) => {
-            return holds("holds it · it sends once you pair again");
+        Composer::Waiting(Waiting::Detached) if reach == Reach::Offline(Offline::Revoked) => {
+            return waits("can't send until you pair again");
         }
-        Composer::Holds(Waiting::Detached) => {
-            return holds("holds it · it sends when the host is back");
+        Composer::Waiting(Waiting::Detached) => {
+            return waits("can't send until the host is back");
         }
-        Composer::Holds(Waiting::Reconnecting) => {
-            return holds("holds it · it sends once amux is back");
+        Composer::Waiting(Waiting::Reconnecting) => {
+            return waits("can't send until amux is back");
         }
-        Composer::Holds(Waiting::CatchingUp) => {
-            return holds("holds it · it sends once caught up");
+        Composer::Waiting(Waiting::CatchingUp) => {
+            return waits("can't send until caught up");
         }
     }
     pairs.push((&more, "more"));
@@ -3926,7 +3926,7 @@ fn empty_feed(
     theme: Theme,
 ) -> Vec<Line<'static>> {
     let mut lines = vec![Line::default(); height];
-    let away = matches!(state.composer(), Composer::Holds(Waiting::Detached)) || !reach.online();
+    let away = matches!(state.composer(), Composer::Waiting(Waiting::Detached)) || !reach.online();
     // A caught-up chat is current from its host, which loses its source
     // the moment the host does: the fleet's word on the host comes on
     // another stream and may still say away just after the host is back.

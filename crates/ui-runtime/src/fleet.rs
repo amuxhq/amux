@@ -220,7 +220,6 @@ impl Inner {
                     _ => {
                         if sessions.get(&key).is_some_and(|slot| slot.viewers == 0) {
                             sessions.remove(&key);
-                            self.drafts.session_gone(&key);
                         }
                     }
                 }
@@ -287,13 +286,6 @@ impl Inner {
             if let Some(fleet) = fleet.upgrade() {
                 fleet.model().changed.insert(woken.clone());
                 fleet.changed.send_replace(());
-            }
-        }));
-        let fleet = self.me.clone();
-        let holding = key.clone();
-        session.on_held(Box::new(move |held| {
-            if let Some(fleet) = fleet.upgrade() {
-                fleet.drafts.held(fleet.client.clone(), &holding, held);
             }
         }));
         // A chat opened out of the foreground (a notification bringing it
@@ -523,11 +515,7 @@ impl Fleet {
     /// Keeps the composer's draft for an agent with this machine's daemon,
     /// so it outlives the chat and the client; an empty one is kept too, so
     /// the chat reopens empty. Saves to one agent go in order, and one
-    /// overtaken before it is sent is never sent. The words of each prompt
-    /// the agent's session holds for an unreachable host are kept ahead of
-    /// the composer's, from the moment it is held until it goes or is taken
-    /// back: a held prompt lives only as long as the client, and one killed
-    /// before the host is back finds the words in the draft.
+    /// overtaken before it is sent is never sent.
     pub fn keep_draft(&self, agent: &AgentKey, draft: wire::Draft) {
         self.inner
             .drafts
@@ -536,8 +524,7 @@ impl Fleet {
 
     /// The draft this machine's daemon keeps for an agent, read after every
     /// save to it asked for before; None when there is none, it is empty or
-    /// it cannot be read. While the agent's session holds prompts kept in
-    /// it, the composer's own words alone.
+    /// it cannot be read.
     pub async fn kept_draft(&self, agent: &AgentKey) -> Option<wire::Draft> {
         self.inner.drafts.kept(&*self.inner.client, agent).await
     }
@@ -567,7 +554,6 @@ impl Fleet {
             }
             if !live {
                 sessions.remove(agent);
-                self.inner.drafts.session_gone(agent);
                 return;
             }
             slot.session.get().cloned()

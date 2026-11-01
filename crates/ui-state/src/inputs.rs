@@ -18,8 +18,6 @@ pub enum InputOutcome {
     Reply(SendInputResponse),
     /// The transport failed before a reply.
     Lost,
-    /// It never left: the client holds it to send once the host is back.
-    Held,
 }
 
 /// What an input asked for, as far as the model needs it.
@@ -44,15 +42,6 @@ pub enum InputWhat {
 }
 
 impl InputWhat {
-    /// Whether a send of this that certainly never left is held to send
-    /// again once the host is back: a prompt or an answer, the person's own
-    /// words and choices. An interrupt, a withdraw, a send-now or a setting
-    /// sent later would act on whatever the agent is doing then, so those
-    /// are refused at once with the reason instead.
-    pub fn holds(&self) -> bool {
-        matches!(self, InputWhat::Prompt { .. } | InputWhat::Answer { .. })
-    }
-
     pub fn of(input: &Input) -> InputWhat {
         use wire::{
             KindInput, claude_pty_input as pty, claude_sdk_input as sdk, codex_input as codex,
@@ -128,10 +117,7 @@ pub struct SentInput {
     /// A snapshot has listed it in the queue; leaving the queue after that
     /// means it was submitted or withdrawn.
     pub(crate) seen_queued: bool,
-    /// The session's count of words that the host can be reached, as this
-    /// input last left: a word since then sends it again if it is held.
-    pub(crate) left_at: u64,
-    /// Sent to an idle agent with nothing queued and not held: a prompt on
+    /// Sent to an idle agent with nothing queued: a prompt on
     /// its way draws at the feed's end rather than in the queue, and keeps
     /// that place as the agent starts on it.
     pub in_feed: bool,
@@ -175,7 +161,6 @@ impl Inputs {
             state: InputState::Sent,
             input,
             seen_queued: false,
-            left_at: 0,
             in_feed: false,
         });
         true

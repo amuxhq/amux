@@ -193,7 +193,7 @@ pub fn all() -> Vec<Story> {
         story("chat.queued", || {
             chat(Kind::ClaudeSdk, "recorded_steer_folded", Pick::Queued)
         }),
-        story("chat.away", held_while_away),
+        story("chat.away", draft_while_away),
         story("chat.exited", exited_with_a_draft),
         story("chat.signed-out", || {
             chat(Kind::ClaudeSdk, "recorded_sign_in_problem", Pick::Last)
@@ -333,7 +333,7 @@ fn recorded(kind: Kind, fixture: &str, pick: Pick) -> ChatScene {
     }
 }
 
-fn held_while_away() -> Scene {
+fn draft_while_away() -> Scene {
     let mut scene = recorded(Kind::ClaudeSdk, "recorded_multi_turn", Pick::Last);
     scene.state.update(Msg::Host(wire::HostEntry {
         host: Some(wire::Host {
@@ -346,15 +346,12 @@ fn held_while_away() -> Scene {
     scene.state.update(Msg::Event(wire::SessionEvent {
         of: Some(wire::session_event::Of::Detached(wire::Detached {})),
     }));
-    scene.state.update(Msg::Send(wire::Input::new(
-        b"held".to_vec(),
-        wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
-                text: "Now say the word back to me.".into(),
-                attachments: vec![],
-            })),
-        }),
-    )));
+    let theme = Theme::dark(tui::ColorMode::TrueColor);
+    for c in "Now say the word back to me.".chars() {
+        scene
+            .view
+            .key(&scene.state, KeyEvent::from(KeyCode::Char(c)), theme);
+    }
     Scene::Chat(Box::new(scene))
 }
 

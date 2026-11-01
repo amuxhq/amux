@@ -2598,8 +2598,8 @@ fn the_overview_holds_the_changes_it_is_given() {
 /// if the agent was idle, in the queue otherwise. While the link is down it
 /// waits for the host there; after catching up, one that never showed up
 /// may not have arrived and waits last in the queue for the person. One
-/// its host could not take certainly never left: it is held, and goes again
-/// once the chat is current.
+/// its host could not take never left: it is not on its way at all but
+/// refused, for the composer to take back, and nothing sends it again.
 #[test]
 fn prompts_on_their_way_follow_the_sending_rules() {
     let kind = Kind::Codex;
@@ -2644,10 +2644,18 @@ fn prompts_on_their_way_follow_the_sending_rules() {
         }),
     ));
     assert!(
-        prompts_underway(&state)
+        !prompts_underway(&state)
             .iter()
-            .any(|prompt| prompt.input_id == b"p3" && prompt.underway == Underway::Held),
-        "one its host could not take is held"
+            .any(|prompt| prompt.input_id == b"p3"),
+        "one its host could not take is not on its way"
+    );
+    assert_eq!(
+        refused_prompts(&state),
+        vec![RefusedPrompt {
+            input_id: b"p3".to_vec(),
+            reason: ui_state::Refusal::of(wire::Refusal::HostUnreachable),
+        }],
+        "one its host could not take is refused"
     );
     state.update(snapshot(kind, Phase::Working, vec![], vec![]));
     state.update(caught_up());
@@ -2663,17 +2671,12 @@ fn prompts_on_their_way_follow_the_sending_rules() {
                 Lands::Queue,
                 Underway::Sending { waiting: false }
             ),
-            (
-                &b"p3"[..],
-                Lands::Queue,
-                Underway::Sending { waiting: false }
-            ),
             (&b"p1"[..], Lands::Queue, Underway::MayNotHaveArrived),
         ],
-        "caught up, the held one goes again and the lost one may not have \
-         arrived and waits last"
+        "caught up, the refused one stays refused and the lost one may not \
+         have arrived and waits last"
     );
-    assert!(refused_prompts(&state).is_empty(), "nothing was refused");
+    assert_eq!(refused_prompts(&state).len(), 1, "nothing sent it again");
 }
 
 /// A tool server's form reads once, here, for every client: its fields in

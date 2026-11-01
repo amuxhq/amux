@@ -557,7 +557,6 @@ pub(crate) fn frame(state: &SessionState, now_ms: i64, ended: Option<String>) ->
 fn outcome_state(outcome: &InputOutcome) -> InputState {
     match outcome {
         InputOutcome::Lost => InputState::Uncertain,
-        InputOutcome::Held => InputState::Held,
         InputOutcome::Reply(reply) => match &reply.of {
             Some(send_input_response::Of::Accepted(accepted)) if accepted.queued => {
                 InputState::Queued
@@ -576,7 +575,6 @@ fn acted(result: Result<(), InputError>) -> ActOutcome {
         Ok(()) => ActOutcome::Done,
         Err(InputError::Rejected(reason)) => ActOutcome::Rejected(reason),
         Err(InputError::Uncertain) => ActOutcome::NotConfirmed,
-        Err(InputError::Held) => ActOutcome::Held,
     }
 }
 

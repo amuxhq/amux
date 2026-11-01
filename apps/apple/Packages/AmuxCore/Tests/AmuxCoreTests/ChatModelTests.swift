@@ -191,19 +191,9 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         return ordered.filter { keys.contains($0.id) }
     }
 
-    /// Sends are held, as for a host that cannot be reached: each is listed
-    /// held with its draft, under ids from 1.
-    var holdsSends = false
-
     func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {
         sent.append(draft)
-        let id = [UInt8(sent.count)]
-        guard holdsSends else { return .success(SendOutcome(inputId: id, state: .sent)) }
-        drafts[id] = draft
-        current.underway.append(
-            SentPrompt(inputId: id, text: [.text(draft.words)], lands: .feed, underway: .held))
-        pending.session = true
-        return .success(SendOutcome(inputId: id, state: .held))
+        return .success(SendOutcome(inputId: [UInt8(sent.count)], state: .sent))
     }
 
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { .done }
@@ -634,17 +624,17 @@ final class ChatModelTests: XCTestCase {
         XCTAssertTrue(source.paged.isEmpty)
     }
 
-    func testADraftSentWhileCatchingUpIsHandedOnForTheLibraryToHold() async {
-        // Decided: a chat that is not current still takes a send. The client
-        // library holds it, shown pending with Cancel, and sends it under its
-        // id once the chat is current; the phone does not keep Send disabled.
-        let source = FakeChat(rows: [], frame: frame(mode: .holds(.catchingUp), caughtUp: false))
+    func testADraftIsNotSentWhileCatchingUpAndStaysInTheComposer() async {
+        // Decided: a chat that is not current sends nothing. Send stays off,
+        // the draft stays in the composer, and nothing holds it to send
+        // later; the person sends it once the chat is current.
+        let source = FakeChat(rows: [], frame: frame(mode: .waiting(.catchingUp), caughtUp: false))
         let model = ChatModel(source: source)
         model.draft = "Run the tests."
-        XCTAssertTrue(model.canSend)
-        await model.send()?.value
-        XCTAssertEqual(source.sent.map(\.text), ["Run the tests."])
-        XCTAssertEqual(model.draft, "")
+        XCTAssertFalse(model.canSend)
+        XCTAssertNil(model.send())
+        XCTAssertEqual(source.sent.map(\.text), [])
+        XCTAssertEqual(model.draft, "Run the tests.")
     }
 
     func testAnExitedAgentResumesWithTheDraft() async {
@@ -707,7 +697,7 @@ final class ChatModelTests: XCTestCase {
         let model = ChatModel(source: source)
         XCTAssertEqual(model.draft, "What is this?")
         XCTAssertEqual(model.attachments, [.image(photo)])
-        XCTAssertEqual(model.notice, "Not sent: its host can’t be reached")
+        XCTAssertEqual(model.notice, "Not sent: its host is away")
         XCTAssertEqual(source.discarded, [[8]])
         XCTAssertEqual(model.frame?.refused, [], "taken back once")
     }

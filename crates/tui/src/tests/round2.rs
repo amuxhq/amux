@@ -609,12 +609,11 @@ fn a_prompt_sent_while_its_file_attaches_waits_for_the_file() {
 
 // --- decided behaviour: sends while the host is away ----------------------
 
-/// Decided: a prompt typed while the host can't be reached is handed to the
-/// client library, which holds it as pending (visible, with Cancel) and
-/// sends it when the host is back. Today the composer keeps it as a draft
-/// under "Draft kept · sending waits" and nothing ever sends it.
+/// Decided: a prompt typed while the host can't be reached is refused at
+/// once and never leaves the composer, whose top edge says the host is
+/// away; nothing holds it or sends it later.
 #[test]
-fn a_prompt_sent_while_the_host_is_away_is_handed_on_to_be_held() {
+fn a_prompt_sent_while_the_host_is_away_stays_in_the_composer() {
     let mut state = chat(replies(1, 5));
     state.update(Msg::Host(wire::HostEntry {
         host: Some(wire::Host {
@@ -629,13 +628,13 @@ fn a_prompt_sent_while_the_host_is_away_is_handed_on_to_be_held() {
     typed(&mut view, &state, "send this when studio is back");
     let effects = view.key(&state, key(KeyCode::Enter), theme());
     assert!(
-        effects.iter().any(|effect| matches!(
-            effect,
-            ChatEffect::Prompt { text, .. } if text == "send this when studio is back"
-        )),
-        "Enter while studio is away held nothing to send: {effects:?}, draft {:?}",
+        no_prompt(&effects) && view.editor.text() == "send this when studio is back",
+        "Enter while studio is away did {effects:?}, draft {:?}",
         view.editor.text()
     );
+    let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
+    let screen = text(&buffer);
+    assert!(screen.contains("studio is away"), "{screen}");
 }
 
 // --- decided behaviour: commands the client handles -----------------------

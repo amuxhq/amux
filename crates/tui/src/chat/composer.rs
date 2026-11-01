@@ -222,13 +222,6 @@ pub enum QueueEntry {
         input_id: Vec<u8>,
         text: Vec<Segment>,
     },
-    /// This client's prompt that never left, the agent's host out of
-    /// reach: the client holds it and sends it when `host` is back.
-    Held {
-        input_id: Vec<u8>,
-        text: Vec<Segment>,
-        host: String,
-    },
 }
 
 impl QueueEntry {
@@ -248,7 +241,6 @@ impl QueueEntry {
             QueueEntry::Unconfirmed { .. } => {
                 &[("enter", "resend"), ("backspace", "discard"), QUEUED, BACK]
             }
-            QueueEntry::Held { .. } => &[("enter", "cancel"), QUEUED, BACK],
             QueueEntry::Queued(_) | QueueEntry::Sending { .. } => &[QUEUED, BACK],
         }
     }
@@ -256,9 +248,7 @@ impl QueueEntry {
     pub fn text(&self) -> &[Segment] {
         match self {
             QueueEntry::Queued(row) => &row.text,
-            QueueEntry::Sending { text, .. }
-            | QueueEntry::Unconfirmed { text, .. }
-            | QueueEntry::Held { text, .. } => text,
+            QueueEntry::Sending { text, .. } | QueueEntry::Unconfirmed { text, .. } => text,
         }
     }
 
@@ -276,7 +266,6 @@ impl QueueEntry {
             } => format!("waiting for {host}…"),
             QueueEntry::Sending { .. } => "queued".to_owned(),
             QueueEntry::Unconfirmed { .. } => "may not have arrived".to_owned(),
-            QueueEntry::Held { host, .. } => format!("sends when {host} is back"),
         }
     }
 
@@ -296,7 +285,6 @@ impl QueueEntry {
             }
             QueueEntry::Sending { .. } => Vec::new(),
             QueueEntry::Unconfirmed { .. } => vec!["[Resend]", "[Discard]"],
-            QueueEntry::Held { .. } => vec!["[Cancel]"],
         }
     }
 }

@@ -282,15 +282,27 @@ mod tests {
         assert!(folders.hold(&ours, session));
         assert!(!folders.hold(&ours, "55555555-5555-5555-5555-555555555555"));
         assert!(!folders.hold(&project.join("other.jsonl"), session));
+        assert!(
+            !folders.hold(
+                &config
+                    .join("projects/elsewhere")
+                    .join(format!("{session}.jsonl")),
+                session
+            )
+        );
         assert!(!folders.hold(
-            &config.join("projects/elsewhere").join(format!("{session}.jsonl")),
+            Path::new(&format!("/home/me/.ssh/{session}.jsonl")),
             session
         ));
-        assert!(!folders.hold(Path::new(&format!("/home/me/.ssh/{session}.jsonl")), session));
-        assert!(!folders.hold(
-            &project.join("..").join("x").join(format!("{session}.jsonl")),
-            session
-        ));
+        assert!(
+            !folders.hold(
+                &project
+                    .join("..")
+                    .join("x")
+                    .join(format!("{session}.jsonl")),
+                session
+            )
+        );
 
         let long = root.path().join("d".repeat(240));
         std::fs::create_dir_all(&long).unwrap();

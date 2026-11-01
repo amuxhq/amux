@@ -849,7 +849,10 @@ mod tests {
             .iter()
             .map(|tool| tool["name"].as_str().unwrap().to_owned())
             .collect();
-        let tabled: Vec<String> = super::TOOLS.iter().map(|(name, _)| (*name).to_owned()).collect();
+        let tabled: Vec<String> = super::TOOLS
+            .iter()
+            .map(|(name, _)| (*name).to_owned())
+            .collect();
         assert_eq!(listed, tabled);
         assert!(!super::unasked().any(|name| name == wire::ATTACH_TOOL));
     }

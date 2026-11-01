@@ -409,8 +409,8 @@ impl<'a> Scratch<'a> {
         // permissions with it.
         match std::fs::File::open(&own) {
             Ok(mut from) => {
-                let mut to = std::fs::File::create_new(dir.path().join(INDEX))
-                    .map_err(GitError::Scratch)?;
+                let mut to =
+                    std::fs::File::create_new(dir.path().join(INDEX)).map_err(GitError::Scratch)?;
                 std::io::copy(&mut from, &mut to).map_err(GitError::Scratch)?;
             }
             // A repository nothing was ever added to has no index yet.
@@ -630,11 +630,13 @@ mod tests {
         std::fs::write(repo.path().join("untracked.txt"), "y\n").unwrap();
 
         let scratch = super::Scratch::new(repo.path()).await.unwrap();
-        let mode = |path: &std::path::Path| {
-            std::fs::metadata(path).unwrap().permissions().mode() & 0o777
-        };
+        let mode =
+            |path: &std::path::Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(scratch.dir.path()), 0o700);
         assert!(scratch.index().is_file());
-        assert_ne!(std::fs::read(&own).unwrap(), std::fs::read(scratch.index()).unwrap());
+        assert_ne!(
+            std::fs::read(&own).unwrap(),
+            std::fs::read(scratch.index()).unwrap()
+        );
     }
 }

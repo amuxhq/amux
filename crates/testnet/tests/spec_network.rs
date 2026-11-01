@@ -752,8 +752,13 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
         .expect("the SPAKE2 exchange completes");
         confirm_pair(&net, "desk", pending.token).await
     };
-    let refused = join().await.expect_err("the laptop still trusts the old key");
-    assert_eq!(refused.message(), "Already paired with desk. Unpair it first.");
+    let refused = join()
+        .await
+        .expect_err("the laptop still trusts the old key");
+    assert_eq!(
+        refused.message(),
+        "Already paired with desk. Unpair it first."
+    );
     let pinned = edge(&net, "laptop")
         .trusted()
         .into_iter()
@@ -771,14 +776,19 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
         .into_iter()
         .find(|(host, ..)| *host == desk)
         .unwrap();
-    assert_eq!(pinned.2, rotated, "pairing after the unpair trusts the new key");
+    assert_eq!(
+        pinned.2, rotated,
+        "pairing after the unpair trusts the new key"
+    );
     peer_inventory_hosts(&edge(&net, "laptop"), desk)
         .await
         .expect("the laptop calls the rotated desk");
     peer_inventory_hosts(&edge(&net, "desk"), laptop)
         .await
         .expect("the rotated desk calls the laptop");
-    println!("the rotated desk was refused on its old key and linked again after unpairing and pairing");
+    println!(
+        "the rotated desk was refused on its old key and linked again after unpairing and pairing"
+    );
 
     net.shutdown().await.unwrap();
 }
@@ -852,7 +862,10 @@ async fn a_pairing_under_a_paired_hosts_id_with_another_key_is_refused() {
     let refused = confirm_pair(&net, "new-desk", pending.token)
         .await
         .expect_err("the laptop already trusts the desk under its old key");
-    assert_eq!(refused.message(), "Already paired with desk. Unpair it first.");
+    assert_eq!(
+        refused.message(),
+        "Already paired with desk. Unpair it first."
+    );
     let pinned = edge(&net, "laptop")
         .trusted()
         .into_iter()
@@ -865,7 +878,10 @@ async fn a_pairing_under_a_paired_hosts_id_with_another_key_is_refused() {
         "the real desk's link stays up"
     );
     drop(old);
-    println!("a second machine claiming the desk's id was refused: {}", refused.message());
+    println!(
+        "a second machine claiming the desk's id was refused: {}",
+        refused.message()
+    );
 
     net.shutdown().await.unwrap();
 }

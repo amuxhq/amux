@@ -123,7 +123,9 @@ pub fn validate_host_name(host_name: &str) -> Result<(), ConfigError> {
 pub(crate) fn default_socket_dir() -> Option<PathBuf> {
     let var = |name| std::env::var_os(name).filter(|value| !value.is_empty());
     let base = if cfg!(target_os = "macos") {
-        var("TMPDIR").map(PathBuf::from).or_else(darwin_user_temp_dir)
+        var("TMPDIR")
+            .map(PathBuf::from)
+            .or_else(darwin_user_temp_dir)
     } else {
         var("XDG_RUNTIME_DIR").map(PathBuf::from)
     };

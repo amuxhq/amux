@@ -28,8 +28,7 @@ use crate::claude_common::{
     permission_scopes, plan_ask, question_ask, question_ask_text, split_tool_name, tool_input,
     tool_result_text,
 };
-use crate::shared::json_as_written;
-use crate::shared::without_terminal_codes;
+use crate::shared::{json_as_written, without_terminal_codes};
 use crate::{Channel, Effect, Emit, Fact, ItemDraft, ask_item, is_status_tool, status_working_on};
 
 const INTERRUPTED: &str = "[Request interrupted by user";

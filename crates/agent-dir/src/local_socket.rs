@@ -387,9 +387,7 @@ mod imp {
         options.reject_remote_clients(true);
         // SAFETY: the attributes and the descriptor they point at outlive
         // the call, which copies what it needs.
-        unsafe {
-            options.create_with_security_attributes_raw(name, (&raw mut attributes).cast())
-        }
+        unsafe { options.create_with_security_attributes_raw(name, (&raw mut attributes).cast()) }
     }
 
     /// A path already in the pipe namespace (the front door's default,
@@ -439,8 +437,8 @@ mod imp {
             static ME: OnceLock<Result<Me, String>> = OnceLock::new();
             ME.get_or_init(|| {
                 // SAFETY: the pseudo handle needs no closing.
-                let (sid, text) = sid_of(unsafe { GetCurrentProcess() })
-                    .map_err(|error| error.to_string())?;
+                let (sid, text) =
+                    sid_of(unsafe { GetCurrentProcess() }).map_err(|error| error.to_string())?;
                 // Protected, so nothing is inherited; this user may do
                 // anything; nobody else is named, so nobody else may open it.
                 let sddl: Vec<u16> = format!("D:P(A;;GA;;;{text})")

@@ -324,13 +324,21 @@ impl Edge {
         let mut last_unreachable = None;
         let mut selected = None;
         // A host with no pairing window open refuses the connection before
-        // reading the secret; that refusal answers like any other secret
-        // failure, whether it ends the dial or the call that follows it.
+        // reading the secret, whether that ends the dial or the call that
+        // follows it. Any QUIC listener at one of the code's addresses may
+        // be some other machine, so the refusal is a miss for that address
+        // alone, unless discovery found the host there; once every address
+        // has missed, it answers like any other secret failure.
+        let mut no_window = false;
         let mut dials = PairingDials::start(&self.quic_endpoint, &plan);
         while let Some((addr, found, dial)) = dials.next().await {
             let dial = match dial {
                 Ok(dial) => dial,
-                Err(DialMiss::NoPairingWindow) => return Err(invalid_pin()),
+                Err(DialMiss::NoPairingWindow) if found => return Err(invalid_pin()),
+                Err(DialMiss::NoPairingWindow) => {
+                    no_window = true;
+                    continue;
+                }
                 Err(DialMiss::Unreachable(error)) => {
                     last_unreachable = Some(error);
                     continue;
@@ -347,7 +355,8 @@ impl Edge {
                 .await
                 .map_err(refused);
             match result {
-                Err(_) if dial.refused() => return Err(invalid_pin()),
+                Err(_) if dial.refused() && found => return Err(invalid_pin()),
+                Err(_) if dial.refused() => no_window = true,
                 Ok(pending) => {
                     selected = Some((pending, RouteKind::Direct));
                     break;
@@ -364,6 +373,9 @@ impl Edge {
             }
         }
         drop(dials);
+        if selected.is_none() && no_window {
+            return Err(invalid_pin());
+        }
         // No address answered: every neighbor announcing the host is tried,
         // paired hosts first, since they forward on any plan and the cloud
         // relay only on a paid one.

@@ -715,7 +715,8 @@ async fn hook_payloads(
         if stream.read_to_end(&mut bytes).await.is_err() || bytes.is_empty() {
             continue;
         }
-        let (payload, messaging) = claude::hooks::unwrap_forwarded(&bytes).unwrap_or((bytes, None));
+        let (payload, messaging) =
+            crate::claude::hooks::unwrap_forwarded(&bytes).unwrap_or((bytes, None));
         let payload = answers.hold(payload, stream);
         if let Some(messaging) = messaging
             && events

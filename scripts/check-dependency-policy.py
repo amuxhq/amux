@@ -30,13 +30,11 @@ ALLOWED_LOCAL = {
     # The pure per-kind step, and the per-kind body redactor beside it.
     "interpret": {"attachments", "claude-protocol", "codex-protocol", "redaction", "wire"},
     # The agent process: its lock, journal and sockets, the interpreter,
-    # and the provider hosts.
+    # and the provider hosts, Claude's in its `claude` module.
     "agent": {
-        "agent-core", "agent-dir", "attachments", "claude", "claude-protocol", "codex",
-        "codex-protocol", "core-ring", "git-facts", "interpret", "journal", "log-file", "pty-host",
-        "wire",
+        "agent-core", "agent-dir", "attachments", "claude-protocol", "codex", "codex-protocol",
+        "core-ring", "git-facts", "interpret", "journal", "log-file", "pty-host", "wire",
     },
-    "claude": {"claude-protocol"},
     "codex": set(),
     # Each provider's messages as types: pure, so the interpreter the phone
     # links can read them. PURE_EXTERNAL below bounds what they may pull in.
@@ -49,7 +47,7 @@ ALLOWED_LOCAL = {
     # interpret only for the dump path's per-kind redactor: the one stated
     # exception to "the daemon interprets nothing".
     "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "version-stamp", "wire"},
-    "amux": {"agent", "agent-dir", "analytics", "claude", "client", "log-file", "node", "settings", "tui", "wire"},
+    "amux": {"agent", "agent-dir", "analytics", "client", "log-file", "node", "settings", "tui", "wire"},
     # The version stamp a release tool can rewrite in a built binary, and the
     # release manifest the tool signs and the daemon verifies; the xtask
     # shares both without building the daemon.
@@ -102,8 +100,7 @@ CORES_ALLOWED_LOCAL = {
 # (app-ffi, app-embedded) hosts the runtime in process and is not one of them.
 UI_CRATES = {"model", "client", "ui-state", "ui-view", "ui-runtime", "tui", "app-runtime"}
 FORBIDDEN_FOR_UI = {
-    "node", "store", "interpret", "agent", "claude", "claude-protocol", "codex", "codex-protocol",
-    "pty-host",
+    "node", "store", "interpret", "agent", "claude-protocol", "codex", "codex-protocol", "pty-host",
 }
 # The protocol crates hold types and nothing else: no process, socket or
 # async runtime code may come in through a dependency.

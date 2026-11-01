@@ -9,7 +9,7 @@ own:
 | Layer | Claude | Codex | Holds |
 |---|---|---|---|
 | Protocol | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | [`codex-protocol`](../crates/codex-protocol/src/lib.rs) | Every message in both directions, as types, with a decoder and an encoder. Nothing else. |
-| Host | [`claude`](../crates/claude/src/lib.rs) | [`codex`](../crates/codex/src/lib.rs) | Starting the provider and carrying its bytes: launch arguments, the process, the terminal, sockets, the transcript file, the hook command. |
+| Host | [`agent::claude`](../crates/agent/src/claude.rs) | [`codex`](../crates/codex/src/lib.rs) | Starting the provider and carrying its bytes: launch arguments, the process, the terminal, sockets, the transcript file, the hook command. |
 | Client | the agent process and the [interpreters](INTERPRETERS.md) | the agent process and the [interpreters](INTERPRETERS.md) | Deciding what to send and what what was received means. |
 
 ## Protocol
@@ -48,14 +48,15 @@ provider sends shows up: as a failed test naming the line, not as a quiet
 
 ## Host
 
-A host crate knows how to start the provider and move bytes, and takes
-every message type from its protocol crate.
+A host knows how to start the provider and move bytes, and takes every
+message type from its protocol crate.
 
-- `claude` builds Claude Code's launch settings and the environment it
-  scrubs, carries hook payloads from the hook command to the agent process
-  over a socket, reaches Claude's messaging socket, finds its session
-  files, and probes its version. The agent process uses it for terminal
-  Claude, and hosts the terminal and follows the transcript itself.
+- `agent::claude`, a module of the agent process, builds Claude Code's
+  launch settings and the environment it scrubs, carries hook payloads
+  from the hook command to the agent process over a socket, reaches
+  Claude's messaging socket, finds its session files, and probes its
+  version. The rest of the agent process uses it for terminal Claude, and
+  hosts the terminal and follows the transcript itself.
 - `codex` starts `codex app-server` listening on a socket in the agent's
   folder (stdio on Windows) and carries whole messages to and from it as
   bytes; the agent process and its interpreter build and read them with

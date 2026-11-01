@@ -581,9 +581,9 @@ nicer in several places, and Windows pays for each:
 
 ![The wire crate is the only thing every side shares. interpret reads provider events on the agent side, one module per kind; the UI lib never links a store.](figures/crate-layers.svg)
 
-Every workspace member, grouped by layer. The figure draws `codex` beside
-`claude` under the agent: it starts Codex's app server and carries its
-bytes, and the agent process speaks the protocol itself.
+Every workspace member, grouped by layer. The figure draws the agent with
+its provider hosts inside it, beside the two protocol crates that type
+every message a provider sends or is sent.
 
 **Shared values** — no dependencies on other layers.
 
@@ -606,11 +606,10 @@ bytes, and the agent process speaks the protocol itself.
 | [`agent-dir`](../crates/agent-dir/src/lib.rs) | The directory contract: names, the lock, local sockets, control-socket framing and the clock both sides' deadlines run on. |
 | [`journal`](../crates/journal/src/lib.rs) | Append-only journal segments: writer, reader and reclaiming. |
 | [`interpret`](../crates/interpret/src/lib.rs) | The per-kind interpreters (`claude_pty`, `claude_sdk`, `codex`), their shared core, the per-kind body redactor and the golden harness. See [interpreters](INTERPRETERS.md). |
-| [`agent`](../crates/agent/src/lib.rs) | The agent process (`amux internal agent <dir>`) and the tool server (`amux internal mcp <dir>`). |
+| [`agent`](../crates/agent/src/lib.rs) | The agent process (`amux internal agent <dir>`) and the tool server (`amux internal mcp <dir>`), with each provider's host in a module of its own: [`claude`](../crates/agent/src/claude.rs) (launch settings, hook forwarding, the messaging socket, session files and the version probe). |
 | [`git-facts`](../crates/git-facts/src/lib.rs) | An agent folder's branch, base branch and change totals, read by running git; shared by the agent process and the daemon. |
 | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | Claude Code's headless stream, transcript rows and hook payloads as types, with a tolerant decoder. See [provider crates](PROVIDER_CRATES.md). |
 | [`codex-protocol`](../crates/codex-protocol/src/lib.rs) | Codex's app-server messages as types, with a tolerant decoder. |
-| [`claude`](../crates/claude/src/lib.rs) | Claude Code integration: launch, hooks, transcript reading, messaging and version probing. |
 | [`codex`](../crates/codex/src/lib.rs) | Starting Codex's app server on a socket other clients can join, and carrying its messages as bytes. |
 | [`pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal process hosting. |
 
@@ -685,8 +684,8 @@ workspace crates, and ignores dev-dependencies. Its rules:
    `replay-support` may be depended on only by each other.
 3. **The UI never reaches the daemon or a provider.** `model`, `client`,
    `ui-state`, `ui-view`, `ui-runtime`, `tui` and `app-runtime` may not
-   reach `node`, `store`, `interpret`, `agent`, `claude`, `claude-protocol`,
-   `codex`, `codex-protocol` or `pty-host`, directly or through any chain of
+   reach `node`, `store`, `interpret`, `agent`, `claude-protocol`, `codex`,
+   `codex-protocol` or `pty-host`, directly or through any chain of
    dependencies.
 4. **A core reaches no runtime.** Each state-machine core's edges stay
    within its listed set, an upper bound rather than an exact list, so a
@@ -706,14 +705,14 @@ The allowed sets encode the layering above:
 | `journal`, `store`, `agent-dir`, `attachments` | `wire` | |
 | `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
 | `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `redaction`, `wire` | the pure step and its body redactor |
-| `claude` → `claude-protocol`, `pty-host`; `codex` → `codex-protocol` | | |
+| `codex` | nothing in the workspace | Codex's host carries its messages as bytes; the agent reads them with `codex-protocol` |
 | `daemon-core` | at most `core-ring`, `journal`, `store`, `wire` | holds the store, reads journals, records its inputs |
 | `relay-core` | at most `daemon-core` | built from the daemon core's link and routing state |
 | `path-core` | at most `daemon-core` | names links and reports dumps as the daemon core does |
 | `socket-core` | at most `path-core` | names links and paths as the path machine does |
 | `agent-core` | at most `core-ring`, `interpret`, `journal`, `wire` | wraps the interpreter |
 | `supervisor-core` | at most `release`, `version-stamp` | reads release manifests and version stamps |
-| `agent` | `agent-core`, `agent-dir`, `attachments`, `claude`, `claude-protocol`, `codex`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `log-file`, `pty-host`, `wire` | the agent core's driver, and the only production crate that reads a provider |
+| `agent` | `agent-core`, `agent-dir`, `attachments`, `claude-protocol`, `codex`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `log-file`, `pty-host`, `wire` | the agent core's driver with Claude's host inside it, and the only production crate that reads a provider |
 | `node` | `agent-dir`, `analytics`, `core-ring`, `daemon-core`, `git-facts`, `interpret`, `journal`, `log-file`, `path-core`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `version-stamp`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the dump's per-kind redactor |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
 | `model` → `wire`; `ui-state` → `model`, `wire`; `ui-view` → `attachments`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library |
@@ -721,7 +720,7 @@ The allowed sets encode the layering above:
 | `app-runtime` | `client`, `model`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | the phone's chats with no `node` |
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` | the daemon in the phone's process |
 | `app-ffi` | `app-embedded`, `app-runtime`, `client`, `model`, `node`, `ui-view` | the C ABI over both |
-| `amux` | `agent`, `agent-dir`, `analytics`, `claude`, `client`, `log-file`, `node`, `settings`, `tui`, `wire` | the one binary |
+| `amux` | `agent`, `agent-dir`, `analytics`, `client`, `log-file`, `node`, `settings`, `tui`, `wire` | the one binary |
 | `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `socket-core`, `store`, `supervisor-core`, `ui-state`, `wire` | the properties, explored over the real cores, store and session state |
 | `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `redaction`, `store`, `ui-state`, `ui-view`, `wire` | replays the four stages, judging the models' properties; a debugging tool nothing links |
 | `qualification` | `node`, `provider-fakes`, `pty-host`, `redaction`, `testnet`, `wire` | the live lane and the performance workloads over the harness; its probes host terminal Claude on a pseudo-terminal of their own and sanitize what they record |

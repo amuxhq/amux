@@ -35,7 +35,7 @@ local edge to a fixed list:
 | `app-ffi` | `app-embedded`, `app-runtime`, `client`, `model`, `node`, `ui-view` |
 
 `app-runtime` is also one of the UI crates, which may not reach `node`,
-`store`, `interpret`, `agent`, `claude`, `codex` or `pty-host` directly or
+`store`, `interpret`, `agent`, `codex` or `pty-host` directly or
 through anything else, and no production crate may depend on test support.
 `app-embedded` and `app-ffi` host the runtime in process and are the
 deliberate exception to "no UI crate links the daemon".

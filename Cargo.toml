@@ -10,7 +10,6 @@ members = [
     "crates/agent-dir",
     "crates/amux",
     "crates/attachments",
-    "crates/claude",
     "crates/claude-protocol",
     "crates/client",
     "crates/codex",
@@ -90,7 +89,6 @@ ui-view = { path = "crates/ui-view" }
 tui = { path = "crates/tui" }
 pty-host = { path = "crates/pty-host" }
 provider-fakes = { path = "crates/provider-fakes" }
-claude = { path = "crates/claude" }
 claude-protocol = { path = "crates/claude-protocol" }
 codex = { path = "crates/codex" }
 codex-protocol = { path = "crates/codex-protocol" }

@@ -16,6 +16,7 @@
 
 pub mod attach;
 pub mod catalogue;
+pub mod claude;
 mod dir;
 mod dump;
 mod git;

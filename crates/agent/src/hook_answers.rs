@@ -38,7 +38,7 @@ impl HookAnswers {
         let answered = fields
             .get("hook_event_name")
             .and_then(Value::as_str)
-            .is_some_and(|name| claude::hooks::ANSWERED_EVENTS.contains(&name));
+            .is_some_and(|name| crate::claude::hooks::ANSWERED_EVENTS.contains(&name));
         if !answered {
             return payload;
         }

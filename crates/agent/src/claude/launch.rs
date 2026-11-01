@@ -169,7 +169,7 @@ fn deep_merge(destination: &mut Value, addition: Value) {
 
 /// The hook events terminal Claude reports to the agent. MessageDisplay
 /// streams the reply as Claude draws it; PermissionRequest and Elicitation
-/// are answered (see [`crate::hooks::ANSWERED_EVENTS`]).
+/// are answered (see [`crate::claude::hooks::ANSWERED_EVENTS`]).
 pub const HOOK_EVENTS: &[&str] = &[
     "SessionStart",
     "SessionEnd",
@@ -202,7 +202,7 @@ fn managed_hook_settings(command: &[String]) -> Value {
                 "command": program,
                 "args": args,
             });
-            if crate::hooks::ANSWERED_EVENTS.contains(event) {
+            if crate::claude::hooks::ANSWERED_EVENTS.contains(event) {
                 hook["timeout"] = ANSWER_TIMEOUT_SECS.into();
             }
             ((*event).to_owned(), serde_json::json!([{"hooks": [hook]}]))

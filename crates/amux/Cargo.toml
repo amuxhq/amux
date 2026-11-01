@@ -17,7 +17,6 @@ agent = { workspace = true }
 agent-dir = { workspace = true }
 analytics = { workspace = true }
 anyhow = { workspace = true }
-claude = { workspace = true }
 client = { workspace = true }
 clap = { workspace = true }
 crossterm = { workspace = true }

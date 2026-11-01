@@ -72,8 +72,8 @@ pub fn main(provider: &str, command: &str, out: &Path) -> i32 {
 /// except where the organization manages its MCP servers: Claude there
 /// refuses to be told to start none, and starts the organization's.
 async fn ask_claude(command: &str) -> Result<(Catalogue, bool), String> {
-    let managed = claude::launch::managed_mcp(
-        std::env::var_os(claude::launch::MANAGED_SETTINGS_PATH_ENV)
+    let managed = crate::claude::launch::managed_mcp(
+        std::env::var_os(crate::claude::launch::MANAGED_SETTINGS_PATH_ENV)
             .as_deref()
             .map(Path::new),
     );

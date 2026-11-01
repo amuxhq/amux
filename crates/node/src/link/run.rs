@@ -826,10 +826,13 @@ async fn run_established(
                         break;
                     }
                 };
+                // A message this build does not know decodes with no body.
+                // It is dropped and the link carries on, so a later build
+                // can add a control message without both ends updating
+                // together.
                 let Some(body) = message.body else {
-                    let _ = out_tx.send(protocol_error_link_close("message body is missing")).await;
-                    close_reason = wire::LinkCloseReason::ProtocolError;
-                    break;
+                    tracing::debug!("ignored a control message this build does not know");
+                    continue;
                 };
                 match handle_control_body(&ctx, link, body, acceptor_auth.as_mut()).await {
                     ControlAction::Continue => {}
@@ -1909,6 +1912,110 @@ mod tests {
         assert!(!linked(&links, peer.id).await);
         tokio::time::advance(LINK_CONNECT_HELLO_TIMEOUT + Duration::from_millis(1)).await;
 
+        assert_eq!(
+            acceptor_carrier.closed().await,
+            wire::LinkCloseReason::ProtocolError
+        );
+        task.await.unwrap().unwrap();
+        assert!(!linked(&links, peer.id).await);
+    }
+
+    /// Writes `bytes` to the control stream as one frame, as a build that
+    /// knows messages this one does not would.
+    async fn write_raw(sink: &mut ControlSink, bytes: Vec<u8>) {
+        let (result, written) = tokio::sync::oneshot::channel();
+        sink.tx
+            .send(crate::link::carrier::ControlWrite {
+                bytes,
+                declared_len: None,
+                result,
+            })
+            .await
+            .unwrap();
+        written.await.unwrap().unwrap();
+    }
+
+    /// A control message a later build adds, in a field number this build's
+    /// `Message.body` does not have.
+    fn unknown_control_message() -> Vec<u8> {
+        use prost::Message as _;
+        let mut bytes = Vec::new();
+        prost::encoding::encode_key(99, prost::encoding::WireType::LengthDelimited, &mut bytes);
+        prost::encoding::encode_varint(0, &mut bytes);
+        assert_eq!(
+            wire::Message::decode(bytes.as_slice()).unwrap().body,
+            None,
+            "this build reads it as a message with no body"
+        );
+        bytes
+    }
+
+    /// After the handshake a control message this build does not know is
+    /// dropped and the link carries on both ways, so a peer on a later
+    /// build can add one without this host updating first.
+    #[tokio::test]
+    async fn an_unknown_control_message_after_the_handshake_is_ignored() {
+        let local = crate::routing::LiveLocalHost::new(host(1));
+        let peer = host(2);
+        let links = Arc::new(LinkRegistry::new(local.id()));
+        let (connector_carrier, acceptor_carrier) = carrier_pair().await;
+        let ctx = LinkCtx::new_live(local.clone(), links.clone()).with_authenticated_peer(peer.id);
+        let task = tokio::spawn(run_link(ctx, acceptor_carrier.clone()));
+        let (mut sink, mut source) = connector_carrier.control();
+        send_hello(&mut sink, &peer, None).await;
+        expect_accepted(&mut source).await;
+
+        write_raw(&mut sink, unknown_control_message()).await;
+
+        // The host still tells its peer where it is.
+        local.set_public("203.0.113.9:41000".parse().unwrap());
+        let next = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match read_message(&mut source).await.unwrap().unwrap().body {
+                    Some(wire::message::Body::Addresses(addresses)) => return addresses,
+                    Some(wire::message::Body::LinkClose(close)) => {
+                        panic!("the link closed over the unknown message: {close:?}")
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("the change is sent");
+        assert_eq!(next.public_addr.as_deref(), Some("203.0.113.9:41000"));
+        assert!(linked(&links, peer.id).await, "the link is still up");
+
+        // And it still reads what the peer sends after the unknown message:
+        // the peer's close is taken with the peer's reason.
+        write_message(&mut sink, &link_close(wire::LinkCloseReason::UserShutdown))
+            .await
+            .unwrap();
+        assert_eq!(
+            acceptor_carrier.closed().await,
+            wire::LinkCloseReason::UserShutdown
+        );
+        task.await.unwrap().unwrap();
+        assert!(!linked(&links, peer.id).await);
+    }
+
+    /// The handshake is one exchange: a second Hello once it is done
+    /// closes the link as a protocol error.
+    #[tokio::test]
+    async fn a_hello_after_the_handshake_closes_the_link_as_a_protocol_error() {
+        let local = host(1);
+        let peer = host(2);
+        let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
+        let (connector_carrier, acceptor_carrier) = carrier_pair().await;
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(local), links.clone())
+            .with_authenticated_peer(peer.id);
+        let task = tokio::spawn(run_link(ctx, acceptor_carrier.clone()));
+        let (mut sink, mut source) = connector_carrier.control();
+        send_hello(&mut sink, &peer, None).await;
+        expect_accepted(&mut source).await;
+        assert!(linked(&links, peer.id).await);
+
+        send_hello(&mut sink, &peer, None).await;
+        expect_link_close(&mut source, wire::LinkCloseReason::ProtocolError).await;
         assert_eq!(
             acceptor_carrier.closed().await,
             wire::LinkCloseReason::ProtocolError

@@ -765,6 +765,8 @@ What the design already relies on:
   `REFUSAL_UNSUPPORTED`.
 - A phase a client does not know decodes as `PHASE_UNSPECIFIED`, which the
   views draw as idle.
+- A link control message a host does not know is ignored once the handshake
+  is done, and the link carries on (see [link control](PROTOCOL.md#link-control)).
 
 ### Versions
 

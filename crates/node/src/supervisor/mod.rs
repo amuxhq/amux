@@ -109,7 +109,8 @@ pub struct UpdatePolicy {
     /// Whether the hourly tick installs releases (`updates: auto`); without
     /// it only `amux update` does.
     pub auto: bool,
-    /// None when this build trusts no release key: nothing can be installed.
+    /// None when this build trusts no release key for the configured feed:
+    /// nothing can be installed.
     pub source: Option<UpdateSource>,
 }
 
@@ -546,7 +547,8 @@ impl Driver {
             } else {
                 match policy.source {
                     None => Listed::Nothing(
-                        "this build trusts no release key, so it installs nothing".into(),
+                        "this build trusts no release key for its feed, so it installs nothing"
+                            .into(),
                     ),
                     Some(source) => match list(&source).await {
                         Ok(manifest) => Listed::Manifest {

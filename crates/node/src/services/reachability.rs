@@ -492,6 +492,7 @@ async fn fly(
     drop(me);
     let sent = tokio::time::Instant::now();
     let tried = flight.to_string();
+    let planned = planned_addresses(&flight);
     let resumed = channels
         .open_resumed_on(host, calls, flight)
         .await
@@ -503,12 +504,33 @@ async fn fly(
         .carrier
         .remote_address()
         .and_then(|stand_in| endpoint.socket.path_of(stand_in))
-        .and_then(|path| match path {
-            Path::Direct(addr) => Some(addr),
-            _ => None,
-        });
+        .and_then(|path| answered_at(&planned, path));
     first_flights.landed(landed, own, host, sent, requests, resumed);
     Ok(AttemptOutcome::Linked { addr })
+}
+
+/// The addresses a flight dials the host at directly.
+fn planned_addresses(flight: &Flight) -> Vec<std::net::SocketAddr> {
+    flight
+        .paths
+        .iter()
+        .filter_map(|path| match path {
+            Path::Direct(addr) => Some(*addr),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The address to remember the host answered at, when its link came up on
+/// `path`: only one the flight dialled. Any packet can move a link to a
+/// path of its sender's choosing before the link has proved anything, so
+/// an address the flight never named is not kept as where the host is; a
+/// host that moved says where it is now in its signed Hello.
+fn answered_at(planned: &[std::net::SocketAddr], path: Path) -> Option<std::net::SocketAddr> {
+    match path {
+        Path::Direct(addr) if planned.contains(&addr) => Some(addr),
+        _ => None,
+    }
 }
 
 /// Runs `amux relay` on the far host over SSH, joining the profile whose
@@ -841,5 +863,31 @@ struct AbortTaskOnDrop(tokio::task::AbortHandle);
 impl Drop for AbortTaskOnDrop {
     fn drop(&mut self) {
         self.0.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_flight_remembers_only_an_address_it_dialled_as_where_the_host_answered() {
+        let lan: std::net::SocketAddr = "192.168.1.20:4433".parse().unwrap();
+        let elsewhere: std::net::SocketAddr = "203.0.113.9:4433".parse().unwrap();
+        let flight = Flight {
+            paths: vec![
+                Path::Direct(lan),
+                Path::Forwarded(crate::link::socket::LinkId(1)),
+            ],
+            through_relay: true,
+        };
+        let planned = planned_addresses(&flight);
+        assert_eq!(planned, [lan]);
+        assert_eq!(answered_at(&planned, Path::Direct(lan)), Some(lan));
+        assert_eq!(answered_at(&planned, Path::Direct(elsewhere)), None);
+        assert_eq!(
+            answered_at(&planned, Path::Forwarded(crate::link::socket::LinkId(1))),
+            None
+        );
     }
 }

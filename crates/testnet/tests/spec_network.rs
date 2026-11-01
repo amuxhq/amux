@@ -701,8 +701,9 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
     net.discovery().withdraw_host(desk);
 
     // The desk comes back with a new key under the same id. The laptop's
-    // pinned key no longer matches, so neither side can link, until the two
-    // pair again and the new key replaces the old.
+    // pinned key no longer matches, so neither side can link. Pairing again
+    // never replaces the key by itself: the laptop refuses until its person
+    // unpairs the old desk, and then the new key is trusted.
     let key = node::harness::device_key_path(&node::profile_dir(
         &net.host("desk").unwrap().data_dir,
         net.host("desk").unwrap().profile,
@@ -738,21 +739,56 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
             .await
             .is_err()
     );
-    pair(&net, "desk", "laptop").await;
+    let window = start_pairing(&net, "laptop", pin_window()).await.unwrap();
+    let join = async || {
+        let pending = begin_pair(
+            &net,
+            "desk",
+            Some(laptop),
+            begin_pair_request::Secret::Pin(pin_of(&window)),
+            window.addrs.clone(),
+        )
+        .await
+        .expect("the SPAKE2 exchange completes");
+        confirm_pair(&net, "desk", pending.token).await
+    };
+    let refused = join()
+        .await
+        .expect_err("the laptop still trusts the old key");
+    assert_eq!(
+        refused.message(),
+        "Already paired with desk. Unpair it first."
+    );
+    let pinned = edge(&net, "laptop")
+        .trusted()
+        .into_iter()
+        .find(|(host, ..)| *host == desk)
+        .unwrap();
+    assert_eq!(pinned.2, desk_key, "the refused pairing left the old key");
+    edge(&net, "laptop")
+        .unpair(wire::HostRef::id(desk.as_bytes().to_vec()))
+        .await
+        .unwrap();
+    join().await.expect("the person confirms the peer");
     until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     let pinned = edge(&net, "laptop")
         .trusted()
         .into_iter()
         .find(|(host, ..)| *host == desk)
         .unwrap();
-    assert_eq!(pinned.2, rotated, "pairing again replaced the pinned key");
+    assert_eq!(
+        pinned.2, rotated,
+        "pairing after the unpair trusts the new key"
+    );
     peer_inventory_hosts(&edge(&net, "laptop"), desk)
         .await
         .expect("the laptop calls the rotated desk");
     peer_inventory_hosts(&edge(&net, "desk"), laptop)
         .await
         .expect("the rotated desk calls the laptop");
-    println!("the rotated desk was refused on its old key and linked again after pairing");
+    println!(
+        "the rotated desk was refused on its old key and linked again after unpairing and pairing"
+    );
 
     net.shutdown().await.unwrap();
 }
@@ -775,12 +811,11 @@ async fn stored_addrs(net: &Net, host: &str, peer: &str) -> Vec<String> {
     serde_json::from_str(direct).expect("addresses as the daemon writes them")
 }
 
-/// Pairing with a host under an id this host already trusts replaces the
-/// pinned key, and a link the old key still holds open is closed, saying
-/// the trust was replaced, before the new key is trusted: nothing opened
-/// under the old key outlives the replacement.
+/// A machine that pairs under the id of a host this one already trusts,
+/// with another key, is refused in words naming that host: the pinned key
+/// and the link the real host holds open both stand.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_pairing_that_replaces_a_hosts_key_closes_the_old_keys_live_link_first() {
+async fn a_pairing_under_a_paired_hosts_id_with_another_key_is_refused() {
     // Nothing discovers anything, and the desk listens on no LAN: the one
     // link between the old desk and the laptop is the one held here.
     let mut net = Net::start(
@@ -814,39 +849,39 @@ async fn a_pairing_that_replaces_a_hosts_key_closes_the_old_keys_live_link_first
     let new_key = edge(&net, "new-desk").public_key().to_vec();
     assert_ne!(new_key, old_key);
 
-    // The moment the laptop's side of the old link ends, read what the
-    // laptop pins for the desk.
-    let closed = tokio::spawn({
-        let laptop = edge(&net, "laptop");
-        async move {
-            let end = old.accepted_end().await;
-            let pinned = laptop
-                .trusted()
-                .into_iter()
-                .find(|(host, ..)| *host == desk)
-                .map(|(.., key)| key);
-            (end, pinned)
-        }
-    });
-    pair(&net, "new-desk", "laptop").await;
-    let (end, pinned_at_close) = tokio::time::timeout(Duration::from_secs(10), closed)
+    let window = start_pairing(&net, "laptop", pin_window()).await.unwrap();
+    let pending = begin_pair(
+        &net,
+        "new-desk",
+        Some(host_id(&net, "laptop")),
+        begin_pair_request::Secret::Pin(pin_of(&window)),
+        window.addrs.clone(),
+    )
+    .await
+    .expect("the SPAKE2 exchange completes");
+    let refused = confirm_pair(&net, "new-desk", pending.token)
         .await
-        .expect("the old key's link closes when its key is replaced")
-        .unwrap();
-    let end = end.expect("the laptop ends the old link with a reason");
-    assert!(end.contains("peer trust was replaced"), "{end}");
-    assert_ne!(
-        pinned_at_close.as_ref(),
-        Some(&new_key),
-        "the old link closed before the new key was trusted"
+        .expect_err("the laptop already trusts the desk under its old key");
+    assert_eq!(
+        refused.message(),
+        "Already paired with desk. Unpair it first."
     );
     let pinned = edge(&net, "laptop")
         .trusted()
         .into_iter()
         .find(|(host, ..)| *host == desk)
         .map(|(.., key)| key);
-    assert_eq!(pinned, Some(new_key), "the pairing replaced the pinned key");
-    println!("the old desk's live link closed ({end}) before its replacement key was trusted");
+    assert_eq!(pinned, Some(old_key), "the pinned key stands");
+    assert_eq!(
+        edge(&net, "laptop").via(desk).await,
+        LiveRoute::Direct,
+        "the real desk's link stays up"
+    );
+    drop(old);
+    println!(
+        "a second machine claiming the desk's id was refused: {}",
+        refused.message()
+    );
 
     net.shutdown().await.unwrap();
 }

@@ -157,6 +157,16 @@ the public key and a name of at most 256 bytes, with direction and transcript
 in the additional authenticated data. `PairingComplete` commits both stores.
 Every secret failure is the same opaque `INVALID_PIN`.
 
+Pairing never replaces a pinned key. Host ids are not secret (discovery
+advertises them), so a peer that proved the secret but names a host this one
+already trusts under another key is refused: the responder sends
+`ALREADY_PAIRED` with the sentence the joiner's person is shown,
+`Already paired with <name>. Unpair it first.`, and keeps its window open; a
+joiner that meets such a responder refuses before asking its person to
+confirm, with the same words (as a wrong secret, when discovery found the
+machine). SSH pairing refuses the same way. A machine whose key changed is
+unpaired on the other side and paired again.
+
 Before trust exists, an open pairing window lets the dispatcher admit one
 anonymous channel to `PairingService`. SPAKE2 authenticates that exchange and
 creates the pins later channel handshakes check. A window lasts the length
@@ -693,10 +703,13 @@ never does, because its directory and journal are its whole interface (see
 
 The front door's path is the installation setting `front_door_socket`. By
 default it is `amux.sock` in a per-user runtime directory: `$TMPDIR/amux/` on
-macOS, `$XDG_RUNTIME_DIR/amux/` on Linux, `/tmp/amux-<uid>/` when neither is
-set, and the named pipe `\\.\pipe\amux-<user>` on Windows. Local sockets are
-Unix domain sockets on Unix and named pipes on Windows
-(`crates/agent-dir/src/local_socket.rs`); a path too long for a Unix socket
+macOS (the system's per-user temporary folder when `TMPDIR` is unset) and
+`$XDG_RUNTIME_DIR/amux/` on Linux. A Linux machine without `XDG_RUNTIME_DIR`
+(a container, `su`, cron) has no folder another user cannot create first, so
+there amux refuses to start until `front_door_socket` is set, and says so; the
+CLI and the daemon read the same setting. On Windows it is the named pipe
+`\\.\pipe\amux-<user>`. Local sockets are Unix domain sockets on Unix and
+named pipes on Windows (`crates/agent-dir/src/local_socket.rs`); a path too long for a Unix socket
 address is reached through a short symbolic link in the per-user runtime
 directory, so both ends derive the same address from the same path.
 
@@ -910,10 +923,16 @@ Each agent's `tools.sock` serves the same `AgentService` and
 starts the agent's process, and whatever arrives on it is from that agent, so
 no request carries an agent id or a token claiming one. On that socket:
 
-- `CreateAgent` makes the caller the child's parent.
+- `CreateAgent` makes the caller the child's parent, and takes only the
+  kind's default settings, as the spawn tool sends them: a permission mode,
+  model, effort or provider arguments are refused, being the person's to
+  choose.
 - `SendMessage` stamps the caller as the message's sender.
-- `SendInput` goes only to one of the caller's own direct children; the stop
-  tool's interrupt is the input an agent sends.
+- Every call on a named agent (`SendInput`, `StopAgent`, `RenameAgent`,
+  `ResumeAgent`, `DeleteAgent`, the blob, diff, draft and session reads) goes
+  only to one of the caller's own direct children, refused with
+  `PERMISSION_DENIED` otherwise; the stop tool's interrupt is the input an
+  agent sends. An agent reaches any other agent by messaging it.
 
 [Agent tools](AGENT_TOOLS.md) describes the tool server that dials it.
 

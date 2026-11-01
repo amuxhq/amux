@@ -1256,7 +1256,7 @@ impl App {
             ChatEffect::ReviewAt(path) => self.review(Some(path)),
             ChatEffect::OpenUrl(url) => {
                 if let Err(error) = open_url(&url) {
-                    self.notice(format!("could not open {url}: {error}"), Tone::Warn);
+                    self.notice(format!("could not open the link: {error}"), Tone::Warn);
                 }
             }
             ChatEffect::Home => self.close_chat(),
@@ -1891,16 +1891,59 @@ fn open_url(url: &str) -> std::io::Result<()> {
     {
         return Err(std::io::Error::other("not a web link"));
     }
-    let mut command = if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
-    } else if cfg!(windows) {
-        let mut command = std::process::Command::new("cmd");
-        command.args(["/C", "start", ""]);
-        command
-    } else {
-        std::process::Command::new("xdg-open")
+    // Links come from agent text. A well-formed link has no whitespace,
+    // quotes or control characters, and those are what let an argument break
+    // out of the opener's quoting, so such a link is refused outright.
+    if url
+        .chars()
+        .any(|c| c.is_whitespace() || c.is_control() || c == '"' || c == '\'')
+    {
+        return Err(std::io::Error::other(
+            "link contains spaces, quotes or control characters",
+        ));
+    }
+    system_open(url)
+}
+
+/// Hands the link to the shell's own URL handler. Never through `cmd`,
+/// whose parser would read `&` or `|` in a link as command separators.
+#[cfg(windows)]
+fn system_open(url: &str) -> std::io::Result<()> {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    let wide = |text: &str| text.encode_utf16().chain([0]).collect::<Vec<u16>>();
+    let (verb, file) = (wide("open"), wide(url));
+    // SAFETY: both strings are NUL-terminated UTF-16 buffers that outlive the
+    // call; the remaining pointers are documented as optional.
+    let instance = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
     };
-    command
+    // ShellExecuteW reports success as a value greater than 32.
+    if instance as isize > 32 {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!(
+            "the system could not open it (code {})",
+            instance as isize
+        )))
+    }
+}
+
+#[cfg(not(windows))]
+fn system_open(url: &str) -> std::io::Result<()> {
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(opener)
         .arg(url)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -1911,4 +1954,23 @@ fn open_url(url: &str) -> std::io::Result<()> {
 
 fn ctrl_held(key: &KeyEvent) -> bool {
     key.modifiers.contains(KeyModifiers::CONTROL)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::open_url;
+
+    #[test]
+    fn links_that_could_escape_the_openers_quoting_are_refused() {
+        for url in [
+            "https://example.com/a b",
+            "https://example.com/\"&calc",
+            "https://example.com/'x'",
+            "https://example.com/\u{1b}]52;c;x\u{7}",
+            "https://example.com/\tx",
+            "file:///etc/passwd",
+        ] {
+            assert!(open_url(url).is_err(), "{url:?} was opened");
+        }
+    }
 }

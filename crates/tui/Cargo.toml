@@ -45,6 +45,9 @@ unicode-width = "0.2"
 libc = { workspace = true }
 signal-hook = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
 [dev-dependencies]
 async-trait = { workspace = true }
 interpret = { workspace = true }

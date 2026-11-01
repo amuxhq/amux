@@ -25,12 +25,16 @@ per-kind carriers are in the interpreters (`crates/interpret`) and in
 The harness starts the tool server itself, as `amux internal mcp <dir>` run from the
 install path, so the server is always the agent's own version for the life of
 its session. The agent process registers it when it launches the provider:
-Claude gets it through `--mcp-config` as a server named `amux`, with
-`mcp__amux__*` allowed in its settings so the tools run without a permission
-prompt; Codex gets it through `--config mcp_servers.amux.command=…` and
-`mcp_servers.amux.args=…`, and when Codex asks to approve a call to it, the
-interpreter approves at once, for the session, without opening an ask. amux's
-own tools never ask, whatever the kind. The server speaks MCP as
+Claude gets it through `--mcp-config` as a server named `amux`, with every
+tool but `attach` allowed by name in its settings (`mcp__amux__agents` and so
+on) so they run without a permission prompt. `attach` goes through Claude's own
+permission check like any read: it copies any file it is given into the blob
+folder Claude may read without asking, so an unasked attach would read files
+the person's own rules deny. In default mode it asks once per call; auto mode
+applies its own check; bypass mode runs it. Codex gets it through
+`--config mcp_servers.amux.command=…` and `mcp_servers.amux.args=…`, and when
+Codex asks to approve a call to it, the interpreter approves at once, for the
+session, without opening an ask; Codex's sandbox already reads any file. The server speaks MCP as
 newline-delimited JSON-RPC on stdin and stdout.
 
 Its identity is its agent's directory. The daemon listens on

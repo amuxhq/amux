@@ -18,6 +18,11 @@ use tokio::io::AsyncWriteExt;
 
 use crate::local_socket::LocalStream;
 
+/// The most hook connections held at once. Claude waits on one per open
+/// permission request or form, far fewer than this; past it a new one is
+/// dropped, so a flood of connections cannot hold descriptors without end.
+const HELD_MOST: usize = 64;
+
 #[derive(Clone, Default)]
 pub(crate) struct HookAnswers(Arc<Mutex<Parked>>);
 
@@ -30,24 +35,28 @@ struct Parked {
 impl HookAnswers {
     /// Holds a payload's connection when Claude waits on it for a
     /// decision, and returns the payload naming where its answer goes.
-    /// Any other connection is closed here.
-    pub(crate) fn hold(&self, payload: Vec<u8>, stream: LocalStream) -> Vec<u8> {
+    /// Any other connection is closed here. None, closing the connection,
+    /// when [`HELD_MOST`] are held already.
+    pub(crate) fn hold(&self, payload: Vec<u8>, stream: LocalStream) -> Option<Vec<u8>> {
         let Ok(Value::Object(mut fields)) = serde_json::from_slice::<Value>(&payload) else {
-            return payload;
+            return Some(payload);
         };
         let answered = fields
             .get("hook_event_name")
             .and_then(Value::as_str)
             .is_some_and(|name| crate::claude::hooks::ANSWERED_EVENTS.contains(&name));
         if !answered {
-            return payload;
+            return Some(payload);
         }
         let mut parked = self.0.lock().expect("hook answers lock");
+        if parked.waiting.len() >= HELD_MOST {
+            return None;
+        }
         parked.next += 1;
         let id = parked.next;
         parked.waiting.insert(id, stream);
         fields.insert(interpret::HOOK_ANSWER_FIELD.to_owned(), id.into());
-        serde_json::to_vec(&fields).unwrap_or(payload)
+        Some(serde_json::to_vec(&fields).unwrap_or(payload))
     }
 
     /// Writes the answer on the connection numbered `id` and closes it. A

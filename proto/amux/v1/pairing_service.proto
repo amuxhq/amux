@@ -32,6 +32,9 @@ message PairingError {
     TIMEOUT = 4;
     USER_REJECTED = 5;
     SELF_PAIRING = 6;
+    // The peer claimed a host this one already trusts under another key.
+    // The detail is the sentence a person is shown, naming that host.
+    ALREADY_PAIRED = 7;
   }
 
   Reason reason = 1;

@@ -734,11 +734,16 @@ pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
 }
 
 /// Signs a profile in: the account service's device sign-in in the
-/// browser, then the daemon binds the profile with the refresh token it
+/// browser, naming this machine on its approval page, then the daemon binds the profile with the refresh token it
 /// gave. A profile that already has agents or paired hosts is adopted only
 /// when the person says so.
-pub async fn login(mut door: Door, profile: Option<&wire::Profile>, cloud_url: &str) -> Result<()> {
-    let refresh = node::run_device_flow(cloud_url)
+pub async fn login(
+    mut door: Door,
+    profile: Option<&wire::Profile>,
+    cloud_url: &str,
+    host_name: &str,
+) -> Result<()> {
+    let refresh = node::run_device_flow(cloud_url, host_name)
         .await
         .context("signing in")?;
     let mut request = BindProfileRequest {

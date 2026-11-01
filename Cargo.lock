@@ -3411,6 +3411,7 @@ dependencies = [
  "libc",
  "serde",
  "serde_ignored",
+ "tempfile",
  "thiserror 2.0.20",
  "toml",
 ]
@@ -4278,6 +4279,7 @@ dependencies = [
  "ui-view",
  "unicode-segmentation",
  "unicode-width 0.2.2",
+ "windows-sys 0.61.2",
  "wire",
 ]
 

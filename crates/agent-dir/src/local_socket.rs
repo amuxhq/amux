@@ -302,10 +302,7 @@ mod imp {
             let name = direct(path).unwrap_or_else(|| pipe_name(path));
             // First instance: a name someone else already holds is refused,
             // never joined.
-            let next = ServerOptions::new()
-                .first_pipe_instance(true)
-                .reject_remote_clients(true)
-                .create(&name)?;
+            let next = create(ServerOptions::new().first_pipe_instance(true), &name)?;
             if direct(path).is_some() {
                 return Ok(Self { name, next });
             }
@@ -320,9 +317,7 @@ mod imp {
 
         pub async fn accept(&mut self) -> io::Result<LocalStream> {
             self.next.connect().await?;
-            let fresh = ServerOptions::new()
-                .reject_remote_clients(true)
-                .create(&self.name)?;
+            let fresh = create(&mut ServerOptions::new(), &self.name)?;
             let connected = std::mem::replace(&mut self.next, fresh);
             Ok(Box::new(connected))
         }
@@ -335,15 +330,36 @@ mod imp {
     }
 
     pub async fn connect(path: &Path) -> io::Result<LocalStream> {
-        Ok(Box::new(open(path).await?))
+        Ok(Box::new(open(path).await?.0))
     }
 
     /// The peer's pid comes from the pipe: the process that created the
     /// server end this client opened.
     pub async fn connect_to_process(path: &Path) -> io::Result<(LocalStream, Option<u32>)> {
+        let (client, pid) = open(path).await?;
+        Ok((Box::new(client), Some(pid)))
+    }
+
+    /// A pipe served by this user's own process, and that process's id.
+    /// Pipe names are predictable, so another user on the machine could
+    /// create one first and answer as amux: a pipe whose server runs as
+    /// anyone else is refused.
+    async fn open(path: &Path) -> io::Result<(NamedPipeClient, u32)> {
         use std::os::windows::io::AsRawHandle;
 
-        let client = open(path).await?;
+        let name = match direct(path) {
+            Some(name) => name,
+            None => std::fs::read_to_string(path)?,
+        };
+        let client = loop {
+            match ClientOptions::new().open(&name) {
+                Ok(client) => break client,
+                Err(error) if error.raw_os_error() == Some(PIPE_BUSY) => {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                Err(error) => return Err(error),
+            }
+        };
         let mut pid = 0u32;
         // SAFETY: the handle is the open pipe client's, and `pid` outlives
         // the call.
@@ -353,22 +369,26 @@ mod imp {
                 &mut pid,
             )
         } != 0;
-        Ok((Box::new(client), known.then_some(pid)))
+        if !known {
+            return Err(io::Error::last_os_error());
+        }
+        if !user::runs_as_me(pid)? {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("{name} is served by another user's process"),
+            ));
+        }
+        Ok((client, pid))
     }
 
-    async fn open(path: &Path) -> io::Result<NamedPipeClient> {
-        let name = match direct(path) {
-            Some(name) => name,
-            None => std::fs::read_to_string(path)?,
-        };
-        loop {
-            match ClientOptions::new().open(&name) {
-                Ok(client) => return Ok(client),
-                Err(error) if error.raw_os_error() == Some(PIPE_BUSY) => {
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-                Err(error) => return Err(error),
-            }
+    /// A server end that admits this user alone, local clients only.
+    fn create(options: &mut ServerOptions, name: &str) -> io::Result<NamedPipeServer> {
+        let mut attributes = user::only_me()?;
+        options.reject_remote_clients(true);
+        // SAFETY: the attributes and the descriptor they point at outlive
+        // the call, which copies what it needs.
+        unsafe {
+            options.create_with_security_attributes_raw(name, (&raw mut attributes).cast())
         }
     }
 
@@ -385,6 +405,152 @@ mod imp {
         BINDS.fetch_add(1, Ordering::Relaxed)
     }
 
+    #[cfg(test)]
+    pub(super) fn runs_as_me_for_test(pid: u32) -> io::Result<bool> {
+        user::runs_as_me(pid)
+    }
+
+    /// Who this process runs as, and the pipe security that follows.
+    mod user {
+        use std::io;
+        use std::sync::OnceLock;
+
+        use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, LocalFree};
+        use windows_sys::Win32::Security::Authorization::{
+            ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
+            SDDL_REVISION_1,
+        };
+        use windows_sys::Win32::Security::{
+            GetLengthSid, GetTokenInformation, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER,
+            TokenUser,
+        };
+        use windows_sys::Win32::System::Threading::{
+            GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+
+        /// This user's SID, and a security descriptor granting it alone
+        /// full access. Read once: a process's user never changes.
+        struct Me {
+            sid: Vec<u8>,
+            descriptor: usize,
+        }
+
+        fn me() -> io::Result<&'static Me> {
+            static ME: OnceLock<Result<Me, String>> = OnceLock::new();
+            ME.get_or_init(|| {
+                // SAFETY: the pseudo handle needs no closing.
+                let (sid, text) = sid_of(unsafe { GetCurrentProcess() })
+                    .map_err(|error| error.to_string())?;
+                // Protected, so nothing is inherited; this user may do
+                // anything; nobody else is named, so nobody else may open it.
+                let sddl: Vec<u16> = format!("D:P(A;;GA;;;{text})")
+                    .encode_utf16()
+                    .chain([0])
+                    .collect();
+                let mut descriptor = std::ptr::null_mut();
+                // SAFETY: `sddl` is NUL-terminated; the descriptor is
+                // allocated by the call and kept for the process's life.
+                let made = unsafe {
+                    ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                        sddl.as_ptr(),
+                        SDDL_REVISION_1,
+                        &mut descriptor,
+                        std::ptr::null_mut(),
+                    )
+                };
+                if made == 0 {
+                    return Err(io::Error::last_os_error().to_string());
+                }
+                Ok(Me {
+                    sid,
+                    descriptor: descriptor as usize,
+                })
+            })
+            .as_ref()
+            .map_err(|error| io::Error::other(format!("reading this user's identity: {error}")))
+        }
+
+        /// Security attributes admitting this user alone.
+        pub(super) fn only_me() -> io::Result<SECURITY_ATTRIBUTES> {
+            Ok(SECURITY_ATTRIBUTES {
+                nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+                lpSecurityDescriptor: me()?.descriptor as *mut _,
+                bInheritHandle: 0,
+            })
+        }
+
+        /// Whether process `pid` runs as this user. One that cannot be
+        /// asked, another user's, is not.
+        pub(super) fn runs_as_me(pid: u32) -> io::Result<bool> {
+            let me = me()?;
+            // SAFETY: a failed open returns null, checked; an opened
+            // handle is closed below.
+            let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+            if process.is_null() {
+                return Ok(false);
+            }
+            let theirs = sid_of(process);
+            // SAFETY: the handle was opened above and is not used again.
+            unsafe { CloseHandle(process) };
+            Ok(theirs.is_ok_and(|(sid, _)| sid == me.sid))
+        }
+
+        /// The user a process runs as: its SID's bytes, and its string form.
+        fn sid_of(process: HANDLE) -> io::Result<(Vec<u8>, String)> {
+            let mut token = std::ptr::null_mut();
+            // SAFETY: `token` outlives the call; closed below once opened.
+            if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let read = token_user(token);
+            // SAFETY: the token was opened above and is not used again.
+            unsafe { CloseHandle(token) };
+            read
+        }
+
+        fn token_user(token: HANDLE) -> io::Result<(Vec<u8>, String)> {
+            let mut needed = 0u32;
+            // SAFETY: a size query: no buffer, the size written to `needed`.
+            unsafe { GetTokenInformation(token, TokenUser, std::ptr::null_mut(), 0, &mut needed) };
+            // u64s, so the TOKEN_USER read out of it is aligned.
+            let mut buffer = vec![0u64; (needed as usize).div_ceil(8)];
+            // SAFETY: the buffer holds at least `needed` bytes.
+            let read = unsafe {
+                GetTokenInformation(
+                    token,
+                    TokenUser,
+                    buffer.as_mut_ptr().cast(),
+                    needed,
+                    &mut needed,
+                )
+            };
+            if read == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: the call wrote a TOKEN_USER at the buffer's start, and
+            // the SID it points at lies within the buffer, which lives on.
+            let sid = unsafe { (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid };
+            // SAFETY: `sid` is a valid SID while `buffer` lives.
+            let bytes = unsafe {
+                std::slice::from_raw_parts(sid.cast::<u8>(), GetLengthSid(sid) as usize).to_vec()
+            };
+            let mut text = std::ptr::null_mut();
+            // SAFETY: `sid` is valid; the string is allocated by the call and
+            // freed below once copied.
+            if unsafe { ConvertSidToStringSidW(sid, &mut text) } == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: the call wrote a NUL-terminated UTF-16 string.
+            let string = unsafe {
+                let length = (0..).take_while(|&at| *text.add(at) != 0).count();
+                String::from_utf16_lossy(std::slice::from_raw_parts(text, length))
+            };
+            // SAFETY: allocated by ConvertSidToStringSidW, not used again.
+            unsafe { LocalFree(text.cast()) };
+            Ok((bytes, string))
+        }
+    }
+
     /// Unique among live pipes: the path's hash for whoever reads a pipe
     /// list, then this process and its count of binds.
     fn pipe_name(path: &Path) -> String {
@@ -399,6 +565,34 @@ mod imp {
             std::process::id(),
             bind_number()
         )
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::*;
+
+    /// A pipe this process serves, under the descriptor admitting only this
+    /// user, is opened by this user and its server is found to be this
+    /// user's own.
+    #[tokio::test]
+    async fn a_pipe_admits_its_own_user_and_its_server_is_checked() {
+        assert!(imp::runs_as_me_for_test(std::process::id()).unwrap());
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("ctl.sock");
+        let mut listener = LocalListener::bind(&path).unwrap();
+        let server = tokio::spawn(async move {
+            let mut stream = listener.accept().await.unwrap();
+            stream.write_all(b"ok").await.unwrap();
+        });
+        let (mut client, pid) = connect_to_process(&path).await.unwrap();
+        assert_eq!(pid, Some(std::process::id()));
+        let mut answer = [0u8; 2];
+        client.read_exact(&mut answer).await.unwrap();
+        assert_eq!(&answer, b"ok");
+        server.await.unwrap();
     }
 }
 

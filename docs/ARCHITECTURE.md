@@ -555,6 +555,10 @@ nicer in several places, and Windows pays for each:
   its name; a path already in the pipe namespace, like the front door's
   default, is that pipe
   ([`agent_dir::local_socket`](../crates/agent-dir/src/local_socket.rs)).
+  Pipe names are predictable and the pipe namespace is shared by every user,
+  where a Unix socket sits in a private folder: so each pipe is created with
+  a security descriptor that admits only the user who made it, and a client
+  refuses a pipe whose serving process runs as anyone else.
 - **Process groups.** Agents start with `CREATE_NEW_PROCESS_GROUP` and
   `DETACHED_PROCESS`; a kill ends the process tree with `taskkill /F /T`.
 - **Terminals.** Pseudo-terminals are ConPTY, through `portable-pty` in

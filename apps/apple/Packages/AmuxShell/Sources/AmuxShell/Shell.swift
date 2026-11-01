@@ -798,7 +798,7 @@ private struct PairByCodePage: View {
             case .digits(let typed): stores.pair(digits: typed)
             // A code cannot reach any of these — nothing on the keypad
             // authenticates, and an account is not what a typed code needs.
-            case .confirm, .abandon, .signIn, .check: break
+            case .confirm, .abandon, .signIn: break
             case .subscribe: actions(.subscribe)
             case .cancel: router.pairing = nil
             }
@@ -816,7 +816,7 @@ private struct PairByCodePage: View {
             // refusing a machine is try the code for the right one.
             case .abandon(let peer): stores.abandonPairing(peer)
             case .cancel: router.pairing = nil
-            case .digits, .signIn, .subscribe, .check: break
+            case .digits, .signIn, .subscribe: break
             }
         }
     }
@@ -824,17 +824,15 @@ private struct PairByCodePage: View {
 
 /// Where a pairing link lands.
 ///
-/// Arriving here dials nothing: a link can come from anywhere, and checking
-/// it reaches whatever addresses it names. Once the person says to check it,
-/// the machine is asked to prove it issued the link and to say who it is; the
-/// trust is written only when the person presses Pair, and leaving instead
-/// tells the machine so.
+/// Arriving here authenticates the invitation and nothing else. The machine is
+/// asked to prove it issued the link and to say who it is; the trust is written
+/// only when the person presses, and leaving instead tells the machine so.
 ///
-/// Once agreed to, the authentication is asked for whenever this page has
-/// something to ask with, which is what carries a link across a cold start
-/// and a sign-in: a launch that opened on this page with no account yet asks
-/// again the moment an account arrives, rather than stranding the person on
-/// a screen that can never say who it is confirming.
+/// The authentication is asked for whenever this page has something to ask
+/// with, which is what carries a link across a cold start and a sign-in: a
+/// launch that opened on this page with no account yet asks again the moment
+/// an account arrives, rather than stranding the person on a screen that can
+/// never say who it is confirming.
 private struct PairConfirmationPage: View {
     let invitation: PairingInvitation
     let router: Router
@@ -864,11 +862,9 @@ private struct PairConfirmationPage: View {
                 switch action {
                 case .signIn: actions(.signIn)
                 case .cancel: router.pairing = nil
-                case .confirm, .abandon, .digits, .subscribe, .check: break
+                case .confirm, .abandon, .digits, .subscribe: break
                 }
             }
-        } else if !asked.agreed {
-            opened
         } else {
             confirmation
         }
@@ -891,21 +887,8 @@ private struct PairConfirmationPage: View {
                 stores.abandonPairing(peer)
                 router.pairing = nil
             case .cancel: router.pairing = nil
-            case .digits, .signIn, .check: break
+            case .digits, .signIn: break
             case .subscribe: actions(.subscribe)
-            }
-        }
-    }
-
-    /// The link as it arrived, until the person says to check it.
-    private var opened: some View {
-        PairLinkOpened { action in
-            switch action {
-            case .check:
-                asked.agree()
-                ask()
-            case .cancel: router.pairing = nil
-            case .confirm, .abandon, .digits, .signIn, .subscribe: break
             }
         }
     }
@@ -936,23 +919,19 @@ private struct PairConfirmationPage: View {
     }
 }
 
-/// Whether the person agreed to check a pairing invitation, and which
-/// account it has been put to.
+/// Which account a pairing invitation has been put to.
 ///
-/// Nothing is asked until the person agrees. A link can arrive before this
-/// phone has an account at all: a cold start hands the URL over before the
-/// first frame, and the person may sign in afterwards. That does not spend
-/// the invitation — it was never asked about — so it is put to whichever
-/// account is on show, once each. Signing in asks; an ordinary redraw does
-/// not; and switching to a second account asks again, because trust is per
-/// account and the first account's answer is not the second's.
+/// A link can arrive before this phone has an account at all: a cold start
+/// hands the URL over before the first frame, and the person may sign in
+/// afterwards. That does not spend the invitation — it was never asked about —
+/// so it is put to whichever account is on show, once each. Signing in asks;
+/// an ordinary redraw does not; and switching to a second account asks again,
+/// because trust is per account and the first account's answer is not the
+/// second's.
 struct LinkAsked {
-    private(set) var agreed = false
     private var account: AccountId?
 
-    func shouldAsk(_ current: AccountId) -> Bool { agreed && account != current }
-
-    mutating func agree() { agreed = true }
+    func shouldAsk(_ current: AccountId) -> Bool { account != current }
 
     mutating func asked(_ current: AccountId) { account = current }
 }

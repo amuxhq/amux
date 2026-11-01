@@ -16,9 +16,6 @@ public enum PairingAction: Equatable, Sendable {
     case abandon(PendingPair)
     /// Left without an attempt in flight.
     case cancel
-    /// Put the invitation a link carries to the machine it names: the
-    /// person agreed to this phone reaching it.
-    case check
     /// Get an account, because the machine the invitation names can only be
     /// reached through the relay and there is no relay without one.
     case signIn
@@ -180,42 +177,6 @@ public struct PairNeedsAnAccount: View {
         .pairingChrome(String(localized: "Pair a Host")) { actions(.cancel) }
         .accessibilityElement(children: .contain)
         .identified("pair-needs-account", value: "not on this network")
-    }
-}
-
-/// A pairing link, opened and not yet acted on.
-///
-/// Checking an invitation reaches the addresses or the relay the link names,
-/// and a link can come from anywhere: a page or a message somebody else wrote
-/// would otherwise make this phone show itself to a machine of their choosing
-/// just by being tapped. So nothing is dialled until the person says to.
-public struct PairLinkOpened: View {
-    private let actions: @MainActor (PairingAction) -> Void
-
-    public init(actions: @escaping @MainActor (PairingAction) -> Void) {
-        self.actions = actions
-    }
-
-    public var body: some View {
-        PairingPanel(
-            title: String(localized: "Check this invitation?"),
-            detail: String(localized: "This phone will contact the host that made it to learn its name. Nothing is trusted until you choose Pair."),
-            identifier: "pair-link.title"
-        ) {
-            Button { actions(.check) } label: {
-                ActionLabel("Check Invitation", kind: .primary, fill: true)
-            }
-            .buttonStyle(.amuxControl)
-            .identified("pair-link.check", label: "Check Invitation")
-            Button { actions(.cancel) } label: {
-                ActionLabel("Not Now", kind: .outline, fill: true)
-            }
-            .buttonStyle(.amuxControl)
-            .identified("pair-link.cancel", label: "Not Now")
-        }
-        .pairingChrome(String(localized: "Pair a Host")) { actions(.cancel) }
-        .accessibilityElement(children: .contain)
-        .identified("pair-link", value: "opened")
     }
 }
 
@@ -646,9 +607,9 @@ public struct PairConfirmation: View {
         return parts.joined(separator: " · ")
     }
 
-    /// While the invitation is being authenticated. A link comes to this once
-    /// the person says to check it, and it is not a screen that pairs: it is
-    /// the wait before the machine has said who it is.
+    /// While the invitation is being authenticated. A link opens straight onto
+    /// this, and it is not a screen that pairs: it is the wait before the
+    /// machine has said who it is.
     private var checking: some View {
         PairingPanel(
             title: String(localized: "Checking the invitation…"),

@@ -571,12 +571,7 @@
       {"literal": "\"\\(identifier).settings\"", "context": ".identified(\"\\(identifier).settings\", label: \"Open Settings\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\(identifier).refused\"", "context": ".identified(\"\\(identifier).refused\", value: \"amux can’t see this network\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"pair-needs-account.signIn\"", "context": "\"pair-needs-account.signIn\", label: SigningIn.title, value: \"signing in\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"signing in\"", "context": "\"pair-needs-account.signIn\", label: SigningIn.title, value: \"signing in\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"pair-link.title\"", "context": "identifier: \"pair-link.title\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"pair-link.check\"", "context": ".identified(\"pair-link.check\", label: \"Check Invitation\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"pair-link.cancel\"", "context": ".identified(\"pair-link.cancel\", label: \"Not Now\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"pair-link\"", "context": ".identified(\"pair-link\", value: \"opened\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"opened\"", "context": ".identified(\"pair-link\", value: \"opened\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"signing in\"", "context": "\"pair-needs-account.signIn\", label: SigningIn.title, value: \"signing in\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift": [
       {"literal": "\"paywall\"", "context": ".identified(\"paywall\", value: state)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
@@ -1114,8 +1109,7 @@
       {"literal": "\"192.168.1.24:4433\"", "context": "machine(5, \"laptop\", platform: .macos, reach: .online(.direct), trusted: false, candidate: true, addrs: [\"192.168.1.24:4433\"], version: nil, providers: []),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"signing-in\"", "context": "sheet(\"signing-in\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"already-paired\"", "context": "code(\"already-paired\") { store in", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"Already paired with studio. Unpair it first.\"", "context": ".failure(RuntimeFailure(\"Already paired with studio. Unpair it first.\")),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"pair.link-opened\"", "context": "id: \"pair.link-opened\", family: .pairing, canvas: CGSize(width: 390, height: 844),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"Already paired with studio. Unpair it first.\"", "context": ".failure(RuntimeFailure(\"Already paired with studio. Unpair it first.\")),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
     ],
     "apps/apple/Amux/Debug/Stories.swift": [
       {"literal": "\"notifications-offer\"", "context": "fleet(\"notifications-offer\", offerNotifications: true) { StoryFleet.busy(nearby: false) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

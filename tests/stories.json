@@ -146,12 +146,6 @@
       "why": "The terminal pairs with amux pair on its command line."
     },
     {
-      "name": "pair.link-opened",
-      "shows": "A pairing link just opened, asking before the phone contacts the machine it names.",
-      "clients": ["phone"],
-      "why": "The terminal pairs with amux pair on its command line."
-    },
-    {
       "name": "pair.confirm",
       "shows": "The machine's own name and key, waiting for Pair or Not Now.",
       "clients": ["phone"],

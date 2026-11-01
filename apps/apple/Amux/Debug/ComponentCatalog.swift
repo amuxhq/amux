@@ -1614,8 +1614,8 @@ extension ComponentCatalog {
     /// an empty keypad to the machine's name and key and the pairing done; a
     /// code that did not work, one the machine refused in words for the
     /// person, and one that reached a machine only the relay can carry; then
-    /// an invitation link opened, waiting, refused, and naming a machine that
-    /// needs an account.
+    /// an invitation link waiting, refused, and naming a machine that needs
+    /// an account.
     fileprivate static let pairing: [ComponentExample] = [
         code("empty") { _ in },
         code("typing") { $0.enter("418") },
@@ -1646,13 +1646,6 @@ extension ComponentCatalog {
             let attempt = store.checking()
             store.reached(.success(CatalogFixtures.pendingLaptop), attempt: attempt)
             store.paired(.success(CatalogFixtures.pendingLaptop.name), attempt: attempt)
-        },
-        ComponentExample(
-            id: "pair.link-opened", family: .pairing, canvas: CGSize(width: 390, height: 844),
-            // The system bar lays its items out a frame after the page.
-            settlesLate: true
-        ) {
-            NavigationStack { PairLinkOpened { _ in } }
         },
         confirm("link-checking", machine: nil) { _ = $0.checking() },
         confirm("link-refused", machine: nil) { store in

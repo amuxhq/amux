@@ -1872,16 +1872,6 @@ fn open_link(journey: &mut PhoneJourney, link: &str, cloud: Option<&Value>) -> R
     Ok(())
 }
 
-/// Check Invitation pressed on the link just opened: the phone reaches the
-/// machine the link names only once the person says to.
-fn check_invitation(journey: &mut PhoneJourney) -> Result<(), String> {
-    let drawn = journey.wait_for(&["pair-link.check"])?;
-    if drawn.has("pair-confirm") {
-        return Err("the link was checked before anybody said to".to_owned());
-    }
-    journey.tap("pair-link.check")
-}
-
 fn calls(journey: &mut PhoneJourney, label: &str) -> Result<Value, String> {
     let reply = journey.app(json!({"kind": "calls"}))?;
     journey.record.observations.insert(
@@ -2127,7 +2117,6 @@ fn purchase_restore(journey: &mut PhoneJourney) -> Proved {
     // subscription rather than called a bad invitation.
     let (pairing, link) = journey.pairing_link("desk")?;
     open_link(journey, &link, Some(&unpaid))?;
-    check_invitation(journey)?;
     journey.wait_for(&["pair-confirm.subscribe"])?;
     journey.screen("needs-subscription", &[])?;
 
@@ -2515,7 +2504,6 @@ fn local_network(journey: &mut PhoneJourney) -> Proved {
     // the desk's name and key before anything is trusted.
     let (pairing, link) = journey.pairing_link("desk")?;
     open_link(journey, &link, None)?;
-    check_invitation(journey)?;
     // The relaunch the link starts the app with finds the desk again behind
     // the sheet; the screen is read once it has.
     let card = journey.wait(

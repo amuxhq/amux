@@ -133,8 +133,12 @@ async fn a_host_resumed_with_a_ticket_for_a_key_no_longer_pinned_is_refused_as_r
     laptop_daemon.shutdown().await.unwrap();
 
     // While the laptop is away the desk pins another key for it, as
-    // pairing a reinstalled laptop under the same name would; the laptop
-    // still holds the ticket its old key was given.
+    // unpairing it and pairing a reinstalled laptop under the same id
+    // would; the laptop still holds the ticket its old key was given.
+    desk_edge
+        .unpair(wire::HostRef::id(laptop_id.as_bytes().to_vec()))
+        .await
+        .unwrap();
     desk_edge
         .trust_ssh_peer(wire::TrustSshPeerRequest {
             peer: Some(wire::PairingIdentity {

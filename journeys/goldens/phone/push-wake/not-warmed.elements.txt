@@ -5,7 +5,7 @@ chat.row.prompt | Get ready. |  | 16,158,370,40
 chat.row.prose | Watching the logs. | final | 16,210,370,20
 chat.prose.render |  | rendered | 16,210,370,20
 chat.row.turn-end | <volatile>
-chat.field | desk is out of reach · sends when back |  | 28,750,346,24
+chat.field | desk is out of reach · your draft is kept |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44

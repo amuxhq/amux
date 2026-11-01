@@ -159,7 +159,10 @@ five minutes, plus a chat a push is bringing current.
 
 App startup does not require an account. The phone is one installation of
 the daemon with one profile per account, as a desktop is; the daemon's
-profile registry creates, binds, signs out and deletes them.
+profile registry creates, binds, signs out and deletes them. The installation
+directory is excluded from iCloud and computer backups: it holds each
+profile's device key and tokens, which would let whoever has the backup act
+as the phone, so a new or restored phone pairs again.
 
 - With nobody signed in, the installation holds one unbound profile and the
   app shows its fleet. The first sign-in binds that profile, keeping its key,

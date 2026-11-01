@@ -505,11 +505,21 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
                     return Ok(());
                 }
             };
+        let hello_bytes = prost::Message::encoded_len(&first);
         let Some(wire::message::Body::Hello(hello)) = first.body else {
             write_message(&mut sink, &protocol_error_hello_ack("expected hello")).await?;
             carrier.close(wire::LinkCloseReason::ProtocolError);
             return Ok(());
         };
+        // How close real Hellos come to their bound, as a relay sees them.
+        if ctx.accounts.is_some() {
+            tracing::info!(
+                bytes = hello_bytes,
+                neighbors = hello.neighbors.len(),
+                limit = wire::HELLO_SIZE_LIMIT,
+                "a link's hello arrived"
+            );
+        }
         // The core records its inputs on the drive, so the credential
         // stays here.
         peer_frame = Some(wire::message::Body::Hello(wire::Hello {
@@ -1052,6 +1062,19 @@ async fn handle_control_body(
 ) -> ControlAction {
     match body {
         body @ (wire::message::Body::NeighborUp(_) | wire::message::Body::NeighborDown(_)) => {
+            // A neighbor announced is held to what a handshake's host is.
+            if let wire::message::Body::NeighborUp(up) = &body
+                && let Err(error) = up
+                    .host
+                    .clone()
+                    .ok_or_else(|| "NeighborUp.host is required".to_string())
+                    .and_then(host_from_wire)
+            {
+                return ControlAction::ReplyAndClose(
+                    Box::new(protocol_error_link_close(error)),
+                    wire::LinkCloseReason::ProtocolError,
+                );
+            }
             ctx.report_frame(link, body);
             ControlAction::Continue
         }

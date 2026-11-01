@@ -59,6 +59,13 @@ pub enum Tier {
 /// this long if it still sends.
 pub const REFUSAL_REPEAT_MS: u64 = 5_000;
 
+/// How many destinations one sending link is remembered as refused for. A
+/// link naming ever new hosts that are not there (any signed-in account
+/// can open one) would otherwise grow the relay without bound; past this,
+/// the link's refusals past their repeat window go, then its oldest half,
+/// whose destinations are only told again sooner.
+pub const REFUSED_PER_LINK: usize = 256;
+
 /// Which of the two links a crossed dial makes both sides keep: each pair
 /// of hosts agrees on it from their ids alone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -569,7 +576,10 @@ impl Relay {
         let gone = self.links.remove(&link)?;
         self.touched.links.push(link);
         self.adjacency.remove(gone.user, gone.host, link);
-        self.refused.retain(|(sender, _), _| *sender != link);
+        let refused: Vec<_> = self.refused_of(link).map(|(key, _)| key).collect();
+        for key in refused {
+            self.refused.remove(&key);
+        }
         let partners = self.unpair_all(link);
         Some((gone, partners))
     }
@@ -641,7 +651,31 @@ impl Relay {
     }
 
     fn mark_refused(&mut self, sender: LinkId, dst: HostId) {
-        self.refused.insert((sender, dst), self.now_ms);
+        if self.refused.insert((sender, dst), self.now_ms).is_some()
+            || self.refused_of(sender).nth(REFUSED_PER_LINK).is_none()
+        {
+            return;
+        }
+        let mut held: Vec<_> = self.refused_of(sender).collect();
+        let now_ms = self.now_ms;
+        let (lapsed, mut kept): (Vec<_>, Vec<_>) = held
+            .drain(..)
+            .partition(|(_, at)| now_ms >= at.saturating_add(REFUSAL_REPEAT_MS));
+        let mut gone: Vec<_> = lapsed.into_iter().map(|(key, _)| key).collect();
+        if kept.len() > REFUSED_PER_LINK {
+            kept.sort_by_key(|(_, at)| *at);
+            gone.extend(kept[..kept.len() / 2].iter().map(|(key, _)| *key));
+        }
+        for key in gone {
+            self.refused.remove(&key);
+        }
+    }
+
+    /// The refusals `sender` is remembered for, with when each was told.
+    fn refused_of(&self, sender: LinkId) -> impl Iterator<Item = ((LinkId, HostId), u64)> + '_ {
+        self.refused
+            .range((sender, HostId([0; 16]))..=(sender, HostId([0xff; 16])))
+            .map(|(key, at)| (*key, *at))
     }
 
     /// Whether packets may flow between two links: both up, on one account,
@@ -1147,6 +1181,39 @@ mod tests {
             refuse(2, DESK, ForwardRefusal::PaymentRequired)
         );
         assert_eq!(pairs(&relay), Vec::new());
+    }
+
+    /// Any signed-in account can name hosts that are not there, as fast as
+    /// it can send: the relay remembers a bounded few refusals per link,
+    /// the newest kept, and none once the link goes.
+    #[test]
+    fn a_link_naming_ever_new_hosts_is_remembered_for_a_bounded_few() {
+        let mut relay = relay();
+        up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));
+        let stranger = |n: u32| {
+            let mut id = [0; 16];
+            id[..4].copy_from_slice(&n.to_be_bytes());
+            HostId(id)
+        };
+        let named = 4 * REFUSED_PER_LINK as u32;
+        for n in 0..named {
+            assert_eq!(
+                packet(&mut relay, 1, stranger(n)),
+                refuse(1, stranger(n), ForwardRefusal::NoRoute)
+            );
+        }
+        assert!(
+            relay.refused.len() <= REFUSED_PER_LINK,
+            "{}",
+            relay.refused.len()
+        );
+        assert_eq!(
+            packet(&mut relay, 1, stranger(named - 1)),
+            Vec::new(),
+            "the newest refusal is not repeated"
+        );
+        step(&mut relay, Input::LinkDown { link: LinkId(1) });
+        assert!(relay.refused.is_empty());
     }
 
     #[test]

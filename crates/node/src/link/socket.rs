@@ -26,11 +26,11 @@ use std::task::{Context, Poll, Waker};
 pub use path_core::{LinkId, Path, PathId};
 use quinn::udp::{RecvMeta, Transmit};
 use quinn::{AsyncUdpSocket, UdpPoller};
-use socket_core::{Again, Arrival, Heard, NoPath, Peer, Peers, Transmit as Sends, Wire, WireTo};
 pub use socket_core::{
-    FORWARD_HEADER, MAX_DATAGRAM, Malformed, PacketKind, encode_delivered, encode_forwarded,
-    encode_probe, encode_probe_answer, parse,
+    Account, FORWARD_HEADER, HostKey, MAX_DATAGRAM, Malformed, PacketKind, encode_delivered,
+    encode_forwarded, encode_probe, encode_probe_answer, parse,
 };
+use socket_core::{Again, Arrival, Heard, NoPath, Peer, Peers, Transmit as Sends, Wire, WireTo};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
@@ -295,7 +295,7 @@ impl LinkSocket {
 
     /// Gives an unnamed sender's stand-in its host once the handshake says
     /// who it is; see [`Peers::name`]. True when the stand-in is the host's.
-    pub fn name(&self, stand_in: SocketAddr, host: HostId) -> bool {
+    pub fn name(&self, stand_in: SocketAddr, host: impl Into<HostKey>) -> bool {
         let now = self.now_ms();
         self.lock().peers.name(stand_in, host, now)
     }
@@ -316,13 +316,13 @@ impl LinkSocket {
     }
 
     /// `peer`'s last link to this relay went; see [`Peers::let_go`].
-    pub fn let_go(&self, peer: HostId) {
+    pub fn let_go(&self, peer: impl Into<HostKey>) {
         self.lock().peers.let_go(peer);
     }
 
     /// `peer` holds a link to this relay again: it is kept until it is let
     /// go.
-    pub fn keep(&self, peer: HostId) {
+    pub fn keep(&self, peer: impl Into<HostKey>) {
         self.lock().peers.keep(peer);
     }
 
@@ -513,7 +513,7 @@ impl LinkSocket {
         let wire = self
             .lock()
             .peers
-            .wire(Peer::Host(peer), path)
+            .wire(Peer::Host(peer.into()), path)
             .map_err(no_path)?;
         self.put(wire, &encode_probe(self.own, nonce))
     }
@@ -1847,6 +1847,37 @@ mod tests {
             fake.take_sent(),
             vec![(relay, encode_forwarded(desk, QUIC))]
         );
+    }
+
+    /// Anyone can make the socket mint a stand-in by sending from a new
+    /// address, faster than a minute's silence lets one go: past a bound,
+    /// the longest unheard are crowded out, and a host this one routes and
+    /// the forwarder it sends through stay.
+    #[tokio::test(start_paused = true)]
+    async fn socket_crowds_out_a_flood_of_unnamed_senders() {
+        let (fake, socket, _own) = fake_socket();
+        let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
+        let via = socket.stand_in_at(relay);
+        socket.add_forwarding(LinkId(5), via, PathKind::RelayUdp);
+        let desk = HostId::new_v4();
+        let desk_lan: SocketAddr = "192.0.2.60:5000".parse().unwrap();
+        socket.set_carrying(desk, Path::Direct(desk_lan));
+        let desk_at = socket.stand_in(desk);
+
+        let flood = socket_core::CROWDED_PEERS + socket_core::CROWDED_PEERS / 2;
+        for n in 0..flood as u32 {
+            fake.push(
+                SocketAddr::from((Ipv4Addr::from(0x0a00_0000 + n), 5000)),
+                QUIC,
+            );
+            receive(&socket).unwrap();
+        }
+
+        let (peers, stand_ins, _, _) = socket.held();
+        assert!(peers <= socket_core::CROWDED_PEERS, "{peers} peers");
+        assert_eq!(stand_ins, peers, "each let go with its stand-in");
+        assert_eq!(socket.path_of(desk_at), Some(Path::Direct(desk_lan)));
+        assert_eq!(socket.forwarding_link(via), Some(LinkId(5)));
     }
 
     /// A sender whose handshake is done but that the socket cannot name,

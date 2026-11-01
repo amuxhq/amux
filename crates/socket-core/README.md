@@ -42,6 +42,10 @@ The rules it keeps:
   is not mistaken for a stray from the peer's earlier run.
 - A forwarder is kept however long it is silent while a link it forwards
   is up: the node removes the link, and the routes through it go with it.
+- A relay names each host by the account its link signed in to as well as
+  by its id, so a link on one account claiming another account's host id
+  is a peer of its own and takes nothing of that host's route. A daemon's
+  peers are all one account's.
 
 Like the cores, it locks, spawns, awaits and reads the clock nowhere: the
 time is an input.

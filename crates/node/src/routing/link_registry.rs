@@ -22,6 +22,7 @@ use crate::link::QuicCarrier;
 use crate::link::link_log::PathKind;
 use crate::link::paths::PathDriver;
 use crate::link::relaying::Relaying;
+use crate::link::socket::{Account, HostKey};
 use crate::routing::types::{LinkId, core_host, host_from_core};
 use crate::routing::{Host, RuntimeInstance, host_to_wire};
 use crate::{HostId, Tier};
@@ -311,7 +312,10 @@ impl LinkRegistry {
             self.relaying.admitted(
                 link.core(),
                 outgoing_tx.clone(),
-                host.id,
+                HostKey {
+                    account: Account(self.user.0),
+                    host: host.id,
+                },
                 carrier.clone(),
                 through,
             );

@@ -24,6 +24,11 @@ pub(crate) const QUIC_HANDSHAKE_CONCURRENCY: usize = 128;
 /// connection, which answers every packet, a Retry included, with another
 /// close.
 const QUIC_RETRY_REPEAT_INTERVAL: Duration = Duration::from_millis(500);
+/// How many sources a listener counts attempts for at once. Every source
+/// that sends an Initial is counted for the window, and one sender can
+/// send from as many addresses as it has; past this, the source counted
+/// longest ago is forgotten first.
+const QUIC_RETRY_SOURCES: usize = 65_536;
 
 /// Which QUIC handshakes a listener takes on, before quinn allocates any
 /// connection or TLS state for them: the daemon's listener and the relay's
@@ -211,7 +216,13 @@ struct RetryAdmission<K, A> {
     refunds: usize,
     window: Duration,
     repeat: Duration,
+    sources: usize,
     entries: HashMap<K, VecDeque<Attempt<A>>>,
+    /// Every attempt counted, oldest first, by its source and when it was
+    /// counted: what ages out of the window, or is forgotten first, is
+    /// found at its front. An attempt given back stays here until it
+    /// reaches the front.
+    order: VecDeque<(Instant, K)>,
 }
 
 #[derive(Debug)]
@@ -236,16 +247,28 @@ enum Admission {
 
 impl<K, A> RetryAdmission<K, A>
 where
-    K: Eq + Hash,
+    K: Eq + Hash + Clone,
     A: Eq,
 {
     fn new(limit: usize, refunds: usize, window: Duration, repeat: Duration) -> Self {
+        Self::with_sources(limit, refunds, window, repeat, QUIC_RETRY_SOURCES)
+    }
+
+    fn with_sources(
+        limit: usize,
+        refunds: usize,
+        window: Duration,
+        repeat: Duration,
+        sources: usize,
+    ) -> Self {
         Self {
             limit,
             refunds,
             window,
             repeat,
+            sources,
             entries: HashMap::new(),
+            order: VecDeque::new(),
         }
     }
 
@@ -255,7 +278,7 @@ where
 
     fn admit_at(&mut self, source: K, attempt: A, now: Instant) -> Admission {
         self.prune(now);
-        let attempts = self.entries.entry(source).or_default();
+        let attempts = self.entries.entry(source.clone()).or_default();
         if let Some(known) = attempts.iter_mut().find(|known| known.id == attempt) {
             if now.duration_since(known.last) < self.repeat {
                 return Admission::Repeat;
@@ -272,6 +295,7 @@ where
             last: now,
             refunded: false,
         });
+        self.counted(source, now);
         Admission::Retry
     }
 
@@ -285,7 +309,7 @@ where
 
     fn admit_validated_at(&mut self, source: K, attempt: A, now: Instant) -> Admission {
         self.prune(now);
-        let attempts = self.entries.entry(source).or_default();
+        let attempts = self.entries.entry(source.clone()).or_default();
         if attempts.iter().any(|known| known.id == attempt) {
             return Admission::Retry;
         }
@@ -298,7 +322,32 @@ where
             last: now,
             refunded: false,
         });
+        self.counted(source, now);
         Admission::Retry
+    }
+
+    /// An attempt of `source`'s was counted at `now`. Past the sources
+    /// counted at once, or the attempts they may hold, those counted
+    /// longest ago are forgotten.
+    fn counted(&mut self, source: K, now: Instant) {
+        self.order.push_back((now, source));
+        while self.entries.len() > self.sources
+            || self.order.len() > self.sources.saturating_mul(self.limit)
+        {
+            let Some((first, source)) = self.order.pop_front() else {
+                break;
+            };
+            // The source's oldest attempt, unless it was given back or its
+            // source forgotten and counted afresh since.
+            if self
+                .entries
+                .get(&source)
+                .and_then(VecDeque::front)
+                .is_some_and(|oldest| oldest.first == first)
+            {
+                self.entries.remove(&source);
+            }
+        }
     }
 
     /// Gives `attempt` back to `source`'s limit. It stays listed until its
@@ -313,17 +362,26 @@ where
         }
     }
 
+    /// Lets go of the attempts that aged out of the window, from the
+    /// front of the order they were counted in: no pass over every source.
     fn prune(&mut self, now: Instant) {
-        let window = self.window;
-        self.entries.retain(|_, attempts| {
+        while let Some((first, _)) = self.order.front()
+            && *first + self.window <= now
+        {
+            let (_, source) = self.order.pop_front().expect("just seen");
+            let Some(attempts) = self.entries.get_mut(&source) else {
+                continue;
+            };
             while attempts
                 .front()
-                .is_some_and(|attempt| attempt.first + window <= now)
+                .is_some_and(|attempt| attempt.first + self.window <= now)
             {
                 attempts.pop_front();
             }
-            !attempts.is_empty()
-        });
+            if attempts.is_empty() {
+                self.entries.remove(&source);
+            }
+        }
     }
 }
 
@@ -357,6 +415,38 @@ mod tests {
         assert_eq!(retries.admit_at("other", 3, start), Admission::Retry);
         let later = start + Duration::from_secs(60);
         assert_eq!(retries.admit_at("peer", 3, later), Admission::Retry);
+    }
+
+    /// One sender can send from as many addresses as it has: the table
+    /// counts a bounded number of sources, forgetting the one counted
+    /// longest ago, and lets aged attempts go without a pass over all.
+    #[test]
+    fn retry_admission_counts_a_bounded_number_of_sources() {
+        let start = Instant::now();
+        let mut retries = RetryAdmission::with_sources(
+            2,
+            QUIC_HANDSHAKE_REFUND_LIMIT,
+            Duration::from_secs(60),
+            Duration::from_millis(500),
+            3,
+        );
+        for (n, source) in ["a", "b", "c", "d"].into_iter().enumerate() {
+            let at = start + Duration::from_secs(n as u64);
+            assert_eq!(retries.admit_at(source, 1, at), Admission::Retry);
+        }
+        assert_eq!(retries.entries.len(), 3);
+        assert!(!retries.entries.contains_key("a"), "the oldest went");
+        // "b" still counts its attempt: one more fills its limit.
+        let now = start + Duration::from_secs(5);
+        assert_eq!(retries.admit_at("b", 2, now), Admission::Retry);
+        assert_eq!(retries.admit_at("b", 3, now), Admission::Refused);
+
+        // Past the window everything ages out, given back or not.
+        retries.refund("c", 1);
+        let later = start + Duration::from_secs(70);
+        assert_eq!(retries.admit_at("e", 1, later), Admission::Retry);
+        assert_eq!(retries.entries.len(), 1);
+        assert_eq!(retries.order.len(), 1);
     }
 
     #[test]

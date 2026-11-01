@@ -124,6 +124,16 @@ final class DeepLinkTests: XCTestCase {
         XCTAssertEqual(invitation.link, link.absoluteString)
     }
 
+    /// A link that only arrived reaches nobody: whoever wrote it chose the
+    /// addresses it names, so the phone dials them once the person says to.
+    func testALinkDialsNothingUntilThePersonAgrees() {
+        var asked = LinkAsked()
+        let ada = AccountId("ada")
+        XCTAssertFalse(asked.shouldAsk(ada))
+        asked.agree()
+        XCTAssertTrue(asked.shouldAsk(ada))
+    }
+
     /// A sign-in in between does not lose the invitation.
     ///
     /// Signing in swaps the stores under the page. The page has been asked
@@ -136,6 +146,8 @@ final class DeepLinkTests: XCTestCase {
         let signedOut = AccountId("signed-out")
         let ada = AccountId("ada")
         let grace = AccountId("grace")
+
+        asked.agree()
 
         XCTAssertTrue(asked.shouldAsk(signedOut))
         // Nothing could be asked while signed out, so nothing is recorded and

@@ -559,7 +559,7 @@
       {"literal": "\"pair-needs-account.title\"", "context": "identifier: \"pair-needs-account.title\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"pin.instruction\"", "context": ".identified(\"pin.instruction\", value: model.machine?.name ?? \"\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"pin.code\"", "context": ".identified(\"pin.code\", label: String(localized: \"Code\"), value: model.digits)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"pin.refused\"", "context": ".identified(\"pin.refused\", value: refused)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"pin.refused\"", "context": ".identified(\"pin.refused\", value: model.told ?? refused)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"pin.notNow\"", "context": ".identified(\"pin.notNow\", label: \"Not Now\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"pair-confirm.subscribe\"", "context": "host: name, identifier: \"pair-confirm.subscribe\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"pair-confirm.name\"", "context": ".identified(\"pair-confirm.name\", value: peer.name)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -571,7 +571,12 @@
       {"literal": "\"\\(identifier).settings\"", "context": ".identified(\"\\(identifier).settings\", label: \"Open Settings\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\(identifier).refused\"", "context": ".identified(\"\\(identifier).refused\", value: \"amux can’t see this network\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"pair-needs-account.signIn\"", "context": "\"pair-needs-account.signIn\", label: SigningIn.title, value: \"signing in\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"signing in\"", "context": "\"pair-needs-account.signIn\", label: SigningIn.title, value: \"signing in\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"signing in\"", "context": "\"pair-needs-account.signIn\", label: SigningIn.title, value: \"signing in\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"pair-link.title\"", "context": "identifier: \"pair-link.title\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"pair-link.check\"", "context": ".identified(\"pair-link.check\", label: \"Check Invitation\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"pair-link.cancel\"", "context": ".identified(\"pair-link.cancel\", label: \"Not Now\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"pair-link\"", "context": ".identified(\"pair-link\", value: \"opened\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"opened\"", "context": ".identified(\"pair-link\", value: \"opened\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift": [
       {"literal": "\"paywall\"", "context": ".identified(\"paywall\", value: state)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
@@ -1018,7 +1023,7 @@
       {"literal": "\"%02x\"", "context": "(0..<32).map { String(format: \"%02x\", UInt8(truncatingIfNeeded: Int(seed) &* 37 &+ $0 &* 11)) }.joined()", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"typing\"", "context": "code(\"typing\") { $0.enter(\"418\") },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"418\"", "context": "code(\"typing\") { $0.enter(\"418\") },", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"418207\"", "context": "store.enter(\"418207\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 5},
+      {"literal": "\"418207\"", "context": "store.enter(\"418207\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 6},
       {"literal": "\"refused\"", "context": "code(\"refused\") { store in", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"wrong secret\"", "context": "store.reached(.failure(RuntimeFailure(\"wrong secret\")), attempt: store.checking())", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"subscribe\"", "context": "code(\"subscribe\", machine: CatalogFixtures.relayLaptop) { store in", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1107,7 +1112,10 @@
       {"literal": "\"on-the-account-free\"", "context": "hostsList(\"on-the-account-free\", hosts: CatalogFixtures.machines + [CatalogFixtures.accountServer]) {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"192.168.1.24:4433\"", "context": "static let nearbyLaptop = machine(5, \"laptop\", platform: .macos, reach: .online(.direct), trusted: false, candidate: true, addrs: [\"192.168.1.24:4433\"], version: nil, providers: [])", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"192.168.1.24:4433\"", "context": "machine(5, \"laptop\", platform: .macos, reach: .online(.direct), trusted: false, candidate: true, addrs: [\"192.168.1.24:4433\"], version: nil, providers: []),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"signing-in\"", "context": "sheet(\"signing-in\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"signing-in\"", "context": "sheet(\"signing-in\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"already-paired\"", "context": "code(\"already-paired\") { store in", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"Already paired with studio. Unpair it first.\"", "context": ".failure(RuntimeFailure(\"Already paired with studio. Unpair it first.\")),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"pair.link-opened\"", "context": "id: \"pair.link-opened\", family: .pairing, canvas: CGSize(width: 390, height: 844),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Amux/Debug/Stories.swift": [
       {"literal": "\"notifications-offer\"", "context": "fleet(\"notifications-offer\", offerNotifications: true) { StoryFleet.busy(nearby: false) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1577,6 +1585,9 @@
       {"literal": "\"https\"", "context": "private static let schemes: Set<String> = [\"https\", \"http\", \"mailto\"]", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"http\"", "context": "private static let schemes: Set<String> = [\"https\", \"http\", \"mailto\"]", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"mailto\"", "context": "private static let schemes: Set<String> = [\"https\", \"http\", \"mailto\"]", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxCore/Sources/AmuxCore/PairingStore.swift": [
+      {"literal": "\".\"", "context": "text.hasSuffix(\".\")", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
     ]
   }
 }

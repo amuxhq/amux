@@ -55,6 +55,36 @@ final class PairingTests: XCTestCase {
         XCTAssertTrue(pairing.taking)
     }
 
+    func testARefusalTheCoreWroteForThePersonIsShownInItsWords() {
+        let pairing = PairingStore()
+        pairing.open()
+        let attempt = pairing.checking()
+        pairing.reached(.success(pending), attempt: attempt)
+        let confirming = pairing.checking()
+        pairing.paired(
+            .failure(RuntimeFailure("Already paired with desk. Unpair it first.")),
+            attempt: confirming)
+        XCTAssertEqual(pairing.phase, .refused)
+        XCTAssertEqual(pairing.told, "Already paired with desk. Unpair it first.")
+        // The next attempt starts with nothing said.
+        _ = pairing.checking()
+        XCTAssertNil(pairing.told)
+    }
+
+    /// Codes and error fragments keep the one refusal the screen draws.
+    func testACodeOrAnErrorFragmentIsNotToldAsWords() {
+        for reason in [
+            "INVALID_PIN", "PAIRING_LOCKED", "pairing stream closed",
+            "PROTOCOL_VIOLATION: SELF_PAIRING", "the installation hosts no profile 3",
+        ] {
+            let pairing = PairingStore()
+            pairing.open()
+            pairing.reached(.failure(RuntimeFailure(reason)), attempt: pairing.checking())
+            XCTAssertEqual(pairing.phase, .refused, reason)
+            XCTAssertNil(pairing.told, reason)
+        }
+    }
+
     func testARelayOnlyMachineOnAnUnpaidAccountAsksForASubscription() {
         let pairing = PairingStore()
         pairing.open()

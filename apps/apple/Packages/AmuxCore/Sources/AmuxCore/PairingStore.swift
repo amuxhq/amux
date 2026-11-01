@@ -8,7 +8,8 @@ import Observation
 /// which answers with its name and fingerprint, and only then does the
 /// person decide. Every refusal reads the same — a wrong code, an expired
 /// one and a machine that did not answer must not be told apart, or the
-/// screen would help somebody guess.
+/// screen would help somebody guess — except one the core wrote out for the
+/// person to read, which it does only where no guess could learn from it.
 @MainActor
 @Observable
 public final class PairingStore {
@@ -34,6 +35,10 @@ public final class PairingStore {
     /// Why the last attempt was refused, for diagnostics: the screen says
     /// every refusal the same way, and a report or a driver needs the reason.
     @ObservationIgnored public private(set) var refusal: String?
+    /// The last refusal in the core's own words, where it wrote them for the
+    /// person, such as a machine that is already paired and has to be
+    /// unpaired first; nil for every refusal the screen says its own way.
+    public private(set) var told: String?
     /// Counts attempts, so an answer to one the person has since left is
     /// dropped.
     @ObservationIgnored private var attempt = 0
@@ -50,6 +55,7 @@ public final class PairingStore {
         self.machine = machine
         digits = ""
         phase = .entering
+        told = nil
         attempt += 1
     }
 
@@ -71,6 +77,7 @@ public final class PairingStore {
     public func checking() -> Int {
         attempt += 1
         phase = .checking
+        told = nil
         return attempt
     }
 
@@ -85,6 +92,7 @@ public final class PairingStore {
             phase = .confirming(pending)
         case .failure(let why):
             refusal = why.description
+            told = Self.told(why.description)
             digits = ""
             phase = relayOnly ? .needsSubscription : .refused
         }
@@ -98,14 +106,32 @@ public final class PairingStore {
         case .success(let name): phase = .trusted(name)
         case .failure(let why):
             refusal = why.description
+            told = Self.told(why.description)
             digits = ""
             phase = .refused
         }
     }
 
+    /// The refusal as the person reads it, if the core wrote it for them.
+    ///
+    /// The core collapses every refusal a guessing peer could learn from
+    /// into one code before it gets here. What it means a person to read it
+    /// writes as a sentence, capitalised and stopped; everything else it
+    /// says is a code such as `INVALID_PIN` or an error's lowercase
+    /// fragment, and those keep the screen's own words.
+    nonisolated static func told(_ reason: String) -> String? {
+        let text = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        let start = text.prefix(2)
+        guard start.first?.isUppercase == true, start.last?.isLowercase == true,
+              text.hasSuffix(".")
+        else { return nil }
+        return text
+    }
+
     /// The person turned the machine away; the keypad starts again.
     public func abandoned() {
         attempt += 1
+        told = nil
         digits = ""
         phase = .entering
     }

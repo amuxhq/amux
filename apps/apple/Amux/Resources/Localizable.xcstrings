@@ -9829,14 +9829,14 @@
         }
       }
     },
-    "Its agents will be on this phone, and you can start new ones on it. This invitation expires %@." : {
+    "You’ll see its agents here and can start new ones, which run on that machine as you. Pair only with your own machines. This invitation expires %@." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Its agents will be on this phone, and you can start new ones on it. This invitation expires %@."
+            "value" : "You’ll see its agents here and can start new ones, which run on that machine as you. Pair only with your own machines. This invitation expires %@."
           }
         }
       }

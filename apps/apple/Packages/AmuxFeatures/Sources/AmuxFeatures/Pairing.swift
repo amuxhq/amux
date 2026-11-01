@@ -587,7 +587,7 @@ public struct PairConfirmation: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
                     .identified("pair-confirm.name", value: peer.name)
-                Explain(String(localized: "Its agents will be on this phone, and you can start new ones on it. This invitation expires \(expiry(peer))."))
+                Explain(String(localized: "You’ll see its agents here and can start new ones, which run on that machine as you. Pair only with your own machines. This invitation expires \(expiry(peer))."))
                     .padding(.top, 14)
                     .identified("pair-confirm.expiry", value: expiry(peer))
                 Spacer(minLength: 22)

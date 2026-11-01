@@ -19,7 +19,7 @@ pair.close | Close |  | 20,82,40,36
  | Hosts |  | 230,830,29,12
  | Pair with desk? |  | 16,148,179,32
  | on this network |  | 16,186,113,20
- | Its agents will be on this phone, and you can start new ones on it. This invitation expires in <t>. |  | 16,220,367,37
+ | You’ll see its agents here and can start new ones, which run on that machine as you. Pair only with your own machines. This invitation expires in <t>. |  | 16,220,363,55
  | Fingerprint, <key> |  | 16,652,351,56
  | Pair |  | 16,726,370,44
  | Not Now |  | 16,780,370,44

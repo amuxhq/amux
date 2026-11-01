@@ -1849,6 +1849,37 @@ mod tests {
         );
     }
 
+    /// Anyone can make the socket mint a stand-in by sending from a new
+    /// address, faster than a minute's silence lets one go: past a bound,
+    /// the longest unheard are crowded out, and a host this one routes and
+    /// the forwarder it sends through stay.
+    #[tokio::test(start_paused = true)]
+    async fn socket_crowds_out_a_flood_of_unnamed_senders() {
+        let (fake, socket, _own) = fake_socket();
+        let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
+        let via = socket.stand_in_at(relay);
+        socket.add_forwarding(LinkId(5), via, PathKind::RelayUdp);
+        let desk = HostId::new_v4();
+        let desk_lan: SocketAddr = "192.0.2.60:5000".parse().unwrap();
+        socket.set_carrying(desk, Path::Direct(desk_lan));
+        let desk_at = socket.stand_in(desk);
+
+        let flood = socket_core::CROWDED_PEERS + socket_core::CROWDED_PEERS / 2;
+        for n in 0..flood as u32 {
+            fake.push(
+                SocketAddr::from((Ipv4Addr::from(0x0a00_0000 + n), 5000)),
+                QUIC,
+            );
+            receive(&socket).unwrap();
+        }
+
+        let (peers, stand_ins, _, _) = socket.held();
+        assert!(peers <= socket_core::CROWDED_PEERS, "{peers} peers");
+        assert_eq!(stand_ins, peers, "each let go with its stand-in");
+        assert_eq!(socket.path_of(desk_at), Some(Path::Direct(desk_lan)));
+        assert_eq!(socket.forwarding_link(via), Some(LinkId(5)));
+    }
+
     /// A sender whose handshake is done but that the socket cannot name,
     /// because its host is carried another way, is kept while it sends:
     /// a crossed direct link next to a relayed one stays where it is.

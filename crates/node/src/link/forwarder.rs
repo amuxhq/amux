@@ -46,7 +46,8 @@ pub struct HoldLimits {
     pub per_sender_bytes: usize,
     /// How long a packet is held before it is dropped unreleased.
     pub for_ms: u64,
-    /// Bytes held for every sender together; the oldest held goes first.
+    /// Bytes held for every sender together, and waiting for links not
+    /// yet registered; the oldest held goes first.
     pub total_bytes: usize,
 }
 
@@ -138,6 +139,9 @@ struct Hold {
     senders: HashMap<SocketAddr, SenderHold>,
     order: VecDeque<(u64, SocketAddr)>,
     bytes: usize,
+    /// The bytes waiting for links not yet registered ([`State::waiting`]),
+    /// which count against the same total.
+    waiting: usize,
     counts: Counts,
 }
 
@@ -194,13 +198,25 @@ impl Hold {
         }
     }
 
-    /// Drops the oldest packet held for anyone.
-    fn drop_oldest_anywhere(&mut self) {
+    /// Drops the oldest packet held for anyone. False when none is held.
+    fn drop_oldest_anywhere(&mut self) -> bool {
         while let Some((seq, sender)) = self.order.pop_front() {
             if self.drop_oldest(sender, Some(seq)) {
-                return;
+                return true;
             }
         }
+        false
+    }
+
+    /// Makes room for `len` more bytes under `total`, dropping the oldest
+    /// held packets: false when there is none to make.
+    fn room_for(&mut self, len: usize, total: usize) -> bool {
+        while self.bytes + self.waiting + len > total {
+            if !self.drop_oldest_anywhere() {
+                return false;
+            }
+        }
+        true
     }
 
     fn take(&mut self, sender: SocketAddr) -> VecDeque<HeldPacket> {
@@ -261,12 +277,40 @@ struct State {
     /// What was forwarded to a link the core paired before the driver
     /// could write to it, oldest first: the core pairs a link as it comes
     /// up, a moment before the driver registers its connection, and the
-    /// first reply to a host's first flight lands in that moment.
+    /// first reply to a host's first flight lands in that moment. Its bytes
+    /// are counted in [`Hold::waiting`].
     waiting: HashMap<LinkId, VecDeque<(u64, Vec<u8>)>>,
     /// The links the driver has registered, so a send that failed before
     /// one was registered and found it registered since is tried again
     /// rather than left waiting for an admission already past.
     registered: HashSet<LinkId>,
+}
+
+/// How many refusals the forwarder keeps before it lets go of those past
+/// their repeat window, then of all: the core keeps its own, bounded, so a
+/// refusal forgotten here only means asking the core again.
+const REFUSALS_KEPT: usize = 65_536;
+
+impl State {
+    /// `link`'s waiting packets, no longer waiting.
+    fn unwait(&mut self, link: LinkId) -> VecDeque<(u64, Vec<u8>)> {
+        let queue = self.waiting.remove(&link).unwrap_or_default();
+        self.hold.waiting -= queue.iter().map(|(_, d)| d.len()).sum::<usize>();
+        queue
+    }
+
+    fn refused_now(&mut self, at: (LinkId, HostId), reason: ForwardRefusal, now_ms: u64) {
+        if self.refused.len() >= REFUSALS_KEPT && !self.refused.contains_key(&at) {
+            self.refused
+                .retain(|_, (_, told)| now_ms < told.saturating_add(REFUSAL_REPEAT_MS));
+            // Each pass over them frees at least half, so a sender naming
+            // ever new hosts costs no pass per packet.
+            if self.refused.len() >= REFUSALS_KEPT / 2 {
+                self.refused.clear();
+            }
+        }
+        self.refused.insert(at, (reason, now_ms));
+    }
 }
 
 /// One forwarding output with the hosts it needs, read from the core in
@@ -358,7 +402,7 @@ impl Forwarder {
         {
             let mut state = self.lock();
             for link in gone.into_iter().chain(displaced) {
-                state.waiting.remove(&link);
+                state.unwait(link);
                 state.registered.remove(&link);
             }
         }
@@ -441,8 +485,9 @@ impl Forwarder {
             }
             hold.drop_oldest(sender, None);
         }
-        while hold.bytes + payload.len() > limits.total_bytes {
-            hold.drop_oldest_anywhere();
+        if !hold.room_for(payload.len(), limits.total_bytes) {
+            hold.counts.dropped += 1;
+            return Forwarded::Dropped(ForwardRefusal::RateLimited);
         }
         let seq = hold.next_seq;
         hold.next_seq += 1;
@@ -470,9 +515,7 @@ impl Forwarder {
             let held = state.hold.take(sender);
             state.registered.insert(link);
             let waiting: Vec<Vec<u8>> = state
-                .waiting
-                .remove(&link)
-                .unwrap_or_default()
+                .unwait(link)
                 .into_iter()
                 .filter(|(at_ms, _)| now_ms < at_ms.saturating_add(self.hold_limits.for_ms))
                 .map(|(_, datagram)| datagram)
@@ -544,22 +587,26 @@ impl Forwarder {
         }
         let State { waiting, hold, .. } = &mut *state;
         let queue = waiting.entry(link).or_default();
-        let before = queue.len();
-        queue.retain(|(at_ms, _)| now_ms < at_ms.saturating_add(limits.for_ms));
-        let mut dropped = before - queue.len();
         let bytes =
             |queue: &VecDeque<(u64, Vec<u8>)>| queue.iter().map(|(_, d)| d.len()).sum::<usize>();
+        let (before, before_bytes) = (queue.len(), bytes(queue));
+        queue.retain(|(at_ms, _)| now_ms < at_ms.saturating_add(limits.for_ms));
         while !queue.is_empty()
             && (queue.len() >= limits.per_sender_packets
                 || bytes(queue) + datagram.len() > limits.per_sender_bytes)
         {
             queue.pop_front();
-            dropped += 1;
         }
-        hold.counts.dropped += dropped as u64;
+        hold.counts.dropped += (before - queue.len()) as u64;
+        hold.waiting -= before_bytes - bytes(queue);
         if datagram.len() > limits.per_sender_bytes {
             return Forwarded::Dropped(ForwardRefusal::NoRoute);
         }
+        if !hold.room_for(datagram.len(), limits.total_bytes) {
+            hold.counts.dropped += 1;
+            return Forwarded::Dropped(ForwardRefusal::NoRoute);
+        }
+        hold.waiting += datagram.len();
         queue.push_back((now_ms, datagram));
         hold.counts.held += 1;
         Forwarded::Held
@@ -684,13 +731,13 @@ impl Forwarder {
                     for (end, dst) in ends {
                         let up = if end == a { a_up } else { b_up };
                         if up {
-                            state.refused.insert((end, dst), (reason, now_ms));
+                            state.refused_now((end, dst), reason, now_ms);
                             tell.refusals.push((end, dst, reason));
                         }
                     }
                 }
                 Action::Refuse { link, dst, reason } => {
-                    state.refused.insert((link, dst), (reason, now_ms));
+                    state.refused_now((link, dst), reason, now_ms);
                     tell.refusals.push((link, dst, reason));
                 }
                 Action::Dump(reason) => tell.dumps.push(reason),
@@ -1277,6 +1324,44 @@ mod tests {
             Forwarded::Dropped(ForwardRefusal::RateLimited)
         );
         assert_eq!(rig.links.take(), vec![]);
+    }
+
+    /// What waits for a link not yet registered shares the hold's total:
+    /// it crowds out what is held from senders not yet admitted, and once
+    /// it alone fills the total, nothing more is held.
+    #[tokio::test(start_paused = true)]
+    async fn what_waits_for_a_link_counts_against_the_held_total() {
+        let rig = rig_with(
+            HoldLimits {
+                total_bytes: 64,
+                ..HoldLimits::DEFAULT
+            },
+            LinkLimits::DEFAULT,
+        );
+        rig.up(1, ALICE, DESK, Some(Tier::Pro));
+        rig.links.unregistered.lock().unwrap().push(LinkId(2));
+        rig.up(2, ALICE, LAPTOP, Some(Tier::Pro));
+
+        assert_eq!(
+            rig.forwarder.hold(addr(4000), LAPTOP, &[0x40; 20]),
+            Forwarded::Held
+        );
+        // Behind its header, 47 of the 64 bytes.
+        assert_eq!(rig.packet(1, LAPTOP, &[0x40; 30]), Forwarded::Held);
+        assert_eq!(rig.forwarder.counts().dropped, 1, "the held one went");
+        assert_eq!(
+            rig.forwarder.hold(addr(4001), LAPTOP, &[0x40; 20]),
+            Forwarded::Dropped(ForwardRefusal::RateLimited)
+        );
+
+        rig.links.unregistered.lock().unwrap().clear();
+        rig.forwarder.on_admitted(LinkId(2), addr(4002));
+        assert_eq!(rig.links.take(), vec![sent(2, DESK, &[0x40; 30])]);
+        assert_eq!(
+            rig.forwarder.hold(addr(4001), LAPTOP, &[0x40; 20]),
+            Forwarded::Held,
+            "released, it holds nothing of the total"
+        );
     }
 
     #[tokio::test(start_paused = true)]

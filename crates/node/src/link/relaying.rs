@@ -99,6 +99,7 @@ impl Relaying {
             socket: Arc::downgrade(&socket),
             relaying: Arc::downgrade(self),
             admitted: Mutex::default(),
+            looks: Mutex::new(Looks::full(tokio::time::Instant::now())),
         });
         let forwarder = Arc::new(Forwarder::new(
             self.core.clone(),
@@ -300,6 +301,44 @@ struct RelayLinks {
     socket: Weak<LinkSocket>,
     relaying: Weak<Relaying>,
     admitted: Mutex<Admitted>,
+    looks: Mutex<Looks>,
+}
+
+/// How many times a second, after a burst of as many, the relay looks
+/// through every link for one whose connection moved to an address no link
+/// was seen at. A packet to forward from anyone else costs a look too, and
+/// anyone can send one from an address of their choosing; the moved
+/// link's packets are held meanwhile, and the next one sent to it finds it.
+const MOVED_LOOKS_PER_S: u64 = 64;
+
+/// The looks for moved links left, in thousandths.
+struct Looks {
+    left: u64,
+    at: tokio::time::Instant,
+}
+
+impl Looks {
+    fn full(now: tokio::time::Instant) -> Self {
+        Self {
+            left: MOVED_LOOKS_PER_S * 1_000,
+            at: now,
+        }
+    }
+
+    fn take(&mut self, now: tokio::time::Instant) -> bool {
+        let elapsed =
+            u64::try_from(now.saturating_duration_since(self.at).as_millis()).unwrap_or(u64::MAX);
+        self.at = self.at.max(now);
+        self.left = self
+            .left
+            .saturating_add(elapsed.saturating_mul(MOVED_LOOKS_PER_S))
+            .min(MOVED_LOOKS_PER_S * 1_000);
+        let taken = self.left >= 1_000;
+        if taken {
+            self.left -= 1_000;
+        }
+        taken
+    }
 }
 
 #[derive(Default)]
@@ -387,10 +426,14 @@ impl RelayLinks {
     /// The link whose forwarded packets arrive from `stand_in`: one seen
     /// there, or one whose connection quinn has moved there since, after
     /// its sender's NAT rebound or its network changed. True in the second
-    /// place: the link was found where it moved to.
+    /// place: the link was found where it moved to. Looking for a moved
+    /// one is bounded by [`MOVED_LOOKS_PER_S`].
     fn sender(&self, stand_in: SocketAddr) -> Option<(daemon_core::LinkId, bool)> {
         if let Some(link) = lock(&self.admitted).senders.get(&stand_in).copied() {
             return Some((link, false));
+        }
+        if !lock(&self.looks).take(tokio::time::Instant::now()) {
+            return None;
         }
         let moved = lock(&self.admitted)
             .links
@@ -956,6 +999,61 @@ mod tests {
         assert_eq!(
             net.take_sent(),
             vec![(desk_cell, encode_delivered(phone, b"\x40five"))]
+        );
+    }
+
+    /// Looking through every link for one that moved is bounded: a flood
+    /// of packets to forward from addresses no link is at spends the
+    /// looks, a link that moved meanwhile has its packets held, and the
+    /// next packet sent to it finds it and lets them go.
+    #[tokio::test(start_paused = true)]
+    async fn a_flood_from_unknown_senders_does_not_look_through_every_link_each_time() {
+        let relay = HostId::new_v4();
+        let net = Arc::new(Net::default());
+        let socket = LinkSocket::bind(net.clone(), relay).unwrap();
+        let relaying = Relaying::new(relay);
+        relaying.forward_on(socket.clone());
+        let user = relay_core::UserId([7; 16]);
+        let (desk, phone) = (HostId::new_v4(), HostId::new_v4());
+        let (desk_lan, phone_lan): (SocketAddr, SocketAddr) = (
+            "203.0.113.10:6000".parse().unwrap(),
+            "203.0.113.20:6000".parse().unwrap(),
+        );
+        let desk_link = Dialled::at(arrive(&net, &socket, desk_lan, QUIC).unwrap());
+        let phone_link = Dialled::at(arrive(&net, &socket, phone_lan, QUIC).unwrap());
+        for (link, host, carrier) in [(1, desk, desk_link.clone()), (2, phone, phone_link.clone())]
+        {
+            link_up(&relaying, link, host, user);
+            let (tx, _rx) = mpsc::channel(8);
+            relaying.admitted(daemon_core::LinkId(link), tx, host, carrier, None);
+        }
+
+        for n in 0..2 * MOVED_LOOKS_PER_S as u32 {
+            let stranger = SocketAddr::from((std::net::Ipv4Addr::from(0x0a00_0000 + n), 9));
+            arrive(&net, &socket, stranger, &encode_forwarded(phone, b"\x40no"));
+        }
+        let desk_cell: SocketAddr = "192.0.2.99:41000".parse().unwrap();
+        desk_link.moved_to(arrive(&net, &socket, desk_cell, QUIC).unwrap());
+        arrive(
+            &net,
+            &socket,
+            desk_cell,
+            &encode_forwarded(phone, b"\x40held"),
+        );
+        assert!(net.take_sent().is_empty(), "no look left to find it with");
+
+        arrive(
+            &net,
+            &socket,
+            phone_lan,
+            &encode_forwarded(desk, b"\x40found"),
+        );
+        assert_eq!(
+            net.take_sent(),
+            vec![
+                (phone_lan, encode_delivered(desk, b"\x40held")),
+                (desk_cell, encode_delivered(phone, b"\x40found")),
+            ]
         );
     }
 

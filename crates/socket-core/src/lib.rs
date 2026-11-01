@@ -164,6 +164,12 @@ fn encode_probe_kind(kind: u8, from: HostId, nonce: u64) -> [u8; PROBE_LEN] {
 pub const UNCLAIMED_PEER_TIMEOUT_MS: u64 = 60_000;
 /// How often arrivals look for peers past [`UNCLAIMED_PEER_TIMEOUT_MS`].
 pub const UNCLAIMED_PEER_SWEEP_MS: u64 = 5_000;
+/// How many peers the socket holds before it lets go at once of a quarter
+/// of those it learned of only from what arrived, the longest unheard
+/// first. Anyone can make it mint one, by sending from a new address or
+/// delivering in a new host's name, faster than a minute's silence lets
+/// them go; a host this host keeps never counts against it.
+pub const CROWDED_PEERS: usize = 65_536;
 
 /// How often an arrival on one path from one host is reported to the path
 /// machines: often enough to keep a working path from being probed, rare
@@ -460,6 +466,9 @@ pub struct Peers<K> {
     next_port: u16,
     /// When arrivals next look for unclaimed peers past their time.
     next_sweep_ms: Option<u64>,
+    /// The number of peers at which minting another first crowds out the
+    /// unclaimed.
+    crowded_at: usize,
     peers: HashMap<Peer, PeerState>,
     by_stand_in: HashMap<SocketAddr, Peer>,
     /// The host each direct or punched address leads to, learned from the
@@ -491,6 +500,7 @@ impl<K> Default for Peers<K> {
             next_stand_in: 0,
             next_port: 0,
             next_sweep_ms: None,
+            crowded_at: CROWDED_PEERS,
             peers: HashMap::new(),
             by_stand_in: HashMap::new(),
             by_addr: HashMap::new(),
@@ -519,6 +529,7 @@ impl<K: Hash> Hash for Peers<K> {
         self.next_stand_in.hash(state);
         self.next_port.hash(state);
         self.next_sweep_ms.hash(state);
+        self.crowded_at.hash(state);
         sorted(self.peers.iter()).hash(state);
         sorted(self.by_stand_in.iter()).hash(state);
         sorted(self.by_addr.iter()).hash(state);
@@ -1246,6 +1257,9 @@ impl<K: Forwarding> Peers<K> {
     /// none.
     fn mint(&mut self, peer: Peer, now_ms: u64, expiry: Expiry) -> &mut PeerState {
         if !self.peers.contains_key(&peer) {
+            if expiry != Expiry::Kept && self.peers.len() >= self.crowded_at {
+                self.crowd_out();
+            }
             let stand_in = self.new_stand_in(peer);
             let route = match peer {
                 Peer::Host(_) => Route::Unset,
@@ -1309,12 +1323,8 @@ impl<K: Forwarding> Peers<K> {
         // it is silent: the link's owner removes the link, and with it the
         // routes through it. A phone suspended for minutes hears its relay
         // again before QUIC's idle timer closes the relay's link.
-        let forwarders: HashSet<Peer> = self
-            .forwarding
-            .values()
-            .filter_map(|(via, _)| self.by_stand_in.get(via).copied())
-            .collect();
-        let gone: Vec<Peer> = self
+        let forwarders = self.forwarders();
+        let gone: HashSet<Peer> = self
             .peers
             .iter()
             .filter(|(peer, _)| !forwarders.contains(peer))
@@ -1330,9 +1340,35 @@ impl<K: Forwarding> Peers<K> {
             })
             .map(|(peer, _)| *peer)
             .collect();
-        for peer in gone {
-            self.forget(peer);
+        self.forget_all(&gone);
+    }
+
+    /// The peers forwarding links reach their forwarders by.
+    fn forwarders(&self) -> HashSet<Peer> {
+        self.forwarding
+            .values()
+            .filter_map(|(via, _)| self.by_stand_in.get(via).copied())
+            .collect()
+    }
+
+    /// Lets go of a quarter of the peers held only for what arrived, those
+    /// unheard from longest, in one pass over the rest: until enough more
+    /// are minted to crowd the socket again, minting costs no pass.
+    fn crowd_out(&mut self) {
+        let forwarders = self.forwarders();
+        let mut unclaimed: Vec<(u64, Peer)> = self
+            .peers
+            .iter()
+            .filter(|(peer, state)| state.expiry != Expiry::Kept && !forwarders.contains(peer))
+            .map(|(peer, state)| (state.heard_ms, *peer))
+            .collect();
+        let count = unclaimed.len().div_ceil(4);
+        if count > 0 {
+            unclaimed.select_nth_unstable(count - 1);
+            let gone = unclaimed[..count].iter().map(|(_, peer)| *peer).collect();
+            self.forget_all(&gone);
         }
+        self.crowded_at = (self.peers.len() + CROWDED_PEERS / 4).max(CROWDED_PEERS);
     }
 
     /// Arrivals on `path` are `host`'s from now on. Whoever the address
@@ -1358,18 +1394,34 @@ impl<K: Forwarding> Peers<K> {
     /// Forgets `peer`: its stand-ins, a host's addresses and the
     /// forwarding links it was the forwarder of, which it returns.
     fn forget(&mut self, peer: Peer) -> Vec<LinkId> {
+        self.forget_all(&HashSet::from([peer]))
+    }
+
+    /// Forgets every one of `gone` as [`Peers::forget`] does, in one pass
+    /// over the socket's maps however many go.
+    fn forget_all(&mut self, gone: &HashSet<Peer>) -> Vec<LinkId> {
+        if gone.is_empty() {
+            return Vec::new();
+        }
         let by_stand_in = &self.by_stand_in;
         let forwarded: Vec<LinkId> = self
             .forwarding
             .iter()
-            .filter(|(_, (via, _))| by_stand_in.get(via) == Some(&peer))
+            .filter(|(_, (via, _))| by_stand_in.get(via).is_some_and(|held| gone.contains(held)))
             .map(|(link, _)| *link)
             .collect();
-        self.by_stand_in.retain(|_, held| *held != peer);
-        self.peers.remove(&peer);
-        if let Peer::Host(host) = peer {
-            self.unlearn_addresses(host);
-            self.reported.retain(|(reported, _), _| *reported != host);
+        self.by_stand_in.retain(|_, held| !gone.contains(held));
+        let mut hosts = HashSet::new();
+        for peer in gone {
+            self.peers.remove(peer);
+            if let Peer::Host(host) = peer {
+                hosts.insert(*host);
+            }
+        }
+        if !hosts.is_empty() {
+            self.by_addr.retain(|_, owner| !hosts.contains(owner));
+            self.reported
+                .retain(|(reported, _), _| !hosts.contains(reported));
         }
         // The links it forwarded go with it, and so do the routes through
         // them, as when a forwarding link is removed.
@@ -1461,22 +1513,20 @@ impl<K: Forwarding> Peers<K> {
     /// unrouted, and forgotten if this host never named, routed or dialled
     /// it.
     fn unroute(&mut self, gone: Path) {
-        let mut left = Vec::new();
+        let mut left = HashSet::new();
         for (peer, held) in &mut self.peers {
             match &mut held.route {
                 Route::Carrying(path) if *path == gone => {
                     held.route = Route::Unset;
                     if held.expiry != Expiry::Kept {
-                        left.push(*peer);
+                        left.insert(*peer);
                     }
                 }
                 Route::All(paths) => paths.retain(|path| *path != gone),
                 _ => {}
             }
         }
-        for peer in left {
-            self.forget(peer);
-        }
+        self.forget_all(&left);
     }
 
     /// The forwarding link whose forwarder is `peer`, if one is.

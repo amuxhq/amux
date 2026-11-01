@@ -108,6 +108,19 @@ fn a_renamed_instance_is_known_by_the_name_its_record_carries() {
     assert_eq!(decoded.name, "Studio");
 }
 
+/// A name printed by `amux hosts` must not carry what a terminal acts on.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn a_host_advertising_no_host_name_is_ignored() {
+    let resolved = mdns::service_info_for_test(&advert("Studio\u{1b}]52;c;aGk=\u{7}"))
+        .unwrap()
+        .as_resolved_service();
+
+    let error = mdns::advertisement_from_service_for_test(&resolved).unwrap_err();
+
+    assert!(error.contains("no host name"), "{error}");
+}
+
 struct MockClock {
     now: Mutex<Instant>,
 }

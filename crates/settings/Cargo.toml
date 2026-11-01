@@ -14,6 +14,8 @@ serde = { workspace = true }
 serde_ignored = { workspace = true }
 toml = { workspace = true }
 thiserror = { workspace = true }
+# A host's name is the one type every place a name enters amux builds.
+wire = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

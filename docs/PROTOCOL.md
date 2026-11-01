@@ -153,8 +153,8 @@ messages B to A then A to B. Both sides hash the big-endian
 `PROTOCOL_VERSION` and length-prefixed SPAKE2 messages. HKDF-SHA256 with salt
 `amux-pair-spake2-v1` derives confirmation keys (`kc/A`, `kc/B`) and
 ChaCha20-Poly1305 keys (`aead/A→B`, `aead/B→A`). The sealed identity contains
-the public key and a name of at most 256 bytes, with direction and transcript
-in the additional authenticated data. `PairingComplete` commits both stores.
+the public key and a host name, with direction and transcript in the
+additional authenticated data. `PairingComplete` commits both stores.
 Every secret failure is the same opaque `INVALID_PIN`.
 
 Before trust exists, an open pairing window lets the dispatcher admit one
@@ -442,7 +442,17 @@ before any early call is served, and the dialler reads it as the revocation.
 
 The connector opens the first bidirectional stream as control. Each control
 message is protobuf encoded after a big-endian `u32` byte length and is bounded
-by `MESSAGE_SIZE_LIMIT` (16 MiB). The complete control vocabulary is:
+by `MESSAGE_SIZE_LIMIT` (16 MiB), save the first in each direction, the `Hello`
+or the `HelloAck`, which is read before anything has checked its sender and is
+bounded by `HELLO_SIZE_LIMIT` (64 KiB). Every host a handshake or a
+`NeighborUp` describes has a non-nil id, a host name, a version of at most 64
+bytes and at most 64 kinds, or the link is closed as a protocol error. A host
+name is printable text of 1 to 64 characters, trimmed, with no control
+characters (C0, C1, DEL) and no invisible formatting ones (Unicode's category
+Cf, such as bidirectional overrides and zero-width characters); pairing and
+local discovery refuse any other name, and a configured `host_name` is held to
+the same rule, while a name taken from the system or a phone is cut and cleaned
+to one. The complete control vocabulary is:
 
 - `Hello`: supported protocol versions, this host, the current neighbor
   snapshot, the sender's runtime instance id, every interface address the

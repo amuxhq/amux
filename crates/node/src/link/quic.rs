@@ -1254,9 +1254,15 @@ async fn read_control_messages(
     mut recv: EarlyRecv,
     sender: mpsc::Sender<io::Result<wire::Message>>,
 ) {
+    // A link's first message, its Hello or the answer to one, is read
+    // before anything has checked who sent it: a relay reads one from any
+    // signed-in account, and a host one on a resumed link before it has
+    // checked the peer's key. Only it is held to the Hello's own bound.
+    let mut limit = wire::HELLO_SIZE_LIMIT;
     loop {
-        match read_proto::<wire::Message>(&mut recv, wire::MESSAGE_SIZE_LIMIT).await {
+        match read_proto::<wire::Message>(&mut recv, limit).await {
             Ok(Some(message)) => {
+                limit = wire::MESSAGE_SIZE_LIMIT;
                 if sender.send(Ok(message)).await.is_err() {
                     return;
                 }

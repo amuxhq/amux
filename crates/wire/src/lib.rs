@@ -34,7 +34,9 @@ pub mod google {
 pub use google::rpc;
 
 mod error;
+mod host_name;
 pub use amux::v1::*;
+pub use host_name::{HostName, HostNameError, MAX_HOST_NAME_CHARS};
 /// An error's code, gRPC's own.
 pub use rpc::Code as ErrorCode;
 /// amux's error, a `google.rpc.Status`: named apart so it never reads as
@@ -43,6 +45,11 @@ pub use rpc::Status as Error;
 
 /// Bound for link-control messages and application-stream prefaces.
 pub const MESSAGE_SIZE_LIMIT: usize = 16 * 1024 * 1024;
+/// Bound for a link's first message, its Hello or the answer to one, read
+/// before anything has checked who sent it. Its fields are bounded but for
+/// the neighbors, one host entry per link the sender holds: this fits well
+/// over a hundred neighbors at the longest names.
+pub const HELLO_SIZE_LIMIT: usize = 64 * 1024;
 /// The largest attachment a person may send: 64 MiB of the file's own
 /// bytes. Clients word it "64 MB".
 pub const ATTACHMENT_SIZE_LIMIT: usize = 64 * 1024 * 1024;

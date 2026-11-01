@@ -52,7 +52,6 @@ pub const MAX_PENDING: usize = 32;
 pub const QR_SECRET_LEN: usize = 32;
 const HOST_ID_LEN: usize = 16;
 const PUBKEY_LEN: usize = 32;
-const MAX_NAME_BYTES: usize = 256;
 
 /// How a window's secret is delivered.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -398,8 +397,8 @@ pub fn validate_identity(identity: &wire::PairingIdentity) -> Result<HostId, &'s
     if identity.pubkey.len() != PUBKEY_LEN {
         return Err("pubkey must be 32 bytes");
     }
-    if identity.name.len() > MAX_NAME_BYTES {
-        return Err("name is too long");
+    if wire::HostName::parse(&identity.name).is_err() {
+        return Err("name is not a host name");
     }
     Ok(HostId::from_slice(&identity.host_id).expect("16 bytes"))
 }

@@ -9,7 +9,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_LOCAL = {
     "wire": set(),
-    "settings": set(),
+    # A host's name is wire's type, built where the configured one is read.
+    "settings": {"wire"},
     # The typed events a device may send and their uploader: a leaf, so the
     # daemon, the phone bridge and the CLI share one definition.
     "analytics": set(),

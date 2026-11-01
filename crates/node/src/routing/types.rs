@@ -161,13 +161,40 @@ pub fn host_to_wire(host: &Host) -> wire::Host {
     }
 }
 
+/// The most agent kinds a host's handshake may say it runs.
+pub(crate) const MAX_KINDS: usize = 64;
+/// The longest version a host's handshake may name.
+pub(crate) const MAX_VERSION_BYTES: usize = 64;
+
+/// A host another one described: in a handshake, of itself or a neighbor,
+/// or announcing a neighbor. What it says is kept for the life of the link
+/// (on a relay, copied to every other link of the account) and shown
+/// wherever hosts are listed, so it is held to the bounds a real host
+/// keeps: a non-nil id, a host name, a version, and no more kinds than
+/// there are.
 pub(crate) fn host_from_wire(host: wire::Host) -> Result<Host, String> {
     let platform = host.platform();
+    let id = uuid_from_bytes("host_id", host.host_id)?;
+    if id.is_nil() {
+        return Err("host_id must not be nil".to_string());
+    }
+    let name = wire::HostName::parse(&host.name)
+        .map_err(|error| format!("host name: {error}"))?
+        .into_string();
+    if host.version.is_empty() || host.version.len() > MAX_VERSION_BYTES {
+        return Err(format!(
+            "host version must be 1 to {MAX_VERSION_BYTES} bytes"
+        ));
+    }
+    let capabilities = host.capabilities.unwrap_or_default();
+    if capabilities.kinds.len() > MAX_KINDS {
+        return Err(format!("a host runs at most {MAX_KINDS} agent kinds"));
+    }
     Ok(Host {
-        id: uuid_from_bytes("host_id", host.host_id)?,
-        name: host.name,
+        id,
+        name,
         version: host.version,
-        capabilities: host.capabilities.unwrap_or_default(),
+        capabilities,
         signed_in: host.account_signed_in,
         platform,
     })
@@ -192,5 +219,101 @@ mod tests {
 
         assert_eq!(first.peer(), peer);
         assert_ne!(first, second);
+    }
+
+    fn described(name: &str) -> wire::Host {
+        wire::Host {
+            host_id: HostId::from_u128(7).as_bytes().to_vec(),
+            name: name.to_owned(),
+            version: "0.9.0".to_owned(),
+            capabilities: Some(Capabilities {
+                cloud_relay: false,
+                kinds: vec![wire::Kind::ClaudeSdk as i32],
+            }),
+            account_signed_in: None,
+            platform: wire::Platform::Macos as i32,
+        }
+    }
+
+    #[test]
+    fn a_described_host_is_held_to_what_a_real_host_says() {
+        assert_eq!(
+            host_from_wire(described("Jordan’s MacBook Pro"))
+                .unwrap()
+                .name,
+            "Jordan’s MacBook Pro"
+        );
+        let refused = [
+            wire::Host {
+                host_id: vec![0; 16],
+                ..described("desk")
+            },
+            described(""),
+            described(&"a".repeat(wire::MAX_HOST_NAME_CHARS + 1)),
+            described("desk\u{1b}[2J"),
+            described("desk\u{202e}"),
+            wire::Host {
+                version: String::new(),
+                ..described("desk")
+            },
+            wire::Host {
+                version: "v".repeat(MAX_VERSION_BYTES + 1),
+                ..described("desk")
+            },
+            wire::Host {
+                capabilities: Some(Capabilities {
+                    cloud_relay: false,
+                    kinds: vec![1; MAX_KINDS + 1],
+                }),
+                ..described("desk")
+            },
+        ];
+        for host in refused {
+            assert!(host_from_wire(host.clone()).is_err(), "{host:?}");
+        }
+    }
+
+    /// The first message's bound holds a Hello at every field's limit:
+    /// well over a hundred neighbors, each at the longest name (in the
+    /// widest characters) and version and with every kind it may list, an
+    /// address for every interface a machine might have, and a token four
+    /// times a real one's size.
+    #[test]
+    fn a_hello_at_its_fields_bounds_fits_the_first_message_bound() {
+        use prost::Message as _;
+
+        let widest = |id: u128| wire::Host {
+            host_id: HostId::from_u128(id).as_bytes().to_vec(),
+            name: "\u{1d54f}".repeat(wire::MAX_HOST_NAME_CHARS),
+            version: "9".repeat(MAX_VERSION_BYTES),
+            capabilities: Some(Capabilities {
+                cloud_relay: true,
+                kinds: vec![wire::Kind::Codex as i32; MAX_KINDS],
+            }),
+            account_signed_in: Some(true),
+            platform: wire::Platform::Macos as i32,
+        };
+        host_from_wire(widest(1)).expect("a host at every bound is a host");
+        let address = "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535".to_owned();
+        let hello = wire::Message {
+            body: Some(wire::message::Body::Hello(wire::Hello {
+                protocol_version: wire::PROTOCOL_VERSION,
+                host: Some(widest(1)),
+                neighbors: (2..130).map(widest).collect(),
+                auth_token: Some("t".repeat(4 * 1024)),
+                runtime_instance_id: vec![0xff; 16],
+                addrs: vec![address.clone(); 64],
+                public_addr: Some(address.clone()),
+                observed_addr: Some(address),
+            })),
+        };
+
+        let bytes = hello.encoded_len();
+
+        assert!(
+            bytes <= wire::HELLO_SIZE_LIMIT,
+            "{bytes} bytes; the bound is {}",
+            wire::HELLO_SIZE_LIMIT
+        );
     }
 }

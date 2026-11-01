@@ -188,8 +188,8 @@ impl Daemon {
             .refused_for_plan = refused_for_plan;
     }
 
-    /// `host` is forgotten: its trust ended or is being replaced. Nothing
-    /// the core decided about it survives.
+    /// `host` is forgotten: its trust ended. Nothing the core decided
+    /// about it survives.
     pub(crate) fn forget_host(&mut self, host: HostId) {
         self.touched.host(host);
         if let Some(known) = self.presence.hosts.get_mut(&host) {

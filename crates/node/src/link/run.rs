@@ -947,7 +947,7 @@ async fn run_established(
             request = link_close_rx.recv() => {
                 close_status = Some(match request {
                     Some(LinkCloseRequest::OutgoingQueueFull) => tonic::Status::resource_exhausted("link outgoing queue full"),
-                    Some(LinkCloseRequest::TrustReplaced) => tonic::Status::permission_denied("peer trust was replaced"),
+                    Some(LinkCloseRequest::Released) => tonic::Status::permission_denied("this host released its peer links"),
                     Some(LinkCloseRequest::Superseded) => tonic::Status::unavailable("direct link superseded"),
                     Some(LinkCloseRequest::CallsFailed) => tonic::Status::unavailable("no call channel opened on the link"),
                     Some(LinkCloseRequest::ForwarderGone) => tonic::Status::unavailable("the link to the forwarder carrying it went"),

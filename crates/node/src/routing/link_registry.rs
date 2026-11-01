@@ -177,7 +177,9 @@ struct LinkWriter {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) enum LinkCloseRequest {
     OutgoingQueueFull,
-    TrustReplaced,
+    /// This host is letting its peer links go: its profile stopped
+    /// dialling or is shutting down.
+    Released,
     Superseded,
     /// This host no longer trusts the peer: the link closes saying
     /// USER_REVOKED, in the close message and as the connection's own
@@ -544,7 +546,7 @@ impl LinkRegistry {
                 .iter()
                 .filter(|(_, writer)| writer.role == LinkRole::Peer)
                 .map(|(link, writer)| {
-                    let _ = writer.close_tx.try_send(LinkCloseRequest::TrustReplaced);
+                    let _ = writer.close_tx.try_send(LinkCloseRequest::Released);
                     (*link, writer.closed.clone())
                 })
                 .collect::<Vec<_>>()

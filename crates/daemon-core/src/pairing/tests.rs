@@ -1,8 +1,8 @@
 use store::Sqlite;
 
 use super::*;
-use crate::payload::{ClientRequest, JobResult};
-use crate::{Input, Job, StartOptions, StepBudget};
+use crate::payload::ClientRequest;
+use crate::{Input, StartOptions, StepBudget};
 
 const OFFERER: u8 = 1;
 const JOINER: u8 = 2;
@@ -52,23 +52,10 @@ impl Host {
         self.daemon.store.own_host()[0]
     }
 
-    /// Steps `input`, then finishes every trust job it asked for.
     fn step(&mut self, input: Input) {
         let mut out = Vec::new();
         self.daemon.step(input, &mut out);
-        self.out.extend(out.iter().cloned());
-        for output in out {
-            if let Output::Job {
-                id,
-                op: Job::Fsync { .. } | Job::TeardownHost { .. },
-            } = output
-            {
-                self.step(Input::JobDone {
-                    job: id,
-                    result: JobResult::Done,
-                });
-            }
-        }
+        self.out.extend(out);
     }
 
     fn call(&mut self, call: u64, request: ClientRequest) {
@@ -371,9 +358,6 @@ fn a_conversation_past_its_deadline_ends_and_frees_its_attempt() {
     assert!(window.in_flight.is_empty() && window.failed == 0);
 }
 
-/// The window closing while the joiner's key waits to be written (here
-/// behind the teardown of the key it replaces) undoes the pairing it was
-/// for, and the key it replaced is trusted again.
 /// A host trusted under another key, as an earlier pairing left it.
 fn trusting(host: &mut Host, peer: u8, name: &str) -> Vec<u8> {
     let old_key = vec![99; 32];

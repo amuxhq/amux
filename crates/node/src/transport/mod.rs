@@ -12,7 +12,7 @@ mod tls;
 
 pub(crate) use compress::Compressed;
 pub(crate) use io::{
-    BoxedGrpcAuth, BoxedGrpcConnectInfo, BoxedGrpcIo, PreTrustPairingReachability, Replacing,
+    BoxedGrpcAuth, BoxedGrpcConnectInfo, BoxedGrpcIo, PreTrustPairingReachability,
 };
 pub(crate) use memory::ShutdownIo;
 #[cfg(test)]

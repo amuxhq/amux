@@ -233,6 +233,7 @@ impl PairFailure {
     fn from_trust(error: &TrustError) -> PairFailure {
         match error {
             TrustError::DuplicatePubkey(_) => PairFailure::violation("pubkey is already trusted"),
+            TrustError::PairedUnderAnotherKey { name, .. } => PairFailure::already_paired(name),
             other => PairFailure::new(ErrorCode::Internal, other.to_string()),
         }
     }

@@ -444,9 +444,9 @@ completes.
 **The resumed identity.** A resumed handshake presents no certificate: the
 ticket names the key the host proved when it was issued. The listener holds
 the link's early streams until its daemon core has decided that key is still
-the one pinned for the host the `Hello` names; a host whose pin was removed,
-or is being replaced, is refused with the revocation close (`USER_REVOKED`)
-before any early call is served, and the dialler reads it as the revocation.
+the one pinned for the host the `Hello` names; a host whose pin was removed
+is refused with the revocation close (`USER_REVOKED`) before any early call
+is served, and the dialler reads it as the revocation.
 
 ### Link control
 

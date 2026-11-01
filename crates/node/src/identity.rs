@@ -720,7 +720,7 @@ mod tests {
     use std::sync::{Arc, Barrier};
     use std::time::Duration;
 
-    use daemon_core::trust::PairingUpdate;
+    use daemon_core::trust::TrustError;
     use rustls::pki_types::{CertificateDer, UnixTime};
     use tempfile::TempDir;
 
@@ -856,7 +856,7 @@ mod tests {
     }
 
     #[test]
-    fn pinned_server_cert_verifier_reads_live_trust_store_updates_and_replacements() {
+    fn pinned_server_cert_verifier_reads_live_trust_store_updates() {
         let peer_dir = temp_data_dir();
         let peer = identity_in(peer_dir.path()).unwrap();
         let rotated_peer = DeviceIdentity::for_test(peer.host_id);
@@ -866,6 +866,14 @@ mod tests {
         let server_name = ServerName::try_from("peer.amux.invalid").unwrap();
         let peer_cert = CertificateDer::from(peer.certificate_der().unwrap());
         let rotated_cert = CertificateDer::from(rotated_peer.certificate_der().unwrap());
+        let pair = |identity: &DeviceIdentity| {
+            trust_store.write().unwrap().upsert_paired_peer(
+                peer.host_id,
+                identity.public_key().to_vec(),
+                "peer".to_string(),
+                Reachability::Cloud,
+            )
+        };
 
         assert!(
             verifier
@@ -873,54 +881,28 @@ mod tests {
                 .is_err()
         );
 
-        trust_store
-            .write()
-            .unwrap()
-            .upsert_paired_peer(
-                peer.host_id,
-                peer.public_key().to_vec(),
-                "peer".to_string(),
-                Reachability::Cloud,
-            )
-            .unwrap();
+        pair(&peer).unwrap();
         verifier
             .verify_server_cert(&peer_cert, &[], &server_name, &[], now)
             .unwrap();
 
-        assert_eq!(
-            trust_store
-                .write()
-                .unwrap()
-                .upsert_paired_peer(
-                    peer.host_id,
-                    rotated_peer.public_key().to_vec(),
-                    "peer-rotated".to_string(),
-                    Reachability::Cloud
-                )
-                .unwrap(),
-            PairingUpdate::PubkeyReplacementRequired
-        );
-        assert!(
-            verifier
-                .verify_server_cert(&peer_cert, &[], &server_name, &[], now)
-                .is_err()
-        );
+        // Another key for the paired host is refused; the pinned one stays.
+        assert!(matches!(
+            pair(&rotated_peer),
+            Err(TrustError::PairedUnderAnotherKey { .. })
+        ));
+        verifier
+            .verify_server_cert(&peer_cert, &[], &server_name, &[], now)
+            .unwrap();
         assert!(
             verifier
                 .verify_server_cert(&rotated_cert, &[], &server_name, &[], now)
                 .is_err()
         );
 
-        trust_store
-            .write()
-            .unwrap()
-            .replace_paired_peer_after_teardown(
-                peer.host_id,
-                rotated_peer.public_key().to_vec(),
-                "peer-rotated".to_string(),
-                Reachability::Cloud,
-            )
-            .unwrap();
+        // Unpaired and paired again, only the new key is trusted.
+        trust_store.write().unwrap().remove(peer.host_id).unwrap();
+        pair(&rotated_peer).unwrap();
         assert!(
             verifier
                 .verify_server_cert(&peer_cert, &[], &server_name, &[], now)

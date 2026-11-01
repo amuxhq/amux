@@ -3,10 +3,9 @@ use wire::message::Body;
 use wire::{Hello, Message, NeighborUp};
 
 use super::*;
-use crate::ids::{CallId, JobId};
-use crate::io::{Input, Job};
-use crate::payload::{CarrierKind, ClientRequest, JobResult};
-use crate::trust::{Reachability, TrustStore};
+use crate::io::Input;
+use crate::payload::CarrierKind;
+use crate::trust::TrustStore;
 use crate::{StartOptions, StepBudget};
 
 const OWN: [u8; 16] = *b"own-host-0000000";
@@ -84,20 +83,6 @@ fn linked(daemon: &mut Daemon, link: u64, peer: HostId, kind: CarrierKind, reach
     );
 }
 
-fn neighbor_up(daemon: &mut Daemon, link: u64, id: HostId) {
-    step(
-        daemon,
-        Input::LinkControl {
-            link: LinkId(link),
-            frame: Message {
-                body: Some(Body::NeighborUp(NeighborUp {
-                    host: Some(host(id)),
-                })),
-            },
-        },
-    );
-}
-
 fn entry(daemon: &Daemon, id: HostId) -> wire::HostEntry {
     daemon
         .host_set()
@@ -122,72 +107,6 @@ fn channel(daemon: &mut Daemon, link: u64, peer: HostId) -> ChannelId {
             _ => None,
         })
         .expect("the core opens the channel")
-}
-
-fn teardown(out: &[Output]) -> JobId {
-    out.iter()
-        .find_map(|output| match output {
-            Output::Job {
-                id,
-                op: Job::TeardownHost { .. },
-            } => Some(*id),
-            _ => None,
-        })
-        .unwrap_or_else(|| panic!("expected a teardown, got {out:?}"))
-}
-
-fn pair(id: HostId, pubkey: Vec<u8>) -> TrustChange {
-    TrustChange::Pair {
-        host: Uuid::from_bytes(id.0),
-        pubkey,
-        name: "desk".into(),
-        reachability: Some(Reachability::Cloud),
-    }
-}
-
-#[test]
-fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
-    let mut daemon = daemon(&[DESK]);
-    linked(&mut daemon, 1, DESK, CarrierKind::Direct, &[]);
-    assert_eq!(entry(&daemon, DESK).version(), Some("1.2.3"));
-
-    // Pairing under a new key tears the host down first.
-    let out = step(
-        &mut daemon,
-        Input::ClientCall {
-            call: CallId(1),
-            request: ClientRequest::ChangeTrust(pair(DESK, vec![8; 32])),
-        },
-    );
-    let teardown = self::teardown(&out);
-    assert!(daemon.routing.catalogue.said(DESK).is_none());
-    // What arrives meanwhile, on a link or a neighbor's word, is not held.
-    linked(&mut daemon, 2, DESK, CarrierKind::Direct, &[]);
-    linked(&mut daemon, 3, RELAY, CarrierKind::Relay, &[DESK]);
-    assert!(daemon.routing.catalogue.said(DESK).is_none());
-    assert!(
-        daemon
-            .routing
-            .catalogue
-            .claimed()
-            .all(|(host, ..)| host != DESK)
-    );
-
-    step(
-        &mut daemon,
-        Input::JobDone {
-            job: teardown,
-            result: JobResult::Done,
-        },
-    );
-    neighbor_up(&mut daemon, 3, DESK);
-    assert!(
-        daemon
-            .routing
-            .catalogue
-            .claimed()
-            .any(|(host, _, relays)| host == DESK && relays == [RELAY])
-    );
 }
 
 #[test]

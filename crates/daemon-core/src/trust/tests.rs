@@ -5,7 +5,7 @@ use store::Sqlite;
 
 use super::*;
 use crate::payload::ClientRequest;
-use crate::{Input, StartOptions, StepBudget};
+use crate::{Input, Job, JobId, StartOptions, StepBudget};
 
 const PEER: Uuid = Uuid::from_u128(2);
 const OTHER: Uuid = Uuid::from_u128(3);
@@ -60,7 +60,7 @@ fn trust_store_pairing_rejects_duplicate_pubkey_for_different_host() {
 }
 
 #[test]
-fn trust_store_pairing_upsert_requires_teardown_before_pubkey_replacement() {
+fn trust_store_pairing_refuses_a_paired_host_under_another_key() {
     let mut store = TrustStore::default();
     store
         .upsert_paired_peer(PEER, vec![7; 32], "old".into(), Reachability::Cloud)
@@ -70,33 +70,19 @@ fn trust_store_pairing_upsert_requires_teardown_before_pubkey_replacement() {
     };
 
     assert_eq!(
-        store
-            .upsert_paired_peer(PEER, vec![8; 32], "new".into(), direct.clone())
-            .unwrap(),
-        PairingUpdate::PubkeyReplacementRequired
+        store.upsert_paired_peer(PEER, vec![8; 32], "new".into(), direct),
+        Err(TrustError::PairedUnderAnotherKey {
+            host: PEER,
+            name: "old".into(),
+        })
     );
     let entry = store.entry(PEER).unwrap();
     assert_eq!(entry.name, "old");
     assert_eq!(entry.pubkey, vec![7; 32]);
-    assert!(entry.on_account);
     assert!(entry.direct.is_empty());
-    assert!(store.pubkey_for_host(PEER).is_none());
-    assert!(store.host_id_for_pubkey(&[7; 32]).is_none());
-
-    assert_eq!(
-        store
-            .replace_paired_peer_after_teardown(PEER, vec![8; 32], "new".into(), direct.clone())
-            .unwrap(),
-        PairingUpdate::ReplacedPubkey
-    );
-    let entry = store.entry(PEER).unwrap();
-    assert_eq!(entry.name, "new");
-    assert_eq!(entry.pubkey, vec![8; 32]);
-    assert!(
-        !entry.on_account,
-        "a replaced key starts from what its pairing reached"
-    );
-    assert_eq!(entry.direct, vec![addr("127.0.0.1:9000")]);
+    assert_eq!(store.pubkey_for_host(PEER), Some([7; 32].as_slice()));
+    assert_eq!(store.host_id_for_pubkey(&[7; 32]), Some(PEER));
+    assert_eq!(store.host_id_for_pubkey(&[8; 32]), None);
 }
 
 fn a_full_entry() -> TrustEntry {
@@ -317,73 +303,30 @@ fn a_remembered_fact_is_kept_and_one_that_did_not_move_writes_nothing() {
     assert_eq!(daemon.store().changes(), before);
 }
 
-/// A host paired under another key stops being trusted under the old key
-/// at once; its connections are torn down before the new key is written.
+/// Pairing a paired host under another key is refused, and the old key
+/// stays trusted and held.
 #[test]
-fn replacing_a_key_tears_the_host_down_before_the_write() {
+fn pairing_a_host_under_another_key_is_refused_without_a_write() {
     let mut daemon = daemon();
     change(&mut daemon, 1, pair(7));
+    let before = daemon.store().changes();
 
     let out = change(&mut daemon, 2, pair(8));
-    let Some((teardown, Job::TeardownHost { host })) = job(&out) else {
-        panic!("expected a teardown first, got {out:?}");
-    };
-    assert_eq!(host, HostId(*PEER.as_bytes()));
-    assert!(
-        daemon.trust().pubkey_for_host(PEER).is_none(),
-        "the old key is out"
-    );
-    assert!(published(&out).unwrap().pubkey_for_host(PEER).is_none());
     assert_eq!(
-        held(&daemon).pubkey_for_host(PEER),
-        Some([7; 32].as_slice()),
-        "the new key waits for the teardown"
+        ended(&out, 2),
+        Some(Status::Failed(CallError::Trust(
+            TrustError::PairedUnderAnotherKey {
+                host: PEER,
+                name: "peer".into(),
+            }
+        )))
     );
-    // A change asked for meanwhile waits behind the replacement.
-    let waiting = change(&mut daemon, 3, TrustChange::Remove { host: PEER });
-    assert_eq!(ended(&waiting, 3), None);
-
-    let out = step(
-        &mut daemon,
-        Input::JobDone {
-            job: teardown,
-            result: crate::payload::JobResult::Done,
-        },
-    );
-    assert!(out.contains(&Output::Answer {
-        call: CallId(2),
-        response: Response::Trust(TrustChanged::Paired(PairingUpdate::ReplacedPubkey)),
-    }));
-    assert_eq!(
-        ended(&out, 3),
-        Some(Status::Ok),
-        "then the removal: {out:?}"
-    );
-    assert!(held(&daemon).is_empty());
-}
-
-#[test]
-fn a_replacement_the_store_refused_trusts_the_old_key_again() {
-    let mut daemon = daemon();
-    change(&mut daemon, 1, pair(7));
-    let Some((teardown, _)) = job(&change(&mut daemon, 2, pair(8))) else {
-        panic!("expected a teardown");
-    };
-    refuse_writes(&daemon);
-    let out = step(
-        &mut daemon,
-        Input::JobDone {
-            job: teardown,
-            result: crate::payload::JobResult::Done,
-        },
-    );
+    assert_eq!(daemon.store().changes(), before);
     assert_eq!(
         daemon.trust().pubkey_for_host(PEER),
         Some([7; 32].as_slice())
     );
-    assert!(out.contains(&Output::Shell(ShellWork::ReplacementEnded {
-        host: HostId(*PEER.as_bytes()),
-    })));
+    assert_eq!(held(&daemon), *daemon.trust());
 }
 
 /// A change asked for while the WAL moves into the main file waits until
@@ -438,26 +381,18 @@ fn a_change_waits_out_a_checkpoint() {
     );
 }
 
-/// A replacement under way and a change behind it survive the checkpoint
-/// the core is restored from, and the paired hosts come back from the
-/// store.
+/// The paired hosts come back from the store a core is restored beside.
 #[test]
-fn a_replacement_under_way_survives_a_checkpoint() {
+fn a_restored_core_reads_its_paired_hosts_from_the_store() {
     let mut daemon = daemon();
     change(&mut daemon, 1, pair(7));
-    change(&mut daemon, 2, pair(8));
-    step(
-        &mut daemon,
-        Input::ChangeTrust(TrustChange::DirectAddrs {
-            host: PEER,
-            addrs: vec![addr("[::1]:4000")],
-        }),
-    );
     let checkpoint = daemon.checkpoint();
     let store = Sqlite::restore(&daemon.store().dump().unwrap()).unwrap();
     let restored = Daemon::restore(&checkpoint, store, Default::default()).expect("it restores");
     assert_eq!(restored.checkpoint(), checkpoint);
     assert_eq!(restored.trust, daemon.trust);
-    assert!(restored.trust().pubkey_for_host(PEER).is_none());
-    assert!(restored.trust().entry(PEER).is_some());
+    assert_eq!(
+        restored.trust().pubkey_for_host(PEER),
+        Some([7; 32].as_slice())
+    );
 }

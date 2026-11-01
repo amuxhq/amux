@@ -2172,7 +2172,6 @@ impl Transition<'_> {
             Job::Fsync { .. }
             | Job::WriteBlob { .. }
             | Job::CheckpointWal
-            | Job::TeardownHost { .. }
             | Job::RefreshToken { .. }
             | Job::SendPush(_) => JobResult::Done,
         })
@@ -2788,7 +2787,6 @@ fn agent_input(input: &agent_core::Input) -> &'static str {
 fn job_kind(job: &Job) -> &'static str {
     match job {
         Job::Fsync { .. } => "Fsync",
-        Job::TeardownHost { .. } => "TeardownHost",
         Job::CheckpointWal => "CheckpointWal",
         Job::WriteBlob { .. } => "WriteBlob",
         Job::RefreshToken { .. } => "RefreshToken",

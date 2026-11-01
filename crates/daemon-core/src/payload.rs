@@ -90,8 +90,7 @@ pub struct PeerAddress {
 pub enum ChannelError {
     /// The link it was asked on is not up.
     NoLink,
-    /// No key is pinned for the peer: it is not paired, or its pairing is
-    /// being replaced.
+    /// No key is pinned for the peer: it is not paired.
     Unpinned,
 }
 

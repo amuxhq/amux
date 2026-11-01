@@ -2082,20 +2082,21 @@ mod tests {
         .await;
         client.link(&server).await.unwrap();
 
-        // The peer is paired again under a new key; the old key's holder
-        // still has the session behind the client's ticket.
+        // The peer is unpaired and paired again under a new key; the old
+        // key's holder still has the session behind the client's ticket.
         let replacement = DeviceIdentity::for_test(server_identity.host_id);
-        client
-            .trust
-            .write()
-            .unwrap()
-            .upsert_paired_peer(
-                replacement.host_id,
-                replacement.public_key().to_vec(),
-                "peer".to_string(),
-                None,
-            )
-            .unwrap();
+        {
+            let mut trust = client.trust.write().unwrap();
+            trust.remove(replacement.host_id).unwrap();
+            trust
+                .upsert_paired_peer(
+                    replacement.host_id,
+                    replacement.public_key().to_vec(),
+                    "peer".to_string(),
+                    None,
+                )
+                .unwrap();
+        }
         assert!(
             client.link(&server).await.is_err(),
             "the old key's holder is refused"

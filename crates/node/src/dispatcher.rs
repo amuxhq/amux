@@ -11,7 +11,7 @@ use crate::identity::{self, IdentityError};
 use crate::link::link_log::PathKind;
 use crate::link::{InboundStream, LinkCtx, QuicCarrier, accepted_quic_bidi_stream, run_link};
 use crate::resource_limits::{Admitted, HandshakeAdmission};
-use crate::transport::{BoxedGrpcIo, Compressed, PreTrustPairingReachability, Replacing};
+use crate::transport::{BoxedGrpcIo, Compressed, PreTrustPairingReachability};
 use crate::trust::SharedTrustStore;
 
 #[derive(Debug, Error)]
@@ -51,7 +51,6 @@ fn link_outcome(error: crate::link::LinkError) -> DispatchError {
 pub(crate) struct TunnelDispatcher {
     trust_store: SharedTrustStore,
     pair_mode: std::sync::Arc<PairMode>,
-    replacing: Replacing,
     trusted_tx: mpsc::Sender<BoxedGrpcIo>,
     pairing_tx: mpsc::Sender<BoxedGrpcIo>,
     handshake_timeout: Duration,
@@ -112,7 +111,6 @@ impl TunnelDispatcher {
     pub(crate) fn new(
         trust_store: SharedTrustStore,
         pair_mode: std::sync::Arc<PairMode>,
-        replacing: Replacing,
         trusted_tx: mpsc::Sender<BoxedGrpcIo>,
         pairing_tx: mpsc::Sender<BoxedGrpcIo>,
         handshake_timeout: Duration,
@@ -120,7 +118,6 @@ impl TunnelDispatcher {
         Self {
             trust_store,
             pair_mode,
-            replacing,
             trusted_tx,
             pairing_tx,
             handshake_timeout,
@@ -235,11 +232,6 @@ impl TunnelDispatcher {
         if !paired {
             return Err(DispatchError::Link(format!(
                 "a stream from {adjacent_peer}, which is not paired"
-            )));
-        }
-        if self.replacing.contains(adjacent_peer) {
-            return Err(DispatchError::Link(format!(
-                "a stream from {adjacent_peer}, whose key is being replaced"
             )));
         }
         // Compressed as the opener's end is (`ChannelPool::channel_over`).
@@ -487,7 +479,7 @@ mod tests {
         );
 
         let refused = link_outcome(crate::link::LinkError::Status(
-            tonic::Status::permission_denied("peer trust was replaced"),
+            tonic::Status::permission_denied("the peer no longer trusts this host"),
         ));
         assert!(matches!(refused, DispatchError::Link(_)), "{refused}");
     }

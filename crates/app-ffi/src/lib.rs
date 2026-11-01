@@ -46,11 +46,11 @@ use app_runtime::values::{
     AgentAct, ChatAct, ChatDelta, Draft, FleetDelta, Found, FrozenReview, NewAgent,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
-use model::{AgentKey, Key};
 use node::SourcePolicy;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
+use ui_state::{AgentKey, Key};
 use ui_view::Comparison;
 
 // The tests drive real agent processes, which run on Unix.

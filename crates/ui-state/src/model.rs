@@ -1,4 +1,5 @@
-//! The plain values the amux views and the phone bridge share.
+//! The plain values the amux views and the phone bridge share, re-exported
+//! at the crate root.
 //!
 //! The session model computes them, the views put them in what they return,
 //! and the bridge hands them to Swift, whose mirrors are generated from

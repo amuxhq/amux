@@ -15,11 +15,11 @@ use app_runtime::values::{
 };
 use app_runtime::{AppRuntime, Wake};
 use client::SystemClock;
-use model::{AgentKey, Connection};
 use node::SourcePolicy;
 use patience::{PATIENCE, until};
 use provider_fakes::script::Step;
 use testnet::{AgentDecl, FakeKind, HostDecl, Net, Relay, Topology};
+use ui_state::{AgentKey, Connection};
 use ui_view::FleetCard;
 use wire::{Empty, StartPairingRequest, start_pairing_request};
 
@@ -702,7 +702,7 @@ async fn the_apps_own_events_are_recorded_on_its_profiles() {
 
 fn app_card_idle(app: &AppRuntime, agent: &AgentKey) -> bool {
     app.fleet_card(agent)
-        .is_some_and(|card| card.attention == model::Attention::Idle)
+        .is_some_and(|card| card.attention == ui_state::Attention::Idle)
 }
 
 /// What the phone shows of the desk's agent: its fleet card, less how

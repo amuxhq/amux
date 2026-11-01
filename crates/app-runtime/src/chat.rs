@@ -5,10 +5,9 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
-use model::AgentKey;
 use tokio::task::JoinHandle;
 use ui_runtime::{Fleet, InputError, PageError, Session};
-use ui_state::{InputOutcome, InputState, Key, Refusal, SessionState};
+use ui_state::{AgentKey, InputOutcome, InputState, Key, Refusal, SessionState};
 use ui_view::{
     AskCard, Comparison, FormValue, Overview, QuestionResponse, Row, SettingChange, SettingsView,
     ToolRows,

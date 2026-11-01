@@ -21,7 +21,6 @@ members = [
     "crates/ios-tools",
     "crates/journal",
     "crates/log-file",
-    "crates/model",
     "crates/models",
     "crates/node",
     "crates/path-core",
@@ -73,7 +72,6 @@ testnet = { path = "crates/testnet" }
 client = { path = "crates/client" }
 interpret = { path = "crates/interpret" }
 journal = { path = "crates/journal" }
-model = { path = "crates/model" }
 models = { path = "crates/models" }
 store = { path = "crates/store" }
 wire = { path = "crates/wire", default-features = false }

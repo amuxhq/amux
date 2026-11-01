@@ -537,11 +537,11 @@ cargo = [{ package = "client", modules = ["seam"], features = [] }]
 
 [[suite]]
 name = "phone-bridge-library-units"
-contract = "The Rust phone bridge preserves its C boundary, mobile lifecycle and callback contracts, and every shared view value has a schema for its Swift mirror."
-paths = ["crates/app-ffi/src", "crates/model/src"]
+contract = "The Rust phone bridge preserves its C boundary, mobile lifecycle and callback contracts."
+paths = ["crates/app-ffi/src"]
 recipe = "just suite phone-bridge-library-units"
 boundary = "Store, effects, bridge"
-oracle = "C-boundary results, callback records, runtime state, and generated schemas."
+oracle = "C-boundary results, callback records and runtime state."
 real = ["embedded runtime", "SQLite", "temporary files"]
 substituted = ["Swift caller", "cloud account", "providers"]
 time = "real"
@@ -551,7 +551,6 @@ evidence = ""
 update = ""
 cargo = [
   { package = "app-ffi", kind = "lib", targets = ["app_ffi"], features = [] },
-  { package = "model", kind = "lib", targets = ["model"], features = [] },
 ]
 
 [[suite]]
@@ -859,11 +858,11 @@ cargo = [
 
 [[suite]]
 name = "client-model-spec"
-contract = "Ordered messages reduce to the documented client model and remain equivalent across replay and checkpoint cuts."
-paths = ["crates/ui-state/tests"]
+contract = "Ordered messages reduce to the documented client model and remain equivalent across replay and checkpoint cuts, and every plain value the views and the phone bridge share has a schema for its Swift mirror."
+paths = ["crates/ui-state/tests", "crates/ui-state/src/model.rs"]
 recipe = "just suite client-model-spec"
 boundary = "Client model"
-oracle = "Explicit state assertions, the window, run-index and changed-key invariants after every message, and replay equality at every checkpoint cut."
+oracle = "Explicit state assertions, the window, run-index and changed-key invariants after every message, replay equality at every checkpoint cut, and generated schemas."
 real = []
 substituted = ["network", "store", "provider", "wall clock"]
 time = "none"

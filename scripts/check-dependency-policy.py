@@ -9,10 +9,6 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_LOCAL = {
     "wire": set(),
-    # The plain values the views and the phone bridge share; the Swift
-    # mirrors are generated from them. They hold the wire's own enums
-    # (a refusal reason) rather than copies, so they see `wire` and nothing else.
-    "model": {"wire"},
     "settings": set(),
     # The typed events a device may send and their uploader: a leaf, so the
     # daemon, the phone bridge and the CLI share one definition.
@@ -54,19 +50,22 @@ ALLOWED_LOCAL = {
     "xtask": {"release"},
     # The Swift mirrors of the view values are generated from their
     # definitions, so the generator reads them.
-    "ios-tools": {"app-runtime", "model", "ui-view", "wire"},
+    "ios-tools": {"app-runtime", "ui-state", "ui-view", "wire"},
     # The seam both clients call the local runtime through: the local socket
     # and the shared clock trait come from the agent directory contract.
     "client": {"agent-dir", "wire"},
-    "ui-state": {"model", "wire"},
+    # The session and fleet model, with the plain values the views and the
+    # phone bridge share, from which the Swift mirrors are generated. Those
+    # hold the wire's own enums (a refusal reason) rather than copies.
+    "ui-state": {"wire"},
     "ui-view": {"attachments", "ui-state", "wire"},
     "ui-runtime": {"client", "ui-state", "ui-view", "wire"},
     # The phone's chats and fleet over the local runtime, with no node.
-    "app-runtime": {"client", "model", "ui-runtime", "ui-state", "ui-view", "wire"},
+    "app-runtime": {"client", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The daemon's profile runtime hosted in the phone's process.
     "app-embedded": {"analytics", "app-runtime", "client", "log-file", "node", "wire"},
     # The C ABI over both.
-    "app-ffi": {"app-embedded", "app-runtime", "client", "model", "node", "ui-view"},
+    "app-ffi": {"app-embedded", "app-runtime", "client", "node", "ui-state", "ui-view"},
     # The terminal client composes the views over the drivers' state.
     "tui": {"attachments", "client", "settings", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The bounded ring of a core's inputs since its last checkpoint, in
@@ -96,7 +95,7 @@ CORES_ALLOWED_LOCAL = {
 # the client seam: none of them may link, directly or through another crate,
 # the daemon, its store, the interpreters or a provider. The phone bridge
 # (app-ffi, app-embedded) hosts the runtime in process and is not one of them.
-UI_CRATES = {"model", "client", "ui-state", "ui-view", "ui-runtime", "tui", "app-runtime"}
+UI_CRATES = {"client", "ui-state", "ui-view", "ui-runtime", "tui", "app-runtime"}
 FORBIDDEN_FOR_UI = {
     "node", "store", "interpret", "agent", "claude-protocol", "codex-protocol", "pty-host",
 }

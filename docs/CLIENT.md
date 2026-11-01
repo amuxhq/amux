@@ -31,8 +31,7 @@ Three rules shape the library:
 | Crate | What it owns |
 |---|---|
 | [`client`](../crates/client/src/lib.rs) | The `Client` trait: the one seam both clients call the runtime through, with a gRPC implementation over the profile socket and an in-process one for the phone. |
-| [`model`](../crates/model/src/lib.rs) | Plain shared values: `Key`, `AgentKey`, `Attention`, `Connection`, `BlobStatus`, `Composer`, `Waiting`, `PhaseView`, `Activity`, `InputState`. The Swift mirrors are generated from these. |
-| [`ui-state`](../crates/ui-state/src/lib.rs) | `SessionState` (one open chat) and `FleetState` (the inventory), updated by messages. No I/O, no clock, no handles. |
+| [`ui-state`](../crates/ui-state/src/lib.rs) | `SessionState` (one open chat) and `FleetState` (the inventory), updated by messages. No I/O, no clock, no handles. Also the plain shared values ([`model.rs`](../crates/ui-state/src/model.rs)): `Key`, `AgentKey`, `Attention`, `Connection`, `BlobStatus`, `Composer`, `Waiting`, `PhaseView`, `Activity`, `InputState`, from which the Swift mirrors are generated. |
 | [`ui-view`](../crates/ui-view/src/lib.rs) | Pure functions from the state to content values: chat rows, the ask card, the composer and overview, the settings view, fleet rows and cards, the review document. |
 | [`ui-runtime`](../crates/ui-runtime/src/lib.rs) | The drivers, `Session` and `Fleet`: subscribe, reconnect, page, send, fetch blobs, and keep a bounded trace for dumps. The fleet holds the one session each live agent has. The only place a chat does I/O. |
 | [`replay-support`](../crates/replay-support/src/lib.rs) | Replaying a dump bundle through the interpreter, the session state and the views. |
@@ -40,10 +39,10 @@ Three rules shape the library:
 
 The terminal client ([`tui`](../crates/tui/src/lib.rs)) and the phone's runtime
 ([`app-runtime`](../crates/app-runtime/src/lib.rs)) sit on top. The dependency policy
-(`scripts/check-dependency-policy.py`, run by `just dependency-policy`) holds the shape: `model`, `client`,
+(`scripts/check-dependency-policy.py`, run by `just dependency-policy`) holds the shape: `client`,
 `ui-state`, `ui-view`, `ui-runtime`, `tui` and `app-runtime` may not link the daemon (`node`), its `store`, the
 interpreters (`interpret`), the agent process (`agent`) or any provider crate, directly or through another crate.
-Among amux's own crates, `ui-state` links only `model` and `wire`; `ui-view` adds `attachments`; `ui-runtime`
+Among amux's own crates, `ui-state` links only `wire`; `ui-view` adds `attachments`; `ui-runtime`
 adds `client` and `ui-view`, whose fleet line decides when a session wakes home.
 
 Every value the views return for drawing derives `Serialize` and `JsonSchema`. The phone receives them as JSON over the C

@@ -12,10 +12,10 @@ use app_runtime::values::{
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use client::{Client, InProcess, SystemClock};
-use model::{AgentKey, InputState, PhaseView, Refusal};
 use provider_fakes::script::{Ask, Question, Step, Tool, ToolClass};
 use testnet::{AgentDecl, FakeKind, Net, Topology};
 use tokio::sync::mpsc;
+use ui_state::{AgentKey, InputState, PhaseView, Refusal};
 use ui_view::{AskBody, ChoiceOutcome, Comparison, QuestionResponse, RowKind, SettingChange};
 
 const PATIENCE: Duration = Duration::from_secs(20);
@@ -578,7 +578,7 @@ async fn the_fleet_wakes_the_host_when_an_agent_moves() {
                     .flat_map(|section| &section.rows)
                     .any(|row| {
                         row.card.agent == worker(&net)
-                            && row.card.attention == model::Attention::NeedsYou
+                            && row.card.attention == ui_state::Attention::NeedsYou
                     })
             });
             if needs_you {

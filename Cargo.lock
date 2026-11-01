@@ -230,7 +230,6 @@ dependencies = [
  "app-runtime",
  "client",
  "log-file",
- "model",
  "node",
  "patience",
  "provider-fakes",
@@ -242,6 +241,7 @@ dependencies = [
  "tonic",
  "tracing",
  "tracing-subscriber",
+ "ui-state",
  "ui-view",
  "uuid",
  "wire",
@@ -256,7 +256,6 @@ dependencies = [
  "cbindgen",
  "client",
  "libc",
- "model",
  "node",
  "provider-fakes",
  "serde",
@@ -264,6 +263,7 @@ dependencies = [
  "tempfile",
  "testnet",
  "tokio",
+ "ui-state",
  "ui-view",
  "wire",
 ]
@@ -273,7 +273,6 @@ name = "app-runtime"
 version = "0.2.0"
 dependencies = [
  "client",
- "model",
  "models",
  "prost",
  "provider-fakes",
@@ -1779,11 +1778,11 @@ name = "ios-tools"
 version = "0.1.0"
 dependencies = [
  "app-runtime",
- "model",
  "schemars",
  "serde",
  "serde_json",
  "tempfile",
+ "ui-state",
  "ui-view",
  "wire",
 ]
@@ -2029,16 +2028,6 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "model"
-version = "0.2.0"
-dependencies = [
- "schemars",
- "serde",
- "serde_json",
- "wire",
 ]
 
 [[package]]
@@ -4337,9 +4326,11 @@ dependencies = [
 name = "ui-state"
 version = "0.5.0"
 dependencies = [
- "model",
  "proptest",
  "prost",
+ "schemars",
+ "serde",
+ "serde_json",
  "wire",
 ]
 

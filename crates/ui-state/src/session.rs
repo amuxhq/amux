@@ -5,12 +5,14 @@ mod history;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-pub use model::{Activity, ActivityKind, BlobStatus, Composer, Connection, PhaseView, Waiting};
 use wire::{Agent, HostEntry, Input, Item, Kind, QueuedInput, SessionEvent, session_event};
 
 use crate::Key;
 use crate::body::{AgentState, ItemClass, OpenAsk};
 use crate::inputs::{InputId, InputOutcome, InputState, InputWhat, Inputs, SentInput};
+pub use crate::model::{
+    Activity, ActivityKind, BlobStatus, Composer, Connection, PhaseView, Waiting,
+};
 use crate::transcript::{Appended, Changed, Held, Transcript};
 
 /// Everything the driver forwards to a session.

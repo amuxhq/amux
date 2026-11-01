@@ -13,6 +13,7 @@
 pub mod body;
 mod fleet;
 mod inputs;
+mod model;
 mod session;
 mod transcript;
 

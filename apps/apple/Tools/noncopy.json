@@ -305,6 +305,7 @@
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Runtime.swift": [
       {"literal": "\"amux.core\"", "context": "private let queue = DispatchQueue(label: \"amux.core\", qos: .userInitiated)", "reason": "Dispatch queue label for debugging tools, not app interface copy.", "count": 1},
       {"literal": "\"Suspending\"", "context": "case suspending = \"Suspending\"", "reason": "Bridge JSON key or literal, not interface copy.", "count": 1},
+      {"literal": "\"Woken\"", "context": "case woken = \"Woken\"", "reason": "Bridge JSON key or literal, not interface copy.", "count": 1},
       {"literal": "\"NetworkChanged\"", "context": "case networkChanged = \"NetworkChanged\"", "reason": "Bridge JSON key or literal, not interface copy.", "count": 1},
       {"literal": "\"Background\"", "context": "case background = \"Background\"", "reason": "Bridge JSON key or literal, not interface copy.", "count": 1},
       {"literal": "\"Foreground\"", "context": "case foreground = \"Foreground\"", "reason": "Bridge JSON key or literal, not interface copy.", "count": 1},

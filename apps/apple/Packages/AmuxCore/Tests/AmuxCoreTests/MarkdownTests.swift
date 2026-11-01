@@ -115,11 +115,6 @@ final class MarkdownTests: XCTestCase {
         guard case .rule = blocks("---")[0] else { return XCTFail("expected a rule") }
     }
 
-    func testPlainProseIsRecognisedSoItCanBeDrawnCheaply() {
-        XCTAssertTrue(MarkdownDocument.parse("just a sentence").isPlainParagraph)
-        XCTAssertFalse(MarkdownDocument.parse("# heading\n\ntext").isPlainParagraph)
-    }
-
     // Every line the parser meets must be consumed by some block. A line
     // that starts like a heading or a table but is neither is still prose;
     // the chat measures rows on the main thread, so a parse that never

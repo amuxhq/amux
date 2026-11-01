@@ -12,10 +12,10 @@ use std::collections::HashSet;
 
 use ratatui::text::Line;
 use ui_state::{Fold, ItemClass, Key, SessionState};
-use ui_view::{ChatOptions, LIVE_STEPS, Row, RunCounts, ToolRows, chat_rows_for};
+use ui_view::{LIVE_STEPS, Row, RunCounts, ToolRows, chat_rows_for};
 
 use super::feed::{self, Header, LineHits, Placement};
-use super::rows::{RowFacts, RowState, on_rail, row_lines};
+use super::rows::{RowFacts, RowState, row_lines};
 use crate::theme::Theme;
 
 /// How a chat draws its runs of tool steps: the person's choice, kept for
@@ -123,8 +123,6 @@ pub struct Laid {
     pub top_offset: usize,
     /// The feed shows the newest row at its bottom.
     pub at_bottom: bool,
-    /// Held rows that would draw above the screen.
-    pub held_above: u64,
     /// An older page to ask for, and its size, when the reader is within a
     /// page of the oldest held row and older history exists.
     pub page: Option<u32>,
@@ -153,10 +151,8 @@ pub struct Frame<'a> {
 }
 
 impl Frame<'_> {
-    fn options(&self) -> ChatOptions<'_> {
-        ChatOptions {
-            tools: self.tools.rows(self.open_runs),
-        }
+    fn options(&self) -> ToolRows<'_> {
+        self.tools.rows(self.open_runs)
     }
 
     /// The row drawn at one held order, as shown, with whether its subagent
@@ -164,7 +160,7 @@ impl Frame<'_> {
     fn shown(&self, state: &SessionState, order: u64) -> Option<(Row, bool)> {
         let held = state.transcript().at(order)?;
         let row =
-            chat_rows_for(state, std::slice::from_ref(&held.item.key), &self.options()).pop()?;
+            chat_rows_for(state, std::slice::from_ref(&held.item.key), self.options()).pop()?;
         let child_open = row
             .parent
             .as_ref()
@@ -179,35 +175,14 @@ impl Frame<'_> {
         Some((shown, child_open))
     }
 
-    /// Whether the nearest row drawn beside `order`, older or newer, is a
-    /// tool row.
-    fn tool_beside(&self, state: &SessionState, order: u64, older: bool) -> bool {
-        let beside = |held: &ui_state::Held| self.shown(state, held.item.order);
-        let row = if older {
-            before(state, order).rev().find_map(beside)
-        } else {
-            after(state, order).find_map(beside)
-        };
-        row.is_some_and(|(row, _)| on_rail(&row))
-    }
-
-    /// The row for one held order, or None when it draws nothing here.
-    fn block(&self, state: &SessionState, order: u64) -> Option<Block> {
-        self.feed_block(state, order)
-    }
-
     /// A row drawn on its own, outside the feed's turns: asks closed long
     /// ago, errors, boundaries and the other kinds the feed leaves as rows.
     fn row_block(&self, state: &SessionState, order: u64) -> Option<Block> {
         let (shown, child_open) = self.shown(state, order)?;
         let expanded = self.expanded.contains(&shown.id);
-        let tool = on_rail(&shown);
-        let joined = tool && self.tool_beside(state, order, false);
         let row_state = RowState {
             focused: self.focus == Some(&shown.id),
             expanded,
-            rail: joined || (tool && self.tool_beside(state, order, true)),
-            joined,
         };
         let mut lines = row_lines(&shown, row_state, self.width, self.theme);
         if child_open {
@@ -229,16 +204,17 @@ impl Frame<'_> {
         })
     }
 
-    /// A row of the feed. Inside a run, what draws depends on whether the
-    /// run is open, under way or folded; outside one, text and turn ends
-    /// draw from [`feed`], and the rest keeps its own drawing.
-    fn feed_block(&self, state: &SessionState, order: u64) -> Option<Block> {
+    /// The row for one held order, or None when it draws nothing here.
+    /// Inside a run, what draws depends on whether the run is open, under
+    /// way or folded; outside one, text and turn ends draw from [`feed`],
+    /// and the rest keeps its own drawing.
+    fn block(&self, state: &SessionState, order: u64) -> Option<Block> {
         let transcript = state.transcript();
         let held = transcript.at(order)?;
         if self.asking == Some(&held.item.key) {
             return None;
         }
-        let in_run = chat_rows_for(state, std::slice::from_ref(&held.item.key), &self.options())
+        let in_run = chat_rows_for(state, std::slice::from_ref(&held.item.key), self.options())
             .pop()
             .filter(|row| row.run.is_some());
         let (placement, row, toggle) = match in_run {
@@ -390,7 +366,7 @@ impl Frame<'_> {
 
     /// What the run whose newest step is `last` did.
     fn counts(&self, state: &SessionState, last: &Key) -> RunCounts {
-        chat_rows_for(state, std::slice::from_ref(last), &EVERYTHING)
+        chat_rows_for(state, std::slice::from_ref(last), ToolRows::ShowAll)
             .pop()
             .and_then(|row| row.run)
             .and_then(|run| run.counts)
@@ -421,8 +397,7 @@ impl Frame<'_> {
             None => self.upward(state, head),
         };
         let top = laid.blocks.first().map_or(oldest, |block| block.order);
-        laid.held_above = self.held_above(state, top);
-        if laid.held_above < LOOKAHEAD && transcript.has_older() {
+        if self.held_above(state, top) < LOOKAHEAD && transcript.has_older() {
             let run_page = laid
                 .blocks
                 .first()
@@ -618,8 +593,3 @@ fn after(state: &SessionState, order: u64) -> impl DoubleEndedIterator<Item = &u
         })
         .filter(move |_| !empty)
 }
-
-/// Every row whole: the layout decides what of a run draws.
-const EVERYTHING: ChatOptions<'static> = ChatOptions {
-    tools: ToolRows::ShowAll,
-};

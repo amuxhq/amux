@@ -47,7 +47,7 @@ async fn grpc(net: &Net) -> GrpcClient {
         .front_door("desk")
         .await
         .unwrap()
-        .list_profiles(wire::ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -230,6 +230,131 @@ async fn a_session_over_the_socket_reconnects_across_a_daemon_restart() {
     })
     .await;
     println!("{}", compact(&session.state().trace()));
+    fleet.close(&agent);
+    drop(session);
+    drop(fleet);
+    net.shutdown().await.unwrap();
+}
+
+/// The text of the draft desk's daemon keeps for `agent`, once it reads
+/// `wanted`.
+async fn kept_reads(client: &dyn Client, agent: &[u8], wanted: &str) {
+    let mut last = String::new();
+    let reached = tokio::time::timeout(PATIENCE, async {
+        loop {
+            last = client
+                .get_draft(wire::GetDraftRequest {
+                    agent_id: agent.to_vec(),
+                })
+                .await
+                .unwrap()
+                .text;
+            if last == wanted {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    assert!(
+        reached.is_ok(),
+        "the kept draft never read {wanted:?} (last {last:?})"
+    );
+}
+
+/// A prompt sent while its agent's host can't be reached never left: it is
+/// refused at once, never uncertain, and nothing sends it again when the
+/// host is back. Its words are the composer's again, and the draft this
+/// machine keeps keeps them; sent again by the person, it goes once.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_prompt_for_an_unreachable_host_is_refused_and_goes_only_when_sent_again() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("laptop")
+            .link("desk", "laptop")
+            .agent(
+                AgentDecl::new("far", "laptop")
+                    .kind(FakeKind::ClaudeSdk)
+                    .steps(vec![
+                        text("Ready."),
+                        Step::TurnEnd,
+                        text("Tests pass."),
+                        Step::TurnEnd,
+                    ])
+                    .prompt("go"),
+            ),
+    )
+    .await
+    .unwrap();
+    net.settle("far").await.unwrap();
+    let client: Arc<dyn Client> = Arc::new(client::InProcess::new(net.client("desk").unwrap()));
+    let fleet = Fleet::connect(client.clone(), SystemClock).await.unwrap();
+    let far = net.agent("far").unwrap().id;
+    let agent = until_within(PATIENCE, fleet.changed(), || {
+        fleet.state().find(far.as_bytes()).map(ui_state::agent_key)
+    })
+    .await;
+    let session = fleet
+        .open(&agent, Window { tail: 20, cap: CAP })
+        .await
+        .unwrap();
+    until_within(PATIENCE, session.changed(), || {
+        (session.state().caught_up() && says(&session, "Ready.")).then_some(())
+    })
+    .await;
+
+    net.sever_link("desk", "laptop").unwrap();
+    until_within(PATIENCE, session.changed(), || {
+        let state = session.state();
+        state
+            .host()
+            .is_some_and(|host| host.online().is_none())
+            .then_some(())
+    })
+    .await;
+    let sent = session.send_prompt("Run the tests.", Vec::new()).await;
+    let refused = Some(InputState::Rejected(ui_state::Refusal::of(
+        wire::Refusal::HostUnreachable,
+    )));
+    assert_eq!(session.state().input_state(&sent.id), refused);
+    // The composer takes the words back, and the kept draft is its words.
+    fleet.keep_draft(
+        &agent,
+        wire::Draft {
+            text: "Run the tests.".into(),
+            attachments: Vec::new(),
+        },
+    );
+    kept_reads(&*client, far.as_bytes(), "Run the tests.").await;
+
+    net.restore_link("desk", "laptop").await.unwrap();
+    until_within(PATIENCE, session.changed(), || {
+        let state = session.state();
+        (state.caught_up() && state.host().is_some_and(|host| host.online().is_some()))
+            .then_some(())
+    })
+    .await;
+    assert_eq!(
+        session.state().input_state(&sent.id),
+        refused,
+        "nothing sent the refused prompt again"
+    );
+    assert!(!says(&session, "Run the tests."));
+    fleet.keep_draft(&agent, wire::Draft::default());
+    session.send_prompt("Run the tests.", Vec::new()).await;
+    until_within(PATIENCE, session.changed(), || {
+        says(&session, "Tests pass.").then_some(())
+    })
+    .await;
+    let prompts = session
+        .state()
+        .transcript()
+        .iter()
+        .filter(|held| held.item.text.contains("Run the tests."))
+        .count();
+    assert_eq!(prompts, 1, "the prompt reached the agent once");
+    kept_reads(&*client, far.as_bytes(), "").await;
     fleet.close(&agent);
     drop(session);
     drop(fleet);

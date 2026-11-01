@@ -1,0 +1,38 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 13 recorded 11: fact Transcript type=user uuid=732f82f6-8a7f-4aad-a8a6-cd66acfbfdb8
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 38 recorded 36: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01PLdSkd8FSfhDKUe7brrG9C
+  composer Send activity=Some(Running { key: "toolu_01PLdSkd8FSfhDKUe7brrG9C" }) queue=[] underway=[] refused=[]
+## 40 recorded 38: fact Hook hook_event_name=PermissionRequest
+  ask ask:1 -> "" 1/1 Open
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
+    body Command { command: "printf allowed > allowed.txt", cwd: "", reason: "", description: "Write \"allowed\" to allowed.txt in working directory" }
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 44 recorded 42: fact Transcript type=assistant uuid=5ccb9a5e-b094-4a8b-8df2-7829f107fa69
+  ask ask:1 -> "toolu_01PLdSkd8FSfhDKUe7brrG9C" 1/1 Open
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
+    body Command { command: "printf allowed > allowed.txt", cwd: "", reason: "", description: "Write \"allowed\" to allowed.txt in working directory" }
+## 48 recorded 46: fact Transcript type=user uuid=980b55f0-f77d-4c10-bf92-d9d29869bcb8
+  ask none
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 65 recorded 63: fact Transcript type=system subtype=turn_duration uuid=6f9f7c94-96d0-4159-b54a-ac59dfd1a5b1
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 732f82f6-8a7f-4aad-a8a6-cd66acfbfdb8 Prompt { text: [Text("Use the Bash tool to run exactly: printf allowed > allowed.txt. Then reply with the single word done.")], steered: false }
+     3 toolu_01PLdSkd8FSfhDKUe7brrG9C Command { command: "printf allowed > allowed.txt", state: Succeeded, exit_code: None, output_head: ["(Bash completed with no output)"], more_lines: 0, output_trimmed: false, output_tail: ["(Bash completed with no output)"], duration_ms: Some(424) } run[toolu_01PLdSkd8FSfhDKUe7brrG9C..toolu_01PLdSkd8FSfhDKUe7brrG9C x1 recent=0 RunCounts { commands: 1, edits: 0, r…
+     4 stream:cd6862da-a974-43fb-8be7-2e0fe5b476f4 Prose { text: [Text("done")], streaming: false, working_note: false }
+     5 turn:1 TurnEnd { duration_ms: Some(1900), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 35749, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

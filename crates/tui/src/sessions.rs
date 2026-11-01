@@ -1,58 +1,10 @@
-//! Sessions built from what an interpreter wrote, committed the way the
-//! owning daemon commits them: for the TUI's tests, and for the storybook,
-//! which replays recorded fixtures through an interpreter of its own.
+//! What the TUI's tests and the storybook share: the agent and the catch-up
+//! a session built from an interpreter's fixtures starts from, and a drawn
+//! buffer read back as text.
 
-use std::collections::HashMap;
-
+use ratatui::buffer::Buffer;
 use ui_state::Msg;
 use wire::{Kind, SessionEvent, session_event};
-
-/// Commits interpreter steps the way the owning daemon does: an order once
-/// per new key, a revision per record.
-#[derive(Clone, Default)]
-pub struct Committer {
-    pub revision: u64,
-    next_order: u64,
-    orders: HashMap<String, u64>,
-    revisions: HashMap<String, u64>,
-}
-
-impl Committer {
-    pub fn commit(&mut self, step: &wire::Step) -> Vec<SessionEvent> {
-        let event = |of| SessionEvent { of: Some(of) };
-        let mut out = Vec::new();
-        for item in &step.items {
-            self.revision += 1;
-            let order = *self.orders.entry(item.key.clone()).or_insert_with(|| {
-                self.next_order += 1;
-                self.next_order
-            });
-            self.revisions.insert(item.key.clone(), self.revision);
-            let mut item = item.clone();
-            item.order = order;
-            item.revision = self.revision;
-            out.push(event(session_event::Of::Item(item)));
-        }
-        for append in &step.appends {
-            self.revision += 1;
-            let base = self
-                .revisions
-                .insert(append.key.clone(), self.revision)
-                .unwrap_or(0);
-            let mut append = append.clone();
-            append.base_revision = base;
-            append.revision = self.revision;
-            out.push(event(session_event::Of::Append(append)));
-        }
-        if let Some(snapshot) = &step.snapshot {
-            self.revision += 1;
-            let mut snapshot = snapshot.clone();
-            snapshot.revision = self.revision;
-            out.push(event(session_event::Of::Snapshot(snapshot)));
-        }
-        out
-    }
-}
 
 pub fn agent(kind: Kind) -> wire::Agent {
     wire::Agent {
@@ -71,4 +23,19 @@ pub fn caught_up(revision: u64) -> Msg {
     Msg::Event(SessionEvent {
         of: Some(session_event::Of::CaughtUp(wire::CaughtUp { revision })),
     })
+}
+
+/// The buffer's text, one line per row, trailing blanks trimmed.
+pub fn text(buffer: &Buffer) -> String {
+    let area = buffer.area;
+    let mut out = String::new();
+    for y in 0..area.height {
+        let mut line = String::new();
+        for x in 0..area.width {
+            line.push_str(buffer[(x, y)].symbol());
+        }
+        out.push_str(line.trim_end());
+        out.push('\n');
+    }
+    out
 }

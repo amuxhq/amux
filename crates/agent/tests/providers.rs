@@ -392,8 +392,7 @@ async fn a_restart_from_the_checkpoint_re_emits_open_items_and_carries_keys_on()
     assert_eq!(agent.exit().await, ExitCause::Killed);
 }
 
-/// Terminal Claude: the agent reads the version the binary reports and
-/// records it on the boundary; the prompt is pasted into the terminal;
+/// Terminal Claude: the prompt is pasted into the terminal;
 /// hooks arrive through the hook command on private/hooks.sock and the
 /// transcript is followed from the path the session start names.
 // Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
@@ -422,11 +421,6 @@ fn a_terminal_claude_agent_types_its_prompt_and_hears_its_hooks() {
         let log = agent.log();
         assert!(log.has_text("hello from the terminal"));
         assert!(log.has_text("say hello"), "the typed prompt is reflected");
-        assert_eq!(
-            log.launches().first().map(String::as_str),
-            Some("STARTED 2.1.283"),
-            "the boundary records the version"
-        );
         daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
     });
@@ -594,8 +588,8 @@ async fn codex_takes_an_agent_message_as_injected_items() {
     a_message_mid_turn_is_consumed_before_a_one_shot_child_exits(Kind::Codex, false).await;
 }
 
-// Strict replay: each fake plays a real recording from the claude-specs or
-// codex-specs corpus (tests/replay/, its host lines rewritten to what the
+// Strict replay: each fake plays a real recording from the Claude or Codex
+// corpus (tests/replay/, its host lines rewritten to what the
 // agent writes) and checks every byte the agent writes against it. An
 // unexpected write, a missing one, or a write after the recording's end is
 // reported in the provider's log and fails the test; a stdio provider
@@ -802,11 +796,8 @@ fn terminal_claude_switches_to_auto_mode_from_the_permission_menu() {
             .items()
             .into_iter()
             .filter_map(|(_, item)| {
-                match wire::ClaudePtyItem::decode(item.body.as_slice())
-                    .ok()?
-                    .kind?
-                {
-                    wire::claude_pty_item::Kind::Tool(tool) => Some((item.key, tool)),
+                match wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+                    wire::claude_item::Kind::Tool(tool) => Some((item.key, tool)),
                     _ => None,
                 }
             })
@@ -882,11 +873,8 @@ fn terminal_claude_denies_on_the_menu_that_offers_auto_mode() {
             .items()
             .into_iter()
             .filter_map(|(_, item)| {
-                match wire::ClaudePtyItem::decode(item.body.as_slice())
-                    .ok()?
-                    .kind?
-                {
-                    wire::claude_pty_item::Kind::Tool(tool) => Some((item.key, tool)),
+                match wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+                    wire::claude_item::Kind::Tool(tool) => Some((item.key, tool)),
                     _ => None,
                 }
             })

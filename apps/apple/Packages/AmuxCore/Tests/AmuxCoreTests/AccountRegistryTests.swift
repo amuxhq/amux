@@ -72,9 +72,6 @@ final class AccountRegistryTests: XCTestCase {
         XCTAssertEqual(registry.selectedAccount?.signedIn, false)
         XCTAssertEqual(registry.selectedAccount?.line, "Signed out")
         XCTAssertEqual(registry.profile, "p0")
-        // A paused profile is still signed in: only its relay link is down.
-        registry.show([profile("p0", "ada", .paused)])
-        XCTAssertEqual(registry.selectedAccount?.signedIn, true)
     }
 
     func testLeavingTheAccountOnScreenMovesToASignedInOneThenAnyThenNobody() {

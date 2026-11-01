@@ -46,11 +46,6 @@ def build_tests() -> dict[str, Path]:
         target = message["target"]
         if not target.get("test"):
             continue
-        features = set(message.get("features", []))
-        if "bundled" not in features:
-            raise RuntimeError(
-                f"store test {target['name']} was built without the bundled feature"
-            )
         executables[target["name"]] = Path(message["executable"])
     missing = EXPECTED_TESTS - executables.keys()
     unexpected = executables.keys() - EXPECTED_TESTS

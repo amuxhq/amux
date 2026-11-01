@@ -160,7 +160,6 @@ mod tests {
 
     fn item(order: u64) -> Msg {
         event(session_event::Of::Item(wire::Item {
-            agent_id: b"agent".to_vec(),
             key: format!("k{order}"),
             order,
             revision: order,
@@ -180,9 +179,9 @@ mod tests {
             ..wire::Agent::default()
         };
         let state = SessionState::new(agent, 3);
-        let mut frame = crate::chat::frame(&state, 0, None, &std::collections::HashMap::new());
-        let activity = |since_ms, elapsed_ms| model::Activity {
-            kind: model::ActivityKind::Working,
+        let mut frame = crate::chat::frame(&state, 0, None);
+        let activity = |since_ms, elapsed_ms| ui_state::Activity {
+            kind: ui_state::ActivityKind::Working,
             since_ms,
             elapsed_ms,
             turn_elapsed_ms: elapsed_ms,

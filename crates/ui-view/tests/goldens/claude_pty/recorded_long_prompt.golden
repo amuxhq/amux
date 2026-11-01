@@ -1,0 +1,23 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 12 recorded 10: fact Transcript type=user uuid=c71096aa-f7ea-4834-957c-890fb9a82ffd
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 46 recorded 44: fact Transcript type=system subtype=turn_duration uuid=f805d1a7-9ac7-47b8-8d7e-03daedf92a5a
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 c71096aa-f7ea-4834-957c-890fb9a82ffd Prompt { text: [Text("Reply with exactly LONG_OK and nothing else. Padding follows.\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu. alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec rom…
+     3 stream:02565d45-37c7-4818-ad39-af91a18ead99 Prose { text: [Text("LONG_OK")], streaming: false, working_note: false }
+     4 turn:1 TurnEnd { duration_ms: Some(884), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 36709, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

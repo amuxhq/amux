@@ -164,7 +164,7 @@ impl ProcessHost {
         let profile = self
             .front_door()
             .await?
-            .list_profiles(wire::ListProfilesRequest {})
+            .list_profiles(wire::Empty {})
             .await
             .map_err(|status| status.message().to_owned())?
             .into_inner()

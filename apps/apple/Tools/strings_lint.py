@@ -202,6 +202,7 @@ def check(root=ROOT):
                 raise ValueError(f"{path}: duplicate non-copy exemption")
             exemptions[identity] = entry["count"]
     used = Counter()
+    worded = {CATALOGUE: set(), DEBUG_CATALOGUE: set()}
     complaints = []
     seen = 0
     sources = swift_sources(root)
@@ -218,10 +219,18 @@ def check(root=ROOT):
             identity = (path, item.source, item.context)
             if identity in exemptions:
                 used[identity] += 1
-            elif item.key in public or (debug_source(path) and item.key in debug):
                 continue
-            else:
+            if item.key in public:
+                worded[CATALOGUE].add(item.key)
+            if debug_source(path) and item.key in debug:
+                worded[DEBUG_CATALOGUE].add(item.key)
+            if item.key not in public and not (debug_source(path) and item.key in debug):
                 complaints.append(f"{path}:{item.line}: uncatalogued literal {item.source}")
+    # The other way round too: copy whose code went must not stay behind.
+    for path, entries in ((CATALOGUE, public), (DEBUG_CATALOGUE, debug)):
+        for key in entries:
+            if key not in worded[path]:
+                complaints.append(f"{path}: no literal uses the catalogued copy {key!r}")
     for identity, count in exemptions.items():
         if used[identity] != count:
             path, literal, _ = identity

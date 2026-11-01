@@ -199,7 +199,9 @@ impl Streams {
     /// other stream open. Returns the agent and the tail it asked for.
     async fn answer(&mut self, calls: &mut Calls) -> (Vec<u8>, u32) {
         let (request, feed) = calls.subscribe_session().await;
-        let tail = request.tail;
+        let Some(wire::subscribe_session_request::From::Tail(tail)) = request.from else {
+            panic!("a client asks for a tail, got {:?}", request.from);
+        };
         let agent = request.agent_id;
         assert_eq!(
             self.open(&agent),

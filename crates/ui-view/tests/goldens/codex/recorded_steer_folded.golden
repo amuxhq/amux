@@ -1,0 +1,79 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 24 recorded 23: input 0x8a3ec88a8bbe4cab8c21d0678a4d08d6
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 52 recorded 51: fact Rpc method=item/started
+  composer Send activity=Some(Running { key: "exec-083d74f7-a5c1-472e-b298-7b45abe14624" }) queue=[] underway=[] refused=[]
+## 54 recorded 53: input 0xbf1ebb8fd0c242f287ed42637a5a42e7
+  composer Send activity=Some(Running { key: "exec-083d74f7-a5c1-472e-b298-7b45abe14624" }) queue=[QueuedRow { input_id: [191, 30, 187, 143, 208, 194, 66, 242, 135, 237, 66, 99, 122, 90, 66, 231], text: [Text("Also append the word BANANA.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
+## 55 recorded 54: input stdin-9
+  composer Send activity=Some(Running { key: "exec-083d74f7-a5c1-472e-b298-7b45abe14624" }) queue=[QueuedRow { input_id: [191, 30, 187, 143, 208, 194, 66, 242, 135, 237, 66, 99, 122, 90, 66, 231], text: [Text("Also append the word BANANA.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
+## 64 recorded 63: fact Rpc method=item/completed
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 76 recorded 75: fact Rpc method=item/started
+  composer Send activity=Some(Running { key: "exec-dfdc7ad2-264d-4fa9-a172-957b82d3f8db" }) queue=[] underway=[] refused=[]
+## 84 recorded 83: fact Rpc method=item/completed
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 102 recorded 101: fact Rpc method=turn/completed
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 104 recorded 103: input 0x674c0af2204b4353bc571b69672d7249
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 128 recorded 127: fact Rpc method=turn/completed
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     3 prompt:8a3ec88a8bbe4cab8c21d0678a4d08d6 Prompt { text: [Text("Run the shell command `sleep 15; echo S1`, then the shell command `sleep 5; echo S2`, then reply exactly DONE plus any extra words the user asked for.")], steered: false }
+     4 msg_0fe6f22fbb8eaa10016ae5dc2f35fc8191924991056c1af14f Prose { text: [Text("I’ll run the two commands in order.")], streaming: false, working_note: true }
+     5 exec-083d74f7-a5c1-472e-b298-7b45abe14624 Command { command: "sleep 15; echo S1", state: Succeeded, exit_code: Some(0), output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(14918) } run[exec-083d74f7-a5c1-472e-b298-7b45abe14624..exec-083d74f7-a5c1-472e-b298-7b45abe14624 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents…
+     6 steer:bf1ebb8fd0c242f287ed42637a5a42e7 Prompt { text: [Text("Also append the word BANANA.")], steered: true }
+     7 exec-dfdc7ad2-264d-4fa9-a172-957b82d3f8db Command { command: "sleep 5; echo S2", state: Succeeded, exit_code: Some(0), output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(4914) } run[exec-dfdc7ad2-264d-4fa9-a172-957b82d3f8db..exec-dfdc7ad2-264d-4fa9-a172-957b82d3f8db x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: …
+     8 msg_0fe6f22fbb8eaa10016ae5dc464bc8819181f13012abdc926c Prose { text: [Text("DONE BANANA")], streaming: false, working_note: false }
+     9 turn:1 TurnEnd { duration_ms: Some(26632), failed: false }
+    10 prompt:674c0af2204b4353bc571b69672d7249 Prompt { text: [Text("Then reply with exactly LATER.")], steered: false }
+    11 msg_0fe6f22fbb8eaa10016ae5dc493fb4819191dc2647aefa46f0 Prose { text: [Text("LATER")], streaming: false, working_note: false }
+    12 turn:2 TurnEnd { duration_ms: Some(3509), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 17940, window_tokens: Some(475000), percent: Some(3), near_full: false }) sign-in None
+== settings
+  model* gpt-6.1-sol "GPT-6.1-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-astra "GPT-6-Astra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6.1-terra "GPT-6.1 Terra" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-sol "GPT-6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6-luna "GPT-6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  model  gpt-5.6-sol "GPT-5.6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-5.6-terra "GPT-5.6-Terra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-5.6-luna "GPT-5.6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  effort* low (default)
+  effort  medium
+  effort  high
+  effort  xhigh
+  effort  max
+  effort  ultra
+  permission* "read-only" "Read only"
+  permission  "default" "Default" normal
+  permission  "auto" "Auto"
+  permission  "full-access" "Full access" never_asks
+  mode  "default" "Default" normal
+  mode  "plan" "Plan"
+  changes: model Pick · effort Pick · permission Pick · mode Pick
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
+  command /rename source="" hint="<name>" "Rename the agent"
+  command /compact source="codex" hint="" "Summarize the conversation to free up context"
+  command /clear source="codex" hint="" "Start a new conversation"
+  command /review source="codex" hint="[instructions]" "Review the uncommitted changes, or what the instructions say"
+  command /init source="codex" hint="" "Write an AGENTS.md with instructions for Codex"
+  command /plan source="codex" hint="[prompt]" "Switch to plan mode"
+  command /autopilot source="user" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested."
+  command /delegate source="user" hint="" "Resolve or diagnose agent staffing by mapping a requested role and effort through the operator-owned roster to a mind and dispatch specification. Use when an agent or driver will dispatch work, or when a binding cannot launch. Do not use merely because ordinary work is being discussed or performed locally."
+  command /frontend-design source="user" hint="" "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.…
+  command /gardening source="user" hint="" "Review and improve an operator's Linear backlog with them. Use when the operator asks to garden, clean up, shape, deduplicate, or reassess tracked work. Do not invoke merely because Linear is available or ordinary work reveals a possible follow-up."
+  command /handoff source="user" hint="" "Independently verify and present finished work when an ordinary diff and focused checks are not enough to judge it, including third-party branches or pull requests. Use compact proof for easily judged behavior and a decision page for consequential or difficult work. Do not invoke at project start or impose a page on ordinary small changes."
+  command /intake source="user" hint="" "Align and confirm a durable acceptance contract for consequential work that must cross contexts. Use after the operator commits to work when several requirements, boundaries, or success demonstrations remain unsettled. Skip for exploration, one or two locally resolvable questions, and already-confirmed requirements."
+  command /imagegen source="system" hint="" "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the …
+  command /openai-docs source="system" hint="" "Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge—including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex—and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not u…
+  command /review-agent source="system" hint="" "Perform a read-only, defect-first review of a specified code change and return every actionable finding. Use when another agent delegates review of uncommitted changes, a base-branch diff, a commit, or custom review instructions."
+  command /skill-creator source="system" hint="" "Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources."
+  command /skill-installer source="system" hint="" "Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos)."
+  controls: model=Some("GPT-6.1-Sol") effort=Some("low") permission=Some("read-only") mode=None

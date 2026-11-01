@@ -41,10 +41,11 @@ pub fn is_published() -> bool {
 }
 
 #[used]
-static STAMP: [u8; version_stamp::LEN] = version_stamp::stamp(env!("CARGO_PKG_VERSION"));
+static STAMP: [u8; release::version_stamp::LEN] =
+    release::version_stamp::stamp(env!("CARGO_PKG_VERSION"));
 
-/// This binary's version, as stamped; `version_stamp::restamp` makes a copy
-/// of a built binary report another.
+/// This binary's version, as stamped; `release::version_stamp::restamp`
+/// makes a copy of a built binary report another.
 pub fn version() -> &'static str {
     static VERSION: OnceLock<String> = OnceLock::new();
     VERSION.get_or_init(|| {
@@ -52,8 +53,8 @@ pub fn version() -> &'static str {
         // bytes a re-stamp changed rather than the constant it was built
         // with.
         let stamp = unsafe { std::ptr::read_volatile(&STAMP) };
-        version_stamp::read(&stamp)
+        release::version_stamp::read(&stamp)
     })
 }
 
-pub use version_stamp::restamp;
+pub use release::version_stamp::restamp;

@@ -1,23 +1,16 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 2 input {"id":"p1","prompt":{"text":"Deploy it."}}
-  row    2 prompt:7031 Prompt { text: [Text("Deploy it.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 5 fact {"channel":"rpc","json":{"id":7,"method":"item/commandExecution/requestApproval","params":{"availableDecisions":["accept",{"acceptWithExecpolicyAmendment":{"execpolicy_amendment":["curl","-s"]}},{"applyNetworkPolicyAmendment":{"network_policy_amendment":{"action":"allow","host":"api.example.com"}}},"decline","cancel"],"command":"/bin/zsh -lc 'curl -s https://api.example.com/status'","cwd":"/w…
-  row    3 cmd-1 Command { command: "curl -s https://api.example.com/status", state: Asking, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] attention
   ask 7 -> "cmd-1" 1/1 Open
     choices AllowOnce*, AllowSimilar { prefix: ["curl", "-s"] }, AllowNetwork { hosts: ["api.example.com"] }, Deny { stops: false }, DenyAndStop
     body Command { command: "curl -s https://api.example.com/status", cwd: "/work", reason: "Reach the status API.", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 6 input {"answer":{"answer":{"decision":"approve_network"},"ask":"7"},"id":"a1"}
-  row    3 cmd-1 Command { command: "curl -s https://api.example.com/status", state: Pending, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: Some(NetworkHosts { hosts: ["api.examp…
   ask none
   composer Send activity=Some(Running { key: "cmd-1" }) queue=[] underway=[] refused=[]
 ## 8 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"changes":[{"diff":"@@ -1 +1 @@\n-a\n+b\n","kind":{"move_path":null,"type":"update"},"path":"/work/a.txt"}],"id":"fc-1","status":"inProgress","type":"fileChange"},"startedAtMs":1800000000500,"threadId":"t1","turnId":"turn-1"}}}
-  row    3 cmd-1 Command { command: "curl -s https://api.example.com/status", state: Pending, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..fc-1 x2 recent=1 live] decision=Decision { outcome: Allowed, granted: Some(NetworkHosts { hosts: ["api.example.com"] }), note: None, elsewhere: false }
-  row    4 fc-1 FileChange { files: [FileRow { path: "/work/a.txt", change: Edited, added: 1, removed: 1, line: None }], state: Running } run[cmd-1..fc-1 x2 recent=0 live RunCounts { commands: 1, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "fc-1" }) queue=[] underway=[] refused=[]
 ## 9 fact {"channel":"rpc","json":{"id":8,"method":"item/fileChange/requestApproval","params":{"grantRoot":"/work","itemId":"fc-1","reason":"Edit outside the workspace","threadId":"t1","turnId":"turn-1"}}}
   ask 8 -> "fc-1" 1/1 Open
@@ -29,26 +22,19 @@
     choices AllowOnce*, AllowAlways { subjects: ["/work/a.txt"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }, DenyAndStop
     body Edit { path: "/work/a.txt", files: 1, added: 1, removed: 1, lines: [Hunk { old_start: 1, new_start: 1 }, Line(PatchLine { number: Some(1), kind: Removed, text: "a" }), Line(PatchLine { number: Some(1), kind: Added, text: "b" })], line: Some(1), reason: "Edit outside the workspace", created: Some(false) }
 ## 11 input {"answer":{"answer":{"decision":"deny"},"ask":"8"},"id":"a4"}
-  row    4 fc-1 FileChange { files: [FileRow { path: "/work/a.txt", change: Edited, added: 1, removed: 1, line: None }], state: Denied } run[cmd-1..fc-1 x2 recent=0 live RunCounts { commands: 1, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: false }
   ask none
   composer Send activity=Some(Running { key: "fc-1" }) queue=[] underway=[] refused=[]
 ## 12 fact {"channel":"rpc","json":{"method":"item/completed","params":{"completedAtMs":1800000000600,"item":{"changes":[{"diff":"@@ -1 +1 @@\n-a\n+b\n","kind":{"move_path":null,"type":"update"},"path":"/work/a.txt"}],"id":"fc-1","status":"declined","type":"fileChange"},"threadId":"t1","turnId":"turn-1"}}}
-  row    4 fc-1 FileChange { files: [FileRow { path: "/work/a.txt", change: Edited, added: 1, removed: 1, line: None }], state: Denied } run[cmd-1..fc-1 x2 recent=0 live RunCounts { commands: 1, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 13 fact {"channel":"rpc","json":{"id":9,"method":"item/tool/requestUserInput","params":{"itemId":"call-1","questions":[{"header":"Token","id":"token","isOther":true,"isSecret":true,"options":null,"question":"Paste the deploy token."},{"header":"Env","id":"env","isOther":false,"isSecret":false,"options":[{"description":"Safe first.","label":"staging (Recommended)"},{"description":"Live.","label":"prod…
-  row    3 cmd-1 Command { command: "curl -s https://api.example.com/status", state: Pending, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..fc-1 x2 recent=1] decision=Decision { outcome: Allowed, granted: Some(NetworkHosts { hosts: ["api.example.com"] }), note: None, elsewhere: false } collapsed
-  row    4 fc-1 FileChange { files: [FileRow { path: "/work/a.txt", change: Edited, added: 1, removed: 1, line: None }], state: Denied } run[cmd-1..fc-1 x2 recent=0 RunCounts { commands: 1, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: false }
-  row    5 ask:9 [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Token", question: "Paste the deploy token.", multi_select: false, options: [], allow_other: true, secret: true }, QuestionView { header: "Env", question: "Which environment?", multi_select: false, options: [OptionView { label: "staging", description: "Safe first.", preview: "", recommended: true }, OptionView { label…
   ask 9 -> "ask:9" 1/1 Open
     choices 
     body Question([QuestionView { header: "Token", question: "Paste the deploy token.", multi_select: false, options: [], allow_other: true, secret: true }, QuestionView { header: "Env", question: "Which environment?", multi_select: false, options: [OptionView { label: "staging", description: "Safe first.", preview: "", recommended: true }, OptionView { label: "production", description: "Live.", preview: "…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 14 input {"answer":{"answer":{"note":"rotate it after the deploy","selected":["tok-SECRET-1234",0]},"ask":"9"},"id":"a5"}
-  row    5 ask:9 [Answered: Token = (hidden); Env = staging note="rotate it after the deploy" skipped=0] Ask(Questions { questions: [QuestionView { header: "Token", question: "Paste the deploy token.", multi_select: false, options: [], allow_other: true, secret: true }, QuestionView { header: "Env", question: "Which environment?", multi_select: false, options: [OptionView { label: "staging", description…
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 15 fact {"channel":"rpc","json":{"id":20,"method":"item/permissions/requestApproval","params":{"itemId":"exec-9","permissions":{"fileSystem":{"read":["/etc/shared"],"write":["/var/cache"]},"network":{"enabled":true}},"reason":"Read the shared config and reach the registry.","threadId":"t1","turnId":"turn-1"}}}
-  row    6 ask:20 Ask(Grant { reason: "Read the shared config and reach the registry.", read: ["/etc/shared"], write: ["/var/cache"], network: true, hosts: [], granted: None, resolution: Open }) attention
   ask 20 -> "ask:20" 1/1 Open
     choices GrantForTurn*, GrantForSession, Deny { stops: false }
     body Access { reason: "Read the shared config and reach the registry.", read: ["/etc/shared"], write: ["/var/cache"], network: true, hosts: [] }
@@ -58,88 +44,62 @@
     choices GrantForTurn*, GrantForSession, Deny { stops: false }
     body Access { reason: "Read the shared config and reach the registry.", read: ["/etc/shared"], write: ["/var/cache"], network: true, hosts: [] }
 ## 17 input {"answer":{"answer":{"grant":{"for_session":true,"network":true,"read":["/etc/shared"]}},"ask":"20"},"id":"a7"}
-  row    6 ask:20 Ask(Grant { reason: "Read the shared config and reach the registry.", read: ["/etc/shared"], write: ["/var/cache"], network: true, hosts: [], granted: Some(Granted { read: ["/etc/shared"], write: [], network: true, for_session: true }), resolution: Answered })
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 18 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"arguments":{},"error":null,"id":"mcp-1","result":null,"server":"docs","status":"inProgress","tool":"sign_in","type":"mcpToolCall"},"startedAtMs":1800000000700,"threadId":"t1","turnId":"turn-1"}}}
-  row    7 mcp-1 ToolCall { server: "docs", tool: "sign_in", fact: "", state: Running, result: "" } run[mcp-1..mcp-1 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
   composer Send activity=Some(Running { key: "mcp-1" }) queue=[] underway=[] refused=[]
 ## 19 fact {"channel":"rpc","json":{"id":"elicit-1","method":"mcpServer/elicitation/request","params":{"message":"Sign in to the docs server.","mode":"url","serverName":"docs","threadId":"t1","turnId":"turn-1","url":"https://docs.example.com/login"}}}
-  row    7 mcp-1 ToolCall { server: "docs", tool: "sign_in", fact: "", state: Running, result: "" } run[mcp-1..mcp-1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
-  row    8 ask:"elicit-1" Ask(Link { server: "docs", message: "Sign in to the docs server.", url: "https://docs.example.com/login", resolution: Open }) attention
   ask "elicit-1" -> "ask:\"elicit-1\"" 1/1 Open
     choices OpenLink*, Decline
     body Link { server: "docs", message: "Sign in to the docs server.", url: "https://docs.example.com/login", local_page: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 20 input {"answer":{"answer":{"link":{"action":"accept"}},"ask":"\"elicit-1\""},"id":"a8"}
-  row    8 ask:"elicit-1" Ask(Link { server: "docs", message: "Sign in to the docs server.", url: "https://docs.example.com/login", resolution: Answered })
   ask none
   composer Send activity=Some(Running { key: "mcp-1" }) queue=[] underway=[] refused=[]
 ## 21 fact {"channel":"rpc","json":{"id":"elicit-2","method":"mcpServer/elicitation/request","params":{"message":"Which space?","mode":"form","requestedSchema":{"properties":{"space":{"type":"string"}},"type":"object"},"serverName":"docs","threadId":"t1","turnId":"turn-1"}}}
-  row    9 ask:"elicit-2" Ask(Form { server: "docs", message: "Which space?", fields: [], resolution: Open }) attention
   ask "elicit-2" -> "ask:\"elicit-2\"" 1/1 Open
     choices Submit*, Decline
     body Form { server: "docs", message: "Which space?", fields: [FormField { name: "space", title: "space", description: "", required: false, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 22 input {"answer":{"answer":{"form":{"action":"accept","content":{"space":"eng"}}},"ask":"\"elicit-2\""},"id":"a9"}
-  row    9 ask:"elicit-2" Ask(Form { server: "docs", message: "Which space?", fields: ["space"], resolution: Answered })
   ask none
   composer Send activity=Some(Running { key: "mcp-1" }) queue=[] underway=[] refused=[]
 ## 23 fact {"channel":"rpc","json":{"method":"item/completed","params":{"completedAtMs":1800000000800,"item":{"arguments":{},"error":null,"id":"mcp-1","result":{"content":[{"text":"ok","type":"text"}]},"server":"docs","status":"completed","tool":"sign_in","type":"mcpToolCall"},"threadId":"t1","turnId":"turn-1"}}}
-  row    7 mcp-1 ToolCall { server: "docs", tool: "sign_in", fact: "", state: Succeeded, result: "{\"content\":[{\"text\":\"ok\",\"type\":\"text\"}]}" } run[mcp-1..mcp-1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 24 fact {"channel":"rpc","json":{"id":30,"method":"item/commandExecution/requestApproval","params":{"availableDecisions":null,"command":"/bin/zsh -lc 'curl -s https://api.example.com/status'","cwd":"/work","itemId":"cmd-2","networkApprovalContext":{"host":"api.example.com","protocol":"https"},"proposedExecpolicyAmendment":["curl","-s"],"reason":"Reach the status API.","threadId":"t1","turnId":"turn-1…
-  row   10 cmd-2 Command { command: "curl -s https://api.example.com/status", state: Asking, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-2..cmd-2 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] attention
   ask 30 -> "cmd-2" 1/1 Open
     choices AllowOnce*, AllowForSession, Deny { stops: false }, DenyAndStop
     body Command { command: "curl -s https://api.example.com/status", cwd: "/work", reason: "Reach the status API.", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 25 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":30,"threadId":"t1"}}}
-  row   10 cmd-2 Command { command: "curl -s https://api.example.com/status", state: Pending, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-2..cmd-2 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Dismissed, granted: None, note: None, elsewhere: true }
   ask none
   composer Send activity=Some(Running { key: "cmd-2" }) queue=[] underway=[] refused=[]
 ## 26 fact {"channel":"rpc","json":{"id":33,"method":"item/tool/requestUserInput","params":{"itemId":"call-2","questions":[{"header":"Region","id":"region","isOther":true,"isSecret":false,"options":null,"question":"Which region?"}],"threadId":"t1","turnId":"turn-1"}}}
-  row   10 cmd-2 Command { command: "curl -s https://api.example.com/status", state: Pending, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-2..cmd-2 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Dismissed, granted: None, note: None, elsewhere: true }
-  row   11 ask:33 [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Region", question: "Which region?", multi_select: false, options: [], allow_other: true, secret: false }], answers: [], skipped: 0, reply: None, resolution: Open }) attention
   ask 33 -> "ask:33" 1/1 Open
     choices 
     body Question([QuestionView { header: "Region", question: "Which region?", multi_select: false, options: [], allow_other: true, secret: false }])
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 27 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":33,"threadId":"t1"}}}
-  row   11 ask:33 [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Region", question: "Which region?", multi_select: false, options: [], allow_other: true, secret: false }], answers: [], skipped: 0, reply: None, resolution: Dismissed })
   ask none
   composer Send activity=Some(Running { key: "cmd-2" }) queue=[] underway=[] refused=[]
 ## 28 fact {"channel":"rpc","json":{"id":31,"method":"account/chatgptAuthTokens/refresh","params":{"reason":"unauthorized"}}}
-  row   12 unrecognized:2 Unrecognized { what: "account/chatgptAuthTokens/refresh", summary: "a request amux cannot answer" }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 29 fact {"channel":"rpc","json":{"id":34,"method":"item/commandExecution/requestApproval","params":{"availableDecisions":["accept",{"acceptWithExecpolicyAmendment":{"execpolicy_amendment":["touch"]}},"cancel"],"command":"/bin/zsh -lc 'touch notes.txt'","cwd":"/work","itemId":"cmd-4","proposedExecpolicyAmendment":["touch"],"reason":"Create notes.txt.","threadId":"t1","turnId":"turn-1"}}}
-  row   13 cmd-4 Command { command: "touch notes.txt", state: Asking, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-4..cmd-4 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] attention
   ask 34 -> "cmd-4" 1/1 Open
     choices AllowOnce*, AllowSimilar { prefix: ["touch"] }, Deny { stops: false }, DenyAndStop
     body Command { command: "touch notes.txt", cwd: "/work", reason: "Create notes.txt.", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 30 input {"answer":{"answer":{"decision":"deny"},"ask":"34"},"id":"a9"}
-  row   13 cmd-4 Command { command: "touch notes.txt", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-4..cmd-4 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: false }
   ask none
   composer Send activity=Some(Running { key: "cmd-4" }) queue=[] underway=[] refused=[]
 ## 31 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"aggregatedOutput":null,"command":"/bin/zsh -lc 'touch notes.txt'","commandActions":[],"cwd":"/work","durationMs":null,"exitCode":null,"id":"cmd-4","status":"declined","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
-  row   13 cmd-4 Command { command: "touch notes.txt", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[cmd-4..cmd-4 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 32 fact {"channel":"rpc","json":{"id":32,"method":"item/commandExecution/requestApproval","params":{"availableDecisions":["accept",{"acceptWithExecpolicyAmendment":{"execpolicy_amendment":["curl","-s"]}},{"applyNetworkPolicyAmendment":{"network_policy_amendment":{"action":"allow","host":"api.example.com"}}},"decline","cancel"],"command":"/bin/zsh -lc 'curl -s https://api.example.com/status'","cwd":"/…
-  row   13 cmd-4 Command { command: "touch notes.txt", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[cmd-4..cmd-3 x2 recent=1 live] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: false }
-  row   14 cmd-3 Command { command: "curl -s https://api.example.com/status", state: Asking, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-4..cmd-3 x2 recent=0 live RunCounts { commands: 2, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] attention
   ask 32 -> "cmd-3" 1/1 Open
     choices AllowOnce*, AllowSimilar { prefix: ["curl", "-s"] }, AllowNetwork { hosts: ["api.example.com"] }, Deny { stops: false }, DenyAndStop
     body Command { command: "curl -s https://api.example.com/status", cwd: "/work", reason: "Reach the status API.", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 33 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"interrupted"}}}}
-  row    3 cmd-1 Command { command: "curl -s https://api.example.com/status", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..fc-1 x2 recent=1] decision=Decision { outcome: Allowed, granted: Some(NetworkHosts { hosts: ["api.example.com"] }), note: None, elsewhere: false } collapsed
-  row    4 fc-1 FileChange { files: [FileRow { path: "/work/a.txt", change: Edited, added: 1, removed: 1, line: None }], state: Denied } run[cmd-1..fc-1 x2 recent=0 RunCounts { commands: 1, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: false }
-  row    7 mcp-1 ToolCall { server: "docs", tool: "sign_in", fact: "", state: Succeeded, result: "{\"content\":[{\"text\":\"ok\",\"type\":\"text\"}]}" } run[mcp-1..mcp-1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
-  row   10 cmd-2 Command { command: "curl -s https://api.example.com/status", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-2..cmd-2 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Dismissed, granted: None, note: None, elsewhere: true }
-  row   13 cmd-4 Command { command: "touch notes.txt", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[cmd-4..cmd-3 x2 recent=1] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: false } collapsed
-  row   14 cmd-3 Command { command: "curl -s https://api.example.com/status", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-4..cmd-3 x2 recent=0 RunCounts { commands: 2, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Dismissed, granted: None, note: None, elsewhere: false }
-  row   15 turn:1 Stopped
   ask none
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

@@ -6,6 +6,8 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::theme::Theme;
+
 /// Display width in terminal cells: CJK and emoji two, combining marks zero.
 pub(crate) fn str_width(text: &str) -> usize {
     unicode_width::UnicodeWidthStr::width(text)
@@ -106,6 +108,41 @@ pub(crate) fn fit_hints(pairs: &[(&str, &str)], room: usize) -> Fitted {
         shown,
         mark,
     }
+}
+
+/// Draws a key legend after what `line` holds, laid out by [`fit_hints`]
+/// in `room` columns: the key is what you press, so it reads first, bright
+/// and bold; its action recedes. Returns, for each pair drawn, its index in
+/// `pairs` and the columns it covers, so a click can press it.
+pub(crate) fn push_hints(
+    line: &mut Line<'static>,
+    pairs: &[(&str, &str)],
+    room: usize,
+    theme: Theme,
+) -> Vec<(usize, (usize, usize))> {
+    let fitted = fit_hints(pairs, room);
+    let cut = |line: &mut Line<'static>| line.spans.push(Span::styled(" …", theme.faint()));
+    let mut spots = Vec::new();
+    for (i, &at) in fitted.shown.iter().enumerate() {
+        if fitted.mark == Some(i) {
+            cut(line);
+        }
+        if i > 0 {
+            line.spans
+                .push(Span::styled(" ".repeat(fitted.gap), theme.faint()));
+        }
+        let (key, action) = pairs[at];
+        let from = line_width(line);
+        line.spans
+            .push(Span::styled(key.to_owned(), theme.emphasis()));
+        line.spans
+            .push(Span::styled(format!(" {action}"), theme.faint()));
+        spots.push((at, (from, line_width(line))));
+    }
+    if fitted.mark == Some(fitted.shown.len()) {
+        cut(line);
+    }
+    spots
 }
 
 /// Columns between tab stops in an agent's code.
@@ -455,6 +492,37 @@ pub fn thousands(n: usize) -> String {
         out.push(c);
     }
     out
+}
+
+/// How long something ran or has run, coarsely: "1s" (never "0s"), "4m",
+/// "2h 5m".
+pub(crate) fn ran_for(ms: i64) -> String {
+    let secs = ms.max(0) / 1_000;
+    match secs {
+        0..60 => format!("{}s", secs.max(1)),
+        60..3_600 => format!("{}m", secs / 60),
+        _ => format!("{}h {}m", secs / 3_600, secs % 3_600 / 60),
+    }
+}
+
+/// The end of `text` in at most `max` cells, "…" where it is cut.
+pub(crate) fn tail(text: &str, max: usize) -> String {
+    if str_width(text) <= max {
+        return text.to_owned();
+    }
+    let keep = max.saturating_sub(1);
+    let mut out: Vec<char> = Vec::new();
+    let mut used = 0;
+    for c in text.chars().rev() {
+        let w = str_width(c.encode_utf8(&mut [0; 4]));
+        if used + w > keep {
+            break;
+        }
+        used += w;
+        out.push(c);
+    }
+    out.reverse();
+    format!("…{}", out.into_iter().collect::<String>())
 }
 
 /// `text` in at most `max` columns, cut in the middle so both ends show.

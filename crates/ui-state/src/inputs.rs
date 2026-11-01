@@ -1,31 +1,15 @@
 //! What this client sent and what became of each input: the one thing only
 //! the sender can know.
 
-pub use model::{InputId, InputState, Refusal, RefusalReason};
 use wire::{Attachment, Input, Rejected, SendInputResponse};
+
+pub use crate::model::{InputId, InputState, Refusal};
 
 /// Why an input was refused, from its `Rejected` reply.
 pub fn refusal(rejected: &Rejected) -> Refusal {
     Refusal {
-        reason: refusal_reason(rejected.refusal()),
+        reason: rejected.refusal(),
         detail: rejected.detail.clone(),
-    }
-}
-
-/// The client's value for a wire refusal; a value this build does not know
-/// reads as unspecified.
-pub fn refusal_reason(refusal: wire::Refusal) -> RefusalReason {
-    match refusal {
-        wire::Refusal::Unspecified => RefusalReason::Unspecified,
-        wire::Refusal::ClosedAsk => RefusalReason::ClosedAsk,
-        wire::Refusal::NotQueued => RefusalReason::NotQueued,
-        wire::Refusal::Unsupported => RefusalReason::Unsupported,
-        wire::Refusal::Draining => RefusalReason::Draining,
-        wire::Refusal::Exiting => RefusalReason::Exiting,
-        wire::Refusal::Exited => RefusalReason::Exited,
-        wire::Refusal::HostUnreachable => RefusalReason::HostUnreachable,
-        wire::Refusal::ConversationElsewhere => RefusalReason::ConversationElsewhere,
-        wire::Refusal::TooLong => RefusalReason::TooLong,
     }
 }
 
@@ -35,8 +19,6 @@ pub enum InputOutcome {
     Reply(SendInputResponse),
     /// The transport failed before a reply.
     Lost,
-    /// It never left: the client holds it to send once the host is back.
-    Held,
 }
 
 /// What an input asked for, as far as the model needs it.
@@ -61,15 +43,6 @@ pub enum InputWhat {
 }
 
 impl InputWhat {
-    /// Whether a send of this that certainly never left is held to send
-    /// again once the host is back: a prompt or an answer, the person's own
-    /// words and choices. An interrupt, a withdraw, a send-now or a setting
-    /// sent later would act on whatever the agent is doing then, so those
-    /// are refused at once with the reason instead.
-    pub fn holds(&self) -> bool {
-        matches!(self, InputWhat::Prompt { .. } | InputWhat::Answer { .. })
-    }
-
     pub fn of(input: &Input) -> InputWhat {
         use wire::{
             KindInput, claude_pty_input as pty, claude_sdk_input as sdk, codex_input as codex,
@@ -145,9 +118,10 @@ pub struct SentInput {
     /// A snapshot has listed it in the queue; leaving the queue after that
     /// means it was submitted or withdrawn.
     pub(crate) seen_queued: bool,
-    /// The session's count of words that the host can be reached, as this
-    /// input last left: a word since then sends it again if it is held.
-    pub(crate) left_at: u64,
+    /// Sent to an idle agent with nothing queued: a prompt on
+    /// its way draws at the feed's end rather than in the queue, and keeps
+    /// that place as the agent starts on it.
+    pub in_feed: bool,
 }
 
 /// Every input this client sent during this open, in sending order. Nothing
@@ -188,7 +162,7 @@ impl Inputs {
             state: InputState::Sent,
             input,
             seen_queued: false,
-            left_at: 0,
+            in_feed: false,
         });
         true
     }
@@ -215,7 +189,7 @@ mod tests {
         assert_eq!(
             refusal(&rejected),
             Refusal {
-                reason: RefusalReason::Unspecified,
+                reason: wire::Refusal::Unspecified,
                 detail: Some("rate limited".into()),
             }
         );
@@ -223,6 +197,6 @@ mod tests {
             refusal: wire::Refusal::ClosedAsk as i32,
             detail: None,
         };
-        assert_eq!(refusal(&closed), Refusal::of(RefusalReason::ClosedAsk));
+        assert_eq!(refusal(&closed), Refusal::of(wire::Refusal::ClosedAsk));
     }
 }

@@ -1,7 +1,11 @@
 //! View data goldens for all three kinds, derived from every interpreter
 //! fixture: the interpreter's emission is committed the way the daemon
 //! commits it (an order once per new key, a revision per record), reduced
-//! into a session, and the views are rendered after every frame.
+//! into a session. Each frame records where the ask card and the composer
+//! moved; the rows, the overview, the context and the settings are
+//! recorded once, as the fixture leaves them. The rows' streaming rules
+//! are held by the session spec and the views tests, not frame by frame
+//! here.
 //!
 //! Goldens live in `tests/goldens/<kind>/<fixture>.golden` and are only
 //! rewritten with `UI_VIEW_UPDATE_GOLDENS=1`; review the diff.
@@ -12,13 +16,12 @@ use std::path::{Path, PathBuf};
 
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
-use interpret::codex::{Codex, CodexWith, Drained, Parked};
-use interpret::{Interpreter, Replayed, replay};
-use support::Committer;
+use interpret::codex::Codex;
+use interpret::{Committer, Interpreter, Replayed, replay};
 use ui_state::{InputOutcome, Msg, SessionState};
 use ui_view::{
-    ChatOptions, ToolRows, ask_card, chat_rows, chat_rows_for, composer, context, overview,
-    prompts_underway, queue_rows, refused_prompts, settings, sign_in,
+    ToolRows, ask_card, composer, context, overview, prompts_underway, queue_rows, refused_prompts,
+    settings, sign_in,
 };
 use wire::{Kind, SessionEvent, session_event};
 
@@ -36,19 +39,6 @@ fn goldens(kind: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/goldens")
         .join(kind)
-}
-
-fn agent(kind: Kind) -> wire::Agent {
-    wire::Agent {
-        agent_id: b"agent".to_vec(),
-        host_id: b"host".to_vec(),
-        kind: kind as i32,
-        name: "worker".into(),
-        lifecycle: wire::Lifecycle::Live as i32,
-        phase: wire::Phase::NeedsYou as i32,
-        incarnation: 1,
-        ..wire::Agent::default()
-    }
 }
 
 fn clip(line: String) -> String {
@@ -182,13 +172,11 @@ fn describe_card(card: Option<&ui_view::AskCard>) -> String {
 
 /// Replays a fixture's emission through the session and renders the views.
 fn render(kind: Kind, frames: &[Replayed]) -> String {
-    let mut state = SessionState::new(agent(kind), support::CAP);
+    let mut state = SessionState::new(support::agent(kind, wire::Phase::NeedsYou), support::CAP);
     let mut committer = Committer::default();
     let mut out = String::new();
     let open = HashSet::new();
-    let opts = ChatOptions {
-        tools: ToolRows::Collapse { open: &open },
-    };
+    let tools = ToolRows::Collapse { open: &open };
     let mut last_card = None;
     let mut last_composer = String::new();
     for (index, frame) in frames.iter().enumerate() {
@@ -199,14 +187,12 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
         for (id, verdict) in &frame.replies {
             state.update(Msg::Sent(id.clone(), InputOutcome::Reply(verdict.clone())));
         }
-        let mut changed = Vec::new();
         for event in committer.commit(&frame.step) {
             let outcome = state.update(Msg::Event(event));
             assert!(
                 outcome.need_get.is_none(),
                 "a committed append always has its base"
             );
-            changed.extend(outcome.changed);
         }
         if index == 0 {
             state.update(Msg::Event(SessionEvent {
@@ -221,11 +207,6 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
                 hash: hash.clone(),
                 catalogue: catalogue.clone(),
             });
-        }
-        changed.sort();
-        changed.dedup();
-        for row in chat_rows_for(&state, &changed, &opts) {
-            lines.push(format!("  row {}", describe_row(&row)));
         }
         let card = ask_card(&state);
         if card != last_card {
@@ -246,7 +227,7 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
             composer(&state, at).mode,
             state.activity(at).map(|activity| activity.kind),
             queue_rows(&state),
-            prompts_underway(&state, |_| false),
+            prompts_underway(&state),
             refused_prompts(&state)
         );
         if composing != last_composer {
@@ -261,8 +242,7 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
         }
     }
     let _ = writeln!(out, "== chat");
-    let head = state.transcript().head().unwrap_or(0);
-    for row in chat_rows(&state, 0..=head, &opts) {
+    for row in crate::support::all_rows(&state, tools) {
         let _ = writeln!(out, "  {}", describe_row(&row));
     }
     let _ = writeln!(out, "== overview {:?}", overview(&state, None));
@@ -416,7 +396,7 @@ fn check(
     }
 }
 
-fn run_all<I: Interpreter>(kind: Kind, dir: &str, special: &Special) {
+fn run_all<I: Interpreter>(kind: Kind, dir: &str) {
     let mut failures = Vec::new();
     let mut names: Vec<String> = std::fs::read_dir(fixtures(dir))
         .unwrap()
@@ -431,7 +411,7 @@ fn run_all<I: Interpreter>(kind: Kind, dir: &str, special: &Special) {
     let mut expected = HashSet::new();
     for name in &names {
         let path = fixtures(dir).join(format!("{name}.json"));
-        let frames = special(name, &path).unwrap_or_else(|| replay::<I>(&path));
+        let frames = replay::<I>(&path);
         expected.insert(format!("{name}.golden"));
         failures.extend(check(kind, dir, name, frames));
     }
@@ -447,30 +427,17 @@ fn run_all<I: Interpreter>(kind: Kind, dir: &str, special: &Special) {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-/// A fixture that needs a particular interpreter arm replays through it.
-type Special = dyn Fn(&str, &Path) -> Option<Result<Vec<Replayed>, String>>;
-
-fn none(_: &str, _: &Path) -> Option<Result<Vec<Replayed>, String>> {
-    None
-}
-
 #[test]
 fn claude_pty_view_goldens() {
-    run_all::<ClaudePty>(Kind::ClaudePty, "claude_pty", &none);
+    run_all::<ClaudePty>(Kind::ClaudePty, "claude_pty");
 }
 
 #[test]
 fn claude_sdk_view_goldens() {
-    run_all::<ClaudeSdk>(Kind::ClaudeSdk, "claude_sdk", &none);
+    run_all::<ClaudeSdk>(Kind::ClaudeSdk, "claude_sdk");
 }
 
 #[test]
 fn codex_view_goldens() {
-    // Two fixtures pin a message-consumption arm of the Codex interpreter.
-    let arms = |name: &str, path: &Path| match name {
-        "inject_parked" => Some(replay::<CodexWith<Parked>>(path)),
-        "inject_drained" | "inject_drained_turn_end" => Some(replay::<CodexWith<Drained>>(path)),
-        _ => None,
-    };
-    run_all::<Codex>(Kind::Codex, "codex", &arms);
+    run_all::<Codex>(Kind::Codex, "codex");
 }

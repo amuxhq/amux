@@ -40,7 +40,7 @@ use path_core::{
     PathId, Paths, RELAY_READY_WHILE_DIRECT, Source, StepBudget,
 };
 
-use crate::{Fault, Machine, MsgIndex, Property};
+use crate::{Machine, Property};
 
 /// The relay's forwarding link.
 const RELAY: LinkId = LinkId(1);
@@ -273,9 +273,10 @@ pub enum Action {
     /// The relay refuses the link's packets for a reason other than the
     /// plan.
     RelayRefusesFor(ForwardRefusal),
-    /// A probe is lost (`Lose`), or time passes to the machine's next wake
-    /// (`Tick`).
-    Fault(Fault),
+    /// The probe at this place in flight is lost.
+    Lose(usize),
+    /// Time passes to the machine's next wake.
+    Tick { ms: u64 },
     /// This host moves to another network.
     NetworkChanged,
     /// The relay link goes down.
@@ -730,9 +731,7 @@ impl Machine for PathModel {
                 }
             }
             if s.used.probes_lost < self.probes_lost {
-                out.extend(
-                    (0..s.in_flight.len()).map(|index| Action::Fault(Fault::Lose(MsgIndex(index)))),
-                );
+                out.extend((0..s.in_flight.len()).map(Action::Lose));
             }
             if s.used.network_changes < self.network_changes {
                 out.push(Action::NetworkChanged);
@@ -783,12 +782,8 @@ impl Machine for PathModel {
             }
             if s.relay_up && s.sent_on_relay() && s.used.refusals < self.refusals {
                 out.extend(
-                    [
-                        ForwardRefusal::NoRoute,
-                        ForwardRefusal::RateLimited,
-                        ForwardRefusal::ShuttingDown,
-                    ]
-                    .map(Action::RelayRefusesFor),
+                    [ForwardRefusal::NoRoute, ForwardRefusal::RateLimited]
+                        .map(Action::RelayRefusesFor),
                 );
             }
         }
@@ -798,7 +793,7 @@ impl Machine for PathModel {
             }
         }
         if let Some(at) = self.wake(s) {
-            out.push(Action::Fault(Fault::Tick { ms: at - s.now_ms }));
+            out.push(Action::Tick { ms: at - s.now_ms });
         }
         if !s.relay_up {
             out.push(Action::ForwardingUp);
@@ -897,14 +892,14 @@ impl Machine for PathModel {
                     reason: *reason,
                 }
             }
-            Action::Fault(Fault::Lose(MsgIndex(index))) => {
+            Action::Lose(index) => {
                 let path = *next.in_flight.keys().nth(*index)?;
                 next.unanswerable(path, keep);
                 next.missed(path);
                 next.used.probes_lost += 1;
                 return Some(next);
             }
-            Action::Fault(Fault::Tick { ms }) => {
+            Action::Tick { ms } => {
                 if next.rested {
                     next.used.rest_ticks += 1;
                 } else if next.lan_silent && next.used.outage_ticks < OUTAGE_TICKS {
@@ -927,7 +922,6 @@ impl Machine for PathModel {
                 next.lost.retain(|_, sent| *sent + PROBE_TIMEOUT_MS > now);
                 Input::Tick { now_ms: now }
             }
-            Action::Fault(_) => return None,
             Action::NetworkChanged => {
                 next.used.network_changes += 1;
                 next.on_lan = !next.on_lan;
@@ -937,12 +931,7 @@ impl Machine for PathModel {
                 next.lost.clear();
                 next.answered.clear();
                 next.failed.clear();
-                let ip = if next.on_lan {
-                    IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5))
-                } else {
-                    IpAddr::V4(Ipv4Addr::new(172, 20, 10, 5))
-                };
-                Input::NetworkChanged { addrs: vec![ip] }
+                Input::NetworkChanged
             }
             Action::ForwardingDown => {
                 next.used.forwarding_drops += 1;

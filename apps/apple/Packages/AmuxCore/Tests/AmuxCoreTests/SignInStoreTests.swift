@@ -28,10 +28,6 @@ private struct OneAnswer: CloudService, @unchecked Sendable {
         }
     }
 
-    func account(_ id: AccountId) async throws(CloudError) -> AccountFacts {
-        throw .unauthenticated
-    }
-
     func recordPurchase(_ id: AccountId, signedTransaction: String) async throws(CloudError) {
         throw .unauthenticated
     }

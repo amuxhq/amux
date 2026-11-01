@@ -178,9 +178,7 @@ impl Daemon {
         let refused_for_plan = match reason {
             ForwardRefusal::PaymentRequired => true,
             ForwardRefusal::NoRoute => false,
-            ForwardRefusal::RateLimited
-            | ForwardRefusal::ShuttingDown
-            | ForwardRefusal::Unspecified => return,
+            ForwardRefusal::RateLimited | ForwardRefusal::Unspecified => return,
         };
         self.touched.host(host);
         self.presence
@@ -476,32 +474,6 @@ mod tests {
     }
 
     #[test]
-    fn a_host_reads_online_while_a_link_of_its_own_is_up_and_offline_once_no_route_lists_it() {
-        let mut daemon = daemon();
-        up(&mut daemon, 1, RELAY, CarrierKind::Relay);
-        claims(&mut daemon, 1, &[DESK]);
-        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
-
-        up(&mut daemon, 2, DESK, CarrierKind::Forwarded);
-        assert_eq!(view(&daemon, DESK).presence, Presence::Online);
-        up(&mut daemon, 3, LAPTOP, CarrierKind::Direct);
-        claims(&mut daemon, 3, &[DESK]);
-
-        // Its own last link going, while claims still list it, reads it
-        // offline and takes the link's channels; the last route going
-        // forgets it.
-        let out = down(&mut daemon, 2);
-        assert!(out.contains(&Output::DropRoute {
-            host: DESK,
-            route: Route::Direct(LinkId(2))
-        }));
-        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
-        down(&mut daemon, 3);
-        down(&mut daemon, 1);
-        assert_eq!(view(&daemon, DESK), HostView::default());
-    }
-
-    #[test]
     fn a_host_not_trusted_is_not_dialled_through_until_it_is() {
         let mut daemon = daemon();
         trust(&mut daemon, vec![LAPTOP]);
@@ -514,30 +486,12 @@ mod tests {
     }
 
     #[test]
-    fn a_refusal_for_the_plan_reads_the_host_away_until_a_link_of_its_own_is_up() {
-        let mut daemon = refused_desk();
-        up(&mut daemon, 2, DESK, CarrierKind::Direct);
-        assert_eq!(view(&daemon, DESK).presence, Presence::Online);
-
-        // The refusal went with the link it predates.
-        down(&mut daemon, 2);
-        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
-    }
-
-    #[test]
     fn a_plan_change_dials_every_host_the_relay_refused_for_the_plan() {
         let mut daemon = refused_desk();
         claims(&mut daemon, 1, &[DESK, LAPTOP]);
         let out = step(&mut daemon, Input::PlanChanged);
         assert_eq!(dialled(&out), vec![DESK]);
         assert_eq!(view(&daemon, DESK).presence, Presence::Away);
-    }
-
-    #[test]
-    fn a_forwarder_holding_no_link_to_the_host_reads_it_offline_at_once() {
-        let mut daemon = refused_desk();
-        forward_refused(&mut daemon, 1, DESK, ForwardRefusal::NoRoute);
-        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
     }
 
     #[test]
@@ -558,12 +512,13 @@ mod tests {
     }
 
     #[test]
-    fn a_forward_refused_for_the_rate_or_a_shutdown_says_nothing_of_the_host() {
+    fn a_forward_refused_for_the_rate_says_nothing_of_the_host() {
         let mut daemon = refused_desk();
-        for reason in [ForwardRefusal::RateLimited, ForwardRefusal::ShuttingDown] {
-            assert_eq!(forward_refused(&mut daemon, 1, DESK, reason), Vec::new());
-            assert_eq!(view(&daemon, DESK).presence, Presence::Away);
-        }
+        assert_eq!(
+            forward_refused(&mut daemon, 1, DESK, ForwardRefusal::RateLimited),
+            Vec::new()
+        );
+        assert_eq!(view(&daemon, DESK).presence, Presence::Away);
     }
 
     #[test]

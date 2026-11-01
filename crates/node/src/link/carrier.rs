@@ -2,7 +2,6 @@ use std::io;
 
 use prost::Message as _;
 use tokio::sync::{mpsc, oneshot};
-use wire::{self, pb};
 
 /// A bidirectional byte stream carried by a link.
 pub type ByteStream = super::quic::QuicByteStream;
@@ -26,10 +25,10 @@ pub struct ControlSink {
 }
 
 pub struct ControlSource {
-    pub(super) rx: mpsc::Receiver<io::Result<pb::Message>>,
+    pub(super) rx: mpsc::Receiver<io::Result<wire::Message>>,
 }
 
-pub async fn write_message(sink: &mut ControlSink, message: &pb::Message) -> io::Result<()> {
+pub async fn write_message(sink: &mut ControlSink, message: &wire::Message) -> io::Result<()> {
     let encoded_len = message.encoded_len();
     if encoded_len > wire::MESSAGE_SIZE_LIMIT {
         return Err(io::Error::new(
@@ -59,6 +58,6 @@ pub async fn write_message(sink: &mut ControlSink, message: &pb::Message) -> io:
         .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "control stream closed"))?
 }
 
-pub async fn read_message(source: &mut ControlSource) -> io::Result<Option<pb::Message>> {
+pub async fn read_message(source: &mut ControlSource) -> io::Result<Option<wire::Message>> {
     source.rx.recv().await.transpose()
 }

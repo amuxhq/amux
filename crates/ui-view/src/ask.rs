@@ -57,9 +57,6 @@ pub enum CardState {
     Rejected(Refusal),
     /// The connection dropped before a reply: resend or discard.
     NotConfirmed,
-    /// The answer never left: the agent's host cannot be reached, and it
-    /// goes once it is back. Cancel takes it back.
-    Held,
     /// The agent exited with the ask open.
     Dismissed,
 }
@@ -248,7 +245,6 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
             Some(InputState::Sent | InputState::Settled | InputState::Queued) => CardState::Sending,
             Some(InputState::Rejected(reason)) => CardState::Rejected(reason.clone()),
             Some(InputState::Uncertain) => CardState::NotConfirmed,
-            Some(InputState::Held) => CardState::Held,
             None => CardState::Open,
         }
     };
@@ -349,8 +345,7 @@ fn claude(
                 ChoiceOutcome::AllowOnce,
                 permission(P::Allow(wire::PermissionAllow { scope: None })),
             )];
-            for scope in &p.scopes {
-                let grant = scope.grant.clone().unwrap_or_default();
+            for (index, grant) in p.scopes.iter().enumerate() {
                 let mode = grant.mode.clone().unwrap_or_default();
                 choices.push(choice(
                     ChoiceOutcome::AllowAlways {
@@ -362,10 +357,10 @@ fn claude(
                             .map(|permission| permission.display_name.clone())
                             .unwrap_or_default(),
                         mode,
-                        scope: scope_of(&grant),
+                        scope: scope_of(grant),
                     },
                     permission(P::Allow(wire::PermissionAllow {
-                        scope: Some(scope.index),
+                        scope: Some(index as u32),
                     })),
                 ));
             }
@@ -687,8 +682,7 @@ fn plan_card(
         .map(|held| {
             let writing = matches!(
                 &held.body,
-                ui_state::ItemBody::ClaudePty(wire::claude_pty_item::Kind::Plan(plan))
-                | ui_state::ItemBody::ClaudeSdk(wire::claude_sdk_item::Kind::Plan(plan))
+                ui_state::ItemBody::Claude(wire::claude_item::Kind::Plan(plan))
                 | ui_state::ItemBody::Codex(wire::codex_item::Kind::Plan(plan))
                     if !plan.complete
             );

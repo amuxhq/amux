@@ -1,47 +1,20 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 2 agent_message {"envelope":"env-idle","from":"probe","text":"A2A_SOCKET_IDLE_21240"}
-  row    1 agent-message:656e762d69646c65 AgentMessage { from: "probe", kind: Message, text: [Text("A2A_SOCKET_IDLE_21240")], to: "", sent: Unspecified, rejection: "" }
-## 3 agent_message {"envelope":"env-busy","from":"probe","text":"A2A_SOCKET_BUSY_21240"}
-  row    2 agent-message:656e762d62757379 AgentMessage { from: "probe", kind: Message, text: [Text("A2A_SOCKET_BUSY_21240")], to: "", sent: Unspecified, rejection: "" }
 ## 11 recorded 7: fact Transcript type=user uuid=f30e3af6-7585-43a0-bff2-42f3eb53493b
-  row    3 f30e3af6-7585-43a0-bff2-42f3eb53493b Prompt { text: [Text("Reply exactly READY and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 16 recorded 12: fact Transcript type=assistant uuid=6770e217-dc12-44ac-aa3e-f9d8651ce95e
-  row    4 6770e217-dc12-44ac-aa3e-f9d8651ce95e Thinking { text: "", open: false, duration_ms: Some(1448) }
-## 18 recorded 14: fact Transcript type=assistant uuid=70cca43c-1567-454d-b513-aee897603d83
-  row    5 70cca43c-1567-454d-b513-aee897603d83 Prose { text: [Text("READY")], streaming: false, working_note: false }
 ## 22 recorded 18: fact Transcript type=system subtype=turn_duration uuid=b85b3963-3ef9-45af-8f4f-b2faac705088
-  row    6 turn:1 TurnEnd { duration_ms: Some(1478), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 28 recorded 24: fact Transcript type=user uuid=3df6809d-39e3-48ce-a73b-baf08099c9d8
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 34 recorded 30: fact Transcript type=assistant uuid=2697ce1c-a9af-488f-80d8-bd2daa5f1106
-  row    7 2697ce1c-a9af-488f-80d8-bd2daa5f1106 Thinking { text: "", open: false, duration_ms: Some(4986) }
-## 36 recorded 32: fact Transcript type=assistant uuid=2cb9c201-f99c-449a-80a5-3411ed0f8d59
-  row    8 2cb9c201-f99c-449a-80a5-3411ed0f8d59 Prose { text: [Text("I received the message from the probe session, but I need context to act on it. What should I do with `A2A_SOCKET_IDLE_21240`? \n\nIs it:\n- A process/socket to check or monitor?\n- A test or validation to run?\n- A log entry to search for?\n- Something else?\n\nLet me know what action you'd like me to take.")], streaming: false, worki…
 ## 40 recorded 36: fact Transcript type=system subtype=turn_duration uuid=12e8722d-b052-4239-9c73-25b89c80dae6
-  row    9 turn:2 TurnEnd { duration_ms: Some(5258), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 43 recorded 39: fact Transcript type=user uuid=0a501bda-51f2-49be-a643-b0dcbc2053de
-  row   10 0a501bda-51f2-49be-a643-b0dcbc2053de Prompt { text: [Text("Use the Bash tool to run exactly: sleep 3. Then reply exactly BUSY_DONE.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 52 recorded 48: fact Transcript type=assistant uuid=babb0fd4-46ee-43c0-a44c-b5d929f8a9ad
-  row   11 babb0fd4-46ee-43c0-a44c-b5d929f8a9ad Thinking { text: "", open: false, duration_ms: Some(1455) }
 ## 54 recorded 50: fact Transcript type=assistant uuid=024bb248-7211-4c68-b7c3-7af04d70a3a0
-  row   12 toolu_013jKhDLNrgrMEgFPXnugyHG Command { command: "sleep 3", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_013jKhDLNrgrMEgFPXnugyHG..toolu_013jKhDLNrgrMEgFPXnugyHG x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_013jKhDLNrgrMEgFPXnugyHG" }) queue=[] underway=[] refused=[]
 ## 56 recorded 52: fact Transcript type=user uuid=d98ca0de-ef5b-48c7-8e78-d97d98b672bb
-  row   12 toolu_013jKhDLNrgrMEgFPXnugyHG Command { command: "sleep 3", state: Succeeded, exit_code: None, output_head: ["(Bash completed with no output)"], more_lines: 0, output_trimmed: false, output_tail: ["(Bash completed with no output)"], duration_ms: Some(3511) } run[toolu_013jKhDLNrgrMEgFPXnugyHG..toolu_013jKhDLNrgrMEgFPXnugyHG x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, search…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 64 recorded 60: fact Transcript type=assistant uuid=d2d590ca-ada1-4446-9283-9a90e27caa78
-  row   13 d2d590ca-ada1-4446-9283-9a90e27caa78 Thinking { text: "", open: false, duration_ms: Some(4999) }
-## 66 recorded 62: fact Transcript type=assistant uuid=1fa304dd-838d-48a8-bc36-dec87025c783
-  row   12 toolu_013jKhDLNrgrMEgFPXnugyHG Command { command: "sleep 3", state: Succeeded, exit_code: None, output_head: ["(Bash completed with no output)"], more_lines: 0, output_trimmed: false, output_tail: ["(Bash completed with no output)"], duration_ms: Some(3511) } run[toolu_013jKhDLNrgrMEgFPXnugyHG..toolu_013jKhDLNrgrMEgFPXnugyHG x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0…
-  row   14 1fa304dd-838d-48a8-bc36-dec87025c783 Prose { text: [Text("BUSY_DONE")], streaming: false, working_note: false }
 ## 70 recorded 66: fact Transcript type=system subtype=turn_duration uuid=2cca810f-615d-494c-a372-0455bd4c9708
-  row   12 toolu_013jKhDLNrgrMEgFPXnugyHG Command { command: "sleep 3", state: Succeeded, exit_code: None, output_head: ["(Bash completed with no output)"], more_lines: 0, output_trimmed: false, output_tail: ["(Bash completed with no output)"], duration_ms: Some(3511) } run[toolu_013jKhDLNrgrMEgFPXnugyHG..toolu_013jKhDLNrgrMEgFPXnugyHG x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0…
-  row   15 turn:3 TurnEnd { duration_ms: Some(6602), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 72 recorded 68: fact Transcript type=user uuid=fab2d431-bbc0-457f-9613-04d4050d004f
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]

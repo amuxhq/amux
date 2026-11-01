@@ -1,33 +1,24 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 2 input {"id":"p1","prompt":{"text":"Deploy it."}}
-  row    2 prompt:7031 Prompt { text: [Text("Deploy it.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 5 fact {"channel":"rpc","json":{"id":9,"method":"item/tool/requestUserInput","params":{"itemId":"call-1","questions":[{"header":"Env","id":"env","isOther":false,"isSecret":false,"options":[{"description":"Safe first.","label":"staging (Recommended)"},{"description":"Live.","label":"production"}],"question":"Which environment?"},{"header":"Window","id":"window","isOther":false,"isSecret":false,"optio…
-  row    3 ask:9 [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Env", question: "Which environment?", multi_select: false, options: [OptionView { label: "staging", description: "Safe first.", preview: "", recommended: true }, OptionView { label: "production", description: "Live.", preview: "", recommended: false }], allow_other: false, secret: false }, QuestionView { header: "Win…
   ask 9 -> "ask:9" 1/1 Open
     choices 
     body Question([QuestionView { header: "Env", question: "Which environment?", multi_select: false, options: [OptionView { label: "staging", description: "Safe first.", preview: "", recommended: true }, OptionView { label: "production", description: "Live.", preview: "", recommended: false }], allow_other: false, secret: false }, QuestionView { header: "Window", question: "When should it go out?", multi_…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 6 input {"answer":{"answer":{"notes":["after the freeze",null,"cut it from main"],"selected":[1,null,"v2.3"]},"ask":"9"},"id":"a1"}
-  row    3 ask:9 [Answered: Env = production note="after the freeze"; Window = (skipped); Tag = "v2.3" note="cut it from main" skipped=1] Ask(Questions { questions: [QuestionView { header: "Env", question: "Which environment?", multi_select: false, options: [OptionView { label: "staging", description: "Safe first.", preview: "", recommended: true }, OptionView { label: "production", description: "Live."…
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 8 fact {"channel":"rpc","json":{"id":10,"method":"item/tool/requestUserInput","params":{"itemId":"call-2","questions":[{"header":"Env","id":"env","isOther":false,"isSecret":false,"options":[{"description":"Safe first.","label":"staging (Recommended)"},{"description":"Live.","label":"production"}],"question":"Which environment?"},{"header":"Window","id":"window","isOther":false,"isSecret":false,"opti…
-  row    4 ask:10 [Open:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Env", question: "Which environment?", multi_select: false, options: [OptionView { label: "staging", description: "Safe first.", preview: "", recommended: true }, OptionView { label: "production", description: "Live.", preview: "", recommended: false }], allow_other: false, secret: false }, QuestionView { header: "Wi…
   ask 10 -> "ask:10" 1/1 Open
     choices 
     body Question([QuestionView { header: "Env", question: "Which environment?", multi_select: false, options: [OptionView { label: "staging", description: "Safe first.", preview: "", recommended: true }, OptionView { label: "production", description: "Live.", preview: "", recommended: false }], allow_other: false, secret: false }, QuestionView { header: "Window", question: "When should it go out?", multi_…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 9 input {"answer":{"answer":{"reply":{"selected":[0,null,null],"text":"Hold the deploy until Monday."}},"ask":"10"},"id":"a2"}
-  row    4 ask:10 [Replied: Env = staging; Window = (skipped); Tag = (skipped) skipped=2 reply="Hold the deploy until Monday."] Ask(Questions { questions: [QuestionView { header: "Env", question: "Which environment?", multi_select: false, options: [OptionView { label: "staging", description: "Safe first.", preview: "", recommended: true }, OptionView { label: "production", description: "Live.", preview:…
   ask none
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [97, 50], text: [Text("Hold the deploy until Monday.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 11 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"interrupted"}}}}
-  row    5 turn:1 TurnEnd { duration_ms: Some(0), failed: false }
-  row    6 prompt:6132 Prompt { text: [Text("Hold the deploy until Monday.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

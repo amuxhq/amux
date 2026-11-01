@@ -1,0 +1,58 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 2 recorded 1: fact Stream type=control_response
+effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
+effect catalogue 08dc149d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=56 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 08dc149d
+snapshot IDLE queue=[] working_on=- at=1793423347672 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 4 recorded 3: fact Stream type=control_response
+snapshot IDLE queue=[] working_on=- at=1793423347680 asks=[] session=? model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=low mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 6 recorded 5: input 0xbc33b00846dd455287f769962790a749
+effect reply 0xbc33b00846dd455287f769962790a749 accepted
+effect user bc33b008-46dd-4552-87f7-69962790a749 "Reply with the single word pong and nothing else."
+item boundary:1 boundary final at=1793423347783 text="" BOUNDARY_KIND_STARTED
+item bc33b008-46dd-4552-87f7-69962790a749 prompt final input=0xbc33b00846dd455287f769962790a749 at=1793423347783 text="Reply with the single word pong and nothing else."
+snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423347783 asks=[] session=? model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=low mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 12 recorded 11: fact Stream type=system subtype=init uuid=c1ddf116-945b-498c-b54d-807f12c83ac3
+item boundary:1 boundary final at=1793423347818 text="" BOUNDARY_KIND_STARTED
+snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423347818 asks=[] session=318f11ad-b5f3-4681-8bb2-b14fbc4c7708 model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=low mode=default context=? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 14 recorded 13: fact Stream type=system subtype=status uuid=a597112f-63c5-4256-9bb1-d006ab406f15
+item a597112f-63c5-4256-9bb1-d006ab406f15 status final at=1793423347820 text="" SDK_STATUS_UNSPECIFIED requesting
+## 17 recorded 16: fact Stream type=stream_event uuid=a9cda1d3-a98d-4f90-ad6d-c4c2c8b5fae8
+snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423349303 asks=[] session=318f11ad-b5f3-4681-8bb2-b14fbc4c7708 model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=low mode=default context=19533/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 18 recorded 17: fact Stream type=stream_event uuid=55344666-b42d-443c-ba37-5957373cc536
+item msg_011CgZjixwkrEzUw4wCXFmE4:0 message open at=1793423349303 text=""
+## 19 recorded 18: fact Stream type=stream_event uuid=12e473f9-2daa-47c1-aaf2-6cea6952e221
+append msg_011CgZjixwkrEzUw4wCXFmE4:0 "pong"
+## 21 recorded 20: fact Stream type=assistant uuid=bcd9849a-f933-4d82-9ef6-2a6bc765c4ee
+item msg_011CgZjixwkrEzUw4wCXFmE4:0 message final at=1793423349303 text="pong"
+## 28 recorded 27: fact Stream type=rate_limit_event uuid=1c99e33c-cfcd-4e12-baef-13c6e5dfcd91
+snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423349315 asks=[] session=318f11ad-b5f3-4681-8bb2-b14fbc4c7708 model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=low mode=default context=19533/? tasks=? active=[] usage=ok 5h:18%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 30 recorded 29: fact Stream type=result subtype=success uuid=db478ecb-c5c4-4f29-8618-d160cd2cb72e
+item turn:1 turn final at=1793423349322 text="" #1 TURN_OUTCOME_COMPLETED started=1793423347806
+snapshot IDLE queue=[] working_on="Reply with the single word pong and nothing else." at=1793423349322 asks=[] session=318f11ad-b5f3-4681-8bb2-b14fbc4c7708 model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=low mode=default context=19533/1000000 tasks=? active=[] usage=ok 5h:18%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 1 last=msg_011CgZjixwkrEzUw4wCXFmE4:0
+## 34 recorded 33: input stdin-4
+effect write "{\"request\":{\"settings\":{\"effortLevel\":\"high\"},\"subtype\":\"apply_flag_settings\"},\"request_id\":\"amux-2\",\"type\":\"control_request\"}"
+effect reply stdin-4 accepted
+## 36 recorded 35: input 0x7e2eddb9f81f4336a64956df771bb86a
+effect reply 0x7e2eddb9f81f4336a64956df771bb86a accepted
+effect user 7e2eddb9-f81f-4336-a649-56df771bb86a "Reply with the single word pong and nothing else."
+item 7e2eddb9-f81f-4336-a649-56df771bb86a prompt final input=0x7e2eddb9f81f4336a64956df771bb86a at=1793423349441 text="Reply with the single word pong and nothing else."
+snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423349441 asks=[] session=318f11ad-b5f3-4681-8bb2-b14fbc4c7708 model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=low mode=default context=19533/1000000 tasks=? active=[] usage=ok 5h:18%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 38 recorded 37: fact Stream type=control_response
+snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423349457 asks=[] session=318f11ad-b5f3-4681-8bb2-b14fbc4c7708 model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=high mode=default context=19533/1000000 tasks=? active=[] usage=ok 5h:18%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 46 recorded 45: fact Stream type=system subtype=status uuid=d191ccd0-141e-4644-a5f1-09bd4ac3f88f
+item d191ccd0-141e-4644-a5f1-09bd4ac3f88f status final at=1793423349467 text="" SDK_STATUS_UNSPECIFIED requesting
+## 49 recorded 48: fact Stream type=stream_event uuid=c624ba5d-5f50-4e74-8146-1f846d67d20b
+snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423350866 asks=[] session=318f11ad-b5f3-4681-8bb2-b14fbc4c7708 model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=high mode=default context=19555/1000000 tasks=? active=[] usage=ok 5h:18%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 50 recorded 49: fact Stream type=stream_event uuid=a50c7e45-1864-42a5-bb2a-9ca1967ee4fb
+item msg_011CgZjj5qjni56eUeUGDzu8:0 message open at=1793423350866 text=""
+## 51 recorded 50: fact Stream type=stream_event uuid=d8467933-54b5-40f2-b11d-74d4cad76a3b
+append msg_011CgZjj5qjni56eUeUGDzu8:0 "pong"
+## 53 recorded 52: fact Stream type=assistant uuid=0071e918-be54-42bc-9b0c-50b275a17552
+item msg_011CgZjj5qjni56eUeUGDzu8:0 message final at=1793423350866 text="pong"
+## 59 recorded 58: fact Stream type=result subtype=success uuid=1186087b-df91-4647-ace7-b31295a307de
+item turn:2 turn final at=1793423350878 text="" #2 TURN_OUTCOME_COMPLETED started=1793423349459
+snapshot IDLE queue=[] working_on="Reply with the single word pong and nothing else." at=1793423350878 asks=[] session=318f11ad-b5f3-4681-8bb2-b14fbc4c7708 model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=high mode=default context=19555/1000000 tasks=? active=[] usage=ok 5h:18%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 2 last=msg_011CgZjj5qjni56eUeUGDzu8:0

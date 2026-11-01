@@ -35,7 +35,6 @@ pub enum Call {
     SendInput(SendInputRequest, Reply<SendInputResponse>),
     Resume(ResumeAgentRequest, Reply<Agent>),
     GetBlob(GetBlobRequest, Reply<GetBlobResponse>),
-    PutBlob(PutBlobRequest, Reply<BlobRef>),
     Stop(StopAgentRequest, Reply<()>),
     Dump(DumpRequest, Reply<DumpResponse>),
 }
@@ -50,7 +49,6 @@ impl std::fmt::Debug for Call {
             Call::SendInput(request, _) => write!(f, "SendInput({request:?})"),
             Call::Resume(request, _) => write!(f, "Resume({request:?})"),
             Call::GetBlob(request, _) => write!(f, "GetBlob({request:?})"),
-            Call::PutBlob(request, _) => write!(f, "PutBlob({:?})", request.name),
             Call::Stop(request, _) => write!(f, "Stop({request:?})"),
             Call::Dump(request, _) => write!(f, "Dump({request:?})"),
         }
@@ -157,15 +155,12 @@ impl Client for FakeRuntime {
         unimplemented!("delete_agent")
     }
 
-    async fn send_message(
-        &self,
-        _: wire::SendMessageRequest,
-    ) -> Result<SendMessageResponse, RpcError> {
+    async fn send_message(&self, _: wire::Envelope) -> Result<SendMessageResponse, RpcError> {
         unimplemented!("send_message")
     }
 
-    async fn put_blob(&self, request: PutBlobRequest) -> Result<BlobRef, RpcError> {
-        self.call(|reply| Call::PutBlob(request, reply)).await
+    async fn put_blob(&self, _: PutBlobRequest) -> Result<BlobRef, RpcError> {
+        unimplemented!("put_blob")
     }
 
     async fn get_blob(&self, request: GetBlobRequest) -> Result<GetBlobResponse, RpcError> {
@@ -192,6 +187,21 @@ impl Client for FakeRuntime {
 
     async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError> {
         self.call(|reply| Call::Dump(request, reply)).await
+    }
+
+    async fn submit_report(
+        &self,
+        _: wire::SubmitReportRequest,
+    ) -> Result<wire::SubmitReportResponse, RpcError> {
+        unimplemented!("submit_report")
+    }
+
+    async fn update_draft(&self, _: wire::UpdateDraftRequest) -> Result<wire::Draft, RpcError> {
+        unimplemented!("update_draft")
+    }
+
+    async fn get_draft(&self, _: wire::GetDraftRequest) -> Result<wire::Draft, RpcError> {
+        unimplemented!("get_draft")
     }
 }
 
@@ -316,7 +326,6 @@ fn event(of: session_event::Of) -> SessionEvent {
 
 pub fn snapshot(kind: Kind, revision: u64, queue: &[&[u8]]) -> SessionEvent {
     event(session_event::Of::Snapshot(Snapshot {
-        agent_id: b"agent-1".to_vec(),
         revision,
         kind: kind as i32,
         queue: queue
@@ -334,7 +343,6 @@ pub fn snapshot(kind: Kind, revision: u64, queue: &[&[u8]]) -> SessionEvent {
 
 pub fn text_item(kind: Kind, order: u64, revision: u64, text: &str) -> Item {
     Item {
-        agent_id: b"agent-1".to_vec(),
         key: format!("k{order}"),
         order,
         revision,
@@ -373,7 +381,6 @@ pub fn ev(item: Item) -> SessionEvent {
 
 pub fn append(key: &str, base: u64, revision: u64, text: &str) -> SessionEvent {
     event(session_event::Of::Append(wire::Append {
-        agent_id: b"agent-1".to_vec(),
         key: key.into(),
         base_revision: base,
         revision,

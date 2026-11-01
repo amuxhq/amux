@@ -386,34 +386,11 @@ verification list on purpose.
   Store route to an entitlement is unproven on this build's products, bundle
   id and provider configuration.
 
-- **`just ios qa-live-journey`** runs the whole product once against the real
-  one. It signs the QA account into amux.sh, hands the simulator app only that
-  session (the door's `restoreSession`), and stands back: the app asks the
-  account service who the account is and what it may do, its profile fetches
-  a relay credential and dials the relay it names. On the other side is this
-  checkout's own daemon (started with `wt run daemon`), on a profile the
-  recipe creates for the run and deletes afterwards, signed in as the same
-  account through the CLI's device flow. The phone pairs with that machine by
-  the QR invitation it offers and then, after forgetting it, by the six
-  digits it prints, opens a real Claude session there, asks one question and
-  reads the answer back.
-
-  It is the only run that exercises the production handshake: every other
-  journey uses a relay started beside it with credentials a harness minted, so
-  the audience, port and client the relay compares, and the signature it
-  validates, are exercised only here. A mismatch there fails silently (the
-  phone never arrives), so a failure is reported with what the phone's runtime
-  and the daemon logged. It spends real money on a real agent. If
-  `/api/connect` answers `403 payment_required`, the QA account's entitlement
-  has lapsed; restoring it is an operator's job, and the recipe says so and
-  stops.
-
-**The accounts.** `AMUX_QA_EMAIL` names the account for the sign-in and the
-live journey, and `AMUX_QA_DEVICE_EMAIL` the sandbox account. A variable
-already set in the environment wins; otherwise the recipes read
-`.autopilot/qa-account.env` at the repository root, an untracked,
-operator-written file that sets those variables and nothing else. There is no
-built-in address.
+**The accounts.** `AMUX_QA_EMAIL` names the account for the sign-in, and
+`AMUX_QA_DEVICE_EMAIL` the sandbox account. A variable already set in the
+environment wins; otherwise the recipes read `.autopilot/qa-account.env` at
+the repository root, an untracked, operator-written file that sets those
+variables and nothing else. There is no built-in address.
 
 **The password.** Read from the login keychain when it is needed, with
 `security find-generic-password -s amuxcloud-qa -a "<the address>" -w`, and

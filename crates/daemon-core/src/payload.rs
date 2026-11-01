@@ -3,8 +3,7 @@
 //! Every payload is decoded: the driver turns bytes into these values on the
 //! way in and these values into bytes on the way out, so the core never
 //! sees a stream. Where the protocol already defines the message, the
-//! payload is the generated message type. The rest are the core's own, and
-//! a payload no machine in the core reads carries nothing until one does.
+//! payload is the generated message type. The rest are the core's own.
 
 use std::sync::Arc;
 
@@ -21,8 +20,6 @@ pub type LinkFrame = wire::Message;
 pub type LinkCloseReason = wire::LinkCloseReason;
 /// One message of a pairing conversation.
 pub type PairMessage = wire::PairMessage;
-/// An agent process's hello on its control socket.
-pub type Hello = wire::AgentHello;
 /// A frame to an agent process's control socket.
 pub type ControlFrame = wire::CtlFrame;
 /// What an agent is started with.
@@ -30,24 +27,6 @@ pub type AgentSpec = wire::AgentSpec;
 /// Why a forwarder will not carry a link's packets to a destination.
 pub type ForwardRefusal = wire::ForwardRefusal;
 
-macro_rules! payload {
-    ($($(#[$doc:meta])* $name:ident;)*) => {
-        $(
-            $(#[$doc])*
-            #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-            pub struct $name;
-        )*
-    };
-}
-
-payload! {
-    /// A batch of analytics events to upload.
-    AnalyticsBatch;
-}
-
-/// A host found on the local network: a hint where to dial it, which the
-/// driver keeps. Whether the host is paired rides along until the trust
-/// store moves into the core.
 /// What a push carries: envelope fields only, so producing it interprets
 /// nothing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -80,16 +59,6 @@ pub enum CarrierKind {
     Forwarded,
 }
 
-/// What a channel carries.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum ChannelClass {
-    /// Calls to the peer.
-    Calls,
-    /// Session subscriptions, apart from the calls so that neither waits
-    /// behind the other.
-    Session,
-}
-
 /// Where a candidate address for a peer came from, which decides whether a
 /// free account may probe it: a candidate learned only through the relay's
 /// observation is paid.
@@ -116,7 +85,7 @@ pub struct PeerAddress {
     pub source: Source,
 }
 
-/// Why a channel closed or could not open.
+/// Why the core would not open a channel.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ChannelError {
     /// The link it was asked on is not up.
@@ -124,18 +93,9 @@ pub enum ChannelError {
     /// No key is pinned for the peer: it is not paired, or its pairing is
     /// being replaced.
     Unpinned,
-    /// The link went before the channel opened.
-    LinkClosed,
-    /// The forwarder between the two hosts would not carry the link.
-    Refused(#[serde(with = "codec::numbered")] ForwardRefusal),
-    /// The handshake failed or took too long, in the driver's words.
-    Handshake(String),
-    /// The connection under an open channel ended.
-    Ended,
 }
 
-/// The key a channel's handshake must find at the other end: the peer's
-/// identity key as it was pinned at pairing.
+/// A peer's identity key, as a resumed link's ticket names it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PublicKey(pub Vec<u8>);
 
@@ -154,10 +114,6 @@ pub(crate) enum Opening {
 }
 
 /// A client's decoded request.
-///
-/// An inventory opening still reads the host set the profile's shell
-/// publishes. Until that moves into the core the driver reads it as it
-/// hands the call over, and it rides on the request.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ClientRequest {
     /// Opens a stream of an agent's session events: the opening cut, then
@@ -308,7 +264,7 @@ pub enum MessageRefusal {
 pub enum PeerRequest {
     /// A stream of one of this host's agents' session events: from what
     /// came after the revision the peer's replica holds, or a tail.
-    SubscribeSession(#[serde(with = "codec::message")] wire::PeerSubscribeSessionRequest),
+    SubscribeSession(#[serde(with = "codec::message")] wire::SubscribeSessionRequest),
     /// A stream of this host's entry and its own agents.
     SubscribeInventory,
     ListItems(#[serde(with = "codec::message")] wire::ListItemsRequest),

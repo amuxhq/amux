@@ -3,15 +3,12 @@
 ## 1 input {"id":"p1","prompt":{"text":"Start."}}
   composer Send activity=None queue=[QueuedRow { input_id: [112, 49], text: [Text("Start.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 2 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 prompt:7031 Prompt { text: [Text("Start.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 6 input {"id":"s1","prompt":{"text":"Use the staging config."}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [115, 49], text: [Text("Use the staging config.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 7 input {"id":"n1","send_now":{"target":"s1"}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [115, 49], text: [Text("Use the staging config.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
 ## 9 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"content":[{"text":"Use the staging config.","type":"text"}],"id":"u-2","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
-  row    3 steer:7331 Prompt { text: [Text("Use the staging config.")], steered: true }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 10 input {"id":"p2","prompt":{"text":"Then summarise."}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 50], text: [Text("Then summarise.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
@@ -20,32 +17,18 @@
 ## 18 input {"id":"p3","prompt":{"text":"Next."}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 51], text: [Text("Next.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 20 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"interrupted"}}}}
-  row    4 turn:1 Stopped
-  row    5 prompt:7033 Prompt { text: [Text("Next.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 21 fact {"channel":"rpc","json":{"error":{"code":-32600,"message":"model gpt-5.6 is not available"},"id":"amux-4"}}
-  row    6 error:rpc:amux-4 Error { error_kind: "request", message: "model gpt-5.6 is not available", attempts: 0, gave_up: true } attention
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 23 input {"id":"p4","prompt":{"text":"Try again."}}
-  row    7 prompt:7034 Prompt { text: [Text("Try again.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 26 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-2","status":"interrupted"}}}}
-  row    8 turn:3 Stopped
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 27 input {"id":"p5","prompt":{"text":"/compact"}}
-  row    9 prompt:7035 Prompt { text: [Text("/compact")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 30 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"cc-1","type":"contextCompaction"},"threadId":"t1","turnId":"turn-3"}}}
-  row   10 boundary:2 Boundary { kind: Compacted, cause: "" }
 ## 31 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-3","status":"completed"}}}}
-  row   11 turn:4 TurnEnd { duration_ms: Some(0), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 32 provider_exit {"code":1}
-  row   12 boundary:3 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
-## 33 agent_message {"envelope":"e9","from":"lead","text":"Status?"}
-  row   13 agent-message:6539 AgentMessage { from: "lead", kind: Message, text: [Text("Status?")], to: "", sent: Unspecified, rejection: "" }
 ## 34 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
-  row   14 boundary:4 Boundary { kind: Resumed, cause: "" }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

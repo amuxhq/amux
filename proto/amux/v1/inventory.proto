@@ -55,7 +55,7 @@ message Trusted {
     // connection between hosts: upgrading reaches this host.
     Empty away = 2;
     // Anything else: no route, or a channel that failed for any reason but
-    // the plan (no route at the relay, rate limited, shutting down, revoked,
+    // the plan (no route at the relay, rate limited, revoked,
     // TLS or identity failure, timeout, link gone).
     Offline offline = 3;
   }
@@ -92,12 +92,6 @@ message ProviderOnHost {
   // The hash GetCatalogue answers with for this provider.
   optional bytes catalogue = 2;
   bool signed_in = 3;
-}
-
-// A spawn named a host that more than one trusted host answers to.
-message AmbiguousHostName {
-  string name = 1;
-  repeated HostEntry candidates = 2;
 }
 
 // How this machine reaches a host, or how a pairing peer was reached. No
@@ -145,37 +139,22 @@ message Agent {
   uint32 background_jobs = 17;
 }
 
-// ResolveAgent found more than one agent by that name.
-message AmbiguousAgentName {
-  string name = 1;
-  repeated Agent candidates = 2;
-}
-
 enum Lifecycle {
   LIFECYCLE_UNSPECIFIED = 0;
   LIFECYCLE_LIVE = 1;
   LIFECYCLE_EXITED = 2;
 }
 
-// Why the row left this daemon's view, which is not always deletion at
-// the origin: a host that stops listing an agent, or that this machine
-// stops trusting, takes its rows with it.
-enum RemovalReason {
-  REMOVAL_REASON_UNSPECIFIED = 0;
-  REMOVAL_REASON_DELETED = 1;
-  REMOVAL_REASON_RETENTION = 2;
-  REMOVAL_REASON_NO_LONGER_LISTED = 3;
-  REMOVAL_REASON_HOST_UNTRUSTED = 4;
-}
-
+// The row left this daemon's view, which is not always deletion at the
+// origin: a host that stops listing an agent, or that this machine stops
+// trusting, takes its rows with it.
 message AgentRemoved {
   bytes host_id = 1;
   bytes agent_id = 2;
-  RemovalReason reason = 3;
 }
 
 // A host by id, or as a person names it, resolved against this host and
-// the trusted ones: exact first, then ignoring case. AmbiguousHostName
+// the trusted ones: exact first, then ignoring case. FAILED_PRECONDITION
 // when more than one answers.
 message HostRef {
   oneof of {

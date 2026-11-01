@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use agent_dir::local_socket::{LocalListener, LocalStream};
 use journal::synthetic::SyntheticWriter;
-use node::{Launch, ProfileRuntime};
+use node::Launch;
 use store::{AgentKey, AgentRow};
 use tokio::io::WriteHalf;
 use tokio::task::JoinHandle;
@@ -29,10 +29,11 @@ pub const SYNTHETIC_PART: &str = "synthetic";
 pub fn quiet_launch() -> Launch {
     Launch {
         install_path: PathBuf::from("/nonexistent/amux"),
-        step_budget: daemon_core::StepBudget::TEST,
-        // An agent's core gets the daemon's test budget, for the same
-        // reason: a loaded debug-build run stretches ordinary steps.
-        agent_step_budget_micros: daemon_core::StepBudget::TEST.micros,
+        // Untimed, daemon and agent cores alike: a loaded debug-build
+        // run stretches ordinary steps past any budget, and a dump for
+        // that overrun would land in `reports/` while a test reads it.
+        step_budget: daemon_core::StepBudget::UNLIMITED,
+        agent_step_budget_micros: daemon_core::StepBudget::UNLIMITED.micros,
         ..Launch::default()
     }
 }
@@ -197,24 +198,11 @@ impl SyntheticAgent {
         row
     }
 
-    /// Writes the row with no daemon running, as a spawn before a crash
-    /// would have left it.
-    pub fn register_offline(&self, install: &Install) {
-        let mut store = store::Sqlite::open(
-            &install.profile_dir().join(node::STORE),
-            host(install).as_bytes().to_vec(),
-        )
-        .unwrap();
-        store.put_agent(&self.row(install)).unwrap();
-    }
-
-    /// Writes the row through a running daemon's store.
-    pub async fn register(&self, install: &Install, runtime: &ProfileRuntime) {
-        let row = self.row(install);
-        runtime
-            .write_store_beneath(move |store| store.put_agent(&row).unwrap())
-            .await
-            .unwrap();
+    /// Writes the row through a store connection of its own, beside any
+    /// daemon's: with none running, as a spawn before a crash would have
+    /// left it.
+    pub fn register(&self, install: &Install) {
+        install.store().put_agent(&self.row(install)).unwrap();
     }
 
     pub fn append(&mut self, step: &Step) -> u64 {
@@ -223,10 +211,9 @@ impl SyntheticAgent {
 
     /// Writes the first incarnation's spec, as the spawn that created this
     /// agent would have, so a resume can start its next incarnation.
-    pub fn write_spec(&self, install: &Install) {
+    pub fn write_spec(&self) {
         let spec = wire::AgentSpec {
             agent_id: self.id.as_bytes().to_vec(),
-            profile_id: install.profile.as_bytes().to_vec(),
             kind: KIND as i32,
             cwd: self.cwd.to_string_lossy().into_owned(),
             name: self.name.clone(),
@@ -529,7 +516,6 @@ pub fn item(key: &str, text: &str) -> Step {
             text: text.to_owned(),
             kind: KIND as i32,
             at_ms: 1_000,
-            producer_version: "synthetic".to_owned(),
             ..Item::default()
         }],
         ..Step::default()

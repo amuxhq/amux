@@ -17,8 +17,7 @@ use prost::Message as _;
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 use ui_state::{
-    BlobStatus, Connection, InputId, InputOutcome, InputState, Key, Msg, Outcome, Refusal,
-    RefusalReason, SessionState,
+    BlobStatus, Connection, InputId, InputOutcome, Key, Msg, Outcome, Refusal, SessionState,
 };
 use ui_view::SessionLine;
 use wire::dump::{ClientSessionEvents, ClientSessionHistory, ClientTraced, client_traced};
@@ -49,10 +48,6 @@ pub struct Sent {
 pub enum InputError {
     #[error("rejected: {0:?}")]
     Rejected(Refusal),
-    /// It never left: the agent's host could not be reached. The client
-    /// holds it, shown pending, and sends it once the host is back.
-    #[error("held: the agent's host cannot be reached; it goes once it is back")]
-    Held,
     /// The connection dropped before the verdict: the chat shows it not
     /// confirmed until it has caught up again.
     #[error("not confirmed: the connection dropped before the agent answered")]
@@ -170,18 +165,8 @@ impl Inner {
 
     /// Applies one message; after close, a late result changes nothing.
     fn apply(&self, msg: Msg) -> Outcome {
-        self.apply_then(msg, |_| ()).0
-    }
-
-    /// [`Self::apply`], reading the state the message left under the same
-    /// lock, before any other message can change it; None after close.
-    fn apply_then<R>(
-        &self,
-        msg: Msg,
-        read: impl FnOnce(&SessionState) -> R,
-    ) -> (Outcome, Option<R>) {
         if self.closed.load(Ordering::Acquire) {
-            return (Outcome::default(), None);
+            return Outcome::default();
         }
         let at_ms = self.clock.now_ms();
         let streamed = matches!(msg, Msg::Event(_));
@@ -201,7 +186,6 @@ impl Inner {
         if outcome.broken.is_some() && cut.is_none() && !self.dumped.load(Ordering::Acquire) {
             *cut = Some(trace.trace());
         }
-        let read = read(state);
         if self.gathering.load(Ordering::Acquire) {
             changes.absorb(&outcome, changed_keys);
         }
@@ -230,7 +214,7 @@ impl Inner {
         if outcome.reload {
             self.reload.notify_one();
         }
-        (outcome, Some(read))
+        outcome
     }
 
     fn note(&self, event: DriverEvent) {
@@ -246,7 +230,9 @@ impl Inner {
     fn subscribe_request(&self) -> SubscribeSessionRequest {
         SubscribeSessionRequest {
             agent_id: self.agent_id.clone(),
-            tail: self.tail.load(Ordering::Acquire),
+            from: Some(wire::subscribe_session_request::From::Tail(
+                self.tail.load(Ordering::Acquire),
+            )),
         }
     }
 
@@ -257,7 +243,6 @@ impl Inner {
         if outcome.session {
             self.want_catalogue();
         }
-        self.resend(outcome.resend.clone());
         if let Some(why) = &outcome.broken {
             self.dump_broken(why);
         }
@@ -395,38 +380,7 @@ impl Inner {
             input.input_id = inputs::input_id();
         }
         let id = input.input_id.clone();
-        // Sent while the chat is not current: held, never handed on, until
-        // the chat catches up again, which then sends it. Read under the
-        // lock the send applied in: a catch-up in between would release it
-        // to its resend, and this send would deliver it a second time.
-        let (_, state) = self.apply_then(Msg::Send(input.clone()), |state| state.input_state(&id));
-        if state.flatten() == Some(InputState::Held) {
-            return Sent {
-                id,
-                outcome: InputOutcome::Held,
-            };
-        }
-        self.deliver(input).await
-    }
-
-    /// Held inputs whose host is back: each goes again under its own id.
-    fn resend(self: &Arc<Self>, inputs: Vec<Input>) {
-        for input in inputs {
-            self.note(DriverEvent::Resend {
-                id: input.input_id.clone(),
-            });
-            let inner = self.clone();
-            tokio::spawn(async move {
-                inner.deliver(input).await;
-            });
-        }
-    }
-
-    /// Hands an input the state already holds as sent to the runtime and
-    /// applies the verdict; one held by it that the host's return already
-    /// overtook goes again at once.
-    async fn deliver(self: &Arc<Self>, input: Input) -> Sent {
-        let id = input.input_id.clone();
+        self.apply(Msg::Send(input.clone()));
         let request = SendInputRequest {
             agent_id: self.agent_id.clone(),
             input: Some(input),
@@ -441,8 +395,7 @@ impl Inner {
             // rejection, never uncertain.
             Err(RpcError::Refused(error)) => InputOutcome::Reply(refused(error)),
         };
-        let applied = self.apply(Msg::Sent(id.clone(), outcome.clone()));
-        self.resend(applied.resend);
+        self.apply(Msg::Sent(id.clone(), outcome.clone()));
         Sent { id, outcome }
     }
 
@@ -762,8 +715,7 @@ impl Session {
 
     /// The agent's host, from the fleet, for the header.
     pub fn set_host(&self, host: HostEntry) {
-        let outcome = self.inner.apply(Msg::Host(host));
-        self.inner.resend(outcome.resend);
+        self.inner.apply(Msg::Host(host));
     }
 
     /// Where the reader is: at the newest row, or in history. A session
@@ -818,9 +770,8 @@ impl Session {
     }
 
     /// Sends an input, under a fresh id when it has none. The optimistic
-    /// row exists from now. A prompt or an answer that certainly never left
-    /// (the chat not current, or its host unreachable) is held and goes
-    /// again under its id once the host is back; a dropped connection
+    /// row exists from now. One refused, its host unreachable among the
+    /// reasons, is rejected and never sent again; a dropped connection
     /// leaves the input uncertain, and that is never resent on its own.
     pub async fn send(&self, input: Input) -> Sent {
         self.inner.send(input).await
@@ -935,16 +886,22 @@ impl Session {
         self.inner.apply(Msg::Discard(id.to_vec()));
     }
 
+    /// Sends a not-confirmed input again under a new id, forgetting the
+    /// old one; None when this client sent no such input.
+    pub async fn resend(&self, id: &[u8]) -> Option<Sent> {
+        let mut input = self.state().inputs().get(id)?.input.clone();
+        self.discard(id);
+        input.input_id.clear();
+        Some(self.send(input).await)
+    }
+
     async fn act(&self, input: Option<Input>) -> Result<(), InputError> {
         let Some(input) = input else {
             return Err(InputError::Rejected(Refusal::of(
-                RefusalReason::Unsupported,
+                wire::Refusal::Unsupported,
             )));
         };
         let sent = self.send(input).await;
-        if self.inner.model().state.input_state(&sent.id) == Some(InputState::Held) {
-            return Err(InputError::Held);
-        }
         match sent.outcome {
             InputOutcome::Reply(SendInputResponse {
                 of: Some(send_input_response::Of::Accepted(_)),
@@ -955,7 +912,6 @@ impl Session {
             InputOutcome::Reply(SendInputResponse { of: None }) | InputOutcome::Lost => {
                 Err(InputError::Uncertain)
             }
-            InputOutcome::Held => Err(InputError::Held),
         }
     }
 
@@ -1020,10 +976,6 @@ impl Session {
     pub fn history(&self) -> ClientSessionHistory {
         self.inner.history()
     }
-
-    /// Drops the stream. Nothing is flushed: nothing was kept. Results of
-    /// calls still in flight change nothing.
-    pub fn close(self) {}
 }
 
 impl Drop for Session {

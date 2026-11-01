@@ -166,18 +166,8 @@ final class Composition {
                 }
             }
         }
-        #if AMUX_DEBUG_TOOLS
-        freezer = ReportFreeze(
-            route: route, dump: dump, trace: { DoorHost.shared.trace(route: route()) },
-            runtimeFailure: { [weak runtime] in runtime?.failure })
-        router.arrived = { [weak router] in
-            guard let router else { return }
-            DoorHost.shared.arrived(at: Self.place(for: router))
-        }
-        #else
         freezer = ReportFreeze(
             route: route, dump: dump, runtimeFailure: { [weak runtime] in runtime?.failure })
-        #endif
         storeFailure = runtime.storeFailure
         runtime.storeFailureChanged = { [weak self] in self?.storeFailure = $0 }
         // A page pushed under the account just left is about that account's
@@ -194,24 +184,6 @@ final class Composition {
         readNotifications()
         Signposts.emit(.compositionBuilt)
     }
-
-    #if AMUX_DEBUG_TOOLS
-    /// Where the app is, in the words a report's view-state recording names
-    /// places by.
-    static func place(for router: Router) -> Place {
-        switch router.top {
-        case .conversation(let agent): return .conversation(agent)
-        case .changes(let agent): return .review(agent)
-        case .some(let top): return .screen(top.name)
-        case .none:
-            return switch router.tab {
-            case .agents: .home
-            case .hosts: .hosts
-            case .you: .settings
-            }
-        }
-    }
-    #endif
 
     /// What the shell asks for that it cannot do itself.
     func handle(_ action: ShellAction) {

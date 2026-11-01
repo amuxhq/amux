@@ -57,7 +57,7 @@ public final class EntitlementWatch {
         lastRead = (id, at)
         registry.entitlement(kept, for: id)
         if force || kept != before || relayDisagrees(with: kept) {
-            if await relink(id) { await registry.stores?.refreshAccount() }
+            _ = await relink(id)
         }
         return true
     }

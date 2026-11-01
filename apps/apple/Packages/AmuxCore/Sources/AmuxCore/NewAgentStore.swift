@@ -173,7 +173,7 @@ public final class NewAgentStore {
     /// What the fleet lists, for names and directories per host, and the
     /// agent to start with: the kind most recently at work, since with
     /// several to choose from that is the one most often wanted again.
-    public func remember(_ rows: [AgentRow]) {
+    public func remember(_ rows: [FleetRow]) {
         if !providerPicked, let latest = rows.filter({ Provider($0.card.kind) != nil })
             .max(by: { $0.lastActivity < $1.lastActivity }), let usual = Provider(latest.card.kind) {
             provider = usual
@@ -187,8 +187,7 @@ public final class NewAgentStore {
             guard !path.isEmpty, !(places[host] ?? []).contains(where: { $0.path == path })
             else { continue }
             let name = path.split(separator: "/").last.map(String.init) ?? path
-            places[host, default: []].append(Directory(
-                path: path, name: name, lastUsedMs: row.card.phaseSinceMs))
+            places[host, default: []].append(Directory(path: path, name: name))
         }
         taken = names
         worked = places

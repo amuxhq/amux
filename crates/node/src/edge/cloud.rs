@@ -29,11 +29,11 @@ use crate::auth::cloud::{
 use crate::driver::CoreLinks;
 use crate::link::QuicCarrier;
 use crate::link::framed::FramedKind;
-use crate::routing::{
-    Host, LinkConnectorAuth, LinkConnectorCtx, LinkConnectorRefreshReceiver,
-    LinkConnectorRefreshRequest, LinkConnectorToken, LinkConnectorTokenRefresher,
-    spawn_connector_with_auth_establishment_and_shutdown,
+use crate::link::run::{
+    LinkConnectorAuth, LinkConnectorRefreshReceiver, LinkConnectorRefreshRequest,
+    LinkConnectorToken, LinkConnectorTokenRefresher, LinkCtx, spawn_connector,
 };
+use crate::routing::Host;
 use crate::transport::tls_connect_stream;
 
 const CLOUD_ROUTING_ESTABLISHMENT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -132,7 +132,7 @@ struct CloudConnectionContext {
     /// Where the relay token is kept between launches.
     profile: PathBuf,
     clock: Arc<dyn Clock>,
-    connector: LinkConnectorCtx,
+    connector: LinkCtx,
     status: RuntimeStatus,
     refresh_rx: LinkConnectorRefreshReceiver,
     transport: CloudTransport,
@@ -191,7 +191,7 @@ pub(crate) fn establish_cloud_link(
     credentials: Arc<dyn CredentialProvider>,
     profile: PathBuf,
     clock: Arc<dyn Clock>,
-    connector_ctx: LinkConnectorCtx,
+    connector_ctx: LinkCtx,
     status: RuntimeStatus,
     transport: CloudTransport,
     core: CoreLinks,
@@ -231,61 +231,46 @@ async fn run_attempt(
     }
     ctx.status.report(Relay::Connecting);
     tracing::info!("attempting cloud routing connection");
-    let outcome = match run_cloud_connection(&ctx, stop_rx.clone(), attempt).await {
-        Ok(()) => {
-            tracing::info!("cloud routing connection closed cleanly");
-            RelayOutcome::Closed
-        }
-        Err(CloudConnectionError::NonRetriable(msg)) => {
+    let outcome = run_cloud_connection(&ctx, stop_rx.clone(), attempt)
+        .await
+        .err()
+        .unwrap_or(RelayOutcome::Closed);
+    match &outcome {
+        RelayOutcome::Closed => tracing::info!("cloud routing connection closed cleanly"),
+        RelayOutcome::Final(msg) => {
             tracing::error!(error = %msg, "cloud non-retriable error, stopping");
             ctx.finished.store(true, Ordering::SeqCst);
-            RelayOutcome::Final(msg)
         }
         // The kept token is forgotten; the next attempt fetches a fresh one
         // at once, and only its refusal is final.
-        Err(CloudConnectionError::KeptTokenRefused) => {
+        RelayOutcome::KeptTokenRefused => {
             tracing::info!("the relay refused the kept token; fetching a fresh one");
-            RelayOutcome::KeptTokenRefused
         }
-        Err(CloudConnectionError::Retriable { msg }) => {
+        RelayOutcome::Lost(msg) => {
             tracing::warn!(error = %msg, "cloud routing connection error, will retry");
-            RelayOutcome::Lost(msg)
         }
-    };
+    }
     if matches!(outcome, RelayOutcome::Closed | RelayOutcome::Lost(_)) && !*stop_rx.borrow() {
         ctx.status.report(Relay::Retrying);
     }
     ctx.core.report(Input::RelayEnded { attempt, outcome });
 }
 
-/// Error type for cloud connection attempts
-enum CloudConnectionError {
-    /// Error that should trigger reconnection (connection lost, host changed)
-    Retriable { msg: String },
-    /// Error that should stop reconnection attempts.
-    NonRetriable(String),
-    /// The relay refused a token kept from an earlier fetch.
-    KeptTokenRefused,
-}
-
-fn cloud_connection_error_from_fetch(
-    error: CloudError,
-    status: &RuntimeStatus,
-) -> CloudConnectionError {
+fn relay_outcome_from_fetch(error: CloudError, status: &RuntimeStatus) -> RelayOutcome {
     match error {
         CloudError::NotAuthenticated | CloudError::Auth(_) => {
             status.report(Relay::SignInAgain);
-            CloudConnectionError::NonRetriable(
+            RelayOutcome::Final(
                 "the cloud refused this profile's credentials; sign in again".to_string(),
             )
         }
         error @ CloudError::Rejected(_) => {
             status.report(Relay::SignInAgain);
-            CloudConnectionError::NonRetriable(error.to_string())
+            RelayOutcome::Final(error.to_string())
         }
-        error @ CloudError::Connection(_) => CloudConnectionError::Retriable {
-            msg: format!("Connection failed: {error}"),
-        },
+        error @ CloudError::Connection(_) => {
+            RelayOutcome::Lost(format!("Connection failed: {error}"))
+        }
     }
 }
 
@@ -293,7 +278,7 @@ async fn run_cloud_connection(
     ctx: &CloudConnectionContext,
     mut stop_rx: watch::Receiver<bool>,
     attempt: AttemptId,
-) -> std::result::Result<(), CloudConnectionError> {
+) -> std::result::Result<(), RelayOutcome> {
     // A stop may drop the fetch mid-refresh: the credential's exchange and
     // the save of a rotated token run apart from it and finish anyway.
     let prepared = tokio::select! {
@@ -339,7 +324,7 @@ fn now(clock: &dyn Clock) -> SystemTime {
 /// next launch.
 async fn prepare_cloud_connection(
     ctx: &CloudConnectionContext,
-) -> std::result::Result<Prepared, CloudConnectionError> {
+) -> std::result::Result<Prepared, RelayOutcome> {
     match load_token(&ctx.profile) {
         Ok(Some(kept)) if kept.usable_at(now(ctx.clock.as_ref())) => {
             tracing::info!("presenting the kept relay token");
@@ -364,7 +349,7 @@ async fn prepare_cloud_connection(
         if matches!(error, CloudError::NotAuthenticated | CloudError::Auth(_)) {
             tracing::warn!("the relay rejected this profile's credentials");
         }
-        cloud_connection_error_from_fetch(error, &ctx.status)
+        relay_outcome_from_fetch(error, &ctx.status)
     })?;
     Ok(Prepared {
         token: token.connector_token(),
@@ -470,7 +455,7 @@ where
         First::Tcp(Ok(carrier)) => {
             match quic.as_mut().now_or_never() {
                 Some(Ok(late_quic)) => {
-                    late_quic.close(wire::pb::LinkCloseReason::UserShutdown);
+                    late_quic.close(wire::LinkCloseReason::UserShutdown);
                     udp.reached(true);
                 }
                 Some(Err(error)) => {
@@ -481,7 +466,7 @@ where
                     tokio::spawn(async move {
                         match quic.await {
                             Ok(late_quic) => {
-                                late_quic.close(wire::pb::LinkCloseReason::UserShutdown);
+                                late_quic.close(wire::LinkCloseReason::UserShutdown);
                                 udp.reached(true);
                             }
                             Err(error) => {
@@ -523,7 +508,7 @@ where
 
 fn close_ready_loser(result: Option<CloudDialResult>) {
     if let Some(Ok(carrier)) = result {
-        carrier.close(wire::pb::LinkCloseReason::UserShutdown);
+        carrier.close(wire::LinkCloseReason::UserShutdown);
     }
 }
 
@@ -533,7 +518,7 @@ async fn run_cloud_connection_with_details(
     carriers: RelayCarriers,
     attempt: AttemptId,
     stop_rx: watch::Receiver<bool>,
-) -> std::result::Result<(), CloudConnectionError> {
+) -> std::result::Result<(), RelayOutcome> {
     tracing::info!(host = %details.host, port = details.port, kept = details.kept, "connecting to cloud routing");
     // One configuration for both carriers, kept by the profile's endpoint
     // so the ticket the relay's last link left (in this process or the
@@ -549,9 +534,7 @@ async fn run_cloud_connection_with_details(
                 .quic_endpoint
                 .relay_config(&details.host, roots)
         })
-        .map_err(|error| CloudConnectionError::Retriable {
-            msg: format!("Connection failed: {error}"),
-        })?;
+        .map_err(|error| RelayOutcome::Lost(format!("Connection failed: {error}")))?;
     let quic_endpoint = ctx.transport.quic_endpoint.clone();
     let quic_host = details.host.clone();
     let quic_port = details.port;
@@ -578,10 +561,6 @@ async fn run_cloud_connection_with_details(
     )
     .await;
     let quic = async move {
-        #[cfg(debug_assertions)]
-        if std::env::var_os("AMUX_TEST_RELAY_UDP_BLOCKED").is_some() {
-            return Err("relay UDP blocked by test fixture".to_string());
-        }
         match quic_override {
             Some(relay) => {
                 QuicCarrier::connect_relay_candidates_with_config(
@@ -644,12 +623,8 @@ async fn run_cloud_connection_with_details(
         ),
     )
     .await
-    .map_err(|_| CloudConnectionError::Retriable {
-        msg: "cloud routing transport dial timed out".to_string(),
-    })?
-    .map_err(|error| CloudConnectionError::Retriable {
-        msg: format!("Connection failed: {error}"),
-    })?;
+    .map_err(|_| RelayOutcome::Lost("cloud routing transport dial timed out".to_string()))?
+    .map_err(|error| RelayOutcome::Lost(format!("Connection failed: {error}")))?;
     {
         let mut settled = settled.lock().unwrap_or_else(|e| e.into_inner());
         *settled = true;
@@ -683,12 +658,12 @@ async fn run_cloud_connection_with_details(
             carrier: relay_carrier,
         });
     });
-    let (connector_task, established_rx) = spawn_connector_with_auth_establishment_and_shutdown(
-        ctx.connector.clone(),
+    let (connector_task, established_rx) = spawn_connector(
+        ctx.connector
+            .clone()
+            .with_connector_auth(connector_auth, Some(ctx.refresh_rx.clone()))
+            .with_shutdown(stop_rx),
         carrier,
-        connector_auth,
-        stop_rx,
-        Some(ctx.refresh_rx.clone()),
     );
     let _abort_connector_on_drop = AbortTaskOnDrop(connector_task.abort_handle());
     let established = await_cloud_establishment(
@@ -700,7 +675,7 @@ async fn run_cloud_connection_with_details(
         kept,
     )
     .await;
-    if matches!(established, Err(CloudConnectionError::KeptTokenRefused)) {
+    if matches!(established, Err(RelayOutcome::KeptTokenRefused)) {
         forget_kept(ctx);
     }
     established?;
@@ -708,9 +683,7 @@ async fn run_cloud_connection_with_details(
 
     let result = connector_task
         .await
-        .map_err(|error| CloudConnectionError::Retriable {
-            msg: format!("cloud routing task failed: {error}"),
-        })?;
+        .map_err(|error| RelayOutcome::Lost(format!("cloud routing task failed: {error}")))?;
 
     match result {
         Ok(()) => Ok(()),
@@ -721,11 +694,9 @@ async fn run_cloud_connection_with_details(
         // fail there and ask for a sign-in.
         Err(error) if error.code() == tonic::Code::Unauthenticated => {
             forget_kept(ctx);
-            Err(CloudConnectionError::Retriable {
-                msg: error.to_string(),
-            })
+            Err(RelayOutcome::Lost(error.to_string()))
         }
-        Err(error) => Err(cloud_connection_error_from_status(&ctx.status, error).await),
+        Err(error) => Err(relay_outcome_from_status(&ctx.status, error)),
     }
 }
 
@@ -767,43 +738,38 @@ async fn await_cloud_establishment(
     tier: crate::Tier,
     carrier: RelayCarrier,
     kept: bool,
-) -> std::result::Result<(), CloudConnectionError> {
+) -> std::result::Result<(), RelayOutcome> {
     match tokio::time::timeout(timeout, established_rx).await {
         Ok(Ok(Ok(_))) => {
             observed.report(Relay::Connected { tier, carrier });
             Ok(())
         }
         Ok(Ok(Err(status))) if kept && status.code() == tonic::Code::Unauthenticated => {
-            Err(CloudConnectionError::KeptTokenRefused)
+            Err(RelayOutcome::KeptTokenRefused)
         }
-        Ok(Ok(Err(status))) => Err(cloud_connection_error_from_status(observed, status).await),
+        Ok(Ok(Err(status))) => Err(relay_outcome_from_status(observed, status)),
         Ok(Err(_)) => Ok(()),
-        Err(_) => Err(CloudConnectionError::Retriable {
-            msg: "cloud routing handshake timed out".to_string(),
-        }),
+        Err(_) => Err(RelayOutcome::Lost(
+            "cloud routing handshake timed out".to_string(),
+        )),
     }
 }
 
-async fn cloud_connection_error_from_status(
-    observed: &RuntimeStatus,
-    status: tonic::Status,
-) -> CloudConnectionError {
-    if crate::net_error::from_status(&status)
-        .is_some_and(|error| crate::net_error::is_version_mismatch(&error))
+fn relay_outcome_from_status(observed: &RuntimeStatus, status: tonic::Status) -> RelayOutcome {
+    if crate::net_error::from_status(&status).and_then(|error| error.reason())
+        == Some(wire::ErrorReason::VersionMismatch)
     {
         observed.report(Relay::VersionMismatch);
-        return CloudConnectionError::NonRetriable(status.to_string());
+        return RelayOutcome::Final(status.to_string());
     }
     if status.code() == tonic::Code::Unauthenticated {
         observed.report(Relay::SignInAgain);
         tracing::warn!(%status, "the relay refused this profile's credentials");
-        return CloudConnectionError::NonRetriable(
+        return RelayOutcome::Final(
             "the relay refused this profile's credentials; sign in again".to_string(),
         );
     }
-    CloudConnectionError::Retriable {
-        msg: status.to_string(),
-    }
+    RelayOutcome::Lost(status.to_string())
 }
 
 trait CloudIo: AsyncRead + AsyncWrite + Send + Unpin + 'static {}

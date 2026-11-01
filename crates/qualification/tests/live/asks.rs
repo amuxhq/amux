@@ -92,7 +92,7 @@ impl Install {
     /// The answer for an ask a scenario did not ask for but may meet on
     /// the way: a permission or approval allowed once, a question's first
     /// option each.
-    fn by_the_way(&self, ask: &OpenAsk) -> Result<Answer, String> {
+    pub(super) fn by_the_way(&self, ask: &OpenAsk) -> Result<Answer, String> {
         if let Some(questions) = questions(ask) {
             let answers = questions
                 .iter()
@@ -170,10 +170,18 @@ impl Install {
         if let Some(why) = follow.signed_out() {
             return Ok(Verdict::Unavailable(why));
         }
+        // Claude, left to choose, may write its plan out instead of putting
+        // it to the person with its plan tool.
+        let how = match self.kind {
+            Kind::Codex => "",
+            _ => " with the ExitPlanMode tool",
+        };
         self.send(
             Scenario::Plan,
-            "Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step \
-             plan: do not ask me anything, and put the plan to me for approval.",
+            &format!(
+                "Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step \
+                 plan: do not ask me anything, and put the plan to me for approval{how}."
+            ),
         )
         .await?;
         let kind = self.kind;
@@ -328,7 +336,7 @@ impl Install {
 }
 
 /// The questions an ask puts, when it is a question.
-fn questions(ask: &OpenAsk) -> Option<Vec<wire::Question>> {
+pub(super) fn questions(ask: &OpenAsk) -> Option<Vec<wire::Question>> {
     match ask {
         OpenAsk::Claude(ask) => match &ask.body {
             Some(wire::ask::Body::Question(question)) if !question.provider_dialog => {
@@ -362,31 +370,27 @@ pub(super) fn settled(kind: Kind, log: &Log) -> bool {
 
 /// Every plan's verdict, in order.
 fn plans(kind: Kind, log: &Log) -> Vec<wire::PlanVerdict> {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     log.ordered()
         .into_iter()
         .filter_map(|item| match ItemBody::decode(kind, &item.body) {
-            ItemBody::ClaudePty(Pty::Plan(plan))
-            | ItemBody::ClaudeSdk(Sdk::Plan(plan))
-            | ItemBody::Codex(Codex::Plan(plan)) => Some(plan.verdict()),
+            ItemBody::Claude(Claude::Plan(plan)) | ItemBody::Codex(Codex::Plan(plan)) => {
+                Some(plan.verdict())
+            }
             _ => None,
         })
         .collect()
 }
 
 /// How each closed question was closed, in order.
-fn question_records(kind: Kind, log: &Log) -> Vec<wire::AskClosed> {
-    use wire::claude_pty_item::Kind as Pty;
-    use wire::claude_sdk_item::Kind as Sdk;
+pub(super) fn question_records(kind: Kind, log: &Log) -> Vec<wire::AskClosed> {
+    use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     log.ordered()
         .into_iter()
         .filter_map(|item| match ItemBody::decode(kind, &item.body) {
-            ItemBody::ClaudePty(Pty::Ask(ask))
-            | ItemBody::ClaudeSdk(Sdk::Ask(ask))
-            | ItemBody::Codex(Codex::Ask(ask)) => Some(ask),
+            ItemBody::Claude(Claude::Ask(ask)) | ItemBody::Codex(Codex::Ask(ask)) => Some(ask),
             _ => None,
         })
         .filter(|ask| matches!(ask.ask, Some(wire::ask_item::Ask::Question(_))))

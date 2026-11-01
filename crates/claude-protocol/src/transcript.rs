@@ -6,7 +6,7 @@
 //! keeps for its own interface (titles, modes, file history, its input
 //! queue). Unknown row types, system subtypes and attachment types are kept
 //! whole and refused by [`strict`]; unknown fields of a known row are kept
-//! in its `extensions` and written back by [`encode`].
+//! in its `extensions`.
 
 use std::path::PathBuf;
 
@@ -36,8 +36,8 @@ tagged_enum! {
         "queue-operation" => QueueOperation(QueueOperationRow),
         "file-history-snapshot" => FileHistorySnapshot(FileHistorySnapshotRow),
         "file-history-delta" => FileHistoryDelta(FileHistoryDeltaRow),
-        "bridge-session" => BridgeSession(BridgeSessionRow),
         "tools-used" => ToolsUsed(ToolsUsedRow),
+        "cost-state" => CostState(CostStateRow),
     }
 }
 
@@ -76,7 +76,7 @@ impl Row {
             Self::AgentName(row) => Some(&row.session_id),
             Self::LastPrompt(row) => Some(&row.session_id),
             Self::QueueOperation(row) => Some(&row.session_id),
-            Self::BridgeSession(row) => Some(&row.session_id),
+            Self::CostState(row) => Some(&row.session_id),
             Self::System(SystemRow::Unknown(raw)) | Self::Unknown(raw) => {
                 raw.field("sessionId")?.as_str()
             }
@@ -109,11 +109,6 @@ pub fn strict(line: &[u8]) -> Result<Row, Drift> {
     })
 }
 
-/// One row as Claude would write it, with no trailing newline.
-pub fn encode(row: &Row) -> Vec<u8> {
-    decoding::encode(row)
-}
-
 /// The fields every row of the conversation carries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,14 +127,6 @@ pub struct Envelope {
     pub version: String,
     #[serde(default = "crate::absent::cwd")]
     pub cwd: PathBuf,
-    #[serde(default = "crate::absent::git_branch")]
-    pub git_branch: String,
-    #[serde(default = "crate::absent::is_sidechain")]
-    pub is_sidechain: bool,
-    #[serde(default = "crate::absent::user_type")]
-    pub user_type: String,
-    #[serde(default = "crate::absent::entrypoint")]
-    pub entrypoint: String,
     /// The session's plan-file name, once it has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slug: Option<String>,
@@ -153,7 +140,9 @@ pub struct UserRow {
     #[serde(flatten)]
     pub envelope: Envelope,
     pub message: MessageParam,
-    #[serde(default = "crate::absent::prompt_id")]
+    /// Absent on the rows of a command Claude runs itself, such as
+    /// `/clear` (Claude 2.1.316).
+    #[serde(default)]
     pub prompt_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<PermissionMode>,
@@ -164,32 +153,15 @@ pub struct UserRow {
     /// How the prompt reached Claude: typed, queued, or Claude's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_source: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub turn_origin: Option<String>,
     /// What the tool returned, in Claude's own shape for each tool.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_use_result: Option<Value>,
-    #[serde(
-        rename = "sourceToolAssistantUUID",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub source_tool_assistant_uuid: Option<String>,
     /// Text Claude adds for the model, never shown as a prompt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_meta: Option<bool>,
     /// The summary that replaces the conversation after a compaction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_compact_summary: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub is_visible_in_transcript_only: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_denial_kind: Option<String>,
-    /// What the person typed when refusing a tool call.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub user_feedback: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub interrupted_message_id: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -219,8 +191,6 @@ pub struct AssistantRow {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api_error_status: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
@@ -234,6 +204,7 @@ tagged_enum! {
         "stop_hook_summary" => StopHookSummary(StopHookSummary),
         "compact_boundary" => CompactBoundary(CompactBoundary),
         "local_command" => LocalCommand(LocalCommand),
+        "informational" => Informational(Informational),
     }
 }
 
@@ -244,6 +215,7 @@ impl SystemRow {
             Self::StopHookSummary(row) => Some(&row.envelope),
             Self::CompactBoundary(row) => Some(&row.envelope),
             Self::LocalCommand(row) => Some(&row.envelope),
+            Self::Informational(row) => Some(&row.envelope),
             Self::Unknown(_) => None,
         }
     }
@@ -257,12 +229,8 @@ pub struct TurnDuration {
     pub envelope: Envelope,
     #[serde(default = "crate::absent::duration_ms")]
     pub duration_ms: Option<u64>,
-    #[serde(default = "crate::absent::message_count")]
-    pub message_count: u64,
     #[serde(default = "crate::absent::is_meta")]
     pub is_meta: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pending_background_agent_count: Option<u64>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -273,16 +241,6 @@ pub struct TurnDuration {
 pub struct StopHookSummary {
     #[serde(flatten)]
     pub envelope: Envelope,
-    pub hook_count: u64,
-    pub hook_infos: Vec<Value>,
-    pub hook_errors: Vec<Value>,
-    pub hook_additional_context: Vec<Value>,
-    pub prevented_continuation: bool,
-    pub stop_reason: String,
-    pub has_output: bool,
-    pub level: String,
-    #[serde(rename = "toolUseID")]
-    pub tool_use_id: String,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -299,8 +257,6 @@ pub struct CompactBoundary {
     pub level: String,
     #[serde(default = "crate::absent::compact_metadata")]
     pub compact_metadata: CompactMetadata,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub logical_parent_uuid: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -339,6 +295,21 @@ pub struct LocalCommand {
     pub extensions: Extensions,
 }
 
+/// A notice Claude shows the person, such as what the permission mode
+/// it offers does (Claude 2.1.316).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Informational {
+    #[serde(flatten)]
+    pub envelope: Envelope,
+    #[serde(default = "crate::absent::content")]
+    pub content: String,
+    #[serde(default = "crate::absent::level")]
+    pub level: String,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
 /// Something Claude attached to the conversation for the model: context,
 /// reminders, a queued prompt.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -370,13 +341,10 @@ tagged_enum! {
         "mcp_instructions_delta" => McpInstructionsDelta(Extensions),
         "skill_listing" => SkillListing(Extensions),
         "prompt_snapshot" => PromptSnapshot(Extensions),
-        "hook_success" => HookSuccess(Extensions),
-        "hook_additional_context" => HookAdditionalContext(Extensions),
         // A hook decided a permission: its event, the call and the decision.
         "hook_permission_decision" => HookPermissionDecision(Extensions),
         "environment" => Environment(Extensions),
         "model" => Model(Extensions),
-        "instructions" => Instructions(Extensions),
         "session_context" => SessionContext(Extensions),
         "date" => Date(Extensions),
         "credential_org" => CredentialOrg(Extensions),
@@ -423,7 +391,6 @@ pub struct PermissionModeRow {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AtisLatchRow {
-    pub atis: String,
     pub session_id: String,
     #[serde(flatten)]
     pub extensions: Extensions,
@@ -433,7 +400,6 @@ pub struct AtisLatchRow {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiTitleRow {
-    pub ai_title: String,
     pub session_id: String,
     #[serde(flatten)]
     pub extensions: Extensions,
@@ -442,7 +408,6 @@ pub struct AiTitleRow {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentNameRow {
-    pub agent_name: String,
     pub session_id: String,
     #[serde(flatten)]
     pub extensions: Extensions,
@@ -454,7 +419,16 @@ pub struct AgentNameRow {
 #[serde(rename_all = "camelCase")]
 pub struct ToolsUsedRow {
     pub session_id: String,
-    pub tools: Vec<String>,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
+/// What the session has cost so far, for Claude's own interface (Claude
+/// 2.1.316).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CostStateRow {
+    pub session_id: String,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -463,10 +437,7 @@ pub struct ToolsUsedRow {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LastPromptRow {
-    pub leaf_uuid: String,
     pub session_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_prompt: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -475,14 +446,8 @@ pub struct LastPromptRow {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueOperationRow {
-    /// `enqueue`, `dequeue` or `remove`.
-    pub operation: String,
     pub session_id: String,
     pub timestamp: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -491,9 +456,6 @@ pub struct QueueOperationRow {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileHistorySnapshotRow {
-    pub message_id: String,
-    pub snapshot: Value,
-    pub is_snapshot_update: bool,
     #[serde(flatten)]
     pub extensions: Extensions,
 }
@@ -502,21 +464,7 @@ pub struct FileHistorySnapshotRow {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileHistoryDeltaRow {
-    pub message_id: String,
-    pub snapshot_message_id: String,
-    pub tracking_path: String,
-    pub backup: Value,
     pub timestamp: String,
-    #[serde(flatten)]
-    pub extensions: Extensions,
-}
-
-/// The remote session Claude's bridge mirrors this one to.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BridgeSessionRow {
-    pub bridge_session_id: String,
-    pub session_id: String,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

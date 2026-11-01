@@ -84,7 +84,7 @@ async fn each_host_keeps_the_addresses_its_peer_lists_with_their_sources_and_whe
     laptop_edge.trust(&desk_edge).await.unwrap();
     let answered_at = format!("127.0.0.1:{desk_port}");
     laptop_edge.dial(desk_id, answered_at.parse().unwrap());
-    assert!(laptop_edge.wait_for_route(desk_id, PATIENCE).await);
+    assert!(wait_for_route(&laptop_edge, desk_id, PATIENCE).await);
 
     // The desk's Hello answer lists its two reachable interfaces, the
     // laptop's Hello its one; both arrived over a link of the hosts' own.
@@ -117,7 +117,7 @@ async fn each_host_keeps_the_addresses_its_peer_lists_with_their_sources_and_whe
     let laptop_daemon = node::start(options, None).await.unwrap();
     let laptop_edge = runtime(&laptop_daemon, &laptop).edge().unwrap();
     laptop_edge.dial(desk_id, answered_at.parse().unwrap());
-    assert!(laptop_edge.wait_for_route(desk_id, PATIENCE).await);
+    assert!(wait_for_route(&laptop_edge, desk_id, PATIENCE).await);
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     assert_eq!(
         remembered(&laptop, desk_id),

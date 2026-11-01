@@ -40,7 +40,7 @@ destroy = "amux server stop"
 # recipes name a kind, golden or small, and apps/apple/Tools/ios_simulators.py maps
 # the kind to the leased device. Count, keep, idle and wait are machine
 # facts: override under [resources.iphone] in ~/.wt/config.toml. The hooks go
-# through scripts/python for the same reason the recipes do: a hook inherits
+# through scripts/py for the same reason the recipes do: a hook inherits
 # whatever PATH it was started with, and on a Mac a bare python3 is often the
 # 3.9 the system ships, which cannot read these scripts at all.
 [resource.iphone]

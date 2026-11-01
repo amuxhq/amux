@@ -1,5 +1,5 @@
-//! What a paired host may ask of this one. The peer service answers only
-//! for this host's own agents and passes nothing on: the inventory it
+//! What a paired host may ask of this one. The agent and session services
+//! answer a paired host only for this host's own agents and passes nothing on: the inventory it
 //! streams is this host's entry and agents, and any call naming an agent it
 //! only replicates is not found, so no host can reach a third host's agent
 //! through it or speak for one.
@@ -12,9 +12,9 @@ use support::*;
 use tonic::Code;
 use wire::{
     DeleteAgentRequest, GetBlobRequest, GetDiffRequest, GetItemRequest, InventoryEvent,
-    ListItemsRequest, PeerSubscribeSessionRequest, Phase, PutBlobRequest, RenameAgentRequest,
-    ResumeAgentRequest, SendInputRequest, StopAgentRequest, inventory_event,
-    peer_subscribe_session_request, session_event,
+    ListItemsRequest, Phase, PutBlobRequest, RenameAgentRequest, ResumeAgentRequest,
+    SendInputRequest, StopAgentRequest, SubscribeSessionRequest, inventory_event, session_event,
+    subscribe_session_request,
 };
 
 use crate::support;
@@ -41,13 +41,13 @@ impl Pair {
     async fn new() -> Self {
         let desk = Install::new();
         let mut coder = SyntheticAgent::new(&desk, "coder", SEGMENTS);
-        coder.register_offline(&desk);
+        coder.register(&desk);
         coder.append(&item("c1", "the coder's first item"));
         coder.append(&snapshot(Phase::Idle, &[], 1_000));
         coder.go_live();
         let laptop = Install::new();
         let mut notes = SyntheticAgent::new(&laptop, "notes", SEGMENTS);
-        notes.register_offline(&laptop);
+        notes.register(&laptop);
         notes.append(&item("n1", "the notes' first item"));
         notes.append(&snapshot(Phase::Idle, &[], 1_000));
         notes.go_live();
@@ -61,16 +61,8 @@ impl Pair {
         desk_edge.trust(&laptop_edge).await.unwrap();
         laptop_edge.trust(&desk_edge).await.unwrap();
         let link = laptop_edge.link_in_process(&desk_edge).unwrap();
-        assert!(
-            laptop_edge
-                .wait_for_route(desk_runtime.host(), PATIENCE)
-                .await
-        );
-        assert!(
-            desk_edge
-                .wait_for_route(laptop_runtime.host(), PATIENCE)
-                .await
-        );
+        assert!(wait_for_route(&laptop_edge, desk_runtime.host(), PATIENCE).await);
+        assert!(wait_for_route(&desk_edge, laptop_runtime.host(), PATIENCE).await);
         until("the laptop to learn the desk's agent", || async {
             match laptop_runtime.owner(coder.id.as_bytes()).await {
                 Ok(Owner::Peer(_)) => Ok(()),
@@ -81,7 +73,7 @@ impl Pair {
         .await
         .unwrap();
         // A person on the laptop opens the desk's agent: the laptop's
-        // replica now holds its rows, which a forwarding peer service would
+        // replica now holds its rows, which a forwarding service would
         // have answered from.
         let mut session = laptop_runtime
             .subscribe_session(coder.id.as_bytes(), 10)
@@ -110,7 +102,7 @@ impl Pair {
         }
     }
 
-    /// The laptop's peer service, as the desk calls it.
+    /// The laptop's services, as the desk calls them.
     async fn laptop_peer(&self) -> node::PeerClient {
         self.desk_edge
             .peer(self.laptop_runtime.host())
@@ -147,9 +139,9 @@ async fn replica_agent_is_refused_on_every_read_and_input() {
     let coder = pair.coder.id.as_bytes().to_vec();
     let notes = pair.notes.id.as_bytes().to_vec();
 
-    let subscribe = |agent: &[u8]| PeerSubscribeSessionRequest {
+    let subscribe = |agent: &[u8]| SubscribeSessionRequest {
         agent_id: agent.to_vec(),
-        from: Some(peer_subscribe_session_request::From::Tail(10)),
+        from: Some(subscribe_session_request::From::Tail(10)),
     };
     let fetch = |agent: &[u8]| ListItemsRequest {
         agent_id: agent.to_vec(),
@@ -326,7 +318,7 @@ async fn inventory_is_origin_only() {
         .laptop_peer()
         .await
         .agents
-        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .subscribe_inventory(wire::Empty {})
         .await
         .unwrap()
         .into_inner();

@@ -340,7 +340,6 @@ pub struct Shared<A: OpenAsk> {
     agent: Vec<u8>,
     /// The wire Kind's integer.
     kind: i32,
-    producer_version: String,
     now_ms: i64,
     /// The provider accepts input.
     started: bool,
@@ -355,13 +354,12 @@ pub struct Shared<A: OpenAsk> {
     /// Agent messages the provider consumed, by envelope id. With the
     /// pending set this is every message the incarnation took, so a second
     /// hand-off of one is answered without a second inject or item.
-    #[serde(default, with = "serde_pb::bytes_set")]
+    #[serde(with = "serde_pb::bytes_set")]
     taken_messages: BTreeSet<Vec<u8>>,
     working_on: Option<String>,
     /// The agent declared its work with the status tool: from then on only
     /// that call changes working_on. Until then it is the first line of
     /// the newest prompt the agent took.
-    #[serde(default)]
     declared: bool,
     turn: TurnCounter,
     /// Prompts handed to the provider and not yet reflected, oldest first:
@@ -386,17 +384,14 @@ pub struct Shared<A: OpenAsk> {
     catalogue: Option<Vec<u8>>,
     /// A submitted prompt starts no turn: the provider's own record of the
     /// prompt does (terminal Claude, where keys typed may never arrive).
-    #[serde(default)]
     turn_on_reflection: bool,
     /// The agent is being stopped: the turn the stop cuts short ends
     /// stopped, however the provider words its end.
-    #[serde(default)]
     stopping: bool,
     /// The incarnation is on its way out, stopped or with its daemon lost:
     /// nothing more is handed to the provider from the queue, so what waits
     /// there stays for the next incarnation rather than going to a
     /// provider about to be closed.
-    #[serde(default)]
     leaving: bool,
 }
 
@@ -404,11 +399,10 @@ impl<A: OpenAsk> Shared<A> {
     /// The state an agent starts from: its queue seeded from the spawn's
     /// prompt, working_on from that prompt's first line, the clock at the
     /// spec's creation time.
-    pub fn new(spec: &AgentSpec, kind: wire::Kind, producer_version: &str) -> Self {
+    pub fn new(spec: &AgentSpec, kind: wire::Kind) -> Self {
         let mut shared = Self {
             agent: spec.agent_id.clone(),
             kind: kind as i32,
-            producer_version: producer_version.to_owned(),
             now_ms: spec.created_at_ms,
             started: false,
             busy: false,
@@ -437,10 +431,9 @@ impl<A: OpenAsk> Shared<A> {
     }
 
     /// Carries this state into the agent's next incarnation under `spec`:
-    /// the producer and clock move on, and a prompt the spec brings (a
+    /// the clock moves on, and a prompt the spec brings (a
     /// resume with a prompt, or a parent's message) joins the queue.
-    pub fn reincarnate(&mut self, spec: &AgentSpec, producer_version: &str) {
-        self.producer_version = producer_version.to_owned();
+    pub fn reincarnate(&mut self, spec: &AgentSpec) {
         self.stopping = false;
         self.leaving = false;
         // A new provider process runs nothing in the background yet.
@@ -490,7 +483,6 @@ impl<A: OpenAsk> Shared<A> {
             _ => self.now_ms,
         };
         let snapshot = Snapshot {
-            agent_id: self.agent.clone(),
             revision: 0,
             queue: self.queue.entries.clone(),
             kind: self.kind,
@@ -589,11 +581,9 @@ impl<A: OpenAsk> Shared<A> {
                 .map_or(self.now_ms, |open| open.at_ms)
         });
         let item = Item {
-            agent_id: self.agent.clone(),
             key: draft.key,
             order: 0,
             revision: 0,
-            producer_version: self.producer_version.clone(),
             input_id: draft.input_id,
             text: draft.text,
             attachments: draft.attachments,
@@ -628,7 +618,6 @@ impl<A: OpenAsk> Shared<A> {
             return true;
         }
         emit.step.appends.push(Append {
-            agent_id: self.agent.clone(),
             key: key.to_owned(),
             base_revision: 0,
             revision: 0,
@@ -1203,6 +1192,20 @@ pub(crate) fn describe_usage_window(
     format!(" {label}:{used}%({})", describe_usage_state(meter.state))
 }
 
+/// Tool servers as goldens print them: each name and its status, in
+/// brackets.
+pub(crate) fn describe_servers(servers: &[wire::ToolServer]) -> String {
+    let servers = servers
+        .iter()
+        .map(|server| {
+            let status = wire::ToolServerStatus::try_from(server.status)
+                .map_or("?", |status| status.as_str_name());
+            format!("{}:{status}", server.name)
+        })
+        .collect::<Vec<_>>();
+    format!("[{}]", servers.join(","))
+}
+
 /// A background job list as goldens print it: `?` while unknown, else each
 /// job as the key of the item that started it, its command and start time.
 pub(crate) fn describe_jobs(jobs: Option<&wire::BackgroundJobs>) -> String {
@@ -1588,7 +1591,7 @@ mod tests {
             created_at_ms: 10,
             ..Default::default()
         };
-        Shared::new(&spec, wire::Kind::Unspecified, "v")
+        Shared::new(&spec, wire::Kind::Unspecified)
     }
 
     #[test]
@@ -1773,7 +1776,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let mut shared: Shared<Ask> = Shared::new(&spec, wire::Kind::Unspecified, "v");
+        let mut shared: Shared<Ask> = Shared::new(&spec, wire::Kind::Unspecified);
         assert_eq!(shared.working_on(), Some("Run the first thing"));
         shared.provider_started();
         assert!(shared.next_queued().is_some());

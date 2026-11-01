@@ -7,15 +7,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow};
-use settings::{ColorSetting, InstallationConfig, ThemeSetting, UiSettings};
+use settings::{ChatInSetting, InstallationConfig, ThemeSetting, UiSettings};
 use tui::{
-    AttachFn, AttachReturn, ColorPreference, TerminalColors, Theme, ThemeError, TuiConfig,
-    detect_color_mode, parse_theme_file, query_terminal_colors, theme_from_file,
+    AttachFn, AttachReturn, TerminalColors, Theme, TuiConfig, detect_color_mode,
+    query_terminal_colors,
 };
 use wire::Agent;
 
 use crate::attach::{Attacher, Outcome, farewell};
-use crate::verbs::Interface;
 
 /// How long to wait for a terminal to say what colours it paints with.
 /// Terminals that answer do so in a few milliseconds; the bound is for the
@@ -36,13 +35,13 @@ pub async fn attach(
     config: &InstallationConfig,
     profile: Option<&str>,
     agent: &str,
-    asked: Option<Interface>,
+    asked: Option<ChatInSetting>,
 ) -> Result<()> {
     let profile = crate::connect::profile(config, profile).await?;
     let mut client = crate::connect::client_of(&profile).await?;
     let agent = crate::verbs::resolve(&mut client, agent).await?;
     let mut attacher = Attacher::new(&profile, config.keybinds.leader.clone())?;
-    if Interface::chosen(asked, config) == Interface::Native {
+    if asked.unwrap_or(config.ui.chat_in) == ChatInSetting::Native {
         match attacher.refusal(&agent) {
             None => {
                 return match attacher.attach(&agent).await? {
@@ -53,7 +52,7 @@ pub async fn attach(
                     }
                 };
             }
-            Some(why) if asked == Some(Interface::Native) => return Err(anyhow!(why)),
+            Some(why) if asked == Some(ChatInSetting::Native) => return Err(anyhow!(why)),
             Some(_) => {}
         }
     }
@@ -76,35 +75,19 @@ async fn open(
         ThemeSetting::Terminal => query_terminal_colors(TERMINAL_COLOR_QUERY),
         _ => None,
     };
-    let theme = resolve_theme(&config.ui, &ColorEnv::capture(), terminal)
-        .context("failed to resolve ui.theme")?;
+    let theme = resolve_theme(&config.ui, &ColorEnv::capture(), terminal);
     let tui_config = TuiConfig {
         working_dir: std::env::current_dir()?,
         leader: char::from(config.keybinds.leader.char),
         theme,
         initial_chat,
-        attach: false,
         version: node::version().to_owned(),
         local_host: attacher.local_host().to_vec(),
         layout: Some(config.root.join("tui").join("layout.json")),
-        reports: Some(config.root.join("reports")),
-        chat_in: match config.ui.chat_in {
-            settings::ChatInSetting::Amux => tui::setup::ChatIn::Amux,
-            settings::ChatInSetting::Native => tui::setup::ChatIn::Native,
-        },
-        defaults: {
-            let of = |agent: &settings::NewAgentDefaults| tui::setup::AgentDefaults {
-                model: agent.model.clone(),
-                effort: agent.effort.clone(),
-                permission: agent.permission.clone(),
-            };
-            tui::setup::Defaults {
-                claude: of(&config.new_agent.claude),
-                codex: of(&config.new_agent.codex),
-            }
-        },
+        chat_in: config.ui.chat_in,
+        defaults: config.new_agent.clone(),
     };
-    tui::run(Arc::new(client), tui_config, Some(attach_fn(attacher))).await
+    tui::run(Arc::new(client), tui_config, attach_fn(attacher)).await
 }
 
 /// The fleet's raw attach. Only the fleet chord comes back to the fleet;
@@ -150,28 +133,19 @@ pub fn resolve_theme(
     settings: &UiSettings,
     env: &ColorEnv,
     terminal: Option<TerminalColors>,
-) -> Result<Theme, ThemeError> {
-    let preference = match settings.color {
-        ColorSetting::Auto => ColorPreference::Auto,
-        ColorSetting::TrueColor => ColorPreference::TrueColor,
-        ColorSetting::Ansi => ColorPreference::Ansi,
-    };
+) -> Theme {
     let mode = detect_color_mode(
-        preference,
+        settings.color,
         env.colorterm.as_deref(),
         env.term.as_deref(),
         env.no_color,
     );
     match &settings.theme {
-        ThemeSetting::Terminal => Ok(match terminal {
+        ThemeSetting::Terminal => match terminal {
             Some(colors) => Theme::from_terminal(colors, mode),
             None => Theme::dark(mode),
-        }),
-        ThemeSetting::Dark => Ok(Theme::dark(mode)),
-        ThemeSetting::Light => Ok(Theme::light(mode)),
-        ThemeSetting::File(path) => {
-            let yaml = std::fs::read_to_string(path)?;
-            theme_from_file(&parse_theme_file(&yaml)?, mode)
-        }
+        },
+        ThemeSetting::Dark => Theme::dark(mode),
+        ThemeSetting::Light => Theme::light(mode),
     }
 }

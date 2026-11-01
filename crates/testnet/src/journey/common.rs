@@ -310,14 +310,6 @@ pub(crate) fn trust(a: &str, b: &str) -> Control {
     }
 }
 
-pub(crate) fn refuse_calls(a: &str, b: &str, refuse: bool) -> Control {
-    Control::RefuseCalls {
-        a: a.to_owned(),
-        b: b.to_owned(),
-        refuse,
-    }
-}
-
 pub(crate) fn open_gate(name: &str) -> Control {
     Control::OpenGate {
         name: name.to_owned(),

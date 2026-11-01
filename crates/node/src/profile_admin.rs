@@ -51,28 +51,10 @@ fn token(token: &[u8]) -> Result<&[u8], Status> {
 impl ProfileAdminService for ProfileAdmin {
     async fn sign_out(
         &self,
-        _request: Request<wire::SignOutRequest>,
+        _request: Request<wire::Empty>,
     ) -> Result<Response<wire::Profile>, Status> {
         Ok(Response::new(info(
             self.registry.sign_out(self.profile).await?,
-        )))
-    }
-
-    async fn pause_profile(
-        &self,
-        _request: Request<wire::PauseProfileRequest>,
-    ) -> Result<Response<wire::Profile>, Status> {
-        Ok(Response::new(info(
-            self.registry.set_paused(self.profile, true).await?,
-        )))
-    }
-
-    async fn resume_profile(
-        &self,
-        _request: Request<wire::ResumeProfileRequest>,
-    ) -> Result<Response<wire::Profile>, Status> {
-        Ok(Response::new(info(
-            self.registry.set_paused(self.profile, false).await?,
         )))
     }
 
@@ -87,7 +69,7 @@ impl ProfileAdminService for ProfileAdmin {
 
     async fn get_pairing_status(
         &self,
-        _request: Request<wire::GetPairingStatusRequest>,
+        _request: Request<wire::Empty>,
     ) -> Result<Response<PairingStatus>, Status> {
         let edge = self.edge()?;
         Ok(Response::new(PairingStatus {
@@ -98,10 +80,10 @@ impl ProfileAdminService for ProfileAdmin {
 
     async fn cancel_pairing(
         &self,
-        _request: Request<wire::CancelPairingRequest>,
-    ) -> Result<Response<wire::CancelPairingResponse>, Status> {
+        _request: Request<wire::Empty>,
+    ) -> Result<Response<wire::Empty>, Status> {
         self.edge()?.cancel_pairing().await?;
-        Ok(Response::new(wire::CancelPairingResponse {}))
+        Ok(Response::new(wire::Empty {}))
     }
 
     async fn begin_pair(
@@ -126,15 +108,15 @@ impl ProfileAdminService for ProfileAdmin {
     async fn abandon_pair(
         &self,
         request: Request<wire::AbandonPairRequest>,
-    ) -> Result<Response<wire::AbandonPairResponse>, Status> {
+    ) -> Result<Response<wire::Empty>, Status> {
         let request = request.into_inner();
         self.edge()?.abandon_pair(token(&request.token)?).await?;
-        Ok(Response::new(wire::AbandonPairResponse {}))
+        Ok(Response::new(wire::Empty {}))
     }
 
     async fn get_device_identity(
         &self,
-        _request: Request<wire::GetDeviceIdentityRequest>,
+        _request: Request<wire::Empty>,
     ) -> Result<Response<DeviceIdentity>, Status> {
         Ok(Response::new(self.edge()?.device_identity()))
     }
@@ -142,40 +124,29 @@ impl ProfileAdminService for ProfileAdmin {
     async fn trust_ssh_peer(
         &self,
         request: Request<TrustSshPeerRequest>,
-    ) -> Result<Response<wire::TrustSshPeerResponse>, Status> {
+    ) -> Result<Response<wire::Empty>, Status> {
         self.edge()?.trust_ssh_peer(request.into_inner()).await?;
-        Ok(Response::new(wire::TrustSshPeerResponse {}))
+        Ok(Response::new(wire::Empty {}))
     }
 
     async fn list_peers(
         &self,
-        _request: Request<wire::ListPeersRequest>,
+        _request: Request<wire::Empty>,
     ) -> Result<Response<ListPeersResponse>, Status> {
         Ok(Response::new(ListPeersResponse {
             peers: self.edge()?.list_peers()?,
         }))
     }
 
-    async fn get_peer(
-        &self,
-        request: Request<wire::GetPeerRequest>,
-    ) -> Result<Response<wire::Peer>, Status> {
-        Ok(Response::new(self.edge()?.peer_entry(
-            request.into_inner().peer.unwrap_or_default(),
-        )?))
-    }
-
     async fn unpair(
         &self,
         request: Request<UnpairRequest>,
     ) -> Result<Response<wire::Peer>, Status> {
-        let request = request.into_inner();
         let peer = request
+            .into_inner()
             .peer
             .ok_or_else(|| failed(ErrorCode::InvalidArgument, "name the peer to unpair"))?;
-        Ok(Response::new(
-            self.edge()?.unpair(peer, request.reason).await?,
-        ))
+        Ok(Response::new(self.edge()?.unpair(peer).await?))
     }
 
     async fn dump(

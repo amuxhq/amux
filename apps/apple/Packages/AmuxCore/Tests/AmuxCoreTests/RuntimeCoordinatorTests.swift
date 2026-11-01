@@ -93,9 +93,9 @@ final class RuntimeCoordinatorTests: XCTestCase {
         guard case .failure = await runtime.accessToken(profile.id) else {
             return XCTFail("a bearer was lent for no account")
         }
-        runtime.discovered([FoundHost(
-            host: HostId(UUID()), name: "elsewhere", version: 1, addrs: ["127.0.0.1:9"],
-            scope: "another-scope").found])
+        runtime.discovered([Found(
+            hostId: HostId(UUID()).bytes, name: "elsewhere", version: 1, addrs: ["127.0.0.1:9"],
+            scope: "another-scope")])
         guard case .success(let trusting) = await runtime.trusting(HostId(UUID())),
               trusting.isEmpty else {
             return XCTFail("a profile trusts a machine nobody paired")
@@ -321,10 +321,10 @@ final class RuntimeCoordinatorTests: XCTestCase {
             let fleet = try runtime.open(profile) { _ in }
             defer { fleet.close() }
             guard case .success(let pending) = await fleet.beginPair(.link(link)),
-                  case .success(let paired) = await fleet.confirmPair(pending) else {
+                  case .success = await fleet.confirmPair(pending) else {
                 throw Refused("\(profile) did not pair")
             }
-            host = HostId(bytes: paired.hostId)
+            host = HostId(bytes: pending.hostId)
         }
         return try XCTUnwrap(host)
     }

@@ -16,6 +16,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Frame as Paint;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
+use settings::{ChatInSetting, NewAgentDefaults, NewAgentSettings};
 use ui_state::FleetState;
 use ui_view::{Changeable, NewAgentChoices, NewAgentPick, Reach, SettingChange, SettingsView};
 use wire::{
@@ -26,19 +27,6 @@ use wire::{
 use crate::editor::Editor;
 use crate::text::{self, push};
 use crate::theme::Theme;
-
-/// Where a person chats with their agents: a preference for this
-/// installation, asked once (in onboarding, when it exists) and changed in
-/// settings. It decides what a new agent runs on and how starting it ends.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ChatIn {
-    /// In amux's own chat.
-    #[default]
-    Amux,
-    /// In each agent's own interface, Claude Code's or Codex's, attached
-    /// on start.
-    Native,
-}
 
 /// The two agents a person chooses between.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,11 +46,19 @@ impl Agent {
     }
 
     /// What runs it where the person chats.
-    fn kind(self, chat_in: ChatIn) -> Kind {
+    fn kind(self, chat_in: ChatInSetting) -> Kind {
         match (self, chat_in) {
-            (Agent::Claude, ChatIn::Amux) => Kind::ClaudeSdk,
-            (Agent::Claude, ChatIn::Native) => Kind::ClaudePty,
+            (Agent::Claude, ChatInSetting::Amux) => Kind::ClaudeSdk,
+            (Agent::Claude, ChatInSetting::Native) => Kind::ClaudePty,
             (Agent::Codex, _) => Kind::Codex,
+        }
+    }
+
+    /// What it starts with, from the installation's settings.
+    fn defaults(self, settings: &NewAgentSettings) -> &NewAgentDefaults {
+        match self {
+            Agent::Claude => &settings.claude,
+            Agent::Codex => &settings.codex,
         }
     }
 
@@ -104,32 +100,6 @@ pub fn signed_in(fleet: &FleetState, host: &[u8], provider: wire::Provider) -> O
         .map(|offer| offer.signed_in)
 }
 
-/// What a new agent starts with, per agent: model, effort and permission,
-/// from the installation's settings (shipped with real values), so the new
-/// agent always shows what it will run.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct AgentDefaults {
-    pub model: String,
-    pub effort: String,
-    /// A permission by its catalogue value.
-    pub permission: String,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Defaults {
-    pub claude: AgentDefaults,
-    pub codex: AgentDefaults,
-}
-
-impl Defaults {
-    fn of(&self, agent: Agent) -> &AgentDefaults {
-        match agent {
-            Agent::Claude => &self.claude,
-            Agent::Codex => &self.codex,
-        }
-    }
-}
-
 /// One of the settings, as the composer's edge shows it and a flyover
 /// changes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -151,7 +121,7 @@ pub struct Setup {
     /// None: named for the person automatically.
     pub name: Option<String>,
     pub agent: Agent,
-    pub chat_in: ChatIn,
+    pub chat_in: ChatInSetting,
     /// None runs the provider's default.
     pub model: Option<String>,
     pub effort: Option<String>,
@@ -170,17 +140,17 @@ pub struct Setup {
     /// Start it in a new worktree of the folder's repository.
     pub worktree: bool,
     /// What each agent starts with, for when the agent changes.
-    pub defaults: Defaults,
+    pub defaults: NewAgentSettings,
 }
 
 impl Setup {
     /// From home: the defaults. No memory per folder: that would start a
     /// notion of projects nobody has designed.
     pub fn defaults(
-        chat_in: ChatIn,
+        chat_in: ChatInSetting,
         working_dir: &str,
         local_host: &[u8],
-        defaults: &Defaults,
+        defaults: &NewAgentSettings,
     ) -> Setup {
         let mut setup = Setup {
             name: None,
@@ -203,7 +173,7 @@ impl Setup {
 
     /// The agent's model, effort and permission from the settings.
     fn start_from_defaults(&mut self) {
-        let defaults = self.defaults.of(self.agent).clone();
+        let defaults = self.agent.defaults(&self.defaults).clone();
         self.model = Some(defaults.model);
         self.effort = Some(defaults.effort);
         self.permission = Some(defaults.permission);
@@ -212,11 +182,11 @@ impl Setup {
 
     /// A running agent's settings, to start a sibling where the person
     /// chats now: whatever the chat did not report comes from the settings.
-    pub fn sibling(mut self, kind: Kind, chat_in: ChatIn) -> Setup {
+    pub fn sibling(mut self, kind: Kind, chat_in: ChatInSetting) -> Setup {
         self.agent = Agent::of(kind);
         self.chat_in = chat_in;
         self.offered = None;
-        let defaults = self.defaults.of(self.agent).clone();
+        let defaults = self.agent.defaults(&self.defaults).clone();
         self.model.get_or_insert(defaults.model);
         self.effort.get_or_insert(defaults.effort);
         self.permission.get_or_insert(defaults.permission);
@@ -472,7 +442,7 @@ impl Setup {
         prompt: Option<PromptSubmission>,
     ) -> CreateAgentRequest {
         // Used in its own terminal, the agent's terminal sets these.
-        let own = self.chat_in == ChatIn::Native;
+        let own = self.chat_in == ChatInSetting::Native;
         let permission = if own { None } else { self.permission.clone() };
         let model = if own { None } else { self.model.clone() };
         let effort = if own { None } else { self.effort.clone() };
@@ -1041,14 +1011,6 @@ impl Picker {
             ],
             Shape::List => vec![("enter", "pick"), ("↑↓", "move"), ("esc", "back")],
         }
-    }
-
-    pub fn hint(&self) -> String {
-        self.hints()
-            .iter()
-            .map(|(key, action)| format!("{key} {action}"))
-            .collect::<Vec<_>>()
-            .join(" · ")
     }
 }
 

@@ -54,8 +54,6 @@ public final class StoreBundle {
     /// Told how many machines this account has paired and how many of its
     /// agents need the person, each time the fleet moves.
     @ObservationIgnored public var saw: (@MainActor (_ hosts: Int, _ attention: Int) -> Void)?
-    /// Whether a re-read of a relay link still coming up is scheduled.
-    @ObservationIgnored private var settling = false
     /// What moved in the fleet while the launch's first frame was going up,
     /// applied once it is up.
     @ObservationIgnored private var held: FleetDelta?
@@ -147,28 +145,13 @@ public final class StoreBundle {
         saw?(fleet.machines.filter(\.trusted).count, fleet.needYou)
         applied += 1
         keepSessions()
-        if delta.hosts != nil {
-            Task { await refreshAccount() }
-            if hosts.rosterBehind { Task { await refreshRoster() } }
-        }
+        if delta.hosts != nil, hosts.rosterBehind { Task { await refreshRoster() } }
     }
 
-    /// Reads the account and its relay link again.
-    public func refreshAccount() async {
-        guard let profile, case .success(let account) = await profile.account() else { return }
+    /// The account and its relay link, as the profile list carries them.
+    public func show(account: AccountView) {
         hosts.show(account)
         fleet.relay(account.relay)
-        // The relay link settles without the host list moving, so while it
-        // is still coming up it is read again until it says where it landed.
-        guard account.relay == .connecting || account.relay == .retrying,
-              !settling else { return }
-        settling = true
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1))
-            guard let self, self.profile === profile else { return }
-            self.settling = false
-            await self.refreshAccount()
-        }
     }
 
     /// Reads this phone's identity and the machines it trusts again.
@@ -207,7 +190,6 @@ public final class StoreBundle {
             chat = try profile.openChat(agent)
         }
         chats[chat.id] = (chat, moved)
-        fleet.opened(agent, at: now())
         return chat
     }
 
@@ -250,10 +232,7 @@ public final class StoreBundle {
 
     /// Which chat sessions exist, after every move of the fleet. A shown
     /// chat keeps its own; a chat viewed within the retention keeps its
-    /// own; a chat a push is bringing current keeps its own until it is; a
-    /// chat holding a prompt for a host that cannot be reached keeps its
-    /// own until the prompt goes, since only the open chat takes it back out
-    /// of the kept draft;
+    /// own; a chat a push is bringing current keeps its own until it is;
     /// nothing else is opened or kept, not even for an agent that
     /// needs the person, because the runtime keeps every listed agent's
     /// rows current without a session and a chat opens from those rows.
@@ -262,7 +241,7 @@ public final class StoreBundle {
         let retention = Double(sessionRetention.components.seconds)
             + Double(sessionRetention.components.attoseconds) / 1e18
         for (agent, open) in models
-        where !shown.contains(agent) && !warming.contains(agent) && !open.model.holdsPrompts {
+        where !shown.contains(agent) && !warming.contains(agent) {
             if let last = viewed[agent], at.timeIntervalSince(last) < retention { continue }
             models.removeValue(forKey: agent)
             viewed.removeValue(forKey: agent)
@@ -341,7 +320,7 @@ public final class StoreBundle {
         let attempt = pairing.checking()
         Task {
             let paired = await profile.confirmPair(pending)
-            pairing.paired(paired, attempt: attempt)
+            pairing.paired(paired.map { _ in pending.name }, attempt: attempt)
             await refreshRoster()
         }
     }

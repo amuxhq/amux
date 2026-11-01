@@ -2,11 +2,11 @@
 """Run every fuzz target in fuzz/ for a bounded time and fail on a crash.
 
 Each target starts from seeds cut from the repository's recorded fixtures
-(every line of the provider captures for the decoders and redaction, every
-journal fixture whole for the journal targets), so a short run begins inside
-real inputs rather than at the empty string. The corpus each run grows and
-any crashing input are kept under target/fuzz/; a crash prints the command
-that replays it.
+(every line of the provider captures for the decoders and redaction, the
+node tests' copy of an agent's journal for the journal targets), so a short
+run begins inside real inputs rather than at the empty string. The corpus
+each run grows and any crashing input are kept under target/fuzz/; a crash
+prints the command that replays it.
 
 `--seconds N` sets each target's time (default 30); names after the options
 narrow the run to those targets.
@@ -28,15 +28,21 @@ TOOLCHAIN = "+nightly-2026-08-30"
 OUT = ROOT / "target" / "fuzz"
 
 # The seeds per target: line-wise from JSONL captures, or whole files.
+CLAUDE_CAPTURES = [
+    "crates/interpret/fixtures/claude_sdk/live",
+    "crates/interpret/fixtures/claude_pty/live",
+    "crates/interpret/fixtures/claude_pty/transcripts",
+]
+CODEX_CAPTURES = ["crates/interpret/fixtures/codex/live"]
 PROVIDER_LINES = {
-    "claude_decode": ["crates/claude-specs/fixtures"],
-    "codex_decode": ["crates/codex-specs/fixtures"],
-    "redact_value": ["crates/claude-specs/fixtures", "crates/codex-specs/fixtures"],
-    "redact_text": ["crates/claude-specs/fixtures", "crates/codex-specs/fixtures"],
+    "claude_decode": CLAUDE_CAPTURES,
+    "codex_decode": CODEX_CAPTURES,
+    "redact_value": [*CLAUDE_CAPTURES, *CODEX_CAPTURES],
+    "redact_text": [*CLAUDE_CAPTURES, *CODEX_CAPTURES],
 }
 WHOLE_FILES = {
-    "journal_frame": ("crates/testnet/fixtures/journals", "*.frames"),
-    "journal_reader": ("crates/testnet/fixtures/journals", "*.frames"),
+    "journal_frame": ("crates/node/tests/fixtures", "journal"),
+    "journal_reader": ("crates/node/tests/fixtures", "journal"),
 }
 TARGETS = [*PROVIDER_LINES, *WHOLE_FILES]
 SEEDS_PER_TARGET = 500

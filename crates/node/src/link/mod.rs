@@ -17,7 +17,7 @@ pub(crate) mod validation;
 pub use carrier::{ByteStream, ControlSink, ControlSource, OpenError, read_message, write_message};
 pub use channels::{
     ChannelClass, ChannelError, ChannelPool, Cursor, EarlyAnswer, EarlyCall, EarlyReply,
-    PeerChannel, PeerClient, ResumedLink, TRUST_REVOKED,
+    PeerClient, ResumedLink, TRUST_REVOKED,
 };
 pub(crate) use channels::{ChannelKey, InboundStream, peer_client, serve_inbound_streams};
 pub use quic::QuicCarrier;

@@ -127,7 +127,6 @@ fn a_removed_parent_leaves_its_children_heading_their_own_family() {
     fleet.update(ev(inventory_event::Of::AgentRemoved(wire::AgentRemoved {
         host_id: b"a".to_vec(),
         agent_id: b"parent".to_vec(),
-        reason: wire::RemovalReason::Deleted as i32,
     })));
     let roots: Vec<&str> = fleet.roots().map(|agent| agent.name.as_str()).collect();
     assert_eq!(roots, ["loner", "child"]);

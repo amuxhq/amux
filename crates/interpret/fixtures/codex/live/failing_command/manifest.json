@@ -1,0 +1,24 @@
+{
+  "spec": "failing_command",
+  "recorded": {
+    "provider": "codex",
+    "version": "0.166.0",
+    "model": "gpt-6.1-sol",
+    "at": "2026-10-31T11:58:08.163847Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:f3eccd4da30af65e3cccae42450e8d323e7f3c46f5e2024f12a6e0d3e5836c56",
+    "spawn.jsonl": "sha256:4c5fcab8a128a4aa6482301bf17ae7a554e62438622bef5369e13c2c0232a8fe"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 42,
+    "personal_identifiers": 2
+  },
+  "session_ids": [
+    "01a191d0-45f6-75a3-8f95-bd970a8300a9"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

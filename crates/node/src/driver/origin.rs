@@ -8,11 +8,9 @@ use std::sync::Weak;
 
 use daemon_core::payload::{Answer, PeerFailure, PeerRequest};
 use daemon_core::{CallId, HostId, Input};
-use store::AgentKey;
 
 use super::feed;
 use crate::link::EarlyAnswer;
-use crate::replicas::SourceVerdict;
 use crate::routing::host_from_core;
 use crate::runtime::ProfileRuntime;
 
@@ -44,20 +42,14 @@ pub(super) async fn stream(
     answer(ended).await;
 }
 
-/// A replica's Subscribe to its origin. The test hook is read as the stream
-/// opens.
+/// A replica's Subscribe to its origin.
 async fn session<F: Future<Output = ()>>(
     runtime: &Weak<ProfileRuntime>,
     host: HostId,
-    request: wire::PeerSubscribeSessionRequest,
+    request: wire::SubscribeSessionRequest,
     mut answer: impl FnMut(wire::SessionEvent) -> F,
 ) -> Answer {
-    let key = AgentKey::new(host.0.to_vec(), request.agent_id.clone());
-    let (edge, hook) = match runtime.upgrade() {
-        Some(me) => (me.edge(), me.replicas.lock().unwrap().hook.clone()),
-        None => return Answer::Failed(PeerFailure::NotSent),
-    };
-    let Some(edge) = edge else {
+    let Some(edge) = runtime.upgrade().and_then(|me| me.edge()) else {
         return Answer::Failed(PeerFailure::NotSent);
     };
     let peer = host_from_core(host);
@@ -95,19 +87,11 @@ async fn session<F: Future<Output = ()>>(
             Ok(None) => return Answer::Ended,
             Err(_) => return Answer::Failed(PeerFailure::Uncertain),
         };
-        if let Some(hook) = &hook {
-            match hook(&key, &event) {
-                SourceVerdict::Keep => {}
-                SourceVerdict::Drop => return Answer::Failed(PeerFailure::Uncertain),
-                SourceVerdict::Hold(held) => held.await,
-            }
-        }
         answer(event).await;
     }
 }
 
-/// A host's SubscribeInventory. The test hook is read for every event, so
-/// one set while the stream is open takes effect on it.
+/// A host's SubscribeInventory.
 async fn inventory<F: Future<Output = ()>>(
     runtime: &Weak<ProfileRuntime>,
     host: HostId,
@@ -145,7 +129,7 @@ async fn inventory<F: Future<Output = ()>>(
             (
                 client
                     .agents
-                    .subscribe_inventory(wire::SubscribeInventoryRequest {})
+                    .subscribe_inventory(wire::Empty {})
                     .await
                     .map(|response| response.into_inner()),
                 None,
@@ -170,14 +154,6 @@ async fn inventory<F: Future<Output = ()>>(
             && let Some(caught_up) = catch_up.take()
         {
             caught_up.arrived();
-        }
-        let hook = runtime
-            .upgrade()
-            .and_then(|me| me.replicas.lock().unwrap().inventory_hook.clone());
-        match hook.map(|hook| hook(peer, &event)) {
-            None | Some(SourceVerdict::Keep) => {}
-            Some(SourceVerdict::Drop) => return Answer::Failed(PeerFailure::Uncertain),
-            Some(SourceVerdict::Hold(held)) => held.await,
         }
         answer(event).await;
     }

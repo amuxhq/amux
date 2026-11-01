@@ -30,22 +30,23 @@ local edge to a fixed list:
 
 | Crate | May depend on |
 | --- | --- |
-| `app-runtime` | `client`, `model`, `ui-runtime`, `ui-state`, `ui-view`, `wire` |
-| `app-embedded` | `app-runtime`, `client`, `node`, `wire` |
-| `app-ffi` | `app-embedded`, `app-runtime`, `client`, `model`, `node`, `ui-view` |
+| `app-runtime` | `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` |
+| `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` |
+| `app-ffi` | `app-embedded`, `app-runtime`, `client`, `node`, `ui-state`, `ui-view` |
 
 `app-runtime` is also one of the UI crates, which may not reach `node`,
-`store`, `interpret`, `agent`, `claude`, `codex` or `pty-host` directly or
-through anything else, and no production crate may depend on test support.
+`store`, `interpret`, `agent` or `pty-host` directly or through anything
+else, and no production crate may depend on test support.
 `app-embedded` and `app-ffi` host the runtime in process and are the
 deliberate exception to "no UI crate links the daemon".
 
 What ships on a phone is checked from the other end too. `just ios
 graph-check` walks `cargo tree -p app-ffi` for the iOS simulator target and
-fails if `pty-host`, `codex`, `agent`, `testnet`, `claude-specs`,
-`codex-specs` or `replay-support` appears, with and without the driving
-tools. `just mobile-check` checks `node`, `client`, `ui-state` and
-`ui-runtime` for the iOS device and simulator targets.
+fails if `pty-host`, `agent`, `testnet`, `qualification` or
+`replay-support` appears, with and without the driving
+tools. `just mobile-check` checks `node`, `client`, `ui-state`,
+`ui-runtime`, `app-runtime` and `app-embedded` for the iOS device and
+simulator targets.
 
 ## What a client reuses
 
@@ -169,8 +170,8 @@ cargo run -p ios-tools -- swift-types          # regenerate
 cargo run -p ios-tools -- swift-types --check  # fail when the committed file differs
 ```
 
-`crates/ios-tools/src/swift_types.rs` lists the root types, from `model`,
-`ui-view` and `app-runtime::values`; everything they hold comes along. The
+`crates/ios-tools/src/swift_types.rs` lists the root types, from `ui-state`'s
+shared values, `ui-view` and `app-runtime::values`; everything they hold comes along. The
 schemas come from `schemars`. A struct becomes a Swift struct with the Rust
 field names as coding keys; a string-only enum becomes a raw-value enum; any
 other enum is serde's externally tagged form with its `Codable` written out;
@@ -180,8 +181,8 @@ mirror that decodes wrongly. Byte strings, such as agent and input ids, are
 JSON arrays of numbers.
 
 Two tests in that file keep the mirrors honest: the committed file must match
-what the generator produces, and every public struct and enum in `model`,
-`ui-view` and `app-runtime::values` must have a mirror, apart from a short
+what the generator produces, and every public struct and enum in `ui-state`'s
+`model.rs`, `ui-view` and `app-runtime::values` must have a mirror, apart from a short
 list that never crosses (the answer body a choice sends, and borrowed option
 types).
 
@@ -202,7 +203,7 @@ that ticket; nothing in the library calls into the client.
 
 | Family | Handle | What it covers |
 | --- | --- | --- |
-| `amux_runtime_*` | `AmuxRuntime` | The installation: start and stop, the wake descriptor and the step, lifecycle inputs (foreground, background, suspending, network changed), the profile list, the registry (create, delete, bind, sign out, pause, resume), source policy, discovered machines, bearers, entitlement refresh, which profiles trust a host, product analytics (the setting and the app's own events) |
+| `amux_runtime_*` | `AmuxRuntime` | The installation: start and stop, the wake descriptor and the step, lifecycle inputs (foreground, background, suspending, network changed), the profile list, the registry (create, delete, bind, sign out), source policy, discovered machines, bearers, entitlement refresh, which profiles trust a host, product analytics (the setting and the app's own events) |
 | `amux_profile_*` | `AmuxProfile` | One profile open on screen: pairing, the roster, account state, creating agents and listing directories, renaming, stopping and deleting agents, the dump |
 | `amux_fleet_*` | `AmuxProfile` | That profile's fleet: rows, cards, family headers, hosts, and taking its changes |
 | `amux_session_*` | `AmuxChat` | One open chat: keys and rows by key, the ask card, overview, settings and frame, taking changes; sending, answering, withdrawing, interrupting, resuming, paging, blobs and the review |

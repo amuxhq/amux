@@ -1,47 +1,32 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Remember the word ALBATROSS. Reply with exactly REMEMBERED.")], steered: false }
+## 6 recorded 5: input 0xb020901a329a4aeb82fb28c089afec4d
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=57bbef3e-7bb7-4327-a383-c6e0d856d6f7
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 8 recorded 7: fact Stream type=assistant uuid=37b2a5ff-74e1-48e6-adab-7e13caf279e2
-  row    3 msg_011CgWLNgU4PW1sEg1RcJ64y:0 Thinking { text: "", open: false, duration_ms: Some(1656) }
-## 10 recorded 9: fact Stream type=assistant uuid=77d64622-c6ea-4bb5-9faa-0afbd8e4f9a9
-  row    4 msg_011CgWLNgU4PW1sEg1RcJ64y:1 Prose { text: [Text("REMEMBERED")], streaming: false, working_note: false }
-## 14 recorded 13: fact Stream type=result subtype=success uuid=e8f7758f-f7a6-492d-bce0-dfb19980f7ae
-  row    5 turn:1 TurnEnd { duration_ms: Some(1655), failed: false }
+## 31 recorded 30: fact Stream type=result subtype=success uuid=046783a5-bc05-4a8e-9941-8af2b616b81f
   composer Send activity=None queue=[] underway=[] refused=[]
-## 16 recorded 15: input stdin-4
-  row    6 73746469-6e2d-4400-8000-000000000000 Prompt { text: [Text("What word did I ask you to remember? Reply with just that word.")], steered: false }
+## 36 recorded 35: input 0x7993eb0a746c40d49d83421a60f4b63e
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 20 recorded 19: fact Stream type=assistant uuid=47fc4744-3a4a-4d46-9c79-ac59b76d0acc
-  row    7 msg_011CgWLNpUWif7MbEKgL1k7H:0 Thinking { text: "", open: false, duration_ms: None }
-## 21 recorded 20: fact Stream type=assistant uuid=99d732b3-7014-44e4-9605-c5033a75cb4d
-  row    8 msg_011CgWLNpUWif7MbEKgL1k7H:1 Prose { text: [Text("ALBATROSS")], streaming: false, working_note: false }
-## 23 recorded 22: fact Stream type=result subtype=success uuid=a3f39345-cfce-44d3-b6c0-19ab8de5e29a
-  row    9 turn:2 TurnEnd { duration_ms: Some(1395), failed: false }
+## 56 recorded 55: fact Stream type=result subtype=success uuid=af128eca-c406-424c-8a92-4c0bd626a179
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Remember the word ALBATROSS. Reply with exactly REMEMBERED.")], steered: false }
-     3 msg_011CgWLNgU4PW1sEg1RcJ64y:0 Thinking { text: "", open: false, duration_ms: Some(1656) }
-     4 msg_011CgWLNgU4PW1sEg1RcJ64y:1 Prose { text: [Text("REMEMBERED")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(1655), failed: false }
-     6 73746469-6e2d-4400-8000-000000000000 Prompt { text: [Text("What word did I ask you to remember? Reply with just that word.")], steered: false }
-     7 msg_011CgWLNpUWif7MbEKgL1k7H:0 Thinking { text: "", open: false, duration_ms: None }
-     8 msg_011CgWLNpUWif7MbEKgL1k7H:1 Prose { text: [Text("ALBATROSS")], streaming: false, working_note: false }
-     9 turn:2 TurnEnd { duration_ms: Some(1395), failed: false }
+     2 b020901a-329a-4aeb-82fb-28c089afec4d Prompt { text: [Text("Reply with the single word one and nothing else.")], steered: false }
+     3 9a00faa3-3dae-41de-8372-db22829c4afa Hidden collapsed
+     4 msg_011CgZkjRHtPLdJ96PSnW8Ty:0 Prose { text: [Text("one")], streaming: false, working_note: false }
+     5 turn:1 TurnEnd { duration_ms: Some(1052), failed: false }
+     6 7993eb0a-746c-40d4-9d83-421a60f4b63e Prompt { text: [Text("Reply with the single word two and nothing else.")], steered: false }
+     7 d9bc0ce7-afe8-4088-a455-45d888330209 Hidden collapsed
+     8 msg_011CgZkjYoaqvP3Nw3Vt7K2D:0 Prose { text: [Text("two")], streaming: false, working_note: false }
+     9 turn:2 TurnEnd { duration_ms: Some(1302), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 23840, window_tokens: Some(200000), percent: Some(11), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 20400, window_tokens: Some(1000000), percent: Some(2), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]
   model  opus "Opus 5.5" efforts=[low,medium,high,xhigh,max]
   model  fable "Fable 5.1" efforts=[low,medium,high,xhigh,max]
   model  sonnet "Sonnet 5.5" efforts=[low,medium,high,xhigh,max]
-  model  haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
-  model* claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
+  model* haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
+  model  claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
   model  claude-sonnet-5 "Sonnet 5" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-5 "Opus 5" efforts=[low,medium,high,xhigh,max]
   model  claude-fable-5 "Fable 5" efforts=[low,medium,high,xhigh,max]
@@ -49,12 +34,18 @@
   model  claude-opus-4-7 "Opus 4.7" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-4-6 "Opus 4.6" efforts=[low,medium,high,max]
   model  claude-sonnet-4-6 "Sonnet 4.6" efforts=[low,medium,high,max]
+  effort  low
+  effort  medium
+  effort* high
+  effort  xhigh
+  effort  max
   permission* "default" "Ask" normal
   permission  "acceptEdits" "Accept edits"
   permission  "plan" "Plan"
-  permission  "auto" "Auto" unsettable
-  changes: model Pick · effort NotOffered · permission Pick · mode NotOffered
+  permission  "auto" "Auto"
+  changes: model Pick · effort Pick · permission Pick · mode NotOffered
   command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
   command /deep-research source="" hint="" "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)"
   command /design source="" hint="consent | revoke" "Grant or revoke Claude agent access to your Design projects"
@@ -69,6 +60,7 @@
   command /fewer-permission-prompts source="" hint="" "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts."
   command /loop source="" hint="[interval] [prompt]" "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace."
   command /schedule source="" hint="" "Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule."
+  command /send-to-project source="" hint="[\"project name\" or id] [message]" "Send this session's work to a Claude Project"
   command /claude-api source="" hint="" "Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration.\nTRIGGER — read BEFORE opening the target file; don't skip because it \"looks like a one-liner\" — whenever: the prompt names Claude/Anthropic in any form (Claude, Anthropic, Fable, Opus, Sonnet, Haiku, `anthropic`, `@anthropic-ai`, `claude-*`, `us…
   command /workflow-authoring source="" hint="" "Reference for writing a Workflow tool script (script API and gotchas, resume, quality patterns, worked examples). Load before authoring a script for a workflow the user already opted into; it does not itself authorize running one."
   command /run source="" hint="" "Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library)."
@@ -88,7 +80,7 @@
   command /workflow-launch-exec source="" hint="" "Execute a server-launched workflow handoff (workflow_launch event sessions only)"
   command /reload-plugins source="" hint="[--force]" "Activate pending plugin changes in the current session"
   command /reload-skills source="" hint="" "Pick up skills added or changed on disk during this session"
-  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~15-25 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
+  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~5-15 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
   command /security-review source="" hint="" "Complete a security review of the pending changes on the current branch"
   command /usage-credits source="" hint="" "Configure usage credits or request them from your admin when you hit a limit"
   command /extra-usage source="" hint="" "Renamed to /usage-credits"
@@ -101,4 +93,4 @@
   command /design-revoke source="" hint="" "Revoke Claude agent access to your Design projects"
   command /list-agents source="" hint="" "List subagents, teammates, and other Claude sessions you can message"
   command /team-onboarding source="" hint="" "Help teammates ramp on Claude Code with a guide from your usage"
-  controls: model=Some("Haiku 4.5") effort=None permission=None mode=None
+  controls: model=Some("Haiku 5.5") effort=Some("high") permission=None mode=None

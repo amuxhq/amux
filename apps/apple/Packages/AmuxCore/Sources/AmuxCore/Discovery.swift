@@ -3,30 +3,6 @@ import Foundation
 import Network
 import dnssd
 
-/// One machine this phone's browser has resolved on the local network.
-///
-/// The field names are the bridge's own, because this is handed straight to it
-/// rather than translated on the way.
-public struct FoundHost: Equatable, Sendable, Codable {
-    public let host: HostId
-    public let name: String
-    /// The protocol version the advertisement's own record claims.
-    public let version: UInt32
-    /// Where this machine can be dialled, as `address:port`.
-    public let addrs: [String]
-    /// The advertiser's discovery scope: empty for real machines, set by a
-    /// test network so the two never meet.
-    public let scope: String
-
-    public init(host: HostId, name: String, version: UInt32, addrs: [String], scope: String = "") {
-        self.host = host
-        self.name = name
-        self.version = version
-        self.addrs = addrs
-        self.scope = scope
-    }
-}
-
 /// Whether the system is letting this app look at the network it is on.
 ///
 /// A person who said no is not a person with no machines nearby, and the two
@@ -54,7 +30,7 @@ public final class LocalDiscovery {
     /// What amux advertises itself as. The transport is QUIC, hence `_udp`.
     public nonisolated static let service = "_amux._udp"
 
-    public typealias HandOver = @MainActor ([FoundHost]) -> Void
+    public typealias HandOver = @MainActor ([Found]) -> Void
 
     /// What the system has said about looking at this network.
     public private(set) var permission: LocalNetworkPermission = .unknown {
@@ -101,7 +77,7 @@ public final class LocalDiscovery {
     /// the browser reports it under.
     private var tracked: [NWEndpoint: Tracked] = [:]
     /// The advertisements whose addresses are known, which is what is handed over.
-    private var found: [NWEndpoint: FoundHost] = [:]
+    private var found: [NWEndpoint: Found] = [:]
     /// Bumped whenever an advertisement starts resolving afresh, so an answer
     /// or a retry belonging to an attempt that was replaced is ignored.
     private var attempts = 0
@@ -245,7 +221,7 @@ public final class LocalDiscovery {
                 continue
             }
             tracked[sighting.endpoint]?.abandon?()
-            if found[sighting.endpoint]?.host != claim.host {
+            if found[sighting.endpoint]?.hostId != claim.host.bytes {
                 found.removeValue(forKey: sighting.endpoint)
             }
             attempts += 1
@@ -286,9 +262,9 @@ public final class LocalDiscovery {
                 return
             }
             self.tracked[endpoint]?.abandon = nil
-            self.found[endpoint] = FoundHost(
-                host: entry.claim.host, name: entry.claim.name, version: entry.claim.version,
-                addrs: [address], scope: entry.claim.scope)
+            self.found[endpoint] = Found(
+                hostId: entry.claim.host.bytes, name: entry.claim.name,
+                version: entry.claim.version, addrs: [address], scope: entry.claim.scope)
             self.handOver(Array(self.found.values))
         }
         if tracked[endpoint]?.attempt == attempt, tracked[endpoint]?.next == entry.next {
@@ -439,12 +415,5 @@ public final class LocalDiscovery {
         case .failed(.dns(DNSServiceErrorType(kDNSServiceErr_PolicyDenied))): return .denied
         default: return .unknown
         }
-    }
-}
-
-extension FoundHost {
-    /// As the shared library takes it.
-    public var found: Found {
-        Found(hostId: host.bytes, name: name, version: version, addrs: addrs, scope: scope)
     }
 }

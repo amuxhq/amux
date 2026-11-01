@@ -333,8 +333,7 @@ mod tests {
     async fn a_channel_compresses_each_message_against_the_ones_before() {
         let journal = std::fs::read(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../replay-support/tests/fixtures/bundle/agents/",
-            "d6832ca2-2f0a-4307-9cf6-5a0e13e937cc/journal/0000000000"
+            "/tests/fixtures/journal"
         ))
         .unwrap();
         let mut frames = Vec::new();

@@ -1,22 +1,13 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 3 input {"id":"p1","prompt":{"text":"Deploy it."}}
-  row    2 prompt:7031 Prompt { text: [Text("Deploy it.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 6 fact {"channel":"rpc","json":{"id":7,"method":"item/commandExecution/requestApproval","params":{"availableDecisions":["accept",{"acceptWithExecpolicyAmendment":{"execpolicy_amendment":["curl","-s"]}},{"applyNetworkPolicyAmendment":{"network_policy_amendment":{"action":"allow","host":"api.example.com"}}},"decline","cancel"],"command":"/bin/zsh -lc 'curl -s https://api.example.com/status'","cwd":"/w…
-  row    3 cmd-1 Command { command: "curl -s https://api.example.com/status", state: Asking, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] attention
   ask 7 -> "cmd-1" 1/1 Open
     choices AllowOnce*, AllowSimilar { prefix: ["curl", "-s"] }, AllowNetwork { hosts: ["api.example.com"] }, Deny { stops: false }, DenyAndStop
     body Command { command: "curl -s https://api.example.com/status", cwd: "/work", reason: "Reach the status API.", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 8 daemon_lost {}
-  row    3 cmd-1 Command { command: "curl -s https://api.example.com/status", state: Asking, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] attention
-  row    4 boundary:2 Boundary { kind: DaemonLost, cause: "" }
 ## 10 exiting "stopped"
-  row    3 cmd-1 Command { command: "curl -s https://api.example.com/status", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
-  row    5 boundary:3 Boundary { kind: Exited, cause: "stopped" }
   ask none
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

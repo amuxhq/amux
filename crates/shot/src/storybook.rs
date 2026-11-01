@@ -23,7 +23,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
 use serde::{Deserialize, Serialize};
 use shot::stories::{self, Scene, Story};
-use tui::{ColorMode, ColorPreference, TerminalColors, TerminalGuard, Theme};
+use tui::{ColorMode, TerminalColors, TerminalGuard, Theme};
 
 #[derive(Debug, Parser)]
 #[command(about = "Step through the terminal client's named screens, or capture them")]
@@ -90,7 +90,10 @@ fn capture(out: &Path, only: Option<&str>) -> anyhow_free::Result {
                 terminal.draw(|frame| scene.draw(frame, frame.area(), theme))?;
                 let buffer = terminal.backend().buffer().clone();
                 let stem = format!("{}.{width}x{height}.{palette}", story.id);
-                std::fs::write(out.join(format!("{stem}.txt")), text(&buffer))?;
+                std::fs::write(
+                    out.join(format!("{stem}.txt")),
+                    tui::sessions::text(&buffer),
+                )?;
                 let raster = shot::rasterize(&buffer, theme)?;
                 shot::write_png(&raster, &out.join(format!("{stem}.png")))?;
                 index.push_str(&format!("- [{stem}]({stem}.png) ([text]({stem}.txt))\n"));
@@ -102,20 +105,6 @@ fn capture(out: &Path, only: Option<&str>) -> anyhow_free::Result {
     std::fs::write(out.join("index.md"), index)?;
     println!("{count} captures in {}", out.display());
     Ok(())
-}
-
-fn text(buffer: &ratatui::buffer::Buffer) -> String {
-    let area = buffer.area;
-    let mut out = String::new();
-    for y in 0..area.height {
-        let mut line = String::new();
-        for x in 0..area.width {
-            line.push_str(buffer[(x, y)].symbol());
-        }
-        out.push_str(line.trim_end());
-        out.push('\n');
-    }
-    out
 }
 
 // --- browsing ----------------------------------------------------------------
@@ -180,7 +169,7 @@ fn browse(story: Option<String>, watch: bool) -> anyhow_free::Result {
     // Asked before the screen is taken over, as the client itself asks.
     let terminal_colors = tui::query_terminal_colors(Duration::from_millis(250));
     let mode = tui::detect_color_mode(
-        ColorPreference::Auto,
+        settings::ColorSetting::Auto,
         std::env::var("COLORTERM").ok().as_deref(),
         std::env::var("TERM").ok().as_deref(),
         std::env::var_os("NO_COLOR").is_some(),

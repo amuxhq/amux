@@ -91,10 +91,3 @@ public struct SubscribeCallToAction: View {
 
     private var detail: String { SubscribeCopy.detail(host: host) }
 }
-
-/// What an account adds, in the one sentence the command line prints for the
-/// same thing. Apart from the view for the same reason the subscribe words
-/// are: the home's one line above the list says it too.
-public enum SignInCopy {
-    public static let caption = "Sign in to reach your agents from anywhere"
-}

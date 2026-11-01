@@ -10,13 +10,9 @@ members = [
     "crates/agent-dir",
     "crates/amux",
     "crates/attachments",
-    "crates/claude",
     "crates/claude-protocol",
-    "crates/claude-specs",
     "crates/client",
-    "crates/codex",
     "crates/codex-protocol",
-    "crates/codex-specs",
     "crates/core-ring",
     "crates/daemon-core",
     "crates/fake-amux",
@@ -25,7 +21,6 @@ members = [
     "crates/ios-tools",
     "crates/journal",
     "crates/log-file",
-    "crates/model",
     "crates/models",
     "crates/node",
     "crates/path-core",
@@ -47,7 +42,6 @@ members = [
     "crates/ui-state",
     "crates/ui-view",
     "crates/release",
-    "crates/version-stamp",
     "crates/wire",
     "crates/xtask",
 ]
@@ -74,12 +68,10 @@ app-runtime = { path = "crates/app-runtime" }
 node = { path = "crates/node" }
 patience = { path = "crates/patience" }
 release = { path = "crates/release" }
-version-stamp = { path = "crates/version-stamp" }
 testnet = { path = "crates/testnet" }
 client = { path = "crates/client" }
 interpret = { path = "crates/interpret" }
 journal = { path = "crates/journal" }
-model = { path = "crates/model" }
 models = { path = "crates/models" }
 store = { path = "crates/store" }
 wire = { path = "crates/wire", default-features = false }
@@ -92,9 +84,7 @@ ui-view = { path = "crates/ui-view" }
 tui = { path = "crates/tui" }
 pty-host = { path = "crates/pty-host" }
 provider-fakes = { path = "crates/provider-fakes" }
-claude = { path = "crates/claude" }
 claude-protocol = { path = "crates/claude-protocol" }
-codex = { path = "crates/codex" }
 codex-protocol = { path = "crates/codex-protocol" }
 redaction = { path = "crates/redaction" }
 
@@ -110,7 +100,6 @@ serde_json = "1"
 # The Swift mirrors of the shared values are generated from their schemas.
 schemars = "1"
 postcard = { version = "1", default-features = false, features = ["alloc"] }
-yaml_serde = "0.10"
 toml = "0.9.12"
 serde_ignored = "0.1"
 toml_edit = "0.23"
@@ -153,7 +142,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
 tempfile = "3"
 crossterm = "0.29"
-ratatui = { version = "0.30", default-features = false, features = ["crossterm", "serde"] }
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 pulldown-cmark = { version = "0.13", default-features = false }
 # Grammars only (no themes: the terminal's palette colours the tokens), with
 # the pure-Rust regex engine so no C library is linked.
@@ -161,7 +150,6 @@ syntect = { version = "5.3", default-features = false, features = ["default-synt
 shell-words = "1"
 bytes = "1"
 qrcode = { version = "0.14", default-features = false }
-nix = { version = "0.31", features = ["process", "signal"] }
 rusqlite = { version = "0.40.2", default-features = false, features = ["hooks", "cache"] }
 if-addrs = "0.15"
 # A screen model of an attached agent's terminal, so leaving it for the

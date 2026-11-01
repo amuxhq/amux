@@ -1,47 +1,62 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 8 recorded 7: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"nev…
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 11 recorded 10: input stdin-4
-  row    2 prompt:737464696e2d34 Prompt { text: [Text("Use your web search tool to look up the capital city of Australia, then reply with the city name only.")], steered: false }
+## 22 recorded 21: input 0x1a103d21cc9f4df28765b36283769981
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 25 recorded 24: fact Rpc method=item/started
-  row    3 rs_07b442cd94dce1af016ab72ebab0a087d2af0fc0f2bb07812a Thinking { text: "", open: true, duration_ms: None }
-  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
-## 27 recorded 26: fact Rpc method=item/completed
-  row    3 rs_07b442cd94dce1af016ab72ebab0a087d2af0fc0f2bb07812a Thinking { text: "", open: false, duration_ms: Some(7553) }
+## 51 recorded 50: fact Rpc method=item/started
+  composer Send activity=Some(Running { key: "exec-dbed62bb-c8a0-4478-88d7-c763627a150f" }) queue=[] underway=[] refused=[]
+## 53 recorded 52: fact Rpc method=item/completed
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 29 recorded 28: fact Rpc method=item/started
-  row    4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "", state: Running, result: "" } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-  composer Send activity=Some(Running { key: "exec-3c575a4d-c180-4758-8b39-f2031d36f615" }) queue=[] underway=[] refused=[]
-## 31 recorded 30: fact Rpc method=item/completed
-  row    4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded, result: "" } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 36 recorded 35: fact Rpc method=item/started
-  row    4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded, result: "" } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-  row    5 msg_07b442cd94dce1af016ab72ec00f3487d29c6b7163e5df4754 Prose { text: [], streaming: true, working_note: false }
-## 37 recorded 36: fact Rpc method=item/agentMessage/delta
-  row    5 msg_07b442cd94dce1af016ab72ec00f3487d29c6b7163e5df4754 Prose { text: [Text("Can")], streaming: true, working_note: false }
-## 39 recorded 38: fact Rpc method=item/agentMessage/delta
-  row    5 msg_07b442cd94dce1af016ab72ec00f3487d29c6b7163e5df4754 Prose { text: [Text("Canberra")], streaming: true, working_note: false }
-## 41 recorded 40: fact Rpc method=item/completed
-  row    5 msg_07b442cd94dce1af016ab72ec00f3487d29c6b7163e5df4754 Prose { text: [Text("Canberra")], streaming: false, working_note: false }
-## 47 recorded 46: fact Rpc method=turn/completed
-  row    4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded, result: "" } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-  row    6 turn:1 TurnEnd { duration_ms: Some(12885), failed: false }
+## 69 recorded 68: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 prompt:737464696e2d34 Prompt { text: [Text("Use your web search tool to look up the capital city of Australia, then reply with the city name only.")], steered: false }
-     3 rs_07b442cd94dce1af016ab72ebab0a087d2af0fc0f2bb07812a Thinking { text: "", open: false, duration_ms: Some(7553) }
-     4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded, result: "" } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-     5 msg_07b442cd94dce1af016ab72ec00f3487d29c6b7163e5df4754 Prose { text: [Text("Canberra")], streaming: false, working_note: false }
-     6 turn:1 TurnEnd { duration_ms: Some(12885), failed: false }
+     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     3 prompt:1a103d21cc9f4df28765b36283769981 Prompt { text: [Text("Use your web search tool to look up the capital city of Australia, then reply with the city name only.")], steered: false }
+     4 msg_0376c45f89b1dbae016ae5d77a42708191b0509053b4ff55e2 Prose { text: [Text("I’ll look it up.")], streaming: false, working_note: true }
+     5 exec-dbed62bb-c8a0-4478-88d7-c763627a150f Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded, result: "" } run[exec-dbed62bb-c8a0-4478-88d7-c763627a150f..exec-dbed62bb-c8a0-4478-88d7-c763627a150f x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+     6 msg_0376c45f89b1dbae016ae5d77d89f88191bccb309f6fbc69c2 Prose { text: [Text("Canberra")], streaming: false, working_note: false }
+     7 turn:1 TurnEnd { duration_ms: Some(6968), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 16447, window_tokens: Some(258400), percent: Some(6), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 19426, window_tokens: Some(475000), percent: Some(4), near_full: false }) sign-in None
 == settings
-  model* unlisted gpt-5.6-luna "GPT-5.6 Luna" efforts=[]
-  permission* unlisted custom "" "" unsettable
-  changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  model* gpt-6.1-sol "GPT-6.1-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-astra "GPT-6-Astra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6.1-terra "GPT-6.1 Terra" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-6-sol "GPT-6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-6-luna "GPT-6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  model  gpt-5.6-sol "GPT-5.6-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
+  model  gpt-5.6-terra "GPT-5.6-Terra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
+  model  gpt-5.6-luna "GPT-5.6-Luna" efforts=[low,medium,high,xhigh,max] default=medium
+  effort* low (default)
+  effort  medium
+  effort  high
+  effort  xhigh
+  effort  max
+  effort  ultra
+  permission* "read-only" "Read only"
+  permission  "default" "Default" normal
+  permission  "auto" "Auto"
+  permission  "full-access" "Full access" never_asks
+  mode  "default" "Default" normal
+  mode  "plan" "Plan"
+  changes: model Pick · effort Pick · permission Pick · mode Pick
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
-  controls: model=Some("GPT-5.6 Luna") effort=None permission=None mode=None
+  command /compact source="codex" hint="" "Summarize the conversation to free up context"
+  command /clear source="codex" hint="" "Start a new conversation"
+  command /review source="codex" hint="[instructions]" "Review the uncommitted changes, or what the instructions say"
+  command /init source="codex" hint="" "Write an AGENTS.md with instructions for Codex"
+  command /plan source="codex" hint="[prompt]" "Switch to plan mode"
+  command /autopilot source="user" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested."
+  command /delegate source="user" hint="" "Resolve or diagnose agent staffing by mapping a requested role and effort through the operator-owned roster to a mind and dispatch specification. Use when an agent or driver will dispatch work, or when a binding cannot launch. Do not use merely because ordinary work is being discussed or performed locally."
+  command /frontend-design source="user" hint="" "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.…
+  command /gardening source="user" hint="" "Review and improve an operator's Linear backlog with them. Use when the operator asks to garden, clean up, shape, deduplicate, or reassess tracked work. Do not invoke merely because Linear is available or ordinary work reveals a possible follow-up."
+  command /handoff source="user" hint="" "Independently verify and present finished work when an ordinary diff and focused checks are not enough to judge it, including third-party branches or pull requests. Use compact proof for easily judged behavior and a decision page for consequential or difficult work. Do not invoke at project start or impose a page on ordinary small changes."
+  command /intake source="user" hint="" "Align and confirm a durable acceptance contract for consequential work that must cross contexts. Use after the operator commits to work when several requirements, boundaries, or success demonstrations remain unsettled. Skip for exploration, one or two locally resolvable questions, and already-confirmed requirements."
+  command /imagegen source="system" hint="" "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the …
+  command /openai-docs source="system" hint="" "Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge—including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex—and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not u…
+  command /review-agent source="system" hint="" "Perform a read-only, defect-first review of a specified code change and return every actionable finding. Use when another agent delegates review of uncommitted changes, a base-branch diff, a commit, or custom review instructions."
+  command /skill-creator source="system" hint="" "Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources."
+  command /skill-installer source="system" hint="" "Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos)."
+  controls: model=Some("GPT-6.1-Sol") effort=Some("low") permission=Some("read-only") mode=None

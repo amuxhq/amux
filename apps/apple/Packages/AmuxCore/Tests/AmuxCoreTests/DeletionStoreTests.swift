@@ -27,10 +27,6 @@ private struct OneDeletion: CloudService, @unchecked Sendable {
         throw .unauthenticated
     }
 
-    func account(_ id: AccountId) async throws(CloudError) -> AccountFacts {
-        throw .unauthenticated
-    }
-
     func entitlement(_ id: AccountId) async throws(CloudError) -> Entitlement { .none }
 
     func recordPurchase(_ id: AccountId, signedTransaction: String) async throws(CloudError) {

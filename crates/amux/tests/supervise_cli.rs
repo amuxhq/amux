@@ -1,5 +1,5 @@
-//! The CLI around the supervisor, driving the real binary: the login units
-//! `amux init` writes, stop going to the owner in both install cells, a
+//! The CLI around the supervisor, driving the real binary: `amux init`
+//! declining a login item, stop going to the owner in both install cells, a
 //! client starting the supervisor only where the install has one, the sleep
 //! assertion, `amux update` and `amux config channel`.
 
@@ -12,58 +12,10 @@ use std::time::Duration;
 
 use node::release;
 use node::supervisor::SUPERVISOR_LOCK;
-use node::supervisor::login::LoginItem;
 use patience::{holds_for, until_within};
 use support::{Channel, PATIENCE, amux_binary};
 
 use crate::support;
-
-fn goldens() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/goldens/login")
-}
-
-fn golden(name: &str, actual: &str) {
-    let path = goldens().join(name);
-    if std::env::var_os("AMUX_UPDATE_GOLDENS").is_some() {
-        std::fs::create_dir_all(goldens()).unwrap();
-        std::fs::write(&path, actual).unwrap();
-        return;
-    }
-    let expected = std::fs::read_to_string(&path).unwrap_or_else(|_| {
-        panic!(
-            "{} is missing; AMUX_UPDATE_GOLDENS=1 writes it",
-            path.display()
-        )
-    });
-    assert_eq!(actual, expected, "{name} differs from its golden");
-}
-
-#[test]
-fn the_login_units_match_their_goldens() {
-    let item = LoginItem {
-        binary: Path::new("/Users/someone/.amux/bin/amux"),
-        config: Some(Path::new(
-            "/Users/someone/Library/Application Support/amux/config & more.toml",
-        )),
-        path: "/opt/homebrew/bin:/usr/bin:/bin",
-        log: Path::new("/Users/someone/.amux/supervisor.log"),
-    };
-    let launch_agent = item.launch_agent();
-    golden("sh.amux.supervise.plist", &launch_agent);
-    let unit = item.systemd_unit();
-    golden("amux.service", &unit);
-    let task = item.windows_task();
-    golden("amux-task.xml", &task);
-
-    // What keeps the agents alive and the supervisor coming back on
-    // failure only.
-    assert!(launch_agent.contains("<key>AbandonProcessGroup</key>\n\t<true/>"));
-    assert!(launch_agent.contains("<key>SuccessfulExit</key>\n\t\t<false/>"));
-    assert!(unit.contains("\nKillMode=process\n"));
-    assert!(unit.contains("\nRestart=on-failure\n"));
-    assert!(!unit.contains("Restart=always"));
-    assert!(task.contains("<LogonTrigger>") && task.contains("<RestartOnFailure>"));
-}
 
 /// A temporary install.
 struct Install {
@@ -331,41 +283,14 @@ async fn the_supervisor_holds_the_sleep_assertion_under_keep_awake() {
 }
 
 #[test]
-fn init_writes_a_login_item_that_runs_amux_supervise() {
+fn init_adds_no_login_item_when_declined_or_without_a_supervisor() {
     let install = Install::new(true, "");
-    let output = install.amux(&["init", "--login-item", "yes", "--dry-run"]);
-    let home = install.root.path().join("home");
-    let path = std::env::var("PATH").unwrap_or_default();
-    let item = LoginItem {
-        binary: amux_binary(),
-        config: Some(&install.config),
-        path: &path,
-        // The config resolves its root; the login item logs under it.
-        log: &settings::InstallationConfig::from_file(&install.config)
-            .unwrap()
-            .root
-            .join("supervisor.log"),
-    };
-    #[cfg(target_os = "macos")]
-    let (file, expected, registers) = (
-        home.join("Library/LaunchAgents/sh.amux.supervise.plist"),
-        item.launch_agent(),
-        "launchctl bootstrap gui/",
-    );
-    #[cfg(not(target_os = "macos"))]
-    let (file, expected, registers) = (
-        home.join(".config/systemd/user/amux.service"),
-        item.systemd_unit(),
-        "systemctl --user enable --now amux.service",
-    );
-    assert_eq!(std::fs::read_to_string(&file).unwrap(), expected);
-    assert!(stdout(&output).contains(registers), "{}", stdout(&output));
-
     let declined = install.amux(&["init", "--login-item", "no"]);
     assert!(stdout(&declined).contains("No login item"));
+    assert!(!install.root.path().join("home").exists());
 
     let without = Install::new(false, "");
-    let output = without.amux(&["init", "--login-item", "yes", "--dry-run"]);
+    let output = without.amux(&["init", "--login-item", "yes"]);
     assert!(
         stdout(&output).contains("no login item to add"),
         "{}",

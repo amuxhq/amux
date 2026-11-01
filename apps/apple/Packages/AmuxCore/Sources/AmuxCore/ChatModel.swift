@@ -193,16 +193,7 @@ public final class ChatModel {
     /// Told the draft as it stands each time it changes, so it can be kept
     /// past the session and the app: the phone's drafts live with its own
     /// daemon.
-    /// It carries the words of prompts held for a host that cannot be
-    /// reached too, ahead of what is typed: a held prompt goes back to the
-    /// draft if the phone closes before the host is back.
     @ObservationIgnored public var keeping: (@MainActor (Draft) -> Void)?
-    /// The prompts the chat holds for a host that cannot be reached, oldest
-    /// first, each as the draft it came from.
-    @ObservationIgnored private var heldDrafts: [(id: [UInt8], draft: Draft)] = []
-    /// Whether the chat holds a prompt for a host that cannot be reached:
-    /// its words are in the kept draft until it goes.
-    public var holdsPrompts: Bool { !heldDrafts.isEmpty }
     /// Attachments still being stored.
     public private(set) var uploading = 0
     /// A send or resume on its way.
@@ -440,7 +431,6 @@ public final class ChatModel {
                 frame.refused = []
             }
             self.frame = frame
-            keepHeld(frame)
         }
         if let moved = delta.ask {
             ask = moved.card
@@ -599,16 +589,11 @@ public final class ChatModel {
     }
 
     /// Sending waits for the rows to be current and the agent live; the draft
-    /// never does.
-    /// A chat that is not current still sends: the library holds the
-    /// prompt, drawn pending with Cancel, and sends it once it is.
+    /// never does. A chat that is not current sends nothing: the draft stays
+    /// in the composer, which says why, until the chat is current again.
     public var canSend: Bool {
         guard let frame, !sending, uploading == 0, hasDraft else { return false }
-        switch frame.composer.mode {
-        case .send: return frame.caughtUp
-        case .holds: return true
-        default: return false
-        }
+        return frame.composer.mode == .send && frame.caughtUp
     }
 
     public var canResume: Bool {
@@ -666,7 +651,7 @@ public final class ChatModel {
                 asks = .rename
             case .acted(let acted)?:
                 switch acted {
-                case .done, .held: if composed == typed { clearDraft() }
+                case .done: if composed == typed { clearDraft() }
                 case .rejected(let reason): notice = Self.notSent(reason)
                 case .failed(let reason): notice = reason
                 case .notConfirmed: notice = Self.notConfirmed
@@ -745,10 +730,6 @@ public final class ChatModel {
                 if composed == sent { clearDraft() }
                 setFollowing(true)
                 toNewest += 1
-            // The library holds it until the host is back, drawn pending
-            // with Cancel; the draft has gone with it.
-            case .held?:
-                if composed == sent { clearDraft() }
             case .rejected(let reason)?: notice = Self.notSent(reason)
             case .failed(let reason)?: notice = reason
             case .notConfirmed?: notice = Self.notConfirmed
@@ -859,38 +840,16 @@ public final class ChatModel {
     }
 
     private func keepDraft() {
-        var kept = (words: draft, attachments: attachments)
-        for held in heldDrafts.reversed() {
-            kept = Self.restoring(held.draft, onto: kept)
-        }
-        keeping?(Draft(words: kept.words, attachments: kept.attachments))
+        keeping?(Draft(words: draft, attachments: attachments))
     }
 
-    /// Keeps the draft again when the prompts held for an unreachable host
-    /// changed: one newly held joins it, one released and sent, or taken
-    /// back into the composer, leaves it.
-    private func keepHeld(_ frame: ChatFrame) {
-        let held = frame.underway.filter { $0.underway == .held }.map(\.inputId)
-        guard held != heldDrafts.map(\.id) else { return }
-        heldDrafts = held.compactMap { id in source.draft(of: id).map { (id: id, draft: $0) } }
-        keepDraft()
-    }
-
-    private func restore(_ sent: Draft) {
-        (draft, attachments) = Self.restoring(sent, onto: (draft, attachments))
-    }
-
-    /// A draft's words and attachments put back ahead of what the composer
+    /// Puts a draft's words and attachments back ahead of what the composer
     /// holds.
-    private static func restoring(
-        _ sent: Draft, onto composer: (words: String, attachments: [DraftAttachment])
-    ) -> (words: String, attachments: [DraftAttachment]) {
+    private func restore(_ sent: Draft) {
         let words = sent.words
         let joined =
-            if composer.words.isEmpty { words } else if words.isEmpty { composer.words } else {
-                words + "\n" + composer.words
-            }
-        return (joined, (sent.attachments ?? []) + composer.attachments)
+            if draft.isEmpty { words } else if words.isEmpty { draft } else { words + "\n" + draft }
+        (draft, attachments) = (joined, (sent.attachments ?? []) + attachments)
     }
 
     /// Whether an attachment this large may be stored. One over the limit is
@@ -986,20 +945,6 @@ public final class ChatModel {
         source.discard(input)
     }
 
-    /// Takes back a prompt held while its host could not be reached: it
-    /// never left, so its words and attachments return to the draft.
-    public func cancelHeld(_ input: [UInt8]) {
-        if let held = source.draft(of: input) { restore(held) }
-        discard(input)
-    }
-
-    /// Takes back an answer held while its host could not be reached; the
-    /// card opens again to be answered.
-    public func cancelHeldAnswer() {
-        guard let input = frame?.askInput else { return }
-        discard(input)
-    }
-
     /// A prompt the agent refused, back into the draft with the reason
     /// said: its words and attachments to change and send again.
     private func takeBack(_ refused: RefusedPrompt) {
@@ -1021,7 +966,7 @@ public final class ChatModel {
         case .exited: String(localized: "it had exited")
         case .exiting: String(localized: "it was exiting")
         case .draining: String(localized: "its host is shutting down")
-        case .hostUnreachable: String(localized: "its host can’t be reached")
+        case .hostUnreachable: String(localized: "its host is away")
         case .unsupported: String(localized: "this agent can’t take it")
         case .closedAsk: String(localized: "the ask had already closed")
         case .notQueued: String(localized: "it was no longer queued")
@@ -1122,9 +1067,6 @@ public final class ChatModel {
             let outcome = await body(source)
             switch outcome {
             case .done?: done?()
-            // Held by the library until the host is back; what holds it says
-            // so, with Cancel.
-            case .held?: break
             case .rejected(let reason)?: notice = Self.notSent(reason)
             case .failed(let reason)?: notice = reason
             case .notConfirmed?:

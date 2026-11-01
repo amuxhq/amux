@@ -13,6 +13,7 @@
 pub mod body;
 mod fleet;
 mod inputs;
+mod model;
 mod session;
 mod transcript;
 
@@ -22,8 +23,7 @@ pub use fleet::{
     exit_cause, exit_words, parent_key,
 };
 pub use inputs::{
-    InputId, InputOutcome, InputState, InputWhat, Inputs, Refusal, RefusalReason, SentInput,
-    refusal, refusal_reason,
+    InputId, InputOutcome, InputState, InputWhat, Inputs, Refusal, SentInput, refusal,
 };
 pub use model::Key;
 pub use session::{

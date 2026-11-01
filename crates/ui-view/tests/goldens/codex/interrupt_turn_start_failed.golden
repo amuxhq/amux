@@ -1,18 +1,12 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 2 input {"id":"p1","prompt":{"text":"Deploy it."}}
-  row    2 prompt:7031 Prompt { text: [Text("Deploy it.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 4 fact {"channel":"rpc","json":{"error":{"code":-32600,"message":"model gpt-5.6 is not available"},"id":"amux-1"}}
-  row    3 error:rpc:amux-1 Error { error_kind: "request", message: "model gpt-5.6 is not available", attempts: 0, gave_up: true } attention
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 5 input {"id":"p2","prompt":{"text":"Summarise the plan."}}
-  row    4 prompt:7032 Prompt { text: [Text("Summarise the plan.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 8 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-2","status":"completed"}}}}
-  row    5 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

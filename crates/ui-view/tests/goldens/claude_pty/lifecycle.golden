@@ -1,11 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 3 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 4 input {"id":"p1","prompt":{"text":"test it"}}
-  composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 49], text: [Text("test it")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
+  composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 49], text: [Text("test it")], lands: Feed, underway: Sending { waiting: false } }] refused=[]
 ## 5 fact {"channel":"transcript","json":{"message":{"content":"test it","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
-  row    2 u1 Prompt { text: [Text("test it")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 6 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"cargo test"},"tool_name":"Bash","tool_use_id":"t1"}}
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
@@ -14,10 +11,7 @@
     choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
     body Command { command: "cargo test", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 9 daemon_lost {}
-  row    3 boundary:2 Boundary { kind: DaemonLost, cause: "" }
 ## 11 exiting "stopped"
-  row    4 boundary:3 Boundary { kind: Exited, cause: "stopped" }
   ask none
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

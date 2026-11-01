@@ -8,7 +8,7 @@ use support::*;
 use ui_runtime::{
     DriverEvent, InputError, PageError, Session, TRACE_EVENTS, TRANSCRIPT_DUMP, TraceEvent,
 };
-use ui_state::{Composer, Connection, InputOutcome, InputState, Refusal, RefusalReason, Waiting};
+use ui_state::{Composer, Connection, InputOutcome, InputState, Refusal, Waiting};
 use wire::{
     ErrorCode, GetBlobResponse, Input, Kind, ListItemsResponse, SendInputRequest, claude_pty_input,
     claude_sdk_input, codex_input,
@@ -73,7 +73,11 @@ async fn open_paints_the_snapshot_and_held_rows_before_it_returns() {
         ManualClock::new(0),
     ));
     let (request, feed) = calls.subscribe_session().await;
-    assert_eq!(request.tail, 40, "a client asks for a tail");
+    assert_eq!(
+        request.from,
+        Some(wire::subscribe_session_request::From::Tail(40)),
+        "a client asks for a tail"
+    );
     feed.send(snapshot(KIND, 7, &[]));
     feed.send(ev(text_item(KIND, 6, 6, "older")));
     feed.send(ev(text_item(KIND, 7, 7, "newest")));
@@ -83,7 +87,7 @@ async fn open_paints_the_snapshot_and_held_rows_before_it_returns() {
         assert!(state.has_snapshot());
         assert_eq!(state.transcript().len(), 2, "held rows are applied");
         assert!(!state.caught_up(), "the origin has not been reached");
-        assert_eq!(state.composer(), Composer::Holds(Waiting::CatchingUp));
+        assert_eq!(state.composer(), Composer::Waiting(Waiting::CatchingUp));
     }
     feed.send(caught_up(7));
     until(session.changed(), || {
@@ -112,7 +116,7 @@ async fn an_away_host_paints_its_held_rows_then_detached_with_send_disabled() {
     let state = session.state();
     assert_eq!(state.transcript().len(), 2, "the rows stay");
     assert!(!state.can_send());
-    assert_eq!(state.composer(), Composer::Holds(Waiting::Detached));
+    assert_eq!(state.composer(), Composer::Waiting(Waiting::Detached));
 }
 
 #[tokio::test]
@@ -121,7 +125,10 @@ async fn lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap() {
     let (session, mut calls, feed) = open_caught_up(&clock, 3).await;
     feed.send(lagged());
     let (request, feed) = calls.subscribe_session().await;
-    assert_eq!(request.tail, 40);
+    assert_eq!(
+        request.from,
+        Some(wire::subscribe_session_request::From::Tail(40))
+    );
     assert!(clock.sleeping().is_empty(), "no backoff after Lagged");
     assert!(!session.state().caught_up());
     assert_eq!(session.state().connection(), Connection::Live);
@@ -426,7 +433,7 @@ async fn acts_on_the_chat_go_in_the_kinds_own_arm_and_return_the_verdict() {
             let expected = match &verdict {
                 Ok(response) if *response == accepted(false) => Ok(()),
                 Ok(_) => Err(InputError::Rejected(Refusal::of(
-                    RefusalReason::Unsupported,
+                    wire::Refusal::Unsupported,
                 ))),
                 Err(_) => Err(InputError::Uncertain),
             };
@@ -494,7 +501,7 @@ async fn a_send_that_raced_the_exit_is_rejected_and_the_composer_offers_resume()
     let sent = sending.await.unwrap();
     assert_eq!(
         session.state().input_state(&sent.id),
-        Some(InputState::Rejected(Refusal::of(RefusalReason::Exited)))
+        Some(InputState::Rejected(Refusal::of(wire::Refusal::Exited)))
     );
     assert_eq!(session.state().composer(), Composer::Resume);
 }
@@ -519,7 +526,7 @@ async fn a_refused_call_is_a_rejection_never_uncertain() {
     assert_eq!(
         session.state().input_state(&sent.id),
         Some(InputState::Rejected(Refusal {
-            reason: RefusalReason::Unspecified,
+            reason: wire::Refusal::Unspecified,
             detail: Some("no such agent".into()),
         }))
     );
@@ -640,7 +647,9 @@ async fn closing_drops_the_stream_and_a_late_result_changes_nothing() {
     let session = open.await.unwrap().unwrap();
     assert_eq!(session.blob(b"hash-1"), None);
     let (_, reply) = calls.get_blob().await;
-    session.close();
+    // Dropping the session drops its stream; a call still in flight
+    // changes nothing.
+    drop(session);
     tokio::time::timeout(PATIENCE, async {
         while !feed.is_closed() {
             tokio::task::yield_now().await;
@@ -734,7 +743,10 @@ async fn a_following_window_trims_to_its_cap_and_a_return_past_the_held_rows_rel
     // window on screen until the fresh one is caught up.
     session.follow(true);
     let (request, fresh) = calls.subscribe_session().await;
-    assert_eq!(request.tail, 3);
+    assert_eq!(
+        request.from,
+        Some(wire::subscribe_session_request::From::Tail(3))
+    );
     assert!(feed.is_closed(), "the old stream is dropped");
     fresh.send(snapshot(KIND, 9, &[]));
     for order in 7..=9 {
@@ -806,29 +818,26 @@ async fn a_return_whose_held_rows_fit_releases_them_without_a_fetch() {
     assert!(!feed.is_closed());
 }
 
-// --- decided: sends the host never received are held -------------------------
+// --- decided: sends the host never received are refused ----------------------
 
 /// Decided: an input the runtime refused before it was written, because the
-/// agent's host could not be reached, certainly never left. The client
-/// library holds it as pending (visible, with Cancel), and once the host is
-/// reachable again sends it once more under the same id. Covers a prompt
-/// and an ask answer; a stop is held the same way once it goes through the
-/// library.
+/// agent's host could not be reached, never left. It is refused like any
+/// other, and nothing sends it again once the host is back: the person
+/// sends it again if they want it. Covers a prompt and an ask answer.
 #[tokio::test]
-async fn an_input_refused_because_the_host_was_unreachable_is_held_and_sent_again_with_its_id() {
+async fn an_input_refused_because_the_host_was_unreachable_is_refused_and_never_sent_again() {
     for act in ["prompt", "answer"] {
         let clock = ManualClock::new(0);
         let (session, mut calls, feed) = open_caught_up(&clock, 2).await;
-        let _sending = tokio::spawn({
+        let sending = tokio::spawn({
             let session = session.clone();
             async move {
                 match act {
                     "prompt" => {
                         session.send_prompt("hello", Vec::new()).await;
+                        None
                     }
-                    _ => {
-                        let _ = session.answer(answering(KIND)).await;
-                    }
+                    _ => session.answer(answering(KIND)).await.err(),
                 }
             }
         });
@@ -837,18 +846,15 @@ async fn an_input_refused_because_the_host_was_unreachable_is_held_and_sent_agai
         reply
             .send(Ok(rejected(wire::Refusal::HostUnreachable)))
             .ok();
-        // The verdict lands; the input is held, not rejected.
-        let held = until(session.changed(), || {
-            session
-                .state()
-                .input_state(&id)
-                .filter(|state| *state != InputState::Sent)
-        })
-        .await;
+        let refusal = Refusal::of(wire::Refusal::HostUnreachable);
+        let error = sending.await.unwrap();
+        if act == "answer" {
+            assert_eq!(error, Some(InputError::Rejected(refusal.clone())));
+        }
         assert_eq!(
-            held,
-            InputState::Held,
-            "{act}: an input that never left is held"
+            session.state().input_state(&id),
+            Some(InputState::Rejected(refusal)),
+            "{act}: an input that never left is refused"
         );
         // The host comes back: the chat reconnects and catches up.
         let feed = reconnect(&clock, &session, &mut calls, feed).await;
@@ -859,18 +865,9 @@ async fn an_input_refused_because_the_host_was_unreachable_is_held_and_sent_agai
             session.state().caught_up().then_some(())
         })
         .await;
-        let again = tokio::time::timeout(std::time::Duration::from_secs(1), calls.next()).await;
-        match again {
-            Ok(Call::SendInput(request, reply)) => {
-                assert_eq!(
-                    request.input.unwrap().input_id,
-                    id,
-                    "{act}: the held input is sent again under its own id"
-                );
-                reply.send(Ok(accepted(false))).ok();
-            }
-            Ok(other) => panic!("{act}: expected the held input again, got {other:?}"),
-            Err(_) => panic!("{act}: the held input was never sent again once the host was back"),
+        let again = tokio::time::timeout(std::time::Duration::from_millis(200), calls.next()).await;
+        if let Ok(Call::SendInput(request, _)) = again {
+            panic!("{act}: the refused input went again: {request:?}");
         }
         drop(feed);
     }

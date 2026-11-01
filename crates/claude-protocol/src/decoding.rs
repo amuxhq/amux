@@ -75,9 +75,3 @@ pub(crate) fn strict<T>(
         Err(Drift::Unknown { kind, reasons })
     }
 }
-
-/// One object as a line, keys in sorted order.
-pub(crate) fn encode(value: &impl serde::Serialize) -> Vec<u8> {
-    let value = serde_json::to_value(value).expect("protocol types serialize");
-    serde_json::to_vec(&value).expect("a JSON value serializes")
-}

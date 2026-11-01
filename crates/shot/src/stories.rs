@@ -23,16 +23,16 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
-use interpret::{Replayed, replay};
+use interpret::{Committer, Replayed, replay};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use serde::Deserialize;
+use settings::ChatInSetting;
 use tui::Theme;
 use tui::chat::ChatView;
 use tui::chat::review::ReviewPage;
 use tui::report::Report;
-use tui::sessions::{Committer, agent, caught_up};
-use tui::setup::ChatIn;
+use tui::sessions::{agent, caught_up};
 use tui::vocabulary::{ChatScene, HomeScene};
 use ui_state::{Connection, FleetMsg, FleetState, InputOutcome, Msg, PhaseView, SessionState};
 use wire::Kind;
@@ -104,7 +104,7 @@ impl Scene {
             Scene::Report(under) => {
                 under.draw(frame, area, theme);
                 let frozen = frame.buffer_mut().clone();
-                Report::without_dump(frozen, theme).draw(frame, area, theme);
+                Report::new(frozen, theme, None).draw(frame, area, theme);
             }
         }
     }
@@ -172,7 +172,7 @@ pub fn all() -> Vec<Story> {
         }),
         story("new-agent.terminal", || {
             let mut home = tui::vocabulary::authored_home();
-            home.chat_in = ChatIn::Native;
+            home.home.place.chat_in = ChatInSetting::Native;
             home.key(KeyCode::Char('n'));
             Scene::Home(Box::new(home))
         }),
@@ -193,7 +193,7 @@ pub fn all() -> Vec<Story> {
         story("chat.queued", || {
             chat(Kind::ClaudeSdk, "recorded_steer_folded", Pick::Queued)
         }),
-        story("chat.away", held_while_away),
+        story("chat.away", draft_while_away),
         story("chat.exited", exited_with_a_draft),
         story("chat.signed-out", || {
             chat(Kind::ClaudeSdk, "recorded_sign_in_problem", Pick::Last)
@@ -333,7 +333,7 @@ fn recorded(kind: Kind, fixture: &str, pick: Pick) -> ChatScene {
     }
 }
 
-fn held_while_away() -> Scene {
+fn draft_while_away() -> Scene {
     let mut scene = recorded(Kind::ClaudeSdk, "recorded_multi_turn", Pick::Last);
     scene.state.update(Msg::Host(wire::HostEntry {
         host: Some(wire::Host {
@@ -346,15 +346,12 @@ fn held_while_away() -> Scene {
     scene.state.update(Msg::Event(wire::SessionEvent {
         of: Some(wire::session_event::Of::Detached(wire::Detached {})),
     }));
-    scene.state.update(Msg::Send(wire::Input::new(
-        b"held".to_vec(),
-        wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
-                text: "Now say the word back to me.".into(),
-                attachments: vec![],
-            })),
-        }),
-    )));
+    let theme = Theme::dark(tui::ColorMode::TrueColor);
+    for c in "Now say the word back to me.".chars() {
+        scene
+            .view
+            .key(&scene.state, KeyEvent::from(KeyCode::Char(c)), theme);
+    }
     Scene::Chat(Box::new(scene))
 }
 
@@ -448,11 +445,10 @@ fn first_run() -> HomeScene {
     }
     fleet.update(FleetMsg::Connection(Connection::Live));
     HomeScene {
-        home: tui::home::Home::default(),
+        home: tui::vocabulary::desk_home(),
         fleet,
         lines: Default::default(),
         now: 1_800_000_000_000,
-        chat_in: ChatIn::Amux,
     }
 }
 

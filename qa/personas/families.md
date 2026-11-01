@@ -17,7 +17,7 @@ that spawns workers on other machines, sends them messages, and waits for their 
 - A lead agent on Haiku told, in exact words, to use amux's tools (see AGENTS-GUIDE.md): spawn a Codex child on
   laptop, send it a message, report back.
 - Faults while the family works: `ctl sever desk laptop` while a child is reporting, `ctl kill box` while a
-  child there works, `ctl refuse-calls desk laptop on` to make calls fail while links stay up.
+  child there works.
 - The phone and the terminal client both watching the family.
 
 ## What would make them unhappy

@@ -6,8 +6,10 @@ amux has two rich clients, the terminal client ([TERMINAL.md](TERMINAL.md)) and 
 ([IOS.md](IOS.md)). Both are thin shells over one Rust library: a pure model of an open chat and of the fleet,
 a driver that owns the streams and does every piece of I/O, and a set of views that turn the model into plain
 content values. Each client composes those values in its own layout and owns only what is ephemeral: panes,
-scroll position, focus, drafts and which rows are expanded. A client hands its unsent drafts to its own machine's
-daemon (`UpdateDraft`, `GetDraft`) so a draft outlives the client; they never leave that machine. A deleted
+scroll position, focus, drafts and which rows are expanded. A client hands its unsent drafts to the fleet driver, which keeps them
+with its own machine's daemon (`UpdateDraft`, `GetDraft`) so a draft outlives the chat and the client; they never
+leave that machine. Saves to one agent go in order, the newest winning, and a chat reads its draft only after them,
+so one reopened at once finds what was left in it. A deleted
 agent's draft goes with it: the daemon forgets it when the agent is deleted (its children too) or removed by
 retention, here or on the host that ran it, and the terminal client saves nothing for a chat that closed because
 its agent was deleted.
@@ -29,19 +31,18 @@ Three rules shape the library:
 | Crate | What it owns |
 |---|---|
 | [`client`](../crates/client/src/lib.rs) | The `Client` trait: the one seam both clients call the runtime through, with a gRPC implementation over the profile socket and an in-process one for the phone. |
-| [`model`](../crates/model/src/lib.rs) | Plain shared values: `Key`, `AgentKey`, `Attention`, `Connection`, `BlobStatus`, `Composer`, `Waiting`, `PhaseView`, `Activity`, `InputState`. The Swift mirrors are generated from these. |
-| [`ui-state`](../crates/ui-state/src/lib.rs) | `SessionState` (one open chat) and `FleetState` (the inventory), updated by messages. No I/O, no clock, no handles. |
+| [`ui-state`](../crates/ui-state/src/lib.rs) | `SessionState` (one open chat) and `FleetState` (the inventory), updated by messages. No I/O, no clock, no handles. Also the plain shared values ([`model.rs`](../crates/ui-state/src/model.rs)): `Key`, `AgentKey`, `Attention`, `Connection`, `BlobStatus`, `Composer`, `Waiting`, `PhaseView`, `Activity`, `InputState`, from which the Swift mirrors are generated. |
 | [`ui-view`](../crates/ui-view/src/lib.rs) | Pure functions from the state to content values: chat rows, the ask card, the composer and overview, the settings view, fleet rows and cards, the review document. |
 | [`ui-runtime`](../crates/ui-runtime/src/lib.rs) | The drivers, `Session` and `Fleet`: subscribe, reconnect, page, send, fetch blobs, and keep a bounded trace for dumps. The fleet holds the one session each live agent has. The only place a chat does I/O. |
-| [`replay-support`](../crates/replay-support/src/lib.rs) | Replaying a dump bundle through the interpreter, the session state and the views, and replaying recorded provider traffic for the provider spec crates. |
+| [`replay-support`](../crates/replay-support/src/lib.rs) | Replaying a dump bundle through the interpreter, the session state and the views. |
 | [`redaction`](../crates/redaction/src/lib.rs) | The structural redactor for free text and JSON in reports, captures and specs. |
 
 The terminal client ([`tui`](../crates/tui/src/lib.rs)) and the phone's runtime
 ([`app-runtime`](../crates/app-runtime/src/lib.rs)) sit on top. The dependency policy
-(`scripts/check-dependency-policy.py`, run by `just dependency-policy`) holds the shape: `model`, `client`,
+(`scripts/check-dependency-policy.py`, run by `just dependency-policy`) holds the shape: `client`,
 `ui-state`, `ui-view`, `ui-runtime`, `tui` and `app-runtime` may not link the daemon (`node`), its `store`, the
 interpreters (`interpret`), the agent process (`agent`) or any provider crate, directly or through another crate.
-Among amux's own crates, `ui-state` links only `model` and `wire`; `ui-view` adds `attachments`; `ui-runtime`
+Among amux's own crates, `ui-state` links only `wire`; `ui-view` adds `attachments`; `ui-runtime`
 adds `client` and `ui-view`, whose fleet line decides when a session wakes home.
 
 Every value the views return for drawing derives `Serialize` and `JsonSchema`. The phone receives them as JSON over the C
@@ -88,7 +89,7 @@ parts:
 - **The entry and host.** The agent's inventory row (lifecycle, phase, incarnation, exit cause and its detail)
   and its host's entry, both fed from the fleet.
 - **`AgentState`**, the newest snapshot decoded. [`body.rs`](../crates/ui-state/src/body.rs) is the thin
-  per-kind layer: `decode_snapshot` reads a `ClaudePtySnapshot`, `ClaudeSdkSnapshot` or `CodexSnapshot` into one
+  per-kind layer: `decode_snapshot` reads a `ClaudeSnapshot` (either Claude kind) or a `CodexSnapshot` into one
   shape (phase, queue, working-on, open asks, model and its display name, effort, mode, sandbox, the
   catalogue's hash, tasks, context, usage, tool servers, sign-in, background jobs, running calls). The offered
   models and commands come from the catalogue the snapshot names. The driver reads it as a blob, `GetBlob` with the
@@ -188,8 +189,7 @@ The state answers the questions every client asks, so no client re-derives them:
 | Method | Answer |
 |---|---|
 | `can_send()` | Caught up, and the entry does not say exited. Drafting is never gated. |
-| `composer()` | `Send`; `Resume` for an exited agent (the draft becomes the next incarnation's first prompt); or `Holds(Waiting)` with `CatchingUp`, `Detached` or `Reconnecting`: the chat is not current, and a send is held until it is. |
-| `held()` | This client's inputs held until the host is back, drawn pending with Cancel. |
+| `composer()` | `Send`; `Resume` for an exited agent (the draft becomes the next incarnation's first prompt); or `Waiting(Waiting)` with `CatchingUp`, `Detached` or `Reconnecting`: the chat is not current, so nothing sends and the draft stays in the composer. |
 | `phase()` | `PhaseView`: lifecycle from the entry, everything else from the snapshot. |
 | `open_asks()` | The asks to draw, head first. Before CaughtUp an ask is drawn only if the entry says needs-you, so an ask answered on another device does not flash from a cached snapshot and vanish. |
 | `activity(now_ms)` | The activity line, derived from the newest items and the phase (see [the chat vocabulary](CHAT_VOCABULARY.md)). |
@@ -214,21 +214,18 @@ Each input this client sends becomes a `SentInput` with an `InputState`:
 | `Settled` | Accepted and, for a prompt, reflected by an item carrying its input id. |
 | `Rejected(refusal)` | The verdict was a rejection: a `Refusal` holding the typed reason and the provider's own words when it gave any. A rejection never touches the transcript. |
 | `Uncertain` | The connection dropped before a reply. |
-| `Held` | A prompt or answer that certainly never left: sent while the chat was not current, or refused with `REFUSAL_HOST_UNREACHABLE`. The client holds it, shown pending with Cancel. |
 
 An uncertain input is resolved only at the next CaughtUp: found in the snapshot's queue it is queued; found among
 the items it is settled; found in neither it stays uncertain and the person decides to resend or discard it.
 Nothing uncertain is resent automatically: it may have reached the agent (handed to the provider and not yet
 reflected looks the same as never arrived), and agents do not drop a person's input sent twice.
 
-A held input is different: it never left, so the state releases it at the next CaughtUp, or when the agent's host
-entry turns online again while the chat is current. Each one is `Sent` again from that moment and listed in the
-update's `Outcome::resend`, and the driver sends it under its own id. One already reflected or queued is settled
-instead. Only prompts and answers are held: an interrupt, a withdraw, a send-now or a setting sent later would act
-on whatever the agent is doing then, so those are refused at once with the reason. Discarding a held input is its
-Cancel. Held inputs live as long as the client: when the client closes, a held prompt's words go back to its
-draft and a held answer is dropped. A rejection with the refusal `REFUSAL_EXITED` flips the composer to Resume for that
-incarnation, so a send that raced the exit keeps its draft.
+Nothing is ever sent later on the client's own initiative. While the chat is not current a client sends
+nothing: the words stay in the composer, whose top edge says why, and the daemon-kept draft keeps them as it
+keeps anything typed. A send the daemon refuses with `REFUSAL_HOST_UNREACHABLE` never left either: it is
+`Rejected` like any other refusal, its words go back to the composer, and the composer says the host is away;
+it goes when the person sends it again. A rejection with the refusal `REFUSAL_EXITED`
+flips the composer to Resume for that incarnation, so a send that raced the exit keeps its draft.
 
 ### The fleet state
 
@@ -276,8 +273,8 @@ host, and from its replica for another host's agent even while that host is away
 | `withdraw(queued)`, `send_now(queued)` | Take a queued prompt back, or steer it into the running turn. |
 | `answer(input)` | Answer an ask with the input `ui_view::answer_input` built. Any open ask can be answered. |
 | `interrupt()` | Interrupt the turn; the agent stays live and idle. |
-| `switch_back()` | Takes terminal Claude's own view back to the agent's conversation after it switched to another; never held. |
-| `rename(name)` | amux's rename, never held: an unreachable host fails it at once with its reason. |
+| `switch_back()` | Takes terminal Claude's own view back to the agent's conversation after it switched to another. |
+| `rename(name)` | amux's rename: an unreachable host fails it at once with its reason. |
 | `discard(id)` | Forget an input that was not confirmed. |
 | `blob(hash)`, `fetch_blob(hash)`, `put_blob(name, mime, bytes)` | Attachment bytes; see [attachments](#attachments). |
 | `working_tree_review()` | The agent's working-tree `Diff` and the patch it names, for a review page. |
@@ -286,8 +283,8 @@ host, and from its replica for another host's agent even while that host is away
 | `trace()`, `history()` | The bounded trace, and the same in the form a dump carries it. |
 | `close()` | Drops the stream. Nothing is flushed; results of calls still in flight change nothing. |
 
-The acts that wait on the agent return `InputError::Rejected(refusal)`, `InputError::Uncertain`, or
-`InputError::Held` (it never left and goes when the host is back) when they do not take effect. `page_older` returns `PageError::OriginUnreachable` when older history is held only by the
+The acts that wait on the agent return `InputError::Rejected(refusal)` or `InputError::Uncertain` when they do
+not take effect. `page_older` returns `PageError::OriginUnreachable` when older history is held only by the
 agent's host and that host cannot be reached; the chat says so rather than showing an empty page.
 
 **The pump.** A background task reads the stream. `Lagged` means the runtime closed the stream because this
@@ -420,12 +417,12 @@ so the first render is correct at once. CaughtUp follows at once
 if the runtime's source for that agent is current, or after the delta if it is catching up; live events follow.
 
 - The header always paints from the inventory entry and host presence.
-- The composer takes a draft at any time, and Send is always offered. While the chat is not current (before
-  CaughtUp, after Detached, or reconnecting to the runtime) the composer is `Holds`: a prompt or answer sent then
-  is held, pending with Cancel, and goes by itself once the chat catches up.
+- The composer takes a draft at any time. While the chat is not current (before CaughtUp, after Detached, or
+  reconnecting to the runtime) the composer is `Waiting`: Send sends nothing, the draft stays where it is, and
+  the composer's edge says why; once the chat catches up the same Send sends it.
 - An agent with no rows yet arrives as a Snapshot with no items. The client shows a loading hint after 300 ms
   (`LOADING_HINT_MS` in the terminal, `loadingHintDelay` on the phone) until the tail lands.
-- Losing the host mid-chat arrives as Detached: the header changes, sends are held, the rows stay. When the
+- Losing the host mid-chat arrives as Detached: the header changes, sending waits, the rows stay. When the
   runtime's source reconnects, the delta or a Reset follows under the same rules; the client does nothing.
 - A deleted agent's session reports `ended()`, and the client closes it to the fleet. The fleet is home: no
   client reopens a chat on its own.
@@ -445,7 +442,8 @@ lands: at the feed's end while the agent is idle with nothing queued, otherwise 
 remembers that place, and `prompts_underway` draws each prompt there until the agent's queue or transcript
 holds it, so it does not jump as the agent starts work. A prompt the connection dropped, which catching up
 found neither queued nor in the transcript, reads "may not have arrived" with resend and discard.
-`refused_prompts` lists the ones the agent refused; the words go back to the composer with the reason.
+`refused_prompts` lists the ones the agent or its host refused; the words go back to the composer with the
+reason, which for a host that could not be reached is that the host is away.
 
 When the entry says exited, the composer is `Resume`: the draft goes through `resume_with` as the next
 incarnation's first prompt, one tap.
@@ -617,18 +615,16 @@ session's window, with a row handed over for every changed key the host held and
 
 ## Replay and redaction
 
-[`replay-support`](../crates/replay-support/src/lib.rs) serves two purposes.
-
-- **Dump bundles.** [`bundle.rs`](../crates/replay-support/src/bundle.rs) opens a bundle the daemon wrote and
-  replays its stages: `AgentDump::replay_facts` runs the agent's facts ring through its interpreter
-  from the checkpoint at the oldest segment (compare the result with the journal the bundle also carries);
-  `AgentDump::session` feeds the store slice through `SessionState` exactly as a Subscribe opening delivers it
-  (snapshot, held rows, CaughtUp); `AgentDump::rows` renders that state through `chat_rows`. An interpreter bug
-  reproduces from the facts, a client bug from the slice. `Bundle::replay_all` (in `replay.rs`, and the
-  `dump-replay` binary) runs all four stages, the daemon core's among them, with the properties judged at every
-  step; see [Debugging](DEBUGGING.md#replaying-a-dump).
-- **Recorded provider traffic.** `ReplayTransport`, `strict_replay`, recording manifests and probes let the
-  provider spec crates (`claude-specs`, `codex-specs`) replay captured sessions byte for byte.
+[`replay-support`](../crates/replay-support/src/lib.rs) replays dump bundles.
+[`bundle.rs`](../crates/replay-support/src/bundle.rs) opens a bundle the daemon wrote and replays its stages:
+`AgentDump::replay_facts` runs the agent's facts ring through its interpreter from the checkpoint at the oldest
+segment (compare the result with the journal the bundle also carries); `AgentDump::session` feeds the store slice
+through `SessionState` exactly as a Subscribe opening delivers it (snapshot, held rows, CaughtUp);
+`AgentDump::rows` renders that state through `chat_rows`. An interpreter bug reproduces from the facts, a client
+bug from the slice. `Bundle::replay_all` (in `replay.rs`, and the `dump-replay` binary) runs all four stages, the
+daemon core's among them, with the properties judged at every step; see [Debugging](DEBUGGING.md#replaying-a-dump).
+Recorded provider traffic (the recording manifests, sanitizing and the capture plumbing both probes share) is the
+live lane's, in `qualification::recording`.
 
 [`redaction`](../crates/redaction/src/lib.rs) is the structural redactor for everything that is not a per-kind
 body: `redact_value` for JSON and `redact_text` for free text replace secrets, machine paths, emails and the local
@@ -640,10 +636,10 @@ only code that can decode them.
 
 | Where | What it holds | Run |
 |---|---|---|
-| `crates/ui-state/tests/spec/` | The session and fleet model: window rules, runs against `RunIndex::rebuild`, inputs and uncertainty, asks before CaughtUp, the activity line, opening, snapshots, the fleet, and properties: arrival-order independence, and catch-up plus live equal to uninterrupted delivery at every cut. | `just test-ui` |
+| `crates/ui-state/tests/spec/` | The session and fleet model: window rules, runs against `RunIndex::rebuild`, inputs and uncertainty, asks before CaughtUp, the activity line, opening, snapshots, the fleet, and properties: arrival-order independence, and catch-up plus live equal to uninterrupted delivery at every cut. | `just suite client-model-spec` |
 | `crates/ui-view/tests/` | View goldens replayed from every interpreter fixture of all three kinds (`goldens.rs`), authored goldens, row invariants over random windows (`views.rs`), and the interpreter accepting each card's answers (`answers.rs`). Rewrite goldens with `UI_VIEW_UPDATE_GOLDENS=1` and review the diff. | `just test-crate ui-view` |
 | `crates/ui-runtime/tests/` | The drivers against an in-memory runtime whose every answer and clock tick the test controls (opening, reconnect and re-tail, uncertain inputs, paging, blobs, traces and dump parts), and against a real daemon in process running an agent on a fake provider, through both clients. | `just test-crate ui-runtime` |
 | `crates/client/tests/seam.rs` | Both `Client` implementations answer alike against one real daemon. | `just test-crate client` |
-| `crates/replay-support/tests/` | Real dump bundles replayed through their four stages, and strict replay of recordings. | `just test-crate replay-support` |
+| `crates/replay-support/tests/` | Dump bundles a test net writes, replayed through their four stages and printed by the dump printer. | `just test-crate replay-support` |
 
 [TESTING.md](TESTING.md) places these in the suite catalogue.

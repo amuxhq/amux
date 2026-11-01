@@ -28,7 +28,6 @@ role             face                size  weight    scales with
 screenTitle     Instrument Sans     26    semibold  title  tracking -0.4
 sectionTitle    Instrument Sans     13    semibold  footnote
 identifier      Instrument Sans     17    semibold  subheadline
-identifierUnread Instrument Sans     17    heavy     subheadline
 body            Instrument Sans     16    regular   callout
 bodyEmphasis    Instrument Sans     16    semibold  callout
 detail          Instrument Sans     15    regular   subheadline

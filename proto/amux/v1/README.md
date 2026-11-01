@@ -10,9 +10,8 @@ application channels on separate native streams.
 
 | File | Holds |
 | --- | --- |
-| `agent_service.proto` | `AgentService`: the fleet, agents' lifecycle and messages, blobs, diffs, catalogues, repositories |
+| `agent_service.proto` | `AgentService`: the fleet, agents' lifecycle and messages, blobs, diffs, catalogues, repositories; served to clients and to paired daemons |
 | `session_service.proto` | `SessionService`: one agent's conversation, its input, the composer's draft |
-| `peer_service.proto` | `PeerAgentService` and `PeerSessionService`, daemon to daemon |
 | `installation_service.proto` | `InstallationService`: the installation and its profiles |
 | `profile_admin_service.proto` | `ProfileAdminService`: one profile's account, pairing, peers and dump |
 | `pairing_service.proto` | `PairingService`: two hosts coming to trust each other |
@@ -49,7 +48,7 @@ done, so the link carries on. A message the other end must understand is a
 break both ends take, and moves `PROTOCOL_VERSION`.
 
 `just proto-compat` checks all of this against the latest release.
-`PROTOCOL_VERSION` (`Hello.supported_protocol_versions`) moves only for a
+`PROTOCOL_VERSION` (`Hello.protocol_version`) moves only for a
 break both ends of a link must take.
 
 What a client writes into a dump is `amux.dump` (`crates/wire/proto/amux/dump/session.proto`),

@@ -16,7 +16,7 @@ use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
 
 use crate::identity::atomic_replace_private;
-use crate::routing::LinkConnectorToken;
+use crate::link::run::LinkConnectorToken;
 
 pub const RELAY_TOKEN_FILE: &str = "relay-token";
 

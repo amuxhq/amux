@@ -42,9 +42,8 @@ pub const DUMP_ARCHIVE: &str = "dump.pb.zst";
 pub const REPORT_DUMP: &str = "dump";
 /// How a person's report directory is named, before its time and id.
 const REPORT_DIR: &str = "report-";
-/// The files a client may hand in beside `report.json`: its frozen frame,
-/// and the phone's view-state recording.
-pub const CLIENT_FILES: &[&str] = &["frame.png", "frame.txt", "frame.json", "trace.jsonl"];
+/// The files a client may hand in beside `report.json`: its frozen frame.
+pub const CLIENT_FILES: &[&str] = &["frame.png", "frame.txt", "frame.json"];
 /// How hard the dump is compressed: redacted JSON and protobuf shrink by
 /// thirty times at this level, and it costs a fraction of a second.
 const ZSTD_LEVEL: i32 = 3;

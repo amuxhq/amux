@@ -255,7 +255,6 @@ pub fn overview(state: &SessionState, diff: Option<&Diff>) -> Overview {
     };
     let failed_servers = agent
         .servers
-        .servers
         .iter()
         .filter(|server| {
             matches!(

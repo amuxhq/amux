@@ -83,31 +83,20 @@ public final class Chat: ChatSource, @unchecked Sendable {
     // MARK: - Acts
 
     public func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {
-        let draft = Bridge.json(draft)
-        return await act(SendOutcome.self) { live in
-            draft.withCString { amux_session_send(live, $0) }
-        }
+        let act = Bridge.json(ChatAct.send(draft))
+        return await self.act(SendOutcome.self) { live in act.withCString { amux_session_act(live, $0) } }
     }
 
     /// Answers the head ask by the position of a choice on its card.
     public func answer(
         _ ask: String, choice: Int, note: String? = nil
     ) async -> ActOutcome? {
-        await value(ActOutcome.self) { live in
-            ask.withCString { ask in
-                Bridge.optional(note) { amux_session_answer(live, ask, UInt32(choice), $0) }
-            }
-        }
+        await value(ActOutcome.self, .answer(ask: ask, choice: UInt32(choice), note: note ?? ""))
     }
 
     /// Answers a question card with one response per question, in order.
     public func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome? {
-        let responses = Bridge.json(responses)
-        return await value(ActOutcome.self) { live in
-            ask.withCString { ask in
-                responses.withCString { amux_session_answer_questions(live, ask, $0) }
-            }
-        }
+        await value(ActOutcome.self, .answerQuestions(ask: ask, responses: responses))
     }
 
     /// Replies to a question card in the person's own words instead of
@@ -115,46 +104,25 @@ public final class Chat: ChatSource, @unchecked Sendable {
     public func replyInstead(
         _ ask: String, text: String, soFar: [QuestionResponse]
     ) async -> ActOutcome? {
-        let soFar = Bridge.json(soFar)
-        return await value(ActOutcome.self) { live in
-            ask.withCString { ask in
-                text.withCString { text in
-                    soFar.withCString { amux_session_reply_instead(live, ask, text, $0) }
-                }
-            }
-        }
+        await value(ActOutcome.self, .replyInstead(ask: ask, reply: text, soFar: soFar))
     }
 
     /// Submits a form ask with the person's values, one per field in the
     /// form's order; the shared view checks and encodes them.
     public func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? {
-        let values = Bridge.json(values)
-        return await value(ActOutcome.self) { live in
-            ask.withCString { ask in
-                values.withCString { amux_session_answer_form(live, ask, $0) }
-            }
-        }
+        await value(ActOutcome.self, .answerForm(ask: ask, values: values))
     }
 
     public func withdraw(_ input: [UInt8]) async -> ActOutcome? {
-        let input = Bridge.json(input)
-        return await value(ActOutcome.self) { live in
-            input.withCString { amux_session_withdraw(live, $0) }
-        }
+        await value(ActOutcome.self, .withdraw(input))
     }
 
     public func sendNow(_ input: [UInt8]) async -> ActOutcome? {
-        let input = Bridge.json(input)
-        return await value(ActOutcome.self) { live in
-            input.withCString { amux_session_send_now(live, $0) }
-        }
+        await value(ActOutcome.self, .sendNow(input))
     }
 
     public func resend(_ input: [UInt8]) async -> SendOutcome? {
-        let input = Bridge.json(input)
-        return await value(SendOutcome?.self) { live in
-            input.withCString { amux_session_resend(live, $0) }
-        } ?? nil
+        await value(SendOutcome?.self, .resend(input)) ?? nil
     }
 
     public func draft(of input: [UInt8]) -> Draft? {
@@ -170,42 +138,33 @@ public final class Chat: ChatSource, @unchecked Sendable {
     }
 
     public func interrupt() async -> ActOutcome? {
-        await value(ActOutcome.self) { amux_session_interrupt($0) }
+        await value(ActOutcome.self, .interrupt)
     }
 
     public func stopJob(_ key: String) async -> ActOutcome? {
-        await value(ActOutcome.self) { live in key.withCString { amux_session_stop_job(live, $0) } }
+        await value(ActOutcome.self, .stopJob(key))
     }
 
     public func switchBack() async -> ActOutcome? {
-        await value(ActOutcome.self) { amux_session_switch_back($0) }
+        await value(ActOutcome.self, .switchBack)
     }
 
     /// Sends a pick from the settings view in the agent's kind.
     public func command(_ draft: Draft) async -> CommandOutcome? {
-        let draft = Bridge.json(draft)
-        return await value(CommandOutcome.self) { live in
-            draft.withCString { amux_session_command(live, $0) }
-        }
+        await value(CommandOutcome.self, .command(draft))
     }
 
     public func change(_ setting: SettingChange) async -> ActOutcome? {
-        let setting = Bridge.json(setting)
-        return await value(ActOutcome.self) { live in
-            setting.withCString { amux_session_change_setting(live, $0) }
-        }
+        await value(ActOutcome.self, .changeSetting(setting))
     }
 
     /// Starts an exited agent again with the composer's draft.
     public func resume(with draft: Draft) async -> ActOutcome? {
-        let draft = Bridge.json(draft)
-        return await value(ActOutcome.self) { live in
-            draft.withCString { amux_session_resume(live, $0) }
-        }
+        await value(ActOutcome.self, .resume(draft))
     }
 
     public func pageOlder(_ rows: UInt32) async -> PageOutcome? {
-        await value(PageOutcome.self) { amux_session_page_older($0, rows) }
+        await value(PageOutcome.self, .pageOlder(rows))
     }
 
     /// The agent's diff for `comparison` as its host froze it, with its
@@ -263,11 +222,12 @@ public final class Chat: ChatSource, @unchecked Sendable {
         Bridge.answer(T.self, await loop.answer { [self] _ in call(nil) { start($0) } })
     }
 
-    /// Starts an act on the core queue and waits for its JSON that is the
-    /// value itself.
-    private func value<T: Decodable & Sendable>(
-        _ type: T.Type, _ start: @escaping @Sendable (OpaquePointer) -> UInt64
-    ) async -> T? {
-        Bridge.value(T.self, await loop.answer { [self] _ in call(nil) { start($0) } })
+    /// Starts a chat act on the core queue and waits for its JSON that is
+    /// the value itself.
+    private func value<T: Decodable & Sendable>(_ type: T.Type, _ act: ChatAct) async -> T? {
+        let act = Bridge.json(act)
+        return Bridge.value(T.self, await loop.answer { [self] _ in
+            call(nil) { live in act.withCString { amux_session_act(live, $0) } }
+        })
     }
 }

@@ -11,8 +11,9 @@ use std::path::{Path, PathBuf};
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
-use interpret::{Checkpoint, Effect, Event, Interpreter, decode_checkpoint, encode_checkpoint};
-use support::Committer;
+use interpret::{
+    Checkpoint, Committer, Effect, Event, Interpreter, decode_checkpoint, encode_checkpoint,
+};
 use ui_state::{InputOutcome, Msg, SessionState};
 use ui_view::{
     Answer, AskBody, AskCard, CardState, Changeable, QuestionResponse, SettingChange, answer_input,
@@ -28,18 +29,6 @@ fn fixtures(kind: &str) -> PathBuf {
         .join(kind)
 }
 
-fn agent(kind: Kind) -> wire::Agent {
-    wire::Agent {
-        agent_id: b"agent".to_vec(),
-        host_id: b"host".to_vec(),
-        kind: kind as i32,
-        lifecycle: wire::Lifecycle::Live as i32,
-        phase: wire::Phase::NeedsYou as i32,
-        incarnation: 1,
-        ..wire::Agent::default()
-    }
-}
-
 /// One interpreter and the session its emission builds, in step.
 #[derive(Clone)]
 struct Driven<S> {
@@ -51,15 +40,11 @@ struct Driven<S> {
 }
 
 impl<S: Checkpoint + Clone> Driven<S> {
-    fn start<I: Interpreter<State = S>>(
-        kind: Kind,
-        spec: &wire::AgentSpec,
-        producer: &str,
-    ) -> Self {
-        let (interpreter, first) = I::initial(spec, producer);
+    fn start<I: Interpreter<State = S>>(kind: Kind, spec: &wire::AgentSpec) -> Self {
+        let (interpreter, first) = I::initial(spec);
         let mut driven = Driven {
             interpreter,
-            session: SessionState::new(agent(kind), support::CAP),
+            session: SessionState::new(support::agent(kind, wire::Phase::NeedsYou), support::CAP),
             committer: Committer::default(),
             held: 0,
         };
@@ -275,7 +260,7 @@ where
     for path in &names {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
         let script = interpret::fixture_script::<I>(path).unwrap();
-        let mut driven = Driven::start::<I>(kind, &script.spec, &script.producer);
+        let mut driven = Driven::start::<I>(kind, &script.spec);
         let mut tried = BTreeSet::new();
         for (label, event) in script.events {
             driven.step::<I>(event);
@@ -377,7 +362,7 @@ where
     for path in &names {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
         let script = interpret::fixture_script::<I>(path).unwrap();
-        let mut driven = Driven::start::<I>(kind, &script.spec, &script.producer);
+        let mut driven = Driven::start::<I>(kind, &script.spec);
         for (_, event) in script.events {
             driven.step::<I>(event);
         }
@@ -469,9 +454,9 @@ fn settings_picks_reach_the_interpreter() {
 /// "Something else": neither drops the other on the way to the agent.
 #[test]
 fn a_multi_select_answer_keeps_its_picks_beside_something_else() {
-    let path = fixtures("claude_pty").join("recorded_question_multi_other.json");
+    let path = fixtures("claude_pty").join("recorded_question_every_shape.json");
     let script = interpret::fixture_script::<ClaudePty>(&path).unwrap();
-    let mut driven = Driven::start::<ClaudePty>(Kind::ClaudePty, &script.spec, &script.producer);
+    let mut driven = Driven::start::<ClaudePty>(Kind::ClaudePty, &script.spec);
     let mut card = None;
     for (_, event) in script.events {
         driven.step::<ClaudePty>(event);

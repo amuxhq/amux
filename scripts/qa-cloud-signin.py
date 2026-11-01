@@ -47,7 +47,7 @@ def main() -> None:
     # The cookie jar the sign-in fills is dropped here. Every question below
     # carries the access token and nothing else, which is the position the
     # phone is in: it has never loaded a page on amux.sh.
-    _, issued = qa_cloud.signed_in(who, secret)
+    issued = qa_cloud.signed_in(who, secret)
     del secret
     token = issued["access_token"]
     print("signed in: amux.sh issued an access token"

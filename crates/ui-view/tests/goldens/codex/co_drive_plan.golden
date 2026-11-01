@@ -1,61 +1,29 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","collaborationMode":{"mode":"plan","settings":{"model":"gpt-5.6-luna","reasoning_effort":null}},"model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.160.0","id":"t1","turns":[]}}}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 2 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-1","status":"inProgress"}}}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 3 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"tui-1","content":[{"text":"Plan the colour change.","type":"text"}],"id":"u-1","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
-  row    2 u-1 Prompt { text: [Text("Plan the colour change.")], steered: false }
-## 4 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"turn-1-plan","text":"","type":"plan"},"threadId":"t1","turnId":"turn-1"}}}
-  row    3 turn-1-plan Ask(Plan { title: None, body: "", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
-## 5 fact {"channel":"rpc","json":{"method":"item/plan/delta","params":{"delta":"## Write the colour\n\n- Write `Blue` to `co","itemId":"turn-1-plan","threadId":"t1","turnId":"turn-1"}}}
-  row    3 turn-1-plan Ask(Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `co", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
-## 6 fact {"channel":"rpc","json":{"method":"item/plan/delta","params":{"delta":"lor.txt`.\n- Check it holds exactly `Blue`.\n","itemId":"turn-1-plan","threadId":"t1","turnId":"turn-1"}}}
-  row    3 turn-1-plan Ask(Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
-## 7 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"turn-1-plan","text":"## Write the colour\n\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n","type":"plan"},"threadId":"t1","turnId":"turn-1"}}}
-  row    3 turn-1-plan Ask(Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
 ## 8 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
-  row    4 turn:1 TurnEnd { duration_ms: Some(0), failed: false }
   ask plan:turn-1-plan -> "turn-1-plan" 1/1 Open
     choices ApprovePlan { mode: "", mode_name: "" }*, SendBack+note
     body Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 9 fact {"channel":"rpc","json":{"method":"thread/settings/updated","params":{"threadId":"t1","threadSettings":{"approvalPolicy":"on-request","collaborationMode":{"mode":"default","settings":{"model":"gpt-5.6-luna","reasoning_effort":null}},"cwd":"/work","effort":null,"model":"gpt-5.6-luna","sandboxPolicy":{"type":"workspaceWrite"}}}}}
-  row    3 turn-1-plan Ask(Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n", verdict: Approved, mode: "", mode_name: "", note: None, writing: false })
   ask none
 ## 10 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-2","status":"inProgress"}}}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 11 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"tui-2","content":[{"text":"Implement the plan.","type":"text"}],"id":"u-2","type":"userMessage"},"threadId":"t1","turnId":"turn-2"}}}
-  row    5 u-2 Prompt { text: [Text("Implement the plan.")], steered: false }
 ## 12 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-2","status":"completed"}}}}
-  row    6 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 14 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-3","status":"inProgress"}}}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 15 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"tui-3","content":[{"text":"Plan the README too.","type":"text"}],"id":"u-3","type":"userMessage"},"threadId":"t1","turnId":"turn-3"}}}
-  row    7 u-3 Prompt { text: [Text("Plan the README too.")], steered: false }
-## 16 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"turn-3-plan","text":"","type":"plan"},"threadId":"t1","turnId":"turn-3"}}}
-  row    8 turn-3-plan Ask(Plan { title: None, body: "", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
-## 17 fact {"channel":"rpc","json":{"method":"item/plan/delta","params":{"delta":"## Write the colour and the README\n\n- Write `B","itemId":"turn-3-plan","threadId":"t1","turnId":"turn-3"}}}
-  row    8 turn-3-plan Ask(Plan { title: Some("Write the colour and the README"), body: "\n- Write `B", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
-## 18 fact {"channel":"rpc","json":{"method":"item/plan/delta","params":{"delta":"lue` to `color.txt`.\n- Say so in `README.md`.\n","itemId":"turn-3-plan","threadId":"t1","turnId":"turn-3"}}}
-  row    8 turn-3-plan Ask(Plan { title: Some("Write the colour and the README"), body: "\n- Write `Blue` to `color.txt`.\n- Say so in `README.md`.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
-## 19 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"turn-3-plan","text":"## Write the colour and the README\n\n- Write `Blue` to `color.txt`.\n- Say so in `README.md`.\n","type":"plan"},"threadId":"t1","turnId":"turn-3"}}}
-  row    8 turn-3-plan Ask(Plan { title: Some("Write the colour and the README"), body: "\n- Write `Blue` to `color.txt`.\n- Say so in `README.md`.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
 ## 20 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-3","status":"completed"}}}}
-  row    9 turn:3 TurnEnd { duration_ms: Some(0), failed: false }
   ask plan:turn-3-plan -> "turn-3-plan" 1/1 Open
     choices ApprovePlan { mode: "", mode_name: "" }*, SendBack+note
     body Plan { title: Some("Write the colour and the README"), body: "\n- Write `Blue` to `color.txt`.\n- Say so in `README.md`.\n" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 21 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-4","status":"inProgress"}}}}
-  row    8 turn-3-plan Ask(Plan { title: Some("Write the colour and the README"), body: "\n- Write `Blue` to `color.txt`.\n- Say so in `README.md`.\n", verdict: SentBack, mode: "", mode_name: "", note: None, writing: false })
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 22 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"tui-4","content":[{"text":"Leave the README alone.","type":"text"}],"id":"u-4","type":"userMessage"},"threadId":"t1","turnId":"turn-4"}}}
-  row   10 u-4 Prompt { text: [Text("Leave the README alone.")], steered: false }
 ## 23 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-4","status":"completed"}}}}
-  row   11 turn:4 TurnEnd { duration_ms: Some(0), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

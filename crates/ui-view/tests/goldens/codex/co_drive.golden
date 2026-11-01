@@ -1,24 +1,14 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.160.0","id":"t1","turns":[]}}}}
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 2 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-1","status":"inProgress"}}}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 3 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"tui-1","content":[{"text":"Fix the flaky test.","type":"text"}],"id":"u-1","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
-  row    2 u-1 Prompt { text: [Text("Fix the flaky test.")], steered: false }
-## 4 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"tui-2","content":[{"text":"Only the parser tests.","type":"text"}],"id":"u-2","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
-  row    3 u-2 Prompt { text: [Text("Only the parser tests.")], steered: true }
 ## 5 input {"id":"p1","prompt":{"text":"Keep the old fixtures."}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 49], text: [Text("Keep the old fixtures.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 6 input {"id":"n1","send_now":{"target":"p1"}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 49], text: [Text("Keep the old fixtures.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
-## 7 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"tui-3","content":[{"text":"And run them twice.","type":"text"}],"id":"u-3","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
-  row    4 u-3 Prompt { text: [Text("And run them twice.")], steered: true }
 ## 9 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"7031","content":[{"text":"Keep the old fixtures.","type":"text"}],"id":"u-4","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
-  row    5 steer:7031 Prompt { text: [Text("Keep the old fixtures.")], steered: true }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 10 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"command":"/bin/zsh -lc 'cargo test -p parser'","commandActions":[],"cwd":"/work","id":"cmd-1","status":"inProgress","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
-  row    6 cmd-1 Command { command: "cargo test -p parser", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "cmd-1" }) queue=[] underway=[] refused=[]
 ## 11 fact {"channel":"rpc","json":{"id":40,"method":"item/commandExecution/requestApproval","params":{"command":"/bin/zsh -lc 'cargo test -p parser'","cwd":"/work","itemId":"cmd-1","reason":"Needs approval.","threadId":"t1","turnId":"turn-1"}}}
   ask 40 -> "cmd-1" 1/1 Open
@@ -26,15 +16,11 @@
     body Command { command: "cargo test -p parser", cwd: "/work", reason: "Needs approval.", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 12 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":40,"threadId":"t1"}}}
-  row    6 cmd-1 Command { command: "cargo test -p parser", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Dismissed, granted: None, note: None, elsewhere: true }
   ask none
   composer Send activity=Some(Running { key: "cmd-1" }) queue=[] underway=[] refused=[]
 ## 13 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"command":"/bin/zsh -lc 'cargo test -p parser'","commandActions":[],"cwd":"/work","id":"cmd-1","status":"completed","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
-  row    6 cmd-1 Command { command: "cargo test -p parser", state: Succeeded, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[cmd-1..cmd-1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 14 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"command":"/bin/zsh -lc 'rm -rf fixtures'","commandActions":[],"cwd":"/work","id":"cmd-2","status":"inProgress","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
-  row    6 cmd-1 Command { command: "cargo test -p parser", state: Succeeded, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[cmd-1..cmd-2 x2 recent=1 live] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true }
-  row    7 cmd-2 Command { command: "rm -rf fixtures", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..cmd-2 x2 recent=0 live RunCounts { commands: 2, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "cmd-2" }) queue=[] underway=[] refused=[]
 ## 15 fact {"channel":"rpc","json":{"id":41,"method":"item/commandExecution/requestApproval","params":{"command":"/bin/zsh -lc 'rm -rf fixtures'","cwd":"/work","itemId":"cmd-2","reason":"Needs approval.","threadId":"t1","turnId":"turn-1"}}}
   ask 41 -> "cmd-2" 1/1 Open
@@ -42,22 +28,15 @@
     body Command { command: "rm -rf fixtures", cwd: "/work", reason: "Needs approval.", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 16 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":41,"threadId":"t1"}}}
-  row    7 cmd-2 Command { command: "rm -rf fixtures", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..cmd-2 x2 recent=0 live RunCounts { commands: 2, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Dismissed, granted: None, note: None, elsewhere: true }
   ask none
   composer Send activity=Some(Running { key: "cmd-2" }) queue=[] underway=[] refused=[]
 ## 17 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"command":"/bin/zsh -lc 'rm -rf fixtures'","commandActions":[],"cwd":"/work","id":"cmd-2","status":"declined","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
-  row    7 cmd-2 Command { command: "rm -rf fixtures", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[cmd-1..cmd-2 x2 recent=0 live RunCounts { commands: 2, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: true }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 19 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"interrupted"}}}}
-  row    6 cmd-1 Command { command: "cargo test -p parser", state: Succeeded, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[cmd-1..cmd-2 x2 recent=1] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true } collapsed
-  row    7 cmd-2 Command { command: "rm -rf fixtures", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[cmd-1..cmd-2 x2 recent=0 RunCounts { commands: 2, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: true }
-  row    8 turn:1 Stopped
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 20 input {"id":"p2","prompt":{"text":"Now commit."}}
-  row    9 prompt:7032 Prompt { text: [Text("Now commit.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 24 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-2","status":"completed"}}}}
-  row   10 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

@@ -141,29 +141,10 @@ async fn a_lost_message_breaks_its_call_and_the_replica_still_catches_up() {
     }
 }
 
-/// The steps of a journal fixture, as its file holds them.
-fn fixture(name: &str) -> Vec<wire::Step> {
-    let path = format!(
-        "{}/fixtures/journals/{name}.frames",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    let bytes = std::fs::read(&path).unwrap();
-    let mut steps = Vec::new();
-    let mut at = 0;
-    while at < bytes.len() {
-        let journal::Frame::Whole(step, length) = journal::decode_frame(&bytes[at..]) else {
-            panic!("{path}: byte {at} is not a whole frame");
-        };
-        steps.push(*step);
-        at += length;
-    }
-    steps
-}
-
 #[tokio::test]
 async fn an_agent_playing_a_recorded_claude_journal_reaches_the_far_host_turn_by_turn() {
-    const JOURNAL: &str = "claude_sdk-multi_turn";
-    let steps = fixture(JOURNAL);
+    const JOURNAL: &str = "recorded_multi_turn";
+    let steps = testnet::sim::recorded_journal(JOURNAL).unwrap();
     let turns = steps.iter().filter(|step| step.turn_end.is_some()).count();
     let mut keys: Vec<String> = steps
         .iter()

@@ -182,7 +182,7 @@ async fn serve(
     crate::server::terminated().await;
     tracing::info!("relay stopping");
     server
-        .send_link_close_to_all(wire::pb::LinkCloseReason::UserShutdown)
+        .send_link_close_to_all(wire::LinkCloseReason::UserShutdown)
         .await;
     tokio::time::sleep(CLOSE_FLUSH).await;
     serving.close();

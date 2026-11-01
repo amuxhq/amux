@@ -23,7 +23,7 @@ async fn remote_entry_carries_version_and_capabilities() {
     desk_edge.trust(&laptop_edge).await.unwrap();
     laptop_edge.trust(&desk_edge).await.unwrap();
     let _link = laptop_edge.link_in_process(&desk_edge).unwrap();
-    assert!(laptop_edge.wait_for_route(desk_host, PATIENCE).await);
+    assert!(wait_for_route(&laptop_edge, desk_host, PATIENCE).await);
 
     let expected = wire::Capabilities {
         cloud_relay: false,
@@ -56,12 +56,12 @@ async fn remote_entry_carries_version_and_capabilities() {
 
 /// A link and the channels over it reach the profile's core as decoded
 /// inputs, never as streams: the link coming up, what the peer's handshake
-/// says it reaches, each channel the core said to open with the key the
-/// peer was paired under, and the link going.
+/// says it reaches, each channel the shell asked of the core, and the link
+/// going.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_link_and_its_channels_reach_the_core_as_inputs() {
     use daemon_core::Input;
-    use daemon_core::payload::{CarrierKind, ChannelClass};
+    use daemon_core::payload::CarrierKind;
 
     let desk = Install::new();
     let desk_daemon = desk.start("boot-1", quiet_launch()).await;
@@ -74,11 +74,7 @@ async fn a_link_and_its_channels_reach_the_core_as_inputs() {
     desk_edge.trust(&laptop_edge).await.unwrap();
     laptop_edge.trust(&desk_edge).await.unwrap();
     let link = laptop_edge.link_in_process(&desk_edge).unwrap();
-    assert!(
-        laptop_edge
-            .wait_for_route(desk_runtime.host(), PATIENCE)
-            .await
-    );
+    assert!(wait_for_route(&laptop_edge, desk_runtime.host(), PATIENCE).await);
 
     let ring = laptop.profile_dir().join(node::CORE_RING);
     let inputs = || {
@@ -94,18 +90,25 @@ async fn a_link_and_its_channels_reach_the_core_as_inputs() {
             })
             .collect::<Vec<_>>()
     };
-    until("the laptop's core to hear a channel to the desk opened", || {
-        let inputs = inputs();
-        async move {
-            match inputs
-                .iter()
-                .any(|input| matches!(input, Input::ChannelOpened { peer, .. } if *peer == desk_host))
-            {
-                true => Ok(()),
-                false => Err(format!("{} inputs", inputs.len())),
+    until(
+        "the laptop's core to hear the desk's hello and be asked for a channel",
+        || {
+            let inputs = inputs();
+            async move {
+                let hello = inputs.iter().any(|input| {
+                    matches!(input, Input::LinkControl { frame, .. }
+                        if matches!(frame.body, Some(wire::message::Body::HelloAck(_))))
+                });
+                let wanted = inputs
+                    .iter()
+                    .any(|input| matches!(input, Input::WantChannel { .. }));
+                match hello && wanted {
+                    true => Ok(()),
+                    false => Err(format!("{} inputs", inputs.len())),
+                }
             }
-        }
-    })
+        },
+    )
     .await
     .unwrap();
     let seen = inputs();
@@ -127,21 +130,12 @@ async fn a_link_and_its_channels_reach_the_core_as_inputs() {
         )),
         "the desk's answer to the laptop's hello reached the core"
     );
-    let Some((wanted, pin)) = seen.iter().find_map(|input| match input {
-        Input::WantChannel {
-            link,
-            peer,
-            class: ChannelClass::Calls,
-            pin,
-        } if *link == up.0 && *peer == desk_host => Some((link, pin.clone())),
-        _ => None,
-    }) else {
-        panic!("a calls channel was asked of the core: {seen:?}");
-    };
-    assert_eq!(*wanted, up.0);
     assert!(
-        pin.is_some_and(|pin| !pin.0.is_empty()),
-        "the channel was asked with the key the desk was paired under"
+        seen.iter().any(|input| matches!(
+            input,
+            Input::WantChannel { link, peer } if *link == up.0 && *peer == desk_host
+        )),
+        "a channel was asked of the core: {seen:?}"
     );
 
     link.sever();

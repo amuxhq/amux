@@ -7,37 +7,38 @@
 ..............................................................................................................
 ..............................................................................................................
 ..............................................................................................................
-..............................................................................................................
-..............................................................................................................
-..............................................................................................................
-..............................................................................................................
 ..bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb..
 ..............................................................................................................
-..cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc..
-..ccdddddddddddddddddddddddddddddcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccceeeeecc..
-..cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc..
+c.daeeeeeeeeeeeeeeeee.........................................................................................
+c...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+c...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb....................................................
+..............................................................................................................
+..ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff..
+..ffgggggggggggggggggggggggggggggffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffhhhhhff..
+..ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff..
 ..............................................................................................................
 ..b.bbbbbb....................................................................................................
 ..............................................................................................................
-..ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff..
-..ffffaaaaaaaaaaaaaaaaaaa..................................................................................f..
-..ff.......................................................................................................f..
-..ffaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.........................................f..
-..ffggggggggggggggggggggggggggggggggg......................................................................f..
-..ff.......................................................................................................f..
-..ffffaaaaaaaaaaaaaaaa.....................................................................................f..
-..ffffaaaaaaa..............................................................................................f..
-..ff.......................................................................................................f..
-..ffffbbbbbbbbbbbb.........................................................................................f..
-..ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbbbbbbbbbbbbbbbbfff..
+..cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc..
+..ccccaaaaaaaaaaaaaaaaaaa..................................................................................c..
+..cc.......................................................................................................c..
+..ccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.........................................c..
+..cceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee......................................................................c..
+..cc.......................................................................................................c..
+..ccccaaaaaaaaaaaaaaaa.....................................................................................c..
+..ccccaaaaaaa..............................................................................................c..
+..cc.......................................................................................................c..
+..ccccbbbbbbbbbbbb.........................................................................................c..
+..ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccbbbbbbbbbbbbbbbbbccc..
 ..............................................................................................................
-..hhhhhbbbbbbbbbbhhhhhhbbbbbbbbbbbbbhhhhhhbbbbb...............................................................
+..iiiiibbbbbbbbbbiiiiiibbbbbbbbbbbbbiiiiiibbbbb...............................................................
 --- legend
 a = {"fg": "5;15"}
 b = {"fg": "5;8"}
-c = {"bg": "5;0"}
-d = {"bg": "5;0", "fg": "5;15"}
-e = {"bg": "5;0", "fg": "5;8"}
-f = {"fg": "5;14"}
-g = {"fg": "5;6"}
-h = {"bold": true, "fg": "5;15"}
+c = {"fg": "5;14"}
+d = {"fg": "5;9"}
+e = {"fg": "5;6"}
+f = {"bg": "5;0"}
+g = {"bg": "5;0", "fg": "5;15"}
+h = {"bg": "5;0", "fg": "5;8"}
+i = {"bold": true, "fg": "5;15"}

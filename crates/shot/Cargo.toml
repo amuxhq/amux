@@ -11,6 +11,7 @@ tui = { workspace = true, features = ["fixtures"] }
 # The storybook replays recorded sessions through the interpreters, which
 # the client itself never links.
 interpret = { workspace = true }
+settings = { workspace = true }
 ui-state = { workspace = true }
 ui-view = { workspace = true }
 wire = { workspace = true }
@@ -21,11 +22,7 @@ png = { workspace = true }
 ratatui = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
 thiserror = { workspace = true }
-
-[dev-dependencies]
-tempfile = { workspace = true }
 
 [[bin]]
 name = "amux-shot"

@@ -12,24 +12,21 @@ use claude_protocol::stream::{
 use claude_protocol::transcript::{self, AssistantRow, Attachment, Row, SystemRow, UserRow};
 use serde::Deserialize;
 use serde_json::Value;
-use wire::claude_pty_item::Kind;
+use wire::claude_item::Kind;
 use wire::{Ask, BoundaryKind, DecisionOutcome, PermissionAsk, ToolState, Turn, TurnOutcome};
 
 use super::{
-    AgentFact, Announced, AskMeta, AskShape, Decision, HeldDisplay, HookRow, PendingMessage,
-    Running, Slash, State, Stream, Subagent, Tool, item_body,
+    AgentFact, Announced, AskMeta, AskShape, Call, Decision, HeldDisplay, HookRow, PendingMessage,
+    Running, Slash, State, Stream, Subagent, Tool,
 };
 use crate::claude_answers::AnswerShape;
 use crate::claude_common::{
-    AnsweredResult, BackgroundInput, BangInput, JobInput, PLAN_TOOL, QUESTION_TOOL, TASK_TOOLS,
-    Verdict, apply_task_tool, blocks_text, compact_json, job_kind, message_text, old_source,
-    permission_scopes, plan_ask, plan_mode_write, question_ask, question_ask_text, split_tool_name,
-    timestamp_ms, tool_class, tool_input, tool_result_images, tool_result_text,
-    without_image_bytes, without_terminal_codes,
+    AnsweredResult, BangInput, JobInput, PLAN_TOOL, QUESTION_TOOL, TASK_TOOLS, blocks_text,
+    item_body, job_kind, message_text, old_source, permission_scopes, plan_ask, plan_mode_write,
+    question_ask, question_ask_text, split_tool_name, timestamp_ms, tool_input, tool_result_text,
+    without_terminal_codes,
 };
-use crate::{
-    Channel, Emit, Fact, ItemDraft, ask_item, is_attach_tool, is_status_tool, status_working_on,
-};
+use crate::{Channel, Emit, Fact, ItemDraft, ask_item, is_status_tool, status_working_on};
 
 /// How terminal Claude words a call the person refused, on the tool result.
 const REJECTED: &str = "The user doesn't want to proceed with this tool use.";
@@ -171,13 +168,13 @@ impl State {
                     self.agent_fact(emit, fact);
                 }
             }
-            Channel::Stream | Channel::Rpc | Channel::Tools => {}
+            Channel::Stream | Channel::Rpc => {}
         }
     }
 
     fn agent_fact(&mut self, emit: &mut Emit, fact: AgentFact) {
-        let version = match fact {
-            AgentFact::Launch { version } => version,
+        match fact {
+            AgentFact::Launch => {}
             // Waiting on its trust dialog, Claude takes no prompt; it
             // starts its session once trusted, and that start says so.
             AgentFact::Ready if self.trust_ask().is_some() => return,
@@ -198,7 +195,6 @@ impl State {
             }
         };
         let provider = &mut self.provider;
-        provider.version = (!version.is_empty()).then_some(version);
         provider.relaunched = provider.launches > 0;
         provider.launches += 1;
         self.publish_catalogue(emit);
@@ -341,7 +337,7 @@ impl State {
                 let id = denied.tool_use_id.clone();
                 match self.tools.get_mut(&id) {
                     Some(tool) => {
-                        tool.decision = Some(Decision::refused(&denied.reason));
+                        tool.decision = Some(Decision::refused(&denied.reason).to_wire());
                         self.emit_tool(emit, &id);
                     }
                     None => {
@@ -464,7 +460,7 @@ impl State {
                 if let Some(subagent) = row
                     .as_ref()
                     .and_then(|id| self.tools.get_mut(id))
-                    .and_then(|tool| tool.subagent.as_mut())
+                    .and_then(|tool| tool.of.subagent.as_mut())
                 {
                     subagent.tool_count += 1;
                     subagent.last_tool = split_tool_name(&call.tool_name).1;
@@ -502,8 +498,10 @@ impl State {
         let id = self
             .tools
             .iter()
-            .filter(|(id, tool)| tool.subagent.is_some() && !tool.finished && !claimed.contains(id))
-            .max_by_key(|(_, tool)| tool.seq)
+            .filter(|(id, tool)| {
+                tool.of.subagent.is_some() && !tool.of.finished && !claimed.contains(id)
+            })
+            .max_by_key(|(_, tool)| tool.of.seq)
             .map(|(id, _)| id.clone())?;
         self.agents.insert(agent.to_owned(), id.clone());
         Some(id)
@@ -518,10 +516,10 @@ impl State {
         let Some(tool) = self.tools.get_mut(id) else {
             return false;
         };
-        if tool.subagent.is_none() {
+        if tool.of.subagent.is_none() {
             return false;
         }
-        tool.awaiting_notification = true;
+        tool.of.awaiting_notification = true;
         tool.background = true;
         let (command, at_ms) = (JobInput::command(&tool.input), tool.at_ms);
         self.jobs
@@ -609,7 +607,6 @@ impl State {
             .filter(|agent| !agent.is_empty());
         let call = self.announced_call(name, input, agent.as_deref());
         let key = self.new_ask(AskMeta {
-            seq: 0,
             tool_name: name.to_owned(),
             input: input.to_string(),
             suggestions: offered
@@ -647,8 +644,7 @@ impl State {
     }
 
     /// Records an ask under a new key.
-    fn new_ask(&mut self, mut meta: AskMeta) -> String {
-        meta.seq = self.next_seq();
+    fn new_ask(&mut self, meta: AskMeta) -> String {
         self.next_ask += 1;
         let key = format!("ask:{}", self.next_ask);
         self.asks.insert(key.clone(), meta);
@@ -666,7 +662,6 @@ impl State {
             return;
         }
         let key = self.new_ask(AskMeta {
-            seq: 0,
             tool_name: String::new(),
             input: String::new(),
             suggestions: Vec::new(),
@@ -743,14 +738,13 @@ impl State {
         let landed = self
             .tools
             .iter()
-            .filter(|(_, tool)| !tool.finished && !tool.awaiting_notification)
-            .max_by_key(|(_, tool)| (!tool.server.is_empty(), tool.seq))
+            .filter(|(_, tool)| !tool.of.finished && !tool.of.awaiting_notification)
+            .max_by_key(|(_, tool)| (!tool.server.is_empty(), tool.of.seq))
             .map(|(id, _)| id.clone());
         let announced = self.running.last().map(|running| running.id.clone());
         let awaits_row = landed.is_none() && announced.is_some();
         let call = landed.or(announced);
         let key = self.new_ask(AskMeta {
-            seq: 0,
             tool_name: String::new(),
             input: String::new(),
             suggestions: Vec::new(),
@@ -955,7 +949,7 @@ impl State {
         match self.tools.get_mut(id) {
             Some(tool) => {
                 tool.started_at_ms = Some(started.max(tool.at_ms));
-                if tool.finished {
+                if tool.of.finished {
                     self.emit_tool(emit, id);
                 }
             }
@@ -980,68 +974,35 @@ impl State {
         if id.is_empty() {
             return;
         }
-        let (server, tool_name) = split_tool_name(name);
         if !self.tools.contains_key(id) {
-            let hidden = is_status_tool(&server, &tool_name)
-                || (server.is_empty() && TASK_TOOLS.contains(&tool_name.as_str()))
-                || plan_mode_write(
-                    self.provider.permission_mode.as_deref(),
-                    &server,
-                    &tool_name,
-                );
-            let plan = (server.is_empty() && tool_name == PLAN_TOOL).then(Verdict::default);
-            let question = server.is_empty() && tool_name == QUESTION_TOOL;
+            let (server, tool_name) = split_tool_name(name);
             if is_status_tool(&server, &tool_name)
                 && let Some(working_on) = status_working_on(input.to_string().as_bytes())
             {
                 self.shared.set_working_on(working_on);
             }
-            let seq = self.next_seq();
-            let class = tool_class(&server, &tool_name);
-            let subagent = (server.is_empty() && tool_name == AGENT_TOOL).then(Subagent::default);
-            self.tools.insert(
-                id.to_owned(),
-                Tool {
-                    seq,
-                    at_ms: at_ms.unwrap_or_else(|| self.shared.now_ms()),
-                    name: tool_name,
-                    server,
-                    input: input.to_string(),
-                    state: ToolState::Running as i32,
-                    outcome_text: String::new(),
-                    outcome_json: String::new(),
-                    class: class as i32,
-                    background: BackgroundInput::deserialize(input)
-                        .is_ok_and(|input| input.run_in_background),
-                    decision: None,
-                    ended_at_ms: None,
-                    started_at_ms: self
-                        .ran_from
-                        .remove(id)
-                        .map(|started| started.max(at_ms.unwrap_or_else(|| self.shared.now_ms()))),
-                    message_id: message_id.to_owned(),
-                    finished: false,
-                    hidden,
-                    subagent,
-                    awaiting_notification: false,
-                    images: Vec::new(),
-                    attached: Vec::new(),
-                    plan,
-                    question,
-                    asked: None,
-                    emitted: Vec::new(),
-                },
-            );
+            let at_ms = at_ms.unwrap_or_else(|| self.shared.now_ms());
+            let call = Call {
+                seq: self.next_seq(),
+                message_id: message_id.to_owned(),
+                subagent: (server.is_empty() && tool_name == AGENT_TOOL).then(Subagent::default),
+                ..Call::default()
+            };
+            let mut tool =
+                Tool::running(name, at_ms, self.provider.permission_mode.as_deref(), call);
+            tool.set_input(input);
+            tool.started_at_ms = self.ran_from.remove(id).map(|started| started.max(at_ms));
+            self.tools.insert(id.to_owned(), tool);
         } else if let Some(tool) = self.tools.get_mut(id)
-            && tool.message_id.is_empty()
+            && tool.of.message_id.is_empty()
         {
             // A call its hook opened: its row names the message.
-            tool.message_id = message_id.to_owned();
+            tool.of.message_id = message_id.to_owned();
         }
         if let Some(reason) = self.refused.remove(id)
             && let Some(tool) = self.tools.get_mut(id)
         {
-            tool.decision = Some(Decision::refused(&reason));
+            tool.decision = Some(Decision::refused(&reason).to_wire());
         }
         self.emit_tool(emit, id);
         self.bind_asks_for(emit, id);
@@ -1097,14 +1058,14 @@ impl State {
         if let Some(decision) = &mut tool.decision
             && decision.outcome == DecisionOutcome::Unknown as i32
         {
-            *decision = Decision::elsewhere(outcome);
+            *decision = Decision::elsewhere(outcome).to_wire();
             decision.note = note.clone();
         }
         let denied = tool
             .decision
             .as_ref()
             .is_some_and(|decision| decision.outcome == DecisionOutcome::Denied as i32);
-        tool.finished = true;
+        tool.of.finished = true;
         tool.state = if rejected
             && (denied
                 || self
@@ -1120,28 +1081,8 @@ impl State {
         } else {
             ToolState::Succeeded as i32
         };
-        tool.outcome_text = output.clone();
-        // amux's attach tool answers with the element, naming the blob by
-        // this host's path: the step carries the attachment instead.
-        if is_attach_tool(&tool.server, &tool.name) {
-            let (text, attached) = crate::shared::parse_reply(output.clone());
-            if !attached.is_empty() {
-                tool.outcome_text = text;
-                tool.attached = attached;
-            }
-        }
-        let images = tool_result_images(content);
-        if !images.is_empty() {
-            tool.images = Vec::new();
-            for (image, write) in images {
-                tool.images.push(image);
-                emit.effect(write);
-            }
-        }
-        if let Some(result) = result.filter(|result| !result.is_null() && tool.attached.is_empty())
-        {
-            tool.outcome_json = compact_json(&without_image_bytes(result));
-        }
+        tool.outcome_text = output;
+        tool.take_result(emit, content, result);
         if tool.ended_at_ms.is_none() {
             tool.ended_at_ms = at_ms.or(Some(self.shared.now_ms()));
         }
@@ -1174,30 +1115,15 @@ impl State {
                 _ => ask_item::dismissed(),
             });
         }
-        self.task_tool(&id, result.unwrap_or(&Value::Null));
-        self.emit_tool(emit, &id);
-    }
-
-    fn task_tool(&mut self, id: &str, result: &Value) {
-        let Some(tool) = self.tools.get(id) else {
-            return;
-        };
-        if !tool.server.is_empty() {
-            return;
+        if let Some(tool) = self.tools.get(&id) {
+            tool.apply_to_tasks(&mut self.tasks, result.unwrap_or(&Value::Null));
         }
-        let input = serde_json::from_str::<Value>(&tool.input).unwrap_or(Value::Null);
-        let name = tool.name.clone();
-        apply_task_tool(&mut self.tasks, &name, &input, result);
+        self.emit_tool(emit, &id);
     }
 
     // --- rows ------------------------------------------------------------
 
     fn row(&mut self, emit: &mut Emit, row: &Row) {
-        if self.provider.version.is_none()
-            && let Some(version) = row.version().filter(|version| !version.is_empty())
-        {
-            self.provider.version = Some(version.to_owned());
-        }
         if self.provider.session.is_none()
             && let Some(session) = row.session_id().filter(|session| !session.is_empty())
         {
@@ -1242,21 +1168,8 @@ impl State {
         if !peer_message_bodies(&whole).is_empty() {
             return self.reflected_messages(&whole);
         }
-        if row.is_compact_summary == Some(true) {
-            self.shared.item(
-                emit,
-                ItemDraft {
-                    key: uuid,
-                    text: whole,
-                    body: item_body(Kind::CompactSummary(wire::CompactSummary {})),
-                    at_ms,
-                    complete: true,
-                    ..Default::default()
-                },
-            );
-            return;
-        }
-        if row.is_meta == Some(true) {
+        // A compaction's summary is the model's, drawn as the compaction row.
+        if row.is_compact_summary == Some(true) || row.is_meta == Some(true) {
             return;
         }
         // Claude's own message to the model, never a person's prompt.
@@ -1425,7 +1338,7 @@ impl State {
         let Some(tool) = self.tools.get_mut(&key) else {
             return;
         };
-        tool.finished = true;
+        tool.of.finished = true;
         tool.state = ToolState::Succeeded as i32;
         tool.outcome_text = match (stdout.is_empty(), stderr.is_empty()) {
             (_, true) => stdout,
@@ -1619,7 +1532,7 @@ impl State {
         let Some(tool) = self.tools.get_mut(id) else {
             return;
         };
-        if !tool.awaiting_notification || tool.finished {
+        if !tool.of.awaiting_notification || tool.of.finished {
             return;
         }
         let result = text
@@ -1629,7 +1542,7 @@ impl State {
                 body.rfind("</result>").map(|end| body[..end].trim())
             })
             .unwrap_or_default();
-        tool.finished = true;
+        tool.of.finished = true;
         tool.state = match between(text, "status") {
             Some("completed") => ToolState::Succeeded,
             Some("failed") => ToolState::Failed,
@@ -1650,26 +1563,16 @@ impl State {
         let running = self
             .tools
             .iter()
-            .filter(|(_, tool)| !tool.finished && !tool.awaiting_notification)
+            .filter(|(_, tool)| !tool.of.finished && !tool.of.awaiting_notification)
             .map(|(id, _)| id.clone())
             .collect::<Vec<_>>();
         for id in running {
             if let Some(tool) = self.tools.get_mut(&id) {
-                tool.finished = true;
+                tool.of.finished = true;
                 tool.state = ToolState::Cancelled as i32;
             }
             self.emit_tool(emit, &id);
         }
-        self.shared.item(
-            emit,
-            ItemDraft {
-                key: key.clone(),
-                body: item_body(Kind::Interruption(wire::Interruption {})),
-                at_ms,
-                complete: true,
-                ..Default::default()
-            },
-        );
         self.end_turn(emit, TurnOutcome::Interrupted, at_ms, None);
         self.interruption = Some(key);
     }
@@ -1715,7 +1618,7 @@ impl State {
         // A finished turn's calls and asks cannot change any more, but for
         // subagents still running in the background.
         self.tools
-            .retain(|_, tool| tool.awaiting_notification && !tool.finished);
+            .retain(|_, tool| tool.of.awaiting_notification && !tool.of.finished);
         let tools = &self.tools;
         self.agents.retain(|_, id| tools.contains_key(id));
         let open = self.open_ask_keys();
@@ -1751,8 +1654,8 @@ impl State {
                 .and_then(|call| self.tools.get(call))
                 .is_some_and(|tool| {
                     !message_id.is_empty()
-                        && !tool.message_id.is_empty()
-                        && tool.message_id != message_id
+                        && !tool.of.message_id.is_empty()
+                        && tool.of.message_id != message_id
                 });
             if later {
                 self.close(emit, &key, Decision::unknown());
@@ -1761,7 +1664,7 @@ impl State {
         // The model writes again only once the form's call returned.
         for (key, call) in self.dialog_asks() {
             let later = match call.map(|call| self.tools.get(&call)) {
-                Some(Some(tool)) => !message_id.is_empty() && tool.message_id != message_id,
+                Some(Some(tool)) => !message_id.is_empty() && tool.of.message_id != message_id,
                 // The call's own row has not landed yet: this may be it.
                 Some(None) => false,
                 None => true,
@@ -1889,7 +1792,10 @@ impl State {
                 let whole = unwrap_pasted(&command.content);
                 self.user_text(emit, command.envelope.uuid.clone(), whole, false, at_ms);
             }
-            SystemRow::StopHookSummary(_) | SystemRow::Unknown(_) => {}
+            // A notice for the person at Claude's own terminal, about its
+            // own interface.
+            SystemRow::StopHookSummary(_) | SystemRow::Informational(_) | SystemRow::Unknown(_) => {
+            }
         }
     }
 }

@@ -8,8 +8,7 @@
       "fact": {
         "channel": "agent",
         "json": {
-          "type": "launch",
-          "version": "2.1.240"
+          "type": "launch"
         }
       }
     },
@@ -35,7 +34,7 @@
     }
   ],
   "recording": {
-    "path": "../../../claude-specs/fixtures/claude-pty/socket_delivery.rows.jsonl",
+    "path": "transcripts/socket_delivery.rows.jsonl",
     "format": "transcript_rows"
   }
 }

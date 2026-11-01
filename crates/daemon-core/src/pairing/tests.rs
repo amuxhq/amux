@@ -116,7 +116,7 @@ impl Host {
                 secret: secret.to_vec(),
                 expect: None,
                 found: false,
-                reachability: Reachability::Cloud,
+                reachability: Some(Reachability::Cloud),
                 method: Method::Pin,
             })),
         });
@@ -301,7 +301,7 @@ fn too_many_wrong_secrets_lock_the_window_out_until_a_new_one_opens() {
     assert_eq!(
         failure(&offerer.take()),
         Some(PairFailure::new(
-            FailureCode::PermissionDenied,
+            ErrorCode::PermissionDenied,
             "PAIRING_LOCKED"
         ))
     );
@@ -356,7 +356,7 @@ fn a_conversation_past_its_deadline_ends_and_frees_its_attempt() {
     assert_eq!(
         failure(&out),
         Some(PairFailure::new(
-            FailureCode::DeadlineExceeded,
+            ErrorCode::DeadlineExceeded,
             "PAIRING_TIMEOUT"
         ))
     );
@@ -384,7 +384,6 @@ fn a_commit_that_lands_after_the_window_closed_is_undone() {
         old_key.clone(),
         "the joiner's old key".into(),
         None,
-        chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
     )
     .unwrap();
     offerer.daemon.trust_for_test(old);
@@ -543,7 +542,7 @@ fn an_ssh_pairing_commits_through_the_same_trust_writes() {
     assert_eq!(
         call_ended(&joiner.take(), 4),
         Some(Status::Failed(CallError::Pairing(PairFailure::new(
-            FailureCode::InvalidArgument,
+            ErrorCode::InvalidArgument,
             "SELF_PAIRING"
         ))))
     );

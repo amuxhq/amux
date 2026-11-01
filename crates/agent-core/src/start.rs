@@ -22,10 +22,9 @@ pub struct Resumed<S> {
 pub(crate) fn starting<I: Interpreter>(
     spec: &AgentSpec,
     resumed: Option<Resumed<I::State>>,
-    producer_version: &str,
 ) -> (I::State, Vec<Step>) {
     let Some(Resumed { mut state, inputs }) = resumed else {
-        let (state, step) = I::initial(spec, producer_version);
+        let (state, step) = I::initial(spec);
         return (state, vec![step]);
     };
     let ended = inputs
@@ -49,7 +48,7 @@ pub(crate) fn starting<I: Interpreter>(
         stepped.step.incarnation_end = None;
         steps.push(stepped.step);
     }
-    let (state, resume) = I::reincarnate(state, spec, producer_version);
+    let (state, resume) = I::reincarnate(state, spec);
     steps.push(resume);
     (state, steps)
 }

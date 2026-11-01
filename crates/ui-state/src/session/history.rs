@@ -14,9 +14,7 @@ use wire::dump::{
 
 use super::{Arrivals, Msg, SessionState};
 use crate::body::AgentState;
-use crate::inputs::{
-    InputOutcome, InputState, InputWhat, Inputs, Refusal, RefusalReason, SentInput,
-};
+use crate::inputs::{InputOutcome, InputState, InputWhat, Inputs, Refusal, SentInput};
 use crate::transcript::{Held, Transcript};
 use crate::{BlobStatus, Connection};
 
@@ -43,7 +41,6 @@ impl SessionState {
             detached: self.detached,
             connection: connection(self.connection) as i32,
             exited_under: self.exited_under,
-            reach: self.reach,
             epoch: self.epoch,
             blobs: self
                 .blobs
@@ -110,7 +107,6 @@ impl SessionState {
             detached: session.detached,
             connection: from_connection(session.connection),
             exited_under: session.exited_under,
-            reach: session.reach,
             epoch: session.epoch,
             blobs: session
                 .blobs
@@ -152,7 +148,6 @@ impl Msg {
                 outcome: Some(match outcome {
                     InputOutcome::Reply(reply) => client_sent::Outcome::Reply(reply.clone()),
                     InputOutcome::Lost => client_sent::Outcome::Lost(wire::dump::ClientLost {}),
-                    InputOutcome::Held => client_sent::Outcome::Held(wire::dump::ClientHeld {}),
                 }),
             }),
             Msg::Discard(id) => Of::DiscardInputId(id.clone()),
@@ -187,7 +182,6 @@ impl Msg {
                 match sent.outcome.ok_or("a send with no outcome")? {
                     client_sent::Outcome::Reply(reply) => InputOutcome::Reply(reply),
                     client_sent::Outcome::Lost(_) => InputOutcome::Lost,
-                    client_sent::Outcome::Held(_) => InputOutcome::Held,
                 },
             ),
             Of::DiscardInputId(id) => Msg::Discard(id),
@@ -260,11 +254,10 @@ fn input(sent: &SentInput) -> ClientInput {
         InputState::Queued => (ClientInputState::Queued, None),
         InputState::Settled => (ClientInputState::Settled, None),
         InputState::Uncertain => (ClientInputState::Uncertain, None),
-        InputState::Held => (ClientInputState::Held, None),
         InputState::Rejected(refusal) => (
             ClientInputState::Rejected,
             Some(Rejected {
-                refusal: wire_refusal(refusal.reason) as i32,
+                refusal: refusal.reason as i32,
                 detail: refusal.detail.clone(),
             }),
         ),
@@ -274,7 +267,7 @@ fn input(sent: &SentInput) -> ClientInput {
         state: state as i32,
         rejected,
         seen_queued: sent.seen_queued,
-        left_at: sent.left_at,
+        in_feed: sent.in_feed,
     }
 }
 
@@ -284,9 +277,8 @@ fn sent_input(held: ClientInput) -> Result<SentInput, String> {
         ClientInputState::Queued => InputState::Queued,
         ClientInputState::Settled => InputState::Settled,
         ClientInputState::Uncertain => InputState::Uncertain,
-        ClientInputState::Held => InputState::Held,
         ClientInputState::Rejected => InputState::Rejected(held.rejected.as_ref().map_or_else(
-            || Refusal::of(RefusalReason::Unspecified),
+            || Refusal::of(wire::Refusal::Unspecified),
             crate::inputs::refusal,
         )),
     };
@@ -299,22 +291,6 @@ fn sent_input(held: ClientInput) -> Result<SentInput, String> {
         state,
         input,
         seen_queued: held.seen_queued,
-        left_at: held.left_at,
+        in_feed: held.in_feed,
     })
-}
-
-/// The wire's refusal for the client's reason.
-fn wire_refusal(reason: RefusalReason) -> wire::Refusal {
-    match reason {
-        RefusalReason::Unspecified => wire::Refusal::Unspecified,
-        RefusalReason::Exited => wire::Refusal::Exited,
-        RefusalReason::Exiting => wire::Refusal::Exiting,
-        RefusalReason::Draining => wire::Refusal::Draining,
-        RefusalReason::HostUnreachable => wire::Refusal::HostUnreachable,
-        RefusalReason::Unsupported => wire::Refusal::Unsupported,
-        RefusalReason::ClosedAsk => wire::Refusal::ClosedAsk,
-        RefusalReason::NotQueued => wire::Refusal::NotQueued,
-        RefusalReason::ConversationElsewhere => wire::Refusal::ConversationElsewhere,
-        RefusalReason::TooLong => wire::Refusal::TooLong,
-    }
 }

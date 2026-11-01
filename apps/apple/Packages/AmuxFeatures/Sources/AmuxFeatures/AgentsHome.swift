@@ -308,15 +308,15 @@ public struct AgentsHome: View {
 
     // MARK: - The list
 
-    private var sections: [HomeSection] { model.sections }
+    private var sections: [FleetSection] { model.sections }
 
     /// The agents that are live, in one list, with the ones that need the
     /// person at the top; the stopped ones folded away under it.
-    private var live: [AgentRow] {
+    private var live: [FleetRow] {
         sections.filter { $0.kind != .exited }.flatMap(\.rows)
     }
 
-    private var stopped: HomeSection? { sections.first { $0.kind == .exited } }
+    private var stopped: FleetSection? { sections.first { $0.kind == .exited } }
 
     /// Names a machine on a row only when there is more than one to tell
     /// apart.
@@ -344,7 +344,7 @@ public struct AgentsHome: View {
                 }
                 if let stopped {
                     stoppedFold(stopped)
-                    if !stopped.folded {
+                    if !model.folded(stopped) {
                         // One block, so it fades and settles as a whole: it
                         // comes down from under the line that opened it and
                         // goes back up into it.
@@ -464,7 +464,7 @@ public struct AgentsHome: View {
 
     /// A hairline under a row, starting where its text does, as a system
     /// list draws one.
-    private func rule(_ row: AgentRow) -> some View {
+    private func rule(_ row: FleetRow) -> some View {
         Rectangle()
             .fill(design.hairline.color)
             .frame(height: design.metrics.hairline)
@@ -474,11 +474,11 @@ public struct AgentsHome: View {
 
     /// Members sit under their head by one step of the mark's column, so a
     /// member's mark lines up with its head's name.
-    private func indent(_ row: AgentRow) -> CGFloat { CGFloat(row.depth) * AgentRowView.textInset }
+    private func indent(_ row: FleetRow) -> CGFloat { CGFloat(row.depth) * AgentRowView.textInset }
 
     /// A row, indented under its family's head, with the head's control for
     /// listing its members under its age.
-    private func agentRow(_ row: AgentRow) -> some View {
+    private func agentRow(_ row: FleetRow) -> some View {
         let state = RowState(row: row)
         let heads = row.depth == 0 && row.children > 0
         // A stop that is held until the host is back says so before anything
@@ -504,7 +504,7 @@ public struct AgentsHome: View {
     // could be read would be a worse answer than the row saying so where it
     // stands.
     @ViewBuilder
-    private func openable(_ row: AgentRow, _ state: RowState, _ content: AgentRowView) -> some View {
+    private func openable(_ row: FleetRow, _ state: RowState, _ content: AgentRowView) -> some View {
         if row.readable {
             Button { actions(.open(row.id)) } label: { content }
                 .buttonStyle(.amuxPush)
@@ -520,7 +520,7 @@ public struct AgentsHome: View {
 
     /// How many agents a head started, and the control that lists them, in
     /// the row's trailing column under its age.
-    private func family(_ row: AgentRow) -> some View {
+    private func family(_ row: FleetRow) -> some View {
         let said = row.expanded
             ? "Hide \(row.children) started by \(row.name)"
             : "Show \(row.children) started by \(row.name)"
@@ -548,7 +548,7 @@ public struct AgentsHome: View {
 
     /// What a row says to somebody who cannot see it, in the order the row
     /// says it: who, what, where, how long, and what it needs.
-    private func spoken(_ row: AgentRow, _ state: RowState) -> String {
+    private func spoken(_ row: FleetRow, _ state: RowState) -> String {
         var parts = [row.name]
         if let said = state.spoken { parts.append(said) }
         if let second = FleetWords.secondLine(
@@ -561,7 +561,6 @@ public struct AgentsHome: View {
         parts.append([PlaceNames.host(row.hostName), row.workingDirectory]
             .joined(separator: ", "))
         parts.append(row.age(at: model.orderedAt) + " ago")
-        if row.unread { parts.append("unread") }
         return parts.joined(separator: ", ")
     }
 
@@ -581,7 +580,7 @@ public struct AgentsHome: View {
     /// Opened and closed in one explicit animation rather than by watching
     /// the fold, so the rows leave as smoothly as they arrive and nothing
     /// else on the screen is swept along with them.
-    private func stoppedFold(_ section: HomeSection) -> some View {
+    private func stoppedFold(_ section: FleetSection) -> some View {
         let names = section.rows.filter { $0.depth == 0 }.map(\.name).joined(separator: ", ")
         let title = "\(Self.title(section.kind)) · \(section.families)"
         let hairline = Rectangle().fill(design.hairline.color).frame(height: design.metrics.hairline)
@@ -606,7 +605,7 @@ public struct AgentsHome: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(design.inkFaint.color)
-                    .rotationEffect(.degrees(section.folded ? 0 : 90))
+                    .rotationEffect(.degrees(model.folded(section) ? 0 : 90))
                     .frame(width: 16)
             }
             .padding(.horizontal, Space.margin)
@@ -621,7 +620,7 @@ public struct AgentsHome: View {
         .buttonStyle(.amuxPush)
         .padding(.top, Space.l)
         .accessibilityLabel("\(title), \(names)")
-        .identified("home.fold.\(section.id)", label: "\(title), \(names)", value: names)
+        .identified("home.fold.\(section.kind.rawValue)", label: "\(title), \(names)", value: names)
     }
 
     /// What this account could do to reach a machine it cannot: subscribe,
@@ -947,7 +946,7 @@ extension FleetGate {
 struct AgentRowView: View {
     @Environment(\.design) private var design
     @Environment(\.dynamicTypeSize) private var typeSize
-    let row: AgentRow
+    let row: FleetRow
     let state: RowState
     /// The machine, when the list spans more than one.
     let host: String?

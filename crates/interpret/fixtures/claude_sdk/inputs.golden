@@ -1,26 +1,26 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 input {"id":"p1","prompt":{"text":"first"}}
 effect reply p1 queued
-snapshot STARTING queue=[p1] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[p1] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 2 fact {"channel":"stream","json":{"claude_code_version":"2.1.282","model":"claude-opus-5-5","permissionMode":"default","session_id":"s1","subtype":"init","type":"system","uuid":"init-s1"}}
 effect user 70310000-0000-4000-8000-000000000000 "first"
-item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=s1 version=2.1.282
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
 item 70310000-0000-4000-8000-000000000000 prompt final input=p1 at=1800000000000 text="first"
-snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 input {"id":"p2","prompt":{"text":"second"}}
 effect reply p2 queued
-snapshot WORKING queue=[p2] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[p2] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 4 input {"id":"w1","withdraw":{"target":"p2"}}
 effect reply w1 accepted
-snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 input {"id":"i1","interrupt":{}}
 effect write "{\"request\":{\"subtype\":\"interrupt\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
 effect reply i1 accepted
 ## 6 fact {"channel":"stream","json":{"message":{"content":[{"text":"[Request interrupted by user]","type":"text"}],"role":"user"},"type":"user","uuid":"u1"}}
 ## 7 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":true,"subtype":"error_during_execution","terminal_reason":"aborted_streaming","total_cost_usd":0.01,"type":"result","uuid":"r1"}}
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_INTERRUPTED started=1799999999000
-snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 1 last=-
 ## 8 input {"id":"i2","interrupt":{}}
 effect reply i2 accepted
@@ -29,34 +29,34 @@ effect write "{\"request\":{\"model\":\"claude-sonnet-5\",\"subtype\":\"set_mode
 effect reply m1 accepted
 ## 10 fact {"channel":"stream","json":{"response":{"request_id":"amux-2","response":{},"subtype":"success"},"type":"control_response"}}
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-3\",\"type\":\"control_request\"}"
-snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 11 fact {"channel":"stream","json":{"response":{"request_id":"amux-3","response":{"applied":{"effort":"medium","model":"claude-sonnet-5"}},"subtype":"success"},"type":"control_response"}}
-snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=medium mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=medium mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 12 input {"id":"m2","permission":{"value":"plan"}}
 effect write "{\"request\":{\"mode\":\"plan\",\"subtype\":\"set_permission_mode\"},\"request_id\":\"amux-4\",\"type\":\"control_request\"}"
 effect reply m2 accepted
 ## 13 fact {"channel":"stream","json":{"response":{"request_id":"amux-4","response":{"mode":"plan"},"subtype":"success"},"type":"control_response"}}
-snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=medium mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=medium mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 14 input {"effort":{"effort":"high"},"id":"e1"}
 effect write "{\"request\":{\"settings\":{\"effortLevel\":\"high\"},\"subtype\":\"apply_flag_settings\"},\"request_id\":\"amux-5\",\"type\":\"control_request\"}"
 effect reply e1 accepted
 ## 15 fact {"channel":"stream","json":{"response":{"request_id":"amux-5","response":{},"subtype":"success"},"type":"control_response"}}
-snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 16 input {"clear":{},"id":"c1"}
 effect reply c1 accepted
 effect user 63310000-0000-4000-8000-000000000000 "/clear"
 item 63310000-0000-4000-8000-000000000000 prompt final input=c1 at=1800000000000 text="/clear"
-snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 17 fact {"channel":"stream","json":{"new_conversation_id":"s2","type":"conversation_reset","uuid":"cr"}}
-item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_CLEARED session=- version=2.1.282
-snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=? model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_CLEARED
+snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=? model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 18 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r2"}}
 item turn:2 turn final at=1800000000000 text="" #2 TURN_OUTCOME_COMPLETED started=1799999999000
-snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=? model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot IDLE queue=[] working_on="first" at=1800000000000 asks=[] session=? model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 2 last=-
 ## 19 agent_message {"envelope":"env-1","from":"reviewer","text":"please look at the diff"}
 effect inject env-1 via Stdin
 effect reply env-1 queued
 item agent-message:656e762d31 agent_message final input=env-1 at=1800000000000 text="please look at the diff" envelope=656e762d31
-snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=? model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="first" at=1800000000000 asks=[] session=? model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 pending [env-1]

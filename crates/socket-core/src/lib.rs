@@ -270,15 +270,6 @@ impl Route {
     }
 }
 
-/// The largest QUIC datagram one path carries. Every path carries
-/// [`MAX_DATAGRAM`]: the forwarding header was left room for under IPv6's
-/// minimum MTU, and byte streams carry whatever they are given.
-fn path_datagram(path: Path) -> usize {
-    match path {
-        Path::Direct(_) | Path::Punched(_) | Path::Forwarded(_) | Path::Framed(_) => MAX_DATAGRAM,
-    }
-}
-
 /// A path that is a network address of the peer's own, rather than a
 /// forwarder or a byte stream.
 fn addressed(path: Path) -> bool {
@@ -836,20 +827,6 @@ impl<K: Forwarding> Peers<K> {
             || (self.peer_of(stand_in).is_none()
                 && matches!(self.path_of(stand_in), Some(Path::Direct(_)))
                 && self.name(stand_in, host, now_ms))
-    }
-
-    /// The largest datagram every path of `host` carries: the smallest of
-    /// its paths', so a switch between them never needs a smaller one.
-    pub fn max_datagram(&self, host: HostId) -> usize {
-        self.peers
-            .get(&Peer::Host(host))
-            .map(|held| held.route.paths())
-            .unwrap_or_default()
-            .iter()
-            .copied()
-            .map(path_datagram)
-            .min()
-            .unwrap_or(MAX_DATAGRAM)
     }
 
     /// Registers a byte-stream path; its packets arrive as

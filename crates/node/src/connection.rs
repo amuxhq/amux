@@ -2,9 +2,8 @@
 //!
 //! The profile's core lists the routes to each host and decides how it
 //! reads from the links up to it; this manager opens the channels calls
-//! ask for on the first route the core lists, and dials what the core
-//! says to. A call that fails on a link closes the link and tries one
-//! other listed route. It keeps nothing of its own about a host.
+//! ask for on the first route the core lists. A call that fails on a link
+//! closes the link and tries one other listed route. It keeps nothing of its own about a host.
 
 use std::sync::Arc;
 
@@ -21,14 +20,7 @@ pub struct ConnectionManager {
     channels: Arc<ChannelPool>,
     replacing: Replacing,
     analytics: analytics::Analytics,
-    /// What dials a host the core says to, once the edge dials at all.
-    dialer: std::sync::OnceLock<crate::services::Dialer>,
-    /// What links to the relay when the core says to, once the edge is up.
-    relay: std::sync::OnceLock<RelayDialer>,
 }
-
-/// Makes one relay attempt the core asked for.
-pub(crate) type RelayDialer = Arc<dyn Fn(daemon_core::AttemptId) + Send + Sync>;
 
 impl ConnectionManager {
     pub(crate) fn new(channels: Arc<ChannelPool>, analytics: analytics::Analytics) -> Arc<Self> {
@@ -36,8 +28,6 @@ impl ConnectionManager {
             channels,
             replacing: Replacing::default(),
             analytics,
-            dialer: std::sync::OnceLock::new(),
-            relay: std::sync::OnceLock::new(),
         })
     }
 
@@ -63,70 +53,12 @@ impl ConnectionManager {
         self.core()?.look(look).await
     }
 
-    pub(crate) fn set_dialer(&self, dialer: crate::services::Dialer) {
-        let _ = self.dialer.set(dialer);
-    }
-
-    /// The core says to dial `host` on every path of `plan`.
-    pub(crate) fn dial(
-        &self,
-        host: daemon_core::HostId,
-        attempt: daemon_core::AttemptId,
-        plan: daemon_core::Plan,
-        early: Vec<daemon_core::payload::PeerRequest>,
-    ) {
-        if let Some(dialer) = self.dialer.get() {
-            dialer.dial(host_from_core(host), attempt, plan, early);
-        }
-    }
-
-    pub(crate) fn set_relay_dialer(&self, dialer: RelayDialer) {
-        let _ = self.relay.set(dialer);
-    }
-
-    /// The core says to link to the relay.
-    pub(crate) fn dial_relay(&self, attempt: daemon_core::AttemptId) {
-        match self.relay.get() {
-            Some(dial) => dial(attempt),
-            None => self.report(Input::RelayEnded {
-                attempt,
-                outcome: daemon_core::RelayOutcome::Lost("the edge is not up".to_owned()),
-            }),
-        }
-    }
-
-    /// The core gave up on the attempt to `host`.
-    pub(crate) fn abandon(&self, host: daemon_core::HostId, attempt: daemon_core::AttemptId) {
-        if let Some(dialer) = self.dialer.get() {
-            dialer.abandon(host_from_core(host), attempt);
-        }
-    }
-
-    /// The core asks the local network again where the hosts it found are.
-    pub(crate) fn rediscover(&self) {
-        if let Some(dialer) = self.dialer.get() {
-            dialer.rediscover();
-        }
-    }
-
     /// The core says `route` no longer carries `host`'s traffic: the
     /// channels cached on it go, so the next call opens a fresh one.
     pub(crate) fn drop_route(&self, host: daemon_core::HostId, route: daemon_core::Route) {
         let peer = host_from_core(host);
         self.channels
             .drop_route(peer, Route::from_core(peer, route));
-    }
-
-    /// From now on no channel to `peer` opens while `refuse` holds,
-    /// whatever route reaches it, and the link each refused channel was on
-    /// closes. Lifting it tells the core to try the host now.
-    pub(crate) fn refuse_calls(&self, peer: HostId, refuse: bool) {
-        self.channels.refuse(peer, refuse);
-        if !refuse {
-            self.report(Input::TryAgain {
-                host: core_host(peer),
-            });
-        }
     }
 
     pub(crate) fn replacing(&self) -> Replacing {
@@ -175,7 +107,7 @@ impl ConnectionManager {
             .copied()
             .ok_or(ChannelError::NoRoute { host_id: peer })?;
         let opened = self.open_route(peer, route, class).await;
-        if let Err(ChannelError::Refused(wire::pb::ForwardRefusal::PaymentRequired)) = &opened {
+        if let Err(ChannelError::Refused(wire::ForwardRefusal::PaymentRequired)) = &opened {
             self.analytics.record_at_most_every(
                 crate::telemetry::RELAY_REFUSED_EVERY,
                 analytics::Event::RelayRefused,

@@ -253,35 +253,6 @@ public struct ActionLabel: View {
     }
 }
 
-/// A round glass button — the shape iOS uses for a bare action in a bar.
-public struct GlassIcon: View {
-    @Environment(\.design) private var design
-    private let glyph: String
-    private let prominent: Bool
-    private let size: CGFloat
-
-    public init(glyph: String, prominent: Bool = false, size: CGFloat = 34) {
-        self.glyph = glyph
-        self.prominent = prominent
-        self.size = size
-    }
-
-    public var body: some View {
-        Image(systemName: glyph)
-            .font(.system(size: size * 0.44, weight: .semibold))
-            .foregroundStyle(prominent ? design.onAccent.color : design.ink.color)
-            .frame(width: size, height: size)
-            .background {
-                if prominent {
-                    Circle().fill(design.accent.color)
-                } else {
-                    Color.clear.frosted(Circle(), as: .glass)
-                }
-            }
-            .contentShape(Circle())
-    }
-}
-
 /// A screen's primary action on glass above the home indicator.
 ///
 /// Kept separate from the full-height screen so scrolling content can run
@@ -338,18 +309,6 @@ public enum Fingerprint {
         stride(from: 0, to: fingerprint.count, by: 4).map { start in
             String(Array(fingerprint)[start..<min(start + 4, fingerprint.count)])
         }.joined(separator: " ")
-    }
-
-    /// The first four characters and the last four, with the middle said to be
-    /// missing rather than merely absent.
-    ///
-    /// For a row that names a key rather than asks about one. Four and four is
-    /// what somebody can hold in their head while glancing between two
-    /// screens, and it is not a comparison — anywhere a key is actually being
-    /// decided about, the whole of it is shown.
-    public static func short(_ fingerprint: String) -> String {
-        guard fingerprint.count > 11 else { return fingerprint }
-        return "\(fingerprint.prefix(4))…\(fingerprint.suffix(4))"
     }
 }
 

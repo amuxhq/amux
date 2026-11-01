@@ -4,9 +4,7 @@
 //! snapshot body, facts-ring entry (fact or input) and the checkpoint it
 //! produces is redacted; afterwards no planted secret is present, the
 //! target still decodes as what it was, and redacting again changes
-//! nothing. Run with `--nocapture` to read the transcript: every target
-//! that carried a planted secret, what was planted in it, and what it reads
-//! as after redaction.
+//! nothing.
 
 use std::collections::BTreeSet;
 
@@ -250,9 +248,7 @@ fn json_shape(bytes: &[u8]) -> BTreeSet<String> {
 
 fn target_bytes(target: &RedactTarget) -> &[u8] {
     match target {
-        RedactTarget::ItemBody(bytes)
-        | RedactTarget::SnapshotBody(bytes)
-        | RedactTarget::Input(bytes)
+        RedactTarget::Input(bytes)
         | RedactTarget::AgentMessage(bytes)
         | RedactTarget::Checkpoint(bytes)
         | RedactTarget::Spec(bytes)
@@ -263,85 +259,50 @@ fn target_bytes(target: &RedactTarget) -> &[u8] {
     }
 }
 
-/// Encoded protobuf as its readable runs of text.
-fn readable(bytes: &[u8]) -> String {
-    String::from_utf8_lossy(bytes)
-        .chars()
-        .map(|c| if c.is_control() { '·' } else { c })
-        .collect()
+/// Redacts one target and checks it: no planted secret survives, `same`
+/// finds its structure kept, and redacting again changes nothing. Returns
+/// what was planted in it.
+fn check<I: Interpreter>(
+    label: &str,
+    before: RedactTarget,
+    same: impl Fn(&[u8], &[u8]) -> bool,
+) -> BTreeSet<&'static str> {
+    let after = redact(I::KIND, before.clone());
+    let again = redact(I::KIND, after.clone());
+    let (before_bytes, after_bytes) = (target_bytes(&before), target_bytes(&after));
+    let left = planted_in(after_bytes);
+    assert!(
+        left.is_empty(),
+        "{:?} {label}: {left:?} survived redaction:\n{}",
+        I::KIND,
+        String::from_utf8_lossy(after_bytes)
+    );
+    assert!(
+        same(before_bytes, after_bytes),
+        "{:?} {label}: structure lost",
+        I::KIND
+    );
+    assert_eq!(
+        again,
+        after,
+        "{:?} {label}: redaction is not idempotent",
+        I::KIND
+    );
+    planted_in(before_bytes)
 }
 
-struct Transcript {
-    text: String,
-    planted: BTreeSet<&'static str>,
-    /// Entries already written; a snapshot repeated unchanged is written
-    /// once.
-    written: BTreeSet<String>,
+fn same_json(before: &[u8], after: &[u8]) -> bool {
+    json_shape(before) == json_shape(after)
 }
 
-impl Transcript {
-    /// Redacts one target, checks it, and records it when something was
-    /// planted in it. `same` compares before and after by structure and
-    /// says what it compared.
-    fn check<I: Interpreter>(
-        &mut self,
-        label: &str,
-        before: RedactTarget,
-        same: impl Fn(&[u8], &[u8]) -> Result<String, String>,
-        show: impl Fn(&[u8]) -> String,
-    ) {
-        let kind = I::KIND;
-        let after = redact(kind, before.clone());
-        let again = redact(kind, after.clone());
-        let (before_bytes, after_bytes) = (target_bytes(&before), target_bytes(&after));
-        let planted = planted_in(before_bytes);
-        let left = planted_in(after_bytes);
-        assert!(
-            left.is_empty(),
-            "{:?} {label}: {left:?} survived redaction:\n{}",
-            I::KIND,
-            show(after_bytes)
-        );
-        let kept = same(before_bytes, after_bytes)
-            .unwrap_or_else(|why| panic!("{:?} {label}: structure lost: {why}", I::KIND));
-        assert_eq!(
-            again,
-            after,
-            "{:?} {label}: redaction is not idempotent",
-            I::KIND
-        );
-        if planted.is_empty() {
-            return;
-        }
-        self.planted.extend(planted.iter().copied());
-        let names = planted.iter().copied().collect::<Vec<_>>().join(", ");
-        let entry = format!(
-            "{label}\n  planted: {names}\n  after:   none present; {kept}\n  reads:   {}\n",
-            show(after_bytes)
-        );
-        if self.written.insert(entry.clone()) {
-            self.text.push_str(&entry);
-        }
-    }
-}
-
-fn same_json(before: &[u8], after: &[u8]) -> Result<String, String> {
-    let (before, after) = (json_shape(before), json_shape(after));
-    if before == after {
-        Ok(format!("same JSON shape ({} leaves)", after.len()))
-    } else {
-        Err(format!("JSON shape {before:?} became {after:?}"))
-    }
-}
-
-fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
+fn run<I: Interpreter>(events: Vec<Event>) -> BTreeSet<&'static str> {
     let spec = AgentSpec {
         agent_id: vec![7; 16],
         kind: I::KIND as i32,
         created_at_ms: 1_800_000_000_000,
         ..AgentSpec::default()
     };
-    let (mut state, first) = I::initial(&spec, "redaction-test");
+    let (mut state, first) = I::initial(&spec);
     let mut steps = vec![first];
     let mut inputs = vec![answer_input::<I>()];
     // An agent message is a ring entry of its own, with a person's words.
@@ -371,11 +332,7 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
         steps.push(I::step(&mut state, event).step);
     }
 
-    let mut transcript = Transcript {
-        text: String::new(),
-        planted: BTreeSet::new(),
-        written: BTreeSet::new(),
-    };
+    let mut planted = BTreeSet::new();
     for fact in facts {
         let value: Value = serde_json::from_slice(&fact.payload).unwrap();
         let what = ["hook_event_name", "method", "type"]
@@ -383,20 +340,21 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
             .find_map(|key| value.get(key).and_then(Value::as_str))
             .unwrap_or("response")
             .to_owned();
-        transcript.check::<I>(
+        planted.extend(check::<I>(
             &format!("fact {:?} {what}", fact.channel),
             RedactTarget::Fact(fact),
             same_json,
-            |bytes| String::from_utf8_lossy(bytes).into_owned(),
-        );
+        ));
     }
     for input in inputs {
-        transcript.check::<I>(
+        planted.extend(check::<I>(
             &format!("input {}", String::from_utf8_lossy(&input.input_id)),
             RedactTarget::Input(input.encode_to_vec()),
             |before, after| {
-                let (before, after) = (Input::decode(before).unwrap(), Input::decode(after));
-                let after = after.map_err(|error| error.to_string())?;
+                let before = Input::decode(before).unwrap();
+                let Ok(after) = Input::decode(after) else {
+                    return false;
+                };
                 // The kind and the arm inside its body, as Debug names them.
                 let arm = |input: &Input| {
                     let body = format!("{:?}", input.decode_body()?);
@@ -405,75 +363,21 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
                     let arm = words.skip_while(|word| *word != "Some").nth(1)?.to_owned();
                     Some((kind, arm))
                 };
-                if arm(&before).is_some()
+                arm(&before).is_some()
                     && arm(&before) == arm(&after)
                     && before.input_id == after.input_id
-                {
-                    Ok(format!(
-                        "decodes as an Input on the same arm ({})",
-                        arm(&after).map(|(kind, _)| kind).unwrap_or_default()
-                    ))
-                } else {
-                    Err(format!("{before:?} became {after:?}"))
-                }
             },
-            readable,
-        );
+        ));
     }
     for message in messages {
-        transcript.check::<I>(
+        planted.extend(check::<I>(
             &format!("agent message {}", String::from_utf8_lossy(&message.id)),
             RedactTarget::AgentMessage(message.encode_to_vec()),
             |before, after| {
-                let before = wire::Envelope::decode(before).unwrap();
-                let after = wire::Envelope::decode(after).map_err(|error| error.to_string())?;
-                if before.id == after.id {
-                    Ok("decodes as an envelope with the same id".to_owned())
-                } else {
-                    Err(format!("{before:?} became {after:?}"))
-                }
+                wire::Envelope::decode(after)
+                    .is_ok_and(|after| wire::Envelope::decode(before).unwrap().id == after.id)
             },
-            readable,
-        );
-    }
-    for step in &steps {
-        for item in &step.items {
-            transcript.check::<I>(
-                &format!("item {}", item.key),
-                RedactTarget::ItemBody(item.body.clone()),
-                |before, after| {
-                    let (before, after) = (I::describe_item(before), I::describe_item(after));
-                    if before.arm == after.arm && before.complete == after.complete {
-                        Ok(format!("decodes on the same arm ({})", after.arm))
-                    } else {
-                        Err(format!("{before:?} became {after:?}"))
-                    }
-                },
-                |bytes| {
-                    let view = I::describe_item(bytes);
-                    format!("{} {}", view.arm, view.text)
-                },
-            );
-        }
-        if let Some(snapshot) = &step.snapshot {
-            transcript.check::<I>(
-                "snapshot",
-                RedactTarget::SnapshotBody(snapshot.body.clone()),
-                |before, after| {
-                    let (before, after) =
-                        (I::describe_snapshot(before), I::describe_snapshot(after));
-                    if before.asks == after.asks {
-                        Ok(format!(
-                            "decodes with the same {} open asks",
-                            after.asks.len()
-                        ))
-                    } else {
-                        Err(format!("{before:?} became {after:?}"))
-                    }
-                },
-                |bytes| I::describe_snapshot(bytes).text,
-            );
-        }
+        ));
     }
     // The daemon's side of a dump: each journal frame, and the store's
     // rows for the agent as one step.
@@ -488,32 +392,35 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
         .map(|(index, step)| (format!("journal frame {index}"), step))
         .chain([("store slice".to_owned(), &slice)])
     {
-        transcript.check::<I>(
+        planted.extend(check::<I>(
             &what,
             RedactTarget::Step(step.encode_to_vec()),
             |before, after| {
                 let before = wire::Step::decode(before).unwrap();
-                let after = wire::Step::decode(after).map_err(|error| error.to_string())?;
+                let Ok(after) = wire::Step::decode(after) else {
+                    return false;
+                };
+                // Each body decodes as it did: an item on the same arm and
+                // as complete, the snapshot with the same open asks.
                 let arms = |step: &wire::Step| {
                     step.items
                         .iter()
-                        .map(|item| I::describe_item(&item.body).arm)
+                        .map(|item| {
+                            let view = I::describe_item(&item.body);
+                            (view.arm, view.complete)
+                        })
                         .collect::<Vec<_>>()
                 };
-                if arms(&before) == arms(&after)
-                    && before.snapshot.is_some() == after.snapshot.is_some()
+                let asks = |step: &wire::Step| {
+                    step.snapshot
+                        .as_ref()
+                        .map(|snapshot| I::describe_snapshot(&snapshot.body).asks)
+                };
+                arms(&before) == arms(&after)
+                    && asks(&before) == asks(&after)
                     && before.turn_end.is_some() == after.turn_end.is_some()
-                {
-                    Ok(format!(
-                        "decodes as a step with the same {} items",
-                        after.items.len()
-                    ))
-                } else {
-                    Err(format!("{before:?} became {after:?}"))
-                }
             },
-            readable,
-        );
+        ));
     }
     let row = wire::Agent {
         agent_id: vec![7; 16],
@@ -525,20 +432,15 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
         kind: wire::Kind::ClaudeSdk as i32,
         ..wire::Agent::default()
     };
-    transcript.check::<I>(
+    planted.extend(check::<I>(
         "inventory row",
         RedactTarget::Agent(row.encode_to_vec()),
         |before, after| {
             let before = wire::Agent::decode(before).unwrap();
-            let after = wire::Agent::decode(after).map_err(|error| error.to_string())?;
-            if before.agent_id == after.agent_id && before.kind == after.kind {
-                Ok("decodes as the same agent".to_owned())
-            } else {
-                Err(format!("{before:?} became {after:?}"))
-            }
+            wire::Agent::decode(after)
+                .is_ok_and(|after| before.agent_id == after.agent_id && before.kind == after.kind)
         },
-        readable,
-    );
+    ));
     // A client's session as a dump carries it: the same rows, held in its
     // window and arriving as messages since.
     let history = wire::dump::ClientSessionHistory {
@@ -573,13 +475,14 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
                 .collect(),
         }),
     };
-    transcript.check::<I>(
+    planted.extend(check::<I>(
         "client session",
         RedactTarget::ClientSession(history.encode_to_vec()),
         |before, after| {
             let before = wire::dump::ClientSessionHistory::decode(before).unwrap();
-            let after = wire::dump::ClientSessionHistory::decode(after)
-                .map_err(|error| error.to_string())?;
+            let Ok(after) = wire::dump::ClientSessionHistory::decode(after) else {
+                return false;
+            };
             let arms = |history: &wire::dump::ClientSessionHistory| {
                 let held = history
                     .start
@@ -607,17 +510,9 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
                     .map(|item| (item.key.clone(), I::describe_item(&item.body).arm))
                     .collect::<Vec<_>>()
             };
-            if arms(&before) == arms(&after) && before.agent_id == after.agent_id {
-                Ok(format!(
-                    "decodes as the same session with the same {} rows",
-                    arms(&after).len()
-                ))
-            } else {
-                Err(format!("{before:?} became {after:?}"))
-            }
+            arms(&before) == arms(&after) && before.agent_id == after.agent_id
         },
-        readable,
-    );
+    ));
     let launched = AgentSpec {
         provider_args: vec![
             "--settings".into(),
@@ -638,43 +533,29 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
         }),
         ..spec
     };
-    transcript.check::<I>(
+    planted.extend(check::<I>(
         "spec",
         RedactTarget::Spec(launched.encode_to_vec()),
         |before, after| {
-            let (before, after) = (AgentSpec::decode(before).unwrap(), AgentSpec::decode(after));
-            let after = after.map_err(|error| error.to_string())?;
+            let before = AgentSpec::decode(before).unwrap();
+            let Ok(after) = AgentSpec::decode(after) else {
+                return false;
+            };
             let names =
                 |spec: &AgentSpec| spec.provider_env.keys().cloned().collect::<BTreeSet<_>>();
-            if names(&before) == names(&after)
+            names(&before) == names(&after)
                 && before.bootstrap.is_some() == after.bootstrap.is_some()
-            {
-                Ok("decodes as a spec with the same environment names".to_owned())
-            } else {
-                Err(format!("{before:?} became {after:?}"))
-            }
         },
-        |bytes| {
-            let spec = AgentSpec::decode(bytes).unwrap();
-            let env = spec
-                .provider_env
-                .into_iter()
-                .collect::<std::collections::BTreeMap<_, _>>();
-            format!(
-                "args={:?} env={env:?} prompt={:?}",
-                spec.provider_args,
-                spec.bootstrap
-                    .map(|bootstrap| readable(&bootstrap.encode_to_vec())),
-            )
-        },
-    );
+    ));
     let checkpoint = encode_checkpoint(&state);
-    transcript.check::<I>(
+    planted.extend(check::<I>(
         "checkpoint",
         RedactTarget::Checkpoint(checkpoint),
         |before, after| {
             let before = decode_checkpoint::<I::State>(before).unwrap();
-            let after = decode_checkpoint::<I::State>(after).map_err(|error| error.to_string())?;
+            let Ok(after) = decode_checkpoint::<I::State>(after) else {
+                return false;
+            };
             let keys = |step: &wire::Step| {
                 step.items
                     .iter()
@@ -682,29 +563,14 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
                     .collect::<Vec<_>>()
             };
             let (before, after) = (before.resume().1, after.resume().1);
-            if keys(&before) == keys(&after)
-                && before.snapshot.is_some() == after.snapshot.is_some()
-            {
-                Ok(format!(
-                    "decodes as the state and resumes with the same {} open items",
-                    after.items.len()
-                ))
-            } else {
-                Err(format!(
-                    "resume {:?} became {:?}",
-                    keys(&before),
-                    keys(&after)
-                ))
-            }
+            keys(&before) == keys(&after) && before.snapshot.is_some() == after.snapshot.is_some()
         },
-        |bytes| String::from_utf8_lossy(bytes).into_owned(),
-    );
-    (transcript.text, transcript.planted)
+    ));
+    planted
 }
 
 fn report<I: Interpreter>(events: Vec<Event>) {
-    let (text, planted) = run::<I>(events);
-    println!("== {:?}\n{text}", I::KIND);
+    let planted = run::<I>(events);
     let missing = PLANTED
         .iter()
         .map(|(name, _)| *name)

@@ -1,58 +1,658 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 2 recorded 1: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue b3e7b097 models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},claude-fable-5-1[1m]{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001] commands=54 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue b3e7b097
-snapshot IDLE queue=[] working_on=- at=1793267899564 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 4 recorded 3: input stdin-2
-effect reply stdin-2 accepted
-effect user 73746469-6e2d-4200-8000-000000000000 "Write three paragraphs about the history of rope-making."
-item boundary:1 boundary final at=1793267899565 text="" BOUNDARY_KIND_STARTED session=- version=-
-item 73746469-6e2d-4200-8000-000000000000 prompt final input=stdin-2 at=1793267899565 text="Write three paragraphs about the history of rope-making."
-snapshot WORKING queue=[] working_on="Write three paragraphs about the history of rope-making." at=1793267899565 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=? sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 6 recorded 5: fact Stream type=system subtype=init uuid=6fa428e5-6150-432c-8514-3e8f667277f7
-item boundary:1 boundary final at=1793267899617 text="" BOUNDARY_KIND_STARTED session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 version=2.1.312
-snapshot WORKING queue=[] working_on="Write three paragraphs about the history of rope-making." at=1793267899617 asks=[] session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 12 recorded 11: fact Stream type=assistant uuid=027adff7-4add-4d48-9e53-f2c59369857e
-item msg_011CgWLA6y5rpxvkBF57axBT:0 thinking final at=1793267901499 text=""
-snapshot WORKING queue=[] working_on="Write three paragraphs about the history of rope-making." at=1793267901499 asks=[] session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23002/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 14 recorded 13: fact Stream type=assistant uuid=02eaefaf-b256-48c8-94a3-df541380ac04
-item msg_011CgWLA6y5rpxvkBF57axBT:1 message final at=1793267906213 text="# The History of Rope-Making\n\nRope-making is one of humanity's oldest crafts, dating back at least to the prehistoric era when early humans discovered that twisting plant fibers together created strong, durable cords. Archaeological evidence suggests that twisted plant fibers were used as early as 20,000 years ago, particularly in ancient Egypt where papyrus and flax were processed into ropes used for construction, fishing, and maritime purposes. The Egyptians became particularly skilled at rope production, developing techniques to extract fibers from plants and twist them into strong cables capable of hauling massive stone blocks for pyramid construction. These early ropes were essential tools for building civilizations and enabled activities that would have been impossible with bare hands alone.\n\nAs civilizations advanced, rope-making techniques became increasingly sophisticated and specialized. By the medieval period, rope-makers had developed distinct guilds and established themselves as skilled tradespeople in European cities. They worked with materials including hemp, jute, and manila fibers, each chosen for specific properties—hemp for durability and strength, jute for flexibility, and manila for water resistance. The invention of the rope walk, a long narrow building where ropers could stretch fibers and twist them into extended lengths, revolutionized production efficiency and allowed for the manufacture of longer, stronger ropes that were crucial for maritime navigation and warfare. Rope-making became a vital industry supporting the expansion of naval power during the Age of Exploration.\n\nThe Industrial Revolution transformed rope-making as it did so many crafts, introducing mechanical spinning and twisting equipment that vastly increased production capacity and consistency. By the 19th century, rope factories could produce standardized ropes of unprecedented quality and length, supporting the massive growth of shipping and construction industries. The 20th century brought new synthetic materials like nylon, polypropylene, and polyester, which offered advantages in strength, water resistance, and durability compared to natural fibers. Today, while modern synthetic ropes dominate industrial and recreational applications, traditional rope-making techniques with natural fibers remain practiced both as a craft and for specialized uses, preserving knowledge of methods that have remained fundamentally unchanged for thousands of years."
-## 16 recorded 15: fact Stream type=rate_limit_event uuid=c9a057fa-eb6e-4ec3-ae12-c7d23bfc01b7
-snapshot WORKING queue=[] working_on="Write three paragraphs about the history of rope-making." at=1793267906235 asks=[] session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23002/? tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 18 recorded 17: fact Stream type=result subtype=success uuid=2cfa6991-b1b7-42af-bfa4-baa95f236b69
-item turn:1 turn final at=1793267906245 text="" #1 TURN_OUTCOME_COMPLETED started=1793267899584
-snapshot IDLE queue=[] working_on="Write three paragraphs about the history of rope-making." at=1793267906245 asks=[] session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23002/200000 tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-turn_end 1 last=msg_011CgWLA6y5rpxvkBF57axBT:1
-## 20 recorded 19: input stdin-3
-effect reply stdin-3 accepted
-effect user 73746469-6e2d-4300-8000-000000000000 "Now three more paragraphs about knots."
-item 73746469-6e2d-4300-8000-000000000000 prompt final input=stdin-3 at=1793267906246 text="Now three more paragraphs about knots."
-snapshot WORKING queue=[] working_on="Now three more paragraphs about knots." at=1793267906246 asks=[] session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23002/200000 tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 28 recorded 27: fact Stream type=assistant uuid=a279bfa0-36a4-42b1-8498-d7d03af6c85c
-item msg_011CgWLAaouUBb5BJXKUjjYq:0 thinking final at=1793267907420 text=""
-snapshot WORKING queue=[] working_on="Now three more paragraphs about knots." at=1793267907420 asks=[] session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23914/200000 tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 30 recorded 29: fact Stream type=assistant uuid=cbcc0690-ef3b-4426-bb32-dcf18dd3939f
-item msg_011CgWLAaouUBb5BJXKUjjYq:1 message final at=1793267912581 text="# The History and Significance of Knots\n\nKnots are among humanity's most fundamental discoveries, representing one of the earliest applications of rope and cordage in practical problem-solving. Archaeological evidence suggests that humans have been tying knots for at least 100,000 years, using them to secure bundles, create fishing nets, and fasten tools and clothing. Ancient civilizations developed systematic knowledge of knots, with some of the earliest documented evidence appearing in Egyptian tomb paintings and sculptures that depict sailors and workers using recognizable knot patterns. The Inca civilization developed a sophisticated system of knotted cords called quipu for record-keeping and communication, demonstrating how knots could serve purposes beyond simple securing of objects.\n\nThe development of specialized knots paralleled the advancement of maritime exploration and engineering, as different trades required different solutions for securing ropes under specific conditions. Sailors developed an extensive vocabulary of knots tailored to nautical applications—the bowline for creating fixed loops, the reef knot for joining ropes, and the clove hitch for securing lines to poles. These knots were so crucial to seafaring that their knowledge was carefully passed down through apprenticeship and tradition, forming part of the essential skill set for any sailor. Military applications also drove knot development, with knots used for siege equipment, bridge construction, and supply management. By the 18th and 19th centuries, knot-tying had become codified into formal systems with standardized names and techniques documented in nautical manuals.\n\nToday, knots remain indispensable across numerous fields including sailing, rock climbing, fishing, camping, and construction, where they continue to serve the fundamental purpose of securely joining or fastening materials. Modern knot science has become increasingly rigorous, with mathematicians and engineers studying the mechanics of how knots distribute stress and fail under load. Rock climbers and rescue professionals rely on specific knots whose properties have been rigorously tested for safety, while sailors still employ many of the same knots developed centuries ago because their effectiveness has been proven through generations of use. The study of knot theory has even found applications in molecular biology and quantum physics, revealing that the ancient human skill of knot-tying connects to deep mathematical principles underlying the structure of the universe."
-## 32 recorded 31: fact Stream type=result subtype=success uuid=eff7949a-fd91-4404-8db6-df149f53cd97
-item turn:2 turn final at=1793267912606 text="" #2 TURN_OUTCOME_COMPLETED started=1793267906252
-snapshot IDLE queue=[] working_on="Now three more paragraphs about knots." at=1793267912606 asks=[] session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23914/200000 tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-turn_end 2 last=msg_011CgWLAaouUBb5BJXKUjjYq:1
-## 34 recorded 33: input stdin-4
-effect reply stdin-4 accepted
-effect user 73746469-6e2d-4400-8000-000000000000 "/compact"
-item 73746469-6e2d-4400-8000-000000000000 prompt final input=stdin-4 at=1793267912608 text="/compact"
-snapshot WORKING queue=[] working_on="Now three more paragraphs about knots." at=1793267912608 asks=[] session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23914/200000 tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 36 recorded 35: fact Stream type=system subtype=status uuid=335a34cf-0794-4ca4-8a83-3fa3e1d49ae7
-item 335a34cf-0794-4ca4-8a83-3fa3e1d49ae7 status final at=1793267912622 text="" SDK_STATUS_COMPACTING compacting
-## 42 recorded 41: fact Stream type=system subtype=compact_boundary uuid=be835eab-7b1e-4c04-927b-1f6e8dcdb955
-item be835eab-7b1e-4c04-927b-1f6e8dcdb955 compaction final at=1793267924410 text="" 25097→4034
-item boundary:2 boundary final at=1793267924410 text="" BOUNDARY_KIND_COMPACTED session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 version=2.1.312
-snapshot WORKING queue=[] working_on="Now three more paragraphs about knots." at=1793267924410 asks=[] session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=4034/200000 tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-## 44 recorded 43: fact Stream type=user uuid=261f445f-8fc0-40c3-8cee-fc75d36a06a2
-item 261f445f-8fc0-40c3-8cee-fc75d36a06a2 slash final at=1793267924410 text="Compacted" /compact args=""
-## 45 recorded 44: fact Stream type=result subtype=success uuid=8962e152-536c-4ab9-babf-3257fd381157
-item turn:3 turn final at=1793267924410 text="" #3 TURN_OUTCOME_COMPLETED started=1793267912613
-snapshot IDLE queue=[] working_on="Now three more paragraphs about knots." at=1793267924410 asks=[] session=382709c4-0d7d-48e2-bc59-0f4b9e70a2c6 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=4034/200000 tasks=? active=[] usage=ok 5h:1%(ok) 7d:42%(?) servers=HEALTH_STATE_HEALTHY[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+effect catalogue 08dc149d models=[default{low/medium/high/xhigh/max},opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=56 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 08dc149d
+snapshot IDLE queue=[] working_on=- at=1793423316906 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 4 recorded 3: fact Stream type=control_response
+snapshot IDLE queue=[] working_on=- at=1793423316930 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 6 recorded 5: input 0x349174b5d8004b9488ed04cb5ed4d339
+effect reply 0x349174b5d8004b9488ed04cb5ed4d339 accepted
+effect user 349174b5-d800-4b94-88ed-04cb5ed4d339 "Write three short paragraphs about the history of rope-making."
+item boundary:1 boundary final at=1793423317030 text="" BOUNDARY_KIND_STARTED
+item 349174b5-d800-4b94-88ed-04cb5ed4d339 prompt final input=0x349174b5d8004b9488ed04cb5ed4d339 at=1793423317030 text="Write three short paragraphs about the history of rope-making."
+snapshot WORKING queue=[] working_on="Write three short paragraphs about the history of rope-making." at=1793423317030 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 12 recorded 11: fact Stream type=system subtype=init uuid=ae346e26-c4ca-4b33-8900-ce1e7e8674f8
+item boundary:1 boundary final at=1793423317053 text="" BOUNDARY_KIND_STARTED
+snapshot WORKING queue=[] working_on="Write three short paragraphs about the history of rope-making." at=1793423317053 asks=[] session=76b8cfdf-8d80-41c0-bea8-8961719ece24 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 14 recorded 13: fact Stream type=system subtype=status uuid=5971eb15-18a0-4b81-afc5-38139a3a1aab
+item 5971eb15-18a0-4b81-afc5-38139a3a1aab status final at=1793423317055 text="" SDK_STATUS_UNSPECIFIED requesting
+## 17 recorded 16: fact Stream type=stream_event uuid=119f6f7b-9504-486c-8b19-1360c0b2f702
+snapshot WORKING queue=[] working_on="Write three short paragraphs about the history of rope-making." at=1793423317971 asks=[] session=76b8cfdf-8d80-41c0-bea8-8961719ece24 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20361/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 19 recorded 18: fact Stream type=stream_event uuid=3ed41922-dbca-44c7-b81e-c239e148f9db
+item msg_011CgZjgf1CH4nLTcUkP7ydn:0 message open at=1793423317972 text=""
+## 20 recorded 19: fact Stream type=stream_event uuid=02446094-1ff1-4180-9c48-d6e5899a5bef
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "R"
+## 22 recorded 21: fact Stream type=stream_event uuid=70d3e1a7-82e6-47ba-9294-efbd7a3a8f5f
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ope-making is"
+## 24 recorded 23: fact Stream type=stream_event uuid=c46589f0-a206-4bcd-830b-7ee2dcfe10f6
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " one of the oldest cr"
+## 26 recorded 25: fact Stream type=stream_event uuid=8cedcaaf-ac3a-429c-a060-1ef975207941
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "afts, with"
+## 28 recorded 27: fact Stream type=stream_event uuid=77b1556d-017b-4b08-9a06-fe350a8e3f55
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " ro"
+## 30 recorded 29: fact Stream type=stream_event uuid=3c9d63fa-59e9-4f1e-9e47-f32c6a4b63c1
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ots re"
+## 32 recorded 31: fact Stream type=stream_event uuid=667db154-70c0-4d43-90c5-30537f8f9e81
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "aching back t"
+## 34 recorded 33: fact Stream type=stream_event uuid=cc42cf12-066c-4710-8580-a41161ccfaa9
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ens of thousands of years."
+## 36 recorded 35: fact Stream type=stream_event uuid=e39ce9a5-6ca0-4043-ac35-514b051f23a5
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " Archaeologists have found"
+## 38 recorded 37: fact Stream type=stream_event uuid=4d7541f3-1731-4921-bae9-97aa44d6e5ae
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " tw"
+## 40 recorded 39: fact Stream type=stream_event uuid=62251739-aa01-4baf-86cb-c98741d96820
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "isted pl"
+## 42 recorded 41: fact Stream type=stream_event uuid=3927e5b5-0e63-48c6-99b5-aeda34d0ecdc
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ant fibers at"
+## 44 recorded 43: fact Stream type=stream_event uuid=be76db54-1b67-4ec4-b04a-51d122409f74
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " s"
+## 46 recorded 45: fact Stream type=stream_event uuid=1dec5fd0-3efc-4891-9e4a-767f687e4455
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ites such"
+## 48 recorded 47: fact Stream type=stream_event uuid=7ce17c20-729b-4566-9196-e6bdeae3ee3f
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " as L"
+## 50 recorded 49: fact Stream type=stream_event uuid=b3e0c862-b730-472e-9c47-12172fca24aa
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "asc"
+## 51 recorded 50: fact Stream type=stream_event uuid=5dcb4ab9-e413-4f29-924c-9c58fe040dfb
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "aux, where"
+## 52 recorded 51: fact Stream type=stream_event uuid=db0fc0cf-830b-4663-8aa1-9056c11affa8
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " c"
+## 53 recorded 52: fact Stream type=stream_event uuid=6c4a141f-7f01-4d0d-b51a-6d5dc1eba9be
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ave"
+## 55 recorded 54: fact Stream type=stream_event uuid=6f23764c-a917-4ba3-9bc6-557fbdb93d10
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " paintings date"
+## 57 recorded 56: fact Stream type=stream_event uuid=05b13661-ff91-401e-9927-0fff73ae8adc
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " to ro"
+## 59 recorded 58: fact Stream type=stream_event uuid=6488284a-82b3-4bcb-aa93-3c4ca86bac14
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ughly 17,000 years"
+## 61 recorded 60: fact Stream type=stream_event uuid=f9480553-b521-45d5-b6e7-ddcece60c3c1
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " ago, and imp"
+## 63 recorded 62: fact Stream type=stream_event uuid=6464c155-897e-44d2-a242-2a65616988b1
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ressions of cord on"
+## 65 recorded 64: fact Stream type=stream_event uuid=282d3dc1-cfdd-4b29-a6c2-6f06d4ad6397
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " p"
+## 67 recorded 66: fact Stream type=stream_event uuid=921eed95-614e-4ac3-92cd-157990c4f618
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ottery and"
+## 69 recorded 68: fact Stream type=stream_event uuid=bc8d10fc-34b0-4e2c-942f-5b5ae161d269
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " clay su"
+## 71 recorded 70: fact Stream type=stream_event uuid=5785c9c3-7c77-4a1b-9638-094088c26fc5
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ggest that"
+## 73 recorded 72: fact Stream type=stream_event uuid=4a25dcd3-190d-4bca-9c0d-e30060eb2d3b
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " people were"
+## 75 recorded 74: fact Stream type=stream_event uuid=ab213e60-2273-40d3-9784-9f053f67e2e2
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " making string"
+## 77 recorded 76: fact Stream type=stream_event uuid=e479506d-8743-495b-9113-30d2e92bc616
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " and"
+## 79 recorded 78: fact Stream type=stream_event uuid=c593fd6d-ea52-4a4d-8dbb-9c4d9f1fc8c3
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " rope well"
+## 81 recorded 80: fact Stream type=stream_event uuid=342a32b2-56ed-4230-bfcb-af42871d410b
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " before the adv"
+## 83 recorded 82: fact Stream type=stream_event uuid=0a2a8fc7-1ff5-417c-9aa8-df72e61f7449
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ent of agriculture."
+## 85 recorded 84: fact Stream type=stream_event uuid=5bfc4c92-d619-42d4-bf19-8ef2f7184e3e
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " Early "
+## 87 recorded 86: fact Stream type=stream_event uuid=a562dc59-55f5-46e4-9d28-034835ccba8e
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ropes were made from pl"
+## 89 recorded 88: fact Stream type=stream_event uuid=0f9419b5-667b-4679-97de-ebfbadf34af3
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ant mater"
+## 91 recorded 90: fact Stream type=stream_event uuid=9e2004e1-0091-4a73-b751-a547ac9105a2
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ials like"
+## 93 recorded 92: fact Stream type=stream_event uuid=e2cf713f-1249-4d28-81fd-2492c28cd33c
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " fl"
+## 95 recorded 94: fact Stream type=stream_event uuid=fefa0960-25f9-4feb-90f0-52ac5959245a
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ax, h"
+## 97 recorded 96: fact Stream type=stream_event uuid=22207183-e427-4a04-b744-afc599ba7f6f
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "emp, gr"
+## 99 recorded 98: fact Stream type=stream_event uuid=69be426f-8e31-4c9a-8320-be8146db42d6
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "as"
+## 101 recorded 100: fact Stream type=stream_event uuid=43fa6820-fd87-4483-b1f4-261951971b4c
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ses, bark, and s"
+## 103 recorded 102: fact Stream type=stream_event uuid=866fd3ff-4417-491d-9d8c-8591f856beb6
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "inew, tw"
+## 105 recorded 104: fact Stream type=stream_event uuid=c6dbe790-cc80-4137-bf53-a2d24f33f04a
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "isted by hand into"
+## 107 recorded 106: fact Stream type=stream_event uuid=d9e425dc-3336-4980-9c9b-d6997dea1a09
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " str"
+## 109 recorded 108: fact Stream type=stream_event uuid=facc2fa2-acc3-4bc5-a5d7-1b7f6ce133ed
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ands and then comb"
+## 111 recorded 110: fact Stream type=stream_event uuid=d957107e-3d25-4c3d-862f-20ad3f8d2e62
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ined into lar"
+## 113 recorded 112: fact Stream type=stream_event uuid=f9fab6c5-6128-4a67-8808-7d15064df9c2
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ger cords. This"
+## 115 recorded 114: fact Stream type=stream_event uuid=7e99b9f9-3e9b-41ec-a5e8-f1d997d23f2f
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " sim"
+## 117 recorded 116: fact Stream type=stream_event uuid=87708fba-d4b1-4649-98f0-f8b10a94ae49
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ple techn"
+## 119 recorded 118: fact Stream type=stream_event uuid=8e31e50a-f3d2-4fd6-9c9b-56a4abfd7574
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ique of spinning f"
+## 121 recorded 120: fact Stream type=stream_event uuid=9a3392e9-a57f-4679-b9cb-2f85c3163bfe
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ibers together was fo"
+## 123 recorded 122: fact Stream type=stream_event uuid=010f7028-7228-45be-9906-6d591dffa1fe
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "undational to h"
+## 125 recorded 124: fact Stream type=stream_event uuid=ff91d7c9-aa28-4e0d-a2a2-a64338dee40c
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "unting n"
+## 127 recorded 126: fact Stream type=stream_event uuid=c2548727-d634-446e-adeb-4441dc1a395f
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ets, f"
+## 129 recorded 128: fact Stream type=stream_event uuid=bcd6ca6d-8141-4f2c-9b59-c1cb7fe58fe9
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ishing l"
+## 131 recorded 130: fact Stream type=stream_event uuid=08c81787-cfd4-46ce-b325-9e21e4f43b9a
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ines, shelter constru"
+## 133 recorded 132: fact Stream type=stream_event uuid=dc7ed2f3-8356-429d-9697-302b91bd8aa5
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ction, and the"
+## 135 recorded 134: fact Stream type=stream_event uuid=519545f7-172d-4038-bb00-4376d1454d31
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " bin"
+## 137 recorded 136: fact Stream type=stream_event uuid=d1d868d8-df5c-4d86-b928-ef5bded73740
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ding of t"
+## 139 recorded 138: fact Stream type=stream_event uuid=b3b460d5-cd9a-4ce7-8b5e-01a6b86ce56b
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ools.\n\nAs"
+## 141 recorded 140: fact Stream type=stream_event uuid=67254807-51e0-4c75-a2cf-c9831f32363f
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " civiliz"
+## 143 recorded 142: fact Stream type=stream_event uuid=5d2198c9-c4f7-407c-b399-1f1dacf8b37f
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ations develop"
+## 145 recorded 144: fact Stream type=stream_event uuid=c82208e1-c792-456b-bb14-1148aa2dafd4
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ed, r"
+## 147 recorded 146: fact Stream type=stream_event uuid=4901485e-1bbf-4066-88c2-8e74c53c399c
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ope became"
+## 149 recorded 148: fact Stream type=stream_event uuid=00ca9b97-12a3-46da-9057-7cd11f7fca5f
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " central"
+## 151 recorded 150: fact Stream type=stream_event uuid=4442a5d6-739c-4032-bc9c-ce7e6874b59a
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " to tr"
+## 153 recorded 152: fact Stream type=stream_event uuid=74c7fdc6-36f2-43a6-b99b-cd266df3ccab
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ade,"
+## 155 recorded 154: fact Stream type=stream_event uuid=e8646deb-c6d4-4a07-ba78-20a62385bb53
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " sh"
+## 157 recorded 156: fact Stream type=stream_event uuid=d9844249-6f63-4c0c-952e-4aab0bf1af85
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ipping"
+## 159 recorded 158: fact Stream type=stream_event uuid=31a4b25f-0c1e-4d81-bab6-1bf7681c82fa
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 ", and eng"
+## 161 recorded 160: fact Stream type=stream_event uuid=b16c2acb-11d0-4584-aed6-bc927d31bd27
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ineering. Ancient"
+## 163 recorded 162: fact Stream type=stream_event uuid=884ea67f-67d1-4ceb-95c0-c53511535d2e
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " Egyptians used"
+## 165 recorded 164: fact Stream type=stream_event uuid=6b98b0d9-04f2-429a-b97c-d91f58ccb520
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " rope ext"
+## 167 recorded 166: fact Stream type=stream_event uuid=74a31c2c-f7e7-4d52-b06c-ce6d44ec2740
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ensively for h"
+## 169 recorded 168: fact Stream type=stream_event uuid=637086ca-12be-44da-8ae6-c6d2b944a9d6
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "au"
+## 171 recorded 170: fact Stream type=stream_event uuid=78664b70-6781-49f4-889a-c949a51d5a0c
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ling stone bl"
+## 173 recorded 172: fact Stream type=stream_event uuid=3169e925-e526-4b29-b02a-603c7e747c5b
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ocks and r"
+## 175 recorded 174: fact Stream type=stream_event uuid=b9b68a8c-40ac-4cf7-afa9-735755349970
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "igging bo"
+## 177 recorded 176: fact Stream type=stream_event uuid=c27579ae-1c67-4b75-a3c5-2595c6fe22b1
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ats, and t"
+## 179 recorded 178: fact Stream type=stream_event uuid=26656e69-2f22-4432-a70a-245107601a7a
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "om"
+## 181 recorded 180: fact Stream type=stream_event uuid=7801c919-8c62-4f31-9f9a-a2d13e209d94
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "b paintings show"
+## 183 recorded 182: fact Stream type=stream_event uuid=45819f5d-7003-4c43-a728-f8b1e870cd91
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " rope-mak"
+## 185 recorded 184: fact Stream type=stream_event uuid=1aa4e35a-236f-448c-9bb7-497e24d3c964
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ers at"
+## 187 recorded 186: fact Stream type=stream_event uuid=f5518f3e-b111-4615-b2b1-fec725ecd4b1
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " work with"
+## 189 recorded 188: fact Stream type=stream_event uuid=72c287bb-c41d-4eda-97dc-399e85ab609b
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " tw"
+## 191 recorded 190: fact Stream type=stream_event uuid=a3b2f8ed-eefb-4aaf-b792-8888e8692204
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "isting fr"
+## 193 recorded 192: fact Stream type=stream_event uuid=2bb03705-44ba-4cfe-a51b-888386e475bd
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ames."
+## 195 recorded 194: fact Stream type=stream_event uuid=4a81ef04-43f3-4df9-85f7-fd0f91521ad3
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " R"
+## 197 recorded 196: fact Stream type=stream_event uuid=9b28e205-d880-48b2-9ca5-e5098787ca9a
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ope production"
+## 199 recorded 198: fact Stream type=stream_event uuid=52b1a4b7-a274-4c25-bd34-9561ed0d2f9e
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " gr"
+## 201 recorded 200: fact Stream type=stream_event uuid=5b24a682-8d74-47da-bc7b-e1e4e43fa26d
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ew into"
+## 203 recorded 202: fact Stream type=stream_event uuid=3a28351c-6b17-4a7b-9d3f-41f7ea5edabc
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " a spec"
+## 205 recorded 204: fact Stream type=stream_event uuid=10c9f9fd-87ec-4c0f-8e54-ffd16aee49b5
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ialized tr"
+## 207 recorded 206: fact Stream type=stream_event uuid=50bff88a-cf03-4b0b-b94f-660b4bb1e97e
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ade,"
+## 209 recorded 208: fact Stream type=stream_event uuid=8dacd30d-f7bf-42e5-a139-5b7e03526ac7
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " with long"
+## 211 recorded 210: fact Stream type=stream_event uuid=4414d8f4-36b8-4fe2-8edc-2f965f86ec48
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " \""
+## 213 recorded 212: fact Stream type=stream_event uuid=2824036a-d883-4d9c-9ebd-37bb804edb73
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "rope walks"
+## 215 recorded 214: fact Stream type=stream_event uuid=56943f5a-56ec-41fd-a988-606a6c00bd13
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "\" built"
+## 217 recorded 216: fact Stream type=stream_event uuid=10ed55ac-afed-4e42-9f40-053b64b95a38
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " in"
+## 219 recorded 218: fact Stream type=stream_event uuid=f4458c79-0c17-4236-a665-5f0eede57956
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " Gre"
+## 221 recorded 220: fact Stream type=stream_event uuid=b9800532-bb73-4549-8119-9d90e53658fe
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ece, R"
+## 223 recorded 222: fact Stream type=stream_event uuid=80ecf2d5-41c1-4367-9c73-453bd088fe86
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ome, and later Europe,"
+## 225 recorded 224: fact Stream type=stream_event uuid=f0d6053f-d81a-46f8-a97e-32aab40b77f4
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " where work"
+## 227 recorded 226: fact Stream type=stream_event uuid=c068de73-d219-4e46-a4c7-0aa5439fdbcb
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ers wal"
+## 229 recorded 228: fact Stream type=stream_event uuid=6118eb82-9b0f-46ca-a974-c1573401ebac
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ked back"
+## 231 recorded 230: fact Stream type=stream_event uuid=6c3d7ec6-8cc1-40a0-acd6-ef5329345ecd
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ward while"
+## 233 recorded 232: fact Stream type=stream_event uuid=78a3f58e-acac-4a10-a739-5018c9dcfa0e
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " feeding f"
+## 235 recorded 234: fact Stream type=stream_event uuid=b95b76e7-2b2f-4a38-98b5-f1255cf76613
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ibers into a line"
+## 237 recorded 236: fact Stream type=stream_event uuid=08a46f51-af82-4aaf-a45f-bb020156d77b
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " of"
+## 239 recorded 238: fact Stream type=stream_event uuid=68890568-9543-4850-a6b0-fdb6e12a5ede
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " sp"
+## 241 recorded 240: fact Stream type=stream_event uuid=fcd01120-6ad0-48eb-9aa6-8eb6d9e8f0c3
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "inning h"
+## 243 recorded 242: fact Stream type=stream_event uuid=7cdbbd84-a428-4a4f-9eeb-66959e91d1a8
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ooks. H"
+## 245 recorded 244: fact Stream type=stream_event uuid=bbe14da6-24e2-4847-a245-ce8d07b1a2bc
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "emp and fl"
+## 247 recorded 246: fact Stream type=stream_event uuid=1d740135-b302-49cf-a622-6a038cafa4c0
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ax were"
+## 249 recorded 248: fact Stream type=stream_event uuid=2131306a-c807-4c3c-8d95-b1f7b3db1e46
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " the most val"
+## 251 recorded 250: fact Stream type=stream_event uuid=28a06173-8bec-4de1-aee4-5c2ce83ed156
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ued materials for"
+## 253 recorded 252: fact Stream type=stream_event uuid=108fb413-98cc-400b-bcd8-a1a8b5bdb906
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " their"
+## 255 recorded 254: fact Stream type=stream_event uuid=b66fb7c7-23b5-4447-8d7c-55f3ef065808
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " str"
+## 257 recorded 256: fact Stream type=stream_event uuid=aed53d68-ede9-4fe7-a329-25f3a2544277
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ength and durability, and the dem"
+## 259 recorded 258: fact Stream type=stream_event uuid=cd5f3594-a134-4108-8902-04ba9a8eb7ff
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ands"
+## 261 recorded 260: fact Stream type=stream_event uuid=d30e9567-07be-46b4-8337-ef4f05089b8a
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " of se"
+## 263 recorded 262: fact Stream type=stream_event uuid=c9eb41fe-f612-4d28-ae42-3571c06ce26d
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "afaring made"
+## 265 recorded 264: fact Stream type=stream_event uuid=d35c8e22-a1fa-4fcf-86e3-066cb5c62075
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " rope a"
+## 267 recorded 266: fact Stream type=stream_event uuid=c6f034c6-7317-468d-aa4a-75e201f72b9d
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " str"
+## 269 recorded 268: fact Stream type=stream_event uuid=7a87acd7-283b-4f94-b5e9-cc9525222f02
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ategic res"
+## 271 recorded 270: fact Stream type=stream_event uuid=83402f37-4326-4580-a505-2e968f5689d5
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ource,"
+## 273 recorded 272: fact Stream type=stream_event uuid=07f3c9df-164f-4663-a73d-ecee73d916be
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " since"
+## 275 recorded 274: fact Stream type=stream_event uuid=ce8bf13e-761d-4e59-8156-06e88cdd8765
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " "
+## 277 recorded 276: fact Stream type=stream_event uuid=72d52b2f-d141-4477-9adc-144dbfd3c25f
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ships required"
+## 279 recorded 278: fact Stream type=stream_event uuid=2e0a29a0-4527-4358-b062-bad2c1aa97a9
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " v"
+## 281 recorded 280: fact Stream type=stream_event uuid=e0a34858-7542-48fc-9f99-3d61e78bade5
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ast qu"
+## 283 recorded 282: fact Stream type=stream_event uuid=ccf26293-0caa-412d-9764-26a9ce56ba5d
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "antities of c"
+## 285 recorded 284: fact Stream type=stream_event uuid=d8a6c7b6-dd26-48c2-b2e2-666de57fe85a
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ordage for"
+## 287 recorded 286: fact Stream type=stream_event uuid=de3282f4-52ef-4d89-9474-851626b53bef
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " s"
+## 289 recorded 288: fact Stream type=stream_event uuid=b8d49ae6-d029-470d-b8a8-729c2fbafdc9
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ails, rigging, and an"
+## 291 recorded 290: fact Stream type=stream_event uuid=5e0d2938-2bf3-44cc-9104-e70e1fecffc7
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "chor"
+## 293 recorded 292: fact Stream type=stream_event uuid=8174a9a3-cda0-47bf-baa5-032c0a4a6ddc
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " l"
+## 295 recorded 294: fact Stream type=stream_event uuid=4ec34c89-bfb3-4d35-8674-e5ae8eb7090f
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ines.\n\nThe"
+## 297 recorded 296: fact Stream type=stream_event uuid=acfb7184-7413-45c3-a6bc-f5c2e19b2ae4
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " Industrial Revolution trans"
+## 299 recorded 298: fact Stream type=stream_event uuid=4d6e2b69-b6f7-4050-a4ee-1736d5edcadf
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "formed rope-"
+## 301 recorded 300: fact Stream type=stream_event uuid=fef20e71-8700-4b48-a1ff-55a192ceb404
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "making."
+## 303 recorded 302: fact Stream type=stream_event uuid=b2f2f71b-796a-4797-886a-c96d433e8c61
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " Mach"
+## 305 recorded 304: fact Stream type=stream_event uuid=8c940f2a-d411-4d2c-8f49-ada517439b93
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ines"
+## 307 recorded 306: fact Stream type=stream_event uuid=3214a593-5ff1-40be-a135-70e6472dc4bc
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " repl"
+## 309 recorded 308: fact Stream type=stream_event uuid=67407ced-e006-4906-98e3-863990109a91
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "aced h"
+## 311 recorded 310: fact Stream type=stream_event uuid=1102cd55-1ff7-42a0-bc4f-e0594f42d500
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "and-spinning in"
+## 313 recorded 312: fact Stream type=stream_event uuid=867db1bd-e3b4-4567-85bb-9bf4c8b9fcf5
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " the e"
+## 315 recorded 314: fact Stream type=stream_event uuid=54e333f2-c03d-4de8-8e06-14b3ebcbca5d
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ighteenth and"
+## 317 recorded 316: fact Stream type=stream_event uuid=84425d48-419c-4a79-9d30-117190f81698
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " nineteenth centuries"
+## 319 recorded 318: fact Stream type=stream_event uuid=4c58d51b-cea5-4e57-aafc-9ac7e1a6e144
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 ", and steel w"
+## 321 recorded 320: fact Stream type=stream_event uuid=2d2ac1ca-7a29-4bca-9c28-00860f8ab287
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ire r"
+## 323 recorded 322: fact Stream type=stream_event uuid=0e4b5330-4b8f-45c3-af89-d8c9a0b9e5ae
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ope,"
+## 325 recorded 324: fact Stream type=stream_event uuid=ca081261-10c7-4d32-992b-c1d0121530aa
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " first"
+## 327 recorded 326: fact Stream type=stream_event uuid=2710cc8e-663a-45e9-a884-0b6698c6f09e
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " develop"
+## 329 recorded 328: fact Stream type=stream_event uuid=36f6a885-1427-48e8-8128-f38c8c1cb761
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ed for mining and later"
+## 331 recorded 330: fact Stream type=stream_event uuid=8e9ed9cc-5c90-47a1-9464-dba79f3b06bd
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " used"
+## 333 recorded 332: fact Stream type=stream_event uuid=f777628a-5a2d-4355-b34f-8c032d51d59b
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " in"
+## 335 recorded 334: fact Stream type=stream_event uuid=1ab0d415-5727-48ca-b6d8-50b032951cdc
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " bridges and el"
+## 337 recorded 336: fact Stream type=stream_event uuid=30416d53-fdfe-4bdc-8e2d-ffc24a5c4423
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "evators, became"
+## 339 recorded 338: fact Stream type=stream_event uuid=912efc46-4384-405f-aa8a-515485f6b8a6
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " a major"
+## 341 recorded 340: fact Stream type=stream_event uuid=35797697-1539-4893-9547-a36dbb894fc2
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " inn"
+## 343 recorded 342: fact Stream type=stream_event uuid=355d6ea4-4662-4186-863f-fe746a9cf608
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ovation. In"
+## 345 recorded 344: fact Stream type=stream_event uuid=7c682b61-e6f2-4b63-866f-d43ec1c4b51a
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " the twentieth century, syn"
+## 347 recorded 346: fact Stream type=stream_event uuid=6329b4b4-9a1d-4a7c-ab40-e726753c34d1
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "thetic fib"
+## 349 recorded 348: fact Stream type=stream_event uuid=094b7151-5b35-4684-ba88-8adbde9b1027
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ers such as nylon, pol"
+## 351 recorded 350: fact Stream type=stream_event uuid=d0d5975e-6794-48cf-9996-ff1fadcae3cc
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "yester, and polypropyl"
+## 353 recorded 352: fact Stream type=stream_event uuid=d853e7f8-f641-422a-953e-374958ab10aa
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ene re"
+## 355 recorded 354: fact Stream type=stream_event uuid=f737e1d9-5eaa-42b0-b9b6-3f6d826f89cb
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "shaped the industry, off"
+## 357 recorded 356: fact Stream type=stream_event uuid=3a81f68a-1cc3-4c78-83e0-775f6fb902bf
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ering gre"
+## 359 recorded 358: fact Stream type=stream_event uuid=cdb2b7e9-bcd7-44a3-904e-f44ca977e44c
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ater strength, res"
+## 361 recorded 360: fact Stream type=stream_event uuid=4cccd961-7f5e-4bbc-8c43-29e9f6fcb20c
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "istance to rot"
+## 363 recorded 362: fact Stream type=stream_event uuid=62588828-b6e2-4425-894a-ed247fd63a57
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 ", and l"
+## 365 recorded 364: fact Stream type=stream_event uuid=16273d7b-f080-47e3-85f1-1dcd901a1ed9
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ower weight than nat"
+## 367 recorded 366: fact Stream type=stream_event uuid=0511d07d-3eb8-4988-9f1f-2d211919b898
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ural fibers. Tra"
+## 369 recorded 368: fact Stream type=stream_event uuid=f20c28c5-8641-42d1-9726-19c1b7a28a23
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ditional rope-making pers"
+## 371 recorded 370: fact Stream type=stream_event uuid=43ddca86-a49f-4b70-a226-c9f98ccf2533
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ists today"
+## 373 recorded 372: fact Stream type=stream_event uuid=699813e8-f659-43e1-bbd5-5b98d0849a1b
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " in he"
+## 375 recorded 374: fact Stream type=stream_event uuid=bf136145-5c67-4453-b58a-81f7a5ae2956
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ritage workshops and among"
+## 377 recorded 376: fact Stream type=stream_event uuid=aea43189-7a09-4684-851e-7d7c013e3eb7
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " craftspeople who"
+## 379 recorded 378: fact Stream type=stream_event uuid=bafba436-d16a-4ea3-b129-5bc7b6e796d6
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " value the older"
+## 381 recorded 380: fact Stream type=stream_event uuid=fbb2f8b5-f73f-4452-a880-55b1d26b4d4d
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " meth"
+## 383 recorded 382: fact Stream type=stream_event uuid=d4a4e3d1-d077-44a0-b8fd-674422ced787
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ods, even"
+## 385 recorded 384: fact Stream type=stream_event uuid=99722646-a76d-431f-94ae-9ad5250ceb0b
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " as modern "
+## 387 recorded 386: fact Stream type=stream_event uuid=d377e5ea-4419-4403-9869-38579241aa16
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ropes ser"
+## 389 recorded 388: fact Stream type=stream_event uuid=f4b37a86-6e57-42bf-805a-d53f85aebd67
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ve in"
+## 391 recorded 390: fact Stream type=stream_event uuid=3dec74a6-9332-48f5-8d8e-7f05f19f6e88
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 " climbing, r"
+## 393 recorded 392: fact Stream type=stream_event uuid=ce9c02ff-c682-43f6-988f-37bd60f2260e
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "esc"
+## 395 recorded 394: fact Stream type=stream_event uuid=b148c2aa-a1fe-4bcf-8129-040aea960db2
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "ue, a"
+## 397 recorded 396: fact Stream type=stream_event uuid=508d63db-617d-44db-9ba8-5642754be129
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "viation, and count"
+## 398 recorded 397: fact Stream type=stream_event uuid=08396ae7-48b1-46a1-a3b5-563c92cc4b1b
+append msg_011CgZjgf1CH4nLTcUkP7ydn:0 "less other applications."
+## 400 recorded 399: fact Stream type=assistant uuid=3e39cdb9-3189-482b-af42-947e89784366
+item msg_011CgZjgf1CH4nLTcUkP7ydn:0 message final at=1793423317972 text="Rope-making is one of the oldest crafts, with roots reaching back tens of thousands of years. Archaeologists have found twisted plant fibers at sites such as Lascaux, where cave paintings date to roughly 17,000 years ago, and impressions of cord on pottery and clay suggest that people were making string and rope well before the advent of agriculture. Early ropes were made from plant materials like flax, hemp, grasses, bark, and sinew, twisted by hand into strands and then combined into larger cords. This simple technique of spinning fibers together was foundational to hunting nets, fishing lines, shelter construction, and the binding of tools.\n\nAs civilizations developed, rope became central to trade, shipping, and engineering. Ancient Egyptians used rope extensively for hauling stone blocks and rigging boats, and tomb paintings show rope-makers at work with twisting frames. Rope production grew into a specialized trade, with long \"rope walks\" built in Greece, Rome, and later Europe, where workers walked backward while feeding fibers into a line of spinning hooks. Hemp and flax were the most valued materials for their strength and durability, and the demands of seafaring made rope a strategic resource, since ships required vast quantities of cordage for sails, rigging, and anchor lines.\n\nThe Industrial Revolution transformed rope-making. Machines replaced hand-spinning in the eighteenth and nineteenth centuries, and steel wire rope, first developed for mining and later used in bridges and elevators, became a major innovation. In the twentieth century, synthetic fibers such as nylon, polyester, and polypropylene reshaped the industry, offering greater strength, resistance to rot, and lower weight than natural fibers. Traditional rope-making persists today in heritage workshops and among craftspeople who value the older methods, even as modern ropes serve in climbing, rescue, aviation, and countless other applications."
+## 407 recorded 406: fact Stream type=rate_limit_event uuid=880b7388-9507-444e-aea3-c9ccf7c2f5a1
+snapshot WORKING queue=[] working_on="Write three short paragraphs about the history of rope-making." at=1793423321912 asks=[] session=76b8cfdf-8d80-41c0-bea8-8961719ece24 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20361/? tasks=? active=[] usage=ok 5h:17%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 409 recorded 408: fact Stream type=result subtype=success uuid=081b1ba8-0ed9-4780-a0eb-eb7ad60fe4c0
+item turn:1 turn final at=1793423321922 text="" #1 TURN_OUTCOME_COMPLETED started=1793423317043
+snapshot IDLE queue=[] working_on="Write three short paragraphs about the history of rope-making." at=1793423321922 asks=[] session=76b8cfdf-8d80-41c0-bea8-8961719ece24 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20361/1000000 tasks=? active=[] usage=ok 5h:17%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 1 last=msg_011CgZjgf1CH4nLTcUkP7ydn:0
+## 413 recorded 412: input 0x8cc2d1b19c4a422c8b43b2e39379ec94
+effect reply 0x8cc2d1b19c4a422c8b43b2e39379ec94 accepted
+effect user 8cc2d1b1-9c4a-422c-8b43-b2e39379ec94 "Now two short paragraphs about knots."
+item 8cc2d1b1-9c4a-422c-8b43-b2e39379ec94 prompt final input=0x8cc2d1b19c4a422c8b43b2e39379ec94 at=1793423321952 text="Now two short paragraphs about knots."
+snapshot WORKING queue=[] working_on="Now two short paragraphs about knots." at=1793423321952 asks=[] session=76b8cfdf-8d80-41c0-bea8-8961719ece24 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20361/1000000 tasks=? active=[] usage=ok 5h:17%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 421 recorded 420: fact Stream type=system subtype=status uuid=17a02146-3aaa-4c61-8ab1-2553484804f0
+item 17a02146-3aaa-4c61-8ab1-2553484804f0 status final at=1793423321962 text="" SDK_STATUS_UNSPECIFIED requesting
+## 425 recorded 424: fact Stream type=stream_event uuid=82af606f-5e1e-4d16-8f58-8c8596de20ae
+snapshot WORKING queue=[] working_on="Now two short paragraphs about knots." at=1793423322745 asks=[] session=76b8cfdf-8d80-41c0-bea8-8961719ece24 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=21029/1000000 tasks=? active=[] usage=ok 5h:17%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 426 recorded 425: fact Stream type=stream_event uuid=26c3a7db-8bc6-4cb3-8b30-19714452b4fa
+item msg_011CgZjh1v35yw1NMpS86xZM:0 message open at=1793423322745 text=""
+## 427 recorded 426: fact Stream type=stream_event uuid=3d00c231-f87d-4eee-a26c-148d5c7a57e5
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "Knots are as"
+## 429 recorded 428: fact Stream type=stream_event uuid=069049d4-3784-4502-b6b8-1d00a2752a90
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " old as rope it"
+## 431 recorded 430: fact Stream type=stream_event uuid=0669b8c1-78be-46c6-a0fd-26ed9bb21f4f
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "self, and"
+## 433 recorded 432: fact Stream type=stream_event uuid=603a2e31-88ad-4812-8992-08fc1ca38d45
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " hum"
+## 434 recorded 433: fact Stream type=stream_event uuid=f204db78-e07c-4407-a6cd-3158278cc4f4
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ans have"
+## 435 recorded 434: fact Stream type=stream_event uuid=731dde08-e141-440d-8bcc-ecd41f0dcf0a
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " tied them for"
+## 436 recorded 435: fact Stream type=stream_event uuid=bcdc3ea6-c7dd-452a-b44e-9723671a8537
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " pract"
+## 437 recorded 436: fact Stream type=stream_event uuid=6fb0bcc2-3e52-41d3-87f9-0b5534f47534
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ical,"
+## 438 recorded 437: fact Stream type=stream_event uuid=53281c3d-e797-4a38-8504-697670e6ea9a
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " "
+## 440 recorded 439: fact Stream type=stream_event uuid=de2ce831-2e92-4954-bebc-077b04770e65
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ceremonial, and art"
+## 442 recorded 441: fact Stream type=stream_event uuid=fb354768-a99a-4ebe-aa72-3c38532a169b
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "istic purposes for"
+## 444 recorded 443: fact Stream type=stream_event uuid=ea2e899b-0877-4d63-ab03-43a10ba35541
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " thousands of years. "
+## 446 recorded 445: fact Stream type=stream_event uuid=f8908bd5-f4b3-43c1-a8b5-e740f5695150
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "Ancient Egyptian"
+## 448 recorded 447: fact Stream type=stream_event uuid=6dc9fbbe-2011-4214-9b82-399fe261a9e1
+append msg_011CgZjh1v35yw1NMpS86xZM:0 ", Chinese, and"
+## 449 recorded 448: fact Stream type=stream_event uuid=0fe03a5c-e44b-4ec2-a688-5796b0cc2676
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " Inc"
+## 451 recorded 450: fact Stream type=stream_event uuid=e48d65ff-9a04-4571-90de-3869fb4b0938
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "an c"
+## 452 recorded 451: fact Stream type=stream_event uuid=2546ff1a-1688-440f-b597-509dd47e3c77
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ultures all"
+## 453 recorded 452: fact Stream type=stream_event uuid=d954e83f-3375-4cd1-b871-6cdeaa8626a4
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " left"
+## 455 recorded 454: fact Stream type=stream_event uuid=8b4f117f-cbf6-46b7-b579-1b5112948290
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " ev"
+## 457 recorded 456: fact Stream type=stream_event uuid=21f0428c-712c-43c0-af36-b55999c4f1d4
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "idence of knot"
+## 459 recorded 458: fact Stream type=stream_event uuid=b375b96c-3d3c-4336-a0a3-55e2839c13a8
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ting, from"
+## 461 recorded 460: fact Stream type=stream_event uuid=4162686f-bf2f-41da-95d3-badf5379d742
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " "
+## 463 recorded 462: fact Stream type=stream_event uuid=3f79d006-d05a-40e2-9d30-3a753da28e07
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ceremonial c"
+## 465 recorded 464: fact Stream type=stream_event uuid=fe8b76d7-c6b2-49f0-b56c-237660ea8544
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ords to record-keeping syst"
+## 467 recorded 466: fact Stream type=stream_event uuid=0807f865-674c-4b61-a781-c4878dccc2c2
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ems. The"
+## 469 recorded 468: fact Stream type=stream_event uuid=5dfff7eb-8239-4839-89d3-82b1af34f2f6
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " Incas"
+## 470 recorded 469: fact Stream type=stream_event uuid=8224d8f0-66de-4bb5-87f3-cf0b35b18881
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " used kn"
+## 472 recorded 471: fact Stream type=stream_event uuid=438d1bb0-a83c-4add-97f9-35ffdf0957e2
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "otted str"
+## 473 recorded 472: fact Stream type=stream_event uuid=2a476580-0b87-4c4d-ad4e-5f683106413e
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ings called quipu"
+## 474 recorded 473: fact Stream type=stream_event uuid=0bed5892-79c1-4610-87b3-b4d285057c65
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " to record num"
+## 476 recorded 475: fact Stream type=stream_event uuid=53f1510e-95a5-41b1-a5d8-71bbda1c3374
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "erical and"
+## 477 recorded 476: fact Stream type=stream_event uuid=ac85ed06-250c-4017-99a6-d6a3cc9d2f30
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " poss"
+## 479 recorded 478: fact Stream type=stream_event uuid=ee4e0432-00bd-4cf1-9af4-9c74fc0509de
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ibly nar"
+## 481 recorded 480: fact Stream type=stream_event uuid=a0fd32a6-df68-4da3-8b70-37e2d76604d6
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "rative information"
+## 483 recorded 482: fact Stream type=stream_event uuid=acef23c2-dbc2-4b80-91ae-20147a01485c
+append msg_011CgZjh1v35yw1NMpS86xZM:0 ", a"
+## 485 recorded 484: fact Stream type=stream_event uuid=72f0a187-1353-4203-9c35-3e771adb5d07
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " re"
+## 487 recorded 486: fact Stream type=stream_event uuid=e058d712-d84c-43c0-a348-6ac4f04d6772
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "minder that knots could"
+## 489 recorded 488: fact Stream type=stream_event uuid=db3a138f-8f02-4734-a80f-0d79f569112a
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " also ser"
+## 490 recorded 489: fact Stream type=stream_event uuid=62aba73a-2af0-452a-8aa8-bbc12ac1aa98
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ve as a"
+## 492 recorded 491: fact Stream type=stream_event uuid=c5060a2b-3bc3-4210-85c0-81f14de442d6
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " form of writing. Sail"
+## 494 recorded 493: fact Stream type=stream_event uuid=f2b34a62-f9a5-4cca-9a3c-295a41c94128
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ors,"
+## 496 recorded 495: fact Stream type=stream_event uuid=40808da5-8259-4d95-acd4-e8e72b89a8cb
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " clim"
+## 498 recorded 497: fact Stream type=stream_event uuid=6e33b45a-88b9-4861-afb2-4b6b0ac6c379
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "bers, and cra"
+## 500 recorded 499: fact Stream type=stream_event uuid=2ed57c9b-3d79-45cc-acfc-451cd6d9985e
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ftspeople later"
+## 502 recorded 501: fact Stream type=stream_event uuid=06134bd1-57b1-48a2-b78b-eb993023ebd1
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " developed spec"
+## 504 recorded 503: fact Stream type=stream_event uuid=8a408a9f-b68b-447f-b0f1-fd52113de49e
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ialized knots"
+## 506 recorded 505: fact Stream type=stream_event uuid=8adcacba-32a5-4425-8a37-213164fce30f
+append msg_011CgZjh1v35yw1NMpS86xZM:0 ", each"
+## 508 recorded 507: fact Stream type=stream_event uuid=9a0c017e-ee73-442b-9b31-8618eb5c0742
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " su"
+## 510 recorded 509: fact Stream type=stream_event uuid=20e3c351-26c0-4b42-b8f6-09ce0a87d93c
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ited to a particular load,"
+## 512 recorded 511: fact Stream type=stream_event uuid=92917a01-cbd9-4520-a500-5a6184409012
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " material"
+## 514 recorded 513: fact Stream type=stream_event uuid=75817119-71d1-4678-b56a-f50a5f435752
+append msg_011CgZjh1v35yw1NMpS86xZM:0 ", or task.\n\nOver"
+## 516 recorded 515: fact Stream type=stream_event uuid=b11e5834-f4ab-4ab1-9814-ea8e92ff9855
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " time"
+## 518 recorded 517: fact Stream type=stream_event uuid=da663132-c660-428f-b291-8c6565282e5a
+append msg_011CgZjh1v35yw1NMpS86xZM:0 ", kn"
+## 520 recorded 519: fact Stream type=stream_event uuid=6172924e-4e97-4cbb-8d14-c3878d33ca6d
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ot"
+## 522 recorded 521: fact Stream type=stream_event uuid=33ee2e6d-1b9d-4360-a111-548497b9fe45
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "-t"
+## 524 recorded 523: fact Stream type=stream_event uuid=c724a108-4546-43f0-b395-330ad5cd1210
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ying became an ess"
+## 526 recorded 525: fact Stream type=stream_event uuid=2123ffb0-45b5-4972-acae-b9b7aca481db
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ential skill in"
+## 528 recorded 527: fact Stream type=stream_event uuid=176d5d86-91ff-4137-9001-06f2cce32d8f
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " se"
+## 530 recorded 529: fact Stream type=stream_event uuid=ffddc05a-7626-4b7f-8192-82b38f3c86df
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "afaring, where"
+## 532 recorded 531: fact Stream type=stream_event uuid=771b0131-2d65-4c8d-bd88-e1fc90ed99f1
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " m"
+## 534 recorded 533: fact Stream type=stream_event uuid=9a2db4fd-c42a-493a-9d24-5791bc68ca6a
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "astering h"
+## 536 recorded 535: fact Stream type=stream_event uuid=7c962721-4813-4d02-8acb-2b1157e8b3d1
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "it"
+## 538 recorded 537: fact Stream type=stream_event uuid=a7819b36-ff52-49cf-a3d4-a59b31377ade
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ches, bends"
+## 540 recorded 539: fact Stream type=stream_event uuid=2a36e7d7-8051-4ff1-9268-c857b62db37c
+append msg_011CgZjh1v35yw1NMpS86xZM:0 ", and spl"
+## 542 recorded 541: fact Stream type=stream_event uuid=05fad731-420b-4909-9212-c98b9a4bbda9
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ices"
+## 544 recorded 543: fact Stream type=stream_event uuid=9e8ba866-ce38-481d-a26f-42e6b21bdb9c
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " could"
+## 546 recorded 545: fact Stream type=stream_event uuid=7ca1b3c6-8e4e-43d7-a9d0-5942ddcc7f43
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " m"
+## 548 recorded 547: fact Stream type=stream_event uuid=4350a767-6d2a-47c8-8358-378fd8088ade
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ean the difference between a"
+## 550 recorded 549: fact Stream type=stream_event uuid=e7bb6386-eadd-47e7-9eb0-51c72bc69382
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " sec"
+## 552 recorded 551: fact Stream type=stream_event uuid=8c1e2e2b-1776-4bb3-ab4f-b5e5cdf4f451
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ure ship and a lost one"
+## 554 recorded 553: fact Stream type=stream_event uuid=5a0a3b06-d013-44a1-b1af-e65bd8f48204
+append msg_011CgZjh1v35yw1NMpS86xZM:0 ". In the nineteenth"
+## 556 recorded 555: fact Stream type=stream_event uuid=7d8d28f4-24c8-482f-a740-69c0ebf9862b
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " and"
+## 558 recorded 557: fact Stream type=stream_event uuid=7795202c-19f7-45e3-aff5-f0728f648af1
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " twentieth centuries,"
+## 560 recorded 559: fact Stream type=stream_event uuid=0b95e0a1-9100-4b37-b974-972b91c27840
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " mathematic"
+## 562 recorded 561: fact Stream type=stream_event uuid=0e53f6e9-12dd-4de5-a520-6f28097fd7e4
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ians began stud"
+## 564 recorded 563: fact Stream type=stream_event uuid=190e5047-1fc5-435a-b1ba-df646cf18d00
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ying knots as ab"
+## 566 recorded 565: fact Stream type=stream_event uuid=3fe1489e-1b60-4ddc-8a67-4e12ec861c03
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "stract objects,"
+## 568 recorded 567: fact Stream type=stream_event uuid=0795c9b9-e2f5-4e8a-bd24-d2fa45e7b7be
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " gi"
+## 570 recorded 569: fact Stream type=stream_event uuid=89663432-14ed-4ce4-85b4-3dff12b8d4fa
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ving rise to knot theory"
+## 572 recorded 571: fact Stream type=stream_event uuid=46bad456-fff1-4d5e-9aee-fda2b579f5e7
+append msg_011CgZjh1v35yw1NMpS86xZM:0 ", a branch of topology that"
+## 574 recorded 573: fact Stream type=stream_event uuid=6aefce45-9976-4f6d-886a-b0b40f138573
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " class"
+## 576 recorded 575: fact Stream type=stream_event uuid=ee11c492-8d66-48e8-b118-bff26b73d0a2
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ifies knots by"
+## 578 recorded 577: fact Stream type=stream_event uuid=29b19044-52d8-493f-928e-04790e40290a
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " wh"
+## 580 recorded 579: fact Stream type=stream_event uuid=090a18b1-6314-4225-a8d8-9c5aca3dc2c6
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ether one"
+## 582 recorded 581: fact Stream type=stream_event uuid=20498cc7-4294-4802-921f-ae79102cba25
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " can be deformed into another without"
+## 584 recorded 583: fact Stream type=stream_event uuid=0a89fd48-729c-4664-ae70-ee089bc6880d
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " c"
+## 586 recorded 585: fact Stream type=stream_event uuid=bed794d9-0c54-4a52-998e-bb2ddd629518
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "utting the"
+## 588 recorded 587: fact Stream type=stream_event uuid=8d3a1c9b-8673-4bb4-9031-01fb1f0aa157
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " string. Today, kn"
+## 590 recorded 589: fact Stream type=stream_event uuid=d863c607-a117-4b92-af61-67596c1775c3
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ots rem"
+## 592 recorded 591: fact Stream type=stream_event uuid=cdc76549-737c-44ad-a7a3-40e8e929f72f
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ain v"
+## 594 recorded 593: fact Stream type=stream_event uuid=1d245141-4ac9-405e-9318-e3814a80c190
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ital in clim"
+## 596 recorded 595: fact Stream type=stream_event uuid=fcb758ad-a976-4891-b70e-45862a42c318
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "bing, rescue, s"
+## 598 recorded 597: fact Stream type=stream_event uuid=43230554-366d-4e5e-9f37-9cb71fc4327a
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ailing, and med"
+## 600 recorded 599: fact Stream type=stream_event uuid=5835f171-ccd0-429f-bea8-10b5b1695fca
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "icine, and"
+## 602 recorded 601: fact Stream type=stream_event uuid=d31e0c48-8f5e-4ef8-a057-a144a27e22ed
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " their study"
+## 604 recorded 603: fact Stream type=stream_event uuid=0c26a6a4-e5d8-4402-8b9f-0869b1245297
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " contin"
+## 606 recorded 605: fact Stream type=stream_event uuid=2f7981eb-f243-4737-933f-df101391bf98
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ues to conn"
+## 608 recorded 607: fact Stream type=stream_event uuid=d54fb9cd-1ffa-4594-bbae-940e416423dd
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ect pract"
+## 610 recorded 609: fact Stream type=stream_event uuid=6c1c29d3-50b5-4e5e-bbb1-8fb8821c0e8c
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ical cra"
+## 612 recorded 611: fact Stream type=stream_event uuid=287f094b-b597-4837-ad10-29d5104b63e9
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ft"
+## 614 recorded 613: fact Stream type=stream_event uuid=d0bcc1e8-1f50-4bd5-b631-2607285c63e5
+append msg_011CgZjh1v35yw1NMpS86xZM:0 " with mod"
+## 616 recorded 615: fact Stream type=stream_event uuid=e52e559a-cba8-411f-9e40-ecfa84fdbee2
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "ern science"
+## 618 recorded 617: fact Stream type=stream_event uuid=4b683eb4-cd50-4912-98d3-c0336ec68b3a
+append msg_011CgZjh1v35yw1NMpS86xZM:0 "."
+## 620 recorded 619: fact Stream type=assistant uuid=8298891f-a84c-49f5-9680-a19eb5204c95
+item msg_011CgZjh1v35yw1NMpS86xZM:0 message final at=1793423322745 text="Knots are as old as rope itself, and humans have tied them for practical, ceremonial, and artistic purposes for thousands of years. Ancient Egyptian, Chinese, and Incan cultures all left evidence of knotting, from ceremonial cords to record-keeping systems. The Incas used knotted strings called quipu to record numerical and possibly narrative information, a reminder that knots could also serve as a form of writing. Sailors, climbers, and craftspeople later developed specialized knots, each suited to a particular load, material, or task.\n\nOver time, knot-tying became an essential skill in seafaring, where mastering hitches, bends, and splices could mean the difference between a secure ship and a lost one. In the nineteenth and twentieth centuries, mathematicians began studying knots as abstract objects, giving rise to knot theory, a branch of topology that classifies knots by whether one can be deformed into another without cutting the string. Today, knots remain vital in climbing, rescue, sailing, and medicine, and their study continues to connect practical craft with modern science."
+## 628 recorded 627: fact Stream type=result subtype=success uuid=89b5de96-6bb4-4bcf-a8fe-bf5d4584ccad
+item turn:2 turn final at=1793423324845 text="" #2 TURN_OUTCOME_COMPLETED started=1793423321957
+snapshot IDLE queue=[] working_on="Now two short paragraphs about knots." at=1793423324845 asks=[] session=76b8cfdf-8d80-41c0-bea8-8961719ece24 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=21029/1000000 tasks=? active=[] usage=ok 5h:17%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+turn_end 2 last=msg_011CgZjh1v35yw1NMpS86xZM:0
+## 632 recorded 631: input 0xfad30551c13343d0997e3361cbcbde86
+effect reply 0xfad30551c13343d0997e3361cbcbde86 accepted
+effect user fad30551-c133-43d0-997e-3361cbcbde86 "/compact"
+item fad30551-c133-43d0-997e-3361cbcbde86 prompt final input=0xfad30551c13343d0997e3361cbcbde86 at=1793423324931 text="/compact"
+snapshot WORKING queue=[] working_on="Now two short paragraphs about knots." at=1793423324931 asks=[] session=76b8cfdf-8d80-41c0-bea8-8961719ece24 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=21029/1000000 tasks=? active=[] usage=ok 5h:17%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 637 recorded 636: fact Stream type=system subtype=status uuid=0f824bf4-6639-415d-bacc-1515a418fa59
+item 0f824bf4-6639-415d-bacc-1515a418fa59 status final at=1793423324943 text="" SDK_STATUS_COMPACTING compacting
+## 639 recorded 638: fact Stream type=rate_limit_event uuid=d2c90706-888b-4361-b780-3c7fdbcd8724
+snapshot WORKING queue=[] working_on="Now two short paragraphs about knots." at=1793423342413 asks=[] session=76b8cfdf-8d80-41c0-bea8-8961719ece24 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=21029/1000000 tasks=? active=[] usage=ok 5h:18%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 645 recorded 644: fact Stream type=system subtype=compact_boundary uuid=343f2fc0-3b5d-49e9-af38-8578cd8d5255
+item 343f2fc0-3b5d-49e9-af38-8578cd8d5255 compaction final at=1793423342428 text="" 21378→4266
+item boundary:2 boundary final at=1793423342428 text="" BOUNDARY_KIND_COMPACTED
+snapshot WORKING queue=[] working_on="Now two short paragraphs about knots." at=1793423342428 asks=[] session=76b8cfdf-8d80-41c0-bea8-8961719ece24 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=4266/1000000 tasks=? active=[] usage=ok 5h:18%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 648 recorded 647: fact Stream type=user uuid=40a7f95c-c764-499e-845c-c1ab7bcf5f52
+item 40a7f95c-c764-499e-845c-c1ab7bcf5f52 slash final at=1793423342429 text="Compacted" /compact args=""
+## 650 recorded 649: fact Stream type=result subtype=success uuid=0130ee9f-e063-4a0b-bcc5-d6f3347acbe1
+item turn:3 turn final at=1793423342429 text="" #3 TURN_OUTCOME_COMPLETED started=1793423324935
+snapshot IDLE queue=[] working_on="Now two short paragraphs about knots." at=1793423342429 asks=[] session=76b8cfdf-8d80-41c0-bea8-8961719ece24 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=4266/1000000 tasks=? active=[] usage=ok 5h:18%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 3 last=-

@@ -5,14 +5,10 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_LOCAL = {
     "wire": set(),
-    # The plain values the views and the phone bridge share; the Swift
-    # mirrors are generated from them, so they depend on nothing.
-    "model": set(),
     "settings": set(),
     # The typed events a device may send and their uploader: a leaf, so the
     # daemon, the phone bridge and the CLI share one definition.
@@ -30,14 +26,11 @@ ALLOWED_LOCAL = {
     # The pure per-kind step, and the per-kind body redactor beside it.
     "interpret": {"attachments", "claude-protocol", "codex-protocol", "redaction", "wire"},
     # The agent process: its lock, journal and sockets, the interpreter,
-    # and the provider hosts.
+    # and the provider hosts, each in a module of its own (`claude`, `codex`).
     "agent": {
-        "agent-core", "agent-dir", "attachments", "claude", "claude-protocol", "codex",
-        "codex-protocol", "core-ring", "git-facts", "interpret", "journal", "log-file", "pty-host",
-        "wire",
+        "agent-core", "agent-dir", "attachments", "claude-protocol", "codex-protocol", "core-ring",
+        "git-facts", "interpret", "journal", "log-file", "pty-host", "wire",
     },
-    "claude": {"claude-protocol"},
-    "codex": {"codex-protocol"},
     # Each provider's messages as types: pure, so the interpreter the phone
     # links can read them. PURE_EXTERNAL below bounds what they may pull in.
     "claude-protocol": set(),
@@ -48,31 +41,33 @@ ALLOWED_LOCAL = {
     # provider in its graph.
     # interpret only for the dump path's per-kind redactor: the one stated
     # exception to "the daemon interprets nothing".
-    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "version-stamp", "wire"},
-    "amux": {"agent", "agent-dir", "analytics", "claude", "client", "log-file", "node", "settings", "store", "tui", "wire"},
-    # The version stamp a release tool can rewrite in a built binary, and the
-    # release manifest the tool signs and the daemon verifies; the xtask
+    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
+    "amux": {"agent", "agent-dir", "analytics", "client", "log-file", "node", "settings", "tui", "wire"},
+    # The release manifest the tool signs and the daemon verifies, and the
+    # version stamp a release tool can rewrite in a built binary; the xtask
     # shares both without building the daemon.
-    "version-stamp": set(),
     "release": set(),
-    "xtask": {"release", "version-stamp"},
+    "xtask": {"release"},
     # The Swift mirrors of the view values are generated from their
     # definitions, so the generator reads them.
-    "ios-tools": {"app-runtime", "model", "ui-view", "wire"},
+    "ios-tools": {"app-runtime", "ui-state", "ui-view", "wire"},
     # The seam both clients call the local runtime through: the local socket
     # and the shared clock trait come from the agent directory contract.
     "client": {"agent-dir", "wire"},
-    "ui-state": {"model", "wire"},
+    # The session and fleet model, with the plain values the views and the
+    # phone bridge share, from which the Swift mirrors are generated. Those
+    # hold the wire's own enums (a refusal reason) rather than copies.
+    "ui-state": {"wire"},
     "ui-view": {"attachments", "ui-state", "wire"},
     "ui-runtime": {"client", "ui-state", "ui-view", "wire"},
     # The phone's chats and fleet over the local runtime, with no node.
-    "app-runtime": {"client", "model", "ui-runtime", "ui-state", "ui-view", "wire"},
+    "app-runtime": {"client", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The daemon's profile runtime hosted in the phone's process.
     "app-embedded": {"analytics", "app-runtime", "client", "log-file", "node", "wire"},
     # The C ABI over both.
-    "app-ffi": {"app-embedded", "app-runtime", "client", "model", "node", "ui-view"},
+    "app-ffi": {"app-embedded", "app-runtime", "client", "node", "ui-state", "ui-view"},
     # The terminal client composes the views over the drivers' state.
-    "tui": {"attachments", "client", "ui-runtime", "ui-state", "ui-view", "wire"},
+    "tui": {"attachments", "client", "settings", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The bounded ring of a core's inputs since its last checkpoint, in
     # segments named as the journal's are.
     "core-ring": {"journal"},
@@ -94,16 +89,15 @@ CORES_ALLOWED_LOCAL = {
     "path-core": {"daemon-core"},
     "socket-core": {"path-core"},
     "agent-core": {"core-ring", "interpret", "journal", "wire"},
-    "supervisor-core": {"core-ring", "release", "version-stamp"},
+    "supervisor-core": {"core-ring", "release"},
 }
 # The UI library and the clients built on it reach the daemon only through
 # the client seam: none of them may link, directly or through another crate,
 # the daemon, its store, the interpreters or a provider. The phone bridge
 # (app-ffi, app-embedded) hosts the runtime in process and is not one of them.
-UI_CRATES = {"model", "client", "ui-state", "ui-view", "ui-runtime", "tui", "app-runtime"}
+UI_CRATES = {"client", "ui-state", "ui-view", "ui-runtime", "tui", "app-runtime"}
 FORBIDDEN_FOR_UI = {
-    "node", "store", "interpret", "agent", "claude", "claude-protocol", "codex", "codex-protocol",
-    "pty-host",
+    "node", "store", "interpret", "agent", "claude-protocol", "codex-protocol", "pty-host",
 }
 # The protocol crates hold types and nothing else: no process, socket or
 # async runtime code may come in through a dependency.
@@ -115,8 +109,6 @@ TEST_SUPPORT = {
     "patience",
     "testnet",
     "qualification",
-    "claude-specs",
-    "codex-specs",
     "provider-fakes",
     "fake-amux",
     "shot",
@@ -134,14 +126,15 @@ SUPPORT_ALLOWED_LOCAL = {
     # Its simulated mode holds every daemon and agent core in one process,
     # the agents on the test kind's interpreter.
     "testnet": {
-        "agent-core", "agent-dir", "daemon-core", "interpret", "journal", "models", "node",
-        "patience", "provider-fakes", "release", "shot", "store", "tui", "wire",
+        "agent-dir", "daemon-core", "interpret", "journal", "models", "node", "patience",
+        "provider-fakes", "release", "shot", "store", "tui", "wire",
     },
     # Qualification owns environment-dependent provider and performance
-    # checks while reusing the network harness rather than shipping it.
-    "qualification": {"node", "provider-fakes", "store", "testnet", "wire"},
-    "claude-specs": {"claude", "claude-protocol", "pty-host", "redaction", "replay-support"},
-    "codex-specs": {"codex", "codex-protocol", "pty-host", "redaction", "replay-support"},
+    # checks while reusing the network harness rather than shipping it. Its
+    # two probes stand in for the providers in the live lane: terminal
+    # Claude's runs on a pseudo-terminal of its own, and both sanitize what
+    # they record before it joins a corpus.
+    "qualification": {"node", "provider-fakes", "pty-host", "redaction", "testnet", "wire"},
     # The fake providers speak each protocol from its recordings, and check
     # what they compose against the protocol crates' types. They never use
     # the host crates, so a host bug cannot hide behind shared host code.
@@ -152,13 +145,12 @@ SUPPORT_ALLOWED_LOCAL = {
     # Renders the terminal client's named states to PNG for review, and
     # its storybook, whose chats are recorded sessions replayed through the
     # interpreters.
-    "shot": {"interpret", "tui", "ui-state", "ui-view", "wire"},
+    "shot": {"interpret", "settings", "tui", "ui-state", "ui-view", "wire"},
     # Replays a dump bundle's stages with the models' properties judged at
     # every step: facts through the interpreter (the journal for
     # comparison), the daemon core from its checkpoint over its store,
-    # records through the session model, state through the views; and
-    # provider recordings for the capture tools. A debugging tool: nothing
-    # that ships links it.
+    # records through the session model, state through the views. A
+    # debugging tool: nothing links it.
     "replay-support": {
         "core-ring", "daemon-core", "interpret", "journal", "models", "redaction", "store",
         "ui-state", "ui-view", "wire",
@@ -168,26 +160,6 @@ SUPPORT_ALLOWED_LOCAL = {
     # clients' session state.
     "models": {"agent-core", "daemon-core", "interpret", "journal", "path-core", "provider-fakes", "relay-core", "release", "socket-core", "store", "supervisor-core", "ui-state", "wire"},
 }
-
-# Every dependency comes from crates.io but rustls, which comes from the
-# fork carrying the amux patch (docs/ARCHITECTURE.md, "The rustls patch")
-# at whatever commit the lockfile pins.
-CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
-GIT_SOURCES = {"rustls": "git+https://github.com/amuxhq/rustls?rev="}
-
-
-def source_failures() -> list[str]:
-    lock = tomllib.loads((ROOT / "Cargo.lock").read_text())
-    failures = []
-    for package in lock["package"]:
-        source = package.get("source")
-        if source is None or source == CRATES_IO:
-            continue
-        allowed = GIT_SOURCES.get(package["name"])
-        if allowed is None or not source.startswith(allowed):
-            failures.append(f"{package['name']} {package['version']}: comes from {source}")
-    return failures
-
 
 def local_edges(package: dict[str, object]) -> set[str]:
     return {
@@ -211,7 +183,7 @@ def main() -> int:
         for package in metadata["packages"]
         if package["id"] in members
     }
-    failures = source_failures()
+    failures: list[str] = []
 
     for name, allowed in (ALLOWED_LOCAL | SUPPORT_ALLOWED_LOCAL).items():
         package = packages.get(name)

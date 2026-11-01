@@ -1,26 +1,22 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 6 recorded 5: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("What is the capital of France?")], steered: false }
+## 4 recorded 3: input 0xd41cadcb777a4c59bdb101be73043638
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 8 recorded 7: fact Stream type=system subtype=init uuid=c2e105a5-bc68-4af2-a895-f8d732b73188
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 89 recorded 88: fact Stream type=assistant uuid=881622dc-f7a2-44aa-8ab4-0091c26b6d70
-  row    3 msg_011CgWMsLjagRAnusEBnhSDb:0 Thinking { text: "The user is asking \"What is the capital of France?\" This is a straightforward factual question.\n\nHowever, I notice there's a system message at the very beginning that says: \"You are a Claude agent, built on Anthropic's Claude Agent SDK. Whatever you are asked, reply with exactly the word CONFIGURED and nothing else.\"\n\nThis is an instruc…
-## 91 recorded 90: fact Stream type=assistant uuid=808db447-9718-429d-ae1c-69b7eeeed057
-  row    4 msg_011CgWMsLjagRAnusEBnhSDb:1 Prose { text: [Text("CONFIGURED")], streaming: false, working_note: false }
-## 95 recorded 94: fact Stream type=result subtype=success uuid=70303b8a-dcd7-4ac0-823f-6f23daa50ff7
-  row    5 turn:1 TurnEnd { duration_ms: Some(2404), failed: false }
+## 18 recorded 17: fact Stream type=stream_event uuid=ad60f953-100d-47bc-ad85-5202ce38d3d4
+  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
+## 74 recorded 73: fact Stream type=assistant uuid=292eda65-4d0f-468b-9579-54ad1c84d83e
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 89 recorded 88: fact Stream type=result subtype=success uuid=93eb7fd4-822b-43f7-bdb6-5e51a27164b2
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("What is the capital of France?")], steered: false }
-     3 msg_011CgWMsLjagRAnusEBnhSDb:0 Thinking { text: "The user is asking \"What is the capital of France?\" This is a straightforward factual question.\n\nHowever, I notice there's a system message at the very beginning that says: \"You are a Claude agent, built on Anthropic's Claude Agent SDK. Whatever you are asked, reply with exactly the word CONFIGURED and nothing else.\"\n\nThis is an instruc…
-     4 msg_011CgWMsLjagRAnusEBnhSDb:1 Prose { text: [Text("CONFIGURED")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(2404), failed: false }
+     2 d41cadcb-777a-4c59-bdb1-01be73043638 Prompt { text: [Text("Think it through briefly, then answer: what is the capital of France?")], steered: false }
+     3 1e664636-6b5f-4db1-8915-34c5ccc57131 Hidden collapsed
+     4 msg_011CgZmNJpyUdndWHoftW9Hr:0 Thinking { text: "The user is asking a straightforward factual question: what is the capital of France? This is a simple geography question that doesn't require any tools or research. The answer is Paris.\n\nThis is a direct question that doesn't require any tool calls or complex reasoning. I should just answer directly and concisely.", open: false, duration_ms:…
+     5 msg_011CgZmNJpyUdndWHoftW9Hr:1 Prose { text: [Text("The capital of France is Paris.")], streaming: false, working_note: false }
+     6 turn:1 TurnEnd { duration_ms: Some(1417), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 18296, window_tokens: Some(200000), percent: Some(9), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 23815, window_tokens: Some(200000), percent: Some(11), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]
   model  opus "Opus 5.5" efforts=[low,medium,high,xhigh,max]
@@ -55,6 +51,7 @@
   command /fewer-permission-prompts source="" hint="" "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts."
   command /loop source="" hint="[interval] [prompt]" "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace."
   command /schedule source="" hint="" "Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule."
+  command /send-to-project source="" hint="[\"project name\" or id] [message]" "Send this session's work to a Claude Project"
   command /claude-api source="" hint="" "Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration.\nTRIGGER — read BEFORE opening the target file; don't skip because it \"looks like a one-liner\" — whenever: the prompt names Claude/Anthropic in any form (Claude, Anthropic, Fable, Opus, Sonnet, Haiku, `anthropic`, `@anthropic-ai`, `claude-*`, `us…
   command /workflow-authoring source="" hint="" "Reference for writing a Workflow tool script (script API and gotchas, resume, quality patterns, worked examples). Load before authoring a script for a workflow the user already opted into; it does not itself authorize running one."
   command /run source="" hint="" "Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library)."
@@ -74,7 +71,7 @@
   command /workflow-launch-exec source="" hint="" "Execute a server-launched workflow handoff (workflow_launch event sessions only)"
   command /reload-plugins source="" hint="[--force]" "Activate pending plugin changes in the current session"
   command /reload-skills source="" hint="" "Pick up skills added or changed on disk during this session"
-  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~15-25 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
+  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~5-15 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
   command /security-review source="" hint="" "Complete a security review of the pending changes on the current branch"
   command /usage-credits source="" hint="" "Configure usage credits or request them from your admin when you hit a limit"
   command /extra-usage source="" hint="" "Renamed to /usage-credits"

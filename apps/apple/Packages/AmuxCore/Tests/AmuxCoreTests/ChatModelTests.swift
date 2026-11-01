@@ -191,19 +191,9 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         return ordered.filter { keys.contains($0.id) }
     }
 
-    /// Sends are held, as for a host that cannot be reached: each is listed
-    /// held with its draft, under ids from 1.
-    var holdsSends = false
-
     func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {
         sent.append(draft)
-        let id = [UInt8(sent.count)]
-        guard holdsSends else { return .success(SendOutcome(inputId: id, state: .sent)) }
-        drafts[id] = draft
-        current.underway.append(
-            SentPrompt(inputId: id, text: [.text(draft.words)], lands: .feed, underway: .held))
-        pending.session = true
-        return .success(SendOutcome(inputId: id, state: .held))
+        return .success(SendOutcome(inputId: [UInt8(sent.count)], state: .sent))
     }
 
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { .done }
@@ -312,7 +302,7 @@ private func frame(
         agent: AgentKey(host: [1], agent: [2]), name: "a", kind: kind, phase: phase,
         composer: ComposerView(mode: mode, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: caughtUp,
         hasOlder: hasOlder, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil, context: nil, ended: nil, git: nil,
-        signIn: nil, waiting: nil)
+        signIn: nil)
 }
 
 /// Prose rows "m<first>" through "m<last>", in order.
@@ -634,17 +624,17 @@ final class ChatModelTests: XCTestCase {
         XCTAssertTrue(source.paged.isEmpty)
     }
 
-    func testADraftSentWhileCatchingUpIsHandedOnForTheLibraryToHold() async {
-        // Decided: a chat that is not current still takes a send. The client
-        // library holds it, shown pending with Cancel, and sends it under its
-        // id once the chat is current; the phone does not keep Send disabled.
-        let source = FakeChat(rows: [], frame: frame(mode: .holds(.catchingUp), caughtUp: false))
+    func testADraftIsNotSentWhileCatchingUpAndStaysInTheComposer() async {
+        // Decided: a chat that is not current sends nothing. Send stays off,
+        // the draft stays in the composer, and nothing holds it to send
+        // later; the person sends it once the chat is current.
+        let source = FakeChat(rows: [], frame: frame(mode: .waiting(.catchingUp), caughtUp: false))
         let model = ChatModel(source: source)
         model.draft = "Run the tests."
-        XCTAssertTrue(model.canSend)
-        await model.send()?.value
-        XCTAssertEqual(source.sent.map(\.text), ["Run the tests."])
-        XCTAssertEqual(model.draft, "")
+        XCTAssertFalse(model.canSend)
+        XCTAssertNil(model.send())
+        XCTAssertEqual(source.sent.map(\.text), [])
+        XCTAssertEqual(model.draft, "Run the tests.")
     }
 
     func testAnExitedAgentResumesWithTheDraft() async {
@@ -707,37 +697,9 @@ final class ChatModelTests: XCTestCase {
         let model = ChatModel(source: source)
         XCTAssertEqual(model.draft, "What is this?")
         XCTAssertEqual(model.attachments, [.image(photo)])
-        XCTAssertEqual(model.notice, "Not sent: its host can’t be reached")
+        XCTAssertEqual(model.notice, "Not sent: its host is away")
         XCTAssertEqual(source.discarded, [[8]])
         XCTAssertEqual(model.frame?.refused, [], "taken back once")
-    }
-
-    /// Settled: if the phone closes before its host is back, a held prompt
-    /// goes back to the draft, which the phone keeps on the device. So the
-    /// kept draft carries the held prompt's words from the moment it is
-    /// held, beside what is typed after it, and drops them once the prompt
-    /// is released and sent. The prompt is held as the host's frame says, which
-    /// is all the model reads; how a send comes to be held is the source's.
-    func testAHeldPromptIsKeptInTheDraftUntilItIsSent() {
-        let source = FakeChat(rows: [], frame: frame())
-        let model = ChatModel(source: source)
-        var kept: [Draft] = []
-        model.keeping = { kept.append($0) }
-        source.drafts[[1]] = Draft(words: "Run the tests.", attachments: [])
-        source.current.underway.append(
-            SentPrompt(inputId: [1], text: [.text("Run the tests.")], lands: .feed, underway: .held))
-        source.pending.session = true
-        source.deliver(to: model)
-        XCTAssertEqual(model.draft, "", "the composer is free for the next prompt")
-        XCTAssertEqual(kept.last?.words, "Run the tests.", "the held prompt is kept in the draft")
-
-        model.draft = "Then the lint."
-        XCTAssertEqual(kept.last?.words, "Run the tests.\nThen the lint.", "typing keeps the held words")
-
-        source.current.underway[0].underway = .sending(waiting: false)
-        source.pending.session = true
-        source.deliver(to: model)
-        XCTAssertEqual(kept.last?.words, "Then the lint.", "a released prompt leaves the kept draft")
     }
 
     /// Prompts on their way split by where they land: the feed's end or

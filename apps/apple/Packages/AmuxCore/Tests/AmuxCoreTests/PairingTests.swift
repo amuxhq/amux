@@ -40,7 +40,7 @@ final class PairingTests: XCTestCase {
         pairing.reached(.success(pending), attempt: attempt)
         XCTAssertEqual(pairing.phase, .confirming(pending))
         let confirming = pairing.checking()
-        pairing.paired(.success(Paired(hostId: Cards.desk.bytes, name: "desk")), attempt: confirming)
+        pairing.paired(.success("desk"), attempt: confirming)
         XCTAssertEqual(pairing.phase, .trusted("desk"))
     }
 

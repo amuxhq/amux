@@ -8,7 +8,6 @@ mod ctl;
 mod family_stories;
 mod harness;
 mod harness_stories;
-mod journal_fixtures;
 mod replication_stories;
 mod sim_harness;
 mod sim_seeds;

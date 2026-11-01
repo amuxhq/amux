@@ -36,8 +36,7 @@ if [ -n "$load" ]; then
     echo "flaky: $cores busy loops running beside the test" >&2
 fi
 
-# The workspace scope and features `just test` builds with, so this reuses
-# its build.
-cargo nextest run --locked --workspace --features bundled --all-targets \
+# The workspace scope `just test` builds with, so this reuses its build.
+cargo nextest run --locked --workspace --all-targets \
     --stress-count "$count" --max-fail 1 --failure-output immediate \
     -E "test($test)"

@@ -24,7 +24,6 @@ private final class OneFreeze: ReportFreezing {
 private func capture(_ route: String) -> ReportCapture {
     ReportCapture(
         frame: FrozenFrame(png: Data([0x89, 0x50]), width: 402, height: 874, scale: 3),
-        trace: "{\"kind\":\"route\",\"screen\":\"run\"}\n",
         route: route)
 }
 

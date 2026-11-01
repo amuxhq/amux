@@ -1,0 +1,23 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 12 recorded 10: fact Transcript type=user uuid=6d84b566-042a-4e01-b054-87a281321129
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 48 recorded 46: fact Transcript type=system subtype=turn_duration uuid=3b64e203-b688-40f0-92a9-7969510790f2
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 6d84b566-042a-4e01-b054-87a281321129 Prompt { text: [Text("Think it through briefly, then answer: what is the capital of France?")], steered: false }
+     3 stream:95800d5e-d607-4d7b-a5d1-44c541f7bd8c Prose { text: [Text("The capital of France is Paris.")], streaming: false, working_note: false }
+     4 908eb68e-7f60-4c15-8d2c-cd071201bbc7 Thinking { text: "The user is asking a straightforward factual question: what is the capital of France?\n\nThis is a simple geography question that doesn't require any tools or complex reasoning. The answer is Paris.\n\nI should give a direct, concise answer as per my instructions.", open: false, duration_ms: None }
+     5 turn:1 TurnEnd { duration_ms: Some(2072), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 34924, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 4.5") effort=None permission=None mode=None

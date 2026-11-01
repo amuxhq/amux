@@ -49,20 +49,3 @@ async fn flood_smoke_with_three_agents_measures_every_metric() {
         );
     }
 }
-
-/// The served flood is the measured one: `testnet serve
-/// journeys/topologies/flood.json` hands a client the topology the perf
-/// lane measures. Regenerate the file with FLOOD_TOPOLOGY_UPDATE=1.
-#[test]
-fn the_served_flood_topology_is_the_measured_one() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../journeys/topologies/flood.json");
-    let measured = flood::topology(&FloodOptions::full());
-    if std::env::var_os("FLOOD_TOPOLOGY_UPDATE").is_some() {
-        let mut text = serde_json::to_string_pretty(&measured).unwrap();
-        text.push('\n');
-        std::fs::write(&path, text).unwrap();
-    }
-    let served = testnet::Topology::load(&path).unwrap();
-    assert_eq!(served, measured);
-}

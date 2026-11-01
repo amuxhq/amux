@@ -104,9 +104,6 @@ pub enum Command {
     /// Drop every UDP datagram between a host and the relay (on), so it
     /// falls back to TCP, or stop (off).
     BlockUdp { host: String, state: OnOff },
-    /// Make `a` fail every call to `b` before it goes out (on), while the
-    /// link and its chats stay up, or stop (off).
-    RefuseCalls { a: String, b: String, state: OnOff },
     /// Crash a host's daemon (SIGKILL for a process host). Its agents keep
     /// running; a supervised host's supervisor starts the daemon again.
     Kill { host: String },
@@ -591,9 +588,6 @@ fn run(folder: &Folder, command: Command) -> Result<Outcome, String> {
         }}))?),
         Command::BlockUdp { host, state } => ack(folder.call(
             json!({"BlockUdp": {"host": host, "blocked": matches!(state, OnOff::On)}}),
-        )?),
-        Command::RefuseCalls { a, b, state } => ack(folder.call(
-            json!({"RefuseCalls": {"a": a, "b": b, "refuse": matches!(state, OnOff::On)}}),
         )?),
         Command::Kill { host } => ack(folder.call(json!({"KillDaemon": {"host": host}}))?),
         Command::Stop { host } => ack(folder.call(json!({"StopDaemon": {"host": host}}))?),

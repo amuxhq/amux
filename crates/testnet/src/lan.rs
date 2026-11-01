@@ -265,10 +265,6 @@ impl Discovery for Gated {
     fn requery(&self) {
         self.inner.requery();
     }
-
-    fn hand_over(&self, found: Vec<Advertisement>) {
-        self.inner.hand_over(found);
-    }
 }
 
 /// A Bonjour advertiser that names the host's front gate instead of its

@@ -54,7 +54,6 @@ pub(crate) fn installation_id(data_dir: &Path) -> io::Result<uuid::Uuid> {
 #[derive(Debug)]
 pub struct InstallationLock {
     file: Option<File>,
-    path: PathBuf,
 }
 
 impl InstallationLock {
@@ -70,17 +69,10 @@ impl InstallationLock {
             .open(&path)
             .map_err(LockError::Io)?;
         match file.try_lock() {
-            Ok(()) => Ok(Self {
-                file: Some(file),
-                path,
-            }),
+            Ok(()) => Ok(Self { file: Some(file) }),
             Err(fs::TryLockError::WouldBlock) => Err(LockError::Busy(path)),
             Err(fs::TryLockError::Error(error)) => Err(LockError::Io(error)),
         }
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 }
 

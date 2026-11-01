@@ -1,4 +1,3 @@
-#if canImport(UIKit)
 import UIKit
 
 extension Design {
@@ -27,4 +26,3 @@ extension Design {
         return UIFontMetrics(forTextStyle: style).scaledFont(for: font)
     }
 }
-#endif

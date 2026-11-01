@@ -5,13 +5,13 @@ mod history;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-pub use model::{Activity, ActivityKind, BlobStatus, Composer, Connection, PhaseView, Waiting};
 use wire::{Agent, HostEntry, Input, Item, Kind, QueuedInput, SessionEvent, session_event};
 
 use crate::Key;
 use crate::body::{AgentState, ItemClass, OpenAsk};
-use crate::inputs::{
-    InputId, InputOutcome, InputState, InputWhat, Inputs, RefusalReason, SentInput,
+use crate::inputs::{InputId, InputOutcome, InputState, InputWhat, Inputs, SentInput};
+pub use crate::model::{
+    Activity, ActivityKind, BlobStatus, Composer, Connection, PhaseView, Waiting,
 };
 use crate::transcript::{Appended, Changed, Held, Transcript};
 
@@ -80,9 +80,6 @@ pub struct Outcome {
     /// holds: the driver reopens the stream with a fresh tail and says so
     /// with [`Msg::Reloading`].
     pub reload: bool,
-    /// Held inputs the host can be reached for again: each is `Sent` from
-    /// now, and the driver sends it under its own id.
-    pub resend: Vec<Input>,
     /// The transcript failed its own check at a Reset or a CaughtUp, saying
     /// how: the driver asks for a dump.
     pub broken: Option<String>,
@@ -129,9 +126,6 @@ pub struct SessionState {
     connection: Connection,
     /// The incarnation a Send was rejected as exited under.
     exited_under: Option<u32>,
-    /// Words that the host can be reached: each time its row reads online,
-    /// and each CaughtUp. A held input goes at the first one after it left.
-    reach: u64,
     epoch: u64,
     blobs: BTreeMap<Vec<u8>, BlobStatus>,
     /// The most rows the window keeps while the reader follows.
@@ -253,7 +247,6 @@ impl SessionState {
             detached: false,
             connection: Connection::Connecting,
             exited_under: None,
-            reach: 0,
             epoch: 0,
             blobs: BTreeMap::new(),
             cap: cap.max(1),
@@ -404,9 +397,9 @@ impl SessionState {
         self.agent.lifecycle() == wire::Lifecycle::Exited || self.exited_under.is_some()
     }
 
-    /// Caught up and the entry says live. Drafting is never gated.
-    /// Whether a send goes to the runtime now. While the chat is not
-    /// current a prompt or an answer is held instead (see [`Composer::Holds`]).
+    /// Caught up and the entry says live: whether a send goes now. Drafting
+    /// is never gated; while the chat is not current a client refuses a
+    /// send at once and keeps the draft (see [`Composer::Waiting`]).
     pub fn can_send(&self) -> bool {
         self.caught_up && !self.exited()
     }
@@ -417,11 +410,11 @@ impl SessionState {
         } else if self.caught_up {
             Composer::Send
         } else if self.connection == Connection::Reconnecting {
-            Composer::Holds(Waiting::Reconnecting)
+            Composer::Waiting(Waiting::Reconnecting)
         } else if self.detached {
-            Composer::Holds(Waiting::Detached)
+            Composer::Waiting(Waiting::Detached)
         } else {
-            Composer::Holds(Waiting::CatchingUp)
+            Composer::Waiting(Waiting::CatchingUp)
         }
     }
 
@@ -487,13 +480,6 @@ impl SessionState {
                 Some(QueueRow { entry, steered: entry.steer || sending_now })
             })
             .collect()
-    }
-
-    /// Inputs held to send once the host is back, drawn pending with Cancel.
-    pub fn held(&self) -> impl Iterator<Item = &SentInput> {
-        self.inputs
-            .iter()
-            .filter(|sent| sent.state == InputState::Held)
     }
 
     /// Inputs to draw as "not confirmed", with resend and discard.
@@ -629,34 +615,17 @@ impl SessionState {
             }
             Msg::Send(input) => {
                 let id = input.input_id.clone();
+                let to_feed = self.phase() == PhaseView::Idle && self.queue().is_empty();
                 outcome.session = self.inputs.push(input);
                 if outcome.session
                     && let Some(sent) = self.inputs.get_mut(&id)
                 {
-                    sent.left_at = self.reach;
-                }
-                // Not current, a prompt or an answer certainly cannot leave:
-                // it is held, and goes once the chat is current again.
-                let hold = !self.caught_up && !self.exited();
-                if let Some(sent) = self.inputs.get_mut(&id)
-                    && hold
-                    && sent.state == InputState::Sent
-                    && sent.what.holds()
-                {
-                    sent.state = InputState::Held;
+                    sent.in_feed = to_feed;
                 }
                 // A reflection can beat the optimistic row only on a resend
                 // of a known id, which the push refuses.
             }
-            Msg::Sent(id, result) => {
-                outcome.session = self.sent(&id, result);
-                // Held by a failure that answers a send which left before
-                // the newest word that the host is back: that word came
-                // already, and the input goes now.
-                if outcome.session && self.caught_up && self.host_online() {
-                    outcome.resend = self.release_held();
-                }
-            }
+            Msg::Sent(id, result) => outcome.session = self.sent(&id, result),
             Msg::Discard(id) => outcome.session = self.inputs.remove(&id),
             Msg::Entry(agent) => {
                 if agent.lifecycle() == wire::Lifecycle::Live
@@ -669,17 +638,8 @@ impl SessionState {
                 self.agent = agent;
                 outcome.session = true;
             }
-            // Every word that the host is online counts, not only a return
-            // from away: a send can fail as unreachable after the host's
-            // return already arrived, or while its row still read online.
             Msg::Host(host) => {
                 self.host = Some(host);
-                if self.host_online() {
-                    self.reach += 1;
-                    if self.caught_up {
-                        outcome.resend = self.release_held();
-                    }
-                }
                 outcome.session = true;
             }
             Msg::Blob { hash, status } => {
@@ -773,8 +733,6 @@ impl SessionState {
                 }
                 self.trim(changed);
                 self.resolve_uncertain();
-                self.reach += 1;
-                outcome.resend = self.release_held();
                 outcome.session = true;
                 outcome.broken = self.transcript.check().err();
             }
@@ -921,7 +879,7 @@ impl SessionState {
             return false;
         };
         let settle = match sent.state {
-            InputState::Sent | InputState::Queued | InputState::Held => true,
+            InputState::Sent | InputState::Queued => true,
             // An uncertain input is judged against caught-up state only.
             InputState::Uncertain => caught_up && visible,
             InputState::Settled | InputState::Rejected(_) => false,
@@ -945,10 +903,8 @@ impl SessionState {
         if sent.state != InputState::Sent {
             return false;
         }
-        let holds = sent.what.holds();
         sent.state = match result {
             InputOutcome::Lost => InputState::Uncertain,
-            InputOutcome::Held => InputState::Held,
             InputOutcome::Reply(reply) => match reply.of {
                 // Queued while the queue lists it, or until it first does;
                 // seen listed and gone again before this reply, it already
@@ -964,16 +920,11 @@ impl SessionState {
                     InputWhat::Prompt { .. } if !reflected => InputState::Sent,
                     _ => InputState::Settled,
                 },
-                // Refused before it was written anywhere: it never left, and
-                // goes again once the host can be reached.
-                Some(Of::Rejected(rejected))
-                    if holds && rejected.refusal() == wire::Refusal::HostUnreachable =>
-                {
-                    InputState::Held
-                }
+                // A host that could not be reached never had it: refused
+                // like any other, its words go back to the composer.
                 Some(Of::Rejected(rejected)) => {
                     let refusal = crate::refusal(&rejected);
-                    if refusal.reason == RefusalReason::Exited {
+                    if refusal.reason == wire::Refusal::Exited {
                         self.exited_under = Some(incarnation);
                     }
                     InputState::Rejected(refusal)
@@ -997,44 +948,6 @@ impl SessionState {
                 _ => {}
             }
         }
-    }
-
-    fn host_online(&self) -> bool {
-        self.host
-            .as_ref()
-            .is_some_and(|host| host.online().is_some())
-    }
-
-    /// The held inputs that left before the newest word that the host can
-    /// be reached, sent from now: the chat is current again or the agent's
-    /// host is online. One held under the newest word waits for the next,
-    /// so a host that cannot take it is not asked again and again. One that
-    /// already landed (its reflection or queue entry is here) is settled
-    /// instead of sent twice.
-    fn release_held(&mut self) -> Vec<Input> {
-        let queue = &self.state.queue;
-        let transcript = &self.transcript;
-        let arrivals = &self.arrivals;
-        let reach = self.reach;
-        let mut resend = Vec::new();
-        for sent in self.inputs.iter_mut() {
-            if sent.state != InputState::Held || sent.left_at == reach {
-                continue;
-            }
-            if queue.iter().any(|entry| entry.input_id == sent.id) {
-                sent.state = InputState::Queued;
-                sent.seen_queued = true;
-            } else if transcript.key_for_input(&sent.id).is_some()
-                || arrivals.key_for_input(&sent.id)
-            {
-                sent.state = InputState::Settled;
-            } else {
-                sent.state = InputState::Sent;
-                sent.left_at = reach;
-                resend.push(sent.input.clone());
-            }
-        }
-        resend
     }
 
     /// At CaughtUp: an uncertain input found in the queue is queued, one found

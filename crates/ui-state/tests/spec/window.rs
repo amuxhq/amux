@@ -20,17 +20,6 @@ fn open_with(kind: Kind, orders: std::ops::RangeInclusive<u64>) -> SessionState 
 }
 
 #[test]
-fn a_live_row_below_the_window_is_dropped() {
-    for kind in KINDS {
-        let mut state = open_with(kind, 5..=7);
-        let outcome = apply_checked(&mut state, ev_item(text(kind, 3, 20, "old row revised")));
-        assert!(outcome.changed.is_empty());
-        assert_eq!(state.oldest_order(), Some(5));
-        assert!(state.transcript().get("k3").is_none());
-    }
-}
-
-#[test]
 fn pages_extend_the_low_edge_and_never_the_top() {
     for kind in KINDS {
         let mut state = open_with(kind, 5..=7);

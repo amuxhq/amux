@@ -23,9 +23,9 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Status};
 use wire::{
-    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, ExitCause, HostEntry, HostRef, Kind,
-    Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, SendMessageRequest,
-    StopAgentRequest, attachment, create_agent_request, host_ref, inventory_event,
+    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, Envelope, ExitCause, HostEntry,
+    HostRef, Kind, Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, StopAgentRequest,
+    attachment, create_agent_request, inventory_event,
 };
 
 use crate::dir;
@@ -70,20 +70,6 @@ messaged you (send); start a child agent, claude or codex, on this or another ho
 stop a child agent (stop); list the agents in the fleet (agents) and the hosts they run on \
 (hosts); say what you are working on (status); and attach a file to your reply (attach).";
 
-/// How the tool server reaches the daemon; the defaults are the product's.
-#[derive(Clone, Debug)]
-pub struct ToolsConfig {
-    pub retry_window: Duration,
-}
-
-impl Default for ToolsConfig {
-    fn default() -> Self {
-        Self {
-            retry_window: RETRY_WINDOW,
-        }
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum ToolsError {
     #[error("reading the harness: {0}")]
@@ -95,28 +81,17 @@ pub enum ToolsError {
 /// `amux internal mcp <dir>`: serves the harness on stdin and stdout until it
 /// closes stdin.
 pub async fn serve_tools(dir: PathBuf) -> Result<(), ToolsError> {
-    serve_tools_on(
-        dir,
-        tokio::io::stdin(),
-        tokio::io::stdout(),
-        ToolsConfig::default(),
-    )
-    .await
+    serve_tools_on(dir, tokio::io::stdin(), tokio::io::stdout()).await
 }
 
 /// Serves one harness on `reader` and `writer`: newline-delimited JSON-RPC,
 /// one response per request, in order.
-pub async fn serve_tools_on<R, W>(
-    dir: PathBuf,
-    reader: R,
-    mut writer: W,
-    config: ToolsConfig,
-) -> Result<(), ToolsError>
+pub async fn serve_tools_on<R, W>(dir: PathBuf, reader: R, mut writer: W) -> Result<(), ToolsError>
 where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let server = Server::new(dir, config);
+    let server = Server::new(dir);
     let mut lines = BufReader::new(reader).lines();
     while let Some(line) = lines.next_line().await.map_err(ToolsError::Read)? {
         if line.trim().is_empty() {
@@ -135,7 +110,6 @@ where
 
 struct Server {
     dir: PathBuf,
-    config: ToolsConfig,
     /// This agent's id, from its newest spec; the directory's name is the
     /// same id, but the spec says it in the wire's own bytes.
     me: Vec<u8>,
@@ -161,7 +135,7 @@ impl From<&str> for Refusal {
 type Answer = Result<String, Refusal>;
 
 impl Server {
-    fn new(dir: PathBuf, config: ToolsConfig) -> Self {
+    fn new(dir: PathBuf) -> Self {
         let dir = std::path::absolute(&dir).unwrap_or(dir);
         let spec = dir::newest_spec(&dir).ok().flatten().map(|(_, spec)| spec);
         let cwd = spec
@@ -176,7 +150,6 @@ impl Server {
             .unwrap_or_default();
         Self {
             dir,
-            config,
             me: spec.map(|spec| spec.agent_id).unwrap_or_default(),
             cwd,
         }
@@ -332,17 +305,18 @@ impl Server {
         for attachment in &positioned.attachments {
             self.within_limit(attachment)?;
         }
-        let request = SendMessageRequest {
+        let request = Envelope {
             id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            from: None,
             to: Some(AgentRef {
                 host_id: recipient.host_id,
                 agent_id: recipient.agent_id,
             }),
             context,
-            body: Some(wire::MessageBody {
+            body: Some(wire::envelope::Body::Message(wire::MessageBody {
                 text: positioned.text,
                 attachments: positioned.attachments,
-            }),
+            })),
         };
         let sent = self
             .daemon_once(format!("the message to {to}"), |mut client| {
@@ -384,9 +358,7 @@ impl Server {
         };
         let request = CreateAgentRequest {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-            host: host.map(|name| HostRef {
-                of: Some(host_ref::Of::Name(name)),
-            }),
+            host: host.map(HostRef::named),
             name,
             parent: None,
             cwd,
@@ -449,7 +421,7 @@ impl Server {
         self.daemon(|mut client| async move {
             let mut stream = client
                 .agents
-                .subscribe_inventory(wire::SubscribeInventoryRequest {})
+                .subscribe_inventory(wire::Empty {})
                 .await?
                 .into_inner();
             let (mut hosts, mut agents) = (Vec::<HostEntry>::new(), Vec::<Agent>::new());
@@ -526,7 +498,7 @@ impl Server {
         F: Fn(wire::ClientStubs) -> Fut,
         Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
     {
-        let deadline = tokio::time::Instant::now() + self.config.retry_window;
+        let deadline = tokio::time::Instant::now() + RETRY_WINDOW;
         let mut backoff = Duration::from_millis(50);
         loop {
             let failed = match connect(&self.dir.join(TOOLS_SOCK)).await {

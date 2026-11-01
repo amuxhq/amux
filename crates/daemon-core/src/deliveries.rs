@@ -1104,13 +1104,7 @@ mod tests {
             .put_agent(&AgentRow::new(daemon.own_key(PARENT), 1, "/src"))
             .unwrap();
         step(&mut daemon, Input::Swept);
-        step(
-            &mut daemon,
-            Input::AgentHello {
-                agent: PARENT,
-                hello: Default::default(),
-            },
-        );
+        step(&mut daemon, Input::AgentHello { agent: PARENT });
         let envelope = Envelope {
             id: b"envelope".to_vec(),
             to: Some(AgentRef {
@@ -1178,13 +1172,7 @@ mod tests {
             .put_agent(&AgentRow::new(daemon.own_key(PARENT), 1, "/src"))
             .unwrap();
         step(&mut daemon, Input::Swept);
-        step(
-            &mut daemon,
-            Input::AgentHello {
-                agent: PARENT,
-                hello: Default::default(),
-            },
-        );
+        step(&mut daemon, Input::AgentHello { agent: PARENT });
         let envelope = Envelope {
             id: b"envelope".to_vec(),
             to: Some(AgentRef {
@@ -1252,13 +1240,7 @@ mod tests {
             })
             .unwrap();
         owe_report(&mut daemon, parent);
-        step(
-            &mut daemon,
-            Input::AgentHello {
-                agent: PARENT,
-                hello: Default::default(),
-            },
-        );
+        step(&mut daemon, Input::AgentHello { agent: PARENT });
         let out = step(&mut daemon, Input::Swept);
         let report = out
             .iter()

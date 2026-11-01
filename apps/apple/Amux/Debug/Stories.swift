@@ -326,30 +326,6 @@ extension ScriptedChat: OpenChat {
     public func close() {}
 }
 
-/// One catalogue example filling the preview's device, the way the app
-/// draws a screen: under the device's own safe areas, not on the fixed
-/// canvas a snapshot uses.
-@MainActor
-struct StoryScreen: View {
-    let id: String
-
-    init(_ id: String) { self.id = id }
-
-    var body: some View {
-        if let example = ComponentCatalog.example(id: id) {
-            ZStack {
-                Ground()
-                example.build()
-                    .padding([.chat, .fleet, .hosts, .pairing, .settings, .report].contains(example.family) ? 0 : 18)
-            }
-            .environment(\.design, Design.app)
-            .environment(\.dynamicTypeSize, example.dynamicTypeSize)
-        } else {
-            Text("No story named \(id)")
-        }
-    }
-}
-
 /// Every example of one family, one under the other.
 @MainActor
 struct StoryGallery: View {
@@ -430,23 +406,6 @@ struct FoundationSheet: View {
         }
         .background(Ground())
         .environment(\.design, Design.app)
-    }
-}
-
-/// The lines a screen's content is meant to sit on: the margins, and where
-/// a list row's text starts after its mark.
-@MainActor
-struct AlignmentGuides: View {
-    var body: some View {
-        GeometryReader { proxy in
-            let lines: [CGFloat] = [Space.margin, Space.margin + Space.m + Space.m, proxy.size.width - Space.margin]
-            ForEach(lines, id: \.self) { x in
-                Rectangle().fill(Color.red.opacity(0.5)).frame(width: 0.5).position(x: x, y: proxy.size.height / 2)
-                    .frame(height: proxy.size.height)
-            }
-        }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
     }
 }
 

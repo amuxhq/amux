@@ -6,17 +6,17 @@
 
 use prost::Message;
 use wire::{
-    Ask, BackgroundJobs, ClaudePtyItem, ClaudePtySnapshot, ClaudeSdkItem, ClaudeSdkSnapshot,
-    CodexAsk, CodexItem, CodexSnapshot, ContextMeter, Kind, OfferedCommand, OfferedModel, SignIn,
-    Task, TaskList, ToolServerHealth, UsageState,
+    Ask, BackgroundJobs, ClaudeItem, ClaudeSnapshot, CodexAsk, CodexItem, CodexSnapshot,
+    ContextMeter, Kind, OfferedCommand, OfferedModel, SignIn, Task, TaskList, ToolServer,
+    UsageState,
 };
 
 /// A decoded item body. `Undecodable` covers an empty or unreadable body and
 /// an item kind this build does not know; views draw it as unrecognized.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ItemBody {
-    ClaudePty(wire::claude_pty_item::Kind),
-    ClaudeSdk(wire::claude_sdk_item::Kind),
+    /// Either Claude kind's item.
+    Claude(wire::claude_item::Kind),
     Codex(wire::codex_item::Kind),
     Undecodable,
 }
@@ -24,14 +24,10 @@ pub enum ItemBody {
 impl ItemBody {
     pub fn decode(kind: Kind, body: &[u8]) -> ItemBody {
         let decoded = match kind {
-            Kind::ClaudePty => ClaudePtyItem::decode(body)
+            Kind::ClaudePty | Kind::ClaudeSdk => ClaudeItem::decode(body)
                 .ok()
                 .and_then(|item| item.kind)
-                .map(ItemBody::ClaudePty),
-            Kind::ClaudeSdk => ClaudeSdkItem::decode(body)
-                .ok()
-                .and_then(|item| item.kind)
-                .map(ItemBody::ClaudeSdk),
+                .map(ItemBody::Claude),
             Kind::Codex => CodexItem::decode(body)
                 .ok()
                 .and_then(|item| item.kind)
@@ -43,52 +39,33 @@ impl ItemBody {
 
     /// The kind-neutral facts the model derives from.
     pub fn class(&self) -> ItemClass {
-        use wire::claude_pty_item::Kind as Pty;
-        use wire::claude_sdk_item::Kind as Sdk;
+        use wire::claude_item::Kind as Claude;
         use wire::codex_item::Kind as Codex;
         match self {
-            ItemBody::ClaudePty(kind) => match kind {
-                Pty::Prompt(_) => ItemClass::Prompt,
-                Pty::Steer(_) => ItemClass::Steer,
-                Pty::Message(text) => ItemClass::Prose {
+            ItemBody::Claude(kind) => match kind {
+                Claude::Prompt(_) => ItemClass::Prompt,
+                Claude::Steer(_) => ItemClass::Steer,
+                Claude::Message(text) => ItemClass::Prose {
                     complete: text.complete,
                 },
-                Pty::Thinking(thinking) => ItemClass::Thinking {
+                Claude::Thinking(thinking) => ItemClass::Thinking {
                     complete: thinking.complete,
                 },
-                Pty::Tool(tool) => claude_tool(tool),
-                Pty::Turn(_) => ItemClass::Turn,
-                Pty::ApiError(error) => api_error(error),
-                Pty::Boundary(_) => ItemClass::Boundary,
-                Pty::AgentMessage(_) => ItemClass::AgentMessage,
-                Pty::CompactSummary(_) | Pty::Interruption(_) => ItemClass::Silent,
-                Pty::Compaction(_) | Pty::Slash(_) | Pty::Unrecognized(_) => ItemClass::Other,
-                Pty::Ask(_) | Pty::Plan(_) => ItemClass::Ask,
-            },
-            ItemBody::ClaudeSdk(kind) => match kind {
-                Sdk::Prompt(_) => ItemClass::Prompt,
-                Sdk::Steer(_) => ItemClass::Steer,
-                Sdk::Message(text) => ItemClass::Prose {
-                    complete: text.complete,
-                },
-                Sdk::Thinking(thinking) => ItemClass::Thinking {
-                    complete: thinking.complete,
-                },
-                Sdk::Tool(tool) => claude_tool(tool),
-                Sdk::Turn(_) => ItemClass::Turn,
-                Sdk::ApiError(error) => api_error(error),
-                Sdk::Boundary(_) => ItemClass::Boundary,
-                Sdk::AgentMessage(_) => ItemClass::AgentMessage,
-                Sdk::Status(status) if status.status() == wire::SdkStatus::Compacting => {
+                Claude::Tool(tool) => claude_tool(tool),
+                Claude::Turn(_) => ItemClass::Turn,
+                Claude::ApiError(error) => api_error(error),
+                Claude::Boundary(_) => ItemClass::Boundary,
+                Claude::AgentMessage(_) => ItemClass::AgentMessage,
+                Claude::Status(status) if status.status() == wire::SdkStatus::Compacting => {
                     ItemClass::Compacting
                 }
-                Sdk::Status(_) => ItemClass::Silent,
-                Sdk::Task(_)
-                | Sdk::Slash(_)
-                | Sdk::Unrecognized(_)
-                | Sdk::ModelSwitch(_)
-                | Sdk::Compaction(_) => ItemClass::Other,
-                Sdk::Ask(_) | Sdk::Plan(_) => ItemClass::Ask,
+                Claude::Status(_) => ItemClass::Silent,
+                Claude::Task(_)
+                | Claude::Slash(_)
+                | Claude::Unrecognized(_)
+                | Claude::ModelSwitch(_)
+                | Claude::Compaction(_) => ItemClass::Other,
+                Claude::Ask(_) | Claude::Plan(_) => ItemClass::Ask,
             },
             ItemBody::Codex(kind) => match kind {
                 Codex::Prompt(_) => ItemClass::Prompt,
@@ -107,7 +84,6 @@ impl ItemBody {
                 Codex::Error(error) => api_error(error),
                 Codex::Boundary(_) => ItemClass::Boundary,
                 Codex::AgentMessage(_) => ItemClass::AgentMessage,
-                Codex::McpStartup(_) | Codex::TurnDiff(_) => ItemClass::Silent,
                 Codex::Unrecognized(_) | Codex::Verdict(_) => ItemClass::Other,
                 Codex::Ask(_) | Codex::Plan(_) => ItemClass::Ask,
             },
@@ -145,8 +121,8 @@ pub enum ItemClass {
     /// decision, not activity: the activity line reads past it to the work
     /// it interrupted.
     Ask,
-    /// Drawn by no client: Claude's status and task bookkeeping, Codex's
-    /// tool-server start-up and turn diffs.
+    /// Drawn by no client: Claude's status bookkeeping, a finished safety
+    /// check.
     Silent,
     Other,
 }
@@ -260,8 +236,8 @@ impl OpenAsk {
     }
 }
 
-/// The agent as its newest Snapshot describes it: the envelope's phase,
-/// queue and working-on, and the per-kind body decoded into the facts the
+/// The agent as its newest Snapshot describes it: the envelope's phase
+/// and queue, and the per-kind body decoded into the facts the
 /// views draw. Every body field is present, at its explicit unknown until
 /// the interpreter learns it: an unset optional string, a `known: false`
 /// meter or list, an UNKNOWN state. An empty body, which is what Subscribe
@@ -272,7 +248,6 @@ pub struct AgentState {
     pub revision: u64,
     pub phase: wire::Phase,
     pub queue: Vec<wire::QueuedInput>,
-    pub working_on: Option<String>,
     pub at_ms: i64,
     /// In the order the interpreter opened them.
     pub asks: Vec<OpenAsk>,
@@ -287,10 +262,9 @@ pub struct AgentState {
     /// The mode in force by its catalogue value (Codex's collaboration
     /// mode); None for Claude, which has none.
     pub mode: Option<String>,
-    /// Codex's own settings, None until Codex says. Set with no
-    /// `permission`, they match no named permission.
+    /// Codex's own approval policy, None until Codex says. Set with no
+    /// `permission`, Codex's settings match no named permission.
     pub approval_policy: Option<String>,
-    pub sandbox: Option<String>,
     /// The hash of the catalogue the agent offers now; None until its
     /// provider says.
     pub catalogue: Option<Vec<u8>>,
@@ -310,11 +284,10 @@ pub struct AgentState {
     pub active_tasks: Vec<Task>,
     /// Each provider's usage limits in its own terms.
     pub usage: Usage,
-    pub servers: ToolServerHealth,
+    pub servers: Vec<ToolServer>,
     pub sign_in: SignIn,
     pub background: BackgroundJobs,
     pub provider_session: Option<String>,
-    pub active_turn: Option<String>,
     /// Terminal Claude's calls its hooks announced before their rows
     /// landed, oldest first.
     pub running_calls: Vec<wire::RunningCall>,
@@ -361,27 +334,8 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
         return state;
     }
     match kind {
-        Kind::ClaudePty => {
-            let Ok(snapshot) = ClaudePtySnapshot::decode(body) else {
-                return state;
-            };
-            state.asks = snapshot.asks.into_iter().map(OpenAsk::Claude).collect();
-            state.tasks = snapshot.tasks.unwrap_or_default();
-            state.context = snapshot.context.unwrap_or_default();
-            state.model = snapshot.model;
-            state.model_name = snapshot.model_name;
-            state.permission = snapshot.permission;
-            state.provider_session = snapshot.provider_session;
-            state.usage = snapshot.usage.map_or(Usage::Unknown, Usage::Claude);
-            state.servers = snapshot.servers.unwrap_or_default();
-            state.sign_in = snapshot.sign_in.unwrap_or_default();
-            state.background = snapshot.background_jobs.unwrap_or_default();
-            state.running_calls = snapshot.running_calls;
-            state.effort = snapshot.effort;
-            state.switched_away = snapshot.switched_away.unwrap_or(false);
-        }
-        Kind::ClaudeSdk => {
-            let Ok(snapshot) = ClaudeSdkSnapshot::decode(body) else {
+        Kind::ClaudePty | Kind::ClaudeSdk => {
+            let Ok(snapshot) = ClaudeSnapshot::decode(body) else {
                 return state;
             };
             state.asks = snapshot.asks.into_iter().map(OpenAsk::Claude).collect();
@@ -394,9 +348,11 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
             state.active_tasks = snapshot.active_tasks;
             state.provider_session = snapshot.provider_session;
             state.usage = snapshot.usage.map_or(Usage::Unknown, Usage::Claude);
-            state.servers = snapshot.servers.unwrap_or_default();
+            state.servers = snapshot.servers;
             state.sign_in = snapshot.sign_in.unwrap_or_default();
             state.background = snapshot.background_jobs.unwrap_or_default();
+            state.running_calls = snapshot.running_calls;
+            state.switched_away = snapshot.switched_away.unwrap_or(false);
         }
         Kind::Codex => {
             let Ok(snapshot) = CodexSnapshot::decode(body) else {
@@ -411,11 +367,9 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
             state.permission = snapshot.permission;
             state.mode = snapshot.mode;
             state.approval_policy = snapshot.approval_policy;
-            state.sandbox = snapshot.sandbox;
-            state.active_turn = snapshot.active_turn;
             state.provider_session = snapshot.thread_id;
             state.usage = snapshot.usage.map_or(Usage::Unknown, Usage::Codex);
-            state.servers = snapshot.servers.unwrap_or_default();
+            state.servers = snapshot.servers;
             state.sign_in = snapshot.sign_in.unwrap_or_default();
             state.background = snapshot.background_jobs.unwrap_or_default();
         }
@@ -433,7 +387,6 @@ impl AgentState {
             revision: snapshot.revision,
             phase: snapshot.phase(),
             queue: snapshot.queue.clone(),
-            working_on: snapshot.working_on.clone(),
             at_ms: snapshot.at_ms,
             catalogue: snapshot.catalogue.clone(),
             ..decode_snapshot(kind, &snapshot.body)

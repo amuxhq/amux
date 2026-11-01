@@ -300,7 +300,7 @@ private final class StubChat: ChatSource, @unchecked Sendable {
             agent: AgentKey(host: [1], agent: [2]), name: "a", kind: .claudeSdk, phase: .idle,
             composer: ComposerView(mode: .send, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: true,
             hasOlder: hasOlder, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil,
-            context: nil, ended: nil, git: nil, signIn: nil, waiting: nil)
+            context: nil, ended: nil, git: nil, signIn: nil)
     }
     func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> { .failure(RuntimeFailure("stub")) }
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { nil }

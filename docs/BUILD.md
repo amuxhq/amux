@@ -22,9 +22,8 @@ shell below, which has it.
 Other tools a full checkout uses:
 
 - [`just`](https://github.com/casey/just) runs every task.
-- Python 3.11 or newer runs the repository scripts. `scripts/python` and
-  `scripts/py` find one even when `python3` on the PATH is the macOS system
-  3.9.
+- Python 3.11 or newer runs the repository scripts. `scripts/py` finds one
+  even when `python3` on the PATH is the macOS system 3.9.
 - Xcode and XcodeGen build the iPhone app (see [the iPhone app](IOS.md)).
 - `tmux` drives the terminal journeys.
 - [`gitleaks`](https://github.com/gitleaks/gitleaks) scans what a push
@@ -85,11 +84,9 @@ debugger needs file and line information. On Apple targets,
 so a profile that does carry debug information keeps it in one dSYM per
 binary instead of leaving every incremental object beside its Cargo unit.
 
-Desktop builds name the `bundled` feature explicitly, which compiles SQLite
-into the binary; the recipes pass `--features bundled` so a command that
-disables default features cannot silently switch SQLite linkage. The same
-config file's `LIBSQLITE3_FLAGS` compiles the bundled SQLite without the
-extensions the store never uses (full-text search, R-trees, JSON, statistics
+The store always compiles SQLite into the binary (rusqlite's `bundled`
+feature). The same config file's `LIBSQLITE3_FLAGS` compiles that SQLite
+without the extensions the store never uses (full-text search, R-trees, JSON, statistics
 tables, loadable extensions).
 
 ## Recipes
@@ -118,12 +115,12 @@ The recipes a build or change usually needs:
 | `just fmt`, `just fmt-check` | Format, or check formatting, with the pinned nightly |
 | `just protobuf` | Regenerates the committed protobuf output |
 | `just codegen-check` | Fails if the committed protobuf output is stale |
-| `just embedded-check`, `just mobile-check` | Check the provider-free client graph on the desktop and for iOS |
+| `just mobile-check` | Check the provider-free client graph for iOS |
 | `just warm` | `just build` and `just test-build` |
 | `just ci` | The whole check sequence; see [CI](CI.md) |
 
-[Testing](TESTING.md) covers the test recipes (`test-store`, `test-ui`,
-`test-tui`, `spec`, `journey`, `live`, `perf`, `tests-list`) in detail.
+[Testing](TESTING.md) covers the test recipes (`suite`, `test-tui`,
+`spec`, `journey`, `live`, `perf`, `tests-list`) in detail.
 
 ## Generated code
 

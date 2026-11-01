@@ -3,7 +3,7 @@
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use store::{Absorb, AgentKey, AgentRow, BlockOrders, CommitClock, Marker, SourceEvent, Sqlite};
+use store::{Absorb, AgentKey, AgentRow, BlockOrders, CommitClock, Marker, Record, Sqlite};
 use wire::{Item, Phase, Snapshot, Step};
 
 const ORIGIN: &[u8] = b"origin-host";
@@ -194,8 +194,8 @@ fn a_replica_block_reads_through_the_views() {
         .unwrap();
     assert!(!replica.current_with(&agent, &origin).unwrap());
     let missing = origin.after(&agent, 5, 10).unwrap().unwrap();
-    let mut events: Vec<SourceEvent> = missing.into_iter().map(SourceEvent::Item).collect();
-    events.push(SourceEvent::Snapshot(
+    let mut events: Vec<Record> = missing.into_iter().map(Record::Item).collect();
+    events.push(Record::Snapshot(
         origin.agent(&agent).unwrap().unwrap().snapshot.unwrap(),
     ));
     replica

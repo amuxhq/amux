@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 pub use limit::{Admitted, DumpKind, DumpLimit, with_suppressed};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-pub use step::{Check, DumpReason, StepBudget, Violation};
+pub use step::{Check, DumpReason, StepBudget, Violation, finish_step};
 
 /// Segments kept.
 const KEEP: usize = 2;

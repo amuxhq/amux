@@ -1,0 +1,24 @@
+{
+  "spec": "sign_in_problem",
+  "recorded": {
+    "provider": "claude",
+    "version": "2.1.316",
+    "model": "haiku",
+    "at": "2026-10-31T13:39:01.951651Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:feebe86b2fdd224a6e6649eb7fbb834cb0d70490f8efb0e566eee98bee6a362c",
+    "spawn.jsonl": "sha256:0bce42183037fdd8215e88b733453a79b7beba103b28cecbfc11228a89578cb7"
+  },
+  "redaction": {
+    "secrets": 1,
+    "machine_paths": 34,
+    "personal_identifiers": 0
+  },
+  "session_ids": [
+    "8aa35055-14b3-4882-ba9d-57426b8c7a0b"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

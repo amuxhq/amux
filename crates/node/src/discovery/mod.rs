@@ -13,16 +13,14 @@ use tokio::sync::broadcast;
 
 use crate::HostId;
 
+// The phone has none: only the system may browse its local network, and
+// the app hands over what the system resolves.
 #[cfg(not(target_os = "ios"))]
 mod mdns;
-#[cfg(target_os = "ios")]
-mod mdns_stub;
 mod scripted;
 
 #[cfg(not(target_os = "ios"))]
 pub use mdns::{MdnsDiscovery, MdnsShared};
-#[cfg(target_os = "ios")]
-pub use mdns_stub::{MdnsDiscovery, MdnsShared};
 pub use scripted::ScriptedDiscovery;
 
 /// The DNS-SD service type advertised by an amux LAN listener.
@@ -113,16 +111,6 @@ pub trait Discovery: Send + Sync + 'static {
 
     /// Re-issues the discovery query immediately.
     fn requery(&self);
-
-    /// Replaces what this browser has found with the set an outside browser
-    /// resolved, announcing what is new and saying goodbye to what is gone.
-    ///
-    /// A platform whose browsing lives outside this process — an iPhone,
-    /// where only the system may browse the local network — hands its whole
-    /// resolved set over each time it changes, because a browser that reports
-    /// a set has no separate word for a machine that left. A discovery that
-    /// browses for itself ignores it.
-    fn hand_over(&self, _found: Vec<Advertisement>) {}
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -156,16 +144,6 @@ impl FoundHosts {
                 self.hosts.write().unwrap().remove(&host_id);
             }
         }
-    }
-
-    /// Records a resolved advertisement.
-    pub fn found(&self, advert: Advertisement) {
-        self.record(advert, Instant::now());
-    }
-
-    /// Removes a host after a goodbye or TTL expiry.
-    pub fn lost(&self, host_id: HostId) {
-        self.hosts.write().unwrap().remove(&host_id);
     }
 
     /// Replaces the whole set with what one browse resolved.
@@ -214,8 +192,8 @@ impl FoundHosts {
     }
 }
 
-/// The browser's clock and its sleep detector, desktop only: the phone's
-/// browser is the stub, and the app hears about sleep from the system.
+/// The browser's clock and its sleep detector, desktop only: the phone
+/// has no browser of its own, and the app hears about sleep from the system.
 #[cfg(not(target_os = "ios"))]
 mod wake {
     use std::sync::{Arc, Mutex};

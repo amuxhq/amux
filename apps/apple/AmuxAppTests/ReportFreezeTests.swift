@@ -15,10 +15,10 @@ final class ReportFreezeTests: XCTestCase {
         return window
     }
 
-    /// Photographed, named, and honest about the one recording it cannot make:
-    /// a build without the driving tools records no view state, and the bundle
-    /// says why rather than leaving the part out.
-    func testAFreezeWithoutTheDrivingToolsDeclaresTheTraceAbsent() async throws {
+    /// Photographed, named, and honest about the recording it does not make:
+    /// the phone records no view state, and the bundle says why rather than
+    /// leaving the part out.
+    func testAFreezeDeclaresTheTraceAbsent() async throws {
         let shown = window()
         let freezer = ReportFreeze(window: { shown }, route: { "you" })
 
@@ -28,8 +28,6 @@ final class ReportFreezeTests: XCTestCase {
         XCTAssertEqual(capture.frame.height, 200)
         XCTAssertNotNil(capture.frame.image, "the photograph does not decode")
         XCTAssertEqual(capture.route, "you")
-        XCTAssertNil(capture.trace)
-        XCTAssertEqual(capture.traceAbsent, "this build does not record view state")
         // With nothing running there is no dump, and the bundle says why
         // rather than leaving the part out.
         XCTAssertNil(capture.dump)
@@ -42,8 +40,7 @@ final class ReportFreezeTests: XCTestCase {
         let parts = try XCTUnwrap(header["parts"] as? [String: Any])
         XCTAssertEqual(parts["frame"] as? String, "present")
         let trace = (parts["trace"] as? [String: Any])?["absent"] as? [String: Any]
-        XCTAssertEqual(trace?["reason"] as? String, "this build does not record view state")
-        XCTAssertNil(upload.trace)
+        XCTAssertEqual(trace?["reason"] as? String, "the phone records no view trace")
         XCTAssertEqual(upload.path, "", "no dump for the runtime to find")
     }
 

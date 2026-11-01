@@ -28,14 +28,14 @@ pub fn definitions() -> Map<String, Value> {
         ($($ty:ty),* $(,)?) => { $( generator.subschema_for::<$ty>(); )* };
     }
     roots!(
-        model::AgentKey,
-        model::Attention,
-        model::BlobStatus,
-        model::Connection,
-        model::Composer,
-        model::PhaseView,
-        model::Activity,
-        model::InputState,
+        ui_state::AgentKey,
+        ui_state::Attention,
+        ui_state::BlobStatus,
+        ui_state::Connection,
+        ui_state::Composer,
+        ui_state::PhaseView,
+        ui_state::Activity,
+        ui_state::InputState,
         ui_view::Row,
         ui_view::AskCard,
         ui_view::AgentNameProblem,
@@ -83,6 +83,7 @@ pub fn definitions() -> Map<String, Value> {
         wire::Catalogue,
         app_runtime::values::Directories,
         app_runtime::values::AgentAct,
+        app_runtime::values::ChatAct,
         app_runtime::values::UsageEvent,
         app_runtime::values::ReportSent,
     );
@@ -780,7 +781,6 @@ mod tests {
             "Answer",
             // Borrowed option types; the chat holds its own open runs.
             "ToolRows",
-            "ChatOptions",
             // A landed edit's first patch lines, which only the terminal
             // draws: ui_view::patch_head is called by no bridge function.
             "PatchHead",
@@ -796,7 +796,7 @@ mod tests {
         let root = repository();
         let mut missing = Vec::new();
         for dir in [
-            "crates/model/src",
+            "crates/ui-state/src/model.rs",
             "crates/ui-view/src",
             "crates/app-runtime/src/values.rs",
         ] {

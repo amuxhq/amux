@@ -1,0 +1,28 @@
+{
+  "spec": "plan",
+  "recorded": {
+    "provider": "claude",
+    "version": "2.1.316",
+    "model": "claude-sonnet-5-5",
+    "at": "2026-10-31T13:29:42.210185Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:1379068d01877ba82a22691a42fc86cd2270f8aaa46a4e5c1c8ded18b1e63a23",
+    "spawn.jsonl": "sha256:6e9db8a7811069115f56605729e4accef37f710ed354ec924cab36a2ee3475bc"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 152,
+    "personal_identifiers": 0
+  },
+  "session_ids": [
+    "e83fefc5-bfdd-4af6-9496-2ca10a6d66e7"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane",
+    "models": [
+      "claude-haiku-5-5",
+      "claude-sonnet-5-5"
+    ]
+  }
+}

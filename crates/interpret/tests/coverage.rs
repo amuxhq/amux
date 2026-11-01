@@ -89,11 +89,8 @@ fn carrier_exists(
     kind: &str,
     carrier: &str,
 ) -> Result<(), String> {
-    let camel = match kind {
-        "claude_pty" => "ClaudePty",
-        "claude_sdk" => "ClaudeSdk",
-        _ => "Codex",
-    };
+    // Both Claude kinds carry the same item and snapshot messages.
+    let camel = if kind == "codex" { "Codex" } else { "Claude" };
     let ask = if kind == "codex" {
         ".amux.v1.CodexAsk"
     } else {

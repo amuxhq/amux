@@ -1,9 +1,7 @@
 import AmuxCore
 import AuthenticationServices
 import Foundation
-#if canImport(UIKit)
 import UIKit
-#endif
 
 /// The browser a sign-in happens in.
 ///
@@ -19,7 +17,6 @@ public struct WebSignIn: WebAuthPresenter {
     public func present(_ url: URL, callbackScheme: String) async throws(CloudError) -> URL {
         let outcome: Result<URL, CloudError> = await withCheckedContinuation { continuation in
             Task { @MainActor in
-                #if canImport(UIKit)
                 // The window the browser is presented over. Looked up before
                 // the session is made rather than asked for by it, so the one
                 // moment there is nothing to present over — an app with no
@@ -31,9 +28,6 @@ public struct WebSignIn: WebAuthPresenter {
                     return
                 }
                 let browser = Browser(anchor: anchor)
-                #else
-                let browser = Browser(anchor: ASPresentationAnchor())
-                #endif
                 Browser.live = browser
                 browser.open(url, callbackScheme: callbackScheme) { result in
                     continuation.resume(returning: result)
@@ -106,12 +100,10 @@ private final class Browser: NSObject, ASWebAuthenticationPresentationContextPro
         anchor
     }
 
-    #if canImport(UIKit)
     static func frontWindow() -> UIWindow? {
         let windows = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows)
         return windows.first { $0.isKeyWindow } ?? windows.first
     }
-    #endif
 }

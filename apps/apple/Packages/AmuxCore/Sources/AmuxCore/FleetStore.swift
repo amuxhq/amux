@@ -2,25 +2,13 @@ import AmuxValues
 import Foundation
 import Observation
 
-/// One agent as the home screen lists it: the runtime's card, where it sits
-/// in its family, and whether this phone has seen its latest activity.
-public struct AgentRow: Sendable, Equatable, Identifiable {
-    public var row: FleetRow
-    public var unread: Bool
-
-    public init(row: FleetRow, unread: Bool) {
-        self.row = row
-        self.unread = unread
-    }
-
-    public var card: FleetCard { row.card }
+/// One agent as the home screen lists it: the runtime's card and where it
+/// sits in its family.
+extension FleetRow: Identifiable {
     public var id: AgentKey { card.agent }
     public var name: String { card.name.isEmpty ? "agent" : card.name }
     public var attention: Attention { card.attention }
-    /// Zero for a family's head.
-    public var depth: Int { Int(row.depth) }
     public var children: Int { Int(card.children) }
-    public var expanded: Bool { row.expanded }
     public var hostId: HostId? { card.agent.hostId }
     public var hostName: String { card.host }
     /// How this phone reaches the agent's host.
@@ -28,15 +16,13 @@ public struct AgentRow: Sendable, Equatable, Identifiable {
     public var workingDirectory: String { card.cwd }
     /// The branch its folder is on, when it is on one.
     public var branch: String? { card.branch }
-    /// What its state calls for, under its name.
-    public var secondLine: SecondLine { row.secondLine }
     /// When the agent's state last changed.
     public var lastActivity: Date { Date(milliseconds: card.phaseSinceMs) }
     /// A kind this build knows how to open.
     public var readable: Bool { card.kind != .unspecified }
     public var needsYou: Bool { attention == .needsYou }
     /// A folded family's head speaking for a member that needs the person.
-    public var speaksForAMember: Bool { row.loud != nil }
+    public var speaksForAMember: Bool { loud != nil }
 
     public func age(at now: Date) -> String {
         Elapsed.spelled(max(0, now.timeIntervalSince(lastActivity)))
@@ -61,32 +47,16 @@ public enum Elapsed {
     }
 }
 
-/// One of home's sections as the runtime groups them: a family sits in
-/// the section of its loudest member.
-public struct HomeSection: Sendable, Equatable, Identifiable {
-    public var kind: SectionKind
-    /// How many families the section holds.
-    public var families: Int
-    public var rows: [AgentRow]
-    public var folded: Bool
-    public var id: String { kind.rawValue }
-
-    public init(kind: SectionKind, families: Int, rows: [AgentRow], folded: Bool) {
-        self.kind = kind
-        self.families = families
-        self.rows = rows
-        self.folded = folded
-    }
-}
-
 /// The fleet as the home screen draws it: the runtime's sections, in the
 /// runtime's order, which every client shares.
 @MainActor
 @Observable
 public final class FleetStore {
     /// Every row on screen, families expanded where asked.
-    public private(set) var rows: [AgentRow] = []
-    public private(set) var sections: [HomeSection] = []
+    public private(set) var rows: [FleetRow] = []
+    /// Home's sections as the runtime groups them: a family sits in the
+    /// section of its loudest member.
+    public private(set) var sections: [FleetSection] = []
     /// Agents across the fleet that need the person, and that are working
     /// or starting, whatever is folded.
     public private(set) var needYou = 0
@@ -108,9 +78,6 @@ public final class FleetStore {
     /// The relay link, as the account screens report it.
     public private(set) var relay: RelayLink = .off
 
-    @ObservationIgnored private var view = FleetView(sections: [], needYou: 0, working: 0)
-    @ObservationIgnored private var seen: [AgentKey: Date] = [:]
-    @ObservationIgnored private let launched: Date
     @ObservationIgnored private var markedFirstFrame = false
     /// The launch's first frame with rows is built and not yet on screen.
     @ObservationIgnored public private(set) var presenting = false
@@ -119,17 +86,18 @@ public final class FleetStore {
 
     public init(now: Date = Date()) {
         orderedAt = now
-        launched = now
     }
 
     /// What the runtime lists now.
     public func show(_ view: FleetView, hosts views: [HostView]) {
-        self.view = view
         loaded = true
         hosts = Dictionary(
             views.filter(\.trusted).compactMap { view in view.id.map { ($0, view) } },
             uniquingKeysWith: { _, last in last })
-        rebuild()
+        sections = view.sections
+        rows = sections.flatMap(\.rows)
+        needYou = Int(view.needYou)
+        working = Int(view.working)
         if let newest = rows.map(\.lastActivity).max(), newest > orderedAt { orderedAt = newest }
         if !markedFirstFrame && !self.rows.isEmpty {
             markedFirstFrame = true
@@ -165,20 +133,19 @@ public final class FleetStore {
         } else {
             flipped.insert(section)
         }
-        rebuild()
     }
 
-    /// Somebody opened this agent's chat.
-    public func opened(_ agent: AgentKey, at time: Date = Date()) {
-        seen[agent] = time
-        rebuild()
+    /// Whether a section is folded: its default, unless opened or folded
+    /// against it.
+    public func folded(_ section: FleetSection) -> Bool {
+        section.foldedByDefault != flipped.contains(section.kind)
     }
 
     public func host(_ id: HostId?) -> HostView? {
         id.flatMap { hosts[$0] }
     }
 
-    public func row(_ agent: AgentKey) -> AgentRow? {
+    public func row(_ agent: AgentKey) -> FleetRow? {
         rows.first { $0.id == agent }
     }
 
@@ -213,22 +180,5 @@ public final class FleetStore {
 
     public var unreachableHost: String? {
         machines.filter { !$0.online }.map(\.name).sorted().first
-    }
-
-    private func isUnread(_ row: FleetRow) -> Bool {
-        let activity = Date(milliseconds: row.card.phaseSinceMs)
-        return activity > (seen[row.card.agent] ?? launched)
-    }
-
-    private func rebuild() {
-        sections = view.sections.map { section in
-            HomeSection(
-                kind: section.kind, families: Int(section.families),
-                rows: section.rows.map { AgentRow(row: $0, unread: isUnread($0)) },
-                folded: section.foldedByDefault != flipped.contains(section.kind))
-        }
-        rows = sections.flatMap(\.rows)
-        needYou = Int(view.needYou)
-        working = Int(view.working)
     }
 }

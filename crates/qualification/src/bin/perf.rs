@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, bail};
 use qualification::perf::flood::{self, FloodOptions};
 use qualification::perf::warmer::{CLUSTER_WARMER_ARG, ClusterWarmer, run_cluster_warmer};
-use qualification::perf::{Baselines, DESKTOP_REFERENCE_STATE, Machine, MetricRun, Report};
+use qualification::perf::{Baselines, Machine, MetricRun, Report};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Selection {
@@ -32,7 +32,7 @@ fn run_qualification(arguments: &[String]) -> Result<()> {
     let recorded = if baseline {
         None
     } else {
-        Baselines::read(&path, &machine, Some(DESKTOP_REFERENCE_STATE))?
+        Baselines::read(&path, &machine)?
     };
     let runs = match selection {
         Selection::All | Selection::Flood => run_flood()?,

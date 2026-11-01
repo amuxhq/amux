@@ -219,7 +219,7 @@ final class DiscoveryTests: XCTestCase {
         // its direct links itself. Withdrawing here as well would leave a
         // phone coming back with an empty network until the browser has found
         // the same machines a second time.
-        var handedOver: [[FoundHost]] = []
+        var handedOver: [[Found]] = []
         let discovery = LocalDiscovery { handedOver.append($0) }
         discovery.stop()
         XCTAssertEqual(handedOver.count, 0)
@@ -245,7 +245,7 @@ private final class Browser {
     let host = HostId(UUID(uuidString: "6D7A4B1E-3C2F-4A58-9B0D-1E2F3A4B5C6D")!)
     var lookups: [Lookup] = []
     var pauses: [TimeInterval] = []
-    var handedOver: [[FoundHost]] = []
+    var handedOver: [[Found]] = []
     private var paused: [@MainActor () -> Void] = []
     private(set) lazy var discovery = LocalDiscovery(
         only: nil,
@@ -269,8 +269,8 @@ private final class Browser {
             routes: routes.map { .hostPort(host: .name($0, nil), port: 1) })
     }
 
-    func found(_ address: String, version: UInt32 = 7) -> FoundHost {
-        FoundHost(host: host, name: "kitchen", version: version, addrs: [address])
+    func found(_ address: String, version: UInt32 = 7) -> Found {
+        Found(hostId: host.bytes, name: "kitchen", version: version, addrs: [address], scope: "")
     }
 
     func resume() {

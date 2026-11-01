@@ -1,0 +1,25 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 12 recorded 10: fact Transcript type=user uuid=485cd404-2f04-4307-a76c-a148bacdb5bb
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 49 recorded 47: fact Transcript type=system subtype=turn_duration uuid=96632ceb-f477-4612-b39e-14eda7d03d41
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 485cd404-2f04-4307-a76c-a148bacdb5bb Prompt { text: [Text("Reply with the single word pong and nothing else.")], steered: false }
+     3 stream:294e35e1-d5a6-424d-830a-1ef02d07579a Prose { text: [Text("pong")], streaming: false, working_note: false }
+     4 turn:1 TurnEnd { duration_ms: Some(983), failed: false }
+     5 boundary:2 Boundary { kind: Cleared, cause: "" }
+     6 8cf4fd5a-78a9-4db1-abb6-34acd3a3b524 SlashOutput { command: "/clear", args: "", output: "" }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context None sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

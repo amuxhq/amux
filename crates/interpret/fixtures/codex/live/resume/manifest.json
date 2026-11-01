@@ -1,0 +1,24 @@
+{
+  "spec": "resume",
+  "recorded": {
+    "provider": "codex",
+    "version": "0.166.0",
+    "model": "gpt-6.1-sol",
+    "at": "2026-10-31T12:04:34.030159Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:cd35ccb579162c44275608bd76a55917e40c3b8a2012fd13ecc179a28686c43a",
+    "spawn.jsonl": "sha256:971660fab09fe5df06b2f8fc482907e082006c568d74397c100ce20f2f1cb7d5"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 72,
+    "personal_identifiers": 4
+  },
+  "session_ids": [
+    "01a191d8-c242-7420-a19c-ae8d5f89f842"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

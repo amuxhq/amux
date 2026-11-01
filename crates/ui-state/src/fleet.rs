@@ -3,9 +3,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-pub use model::{AgentKey, Attention, ExitCause, HostId};
 use wire::{Agent, HostEntry, InventoryEvent, inventory_event};
 
+pub use crate::model::{AgentKey, Attention, ExitCause, HostId};
 use crate::session::Connection;
 
 /// The key naming an agent's row.

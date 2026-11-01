@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{AskClosed, ClaudeGrant, DecisionOutcome, FormAction, claude_answer, permission_answer};
 
-use crate::claude_common::{Verdict, claude_grant, permission_scopes};
+use crate::claude_common::{Verdict, permission_scopes};
 use crate::{ask_item, serde_pb};
 
 /// What answering an ask decided, for the call it held.
@@ -30,6 +30,18 @@ pub(crate) struct ToolDecisionState {
     #[serde(with = "serde_pb::opt_msg")]
     pub(crate) grant: Option<ClaudeGrant>,
     pub(crate) note: String,
+}
+
+impl ToolDecisionState {
+    /// The decision as the call's row carries it.
+    pub(crate) fn to_wire(&self) -> wire::ToolDecision {
+        wire::ToolDecision {
+            outcome: self.outcome,
+            note: self.note.clone(),
+            elsewhere: false,
+            granted: self.grant.clone().map(wire::tool_decision::Granted::Claude),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -81,6 +93,16 @@ pub(crate) enum Answer {
 
 /// Claude's own words for a tool use the person rejected.
 pub(crate) const REJECTED: &str = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file).";
+
+/// What Claude is handed for a plan dismissed by a prompt typed instead of
+/// deciding it: refused, and the turn stopped, so the prompt starts the next.
+pub(crate) fn plan_dismissed() -> PermissionResult {
+    PermissionResult::Deny {
+        message: REJECTED.to_owned(),
+        interrupt: Some(true),
+        tool_use_id: None,
+    }
+}
 
 /// The decision an answer hands Claude and the one it puts on the call's
 /// row, or None when the answer does not fit the ask. `input` is the
@@ -134,8 +156,9 @@ pub(crate) fn decide(
                     let suggestion =
                         serde_json::from_str::<PermissionUpdate>(suggestions.get(index as usize)?)
                             .ok()?;
-                    let scopes = permission_scopes(std::slice::from_ref(&suggestion));
-                    grant = scopes.first().map(claude_grant);
+                    grant = permission_scopes(std::slice::from_ref(&suggestion))
+                        .into_iter()
+                        .next();
                     permissions = Some(vec![suggestion]);
                 }
                 Some((

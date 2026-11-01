@@ -1,0 +1,35 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"agent","json":{"type":"launch"}}
+effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue cd96cd29
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 3 recorded 1: fact Hook hook_event_name=SessionStart
+effect follow "<TRANSCRIPT_1>"
+item boundary:1 boundary final at=1793452964080 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1793452964080 asks=[] session=ba2814c1-3eb9-4b1c-9dc4-ea1527ba314d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793452964723 asks=[] session=ba2814c1-3eb9-4b1c-9dc4-ea1527ba314d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 13 recorded 11: fact Transcript type=user uuid=bb4c51af-fe07-4070-905f-2b7c0fcb1820
+item bb4c51af-fe07-4070-905f-2b7c0fcb1820 prompt final at=1793452965084 text="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed."
+snapshot WORKING queue=[] working_on=- at=1793452965084 asks=[] session=ba2814c1-3eb9-4b1c-9dc4-ea1527ba314d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 41 recorded 39: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01HKJpnEWBDMKvtDKb4XsPFQ
+snapshot WORKING queue=[] working_on=- at=1793452965786 asks=[] session=ba2814c1-3eb9-4b1c-9dc4-ea1527ba314d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01HKJpnEWBDMKvtDKb4XsPFQ Bash since=1793452965786
+## 44 recorded 42: fact Transcript type=assistant uuid=26451cd7-fd93-4250-a92a-b38de4e505ed
+item toolu_01HKJpnEWBDMKvtDKb4XsPFQ tool final at=1793452966199 text="" Bash TOOL_STATE_RUNNING input=shell:"ls does-not-exist"
+snapshot WORKING queue=[] working_on=- at=1793452965934 asks=[] session=ba2814c1-3eb9-4b1c-9dc4-ea1527ba314d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35606/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01HKJpnEWBDMKvtDKb4XsPFQ Bash since=1793452965786
+## 46 recorded 44: fact Hook hook_event_name=PostToolUseFailure tool_use_id=toolu_01HKJpnEWBDMKvtDKb4XsPFQ
+snapshot WORKING queue=[] working_on=- at=1793452965997 asks=[] session=ba2814c1-3eb9-4b1c-9dc4-ea1527ba314d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35606/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 48 recorded 46: fact Transcript type=user uuid=82ccd416-7d60-4cd3-b2b3-83ef634a4eba
+item toolu_01HKJpnEWBDMKvtDKb4XsPFQ tool final at=1793452966199 text="" Bash TOOL_STATE_FAILED ended=1793452966440 input=shell:"ls does-not-exist" out="Exit code 1\nls: does-not-exist: No such file or directory"
+## 58 recorded 56: fact Hook hook_event_name=MessageDisplay
+item stream:716f02f4-ed7e-4483-a180-d10abc1d6e5b message open at=1793452966995 text="Yes, it failed. `ls does-not-exist` exited with code 1 and printed `ls: does-not-exist: No such file or directory`, because there is no such path in the working directory."
+## 60 recorded 58: fact Hook hook_event_name=Stop
+snapshot WORKING queue=[] working_on=- at=1793452966997 asks=[] session=ba2814c1-3eb9-4b1c-9dc4-ea1527ba314d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35606/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 63 recorded 61: fact Transcript type=assistant uuid=21505f36-4a40-485f-b82d-606636435fdf
+item stream:716f02f4-ed7e-4483-a180-d10abc1d6e5b message final at=1793452967385 text="Yes, it failed. `ls does-not-exist` exited with code 1 and printed `ls: does-not-exist: No such file or directory`, because there is no such path in the working directory."
+snapshot WORKING queue=[] working_on=- at=1793452967084 asks=[] session=ba2814c1-3eb9-4b1c-9dc4-ea1527ba314d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35749/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 66 recorded 64: fact Transcript type=system subtype=turn_duration uuid=9b3f4837-3436-4ff2-ba88-57a62725cf19
+item turn:1 turn final at=1793452967444 text="" #1 TURN_OUTCOME_COMPLETED started=1793452965057
+snapshot IDLE queue=[] working_on=- at=1793452967089 asks=[] session=ba2814c1-3eb9-4b1c-9dc4-ea1527ba314d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35749/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+turn_end 1 last=stream:716f02f4-ed7e-4483-a180-d10abc1d6e5b

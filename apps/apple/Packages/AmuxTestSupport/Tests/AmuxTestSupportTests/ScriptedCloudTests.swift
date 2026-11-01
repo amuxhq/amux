@@ -18,8 +18,6 @@ final class ScriptedCloudTests: XCTestCase {
         let handed = await cloud.handOver(ada)
         XCTAssertEqual(handed?.refreshToken, "connect-me")
         XCTAssertEqual(handed?.client, "cli", "the scripted relay's identity endpoint is the CLI's")
-        let facts = try await cloud.account(ada)
-        XCTAssertEqual(facts.entitlement, .active(grant: .purchased(.appStore), renews: ScriptedCloudService.now))
         let deletion = try await cloud.requestDeletion(ada, confirmedEmail: "ada@example.com")
         XCTAssertEqual(deletion, .deleted)
 
@@ -27,7 +25,6 @@ final class ScriptedCloudTests: XCTestCase {
             .signIn(.adding),
             .entitlement(ada),
             .handOver(ada),
-            .account(ada),
             .requestDeletion(ada, confirmedEmail: "ada@example.com"),
         ])
     }

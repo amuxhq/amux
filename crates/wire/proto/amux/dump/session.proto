@@ -40,7 +40,6 @@ message ClientSession {
   bool detached = 11;
   ClientConnection connection = 12;
   optional uint32 exited_under = 13;
-  uint64 reach = 14;
   uint64 epoch = 15;
   repeated ClientBlob blobs = 16;
   uint64 cap = 17;
@@ -75,7 +74,7 @@ message ClientInput {
   // Why it was refused, when its state is REJECTED.
   amux.v1.Rejected rejected = 3;
   bool seen_queued = 4;
-  uint64 left_at = 5;
+  bool in_feed = 6;
 }
 
 enum ClientInputState {
@@ -84,7 +83,6 @@ enum ClientInputState {
   CLIENT_INPUT_STATE_SETTLED = 2;
   CLIENT_INPUT_STATE_REJECTED = 3;
   CLIENT_INPUT_STATE_UNCERTAIN = 4;
-  CLIENT_INPUT_STATE_HELD = 5;
 }
 
 // An attachment's bytes in the client's cache.
@@ -154,11 +152,7 @@ message ClientSent {
     amux.v1.SendInputResponse reply = 2;
     // The transport failed before a reply.
     ClientLost lost = 3;
-    // It never left: held to send once the host is back.
-    ClientHeld held = 4;
   }
 }
 
 message ClientLost {}
-
-message ClientHeld {}

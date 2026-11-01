@@ -17,7 +17,6 @@ tagged_enum! {
         "commandExecution" => CommandExecution(CommandExecutionItem),
         "fileChange" => FileChange(FileChangeItem),
         "mcpToolCall" => McpToolCall(McpToolCallItem),
-        "dynamicToolCall" => DynamicToolCall(DynamicToolCallItem),
         "collabAgentToolCall" => CollabAgentToolCall(CollabAgentToolCallItem),
         "subAgentActivity" => SubAgentActivity(IdItem),
         "webSearch" => WebSearch(WebSearchItem),
@@ -46,7 +45,6 @@ impl ThreadItem {
             Self::CommandExecution(item) => &item.id,
             Self::FileChange(item) => &item.id,
             Self::McpToolCall(item) => &item.id,
-            Self::DynamicToolCall(item) => &item.id,
             Self::CollabAgentToolCall(item) => &item.id,
             Self::WebSearch(item) => &item.id,
             Self::ImageView(item) => &item.id,
@@ -122,8 +120,6 @@ pub struct CommandExecutionItem {
     pub exit_code: Option<i64>,
     #[serde(default)]
     pub duration_ms: Option<i64>,
-    #[serde(default)]
-    pub process_id: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -142,60 +138,11 @@ string_enum! {
 tagged_enum! {
     /// What Codex makes of a command it runs.
     pub enum CommandAction {
-        "read" => Read(ReadAction),
-        "listFiles" => ListFiles(ListFilesAction),
-        "search" => Search(SearchAction),
-        "unknown" => Unrecognized(UnrecognizedAction),
+        "read" => Read(Extra),
+        "listFiles" => ListFiles(Extra),
+        "search" => Search(Extra),
+        "unknown" => Unrecognized(Extra),
     }
-}
-
-impl CommandAction {
-    /// The command the action was read from.
-    pub fn command(&self) -> Option<&str> {
-        match self {
-            Self::Read(action) => Some(&action.command),
-            Self::ListFiles(action) => Some(&action.command),
-            Self::Search(action) => Some(&action.command),
-            Self::Unrecognized(action) => Some(&action.command),
-            Self::Unknown(object) => object.get("command").and_then(Value::as_str),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ReadAction {
-    pub command: String,
-    pub name: String,
-    pub path: String,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ListFilesAction {
-    pub command: String,
-    #[serde(default)]
-    pub path: Option<String>,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SearchAction {
-    pub command: String,
-    #[serde(default)]
-    pub path: Option<String>,
-    #[serde(default)]
-    pub query: Option<String>,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct UnrecognizedAction {
-    pub command: String,
-    #[serde(flatten)]
-    pub extra: Extra,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -280,36 +227,6 @@ pub struct McpToolCallError {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DynamicToolCallItem {
-    pub id: String,
-    /// The namespace amux gave the tool, when it gave one.
-    #[serde(default)]
-    pub namespace: Option<String>,
-    pub tool: String,
-    pub status: ToolStatus,
-    /// The tool's arguments, as the model wrote them.
-    pub arguments: Value,
-    #[serde(default)]
-    pub content_items: Option<Vec<ToolOutputContent>>,
-    #[serde(default)]
-    pub success: Option<bool>,
-    #[serde(default)]
-    pub duration_ms: Option<i64>,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-tagged_enum! {
-    /// What a dynamic tool answers with.
-    pub enum ToolOutputContent {
-        "inputText" => Text(TextContent),
-        "inputImage" => Image(Extra),
-        "inputAudio" => Audio(Extra),
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextContent {
     pub text: String,
     #[serde(flatten)]
@@ -322,12 +239,9 @@ pub struct CollabAgentToolCallItem {
     pub id: String,
     pub tool: CollabAgentTool,
     pub status: ToolStatus,
-    pub sender_thread_id: String,
     pub receiver_thread_ids: Vec<String>,
     #[serde(default)]
     pub prompt: Option<String>,
-    #[serde(default)]
-    pub model: Option<String>,
     #[serde(default)]
     pub reasoning_effort: Option<ReasoningEffort>,
     #[serde(flatten)]
@@ -371,8 +285,6 @@ tagged_enum! {
 pub struct WebSearchQuery {
     #[serde(default)]
     pub query: Option<String>,
-    #[serde(default)]
-    pub queries: Option<Vec<String>>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -430,10 +342,7 @@ tagged_enum! {
         "text" => Text(TextInput),
         "image" => Image(ImageInput),
         "localImage" => LocalImage(LocalImageInput),
-        "audio" => Audio(Extra),
-        "localAudio" => LocalAudio(Extra),
         "skill" => Skill(NamedPath),
-        "mention" => Mention(NamedPath),
     }
 }
 

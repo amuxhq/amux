@@ -1,7 +1,7 @@
 //! `amux config`: one setting at a time in the installation's config file.
 //!
 //! A key is a dotted path into the file (`ui.theme`, `new_agent.claude.model`),
-//! one of [`settings::INSTALLATION_KEYS`]. A value is read as TOML where it
+//! one of [`settings::installation_keys`]. A value is read as TOML where it
 //! is one (`true`, `300`, `["~/source"]`) and as a string otherwise, so
 //! `amux config set channel preview` needs no quotes. A write changes that
 //! key alone, comments and layout kept, and only when the file still reads
@@ -12,7 +12,7 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use settings::{INSTALLATION_KEYS, InstallationConfig};
+use settings::{InstallationConfig, installation_keys};
 use toml_edit::{DocumentMut, Item};
 
 /// `amux config get`: the value in effect, the default when the file does
@@ -158,12 +158,13 @@ pub fn edit(path: &Path) -> Result<()> {
 }
 
 fn known(key: &str) -> Result<()> {
-    if INSTALLATION_KEYS.contains(&key) {
+    let keys = installation_keys();
+    if keys.iter().any(|known| known == key) {
         return Ok(());
     }
     bail!(
         "{key} is not a setting; the settings are {}",
-        INSTALLATION_KEYS.join(", ")
+        keys.join(", ")
     )
 }
 

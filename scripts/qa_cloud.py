@@ -127,8 +127,7 @@ def through(opener, prepared) -> tuple[int, str, str]:
 class Browser:
     """A cookie jar and a redirect that stops rather than following.
 
-    This is the sign-in and the pages that hang off it — the login form, the
-    device-code page — and nothing else. The API asks go through `ask`, which
+    This is the sign-in and the login form it drives, and nothing else. The API asks go through `ask`, which
     has no jar, because the phone has no jar.
 
     The sign-in ends at `amux://callback`, which no HTTP client can follow, so
@@ -268,13 +267,13 @@ def redeem(browser: Browser, code: str, verifier: str) -> dict:
     return json.loads(body)
 
 
-def signed_in(who: str, secret: str) -> tuple[Browser, dict]:
+def signed_in(who: str, secret: str) -> dict:
     """One sign-in, from the authorize request to the redeemed tokens."""
     browser = Browser()
     verifier, challenge = verifier_and_challenge()
     state = secrets.token_urlsafe(24)
     code = sign_in(browser, who, secret, challenge, state)
-    return browser, redeem(browser, code, verifier)
+    return redeem(browser, code, verifier)
 
 
 def ask(url: str, token: str, method: str = "GET",

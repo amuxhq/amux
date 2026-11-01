@@ -392,9 +392,9 @@ public final class Profile: @unchecked Sendable {
         }
     }
 
-    public func confirmPair(_ pending: PendingPair) async -> Result<Paired, RuntimeFailure> {
+    public func confirmPair(_ pending: PendingPair) async -> Result<Nothing, RuntimeFailure> {
         let token = Bridge.json(pending.token)
-        return await act(Paired.self) { live in
+        return await act(Nothing.self) { live in
             token.withCString { amux_profile_confirm_pair(live, $0) }
         }
     }
@@ -417,10 +417,6 @@ public final class Profile: @unchecked Sendable {
     /// This phone's identity in the profile and the machines it trusts.
     public func roster() async -> Result<Roster, RuntimeFailure> {
         await act(Roster.self) { amux_profile_roster($0) }
-    }
-
-    public func account() async -> Result<AccountView, RuntimeFailure> {
-        await act(AccountView.self) { amux_profile_account($0) }
     }
 
     /// A bearer for the profile's account service.
@@ -448,17 +444,14 @@ public final class Profile: @unchecked Sendable {
     /// or why it was not sent.
     public func submitReport(_ upload: ReportUpload) async -> Result<ReportSent, RuntimeFailure> {
         let header = String(decoding: upload.header, as: UTF8.self)
-        let (path, frame, trace) = (upload.path, upload.frame, upload.trace)
+        let (path, frame) = (upload.path, upload.frame)
         return await act(ReportSent.self) { live in
             path.withCString { path in
                 header.withCString { header in
-                    Bridge.optional(trace) { trace in
-                        frame.withUnsafeBytes { bytes in
-                            amux_profile_submit_report(
-                                live, path, header,
-                                bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count,
-                                trace)
-                        }
+                    frame.withUnsafeBytes { bytes in
+                        amux_profile_submit_report(
+                            live, path, header,
+                            bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count)
                     }
                 }
             }
@@ -534,17 +527,6 @@ public final class Profile: @unchecked Sendable {
         _ type: T.Type, _ start: @escaping @Sendable (OpaquePointer) -> UInt64
     ) async -> Result<T, RuntimeFailure> {
         Bridge.answer(T.self, await loop.answer { [self] _ in call(nil) { start($0) } })
-    }
-}
-
-/// What a pairing trusted.
-public struct Paired: Decodable, Sendable, Equatable {
-    public var hostId: [UInt8]
-    public var name: String
-
-    private enum CodingKeys: String, CodingKey {
-        case hostId = "host_id"
-        case name
     }
 }
 

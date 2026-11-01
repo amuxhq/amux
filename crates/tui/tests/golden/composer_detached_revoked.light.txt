@@ -1,7 +1,0 @@
-  ╭─ studio no longer trusts this machine ───────────────────────────────────────────────────────╮
-  │ › Message fixer                                                                              │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
---- styles
-..mmm????????????????????????????????????mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..
-..mmmmmmmmmmmmmmmmm..............................................................................m..
-..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..

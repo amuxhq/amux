@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use clap::{Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 use unicode_width::UnicodeWidthChar as _;
 
 use super::session::{Folder, Outcome, binary};
@@ -1048,20 +1048,21 @@ fn record(
 
 /// One cell's style as the frame names it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct Style {
-    fg: String,
-    bg: String,
-    bold: bool,
-    dim: bool,
-    italic: bool,
-    underlined: bool,
-    reversed: bool,
-    hidden: bool,
-    crossed_out: bool,
+pub(crate) struct Style {
+    /// `default`, `ansi:<n>` for a palette index or `#rrggbb`.
+    pub(crate) fg: String,
+    pub(crate) bg: String,
+    pub(crate) bold: bool,
+    pub(crate) dim: bool,
+    pub(crate) italic: bool,
+    pub(crate) underlined: bool,
+    pub(crate) reversed: bool,
+    pub(crate) hidden: bool,
+    pub(crate) crossed_out: bool,
 }
 
 impl Style {
-    fn plain() -> Self {
+    pub(crate) fn plain() -> Self {
         Self {
             fg: "default".to_owned(),
             bg: "default".to_owned(),
@@ -1219,20 +1220,13 @@ struct Run {
     styles: Vec<&'static str>,
 }
 
-/// The cells of a styled capture as the client's report frame: one run per
-/// stretch of one style, each at its column, wide characters once, the
-/// cursor shown by reversing its cell.
-fn frame(
-    styled: &str,
-    cols: u16,
-    rows: u16,
-    fg: &str,
-    bg: &str,
-    cursor: Option<(u16, u16)>,
-) -> Frame {
+/// tmux `capture-pane -e` output as cells, row by row: each cell's text
+/// and style, a wide character's second column an empty cell, a combining
+/// mark joined to the cell before it, each row filled or cut to `cols`.
+pub(crate) fn styled_cells(styled: &str, cols: usize) -> Vec<Vec<(String, Style)>> {
     let mut grid: Vec<Vec<(String, Style)>> = Vec::new();
     let mut style = Style::plain();
-    for line in styled.split('\n').take(usize::from(rows)) {
+    for line in styled.split('\n') {
         let mut cells: Vec<(String, Style)> = Vec::new();
         let mut chars = line.chars().peekable();
         while let Some(c) = chars.next() {
@@ -1286,12 +1280,28 @@ fn frame(
             }
         }
         // tmux leaves off the blanks it never styled at a line's end.
-        while cells.len() < usize::from(cols) {
+        while cells.len() < cols {
             cells.push((" ".to_owned(), Style::plain()));
         }
-        cells.truncate(usize::from(cols));
+        cells.truncate(cols);
         grid.push(cells);
     }
+    grid
+}
+
+/// The cells of a styled capture as the client's report frame: one run per
+/// stretch of one style, each at its column, wide characters once, the
+/// cursor shown by reversing its cell.
+fn frame(
+    styled: &str,
+    cols: u16,
+    rows: u16,
+    fg: &str,
+    bg: &str,
+    cursor: Option<(u16, u16)>,
+) -> Frame {
+    let mut grid = styled_cells(styled, usize::from(cols));
+    grid.truncate(usize::from(rows));
     while grid.len() < usize::from(rows) {
         grid.push(vec![(" ".to_owned(), Style::plain()); usize::from(cols)]);
     }
@@ -1359,15 +1369,15 @@ fn run_end(run: &Run) -> usize {
             .sum::<usize>()
 }
 
-/// For the frame's JSON in tests.
-#[allow(dead_code)]
-fn frame_value(styled: &str, cols: u16, rows: u16) -> Value {
-    serde_json::to_value(frame(styled, cols, rows, "#ffffff", "#000000", None)).unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The frame's JSON.
+    fn frame_value(styled: &str, cols: u16, rows: u16) -> serde_json::Value {
+        serde_json::to_value(frame(styled, cols, rows, "#ffffff", "#000000", None))
+            .unwrap_or_default()
+    }
 
     /// A copied file reaches the clipboard as a file manager writes it, so
     /// a name with spaces or other bytes comes back as the same path.

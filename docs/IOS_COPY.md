@@ -56,12 +56,13 @@ card's way out of the turn read **Interrupt**. A stop confirm names what the
 stop cuts, "desk-1 is working and has 2 background jobs and 1 subagent. Stop
 anyway?", and asks plainly when it cuts nothing under way.
 
-Something sent while the host cannot be reached is **held**, never refused,
-and says when it goes: "held · sends when desk is back", "Stop held · sends
-when desk is back". The empty field says the same before anything is typed,
-short enough for one line: "Catching up · sends once caught up",
-"Reconnecting · sends when desk is back", "desk is out of reach · sends when
-back". Revoking a host asks first: "Revoke desk? This phone stops reaching it,
+A message is never sent while the chat is not current: Send is off and the
+draft stays, and the empty field says why, short enough for one line:
+"Catching up · your draft is kept", "Reconnecting · your draft is kept",
+"desk is out of reach · your draft is kept". One refused because its host
+could not be reached comes back with "Not sent: its host is away". A stop
+whose host cannot be reached is **held** and says when it goes: "Stop held ·
+sends when desk is back". Revoking a host asks first: "Revoke desk? This phone stops reaching it,
 and only pairing again brings it back."
 
 Use second person and present tense. An agent or host is *it*. Avoid hedging,
@@ -81,7 +82,8 @@ like any other shipping screen's. Copy only the driving tools use is in
 `AmuxTestSupport/Sources/AmuxTestSupport/Resources/DebugCopy.xcstrings`, whose
 resource directory is excluded from Release.
 
-Update the source and the catalogue together. Each catalogue entry has its
+Update the source and the catalogue together: a literal the catalogue lacks fails the
+inventory, and so does an entry no literal uses any more. Each catalogue entry has its
 English value and a comment locating its uses. Swift interpolation is shown
 as `%@` slots for review; the expression and its fallback literals are checked
 separately. These catalogues inventory the app's English copy. They do not

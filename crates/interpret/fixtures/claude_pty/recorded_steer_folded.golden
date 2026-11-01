@@ -1,0 +1,58 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"agent","json":{"type":"launch"}}
+effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue cd96cd29
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 3 recorded 1: fact Hook hook_event_name=SessionStart
+effect follow "<TRANSCRIPT_1>"
+item boundary:1 boundary final at=1793453244964 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1793453244964 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793453245478 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 13 recorded 11: fact Transcript type=user uuid=724c96f8-7f43-4196-bb9a-ad73fbc675ec
+item 724c96f8-7f43-4196-bb9a-ad73fbc675ec prompt final at=1793453245637 text="Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly DONE plus any extra words the user asked for."
+snapshot WORKING queue=[] working_on=- at=1793453245637 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 42 recorded 40: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_0114UaPgea2NVsciuNrx2WbU
+snapshot WORKING queue=[] working_on=- at=1793453246421 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_0114UaPgea2NVsciuNrx2WbU Bash since=1793453246421
+## 46 recorded 44: fact Transcript type=assistant uuid=3f07f2de-2e7e-48c7-8450-452bb0a99b1d
+item toolu_0114UaPgea2NVsciuNrx2WbU tool final at=1793453246571 text="" Bash TOOL_STATE_RUNNING input=shell:"python3 -c 'import time; time.sleep(15)'; echo S1"
+snapshot WORKING queue=[] working_on=- at=1793453246586 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35670/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_0114UaPgea2NVsciuNrx2WbU Bash since=1793453246421
+## 52 recorded 50: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_0114UaPgea2NVsciuNrx2WbU
+snapshot WORKING queue=[] working_on=- at=1793453261688 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35670/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 56 recorded 54: fact Transcript type=user uuid=e4ac6193-7b1e-4716-840c-6ed05bad3ae3
+item toolu_0114UaPgea2NVsciuNrx2WbU tool final at=1793453246571 text="" Bash TOOL_STATE_SUCCEEDED started=1793453246571 ended=1793453261874 input=shell:"python3 -c 'import time; time.sleep(15)'; echo S1" out="S1"
+## 60 recorded 58: fact Transcript type=attachment uuid=0a18d26c-96b8-4a19-affb-bbe635d6b4f3
+item 0a18d26c-96b8-4a19-affb-bbe635d6b4f3 steer final at=1793453247164 text="Also append the word BANANA."
+## 68 recorded 66: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01T5ttnKnFBMN8hbJGd6HqMb
+snapshot WORKING queue=[] working_on=- at=1793453262563 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35670/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01T5ttnKnFBMN8hbJGd6HqMb Bash since=1793453262563
+## 72 recorded 70: fact Transcript type=assistant uuid=3b6b9e2a-ab94-4eb6-a390-4e8616070635
+item toolu_01T5ttnKnFBMN8hbJGd6HqMb tool final at=1793453262713 text="" Bash TOOL_STATE_RUNNING input=shell:"python3 -c 'import time; time.sleep(5)'; echo S2"
+snapshot WORKING queue=[] working_on=- at=1793453262686 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35899/? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_01T5ttnKnFBMN8hbJGd6HqMb Bash since=1793453262563
+## 74 recorded 72: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01T5ttnKnFBMN8hbJGd6HqMb
+snapshot WORKING queue=[] working_on=- at=1793453267671 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35899/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 76 recorded 74: fact Transcript type=user uuid=e4f45e57-40eb-441d-bfcf-fab08ba4d68f
+item toolu_01T5ttnKnFBMN8hbJGd6HqMb tool final at=1793453262713 text="" Bash TOOL_STATE_SUCCEEDED started=1793453262713 ended=1793453267855 input=shell:"python3 -c 'import time; time.sleep(5)'; echo S2" out="S2"
+## 78 recorded 76: fact Hook hook_event_name=Stop
+snapshot WORKING queue=[] working_on=- at=1793453268371 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35899/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 80 recorded 78: fact Hook hook_event_name=MessageDisplay
+item stream:18653f27-4494-4bc6-9ea9-0a69498ef676 message open at=1793453268372 text="DONE BANANA"
+## 84 recorded 82: fact Transcript type=assistant uuid=31484491-6219-44ac-869d-8d112c166a65
+item stream:18653f27-4494-4bc6-9ea9-0a69498ef676 message final at=1793453268509 text="DONE BANANA"
+snapshot WORKING queue=[] working_on=- at=1793453268485 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36035/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 87 recorded 85: fact Transcript type=system subtype=turn_duration uuid=bf593b1d-9904-462f-9a52-3dc2f2bd95d5
+item turn:1 turn final at=1793453268557 text="" #1 TURN_OUTCOME_COMPLETED started=1793453245627
+snapshot IDLE queue=[] working_on=- at=1793453268486 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36035/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+turn_end 1 last=stream:18653f27-4494-4bc6-9ea9-0a69498ef676
+## 93 recorded 91: fact Transcript type=user uuid=7bd5e562-dc5b-4e64-b0b5-296b8d5c5d6a
+item 7bd5e562-dc5b-4e64-b0b5-296b8d5c5d6a prompt final at=1793453269060 text="Then reply with exactly LATER."
+snapshot WORKING queue=[] working_on=- at=1793453269036 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36035/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 98 recorded 96: fact Hook hook_event_name=MessageDisplay
+item stream:d593a1c4-0275-414d-b04b-9dbf69f6a050 message open at=1793453269781 text="LATER"
+## 102 recorded 100: fact Transcript type=assistant uuid=af6504c8-fc1d-47f3-89b1-9b511930d8ea
+item stream:d593a1c4-0275-414d-b04b-9dbf69f6a050 message final at=1793453269940 text="LATER"
+snapshot WORKING queue=[] working_on=- at=1793453269886 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36083/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 105 recorded 103: fact Transcript type=system subtype=turn_duration uuid=3db9c7e6-c688-41e7-939d-5b551857e4e2
+item turn:2 turn final at=1793453269964 text="" #2 TURN_OUTCOME_COMPLETED started=1793453269054
+snapshot IDLE queue=[] working_on=- at=1793453269887 asks=[] session=6d134c35-31a5-46dd-bbfb-460fa6bd1d33 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36083/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+turn_end 2 last=stream:d593a1c4-0275-414d-b04b-9dbf69f6a050

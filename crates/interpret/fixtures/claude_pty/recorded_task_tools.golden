@@ -1,17 +1,17 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 1 fact {"channel":"agent","json":{"type":"launch","version":"2.1.273"}}
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue cd96cd29
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 recorded 1: fact Transcript type=assistant uuid=fecf3c49-ef27-43f8-88ca-e3addea98097
-snapshot WORKING queue=[] working_on=- at=1789588946787 asks=[] session=3dcce16f-d19b-43a8-bf2e-14a05759022a model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=10492 tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1789588946787 asks=[] session=3dcce16f-d19b-43a8-bf2e-14a05759022a model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=10492/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 recorded 3: fact Transcript type=user uuid=a3e51bd9-cb02-4736-88f8-1b4a498d7b2d
-snapshot WORKING queue=[] working_on=- at=1789588946807 asks=[] session=3dcce16f-d19b-43a8-bf2e-14a05759022a model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=10492 tasks=[1:TASK_LIST_STATUS_PENDING:"Resume from the live checklist"] background=?
+snapshot WORKING queue=[] working_on=- at=1789588946807 asks=[] session=3dcce16f-d19b-43a8-bf2e-14a05759022a model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=10492/? tasks=[1:TASK_LIST_STATUS_PENDING:"Resume from the live checklist"] active=[] usage=? servers=[] sign_in=? background=?
 ## 7 recorded 5: fact Transcript type=assistant uuid=a4f0eedc-28b4-41fa-ae17-48e74add819a
-snapshot WORKING queue=[] working_on=- at=1789588948282 asks=[] session=3dcce16f-d19b-43a8-bf2e-14a05759022a model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=10830 tasks=[1:TASK_LIST_STATUS_PENDING:"Resume from the live checklist"] background=?
+snapshot WORKING queue=[] working_on=- at=1789588948282 asks=[] session=3dcce16f-d19b-43a8-bf2e-14a05759022a model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=10830/? tasks=[1:TASK_LIST_STATUS_PENDING:"Resume from the live checklist"] active=[] usage=? servers=[] sign_in=? background=?
 ## 9 recorded 7: fact Transcript type=user uuid=b032d070-6ea5-4b1a-b1bd-1f055088d610
-snapshot WORKING queue=[] working_on=- at=1789588948294 asks=[] session=3dcce16f-d19b-43a8-bf2e-14a05759022a model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=? context=10830 tasks=[1:TASK_LIST_STATUS_IN_PROGRESS:"Resume from the live checklist"] background=?
+snapshot WORKING queue=[] working_on=- at=1789588948294 asks=[] session=3dcce16f-d19b-43a8-bf2e-14a05759022a model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=10830/? tasks=[1:TASK_LIST_STATUS_IN_PROGRESS:"Resume from the live checklist"] active=[] usage=? servers=[] sign_in=? background=?
 ## 11 recorded 9: fact Transcript type=assistant uuid=2fe54192-94de-47c9-8952-81cd5f90a77b
 item toolu_0111yBonGHJL4YvNmE5Zm5iK tool final at=1789588948831 text="" Write TOOL_STATE_RUNNING input=write:"/tmp/planner-probe/permission-request-target.txt"
 ## 13 recorded 11: fact Transcript type=user uuid=28e06a2a-da3b-4238-a2e3-24ee0625ca69

@@ -17,7 +17,6 @@ use core_ring::DumpLimit;
 use daemon_core::DumpReason;
 use daemon_core::payload::ForwardRefusal;
 use relay_core::{Input, Output, Relay};
-use wire::pb;
 
 use super::forwarder::{ForwardLinks, Forwarder, HoldLimits, LinkLimits};
 use super::link_log::PathKind;
@@ -120,15 +119,6 @@ impl Relaying {
         self.forwarding
             .get()
             .map(|forwarding| forwarding.forwarder.counts())
-    }
-
-    /// The core this relays with, for a test that must make it ask for a
-    /// dump.
-    #[cfg(test)]
-    fn with_relay(own: HostId, relay: Relay) -> Arc<Self> {
-        let relaying = Self::new(own);
-        *lock(&relaying.core) = relay;
-        relaying
     }
 
     /// Steps each input in turn, through the forwarder where there is one,
@@ -489,8 +479,8 @@ impl ForwardLinks for RelayLinks {
         };
         // A link too far behind to take its refusal hears it again when it
         // next sends there.
-        let _ = tx.try_send(pb::Message {
-            body: Some(pb::message::Body::ForwardRefused(pb::ForwardRefused {
+        let _ = tx.try_send(wire::Message {
+            body: Some(wire::message::Body::ForwardRefused(wire::ForwardRefused {
                 dst: dst.as_bytes().to_vec(),
                 reason: reason as i32,
             })),
@@ -975,7 +965,6 @@ mod tests {
                     peer.public_key().to_vec(),
                     "peer".to_string(),
                     None,
-                    chrono::Utc::now(),
                 )
                 .unwrap();
         }
@@ -1123,12 +1112,10 @@ mod tests {
     fn a_dump_the_relay_core_asks_for_is_a_file_of_its_state_and_inputs() {
         let reports = tempfile::tempdir().unwrap();
         let own = HostId::new_v4();
-        let relaying = Relaying::with_relay(
-            own,
-            Relay::with_budget(
-                daemon_core::HostId(own.into_bytes()),
-                daemon_core::StepBudget { micros: 0 },
-            ),
+        let relaying = Relaying::new(own);
+        *lock(&relaying.core) = Relay::with_budget(
+            daemon_core::HostId(own.into_bytes()),
+            daemon_core::StepBudget { micros: 0 },
         );
         relaying.report_to(reports.path().to_owned(), analytics::Analytics::off());
         let written = || {

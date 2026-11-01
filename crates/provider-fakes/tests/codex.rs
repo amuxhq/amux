@@ -94,8 +94,13 @@ impl Host {
             json!([{"type": "text", "text": text}])
         };
         let thread = self.thread.clone();
+        // Every client names its message, as amux and Codex's own app do.
+        let message = format!("host-message-{}", self.next_id);
         let started = self
-            .call("turn/start", json!({"threadId": thread, "input": input}))
+            .call(
+                "turn/start",
+                json!({"threadId": thread, "input": input, "clientUserMessageId": message}),
+            )
             .await;
         started["result"]["turn"]["id"].as_str().unwrap().to_owned()
     }
@@ -249,7 +254,8 @@ async fn steer_adds_to_the_running_turn_and_interrupt_ends_it() {
         .call(
             "turn/steer",
             json!({"threadId": thread, "expectedTurnId": turn,
-                   "input": [{"type": "text", "text": "And this", "text_elements": []}]}),
+                   "input": [{"type": "text", "text": "And this", "text_elements": []}],
+                   "clientUserMessageId": "host-steer"}),
         )
         .await;
     assert_eq!(steered["result"]["turnId"], turn);
@@ -420,7 +426,6 @@ async fn account_and_session_facts_play_in_recorded_shapes() {
     let dir = tempfile::tempdir().unwrap();
     let added = dir.path().join("docs/new.md");
     let mut host = Host::start(json!({
-        "context_tokens": 182000,
         "edit_files": true,
         "chunk_ms": 30,
         "steps": [
@@ -457,11 +462,9 @@ async fn account_and_session_facts_play_in_recorded_shapes() {
     host.line
         .send(json!({"id": ask["id"], "result": {"answers": {"q0": {"answers": ["s3cret"]}}}}))
         .await;
-    let usage = host
-        .line
+    host.line
         .until(|frame| frame["method"] == "thread/tokenUsage/updated")
         .await;
-    assert_eq!(usage["params"]["tokenUsage"]["last"]["inputTokens"], 182000);
     host.completed().await;
     host.turn("Again").await;
     let failed = host.completed().await;
@@ -549,7 +552,8 @@ mod socket {
         async fn turn(&mut self, thread: &str, text: &str) -> Value {
             self.call(
                 "turn/start",
-                json!({"threadId": thread, "input": [{"type": "text", "text": text}]}),
+                json!({"threadId": thread, "input": [{"type": "text", "text": text}],
+                       "clientUserMessageId": format!("client-message-{text}")}),
             )
             .await
         }

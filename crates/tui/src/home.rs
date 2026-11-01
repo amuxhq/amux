@@ -18,20 +18,49 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
+use settings::ChatInSetting;
 use ui_state::{ActivityKind, AgentKey, Attention, Connection, FleetState};
 use ui_view::{
     ActivityLine, AskSubject, AskSummary, ExitCause, FleetRow, FleetSection, FleetView, Offline,
     Reach, SecondLine, SectionKind, SessionLine, StuckReason,
 };
-use wire::{Kind, Lifecycle, SignInState};
+use wire::{Attachment, Kind, Lifecycle, SignInState};
 
 use crate::chat::composer::editor_lines;
 use crate::editor::Editor;
-use crate::fleet::FleetEffect;
 use crate::hosts;
-use crate::setup::{ChatIn, Form, FormHit, FormOutcome, Item as Setting, Pick, Picker, Setup};
+use crate::setup::{Form, FormHit, FormOutcome, Item as Setting, Pick, Picker, Setup};
 use crate::text::{self, pad_to, push};
 use crate::theme::Theme;
+
+/// What a fleet key asks the event loop to do.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FleetEffect {
+    Open(AgentKey),
+    /// The agent's own interface, raw.
+    Attach(AgentKey),
+    /// Create an agent with its first prompt, and open its chat or stay.
+    Start {
+        setup: Box<Setup>,
+        text: String,
+        attachments: Vec<Attachment>,
+        open: bool,
+    },
+    Rename {
+        agent: AgentKey,
+        name: String,
+    },
+    Stop(AgentKey),
+    /// Takes back a stop held while the agent's host was out of reach.
+    CancelStop(AgentKey),
+    Delete(AgentKey),
+    /// Leave amux.
+    Quit,
+    /// Show the key help.
+    Help,
+    /// Freeze the screen and report a problem with it.
+    Report,
+}
 
 /// Blank columns at each side of the screen.
 const MARGIN: usize = 2;
@@ -161,6 +190,7 @@ enum Overlay {
 /// What home remembers between frames. Nothing here outlives the process.
 #[derive(Debug, Default)]
 pub struct Home {
+    pub place: Place,
     selected: Option<Target>,
     /// Where the highlight last stood in the list, so a row that leaves
     /// hands it to the row that takes its place, or the new last row.
@@ -316,20 +346,21 @@ impl Home {
         }
     }
 
+    pub fn new(place: Place) -> Home {
+        Home {
+            place,
+            ..Home::default()
+        }
+    }
+
     /// The new agent's setup while its screen is open, made from the
     /// defaults when it first shows.
-    pub fn open_setup(&mut self, place: &Place<'_>) -> Option<&mut Setup> {
+    pub fn open_setup(&mut self) -> Option<&mut Setup> {
         if !self.draft.open {
             return None;
         }
-        Some(self.draft.setup.get_or_insert_with(|| {
-            Setup::defaults(
-                place.chat_in,
-                place.working_dir,
-                place.local_host,
-                place.defaults,
-            )
-        }))
+        let place = &self.place;
+        Some(self.draft.setup.get_or_insert_with(|| place.setup()))
     }
 
     /// The hosts modal, from a chat's `<leader> h`.
@@ -551,7 +582,7 @@ impl Home {
         }
     }
 
-    pub fn key(&mut self, fleet: &FleetState, key: KeyEvent, attach: bool) -> Vec<FleetEffect> {
+    pub fn key(&mut self, fleet: &FleetState, key: KeyEvent) -> Vec<FleetEffect> {
         if self.draft.open {
             return self.draft_key(fleet, key);
         }
@@ -577,9 +608,7 @@ impl Home {
             KeyCode::Down | KeyCode::Char('j') => self.step(&targets, 1),
             KeyCode::Home | KeyCode::Char('g') => self.step(&targets, isize::MIN),
             KeyCode::End | KeyCode::Char('G') => self.step(&targets, isize::MAX),
-            KeyCode::Enter | KeyCode::Char('a')
-                if attach && (ctrl || key.code != KeyCode::Enter) =>
-            {
+            KeyCode::Enter | KeyCode::Char('a') if ctrl || key.code != KeyCode::Enter => {
                 return agent.map(FleetEffect::Attach).into_iter().collect();
             }
             KeyCode::Enter => return self.activate(current),
@@ -746,7 +775,7 @@ impl Home {
             .draft
             .setup
             .as_ref()
-            .is_some_and(|setup| setup.chat_in == ChatIn::Native)
+            .is_some_and(|setup| setup.chat_in == ChatInSetting::Native)
         {
             let (Some(setup), Some(form)) = (&mut self.draft.setup, &mut self.draft.form) else {
                 return vec![];
@@ -869,12 +898,7 @@ impl Home {
         self.draft.picker = Some(Picker::new(item, title, choices, typed));
     }
 
-    pub fn mouse(
-        &mut self,
-        fleet: &FleetState,
-        event: MouseEvent,
-        attach: bool,
-    ) -> Vec<FleetEffect> {
+    pub fn mouse(&mut self, fleet: &FleetState, event: MouseEvent) -> Vec<FleetEffect> {
         let (x, y) = (event.column, event.row);
         let hit = |rows_only: bool| {
             self.spots
@@ -994,7 +1018,7 @@ impl Home {
                 vec![]
             }
             MouseEventKind::Down(MouseButton::Left) => match hit(false) {
-                Some(Hit::Key(key)) => self.key(fleet, key, attach),
+                Some(Hit::Key(key)) => self.key(fleet, key),
                 Some(Hit::Setting(item)) if !self.draft.starting => {
                     self.draft.prefix = false;
                     self.open_setting(fleet, item);
@@ -1031,7 +1055,6 @@ impl Home {
         footer: Option<Line<'static>>,
         now_ms: i64,
         theme: Theme,
-        place: &Place<'_>,
     ) {
         let width = usize::from(area.width);
         let height = usize::from(area.height);
@@ -1044,7 +1067,7 @@ impl Home {
         let mut section_folded = false;
         // Where the new agent's composer box starts, for its flyover.
         let mut box_top = None;
-        self.open_setup(place);
+        self.open_setup();
         // An agent used in its own terminal starts from a modal over home;
         // one chatted with in amux, from its own composer.
         let modal = self.draft.open
@@ -1052,13 +1075,13 @@ impl Home {
                 .draft
                 .setup
                 .as_ref()
-                .is_some_and(|setup| setup.chat_in == ChatIn::Native);
+                .is_some_and(|setup| setup.chat_in == ChatInSetting::Native);
         if modal && self.draft.form.is_none() {
             self.draft.form = self.draft.setup.as_ref().map(Form::new);
         }
         if self.draft.open && !modal {
             laid.push(Laid::plain(self.draft_top(width, theme)));
-            let (composer, at) = self.composer(fleet, place, width, height, theme);
+            let (composer, at) = self.composer(fleet, width, height, theme);
             // As in a chat: a blank, the top line and a blank above; the
             // box, a blank to let it breathe and the keys below.
             let body = height.saturating_sub(4 + composer.len());
@@ -1080,8 +1103,8 @@ impl Home {
                 .map(|(col, row)| (col, laid.len() + row));
             laid.extend(composer);
         } else {
-            let view = self.view(fleet, place.local_host, lines);
-            let (top, at) = self.top_line(fleet, &view, width, theme, place);
+            let view = self.view(fleet, &self.place.local_host, lines);
+            let (top, at) = self.top_line(fleet, &view, width, theme);
             laid.push(Laid::plain(top));
             cursor = at.map(|col| (col, 1));
             laid.push(Laid::default());
@@ -1094,14 +1117,14 @@ impl Home {
                 matches!(item, Item::Heading(section, _, true)
                     if self.selected == Some(Target::Section(*section)))
             });
-            laid.extend(self.list(&items, now_ms, width, room, area.height, theme, place));
+            laid.extend(self.list(&items, now_ms, width, room, area.height, theme));
             // Renaming: the name is a field on its own row.
             if let Some((col, row)) = self.rename_at {
                 cursor = Some((col, list_top + row));
             }
         }
         laid.resize_with(height - 1, Laid::default);
-        let (hint, at) = self.hint_line(footer, width, theme, place.attach, section_folded);
+        let (hint, at) = self.hint_line(footer, width, theme, section_folded);
         if let Some(col) = at {
             cursor = Some((col, height - 1));
         }
@@ -1156,7 +1179,7 @@ impl Home {
         self.overlay_spots.clear();
         match &self.overlay {
             Some(Overlay::Hosts) => {
-                let rows = hosts::modal_rows(fleet, place.local_host, theme);
+                let rows = hosts::modal_rows(fleet, &self.place.local_host, theme);
                 let inner = crate::panel::content_width(&rows)
                     .max(40)
                     .min(width.saturating_sub(8));
@@ -1250,9 +1273,9 @@ impl Home {
         view: &FleetView,
         width: usize,
         theme: Theme,
-        place: &Place<'_>,
     ) -> (Line<'static>, Option<usize>) {
-        let local_host = place.local_host;
+        let place = &self.place;
+        let local_host = &place.local_host[..];
         let mut line = Line::from(Span::raw(" ".repeat(MARGIN)));
         if let Some(filter) = self
             .filter
@@ -1392,7 +1415,6 @@ impl Home {
         room: usize,
         height: u16,
         theme: Theme,
-        place: &Place<'_>,
     ) -> Vec<Laid> {
         let targets = Self::targets(items);
         let selected = self.settle(&targets);
@@ -1487,7 +1509,13 @@ impl Home {
                         ));
                     }
                     laid.extend(agent_lines(
-                        row, chosen, renaming, now_ms, width, theme, place,
+                        row,
+                        chosen,
+                        renaming,
+                        now_ms,
+                        width,
+                        theme,
+                        &self.place,
                     ));
                     if roomy {
                         blank(&mut laid);
@@ -1558,11 +1586,11 @@ impl Home {
     fn composer(
         &self,
         fleet: &FleetState,
-        place: &Place<'_>,
         width: usize,
         height: usize,
         theme: Theme,
     ) -> (Vec<Laid>, Option<(usize, usize)>) {
+        let place = &self.place;
         let inner = width - 2 * MARGIN - 4;
         let (mut body, (row, col)) = editor_lines(
             &self.draft.editor,
@@ -1597,14 +1625,7 @@ impl Home {
         // What the agent will be, on the bottom edge: what runs it, where it
         // works, and on which machine. Each item is a click target, lit
         // as a chip under the pointer.
-        let setup = self.draft.setup.clone().unwrap_or_else(|| {
-            Setup::defaults(
-                place.chat_in,
-                place.working_dir,
-                place.local_host,
-                place.defaults,
-            )
-        });
+        let setup = self.draft.setup.clone().unwrap_or_else(|| place.setup());
         let mut groups = setup.edge(fleet);
         let room = (width - 2 * MARGIN - 2).saturating_sub(6);
         let measure = |groups: &Vec<Vec<(Setting, String)>>| {
@@ -1700,7 +1721,6 @@ impl Home {
         footer: Option<Line<'static>>,
         width: usize,
         theme: Theme,
-        attach: bool,
         section_folded: bool,
     ) -> (Laid, Option<usize>) {
         let mut line = Line::from(Span::raw(" ".repeat(MARGIN)));
@@ -1811,7 +1831,7 @@ impl Home {
                     Some(Target::Section(_)) => vec![("enter", "hide", key(KeyCode::Enter))],
                     _ => vec![("enter", "open", key(KeyCode::Enter))],
                 };
-                if attach && matches!(self.selected, Some(Target::Agent(_))) {
+                if matches!(self.selected, Some(Target::Agent(_))) {
                     hints.push(("a", "attach", key(KeyCode::Char('a'))));
                 }
                 if self.needle().is_some() {
@@ -1826,9 +1846,13 @@ impl Home {
                 hints
             }
         };
-        let mut spots = Vec::new();
-        let start = text::line_width(&line);
-        append_hints(&mut line, &mut spots, start, &hints, width, theme);
+        // `? keys` is last and the first to go.
+        let pairs: Vec<(&str, &str)> = hints.iter().map(|(key, word, _)| (*key, *word)).collect();
+        let room = width.saturating_sub(MARGIN + text::line_width(&line));
+        let spots = text::push_hints(&mut line, &pairs, room, theme)
+            .into_iter()
+            .map(|(at, columns)| (Some(columns), hints[at].2.clone()))
+            .collect();
         (Laid { line, spots }, None)
     }
 }
@@ -1923,55 +1947,29 @@ pub fn help_rows() -> Vec<(&'static str, String)> {
 }
 
 /// What home needs from the app that is not the fleet's.
-pub struct Place<'a> {
-    pub local_host: &'a [u8],
+#[derive(Debug, Default)]
+pub struct Place {
+    /// The host whose daemon this client talks to.
+    pub local_host: Vec<u8>,
     /// This build's version, compared with the daemon's.
-    pub version: &'a str,
+    pub version: String,
     /// Where a new agent works, as the person would write it.
-    pub working_dir: &'a str,
-    pub attach: bool,
+    pub working_dir: String,
     /// Where the person chats, which decides how a new agent starts.
-    pub chat_in: ChatIn,
+    pub chat_in: ChatInSetting,
     /// What each agent starts with.
-    pub defaults: &'a crate::setup::Defaults,
+    pub defaults: settings::NewAgentSettings,
 }
 
-/// `key word` pairs, laid out by [`text::fit_hints`]; each is a click
-/// target for its key. `? keys` is last and the first to go.
-fn append_hints(
-    line: &mut Line<'static>,
-    spots: &mut Vec<(Option<(usize, usize)>, Hit)>,
-    start: usize,
-    hints: &[(&str, &str, Hit)],
-    width: usize,
-    theme: Theme,
-) {
-    let pairs: Vec<(&str, &str)> = hints.iter().map(|(key, word, _)| (*key, *word)).collect();
-    let fitted = text::fit_hints(&pairs, width.saturating_sub(MARGIN + start));
-    let mut at = start;
-    for (i, &index) in fitted.shown.iter().enumerate() {
-        let (key, word, hit) = &hints[index];
-        let size = text::str_width(key) + 1 + text::str_width(word);
-        if fitted.mark == Some(i) {
-            line.spans.push(Span::styled(" …", theme.faint()));
-            at += 2;
-        }
-        let gap = if i == 0 { 0 } else { fitted.gap };
-        if at + gap + size > width - MARGIN {
-            break;
-        }
-        line.spans.push(Span::raw(" ".repeat(gap)));
-        let from = at + gap;
-        // The key is what you press, so it reads first; its action recedes.
-        line.spans
-            .push(Span::styled(key.to_string(), theme.emphasis()));
-        line.spans
-            .push(Span::styled(format!(" {word}"), theme.faint()));
-        at = from + size;
-        spots.push((Some((from, at)), hit.clone()));
-    }
-    if fitted.mark == Some(fitted.shown.len()) {
-        line.spans.push(Span::styled(" …", theme.faint()));
+impl Place {
+    /// A new agent's setup before the person changes any of it.
+    fn setup(&self) -> Setup {
+        Setup::defaults(
+            self.chat_in,
+            &self.working_dir,
+            &self.local_host,
+            &self.defaults,
+        )
     }
 }
 
@@ -2256,7 +2254,7 @@ fn agent_lines(
     now_ms: i64,
     width: usize,
     theme: Theme,
-    place: &Place<'_>,
+    place: &Place,
 ) -> Vec<Laid> {
     let card = &row.card;
     let target = Target::Agent(card.agent.clone());

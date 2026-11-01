@@ -17,8 +17,7 @@ if [ -n "${TESTNET_BINARIES-}" ]; then
     exit 0
 fi
 
-# The desktop SQLite linkage, named as the workspace run names it.
-cargo build --locked --features bundled \
+cargo build --locked \
     -p amux -p provider-fakes -p fake-amux -p agent --bins --example amux_stand_in
 
 # The tests read the directory as a native path: on Windows, Git's sh

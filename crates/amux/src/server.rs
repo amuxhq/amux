@@ -269,7 +269,7 @@ pub async fn start(config: &InstallationConfig, config_path: Option<&Path>) -> R
     loop {
         if let Some(door) = connect::front_door_now(config).await
             && connect::installation(door)
-                .get_installation(wire::GetInstallationRequest {})
+                .get_installation(wire::Empty {})
                 .await
                 .is_ok()
         {
@@ -372,7 +372,7 @@ pub async fn stop(config: &InstallationConfig) -> Result<()> {
         return Ok(());
     };
     connect::installation(door)
-        .shutdown(wire::ShutdownRequest {})
+        .shutdown(wire::Empty {})
         .await
         .map_err(crate::plain)?;
     // The front door closes first; the daemon has stopped once it has

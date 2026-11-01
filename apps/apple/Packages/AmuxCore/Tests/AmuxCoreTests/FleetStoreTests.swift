@@ -110,15 +110,15 @@ final class FleetStoreTests: XCTestCase {
         fleet.show(
             Cards.view([Cards.row(1, "live"), Cards.row(2, "done", attention: .exited)]), hosts: [])
         XCTAssertEqual(fleet.sections.map(\.kind), [.live, .exited])
-        XCTAssertEqual(fleet.sections.map(\.folded), [false, true], "as the runtime says")
+        XCTAssertEqual(fleet.sections.map { fleet.folded($0) }, [false, true], "as the runtime says")
         XCTAssertEqual(fleet.sections[1].families, 1)
         fleet.toggle(.exited)
-        XCTAssertEqual(fleet.sections.map(\.folded), [false, false])
+        XCTAssertEqual(fleet.sections.map { fleet.folded($0) }, [false, false])
         fleet.show(
             Cards.view([Cards.row(1, "live"), Cards.row(2, "done", attention: .exited)]), hosts: [])
-        XCTAssertFalse(fleet.sections[1].folded, "opened stays open as the fleet moves")
+        XCTAssertFalse(fleet.folded(fleet.sections[1]), "opened stays open as the fleet moves")
         fleet.toggle(.exited)
-        XCTAssertTrue(fleet.sections[1].folded)
+        XCTAssertTrue(fleet.folded(fleet.sections[1]))
     }
 
     func testARowCarriesItsBranchAndSecondLine() {
@@ -150,14 +150,6 @@ final class FleetStoreTests: XCTestCase {
             Cards.row(3, "other"),
         ], needYou: 1), hosts: [])
         XCTAssertTrue(fleet.rows[0].speaksForAMember)
-    }
-
-    func testActivitySinceTheLastOpeningIsUnread() {
-        let fleet = FleetStore(now: Cards.now.addingTimeInterval(-3600))
-        fleet.show(Cards.view([Cards.row(1, "one", minutesAgo: 1)]), hosts: [])
-        XCTAssertTrue(fleet.rows[0].unread, "active since the launch")
-        fleet.opened(Cards.key(1), at: Cards.now)
-        XCTAssertFalse(fleet.rows[0].unread)
     }
 
     func testTheSubtitleCountsWhoNeedsYou() {

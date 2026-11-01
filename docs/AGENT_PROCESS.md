@@ -701,7 +701,7 @@ terminal. `amux agent` exits 0 whatever the cause; 1 means it could not start
 | Drain deadline for an orphaned ask | 5 minutes | `agent.drain_secs`, copied into `drain_ms`; the same 5 minutes if the spec leaves it unset |
 | Facts ring size, across its two segments | 4 MiB | `agent.facts_ring_mib`, copied into `facts_ring_bytes` |
 | A step of the agent's core, before it asks for a dump | 10 ms | the spec's `step_budget_micros` (`Launch.agent_step_budget_micros`, not a configuration key); `StepBudget::AGENT` in `agent-core` if the spec leaves it zero |
-| Journal segment size | 1 MiB | the spec's `journal_segment_bytes` |
+| Journal segment size | 1 MiB | `DEFAULT_SEGMENT_BYTES` in `host.rs`; the daemon never sets the spec's `journal_segment_bytes` |
 | Terminal log | 4 segments of 256 KiB | constants in `host.rs` |
 | Provider asked to finish, then killed | 10 s | `PROVIDER_STOP_MS` in `agent-core` |
 | Output collected after a child exits | 300 ms | `TRAILING_OUTPUT` in `provider.rs` |
@@ -718,12 +718,11 @@ the system.
 
 | Suite | Run it with | What it holds |
 |---|---|---|
-| Provider hosting | `just suite agent-provider-hosting` | Each kind's child is launched, completes its handshake and a turn, continues its own session in a later incarnation, and takes agent messages through its own channel |
+| Provider hosting | `just suite agent-provider-hosting` | Each kind's child is launched, completes its handshake and a turn, continues its own session in a later incarnation, and takes agent messages through its own channel; a Codex thread is named after the agent at start and on rename |
 | Lifecycle | `just suite agent-process-lifecycle` | Grace, drain, abort, kill, a failed journal write and a provider exit, with every deadline driven by the test's clock; the snapshot's git facts at start and after a turn |
 | Raw attach | `just suite agent-terminal-attach` | Two clients share terminal Claude's one terminal; each Codex client gets its own view |
 | Codex attach | `just suite desktop-cli-system codex_attach::` | Codex's own app joins a fresh agent's server; its prompt shows in amux's chat, and an approval is answered from amux, then from the app |
 | Codex attach, live | `just live codex attach` | The same against the real Codex, from amux's client and Codex's app in two terminals: a timed capture of each (`app.cast`, `amux.cast`, raw bytes), a text frame of both per step and a verdict, in `target/live/codex-attach/` |
-| Codex thread name | `just suite agent-codex-thread-name` | The thread is named after the agent at start and on rename |
 | Dump | `just suite agent-dump-redaction` | The dump part carries no planted secret |
 | Tool server | `just suite agent-tool-server` | Tool calls reach a scripted daemon on `tools.sock`, retry across an update window, and come back as the items the interpreter draws |
 

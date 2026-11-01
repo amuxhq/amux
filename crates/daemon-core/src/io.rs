@@ -7,16 +7,15 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use store::AgentKey;
-use wire::{InventoryEvent, SessionEvent};
+use wire::SessionEvent;
 
 use crate::families::Ended;
 use crate::ids::{
     AgentId, AttemptId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId,
 };
 use crate::payload::{
-    AgentSpec, AnalyticsBatch, Answer, CarrierKind, ChannelClass, ChannelError, ClientRequest,
-    ControlFrame, Hello, JobResult, LinkCloseReason, LinkFrame, PairMessage, PeerRequest,
-    PublicKey, Push, Response, Status,
+    AgentSpec, Answer, CarrierKind, ChannelError, ClientRequest, ControlFrame, JobResult,
+    LinkCloseReason, LinkFrame, PairMessage, PeerRequest, PublicKey, Push, Response, Status,
 };
 use crate::presence::Route;
 use crate::reach::{AttemptOutcome, Plan};
@@ -70,34 +69,19 @@ pub enum Input {
         /// one is set: a purchase then reaches the link within it.
         free_every_ms: Option<u64>,
     },
-    /// The profile's shell wants a channel to `peer` over `link`. Until
-    /// the machines that open channels move into the core, the shell asks,
-    /// and the key it pinned for the peer rides on the request; the core
-    /// answers with [`Output::OpenChannel`] or [`Output::ChannelRefused`].
+    /// The profile's shell wants a channel to `peer` over `link`. The
+    /// core answers with [`Output::Channel`].
     WantChannel {
         link: LinkId,
         peer: HostId,
-        class: ChannelClass,
-        pin: Option<PublicKey>,
     },
-    /// A channel the core asked for is open, after the driver's handshake
-    /// verified the pin the core gave it.
-    ChannelOpened {
-        channel: ChannelId,
-        link: LinkId,
-        peer: HostId,
-        class: ChannelClass,
-    },
+    /// A channel closed, or never opened.
     ChannelClosed {
         channel: ChannelId,
-        reason: ChannelError,
     },
     /// The account's plan changed: what the relay carries changed with it.
     PlanChanged,
-    /// Try the host now: what kept channels to it from opening is gone.
-    TryAgain {
-        host: HostId,
-    },
+
     /// The host's trust ended or is being replaced.
     HostForgotten {
         host: HostId,
@@ -199,8 +183,6 @@ pub enum Input {
     /// A connection to the agent's process said Hello.
     AgentHello {
         agent: AgentId,
-        #[serde(with = "codec::message")]
-        hello: Hello,
     },
     /// An agent's journal grew.
     Nudge {
@@ -259,10 +241,16 @@ pub enum Input {
     Entropy([u8; 32]),
     /// The settings the profile runs under now.
     Configure(Settings),
-    /// What the profile's shell changed outside a step, for the core's
-    /// subscribers. Each kind goes as the write behind it moves into the
-    /// core.
-    FromShell(FromShell),
+    /// One of an agent's session events the profile's shell committed
+    /// under the store it lends the core, handed over while the store is
+    /// still as that commit left it, so subscribers read it in commit order
+    /// and an opening never reads it twice or misses it.
+    ShellSession {
+        #[serde(with = "codec::agent_key")]
+        agent: AgentKey,
+        #[serde(with = "codec::shared")]
+        event: Arc<SessionEvent>,
+    },
     /// A link up moved onto a path of another kind: its packets now go
     /// straight to the peer or through a forwarder. Calls take the same
     /// link; how the host reads says the new path.
@@ -286,10 +274,10 @@ impl Input {
             Input::LinkControl { .. } => "LinkControl",
             Input::Credential { .. } => "Credential",
             Input::WantChannel { .. } => "WantChannel",
-            Input::ChannelOpened { .. } => "ChannelOpened",
+
             Input::ChannelClosed { .. } => "ChannelClosed",
             Input::PlanChanged => "PlanChanged",
-            Input::TryAgain { .. } => "TryAgain",
+
             Input::HostForgotten { .. } => "HostForgotten",
             Input::Started => "Started",
             Input::ChangeTrust(_) => "ChangeTrust",
@@ -328,7 +316,7 @@ impl Input {
             Input::JobDone { .. } => "JobDone",
             Input::Entropy(_) => "Entropy",
             Input::Configure(_) => "Configure",
-            Input::FromShell(_) => "FromShell",
+            Input::ShellSession { .. } => "ShellSession",
             Input::LinkCarried { .. } => "LinkCarried",
         }
     }
@@ -381,34 +369,6 @@ impl Default for Settings {
     }
 }
 
-/// A change the profile's shell committed under the store it lends the
-/// core, handed to the core while the store is still as that commit left
-/// it, so subscribers read it in commit order and an opening never reads
-/// it twice or misses it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum FromShell {
-    /// One of an agent's session events.
-    Session {
-        #[serde(with = "codec::agent_key")]
-        agent: AgentKey,
-        #[serde(with = "codec::shared")]
-        event: Arc<SessionEvent>,
-    },
-    /// An agent's row as the inventory carries it.
-    Row {
-        #[serde(with = "codec::agent_key")]
-        agent: AgentKey,
-        #[serde(with = "codec::shared")]
-        event: Arc<InventoryEvent>,
-    },
-    /// Nothing about the agent, its session or its row, reaches a
-    /// subscriber until [`FromShell::Unmute`]; its streams stay open. A
-    /// delete mutes the agent it stops, so no subscriber reads the stop as
-    /// an exit it could resume from before the removal arrives.
-    Mute(#[serde(with = "codec::agent_key")] AgentKey),
-    Unmute(#[serde(with = "codec::agent_key")] AgentKey),
-}
-
 /// Everything the daemon wants done. The driver encodes, sends, arms,
 /// spawns and writes; it decides nothing.
 #[derive(Clone, Debug, PartialEq)]
@@ -447,26 +407,10 @@ pub enum Output {
     Checkpoint {
         state: Vec<u8>,
     },
-    /// Open a channel to `peer` over `link`, handshaking against `pin`,
-    /// and report it as [`Input::ChannelOpened`] or
-    /// [`Input::ChannelClosed`] under `channel`.
-    OpenChannel {
-        channel: ChannelId,
-        link: LinkId,
-        peer: HostId,
-        class: ChannelClass,
-        pin: PublicKey,
-    },
-    /// The channel the shell wanted is not opened, and why.
-    ChannelRefused {
-        link: LinkId,
-        peer: HostId,
-        class: ChannelClass,
-        reason: ChannelError,
-    },
-    CloseChannel {
-        channel: ChannelId,
-    },
+    /// The core's word on the channel the shell wanted: the id to open it
+    /// under, reported as [`Input::ChannelClosed`] when it closes or never
+    /// opens, or why it is not opened.
+    Channel(Result<ChannelId, ChannelError>),
     /// `route` no longer carries `host`'s traffic: forget the channels
     /// opened on it, so the next call opens a fresh one.
     DropRoute {
@@ -546,10 +490,6 @@ pub enum Output {
         call: CallId,
         path: PathBuf,
         range: Range<u64>,
-    },
-    LinkControl {
-        link: LinkId,
-        frame: LinkFrame,
     },
     /// Dial the agent's process until a connection says Hello, reported
     /// as [`Input::AgentHello`], and report each Nudge on it; once the
@@ -740,15 +680,10 @@ pub enum Job {
     /// Replace the file at `path` with `bytes` so that a crash or power
     /// cut leaves the old file or the new one, and the new one is on the
     /// drive before the job is done.
-    Fsync {
-        path: PathBuf,
-        bytes: Vec<u8>,
-    },
+    Fsync { path: PathBuf, bytes: Vec<u8> },
     /// Close every connection to `host`: its key is being replaced, and
     /// nothing opened under the old one may outlive it.
-    TeardownHost {
-        host: HostId,
-    },
+    TeardownHost { host: HostId },
     /// Run a passive WAL checkpoint on a connection to the profile store
     /// of the job's own, so the store's main file holds every commit; one
     /// that cannot move the whole WAL fails.
@@ -764,9 +699,7 @@ pub enum Job {
     /// Exchange the account's refresh token for a fresh relay credential
     /// and present it on `link`, which reports it as [`Input::Credential`];
     /// a refresh that fails ends the link.
-    RefreshToken {
-        link: LinkId,
-    },
+    RefreshToken { link: LinkId },
     /// Hand the push to the profile's sender.
     SendPush(Push),
     /// Build the exited agent's next spec from its newest, carrying the
@@ -777,24 +710,16 @@ pub enum Job {
         bootstrap: Option<wire::Bootstrap>,
         snapshot: Option<Vec<u8>>,
     },
-    Upload(AnalyticsBatch),
     /// Kill the agent's process group from outside: the process this
     /// daemon started, or the one on the other end of its control socket.
     /// Fails when there is none it can kill.
-    KillAgent {
-        agent: AgentId,
-    },
+    KillAgent { agent: AgentId },
     /// Wait until no process holds the agent's directory's lock, at most
     /// `patience_ms` on the profile's clock.
-    AwaitUnlocked {
-        agent: AgentId,
-        patience_ms: u64,
-    },
+    AwaitUnlocked { agent: AgentId, patience_ms: u64 },
     /// Remove the directory and everything in it; one already gone is
     /// removed.
-    RemoveDir {
-        path: PathBuf,
-    },
+    RemoveDir { path: PathBuf },
     /// Compare the working tree at `cwd` with `base`, answered as
     /// [`JobResult::Compared`] or [`JobResult::CompareFailed`]; the patch
     /// is built only `with_patch`.
@@ -805,18 +730,13 @@ pub enum Job {
     },
     /// Make a worktree of the repository at `repo` named `name`, answered
     /// as [`JobResult::Worktree`] or [`JobResult::Refused`].
-    MakeWorktree {
-        repo: PathBuf,
-        name: String,
-    },
+    MakeWorktree { repo: PathBuf, name: String },
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::payload::{
-        Answer, ClientRequest, ForwardRefusal, JobResult, PeerFailure, PeerReply, PeerRequest,
-    };
+    use crate::payload::{Answer, ClientRequest, JobResult, PeerFailure, PeerReply, PeerRequest};
 
     #[test]
     fn every_kind_of_input_reads_back_as_written() {
@@ -846,18 +766,9 @@ mod tests {
             Input::WantChannel {
                 link: LinkId(1),
                 peer: HostId([1; 16]),
-                class: ChannelClass::Session,
-                pin: Some(PublicKey(vec![7; 32])),
-            },
-            Input::ChannelOpened {
-                channel: ChannelId(4),
-                link: LinkId(1),
-                peer: HostId([1; 16]),
-                class: ChannelClass::Session,
             },
             Input::ChannelClosed {
                 channel: ChannelId(4),
-                reason: ChannelError::Refused(ForwardRefusal::PaymentRequired),
             },
             Input::LinkDown {
                 link: LinkId(1),
@@ -880,15 +791,13 @@ mod tests {
             Input::PeerCall {
                 from: HostId([1; 16]),
                 call: CallId(7),
-                request: PeerRequest::SubscribeSession(wire::PeerSubscribeSessionRequest {
+                request: PeerRequest::SubscribeSession(wire::SubscribeSessionRequest {
                     agent_id: vec![1, 2],
-                    from: Some(wire::peer_subscribe_session_request::From::After(
-                        wire::After {
-                            revision: 3,
-                            cap: 4,
-                            generation: 5,
-                        },
-                    )),
+                    from: Some(wire::subscribe_session_request::From::After(wire::After {
+                        revision: 3,
+                        cap: 4,
+                        generation: 5,
+                    })),
                 }),
             },
             Input::ClientCall {
@@ -997,7 +906,7 @@ mod tests {
             },
             Input::PeerAnswer {
                 call: CallId(12),
-                answer: Answer::Inventory(InventoryEvent {
+                answer: Answer::Inventory(wire::InventoryEvent {
                     of: Some(wire::inventory_event::Of::CaughtUp(
                         wire::CaughtUp::default(),
                     )),
@@ -1012,8 +921,8 @@ mod tests {
             },
             Input::Started,
             Input::Policy(SourcePolicy::OnDemand),
-            Input::FromShell(FromShell::Session {
-                agent: agent.clone(),
+            Input::ShellSession {
+                agent,
                 event: Arc::new(SessionEvent {
                     of: Some(wire::session_event::Of::Item(wire::Item {
                         key: "k".into(),
@@ -1021,8 +930,7 @@ mod tests {
                         ..Default::default()
                     })),
                 }),
-            }),
-            Input::FromShell(FromShell::Mute(agent)),
+            },
             Input::ClientCall {
                 call: CallId(13),
                 request: ClientRequest::CreateAgent(Box::new(crate::Create {

@@ -22,11 +22,11 @@ use wire::profile_admin_service_server::ProfileAdminService;
 use wire::session_service_server::SessionService;
 use wire::{
     Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Diff, DumpRequest, DumpResponse,
-    ErrorCode, GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent,
-    Item, ListItemsRequest, ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse,
-    PutBlobRequest, RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
-    SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent, StopAgentRequest,
-    SubscribeSessionRequest,
+    Envelope, ErrorCode, GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest,
+    InventoryEvent, Item, ListItemsRequest, ListItemsResponse, ListRepositoriesRequest,
+    ListRepositoriesResponse, PutBlobRequest, RenameAgentRequest, ResolveAgentRequest,
+    ResumeAgentRequest, SendInputRequest, SendInputResponse, SendMessageResponse, SessionEvent,
+    StopAgentRequest, SubscribeSessionRequest,
 };
 
 /// A server stream. An `Err` item or the end of the stream both mean the
@@ -112,10 +112,7 @@ pub trait Client: Send + Sync + 'static {
     async fn stop_agent(&self, request: StopAgentRequest) -> Result<(), RpcError>;
     async fn resume_agent(&self, request: ResumeAgentRequest) -> Result<Agent, RpcError>;
     async fn delete_agent(&self, request: DeleteAgentRequest) -> Result<(), RpcError>;
-    async fn send_message(
-        &self,
-        request: SendMessageRequest,
-    ) -> Result<SendMessageResponse, RpcError>;
+    async fn send_message(&self, request: Envelope) -> Result<SendMessageResponse, RpcError>;
     async fn put_blob(&self, request: PutBlobRequest) -> Result<BlobRef, RpcError>;
     async fn get_blob(&self, request: GetBlobRequest) -> Result<GetBlobResponse, RpcError>;
     async fn get_diff(&self, request: GetDiffRequest) -> Result<Diff, RpcError>;
@@ -132,30 +129,15 @@ pub trait Client: Send + Sync + 'static {
     /// profile is signed in.
     async fn submit_report(
         &self,
-        _request: wire::SubmitReportRequest,
-    ) -> Result<wire::SubmitReportResponse, RpcError> {
-        Err(unimplemented("submit_report"))
-    }
+        request: wire::SubmitReportRequest,
+    ) -> Result<wire::SubmitReportResponse, RpcError>;
     /// Keeps an agent's unsent draft on this machine; an empty one forgets
-    /// it. A client that keeps none of its own answers Unimplemented.
+    /// it.
     async fn update_draft(
         &self,
-        _request: wire::UpdateDraftRequest,
-    ) -> Result<wire::Draft, RpcError> {
-        Err(unimplemented("update_draft"))
-    }
-    async fn get_draft(&self, _request: wire::GetDraftRequest) -> Result<wire::Draft, RpcError> {
-        Err(unimplemented("get_draft"))
-    }
-}
-
-/// The error a client that does not serve a call answers with.
-fn unimplemented(call: &str) -> RpcError {
-    RpcError::Refused(wire::Error {
-        code: ErrorCode::Unimplemented as i32,
-        message: format!("{call} is not served here"),
-        details: Vec::new(),
-    })
+        request: wire::UpdateDraftRequest,
+    ) -> Result<wire::Draft, RpcError>;
+    async fn get_draft(&self, request: wire::GetDraftRequest) -> Result<wire::Draft, RpcError>;
 }
 
 /// One implementation of [`Client`] per way of reaching the services:
@@ -166,7 +148,7 @@ macro_rules! client_impl {
         #[async_trait]
         impl<$($generics)*> Client for $ty {
             async fn subscribe_inventory(&self) -> Result<EventStream<InventoryEvent>, RpcError> {
-                Ok(events($call!(self, agents, subscribe_inventory, wire::SubscribeInventoryRequest {}).await?.into_inner()))
+                Ok(events($call!(self, agents, subscribe_inventory, wire::Empty {}).await?.into_inner()))
             }
 
             async fn resolve_agent(&self, request: ResolveAgentRequest) -> Result<Agent, RpcError> {
@@ -219,7 +201,7 @@ macro_rules! client_impl {
 
             async fn send_message(
                 &self,
-                request: SendMessageRequest,
+                request: Envelope,
             ) -> Result<SendMessageResponse, RpcError> {
                 Ok($call!(self, agents, send_message, request).await?.into_inner())
             }

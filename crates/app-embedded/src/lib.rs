@@ -5,7 +5,7 @@
 //! account, exactly as a desktop is: each profile has its own identity and
 //! trust, its own store of replica rows, direct links on the local network
 //! and a relay link once an account is bound. The daemon's profile registry
-//! creates, binds, signs out, pauses and deletes them; every call here names
+//! creates, binds, signs out and deletes them; every call here names
 //! the profile it is for. Chats read a profile's store through the same
 //! client service the terminal dials over a socket, called in process here;
 //! no client opens the store.
@@ -17,10 +17,8 @@
 mod log;
 mod phone;
 
-use std::collections::VecDeque;
 use std::io;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -33,8 +31,8 @@ pub use app_runtime::values::{PairRequest, ProfileView, StartConfig, UsageEvent}
 use client::{Client, Clock, InProcess};
 use node::{
     ClientApi, Cloud, CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, LanOptions,
-    ProfileRefusal, ProfileRuntime, ProfileState, ProfileSubscription, Registry, Relay, SignIn,
-    SourcePolicy, StartError, StartOptions, Tier,
+    ProfileRefusal, ProfileRuntime, ProfileState, Registry, Relay, SignIn, SourcePolicy,
+    StartError, StartOptions, Tier,
 };
 pub use node::{Cores, ProfileId};
 pub use phone::Phone;
@@ -121,23 +119,11 @@ pub enum EmbeddedError {
     Rebind(ProfileId, io::Error),
 }
 
-/// What a network change did across every profile.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct NetworkChangeReport {
-    /// The profiles whose link socket was bound afresh.
-    pub profiles_rebound: usize,
-    /// The path machines told, one per peer of every profile.
-    pub machines_told: usize,
-    /// The device's interface addresses now.
-    pub addrs: Vec<std::net::IpAddr>,
-}
-
 /// One installation with every profile it hosts, in process.
 pub struct EmbeddedRuntime {
     // Held for its shutdown and to find a profile's runtime.
     daemon: Mutex<Option<Daemon>>,
     registry: Registry,
-    data_dir: PathBuf,
     clock: Arc<dyn Clock>,
     /// The app's telemetry setting, read before every upload.
     telemetry: Arc<AtomicBool>,
@@ -146,32 +132,14 @@ pub struct EmbeddedRuntime {
     analytics: Option<analytics::Flusher>,
 }
 
-/// A change to the profile list, as the registry announces it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ProfileEvent {
-    Upserted(ProfileView),
-    Removed(String),
-    /// Everything that was already there has been announced.
-    CaughtUp,
-}
+/// The registry's bell: it rings whenever the profile list moves, and the
+/// list is read afresh with [`EmbeddedRuntime::profiles`].
+pub struct ProfileWatch(tokio::sync::watch::Receiver<()>);
 
-/// The registry's changes, from a snapshot of every profile on.
-pub struct ProfileEvents {
-    opening: VecDeque<ProfileEvent>,
-    watch: ProfileSubscription,
-}
-
-impl ProfileEvents {
-    /// The next change, or none once the daemon stops or the watch falls
-    /// too far behind, when the list has to be read again.
-    pub async fn next(&mut self) -> Option<ProfileEvent> {
-        if let Some(event) = self.opening.pop_front() {
-            return Some(event);
-        }
-        Some(match self.watch.next().await?.ok()? {
-            node::ProfileEvent::Upserted(state) => ProfileEvent::Upserted(profile_view(&state)),
-            node::ProfileEvent::Removed(id) => ProfileEvent::Removed(id.to_string()),
-        })
+impl ProfileWatch {
+    /// Waits for the list to move; none once the daemon stops.
+    pub async fn moved(&mut self) -> Option<()> {
+        self.0.changed().await.ok()
     }
 }
 
@@ -251,7 +219,6 @@ impl EmbeddedRuntime {
         let daemon = node::start(options, None).await?;
         Ok(EmbeddedRuntime {
             registry: daemon.registry(),
-            data_dir: daemon.data_dir().to_owned(),
             analytics: daemon.analytics_flusher(),
             daemon: Mutex::new(Some(daemon)),
             clock,
@@ -378,20 +345,9 @@ impl EmbeddedRuntime {
         Ok(self.registry.list()?.iter().map(profile_view).collect())
     }
 
-    /// One profile as the registry lists it.
-    pub fn profile(&self, profile: ProfileId) -> Result<ProfileView, EmbeddedError> {
-        Ok(profile_view(&self.registry.profile(profile)?))
-    }
-
-    /// Every profile as it is now, then each change as it happens.
-    pub fn subscribe_profiles(&self) -> Result<ProfileEvents, EmbeddedError> {
-        let mut watch = self.registry.subscribe()?;
-        let opening = std::mem::take(&mut watch.listed)
-            .iter()
-            .map(|state| ProfileEvent::Upserted(profile_view(state)))
-            .chain([ProfileEvent::CaughtUp])
-            .collect();
-        Ok(ProfileEvents { opening, watch })
+    /// Rings for every move of the profile list from now on.
+    pub fn watch_profiles(&self) -> Result<ProfileWatch, EmbeddedError> {
+        Ok(ProfileWatch(self.registry.subscribe()?))
     }
 
     /// A new profile nobody has signed in on.
@@ -606,16 +562,6 @@ impl EmbeddedRuntime {
         Ok(self.edge(profile)?.abandon_pair(token).await?)
     }
 
-    /// Pairs in one step, trusting whoever the secret reaches.
-    pub async fn pair(
-        &self,
-        profile: ProfileId,
-        request: &PairRequest,
-    ) -> Result<wire::Peer, EmbeddedError> {
-        let pending = self.begin_pair(profile, request).await?;
-        self.confirm_pair(profile, &pending.token).await
-    }
-
     /// A profile's identity and the machines it trusts, sorted by name.
     pub fn roster(&self, profile: ProfileId) -> Result<Roster, EmbeddedError> {
         let edge = self.edge(profile)?;
@@ -671,30 +617,17 @@ impl EmbeddedRuntime {
     /// QUIC connections, and every path machine probes its paths again.
     /// Every profile is told even when one fails to rebind; the first
     /// failure is the answer.
-    pub async fn network_changed(&self) -> Result<NetworkChangeReport, EmbeddedError> {
-        let mut report = NetworkChangeReport::default();
+    pub async fn network_changed(&self) -> Result<(), EmbeddedError> {
         let mut failed = None;
         for runtime in self.hosted() {
             let Some(edge) = runtime.edge() else {
                 continue;
             };
-            match edge.network_changed() {
-                Ok(change) => {
-                    report.profiles_rebound += usize::from(change.rebound);
-                    report.machines_told += change.machines_told;
-                    report.addrs = change.addrs;
-                }
-                Err(error) => {
-                    failed.get_or_insert(EmbeddedError::Rebind(runtime.profile(), error));
-                }
+            if let Err(error) = edge.network_changed() {
+                failed.get_or_insert(EmbeddedError::Rebind(runtime.profile(), error));
             }
         }
-        failed.map_or(Ok(report), Err)
-    }
-
-    /// The account a profile is bound to, and its relay link.
-    pub fn account(&self, profile: ProfileId) -> Result<AccountView, EmbeddedError> {
-        Ok(self.profile(profile)?.account)
+        failed.map_or(Ok(()), Err)
     }
 
     /// A bearer for the account service, refreshed by the profile when it
@@ -726,19 +659,11 @@ impl EmbeddedRuntime {
     /// reached.
     pub async fn unpair(&self, profile: ProfileId, host_id: &[u8]) -> Result<(), EmbeddedError> {
         self.edge(profile)?
-            .unpair(
-                HostRef {
-                    of: Some(host_ref::Of::HostId(host_id.to_vec())),
-                },
-                String::new(),
-            )
+            .unpair(HostRef {
+                of: Some(host_ref::Of::HostId(host_id.to_vec())),
+            })
             .await?;
         Ok(())
-    }
-
-    /// Where reports are written.
-    pub fn reports(&self) -> PathBuf {
-        self.data_dir.join(node::REPORTS)
     }
 
     /// Stops serving and flushes the store; the installation is marked
@@ -774,14 +699,13 @@ fn profile_view(state: &ProfileState) -> ProfileView {
                 Cloud::Unbound => AccountBinding::Unbound,
                 Cloud::SignedIn(_) => AccountBinding::SignedIn,
                 Cloud::SignedOut => AccountBinding::SignedOut,
-                Cloud::Paused => AccountBinding::Paused,
             },
             email: account.email.unwrap_or_default(),
             name: account.name.unwrap_or_default(),
             picture: account.picture.unwrap_or_default(),
             pro: state.cloud.connected().map(|(tier, _)| tier == Tier::Pro),
             relay: match &state.cloud {
-                Cloud::Unbound | Cloud::SignedOut | Cloud::Paused => RelayLink::Off,
+                Cloud::Unbound | Cloud::SignedOut => RelayLink::Off,
                 Cloud::SignedIn(Relay::Connecting) => RelayLink::Connecting,
                 Cloud::SignedIn(Relay::Connected { .. }) => RelayLink::Connected,
                 Cloud::SignedIn(Relay::Retrying) => RelayLink::Retrying,

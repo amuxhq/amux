@@ -19,6 +19,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
+use base64::Engine as _;
 use claude_protocol::stream as claude_stream;
 use codex_protocol::client::{
     Capabilities, ClientInfo, InitializeParams, InjectedContent, InjectedItem, ThreadResumeParams,
@@ -68,7 +69,7 @@ pub enum ProviderEvent {
     Exited(Option<i32>),
     /// Terminal Claude's messaging socket and the token it takes, as its
     /// hooks report them.
-    Messaging(claude::hooks::MessagingCredentials),
+    Messaging(crate::claude::hooks::MessagingCredentials),
     /// A write of the provider's own state into private/ failed. The state
     /// is what the next incarnation resumes from, so an incarnation that
     /// cannot record it ends rather than run on as if it had.
@@ -98,8 +99,6 @@ async fn persist(events: &mpsc::Sender<ProviderEvent>, path: &Path, bytes: impl 
 pub enum ProviderError {
     #[error("starting {command}: {source}")]
     Spawn { command: String, source: io::Error },
-    #[error("agents of kind {0} cannot be hosted yet")]
-    Unhosted(i32),
     /// Terminal Claude is hosted on Unix only: ConPTY re-renders the child's
     /// output in its own escape sequences, and Claude's messaging socket and
     /// the fake's raw console mode are Unix-only. docs/ARCHITECTURE.md
@@ -110,7 +109,7 @@ pub enum ProviderError {
     TerminalOnWindows,
     #[error(
         "terminal Claude needs Claude Code {} or later; this machine has {found}. Update Claude, or chat in amux",
-        claude::version::MIN_TERMINAL
+        crate::claude::version::MIN_TERMINAL
     )]
     ClaudeTooOld { found: String },
     #[error("{0}")]
@@ -121,7 +120,7 @@ pub enum ProviderError {
 type Stdin = Arc<tokio::sync::Mutex<Option<ChildStdin>>>;
 /// The agent's connection to its Codex server, shared the same way; None
 /// once closed, or when the server ended before it took a client.
-type CodexSender = Arc<tokio::sync::Mutex<Option<codex::host::Sender>>>;
+type CodexSender = Arc<tokio::sync::Mutex<Option<crate::codex::Sender>>>;
 
 enum Input {
     Stdin(Stdin),
@@ -141,7 +140,7 @@ pub struct Provider {
     #[cfg_attr(unix, allow(dead_code))]
     kill: Option<oneshot::Sender<()>>,
     terminal: Option<pty_host::PtyHandle>,
-    messaging: Option<claude::hooks::MessagingCredentials>,
+    messaging: Option<crate::claude::hooks::MessagingCredentials>,
     session: String,
     dir: PathBuf,
     events: mpsc::Sender<ProviderEvent>,
@@ -161,7 +160,7 @@ impl Provider {
             Ok(wire::Kind::ClaudeSdk) => Self::spawn_sdk(spec, dir, events).await,
             Ok(wire::Kind::ClaudePty) => Self::spawn_terminal(spec, dir, events).await,
             Ok(wire::Kind::Codex) => Self::spawn_codex(spec, dir, events).await,
-            Ok(wire::Kind::Unspecified) | Err(_) => Err(ProviderError::Unhosted(spec.kind)),
+            Ok(wire::Kind::Unspecified) | Err(_) => unreachable!("run refuses any other kind"),
         }
     }
 
@@ -323,15 +322,16 @@ impl Provider {
         environment(&mut command, spec);
         #[cfg(unix)]
         command.process_group(0);
-        let mut child =
-            codex::host::spawn_server(command, &listen).map_err(|source| ProviderError::Spawn {
+        let mut child = crate::codex::spawn_server(command, &listen).map_err(|source| {
+            ProviderError::Spawn {
                 command: spec.provider_command.clone(),
                 source,
-            })?;
+            }
+        })?;
         let pid = child.id();
         #[cfg(unix)]
         let tether = match &listen {
-            codex::host::Listen::Unix(_) => match pty_host::Tether::new(&child) {
+            crate::codex::Listen::Unix(_) => match pty_host::Tether::new(&child) {
                 Ok(tether) => Some(tether),
                 Err(source) => {
                     let _ = child.start_kill();
@@ -341,14 +341,14 @@ impl Provider {
                     });
                 }
             },
-            codex::host::Listen::Stdio => None,
+            crate::codex::Listen::Stdio => None,
         };
         let connection =
-            match codex::host::Connection::connect(&listen, &mut child, CODEX_LISTEN_WAIT).await {
+            match crate::codex::Connection::connect(&listen, &mut child, CODEX_LISTEN_WAIT).await {
                 Ok(connection) => Some(connection),
                 // A server that ends at its start ends the incarnation as
                 // any provider exit does, with its code.
-                Err(codex::host::ConnectError::Exited(_)) => None,
+                Err(crate::codex::ConnectError::Exited(_)) => None,
                 Err(error) => {
                     let _ = child.start_kill();
                     return Err(ProviderError::Spawn {
@@ -431,7 +431,7 @@ impl Provider {
         });
         let (kill, killed) = oneshot::channel();
         let exited = events.clone();
-        let on_socket = matches!(listen, codex::host::Listen::Unix(_));
+        let on_socket = matches!(listen, crate::codex::Listen::Unix(_));
         tokio::spawn(async move {
             let mut killed = killed;
             let mut on_ended = Some(on_ended);
@@ -545,7 +545,7 @@ impl Provider {
     }
 
     /// Claude in a terminal. The agent reads its version first, refuses a
-    /// Claude older than [`claude::version::MIN_TERMINAL`], and reports it
+    /// Claude older than [`crate::claude::version::MIN_TERMINAL`], and reports it
     /// as the launch fact before anything Claude says. Its hooks report to private/hooks.sock; its
     /// messaging socket is private/messaging.sock.
     async fn spawn_terminal(
@@ -559,20 +559,16 @@ impl Provider {
         let (session, resume) = claude_session(spec, dir)?;
         // A version that cannot be read starts anyway: a wrapper or an odd
         // banner is likelier than an old Claude.
-        let version = match claude::version::probe_version(Path::new(&spec.provider_command)).await
-        {
-            Ok(version) if version.0 < claude::version::MIN_TERMINAL => {
+        match crate::claude::version::probe_version(Path::new(&spec.provider_command)).await {
+            Ok(version) if version < crate::claude::version::MIN_TERMINAL => {
                 return Err(ProviderError::ClaudeTooOld {
                     found: version.to_string(),
                 });
             }
-            Ok(version) => version.to_string(),
-            Err(error) => {
-                eprintln!("amux agent: reading the Claude version: {error}");
-                String::new()
-            }
-        };
-        let launch = interpret::claude_pty::launch_fact(&version);
+            Ok(_) => {}
+            Err(error) => eprintln!("amux agent: reading the Claude version: {error}"),
+        }
+        let launch = interpret::claude_pty::launch_fact();
         let _ = events
             .send(ProviderEvent::Fact(Fact {
                 channel: Channel::Agent,
@@ -605,7 +601,7 @@ impl Provider {
             .map(|(key, value)| (key.into(), value.into()))
             .collect();
         env.push((
-            claude::hooks::HOOK_SOCKET_ENV.into(),
+            crate::claude::hooks::HOOK_SOCKET_ENV.into(),
             socket_address(&private.join(dir::HOOKS_SOCK))?.into(),
         ));
         let process = pty_host::spawn(pty_host::PtySpawn {
@@ -613,7 +609,7 @@ impl Provider {
             args,
             cwd: PathBuf::from(&spec.cwd),
             env,
-            env_remove: claude::launch::CHILD_SESSION_ENV_SCRUB
+            env_remove: crate::claude::launch::CHILD_SESSION_ENV_SCRUB
                 .iter()
                 .map(Into::into)
                 .collect(),
@@ -832,7 +828,7 @@ impl Provider {
                         source: ImageSource {
                             r#type: ImageSourceType::Base64,
                             media_type: media_type.to_owned(),
-                            data: base64(&bytes),
+                            data: base64::engine::general_purpose::STANDARD.encode(&bytes),
                             extensions: Default::default(),
                         },
                         extensions: Default::default(),
@@ -853,7 +849,7 @@ impl Provider {
         }
     }
 
-    pub fn set_messaging(&mut self, messaging: claude::hooks::MessagingCredentials) {
+    pub fn set_messaging(&mut self, messaging: crate::claude::hooks::MessagingCredentials) {
         self.messaging = Some(messaging);
     }
 
@@ -863,7 +859,7 @@ impl Provider {
     async fn message_terminal(&mut self, text: &str) -> io::Result<()> {
         if let Some(messaging) = &self.messaging {
             let sent = async {
-                let mut socket = claude::messaging::MessagingSocket::connect(
+                let mut socket = crate::claude::messaging::MessagingSocket::connect(
                     &messaging.socket_path,
                     &messaging.token,
                 )
@@ -897,7 +893,6 @@ impl Provider {
             parent_tool_use_id: None,
             session_id: self.session.clone(),
             uuid: Some(uuid.to_owned()),
-            priority: None,
             extensions: Default::default(),
         });
         self.write_line(&claude_stream::encode(&line)).await
@@ -1260,11 +1255,13 @@ fn claude_launch(
     let mut args = spec.provider_args.clone();
     let managed_folder = spec
         .provider_env
-        .get(claude::launch::MANAGED_SETTINGS_PATH_ENV)
+        .get(crate::claude::launch::MANAGED_SETTINGS_PATH_ENV)
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os(claude::launch::MANAGED_SETTINGS_PATH_ENV).map(PathBuf::from));
+        .or_else(|| {
+            std::env::var_os(crate::claude::launch::MANAGED_SETTINGS_PATH_ENV).map(PathBuf::from)
+        });
     let mut tools = tool_server(spec, dir);
-    let withheld = tools.is_some() && claude::launch::managed_mcp(managed_folder.as_deref());
+    let withheld = tools.is_some() && crate::claude::launch::managed_mcp(managed_folder.as_deref());
     if withheld {
         tools = None;
     }
@@ -1279,11 +1276,11 @@ fn claude_launch(
             .to_string(),
         ]);
     }
-    let sources = claude::launch::take_settings_args(&mut args).map_err(io::Error::other)?;
-    let user = claude::launch::load_user_settings(Path::new(&spec.cwd), &sources)
+    let sources = crate::claude::launch::take_settings_args(&mut args).map_err(io::Error::other)?;
+    let user = crate::claude::launch::load_user_settings(Path::new(&spec.cwd), &sources)
         .map_err(io::Error::other)?;
     let config = spec.config.clone().unwrap_or_default();
-    let managed = claude::launch::ManagedSettings {
+    let managed = crate::claude::launch::ManagedSettings {
         hook_command: if hooks && !config.install_path.is_empty() {
             vec![
                 config.install_path,
@@ -1304,9 +1301,8 @@ fn claude_launch(
             .map(|_| format!("mcp__{}__*", interpret::AMUX_TOOL_SERVER))
             .chain([format!("Read(/{}/**)", rule_path(&dir.join(dir::BLOBS)))])
             .collect(),
-        ..Default::default()
     };
-    let settings = claude::launch::merged_settings(user, &managed).into_value();
+    let settings = crate::claude::launch::merged_settings(user, &managed);
     Ok((args, settings.to_string(), withheld))
 }
 
@@ -1365,7 +1361,7 @@ pub fn codex_view(
     thread: &str,
     size: pty_host::PtySize,
 ) -> Option<pty_host::PtySpawn> {
-    let args = codex::host::attach_args(thread, &codex_listen(dir).ok()?)?;
+    let args = crate::codex::attach_args(thread, &codex_listen(dir).ok()?)?;
     Some(pty_host::PtySpawn {
         command: PathBuf::from(&spec.provider_command),
         args,
@@ -1375,7 +1371,7 @@ pub fn codex_view(
             .iter()
             .map(|(key, value)| (key.into(), value.into()))
             .collect(),
-        env_remove: claude::launch::CHILD_SESSION_ENV_SCRUB
+        env_remove: crate::claude::launch::CHILD_SESSION_ENV_SCRUB
             .iter()
             .map(Into::into)
             .collect(),
@@ -1461,17 +1457,17 @@ fn terminate(child: &tokio::process::Child) {
 
 /// Where this agent's Codex server listens: a socket in its private
 /// folder, which Codex's own app joins to attach; stdio on Windows.
-pub fn codex_listen(dir: &Path) -> io::Result<codex::host::Listen> {
+pub fn codex_listen(dir: &Path) -> io::Result<crate::codex::Listen> {
     #[cfg(unix)]
     {
-        Ok(codex::host::Listen::Unix(socket_address(
+        Ok(crate::codex::Listen::Unix(socket_address(
             &dir.join(dir::PRIVATE).join(dir::CODEX_SOCK),
         )?))
     }
     #[cfg(not(unix))]
     {
         let _ = dir;
-        Ok(codex::host::Listen::Stdio)
+        Ok(crate::codex::Listen::Stdio)
     }
 }
 
@@ -1516,14 +1512,14 @@ fn claude_session(spec: &AgentSpec, dir: &Path) -> io::Result<(String, bool)> {
         return Ok((session, false));
     }
     match session_file(spec, &session) {
-        claude::history::SessionFile::Conversation => Ok((session, true)),
-        claude::history::SessionFile::Missing => {
+        crate::claude::history::SessionFile::Conversation => Ok((session, true)),
+        crate::claude::history::SessionFile::Missing => {
             eprintln!(
                 "amux agent: Claude's session {session} never began; starting it rather than resuming"
             );
             Ok((session, false))
         }
-        claude::history::SessionFile::Empty => {
+        crate::claude::history::SessionFile::Empty => {
             let (new, resume) = new_session(&dir.join(dir::PRIVATE).join(dir::PROVIDER_SESSION))?;
             eprintln!(
                 "amux agent: Claude's session {session} holds no conversation; starting session {new} instead"
@@ -1536,7 +1532,7 @@ fn claude_session(spec: &AgentSpec, dir: &Path) -> io::Result<(String, bool)> {
 /// What Claude has for this session. Claude keeps its transcripts under
 /// CLAUDE_CONFIG_DIR, as the spec or this process sets it, else ~/.claude;
 /// with neither known, the session is taken to have one.
-fn session_file(spec: &AgentSpec, session: &str) -> claude::history::SessionFile {
+fn session_file(spec: &AgentSpec, session: &str) -> crate::claude::history::SessionFile {
     const CONFIG_DIR: &str = "CLAUDE_CONFIG_DIR";
     let configured = spec
         .provider_env
@@ -1546,9 +1542,9 @@ fn session_file(spec: &AgentSpec, session: &str) -> claude::history::SessionFile
     let Some(config) = configured
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".claude")))
     else {
-        return claude::history::SessionFile::Conversation;
+        return crate::claude::history::SessionFile::Conversation;
     };
-    claude::history::session_file(&config, Path::new(&spec.cwd), session)
+    crate::claude::history::session_file(&config, Path::new(&spec.cwd), session)
 }
 
 fn new_session(path: &Path) -> io::Result<(String, bool)> {
@@ -1567,29 +1563,10 @@ fn provider_log(dir: &Path) -> io::Result<std::fs::File> {
 /// The child's environment: ours without the variables a parent Claude
 /// session sets, plus the spec's additions.
 fn environment(command: &mut tokio::process::Command, spec: &AgentSpec) {
-    for key in claude::launch::CHILD_SESSION_ENV_SCRUB {
+    for key in crate::claude::launch::CHILD_SESSION_ENV_SCRUB {
         command.env_remove(key);
     }
     command.envs(&spec.provider_env);
-}
-
-/// Standard base64 with padding, as Claude's image blocks carry bytes.
-fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let word = chunk.iter().enumerate().fold(0u32, |word, (index, byte)| {
-            word | u32::from(*byte) << (16 - 8 * index)
-        });
-        for index in 0..4 {
-            if index <= chunk.len() {
-                encoded.push(ALPHABET[(word >> (18 - 6 * index) & 63) as usize] as char);
-            } else {
-                encoded.push('=');
-            }
-        }
-    }
-    encoded
 }
 
 #[cfg(test)]
@@ -1804,14 +1781,5 @@ mod tests {
                 "/d/agents/a/blobs"
             );
         }
-    }
-
-    #[test]
-    fn base64_pads_as_the_standard_does() {
-        assert_eq!(super::base64(b""), "");
-        assert_eq!(super::base64(b"f"), "Zg==");
-        assert_eq!(super::base64(b"fo"), "Zm8=");
-        assert_eq!(super::base64(b"foo"), "Zm9v");
-        assert_eq!(super::base64(b"foob"), "Zm9vYg==");
     }
 }

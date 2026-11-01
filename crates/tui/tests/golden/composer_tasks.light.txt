@@ -1,9 +1,0 @@
-  Reviewing the draft  1 of 3 tasks    2 background jobs    ctrl+o
-  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
-  │ › Message fixer                                                                              │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
---- styles
-..mmmmmmmmmmmmmmmmmmm?????????????????????????????????????????????..................................
-..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..
-..mmmmmmmmmmmmmmmmm..............................................................................m..
-..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..

@@ -27,7 +27,7 @@ every command goes through `just ios <recipe>` (`just --list ios`).
 | `AmuxDesign` | Light and dark tokens, bundled faces, type scaling, glass, motion and thumb-target geometry |
 | `AmuxFeatures` | The screens, as functions of the state and actions they are handed, plus the registered UIKit leaves |
 | `AmuxShell` | Tabs (Agents, Hosts) and the Settings sheet, routes, deep links, web sign-in and speech dictation |
-| `AmuxTestSupport` | The driving door's protocol, scripted account, App Store and chat stand-ins, and the view-state trace |
+| `AmuxTestSupport` | The driving door's protocol and the scripted account, App Store and chat stand-ins |
 | `apps/apple/Amux` | The app target: entry point, `Composition` (which assembles every store and service), report capture, and under `Debug/` the door server and the component catalogue |
 
 `AmuxCore` links the bridge as the binary target `AmuxApp`, an XCFramework
@@ -115,11 +115,7 @@ thread. A chat is a `ChatModel` over an open `Chat`:
   changes, to the profile's own daemon on the phone, as the terminal hands
   its drafts to its machine's (docs/CLIENT.md), so a draft outlives its
   chat's session and the app being closed, and the chat opens with it again.
-  A prompt held for a host that cannot be reached is kept in the draft too,
-  ahead of what is typed, from the moment it is held until it is released
-  and sent, so a phone that closes first finds its words back in the
-  composer. A chat holding one stays open past its retention until it goes,
-  as only the open chat takes it back out of the kept draft. Drafts never
+  Drafts never
   leave the device, and removing an account deletes its profile and its
   drafts with it. The daemon forgets a deleted agent's draft, wherever it
   was deleted, and nothing typed into its chat while the page leaves is
@@ -129,15 +125,15 @@ thread. A chat is a `ChatModel` over an open `Chat`:
   before anything is read or uploaded, and one over it is refused in words
   naming the file and the limit. One that fails to store is named with the
   reason in the chat's notice.
-- A send while the chat is not current (catching up, reconnecting, or its
-  host out of reach) is handed to the client library rather than refused:
-  Send stays enabled, the field says when the message goes, and the library
-  holds the prompt, answer or stop and sends it, with the same id, once the
-  host can be reached. A held prompt is drawn pending with "held · sends
-  when desk is back" and a Cancel that returns its words to the draft; a held
-  answer shows on the ask card with Cancel; a held stop shows under the
-  chat's header and on the agent's home row, and the chat's menu offers
-  Cancel Stop.
+- While the chat is not current (catching up, reconnecting, or its host out
+  of reach) Send is off: the message stays in the composer, the empty field
+  says why ("desk is out of reach · your draft is kept"), and nothing sends
+  it later; once the chat is current, Send sends it. A prompt refused
+  because its host could not be reached comes back into the composer with
+  "Not sent: its host is away", as any refused prompt does with its reason.
+  A stop is the exception: one whose host cannot be reached is held, shown
+  under the chat's header and on the agent's home row, and the chat's menu
+  offers Cancel Stop.
 - A draft starting with `/` goes to the library's client commands first:
   what the library runs itself (opening settings, renaming, choosing a
   model) happens on the phone, a word the agent does not take is refused in
@@ -201,8 +197,8 @@ The account disc at the top left of the Agents list opens a menu of the
 accounts, Add Account and Settings, a sheet with its own navigation stack.
 The disc shows the account's profile picture: amux.sh names it in the
 `picture` claim of its userinfo answer, the daemon keeps it with the account
-when it binds the profile, and `Profile.account_picture` carries it to
-the app. Initials stand in until it loads, and where there is none.
+when it binds the profile, and the embedded runtime's account view carries
+it to the app. Initials stand in until it loads, and where there is none.
 
 What the account buys changes away from the phone: bought on amux.sh,
 cancelled in the App Store, lapsed. `EntitlementWatch` asks amux.sh again as
@@ -365,13 +361,11 @@ top, a sheet included: the app hands them down as `ReportLayers`, every
 surface that can be on top carries `surface()`, and the last of those to
 appear draws them. The app takes the profile's `report` dump the moment the
 frame freezes, and on Send hands the runtime what only it has
-(`ReportAssembly`): a `report.json` declaring the frame and the trace present
-or absent with a reason, the frozen `frame.png` and the view-state
-`trace.jsonl`. The runtime writes them beside the dump and uploads the report
-(`Profile.submitReport`), as it does the terminal's; the dump carries the tail
-of the installation's `runtime.log` redacted. Only a build with the driving
-tools records the trace, so a Release report declares it absent. The build
-stamps its checkout revision into the app, and each report carries it as
+(`ReportAssembly`): a `report.json` declaring the frame present and the
+trace absent (the phone records none), and the frozen `frame.png`. The runtime
+writes them beside the dump and uploads the report (`Profile.submitReport`), as
+it does the terminal's; the dump carries the tail of the installation's
+`runtime.log` redacted. The build stamps its checkout revision into the app, and each report carries it as
 `git_sha`.
 
 A report is sent to the account on screen; with nobody signed in, Send is
@@ -442,18 +436,8 @@ signs the app into a served relay, and `cloud` and `store` script what the
 account service and the App Store answer, for journeys about accounts and
 purchases.
 
-`ios-tools door` launches the installed app on a pinned simulator, speaks the
-requests it is given and prints the answers:
-
-```sh
-just ios build && just ios tools
-timeout 120 target/debug/ios-tools door --simulator golden \
-  --install target/ios/DerivedData/Build/Products/Debug-iphonesimulator/Amux.app \
-  '{"kind":"open","screen":"home"}' \
-  '{"kind":"appearance","appearance":"dark"}' \
-  '{"kind":"settle"}' '{"kind":"query"}' \
-  '{"kind":"capture","path":"/tmp/amux-home.png"}'
-```
+By hand, `testnet ctl phone` speaks the door to the app on a leased
+simulator ([TestNet](TESTNET.md)).
 
 A sheet is a presentation of its own, and SwiftUI hands what a sheet's
 views declare up only as far as the sheet. So every surface that can be on
@@ -577,11 +561,9 @@ terminal's storybook, so the two clients show the same screens by the same
 names, and a story only one client has says why. It also says what each story
 shows; the golden manifest (`Goldens/manifest.json`) says it for every other
 example. The suite fails when an example is described in neither or both, or
-when the list names a story the catalogue does not draw, and
-`just ios script-tests` fails when a story has no Xcode preview. The previews
-(the `…Previews.swift` files beside the catalogue) open each story on a device
-of its own, and each family's gallery preview scrolls through every example of
-that family.
+when the list names a story the catalogue does not draw. In Xcode's canvas
+(`Previews.swift` beside the catalogue) each family's gallery preview scrolls
+through every example of that family.
 
 ```sh
 just ios component-snapshots
@@ -683,15 +665,11 @@ prose are judged on their name only and listed in the record, which lands in
 
 | Recipe | Runs |
 | --- | --- |
-| `just ios gate` | Lint, script tests, bridge graph check, bridge, simulator, one build of the app and every unit and component suite, then component snapshots, loopback smoke and unit suites. What CI runs on every push that touches the phone's paths ([CI](CI.md)). |
+| `just ios gate` | Lint, script tests, bridge graph check, bridge, simulator, one build of the app and every unit and component suite, then component snapshots and unit suites. What CI runs on every push that touches the phone's paths ([CI](CI.md)). |
 | `just ios captures` | The store suite on the simulator, journeys and the accessibility audit. On demand in CI. |
 | `just ios shipping` | The shipping XCFramework and the Release scope audit. `just ios release` depends on both. |
 | `just ios measured` | The phone measured on this Mac: `just ios perf`, on an enrolled Mac only ([Performance](PERFORMANCE.md)). |
 | `just ios verify` | The workspace's format, lint, tests and specs, then all four of the above, stopping at the first failure. |
-
-`just ios loopback-smoke` links the driving bridge from a bare Swift
-executable, pairs it with a served machine by the link that machine prints,
-and reads the machine and its agents back.
 
 ## Large text
 
@@ -747,9 +725,9 @@ The App Store enforces three rules that a simulator build never shows:
   The compiler writes its own copy nested inside `CFBundleIcons`, which is not
   where Apple looks; without the declared one an upload fails with code 90713.
 
-`scripts/tests/icon_test.py` checks the sources, and `just ios scope-audit`
-refuses a built bundle with no top-level `CFBundleIconName` or no
-`AppIcon60x60@2x.png`.
+`scripts/tests/icon_test.py` checks the committed default icon has no alpha
+channel, and `just ios scope-audit` refuses a built bundle with no top-level
+`CFBundleIconName` or no `AppIcon60x60@2x.png`.
 
 ## Checks only a phone can make
 

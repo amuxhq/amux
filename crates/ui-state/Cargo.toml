@@ -8,12 +8,14 @@ publish = false
 autotests = false
 
 [dependencies]
-model = { workspace = true }
 prost = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
 wire = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+serde_json = { workspace = true }
 
 [[test]]
 name = "integration"

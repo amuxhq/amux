@@ -2,7 +2,7 @@
 //!
 //! There is no "started by an update" or "recovering from a crash" mode.
 //! Every start takes the installation lock; rewrites the generation file,
-//! bumping the counter after an unclean reboot; opens and migrates each
+//! bumping the counter after an unclean reboot; opens or creates each
 //! profile's store; looks at every agent directory without writing; tells
 //! the supervisor it is prepared and waits for go, or goes at once with no
 //! supervisor; and only then finishes the sweep, which is the first write
@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use agent_dir::Clock;
 use agent_dir::local_socket::{self, LocalListener};
-use tokio::sync::{broadcast, watch};
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::activation::{ActivationError, ActivationPipe};
@@ -26,7 +26,6 @@ use crate::grpc::{self, ClientApi};
 use crate::install::{InstallationLock, LockError, REPORTS, STORE, private_dir};
 use crate::outbox::PushSender;
 use crate::profiles::{self, PROFILE_SOCKET, ProfileEntry, ProfileId};
-use crate::registry::{self, ProfileEvent};
 use crate::runtime::{Launch, Looked, Profile, ProfileRuntime, RegistryError, SweepReport};
 use crate::telemetry::{self, Telemetry};
 
@@ -107,11 +106,8 @@ pub(crate) struct Installation {
     pub(crate) hosted: Mutex<BTreeMap<ProfileId, Hosted>>,
     /// One change to the profile set at a time: create, rename, delete.
     pub(crate) profile_changes: tokio::sync::Mutex<()>,
-    /// Profile changes in order.
-    pub(crate) events: broadcast::Sender<ProfileEvent>,
-    /// Held while a change is published, so a watcher's snapshot and its
-    /// subscription see the same moment.
-    pub(crate) publishing: Mutex<()>,
+    /// Rings whenever the profile list moves.
+    pub(crate) moved: watch::Sender<()>,
     shutdown: watch::Sender<bool>,
     /// Where profiles record analytics; unset records nothing.
     analytics: std::sync::OnceLock<Arc<dyn analytics::Sink>>,
@@ -137,8 +133,8 @@ impl Drop for Hosted {
 }
 
 impl Installation {
-    /// Opens a profile's store and its runtime. Writes nothing but the
-    /// store's migrations.
+    /// Opens a profile's store and its runtime. Writes nothing but a
+    /// store that did not exist.
     fn open(&self, profile: ProfileId) -> Result<Arc<ProfileRuntime>, StartError> {
         let dir = profiles::profile_dir(&self.data_dir, profile);
         // The profile's id is its host id, the one its peers know it by.
@@ -170,9 +166,9 @@ impl Installation {
                 None => analytics::Analytics::off(),
             },
             auto_reports: self.auto_reports.clone(),
-            worktrees: Arc::new(crate::worktree::GitWorktrees::new(
+            worktrees: crate::worktree::GitWorktrees::new(
                 self.data_dir.join(crate::worktree::WORKTREES),
-            )),
+            ),
         }))
     }
 
@@ -220,31 +216,27 @@ impl Installation {
             })?;
         let observer = {
             let installation = Arc::downgrade(self);
-            let profile = entry.id;
             let mut observed = edge.subscribe_relay();
             tokio::spawn(async move {
                 while observed.changed().await.is_ok() {
                     let Some(installation) = installation.upgrade() else {
                         return;
                     };
-                    installation.republish(profile);
+                    installation.publish();
                 }
             })
         };
         let socket = self.bind(&runtime)?;
-        let state = {
-            let mut all = self.hosted.lock().unwrap();
-            let hosted = Hosted {
+        self.hosted.lock().unwrap().insert(
+            entry.id,
+            Hosted {
                 runtime,
                 entry,
                 socket,
                 observer: Some(observer),
-            };
-            let state = registry::state(&hosted);
-            all.insert(hosted.entry.id, hosted);
-            state
-        };
-        self.publish(ProfileEvent::Upserted(Box::new(state)));
+            },
+        );
+        self.publish();
         Ok(())
     }
 
@@ -282,22 +274,9 @@ impl Installation {
         self.host(runtime, entry).await
     }
 
-    pub(crate) fn publish(&self, event: ProfileEvent) {
-        let _publishing = self.publishing.lock().unwrap();
-        let _ = self.events.send(event);
-    }
-
-    /// Tells the front door's watchers a profile's description moved.
-    pub(crate) fn republish(&self, profile: ProfileId) {
-        let state = self
-            .hosted
-            .lock()
-            .unwrap()
-            .get(&profile)
-            .map(registry::state);
-        if let Some(state) = state {
-            self.publish(ProfileEvent::Upserted(Box::new(state)));
-        }
+    /// Tells the registry's watchers the profile list moved.
+    pub(crate) fn publish(&self) {
+        self.moved.send_replace(());
     }
 
     pub(crate) fn request_shutdown(&self) {
@@ -415,7 +394,7 @@ impl Drop for Daemon {
 }
 
 /// Starts the daemon for one installation. With a pipe, writes `prepared`
-/// once the stores are migrated and the agent directories looked at, and
+/// once the stores are open and the agent directories looked at, and
 /// waits for `go` before anything else is written.
 pub async fn start(
     options: StartOptions,
@@ -458,8 +437,7 @@ pub async fn start(
         edge,
         hosted: Mutex::new(BTreeMap::new()),
         profile_changes: tokio::sync::Mutex::new(()),
-        events: broadcast::channel(256).0,
-        publishing: Mutex::new(()),
+        moved: watch::Sender::new(()),
         shutdown: watch::Sender::new(false),
         analytics: std::sync::OnceLock::new(),
     });
@@ -584,8 +562,8 @@ impl Daemon {
 
     /// The front door's services in process: the installation's profiles,
     /// as its socket serves them.
-    pub fn front_door(&self) -> crate::FrontDoor {
-        crate::FrontDoor::new(self.registry())
+    pub fn front_door(&self) -> crate::front_door::FrontDoor {
+        crate::front_door::FrontDoor::new(self.registry())
     }
 
     /// A profile's administration, called in process as its socket serves

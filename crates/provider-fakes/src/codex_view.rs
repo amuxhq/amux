@@ -189,12 +189,18 @@ impl Remote {
         }
         let input = json!([{ "type": "text", "text": line, "text_elements": [] }]);
         let thread = self.thread.clone();
+        // Codex's app names each message it sends, as amux does.
+        let message = format!("view-message-{}", self.next_id + 1);
         match self.turn.clone() {
             Some(turn) => self.call(
                 "turn/steer",
-                json!({ "threadId": thread, "input": input, "expectedTurnId": turn }),
+                json!({ "threadId": thread, "input": input, "expectedTurnId": turn,
+                        "clientUserMessageId": message }),
             ),
-            None => self.call("turn/start", json!({ "threadId": thread, "input": input })),
+            None => self.call(
+                "turn/start",
+                json!({ "threadId": thread, "input": input, "clientUserMessageId": message }),
+            ),
         }
     }
 

@@ -4,7 +4,7 @@ messaging socket handles provider JSON by hand.
 
 The interpreters read and write Codex's and Claude's messages through the
 `codex-protocol` and `claude-protocol` crates, the agent process builds its
-handshake from them, and the `claude` crate writes Claude's messaging socket
+handshake from them, and its `claude` module writes Claude's messaging socket
 from them. This check searches those sources for the ways of going around the
 types: building JSON with `json!`, looking a field up by its name
 (`.get("…")`, `["…"]`, `.pointer(…)`, `.remove("…")`, or a path of names
@@ -37,7 +37,7 @@ SOURCES = [
     "crates/interpret/src/claude_common.rs",
     "crates/interpret/src/claude_answers.rs",
     "crates/agent/src/provider.rs",
-    "crates/claude/src/messaging.rs",
+    "crates/agent/src/claude/messaging.rs",
 ]
 
 # What going around the types looks like.
@@ -85,15 +85,9 @@ EXEMPTIONS = [
         "compares tool inputs, which stay JSON as the model wrote them",
     ),
     Exemption(
-        "crates/interpret/src/claude_pty/facts.rs",
-        "task_tool",
-        r"from_str::<Value>\(&tool\.input\)",
-        "a task tool's input, kept as text on its call, read back for the task list",
-    ),
-    Exemption(
-        "crates/interpret/src/claude_sdk/facts.rs",
-        "tool_result",
-        r"from_str::<Value>\(&tool\.input\)",
+        "crates/interpret/src/claude_common.rs",
+        "apply_to_tasks",
+        r"from_str::<Value>\(&self\.input\)",
         "a task tool's input, kept as text on its call, read back for the task list",
     ),
     Exemption(
@@ -143,12 +137,6 @@ EXEMPTIONS = [
         "read",
         r"from_str::<serde_json::Value>\(written\)",
         "a recorded line becomes the fact's payload as written; it is decoded through the types beside it",
-    ),
-    Exemption(
-        "crates/interpret/src/claude_pty/mod.rs",
-        "bind_asks_for",
-        r"from_str::<Value>\(&meta\.input\)",
-        "a tool's input, kept as text on its ask, compared with the call's to bind them",
     ),
     Exemption(
         "crates/interpret/src/claude_pty/recording.rs",

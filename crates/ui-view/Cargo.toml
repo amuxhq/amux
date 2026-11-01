@@ -9,6 +9,7 @@ autotests = false
 
 [dependencies]
 attachments = { workspace = true }
+pulldown-cmark = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

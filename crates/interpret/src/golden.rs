@@ -39,7 +39,7 @@
 //! yields the same items and final snapshot as the uninterrupted run, and a
 //! resume re-emits only known keys at their current content.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -48,8 +48,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use wire::{
     AgentSpec, ClaudeAnswer, CodexAnswer, Envelope, Input, Item, Phase, PromptInput,
-    SendInputResponse, SendQueuedNow, Sender, Snapshot, Step, WithdrawQueued, claude_answer,
-    claude_pty_input, claude_sdk_input, codex_input, send_input_response, sender,
+    SendInputResponse, SendQueuedNow, Sender, SessionEvent, Snapshot, Step, WithdrawQueued,
+    claude_answer, claude_pty_input, claude_sdk_input, codex_input, send_input_response, sender,
+    session_event,
 };
 
 use crate::serde_pb::{from_hex, to_hex};
@@ -165,7 +166,6 @@ struct FixtureSpec {
     #[serde(default)]
     parent: bool,
     initial_prompt: Option<String>,
-    producer_version: Option<String>,
     /// The provider arguments the daemon resolved, as a recording's spawn
     /// passed them.
     #[serde(default)]
@@ -280,6 +280,54 @@ impl GoldenReport {
     }
 }
 
+/// Commits interpreter steps the way the owning daemon does: an order once
+/// per new key, a revision per record: what a replay's steps read as in a
+/// client's session.
+#[derive(Clone, Default)]
+pub struct Committer {
+    pub revision: u64,
+    next_order: u64,
+    orders: HashMap<String, u64>,
+    revisions: HashMap<String, u64>,
+}
+
+impl Committer {
+    pub fn commit(&mut self, step: &Step) -> Vec<SessionEvent> {
+        let event = |of| SessionEvent { of: Some(of) };
+        let mut out = Vec::new();
+        for item in &step.items {
+            self.revision += 1;
+            let order = *self.orders.entry(item.key.clone()).or_insert_with(|| {
+                self.next_order += 1;
+                self.next_order
+            });
+            self.revisions.insert(item.key.clone(), self.revision);
+            let mut item = item.clone();
+            item.order = order;
+            item.revision = self.revision;
+            out.push(event(session_event::Of::Item(item)));
+        }
+        for append in &step.appends {
+            self.revision += 1;
+            let base = self
+                .revisions
+                .insert(append.key.clone(), self.revision)
+                .unwrap_or(0);
+            let mut append = append.clone();
+            append.base_revision = base;
+            append.revision = self.revision;
+            out.push(event(session_event::Of::Append(append)));
+        }
+        if let Some(snapshot) = &step.snapshot {
+            self.revision += 1;
+            let mut snapshot = snapshot.clone();
+            snapshot.revision = self.revision;
+            out.push(event(session_event::Of::Snapshot(snapshot)));
+        }
+        out
+    }
+}
+
 /// One fixture event as the interpreter answered it: the input it carried,
 /// if any, the step it emitted and the verdicts it replied.
 #[derive(Clone, Debug)]
@@ -302,8 +350,7 @@ pub fn replay<I: Interpreter>(fixture: &Path) -> Result<Vec<Replayed>, String> {
         serde_json::from_str(&text).map_err(|error| format!("parse fixture: {error}"))?;
     let script = script::<I>(fixture, &parsed)?;
     let spec = spec::<I>(&parsed.spec);
-    let producer = parsed.spec.producer_version.as_deref().unwrap_or("test");
-    let frames = execute::<I>(&spec, producer, &script, None)?;
+    let frames = execute::<I>(&spec, &script, None)?;
     let mut inputs = script.iter().filter_map(|scripted| match &scripted.action {
         Action::Event(Event::Input(input)) => Some((scripted.label.as_str(), input.clone())),
         _ => None,
@@ -352,7 +399,6 @@ pub fn replay<I: Interpreter>(fixture: &Path) -> Result<Vec<Replayed>, String> {
 /// one themselves.
 pub struct FixtureScript {
     pub spec: AgentSpec,
-    pub producer: String,
     /// Each event with its label, in order; `None` is a checkpoint the
     /// fixture takes there.
     pub events: Vec<(String, Option<Event>)>,
@@ -376,11 +422,6 @@ pub fn fixture_script<I: Interpreter>(fixture: &Path) -> Result<FixtureScript, S
         .collect();
     Ok(FixtureScript {
         spec: spec::<I>(&parsed.spec),
-        producer: parsed
-            .spec
-            .producer_version
-            .clone()
-            .unwrap_or_else(|| "test".into()),
         events,
     })
 }
@@ -394,7 +435,7 @@ pub fn run_until<I: Interpreter>(
     until: impl Fn(&Step) -> bool,
 ) -> Result<Option<(I::State, AgentSpec)>, String> {
     let script = fixture_script::<I>(fixture)?;
-    let (mut state, _) = I::initial(&script.spec, &script.producer);
+    let (mut state, _) = I::initial(&script.spec);
     for (_, event) in script.events {
         let Some(event) = event else {
             continue;
@@ -422,7 +463,6 @@ pub fn run_golden<I: Interpreter>(fixture: &Path) -> GoldenReport {
         Err(error) => return GoldenReport::fail(fixture, error),
     };
     let spec = spec::<I>(&parsed.spec);
-    let producer = parsed.spec.producer_version.as_deref().unwrap_or("test");
 
     let mut report = GoldenReport {
         fixture: fixture.to_owned(),
@@ -433,7 +473,7 @@ pub fn run_golden<I: Interpreter>(fixture: &Path) -> GoldenReport {
         failures: Vec::new(),
     };
 
-    let frames = match execute::<I>(&spec, producer, &script, None) {
+    let frames = match execute::<I>(&spec, &script, None) {
         Ok(frames) => frames,
         Err(error) => return GoldenReport::fail(fixture, error),
     };
@@ -450,7 +490,7 @@ pub fn run_golden<I: Interpreter>(fixture: &Path) -> GoldenReport {
     // The checkpoint property, at every prefix.
     let whole = merge(&frames);
     for at in 0..=script.len() {
-        match execute::<I>(&spec, producer, &script, Some(at)) {
+        match execute::<I>(&spec, &script, Some(at)) {
             Ok(resumed) => {
                 if let Some(problem) = check_resumes(&resumed).into_iter().next() {
                     report
@@ -1066,11 +1106,10 @@ fn codex_answer(ask: &str, answer: &Value) -> Option<CodexAnswer> {
 /// and resumed before event `checkpoint_at`, as a restart would.
 fn execute<I: Interpreter>(
     spec: &AgentSpec,
-    producer: &str,
     script: &[Scripted],
     checkpoint_at: Option<usize>,
 ) -> Result<Vec<Frame>, String> {
-    let (mut state, first) = I::initial(spec, producer);
+    let (mut state, first) = I::initial(spec);
     let mut frames = vec![Frame {
         label: "initial".into(),
         step: first,

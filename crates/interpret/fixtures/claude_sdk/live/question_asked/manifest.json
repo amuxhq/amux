@@ -1,0 +1,24 @@
+{
+  "spec": "question_asked",
+  "recorded": {
+    "provider": "claude",
+    "version": "2.1.314",
+    "model": "claude-haiku-5-5",
+    "at": "2026-10-31T05:21:56.742185Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:c88bcad1c5d4339b3b346ae1e39b4ce15ef9094b5ebdaa55f9424cdef2f6b907",
+    "spawn.jsonl": "sha256:7001461338a157ec84ddaf0294867f4e11f21ae392591ffdba41ec2ae52a4f34"
+  },
+  "redaction": {
+    "secrets": 1,
+    "machine_paths": 9,
+    "personal_identifiers": 2
+  },
+  "session_ids": [
+    "1415b6fb-0762-40ad-9ac9-e21a35db7f06"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

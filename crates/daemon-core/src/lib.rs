@@ -55,7 +55,7 @@ pub use ids::{
 };
 pub use ingest::Journals;
 pub use io::{
-    FromShell, IngestEnd, Ingested, Input, Job, Output, ParentSays, Recorded, Settings, ShellWork,
+    IngestEnd, Ingested, Input, Job, Output, ParentSays, Recorded, Settings, ShellWork,
     SourcePolicy,
 };
 pub use links::LinkRegistry;
@@ -69,10 +69,6 @@ pub use redact::Redactor;
 pub use retention::{Retain, Retained};
 pub use serve::Answers;
 pub use sources::{Sources, Standing, from_wire};
-
-/// The checkpoint layout this build writes and restores. A checkpoint under
-/// any other is refused whole.
-pub const CHECKPOINT_SCHEMA: u32 = 1;
 
 /// The daemon's whole state: the store owned outright, one machine per
 /// concern, open calls by id, armed timers and jobs awaiting their result.
@@ -115,6 +111,9 @@ pub struct StartOptions {
     /// own rows are served under.
     pub generation: u64,
     /// The directory holding each own agent's directory, named by its id.
+    /// Not part of the checkpoint: a restored core is handed the place it
+    /// reads its agents from, which a dump's replay unpacks elsewhere.
+    #[serde(skip)]
     pub agents: PathBuf,
     /// The directory holding each paired host's replicas' files, by host
     /// and then by agent.
@@ -178,28 +177,11 @@ impl Daemon {
         self.publish_host_set(out);
         self.follow_touched(out);
         self.arm_on_commit(out);
-        if let Err(violation) = self.check_step_invariants() {
-            tracing::error!(%violation, input = kind, "a daemon core step broke an invariant");
-            out.push(Output::Dump {
-                reason: DumpReason::Violation(violation),
-            });
-        }
-        let micros = u64::try_from(started.elapsed().as_micros())
-            .unwrap_or(u64::MAX)
-            .saturating_sub(self.touched.synced_micros);
-        if micros > self.options.budget.micros {
-            tracing::warn!(
-                micros,
-                budget = self.options.budget.micros,
-                input = kind,
-                "a daemon core step ran over its budget"
-            );
-            out.push(Output::Dump {
-                reason: DumpReason::OverBudget {
-                    micros,
-                    budget: self.options.budget,
-                },
-            });
+        let checked = self.check_step_invariants();
+        let (budget, synced) = (self.options.budget, self.touched.synced_micros);
+        for reason in finish_step(started, budget, synced, checked) {
+            tracing::error!(%reason, input = kind, "a daemon core step asked for a dump");
+            out.push(Output::Dump { reason });
         }
     }
 
@@ -235,7 +217,7 @@ impl Daemon {
                 }
             }
             Input::Nudge { agent } => self.ingest(agent, out),
-            Input::AgentHello { agent, .. } => {
+            Input::AgentHello { agent } => {
                 self.hello(agent);
                 self.process_hello(agent, out);
             }
@@ -280,7 +262,7 @@ impl Daemon {
                 id: TimerId::Source(host, agent),
             } => self.source_due(host, agent, out),
             Input::Configure(settings) => self.settings = settings,
-            Input::FromShell(change) => self.shell_changed(change, out),
+            Input::ShellSession { agent, event } => self.publish_session(&agent, event, out),
             Input::LinkUp {
                 link,
                 peer,
@@ -299,19 +281,10 @@ impl Daemon {
             Input::Timer {
                 id: TimerId::Refresh(link),
             } => self.refresh_due(link, out),
-            Input::WantChannel {
-                link,
-                peer,
-                class,
-                pin,
-            } => self.want_channel(link, peer, class, pin, out),
-            Input::ChannelOpened { channel, .. } => self.channel_opened(channel),
-            Input::ChannelClosed { channel, .. } => self.channel_closed(channel),
+            Input::WantChannel { link, peer } => self.want_channel(link, peer, out),
+            Input::ChannelClosed { channel } => self.channel_closed(channel),
             Input::PlanChanged => self.plan_changed(out),
-            Input::TryAgain { host } => {
-                self.reconsider(host, out);
-                self.sources_try_again(host, out);
-            }
+
             Input::Started => self.trust_started(out),
             Input::ChangeTrust(change) => self.change_trust(change, None, out),
             Input::Policy(policy) => self.set_policy(policy, out),
@@ -496,16 +469,12 @@ impl Daemon {
         Ok(())
     }
 
-    /// The whole-block predicates the checker, the simulator and replay
-    /// call after every store write; too slow for production.
-    pub fn check_all(&self) -> Result<(), Violation> {
-        self.check_step_invariants()
-    }
-
-    /// The core as of this step. With the store's main file after a passive
-    /// WAL checkpoint that no commit has followed, it is the daemon
-    /// exactly.
-    pub fn checkpoint(&self) -> Checkpoint {
+    /// The core as of this step, serialized. With the store's main file
+    /// after a passive WAL checkpoint that no commit has followed, it is
+    /// the daemon exactly. A checkpoint is read only by the build that
+    /// wrote it: rings are reset with the stores they sit beside, so no
+    /// other layout is ever met.
+    pub fn checkpoint(&self) -> Vec<u8> {
         let core = (
             &self.routing,
             &self.presence,
@@ -523,15 +492,17 @@ impl Daemon {
             &self.settings,
             &self.options,
         );
-        Checkpoint {
-            schema: CHECKPOINT_SCHEMA,
-            state: postcard::to_allocvec(&core).expect("the core's state serializes"),
-        }
+        postcard::to_allocvec(&core).expect("the core's state serializes")
     }
 
-    /// Rebuilds a core from a checkpoint and the store it was taken beside.
-    /// A checkpoint under another schema is refused, never half applied.
-    pub fn restore(checkpoint: Checkpoint, store: Sqlite) -> Result<Daemon, RestoreError> {
+    /// Rebuilds a core from a checkpoint and the store it was taken beside,
+    /// its agents' directories under `agents`. A checkpoint that does not
+    /// decode is refused, never half applied.
+    pub fn restore(
+        checkpoint: &[u8],
+        store: Sqlite,
+        agents: PathBuf,
+    ) -> Result<Daemon, RestoreError> {
         let (
             routing,
             presence,
@@ -547,8 +518,9 @@ impl Daemon {
             timers,
             pending,
             settings,
-            options,
-        ) = checkpoint_parts(&checkpoint)?;
+            mut options,
+        ) = checkpoint_parts(checkpoint)?;
+        options.agents = agents;
         let trust = trust.restored(&store);
         Ok(Daemon {
             routing,
@@ -584,25 +556,6 @@ impl Daemon {
     /// The store the core owned, once the core is done with.
     pub fn into_store(self) -> Sqlite {
         self.store
-    }
-
-    /// Points the core at agent directories that now live under `agents`:
-    /// a replay reads a dump's journals where it unpacked them. The core
-    /// checkpoints the place it was last pointed at.
-    pub fn move_agents(&mut self, agents: PathBuf) {
-        self.options.agents = agents;
-    }
-
-    /// The store, for a write beneath the core's own: only a test setting
-    /// up what no input produces writes through it.
-    #[doc(hidden)]
-    pub fn store_beneath(&mut self) -> &mut Sqlite {
-        &mut self.store
-    }
-
-    /// How long one step may take before it is reported.
-    pub fn budget(&self) -> StepBudget {
-        self.options.budget
     }
 
     /// Sets how long one step may take before it is reported: a replay of
@@ -778,29 +731,7 @@ pub struct Pending {
     peers: peers::PeerCalls,
 }
 
-pub use core_ring::{Check, DumpReason, StepBudget, Violation};
-
-/// The core's state as of one step, serialized, under the layout it was
-/// written with.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Checkpoint {
-    pub schema: u32,
-    pub state: Vec<u8>,
-}
-
-impl Checkpoint {
-    /// The bytes a checkpoint job writes: the layout first, so a reader
-    /// knows whether it can read the rest before it tries.
-    pub fn to_bytes(&self) -> Vec<u8> {
-        postcard::to_allocvec(self).expect("a checkpoint serializes")
-    }
-
-    /// Reads a checkpoint back. Its state is read only by
-    /// [`Daemon::restore`], which refuses another layout.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Checkpoint, RestoreError> {
-        postcard::from_bytes(bytes).map_err(|error| RestoreError::Corrupt(error.to_string()))
-    }
-}
+pub use core_ring::{Check, DumpReason, StepBudget, Violation, finish_step};
 
 /// The core's state as a checkpoint holds it, in the order
 /// [`Daemon::checkpoint`] writes it.
@@ -822,36 +753,25 @@ type Parts = (
     StartOptions,
 );
 
-/// A checkpoint's state read back; one under another schema is refused.
-fn checkpoint_parts(checkpoint: &Checkpoint) -> Result<Parts, RestoreError> {
-    if checkpoint.schema != CHECKPOINT_SCHEMA {
-        return Err(RestoreError::Schema {
-            found: checkpoint.schema,
-            expected: CHECKPOINT_SCHEMA,
-        });
-    }
-    postcard::from_bytes(&checkpoint.state)
-        .map_err(|error| RestoreError::Corrupt(error.to_string()))
+/// A checkpoint's state read back.
+fn checkpoint_parts(checkpoint: &[u8]) -> Result<Parts, RestoreError> {
+    postcard::from_bytes(checkpoint).map_err(RestoreError::of)
 }
 
-/// Why a checkpoint could not be restored.
+/// Why a checkpoint could not be restored: its bytes do not decode under
+/// this build's layout.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RestoreError {
-    /// Written under another layout.
-    Schema { found: u32, expected: u32 },
-    /// The bytes do not decode under this layout.
-    Corrupt(String),
+pub struct RestoreError(String);
+
+impl RestoreError {
+    fn of(error: postcard::Error) -> Self {
+        Self(error.to_string())
+    }
 }
 
 impl fmt::Display for RestoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RestoreError::Schema { found, expected } => write!(
-                f,
-                "the checkpoint was written under layout {found}; this build reads {expected}"
-            ),
-            RestoreError::Corrupt(why) => write!(f, "the checkpoint does not decode: {why}"),
-        }
+        write!(f, "the checkpoint does not decode: {}", self.0)
     }
 }
 
@@ -863,35 +783,7 @@ mod tests {
 
     #[test]
     fn a_checkpoint_that_does_not_decode_is_refused() {
-        let checkpoint = Checkpoint {
-            schema: CHECKPOINT_SCHEMA,
-            state: vec![0xff],
-        };
         let store = Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens");
-        assert!(matches!(
-            Daemon::restore(checkpoint, store),
-            Err(RestoreError::Corrupt(_))
-        ));
-        assert!(matches!(
-            Checkpoint::from_bytes(&[]),
-            Err(RestoreError::Corrupt(_))
-        ));
-    }
-
-    #[test]
-    fn a_checkpoint_under_another_layout_is_refused() {
-        let checkpoint = Checkpoint {
-            schema: CHECKPOINT_SCHEMA + 1,
-            state: Vec::new(),
-        };
-        let store = Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens");
-        let refused = Daemon::restore(checkpoint, store).err();
-        assert_eq!(
-            refused,
-            Some(RestoreError::Schema {
-                found: CHECKPOINT_SCHEMA + 1,
-                expected: CHECKPOINT_SCHEMA,
-            })
-        );
+        assert!(Daemon::restore(&[0xff], store, PathBuf::new()).is_err());
     }
 }

@@ -1,48 +1,40 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 4 recorded 3: input stdin-2
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-  row    2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Name the color of the attached image in one word. Then read square.png in the working directory with the Read tool and say whether it is the same image.")], steered: false }
+## 6 recorded 5: input 0x36c77189318240a4b1d7558bb7f40654
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 6 recorded 5: fact Stream type=system subtype=init uuid=e2966cad-38df-4365-b742-2b8d2eb0cb3e
-  row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 12 recorded 11: fact Stream type=assistant uuid=989a6ed6-3afd-4322-b404-cfa4222c8632
-  row    3 msg_011CgWLSRvZZcNKv1idAYXP1:0 Thinking { text: "", open: false, duration_ms: Some(2192) }
-## 14 recorded 13: fact Stream type=assistant uuid=0b766b4b-257b-476a-b6cf-ea9130a1b469
-  row    4 msg_011CgWLSRvZZcNKv1idAYXP1:1 Prose { text: [Text("Red.\n\nLet me read square.png from the working directory.")], streaming: false, working_note: false }
-## 16 recorded 15: fact Stream type=assistant uuid=3ce4c9da-3173-4b21-ae0a-f675414deb2f
-  row    5 toolu_01MEg9ACmnFEbQyqiqLtyqne Explore { verb: Read, subject: "<MACHINE_PATH>", state: Running, result: "" } run[toolu_01MEg9ACmnFEbQyqiqLtyqne..toolu_01MEg9ACmnFEbQyqiqLtyqne x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
-  composer Send activity=Some(Running { key: "toolu_01MEg9ACmnFEbQyqiqLtyqne" }) queue=[] underway=[] refused=[]
-## 20 recorded 19: fact Stream type=user uuid=dc168c63-28c8-4e05-962a-5a632de50d5f
-  row    5 toolu_01MEg9ACmnFEbQyqiqLtyqne Image { image: Some(BlobRef { hash: [13, 188, 137, 79, 133, 238, 125, 12, 106, 7, 238, 253, 141, 85, 231, 43, 84, 34, 114, 38, 133, 218, 117, 229, 18, 219, 233, 73, 35, 210, 211, 35], name: "", mime: "image/png", size: 99 }), path: "<MACHINE_PATH>", generated: false } run[toolu_01MEg9ACmnFEbQyqiqLtyqne..toolu_01MEg9ACmnFEbQyqiqLtyqne x1 recent=0 live RunCounts {…
+## 18 recorded 17: fact Stream type=stream_event uuid=f38d1358-bf15-44d9-a57a-da28e2473f66
+  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
+## 27 recorded 26: fact Stream type=assistant uuid=cc83c579-2db3-4597-9007-9f70c7ceeb92
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 22 recorded 21: fact Stream type=assistant uuid=1c3a5c5f-288e-4c98-a5aa-3996a95b9243
-  row    6 msg_011CgWLSdYZAa936ZqDSuTvr:0 Thinking { text: "", open: false, duration_ms: Some(1464) }
-## 24 recorded 23: fact Stream type=assistant uuid=8eb78d73-c36d-47e7-b683-08f5f0b13a8c
-  row    5 toolu_01MEg9ACmnFEbQyqiqLtyqne Image { image: Some(BlobRef { hash: [13, 188, 137, 79, 133, 238, 125, 12, 106, 7, 238, 253, 141, 85, 231, 43, 84, 34, 114, 38, 133, 218, 117, 229, 18, 219, 233, 73, 35, 210, 211, 35], name: "", mime: "image/png", size: 99 }), path: "<MACHINE_PATH>", generated: false } run[toolu_01MEg9ACmnFEbQyqiqLtyqne..toolu_01MEg9ACmnFEbQyqiqLtyqne x1 recent=0 RunCounts { comm…
-  row    7 msg_011CgWLSdYZAa936ZqDSuTvr:1 Prose { text: [Text("Yes, they are the same image—both solid red squares.")], streaming: false, working_note: false }
-## 26 recorded 25: fact Stream type=result subtype=success uuid=88e242db-88af-4a47-a258-44008d3f6edb
-  row    5 toolu_01MEg9ACmnFEbQyqiqLtyqne Image { image: Some(BlobRef { hash: [13, 188, 137, 79, 133, 238, 125, 12, 106, 7, 238, 253, 141, 85, 231, 43, 84, 34, 114, 38, 133, 218, 117, 229, 18, 219, 233, 73, 35, 210, 211, 35], name: "", mime: "image/png", size: 99 }), path: "<MACHINE_PATH>", generated: false } run[toolu_01MEg9ACmnFEbQyqiqLtyqne..toolu_01MEg9ACmnFEbQyqiqLtyqne x1 recent=0 RunCounts { comm…
-  row    8 turn:1 TurnEnd { duration_ms: Some(4278), failed: false }
+## 29 recorded 28: fact Stream type=stream_event uuid=81e03307-62f3-4b8c-bd75-14139049a9c2
+  composer Send activity=Some(Running { key: "toolu_01769GXLhBn1Z2xSkGxo4MUg" }) queue=[] underway=[] refused=[]
+## 47 recorded 46: fact Stream type=user uuid=ee9d9a92-955b-47df-872b-83f7d0c981a0
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 52 recorded 51: fact Stream type=stream_event uuid=72b76153-7915-4137-9f78-f57d995cc4d1
+  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
+## 61 recorded 60: fact Stream type=assistant uuid=d7330df9-b0b1-4b0c-96dc-15c0450bd505
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 106 recorded 105: fact Stream type=result subtype=success uuid=09cbf313-611d-42da-97b6-91fbd63aca32
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Name the color of the attached image in one word. Then read square.png in the working directory with the Read tool and say whether it is the same image.")], steered: false }
-     3 msg_011CgWLSRvZZcNKv1idAYXP1:0 Thinking { text: "", open: false, duration_ms: Some(2192) }
-     4 msg_011CgWLSRvZZcNKv1idAYXP1:1 Prose { text: [Text("Red.\n\nLet me read square.png from the working directory.")], streaming: false, working_note: false }
-     5 toolu_01MEg9ACmnFEbQyqiqLtyqne Image { image: Some(BlobRef { hash: [13, 188, 137, 79, 133, 238, 125, 12, 106, 7, 238, 253, 141, 85, 231, 43, 84, 34, 114, 38, 133, 218, 117, 229, 18, 219, 233, 73, 35, 210, 211, 35], name: "", mime: "image/png", size: 99 }), path: "<MACHINE_PATH>", generated: false } run[toolu_01MEg9ACmnFEbQyqiqLtyqne..toolu_01MEg9ACmnFEbQyqiqLtyqne x1 recent=0 RunCounts { comm…
-     6 msg_011CgWLSdYZAa936ZqDSuTvr:0 Thinking { text: "", open: false, duration_ms: Some(1464) }
-     7 msg_011CgWLSdYZAa936ZqDSuTvr:1 Prose { text: [Text("Yes, they are the same image—both solid red squares.")], streaming: false, working_note: false }
-     8 turn:1 TurnEnd { duration_ms: Some(4278), failed: false }
+     2 36c77189-3182-40a4-b1d7-558bb7f40654 Prompt { text: [Text("Name the color of the attached image in one word. Then read square.png in the working directory with the Read tool and say whether it is the same image.")], steered: false }
+     3 76266842-6d1f-400b-8c71-79141edb0ef4 Hidden collapsed
+     4 msg_011CgZjjGWvVRiRUsxj7agbs:0 Thinking { text: "", open: false, duration_ms: Some(1041) }
+     5 toolu_01769GXLhBn1Z2xSkGxo4MUg Image { image: Some(BlobRef { hash: [13, 188, 137, 79, 133, 238, 125, 12, 106, 7, 238, 253, 141, 85, 231, 43, 84, 34, 114, 38, 133, 218, 117, 229, 18, 219, 233, 73, 35, 210, 211, 35], name: "", mime: "image/png", size: 99 }), path: "<MACHINE_PATH>", generated: false } run[toolu_01769GXLhBn1Z2xSkGxo4MUg..toolu_01769GXLhBn1Z2xSkGxo4MUg x1 recent=0 RunCounts { comm…
+     6 aeedf17e-b19e-40cb-96d2-3e3df3adbc0c Hidden collapsed
+     7 msg_011CgZjjPi27jp1BPSTybCcZ:0 Thinking { text: "", open: false, duration_ms: Some(659) }
+     8 msg_011CgZjjPi27jp1BPSTybCcZ:1 Prose { text: [Text("I can't name the color of the attached image because no image came through with your message. If you re-attach it, I'll name its color.\n\n`square.png` is a small solid red square. Since I can't see the attachment, I can't say whether it's the same image.")], streaming: false, working_note: false }
+     9 turn:1 TurnEnd { duration_ms: Some(3234), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 24195, window_tokens: Some(200000), percent: Some(12), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 20617, window_tokens: Some(1000000), percent: Some(2), near_full: false }) sign-in None
 == settings
   model  default "Default (recommended)" efforts=[low,medium,high,xhigh,max]
   model  opus "Opus 5.5" efforts=[low,medium,high,xhigh,max]
   model  fable "Fable 5.1" efforts=[low,medium,high,xhigh,max]
   model  sonnet "Sonnet 5.5" efforts=[low,medium,high,xhigh,max]
-  model  haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
-  model* claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
+  model* haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
+  model  claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
   model  claude-sonnet-5 "Sonnet 5" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-5 "Opus 5" efforts=[low,medium,high,xhigh,max]
   model  claude-fable-5 "Fable 5" efforts=[low,medium,high,xhigh,max]
@@ -50,12 +42,18 @@
   model  claude-opus-4-7 "Opus 4.7" efforts=[low,medium,high,xhigh,max]
   model  claude-opus-4-6 "Opus 4.6" efforts=[low,medium,high,max]
   model  claude-sonnet-4-6 "Sonnet 4.6" efforts=[low,medium,high,max]
+  effort  low
+  effort  medium
+  effort* high
+  effort  xhigh
+  effort  max
   permission* "default" "Ask" normal
   permission  "acceptEdits" "Accept edits"
   permission  "plan" "Plan"
-  permission  "auto" "Auto" unsettable
-  changes: model Pick · effort NotOffered · permission Pick · mode NotOffered
+  permission  "auto" "Auto"
+  changes: model Pick · effort Pick · permission Pick · mode NotOffered
   command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"
   command /deep-research source="" hint="" "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)"
   command /design source="" hint="consent | revoke" "Grant or revoke Claude agent access to your Design projects"
@@ -70,6 +68,7 @@
   command /fewer-permission-prompts source="" hint="" "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts."
   command /loop source="" hint="[interval] [prompt]" "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace."
   command /schedule source="" hint="" "Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule."
+  command /send-to-project source="" hint="[\"project name\" or id] [message]" "Send this session's work to a Claude Project"
   command /claude-api source="" hint="" "Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration.\nTRIGGER — read BEFORE opening the target file; don't skip because it \"looks like a one-liner\" — whenever: the prompt names Claude/Anthropic in any form (Claude, Anthropic, Fable, Opus, Sonnet, Haiku, `anthropic`, `@anthropic-ai`, `claude-*`, `us…
   command /workflow-authoring source="" hint="" "Reference for writing a Workflow tool script (script API and gotchas, resume, quality patterns, worked examples). Load before authoring a script for a workflow the user already opted into; it does not itself authorize running one."
   command /run source="" hint="" "Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library)."
@@ -89,7 +88,7 @@
   command /workflow-launch-exec source="" hint="" "Execute a server-launched workflow handoff (workflow_launch event sessions only)"
   command /reload-plugins source="" hint="[--force]" "Activate pending plugin changes in the current session"
   command /reload-skills source="" hint="" "Pick up skills added or changed on disk during this session"
-  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~15-25 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
+  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~5-15 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
   command /security-review source="" hint="" "Complete a security review of the pending changes on the current branch"
   command /usage-credits source="" hint="" "Configure usage credits or request them from your admin when you hit a limit"
   command /extra-usage source="" hint="" "Renamed to /usage-credits"
@@ -102,4 +101,4 @@
   command /design-revoke source="" hint="" "Revoke Claude agent access to your Design projects"
   command /list-agents source="" hint="" "List subagents, teammates, and other Claude sessions you can message"
   command /team-onboarding source="" hint="" "Help teammates ramp on Claude Code with a guide from your usage"
-  controls: model=Some("Haiku 4.5") effort=None permission=None mode=None
+  controls: model=Some("Haiku 5.5") effort=Some("high") permission=None mode=None

@@ -1,7 +1,0 @@
-  ╭─ studio is away ─────────────────────────────────────────────────────────────────────────────╮
-  │ › Message fixer                                                                              │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
---- styles
-..mmm??????????????mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..
-..mmmmmmmmmmmmmmmmm..............................................................................m..
-..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..

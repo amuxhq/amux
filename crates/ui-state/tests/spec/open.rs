@@ -23,7 +23,10 @@ fn open_from_the_snapshot_and_held_rows_with_caught_up_later() {
             "the first render has the held rows"
         );
         assert!(!tape.state.can_send());
-        assert_eq!(tape.state.composer(), Composer::Holds(Waiting::CatchingUp));
+        assert_eq!(
+            tape.state.composer(),
+            Composer::Waiting(Waiting::CatchingUp)
+        );
         tape.apply(
             "live row before CaughtUp",
             ev_item(text(kind, 41, 41, "delta")),
@@ -89,7 +92,7 @@ fn a_subscribe_to_an_away_host_paints_held_rows_then_detached() {
         tape.apply("Detached", detached());
         assert_eq!(tape.state.transcript().len(), 41, "the rows stay");
         assert!(!tape.state.can_send());
-        assert_eq!(tape.state.composer(), Composer::Holds(Waiting::Detached));
+        assert_eq!(tape.state.composer(), Composer::Waiting(Waiting::Detached));
         // The draft is the client's; nothing here touches it, and nothing
         // else happens until the source resumes after its cursor.
         tape.apply("delta after wake", ev_item(text(kind, 341, 341, "delta")));
@@ -131,7 +134,7 @@ fn a_retail_that_meets_the_window_merges_without_a_reload() {
         }
         apply_checked(&mut state, caught_up(5));
         apply_checked(&mut state, Msg::Connection(Connection::Reconnecting));
-        assert_eq!(state.composer(), Composer::Holds(Waiting::Reconnecting));
+        assert_eq!(state.composer(), Composer::Waiting(Waiting::Reconnecting));
         apply_checked(&mut state, Msg::Connection(Connection::Live));
         apply_checked(
             &mut state,
@@ -145,64 +148,6 @@ fn a_retail_that_meets_the_window_merges_without_a_reload() {
         assert!(!outcome.reloaded);
         assert_eq!(state.oldest_order(), Some(1));
         assert_eq!(state.transcript().head(), Some(7));
-    }
-}
-
-#[test]
-fn a_reopen_under_the_generation_a_live_reset_named_continues_the_window() {
-    for kind in KINDS {
-        for opened_under in [0, 1] {
-            // Opened under generation 1, or on a replica no source had
-            // caught up yet, which names none (0).
-            let mut state = SessionState::new(agent(kind), CAP);
-            apply_checked(&mut state, opening(opened_under));
-            apply_checked(
-                &mut state,
-                ev_snapshot(snapshot(kind, 3, Phase::Idle, &[], &[])),
-            );
-            for order in 1..=3 {
-                apply_checked(&mut state, ev_item(text(kind, order, order, "old")));
-            }
-            apply_checked(&mut state, caught_up(3));
-
-            // The replica takes the block of generation 2, live.
-            apply_checked(&mut state, reset(2));
-            apply_checked(
-                &mut state,
-                ev_snapshot(snapshot(kind, 9, Phase::Idle, &[], &[])),
-            );
-            for order in 4..=5 {
-                apply_checked(&mut state, ev_item(text(kind, order, order + 4, "new")));
-            }
-            let outcome = apply_checked(&mut state, caught_up(9));
-            assert!(outcome.reloaded, "the Reset swaps its block in");
-
-            // A reader pages below the fresh block.
-            apply_page(&mut state, vec![text(kind, 3, 7, "paged")], false);
-            assert_eq!(state.oldest_order(), Some(3));
-
-            // The stream lags and reopens under generation 2 with a tail
-            // that meets the window: the window continues.
-            apply_checked(&mut state, lagged());
-            apply_checked(&mut state, Msg::Connection(Connection::Live));
-            apply_checked(&mut state, opening(2));
-            apply_checked(
-                &mut state,
-                ev_snapshot(snapshot(kind, 10, Phase::Idle, &[], &[])),
-            );
-            for order in 5..=6 {
-                apply_checked(&mut state, ev_item(text(kind, order, order + 4, "new")));
-            }
-            let outcome = apply_checked(&mut state, caught_up(10));
-            assert!(
-                !outcome.reloaded,
-                "opened under {opened_under}: a reopen under the Reset's generation does not \
-                 rebuild"
-            );
-            assert_eq!(state.oldest_order(), Some(3), "the paged row stays");
-            assert_eq!(state.transcript().head(), Some(6));
-            assert_eq!(state.generation(), Some(2));
-        }
     }
 }
 

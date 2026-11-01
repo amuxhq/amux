@@ -17,16 +17,14 @@ final class RowStateTests: XCTestCase {
     private func row(
         _ attention: Attention, kind: Kind = .claudeSdk, reach: Reach = .online(.direct),
         exitCause: ExitCause? = nil
-    ) -> AgentRow {
-        AgentRow(
-            row: FleetRow(
-                card: FleetCard(
-                    agent: AgentKey(host: machine, agent: UUID()), name: "refactor-auth",
-                    kind: kind, attention: attention, cwd: "~/src/amux", phaseSinceMs: 0,
-                    host: "Studio.local", hostReach: reach, children: 0,
-                    familyAttention: attention, members: 1, descendants: 0, backgroundJobs: 0, stopHeld: false, branch: nil, exitCause: exitCause),
-                depth: 0, expanded: false, secondLine: .blank, loud: nil),
-            unread: false)
+    ) -> FleetRow {
+        FleetRow(
+            card: FleetCard(
+                agent: AgentKey(host: machine, agent: UUID()), name: "refactor-auth",
+                kind: kind, attention: attention, cwd: "~/src/amux", phaseSinceMs: 0,
+                host: "Studio.local", hostReach: reach, children: 0,
+                familyAttention: attention, members: 1, descendants: 0, backgroundJobs: 0, stopHeld: false, branch: nil, exitCause: exitCause),
+            depth: 0, expanded: false, secondLine: .blank, loud: nil)
     }
 
     func testEachAttentionSpeaksInWords() {

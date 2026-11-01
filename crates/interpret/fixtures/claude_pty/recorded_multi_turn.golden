@@ -1,0 +1,38 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"agent","json":{"type":"launch"}}
+effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue cd96cd29
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 3 recorded 1: fact Hook hook_event_name=SessionStart
+effect follow "<TRANSCRIPT_1>"
+item boundary:1 boundary final at=1793452857850 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1793452857850 asks=[] session=a3c8e9a3-2250-4490-9391-6a7b0d53a7f0 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793452858352 asks=[] session=a3c8e9a3-2250-4490-9391-6a7b0d53a7f0 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 13 recorded 11: fact Transcript type=user uuid=1ba72233-920f-48d8-a942-81c90234a074
+item 1ba72233-920f-48d8-a942-81c90234a074 prompt final at=1793452858556 text="Remember the word ALBATROSS. Reply with exactly REMEMBERED."
+snapshot WORKING queue=[] working_on=- at=1793452858556 asks=[] session=a3c8e9a3-2250-4490-9391-6a7b0d53a7f0 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 37 recorded 35: fact Hook hook_event_name=Stop
+snapshot WORKING queue=[] working_on=- at=1793452859174 asks=[] session=a3c8e9a3-2250-4490-9391-6a7b0d53a7f0 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 39 recorded 37: fact Hook hook_event_name=MessageDisplay
+item stream:204f7943-eacb-42f4-9fc4-71e1521bc46d message open at=1793452859177 text="REMEMBERED"
+## 43 recorded 41: fact Transcript type=assistant uuid=c91d0650-a9b6-41b8-ba8d-3dd51817af65
+item stream:204f7943-eacb-42f4-9fc4-71e1521bc46d message final at=1793452859347 text="REMEMBERED"
+snapshot WORKING queue=[] working_on=- at=1793452859307 asks=[] session=a3c8e9a3-2250-4490-9391-6a7b0d53a7f0 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35604/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 48 recorded 46: fact Transcript type=system subtype=turn_duration uuid=de1a1270-3e7c-44db-a162-6b199c65d3d8
+item turn:1 turn final at=1793452859401 text="" #1 TURN_OUTCOME_COMPLETED started=1793452858546
+snapshot IDLE queue=[] working_on=- at=1793452859315 asks=[] session=a3c8e9a3-2250-4490-9391-6a7b0d53a7f0 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35604/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+turn_end 1 last=stream:204f7943-eacb-42f4-9fc4-71e1521bc46d
+## 59 recorded 57: fact Transcript type=user uuid=ee13c025-bd8b-402f-b617-24c16bb6df34
+item ee13c025-bd8b-402f-b617-24c16bb6df34 prompt final at=1793452859994 text="What word did I ask you to remember? Reply with just that word."
+snapshot WORKING queue=[] working_on=- at=1793452859906 asks=[] session=a3c8e9a3-2250-4490-9391-6a7b0d53a7f0 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35604/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 63 recorded 61: fact Hook hook_event_name=MessageDisplay
+item stream:47c2a344-773f-41e3-a0e6-a835d88fcf85 message open at=1793452860528 text="ALBATROSS"
+## 65 recorded 63: fact Transcript type=assistant uuid=cc6847f7-a944-4c5f-98ae-2d8e7d15525e
+item stream:47c2a344-773f-41e3-a0e6-a835d88fcf85 message final at=1793452860705 text="ALBATROSS"
+snapshot WORKING queue=[] working_on=- at=1793452860656 asks=[] session=a3c8e9a3-2250-4490-9391-6a7b0d53a7f0 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35658/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 68 recorded 66: fact Transcript type=system subtype=turn_duration uuid=cb07aa50-2091-4a98-8fa4-2105623320cd
+item turn:2 turn final at=1793452860750 text="" #2 TURN_OUTCOME_COMPLETED started=1793452859990
+snapshot IDLE queue=[] working_on=- at=1793452860657 asks=[] session=a3c8e9a3-2250-4490-9391-6a7b0d53a7f0 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35658/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+turn_end 2 last=stream:47c2a344-773f-41e3-a0e6-a835d88fcf85

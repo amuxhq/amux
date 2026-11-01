@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use store::{AgentKey, Sweep};
-use wire::{AgentRemoved, RemovalReason, inventory_event};
+use wire::{AgentRemoved, inventory_event};
 
 use crate::blobs::{BLOBS, hex};
 use crate::ids::AgentId;
@@ -88,7 +88,7 @@ impl Daemon {
             )
             .map_err(|error| error.to_string())?;
         for key in &sweep.removed {
-            self.removed_for_good(key, RemovalReason::Retention, out);
+            self.removed_for_good(key, out);
         }
         Ok(sweep)
     }
@@ -123,18 +123,12 @@ impl Daemon {
     }
 
     /// The agent is gone from the store for good, as a delete leaves it: its
-    /// streams end, the inventory says why, its children here follow and
+    /// streams end, the inventory says it went, its children here follow and
     /// its draft is forgotten.
-    pub(crate) fn removed_for_good(
-        &mut self,
-        agent: &AgentKey,
-        reason: RemovalReason,
-        out: &mut Vec<Output>,
-    ) {
+    pub(crate) fn removed_for_good(&mut self, agent: &AgentKey, out: &mut Vec<Output>) {
         let removed = AgentRemoved {
             host_id: agent.host.clone(),
             agent_id: agent.agent.clone(),
-            reason: reason as i32,
         };
         let removed = Arc::new(inventory(inventory_event::Of::AgentRemoved(removed)));
         self.agent_removed(agent, removed, out);
@@ -238,12 +232,11 @@ mod tests {
             Output::Answer { call, response } if *call == CallId(2) => matches!(
                 response,
                 crate::payload::Response::Inventory(event)
-                    if matches!(&event.of, Some(inventory_event::Of::AgentRemoved(removed))
-                        if removed.reason == RemovalReason::Retention as i32)
+                    if matches!(&event.of, Some(inventory_event::Of::AgentRemoved(_)))
             ),
             _ => false,
         });
-        assert!(told, "the inventory says why it went: {out:#?}");
+        assert!(told, "the inventory says it went: {out:#?}");
         let retained = out.iter().find_map(|output| match output {
             Output::Retained(retained) => Some(retained),
             _ => None,

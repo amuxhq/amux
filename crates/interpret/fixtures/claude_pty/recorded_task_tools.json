@@ -8,14 +8,13 @@
       "fact": {
         "channel": "agent",
         "json": {
-          "type": "launch",
-          "version": "2.1.273"
+          "type": "launch"
         }
       }
     }
   ],
   "recording": {
-    "path": "../../../claude-specs/fixtures/claude-pty/task_tools.rows.jsonl",
+    "path": "transcripts/task_tools.rows.jsonl",
     "format": "transcript_rows"
   },
   "end": {

@@ -2,7 +2,7 @@
 //!
 //! Two formats:
 //!
-//! - `claude_pty_io`: a claude-specs provider recording (`io.jsonl`). Each
+//! - `claude_pty_io`: a live provider recording (`io.jsonl`). Each
 //!   line is `{dir, line, transport_id, us}`; hook lines carry the payload,
 //!   transcript lines `{path, row}`, and PTY bytes are skipped. Time is
 //!   microseconds since the recording began, placed on the wall clock the
@@ -23,7 +23,7 @@ use crate::{Channel, Event, Fact};
 /// Written into transcripts by an earlier tailer; not Claude's.
 const TAILER_MARKER: &str = "amux.transcript_ready";
 
-/// One line of a claude-specs recording: when, on which transport, and
+/// One line of a live recording: when, on which transport, and
 /// what.
 #[derive(Deserialize)]
 struct Record {

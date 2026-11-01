@@ -1,0 +1,28 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"agent","json":{"type":"launch"}}
+effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue cd96cd29
+snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 3 recorded 1: fact Hook hook_event_name=SessionStart
+effect follow "<TRANSCRIPT_1>"
+item boundary:1 boundary final at=1793452890839 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1793452890839 asks=[] session=064097b9-86a9-4975-b2e9-d650c061f296 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot IDLE queue=[] working_on=- at=1793452891379 asks=[] session=064097b9-86a9-4975-b2e9-d650c061f296 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 12 recorded 10: fact Transcript type=user uuid=6d84b566-042a-4e01-b054-87a281321129
+item 6d84b566-042a-4e01-b054-87a281321129 prompt final at=1793452891593 text="Think it through briefly, then answer: what is the capital of France?"
+snapshot WORKING queue=[] working_on=- at=1793452891593 asks=[] session=064097b9-86a9-4975-b2e9-d650c061f296 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 37 recorded 35: fact Hook hook_event_name=MessageDisplay
+item stream:95800d5e-d607-4d7b-a5d1-44c541f7bd8c message open at=1793452893409 text="The capital of France is Paris."
+## 39 recorded 37: fact Hook hook_event_name=Stop
+snapshot WORKING queue=[] working_on=- at=1793452893410 asks=[] session=064097b9-86a9-4975-b2e9-d650c061f296 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 41 recorded 39: fact Transcript type=assistant uuid=908eb68e-7f60-4c15-8d2c-cd071201bbc7
+item 908eb68e-7f60-4c15-8d2c-cd071201bbc7 thinking final at=1793452893553 text="The user is asking a straightforward factual question: what is the capital of France?\n\nThis is a simple geography question that doesn't require any tools or complex reasoning. The answer is Paris.\n\nI should give a direct, concise answer as per my instructions."
+snapshot WORKING queue=[] working_on=- at=1793452893543 asks=[] session=064097b9-86a9-4975-b2e9-d650c061f296 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34924/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 43 recorded 41: fact Transcript type=assistant uuid=238effb2-fbd4-4e28-a151-e022f149e9cc
+item stream:95800d5e-d607-4d7b-a5d1-44c541f7bd8c message final at=1793452893605 text="The capital of France is Paris."
+## 48 recorded 46: fact Transcript type=system subtype=turn_duration uuid=3b64e203-b688-40f0-92a9-7969510790f2
+item turn:1 turn final at=1793452893653 text="" #1 TURN_OUTCOME_COMPLETED started=1793452891581
+snapshot IDLE queue=[] working_on=- at=1793452893562 asks=[] session=064097b9-86a9-4975-b2e9-d650c061f296 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34924/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+turn_end 1 last=stream:95800d5e-d607-4d7b-a5d1-44c541f7bd8c

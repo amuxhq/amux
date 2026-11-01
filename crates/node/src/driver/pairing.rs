@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use daemon_core::pairing::{FailureCode, Initiate, Opened, PairFailure, PairingEvent};
+use daemon_core::pairing::{Failure, Initiate, Opened, PairFailure, PairingEvent};
 use daemon_core::payload::{CallError, ClientRequest, PairMessage, Response, Status};
 use daemon_core::{Input, PairingId};
 use futures_util::{Stream, stream};
@@ -117,7 +117,7 @@ impl Carriers {
                 failure,
             ) => {
                 let _ = pending.send(Err(failure.unwrap_or_else(|| PairFailure {
-                    code: FailureCode::Unavailable,
+                    code: wire::ErrorCode::Unavailable,
                     message: "pairing stream closed".to_owned(),
                 })));
             }
@@ -133,36 +133,26 @@ impl Carriers {
 
 /// A pairing refusal as the carrier's status says it.
 pub(crate) fn status(failure: &PairFailure) -> tonic::Status {
-    let code = match failure.code {
-        FailureCode::PermissionDenied => Code::PermissionDenied,
-        FailureCode::DeadlineExceeded => Code::DeadlineExceeded,
-        FailureCode::InvalidArgument => Code::InvalidArgument,
-        FailureCode::Unavailable => Code::Unavailable,
-        FailureCode::FailedPrecondition => Code::FailedPrecondition,
-        FailureCode::Internal => Code::Internal,
-        FailureCode::ResourceExhausted => Code::ResourceExhausted,
-        FailureCode::Cancelled => Code::Cancelled,
-        FailureCode::Unknown => Code::Unknown,
-    };
-    tonic::Status::new(code, failure.message.clone())
+    tonic::Status::new(Code::from_i32(failure.code as i32), failure.message.clone())
 }
 
 /// A carrier's status, as the core reads a refusal.
 pub(crate) fn failure(status: &tonic::Status) -> PairFailure {
-    let code = match status.code() {
-        Code::PermissionDenied => FailureCode::PermissionDenied,
-        Code::DeadlineExceeded => FailureCode::DeadlineExceeded,
-        Code::InvalidArgument => FailureCode::InvalidArgument,
-        Code::Unavailable => FailureCode::Unavailable,
-        Code::FailedPrecondition => FailureCode::FailedPrecondition,
-        Code::Internal => FailureCode::Internal,
-        Code::ResourceExhausted => FailureCode::ResourceExhausted,
-        Code::Cancelled => FailureCode::Cancelled,
-        _ => FailureCode::Unknown,
-    };
     PairFailure {
-        code,
+        code: wire::ErrorCode::try_from(status.code() as i32).unwrap_or(wire::ErrorCode::Unknown),
         message: status.message().to_owned(),
+    }
+}
+
+/// A failure as analytics counts it.
+pub(crate) fn counted_as(failure: Failure) -> analytics::PairingFailure {
+    match failure {
+        Failure::Abandoned => analytics::PairingFailure::Abandoned,
+        Failure::WrongSecret => analytics::PairingFailure::WrongSecret,
+        Failure::TimedOut => analytics::PairingFailure::TimedOut,
+        Failure::SelfPairing => analytics::PairingFailure::SelfPairing,
+        Failure::Unreachable => analytics::PairingFailure::Unreachable,
+        Failure::Other => analytics::PairingFailure::Other,
     }
 }
 
@@ -277,7 +267,7 @@ impl Driver {
         }
         learned.await.unwrap_or_else(|_| {
             Err(PairFailure {
-                code: FailureCode::Unavailable,
+                code: wire::ErrorCode::Unavailable,
                 message: "the profile is no longer running".to_owned(),
             })
         })
@@ -287,7 +277,7 @@ impl Driver {
 /// Records what a pairing did: one line in the daemon's log, and the
 /// analytics events.
 pub(crate) fn record(event: &PairingEvent, analytics: &analytics::Analytics) {
-    use daemon_core::pairing::{Failure, Method, Outcome, Role};
+    use daemon_core::pairing::{Method, Outcome, Role};
 
     let method = match event.method {
         Method::Pin | Method::Demo => analytics::Method::Pin,
@@ -310,14 +300,7 @@ pub(crate) fn record(event: &PairingEvent, analytics: &analytics::Analytics) {
                 analytics.record(analytics::Event::PairingFailed {
                     role,
                     method,
-                    reason: match counted {
-                        Failure::Abandoned => analytics::PairingFailure::Abandoned,
-                        Failure::WrongSecret => analytics::PairingFailure::WrongSecret,
-                        Failure::TimedOut => analytics::PairingFailure::TimedOut,
-                        Failure::SelfPairing => analytics::PairingFailure::SelfPairing,
-                        Failure::Unreachable => analytics::PairingFailure::Unreachable,
-                        Failure::Other => analytics::PairingFailure::Other,
-                    },
+                    reason: counted_as(*counted),
                 });
             }
         }

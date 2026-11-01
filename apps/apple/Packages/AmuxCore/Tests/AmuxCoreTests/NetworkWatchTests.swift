@@ -78,3 +78,27 @@ final class NetworkWatchTests: XCTestCase {
         XCTAssertEqual(changes(coordinator), 3, "nothing is fed once it stopped")
     }
 }
+
+/// A watch a test drives by hand: each `change()` while started is one
+/// change, told at once on the caller's thread.
+final class FakeNetworkWatch: NetworkPathWatching, @unchecked Sendable {
+    private let lock = NSLock()
+    private var onChange: (@Sendable () -> Void)?
+
+    /// Whether the coordinator is watching.
+    var started: Bool { lock.withLock { onChange != nil } }
+
+    func start(_ onChange: @escaping @Sendable () -> Void) {
+        lock.withLock { self.onChange = onChange }
+    }
+
+    func stop() {
+        lock.withLock { onChange = nil }
+    }
+
+    /// The network changed; nothing hears it unless the watch is started.
+    func change() {
+        let told = lock.withLock { onChange }
+        told?()
+    }
+}

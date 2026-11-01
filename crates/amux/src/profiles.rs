@@ -11,7 +11,7 @@ type Profiles = InstallationServiceClient<Channel>;
 
 pub async fn list(profiles: &mut Profiles) -> Result<()> {
     let listed = profiles
-        .list_profiles(wire::ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .map_err(crate::plain)?
         .into_inner()
@@ -52,7 +52,7 @@ pub async fn rename(profiles: &mut Profiles, reference: &str, name: &str) -> Res
     let renamed = profiles
         .rename_profile(RenameProfileRequest {
             profile_id: profile.id.clone(),
-            override_name: Some(name.to_owned()),
+            name: name.to_owned(),
         })
         .await
         .map_err(crate::plain)?

@@ -140,7 +140,7 @@ of ask has one anatomy, the [`AskCard`](../crates/ui-view/src/ask.rs):
   agent does that.
 - **Sending, then a row.** After an answer, `CardState` goes `Sending` and the card shrinks to one line until the
   agent confirms; the decision then lands in the chat. A rejection brings the card back as `Rejected(refusal)`:
-  a typed `RefusalReason` each client words, and the provider's own sentence when it gave one, shown instead. If the connection dropped before any reply,
+  the wire's typed `Refusal` reason, which each client words, and the provider's own sentence when it gave one, shown instead. If the connection dropped before any reply,
   `NotConfirmed` offers resend and discard; nothing is resent on its own. An exited agent's open asks are drawn `Dismissed`, and the composer offers Resume.
 
 An answer names its ask by key, so any open ask can be answered from any client, not only the head one. Before
@@ -280,9 +280,9 @@ injected into a turn, checkpoints, session-state changes and model verification 
 
 Some hidden facts are journal records: items kept, keyed and replicated like any other, that no client draws as a
 row. Headless Claude's `Status` items (Claude's "compacting" and "requesting", typed, with its own word kept;
-"compacting" is what the activity line reads until the compaction row lands), terminal Claude's `CompactSummary`
-(the summary a compaction wrote) and `Interruption`, and Codex's `McpStartup` (a tool server's startup outcome) and
-`TurnDiff` (the whole turn's patch) map to `RowKind::Hidden` in the view. A body this build cannot decode is an
+"compacting" is what the activity line reads until the compaction row lands) map to `RowKind::Hidden` in the view.
+Terminal Claude's compaction summary, an interruption marker (the turn's end says it was stopped), a failed tool
+server's startup (the snapshot's server list carries it) and Codex's whole-turn patch become no item at all. A body this build cannot decode is an
 `Unrecognized` row, never hidden.
 
 ## Claude versus Codex
@@ -297,10 +297,9 @@ permission once, for longer, or deny; structured questions with an "Other" answe
 (headless Claude and Codex).
 
 **Claude only:** question previews and multi-select, up to four questions; plan approval that switches
-permission as the work starts; scope choices tied to saved rules and directories; cost per turn (headless); the compaction summary text
-(terminal, recorded but not drawn).
+permission as the work starts; scope choices tied to saved rules and directories; cost per turn (headless).
 
-**Codex only:** exit codes and durations on commands; a whole-turn diff item (recorded but not drawn); "allow similar commands" and
+**Codex only:** exit codes and durations on commands; "allow similar commands" and
 per-host network rules; decline and stop as a separate choice (headless Claude has it too); access grants for
 files and network; secret answers to questions; image generation; automatic reviewer verdicts and model
 reroutes; working notes marked apart from the final answer.
@@ -330,8 +329,9 @@ naming the carrier and the golden line that shows it.
 
 **The views.** [`crates/ui-view/tests/goldens.rs`](../crates/ui-view/tests/goldens.rs) replays every interpreter
 fixture of all three kinds, commits its emission the way the daemon does, reduces it into a `SessionState`, and
-records the views (rows, ask card with its choices, overview, composer, queue, prompts underway and refused, settings) after every frame
-into `crates/ui-view/tests/goldens/<kind>/<fixture>.golden`. Authored goldens cover inputs and composer states;
+records into `crates/ui-view/tests/goldens/<kind>/<fixture>.golden` where the ask card (with its choices) and the
+composer (queue, prompts underway and refused) moved after each frame, then the rows, overview and settings the
+fixture leaves. Authored goldens cover inputs and composer states;
 `views.rs` checks row invariants over random windows; `answers.rs` checks that the interpreter accepts the input
 each card's choices build. These goldens are the content oracle for both clients. Rewrite them with
 `UI_VIEW_UPDATE_GOLDENS=1 just test-crate ui-view` and review the diff.
@@ -348,9 +348,8 @@ The pictures on this page are rendered by `amux-shot` from the same components t
 ([`crates/shot/README.md`](../crates/shot/README.md)):
 
 ```sh
-just shot -- render vocabulary --out DIR
+just shot -- render <fixture>... --theme light --out docs/figures/vocabulary
 ```
 
-Copy the light PNGs listed in [the manifest](figures/vocabulary/manifest.json) from `DIR` into
-`docs/figures/vocabulary/`, and update each entry's `sha256`. `just docs-check` verifies every image's hash
+naming each `fixture` [the manifest](figures/vocabulary/manifest.json) lists, then update each entry's `sha256`. `just docs-check` verifies every image's hash
 against the manifest, so a stale or hand-edited rendering fails.

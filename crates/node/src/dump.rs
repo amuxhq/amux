@@ -14,7 +14,8 @@
 //! reports/dump-<unix ms>-<id>/
 //!   manifest.json            what was dumped, when, why, by which daemon, and
 //!                            every file or part that could not be gathered
-//!   daemon.log               the tail of the daemon's own log and its .1,
+//!   daemon.log               the daemon's own log and its .1 for the
+//!                            minute before the dump, at INFO and above,
 //!                            redacted as text
 //!   supervisor.log           the same of the supervisor's, when there is one
 //!   agents/<agent_id>/
@@ -30,8 +31,8 @@
 //!                            (own agents)
 //!     part/...               the agent process's part, as it sent it:
 //!                            facts/<segment>, facts/<segment>.checkpoint,
-//!                            spec.<n>, the tails of agent.log and
-//!                            provider.log, and dump-errors when it had any. An
+//!                            spec.<n>, the minute of agent.log before it,
+//!                            and dump-errors when it had any. An
 //!                            agent with no process has only its specs here,
 //!                            redacted by the daemon
 //!   client/sessions/<agent_id>/
@@ -102,9 +103,9 @@ pub const CLIENT_EVENTS: &str = "events";
 /// store's main file is being checkpointed.
 const CAPTURE_TRIES: u32 = 30;
 const CAPTURE_APART: Duration = Duration::from_millis(100);
-/// How much of each of the installation's logs a dump carries, from its
-/// end: a few thousand lines, which reach back past the minute or so the
-/// core's inputs cover without dwarfing the parts that replay.
+/// The most of each of the installation's logs a dump reads back through
+/// for its window: a log written fast enough to pass this in a minute
+/// sends only its newest lines.
 pub const DUMP_LOG_BYTES: u64 = 1 << 20;
 /// How long an agent process has to send its part.
 const PART_PATIENCE: Duration = Duration::from_secs(10);
@@ -119,22 +120,19 @@ pub const SUPERVISOR_LOG: &str = "supervisor.log";
 struct Gather {
     /// The core's checkpoint, the inputs since and the store copy.
     core: bool,
-    slices: Slices,
+    /// Each covered agent's directory and manifest entry; without it, no
+    /// slice, journal or part either.
+    agents: bool,
+    /// The client sessions the request handed in.
+    sessions: bool,
+    /// Each covered agent's store slice beside its row.
+    slices: bool,
     journals: Journals,
     /// The agent process's part: its facts ring, checkpoints, specs and
     /// log tails.
     parts: bool,
     /// The daemon's and the supervisor's log tails.
     logs: bool,
-}
-
-/// Whose store slice a bundle carries. Every covered agent has its row.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Slices {
-    All,
-    /// Only agents a client session in the request is for.
-    Sessions,
-    None,
 }
 
 /// How much of each own agent's journal a bundle carries.
@@ -154,36 +152,50 @@ impl Gather {
         match scope {
             DumpScope::Unspecified => Gather {
                 core: true,
-                slices: Slices::All,
+                agents: true,
+                sessions: true,
+                slices: true,
                 journals: Journals::Tail,
                 parts: true,
                 logs: true,
             },
             DumpScope::Core => Gather {
                 core: true,
-                slices: Slices::None,
+                agents: true,
+                sessions: false,
+                slices: false,
                 journals: Journals::FromCursor,
                 parts: false,
                 logs: true,
             },
             DumpScope::Agent => Gather {
                 core: false,
-                slices: Slices::All,
+                agents: true,
+                sessions: false,
+                slices: true,
                 journals: Journals::Tail,
                 parts: true,
                 logs: false,
             },
             DumpScope::Transcript => Gather {
                 core: false,
-                slices: Slices::All,
+                agents: true,
+                sessions: false,
+                slices: true,
                 journals: Journals::None,
                 parts: false,
                 logs: false,
             },
+            // A person's report carries our own logs and nothing of any
+            // agent's: no store, journal or session, each of which holds
+            // conversation text, and those of agents the person never
+            // looked at.
             DumpScope::Report => Gather {
-                core: true,
-                slices: Slices::Sessions,
-                journals: Journals::FromCursor,
+                core: false,
+                agents: false,
+                sessions: false,
+                slices: false,
+                journals: Journals::None,
                 parts: false,
                 logs: true,
             },
@@ -344,23 +356,18 @@ impl ProfileRuntime {
             None
         };
         let cursors = core.as_ref().map(|core| &core.cursors);
-        let sessions = client_sessions(&request.sessions, &rows, &partial, &mut errors)?;
-        for row in &rows {
+        let sessions = if gather.sessions {
+            client_sessions(&request.sessions, &rows, &partial, &mut errors)?
+        } else {
+            Vec::new()
+        };
+        let covered = if gather.agents { rows.as_slice() } else { &[] };
+        for row in covered {
             // An agent the checkpoint's store does not hold was made since:
             // all of its journal came after.
             let cursor = cursors.map(|cursors| cursors.get(&row.agent.agent).copied().unwrap_or(0));
-            let slice = match gather.slices {
-                Slices::All => true,
-                Slices::Sessions => sessions.iter().any(|session| {
-                    session["agent_id"]
-                        == Uuid::from_slice(&row.agent.agent)
-                            .unwrap_or_default()
-                            .to_string()
-                }),
-                Slices::None => false,
-            };
             let (entry, mut failed) = self
-                .dump_agent(row, dump_id.as_bytes(), &partial, gather, slice, cursor)
+                .dump_agent(row, dump_id.as_bytes(), &partial, gather, cursor)
                 .await?;
             agents.push(entry);
             errors.append(&mut failed);
@@ -371,12 +378,8 @@ impl ProfileRuntime {
                 (SUPERVISOR_LOG, &self.supervisor_log),
             ] {
                 let Some(path) = path else { continue };
-                match dump_log(path, &partial.join(name)) {
-                    Ok(Some(skipped)) => errors.push(format!(
-                        "{name}: the first {skipped} bytes of the log were left out"
-                    )),
-                    Ok(None) => {}
-                    Err(error) => errors.push(format!("{name}: {error}")),
+                if let Err(error) = dump_log(path, &partial.join(name)) {
+                    errors.push(format!("{name}: {error}"));
                 }
             }
         }
@@ -487,7 +490,6 @@ impl ProfileRuntime {
         dump_id: &[u8],
         bundle: &Path,
         gather: Gather,
-        slice: bool,
         cursor: Option<u64>,
     ) -> Result<(serde_json::Value, Vec<String>), DumpError> {
         let id = Uuid::from_slice(&row.agent.agent).unwrap_or_default();
@@ -505,7 +507,7 @@ impl ProfileRuntime {
             redacted(kind, RedactTarget::Agent(to_wire(row).encode_to_vec())),
         )?;
         let mut rows = None;
-        if slice {
+        if gather.slices {
             let key = row.agent.clone();
             let cut = self
                 .read_rows(move |store| store.cut(&key, DUMP_ROWS))
@@ -609,15 +611,16 @@ impl ProfileRuntime {
     }
 }
 
-/// The tail of the log at `path` and its `.1`, redacted, written to `to`.
-/// Returns how many bytes of the log were left out, when it was cut.
-fn dump_log(path: &Path, to: &Path) -> io::Result<Option<u64>> {
-    let Some((tail, skipped)) = log_file::tail(path, DUMP_LOG_BYTES)? else {
-        return Ok(None);
+/// The log at `path` and its `.1` for the minute before now, redacted,
+/// written to `to`. The window is cut by the wall clock the log is stamped
+/// with, whatever clock the core runs on.
+fn dump_log(path: &Path, to: &Path) -> io::Result<()> {
+    let since = log_file::unix_ms_now() - log_file::DUMP_WINDOW_MS;
+    let Some(window) = log_file::window(path, since, DUMP_LOG_BYTES)? else {
+        return Ok(());
     };
-    let text = interpret::redact_text(&String::from_utf8_lossy(&tail));
-    std::fs::write(to, text)?;
-    Ok((skipped > 0).then_some(skipped))
+    let text = interpret::redact_text(&String::from_utf8_lossy(&window));
+    std::fs::write(to, text)
 }
 
 /// One target through the kind's redactor, as the bytes it came back as.

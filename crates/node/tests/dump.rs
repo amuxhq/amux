@@ -72,16 +72,33 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     launch
         .provider_env
         .insert("DEPLOY_SECRET".to_owned(), ENV_SECRET.to_owned());
+    // Stamped as the processes' formatter stamps lines: one from long
+    // before the dump, which its window leaves out, one below the default
+    // level, and the minute before it.
+    let stamped = |ago_ms: i64| {
+        let at = chrono::DateTime::from_timestamp_millis(log_file::unix_ms_now() - ago_ms).unwrap();
+        at.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
+    };
     let log = install.path("daemon.log");
     std::fs::write(
         &log,
-        format!("INFO started\nWARN a relay call failed: Authorization: Bearer {KEY}\n"),
+        format!(
+            "{}  INFO an hour ago\n{}  INFO started\n{} DEBUG wordy\n{}  WARN a relay call failed: \
+             Authorization: Bearer {KEY}\n",
+            stamped(3_600_000),
+            stamped(1_000),
+            stamped(1_000),
+            stamped(1_000),
+        ),
     )
     .unwrap();
     let supervisor_log = install.path("supervisor.log");
     std::fs::write(
         &supervisor_log,
-        format!("INFO restarting the daemon with GITHUB_TOKEN={TOKEN}\n"),
+        format!(
+            "{}  INFO restarting the daemon with GITHUB_TOKEN={TOKEN}\n",
+            stamped(1_000)
+        ),
     )
     .unwrap();
     let options = node::StartOptions {
@@ -235,10 +252,17 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     has(MANIFEST.to_owned());
     has(DAEMON_LOG.to_owned());
     has(node::SUPERVISOR_LOG.to_owned());
-    // The live agent's process sends the tails of its own log and its
-    // provider's.
+    // The live agent's process sends its own log and never its provider's.
     has(format!("agents/{live}/part/agent.log"));
-    has(format!("agents/{live}/part/provider.log"));
+    assert!(
+        !names.contains(&format!("agents/{live}/part/provider.log").as_str()),
+        "{names:?}"
+    );
+    // Our logs reach back a minute, at the default level.
+    let daemon_log = std::fs::read_to_string(bundle.join(DAEMON_LOG)).unwrap();
+    assert!(daemon_log.contains("INFO started"), "{daemon_log}");
+    assert!(!daemon_log.contains("an hour ago"), "{daemon_log}");
+    assert!(!daemon_log.contains("wordy"), "{daemon_log}");
     for id in [live, stopped] {
         has(format!("agents/{id}/row.pb"));
         has(format!("agents/{id}/store.pb"));
@@ -488,10 +512,79 @@ async fn a_dump_of_named_agents_covers_only_them_and_an_unknown_one_is_an_error(
     daemon.shutdown().await.unwrap();
 }
 
+/// Our logs carry no conversation: a phrase in a prompt, the model's reply
+/// and a later input reaches neither what the daemon logs, at its default
+/// level, nor the agent's own log.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_conversation_reaches_no_log_amux_writes() {
+    const MARKER: &str = "PLANTEDmarkerphrase0004";
+    let log = support::captured_log();
+    let install = Install::new();
+    let launch = install.launch(
+        "quiet",
+        vec![
+            text(&format!("the answer is {MARKER}")),
+            provider_fakes::script::Step::TurnEnd,
+        ],
+    );
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &install);
+    let prompt = format!("please say {MARKER}");
+    let agent = id_of(
+        &runtime
+            .spawn(create(&install.work, "talker", Some(&prompt)), None)
+            .await
+            .unwrap(),
+    );
+    until("the first turn to end", || async {
+        let phase = runtime.agent(agent).await.unwrap().phase;
+        (phase == Phase::Idle as i32)
+            .then_some(())
+            .ok_or_else(|| format!("phase {phase}"))
+    })
+    .await
+    .unwrap();
+    runtime
+        .send_input(&wire::SendInputRequest {
+            agent_id: agent.as_bytes().to_vec(),
+            input: Some(sdk_prompt(b"later", &format!("and {MARKER} again"))),
+        })
+        .await
+        .unwrap();
+    let key = store::AgentKey::new(
+        runtime.host().as_bytes().to_vec(),
+        agent.as_bytes().to_vec(),
+    );
+    until("the later input's reflection", || async {
+        let key = key.clone();
+        runtime
+            .read_store(move |store| store.item_by_input(&key, b"later").unwrap())
+            .await
+            .unwrap()
+            .map(|_| ())
+            .ok_or("no row carries it")
+    })
+    .await
+    .unwrap();
+    let agent_log = std::fs::read(install.agent_dir(agent).join(node::AGENT_LOG)).unwrap();
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+
+    let daemon_log = log.lock().unwrap().clone();
+    assert!(!daemon_log.is_empty(), "the daemon logged something");
+    for (name, bytes) in [("the daemon's log", &daemon_log), ("agent.log", &agent_log)] {
+        assert!(
+            !contains(bytes, MARKER),
+            "{name} holds the conversation: {}",
+            String::from_utf8_lossy(bytes)
+        );
+    }
+}
+
 /// Each scope carries what replays the stage its trigger concerns: the
 /// core's part and the journals it reads for the core, one chat's rows for
-/// a transcript, and for a person's report every row but slices only of
-/// the chats the client had open.
+/// a transcript, and for a person's report none of any agent's.
 #[tokio::test(flavor = "multi_thread")]
 async fn each_scope_carries_what_its_stage_replays() {
     let install = Install::new();
@@ -551,16 +644,31 @@ async fn each_scope_carries_what_its_stage_replays() {
     );
     assert!(!has(&transcript, "core/"), "{transcript:?}");
 
-    let (_, report) = dump(wire::DumpScope::Report, Vec::new()).await;
-    assert!(has(&report, "core/checkpoint"), "{report:?}");
+    // A person's report carries no agent's records, even for a chat the
+    // client had open and handed in: only the manifest and our own logs.
+    let open_chat = wire::dump::ClientSessionHistory {
+        agent_id: one.id.as_bytes().to_vec(),
+        ..wire::dump::ClientSessionHistory::default()
+    };
+    let request = DumpRequest {
+        scope: wire::DumpScope::Report.into(),
+        sessions: vec![open_chat.encode_to_vec()],
+        ..DumpRequest::default()
+    };
+    let bundle = runtime.dump(request).await.unwrap();
+    let report: Vec<String> = tree(&bundle).into_iter().map(|(name, _)| name).collect();
     assert!(
-        has(&report, &format!("agents/{}/row.pb", two.id)),
+        report
+            .iter()
+            .all(|file| [MANIFEST, DAEMON_LOG, node::SUPERVISOR_LOG].contains(&file.as_str())),
         "{report:?}"
     );
-    assert!(
-        !report.iter().any(|file| file.ends_with("store.pb")),
-        "no chat was open, so no slice: {report:?}"
-    );
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
+    assert_eq!(manifest["scope"], "report");
+    assert_eq!(manifest["agents"], serde_json::json!([]));
+    assert_eq!(manifest["client"]["sessions"], serde_json::json!([]));
+    assert!(manifest["core"].is_null(), "{manifest}");
 
     kill_all(&runtime).await;
     drop(runtime);

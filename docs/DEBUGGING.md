@@ -105,7 +105,7 @@ Each dump carries what its trigger replays, and its manifest names that scope:
 | `core` | a daemon core check that broke, or a step over budget | `core/`, own agents' journals from the checkpoint's cursor, and the daemon log |
 | `agent` | an agent core check that broke, or a step over budget | that agent's process part, its journal (at least two segments), row and slice |
 | `transcript` | a chat whose transcript failed its check | that chat's session, and its agent's row and slice |
-| `report` | a person's report, from the terminal or the phone | every agent's row, a slice for each agent with a chat open, the client's sessions, `core/` with own journals from its cursor, and the daemon log |
+| `report` | a person's report, from the terminal or the phone | the daemon and supervisor logs, and no agent's row, slice, journal or session: those hold conversation text |
 
 Some dumps nobody asks for. When the daemon's core breaks one of its cheap invariants, or a step runs over its
 budget, the daemon writes a bundle whose `reason` starts `the daemon core: ` and whose manifest says `automatic`.
@@ -148,7 +148,8 @@ reports/dump-<unix ms>-<id>/
   manifest.json                 dump id, time, reason, scope, the check's id for a check's dump,
                                 profile, host, generation, daemon version, one entry per agent,
                                 and errors
-  daemon.log                    the last 1 MiB of the daemon's log and its .1, redacted
+  daemon.log                    the daemon's log and its .1 for the minute before the dump, at INFO
+                                and above, redacted
   supervisor.log                the same of the supervisor's, when amux runs under one
   agents/<agent id>/
     row.pb                      the inventory row (a wire.Agent)
@@ -159,8 +160,8 @@ reports/dump-<unix ms>-<id>/
     part/facts/<segment>        the agent process's facts ring, redacted line by line
     part/facts/<segment>.checkpoint
     part/spec.<n>               the spec of each incarnation
-    part/agent.log              the tail of the agent's and the provider's logs, each across its .1,
-    part/provider.log           redacted
+    part/agent.log              the agent's own log across its .1 for the minute before, at INFO and
+                                above, redacted; the provider's log never goes
     part/dump-errors            anything the agent process could not read
   core/checkpoint               the daemon core's newest checkpoint
   core/inputs                   every input the core stepped since, and how far each ingest read
@@ -332,7 +333,7 @@ The bundle, in the runtime's `reports/report-<unix ms>-<id>/`, holds:
 | --- | --- |
 | `report.json` | Build and git revision, time, note, marks in points with the frame's size and scale, and every part declared present or absent with a reason |
 | `frame.png` | The frozen screen, without the status bar |
-| `dump/…` | The profile's `report` dump, as above, with the app runtime's client parts |
+| `dump/…` | The profile's `report` dump, as above, with the fleet's structure from the app runtime |
 
 ## Sending reports
 

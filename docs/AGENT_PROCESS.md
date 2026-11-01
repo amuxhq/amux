@@ -87,7 +87,8 @@ itself: in its own process group, with stdin and stdout closed and stderr
 appended to `agent.log`, so neither the daemon's terminal nor its death
 reaches the agent. The agent holds `agent.log` and `private/provider.log`
 to 1 MiB each, checking every 30 seconds and moving a log past its cap to
-`<name>.1`; a dump carries the tail of both.
+`<name>.1`; a dump carries the minute of `agent.log` before it, at INFO and above, and never
+`provider.log`, which is the provider's own output.
 
 `agent::run` then:
 

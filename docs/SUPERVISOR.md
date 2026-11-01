@@ -259,8 +259,10 @@ update` sees as `amux.rejected` beside its own binary changing to name that
 version, it fails saying the build did not start, which version the
 supervisor put back, where the log is, and that `amux update --retry` tries
 it again. Without a supervisor it prints that updates on this install are
-deploys and does nothing. A build that trusts no release key answers every
-check with `this build trusts no release key, so it installs nothing`.
+deploys and does nothing. A build that trusts no release key for its feed
+answers every check with `this build trusts no release key for its feed, so
+it installs nothing`: a release build made by hand, and a debug build on any
+feed but a test's own on the loopback.
 
 ## Rollback
 

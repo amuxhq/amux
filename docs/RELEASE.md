@@ -736,7 +736,7 @@ them:
 | Build | Keys it trusts |
 | --- | --- |
 | `AMUX_RELEASE_PUBLIC_KEYS` set | Those keys |
-| Debug build without it | `TEST_RELEASE_KEY`, whose private half lives in the test suites |
+| Debug build without it | `TEST_RELEASE_KEY`, whose private half lives in the test suites, and only for a feed on the loopback; from amux.sh or any other host, none |
 | Release build without it | None. It restarts its daemon but installs nothing, and `amux update` says so. |
 
 The Release workflow sets it to the release key and its backup, so every

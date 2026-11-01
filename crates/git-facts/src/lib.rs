@@ -374,20 +374,29 @@ fn sum(files: &[FileChange]) -> ChangeTotals {
         })
 }
 
+/// The scratch index's name inside its folder.
+const INDEX: &str = "index";
+
 /// A temporary copy of the person's index with intent-to-add entries for
 /// the untracked files, so a comparison with the working tree counts them
 /// as added and the person's own index is never touched. Removed on drop.
+///
+/// The copy lives in a folder only this user can enter: the index names
+/// every file in the repository, the system temporary folder is shared on
+/// Linux, and git rewrites the copy through a lock file of its own whose
+/// permissions follow the umask, not the copy's.
 struct Scratch<'a> {
     cwd: &'a Path,
-    index: tempfile::NamedTempFile,
+    dir: tempfile::TempDir,
 }
 
 impl<'a> Scratch<'a> {
     async fn new(cwd: &'a Path) -> Result<Self, GitError> {
-        let index = tempfile::Builder::new()
-            .prefix("amux-git-facts-")
-            .tempfile()
-            .map_err(GitError::Scratch)?;
+        let mut builder = tempfile::Builder::new();
+        builder.prefix("amux-git-facts-");
+        #[cfg(unix)]
+        builder.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700));
+        let dir = builder.tempdir().map_err(GitError::Scratch)?;
         let own = text(
             &checked(
                 cwd,
@@ -396,15 +405,19 @@ impl<'a> Scratch<'a> {
             )
             .await?,
         );
-        match std::fs::copy(&own, index.path()) {
-            Ok(_) => {}
-            // A repository nothing was ever added to has no index yet.
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                std::fs::remove_file(index.path()).map_err(GitError::Scratch)?;
+        // The bytes, not the file: a copy would carry the index's own
+        // permissions with it.
+        match std::fs::File::open(&own) {
+            Ok(mut from) => {
+                let mut to = std::fs::File::create_new(dir.path().join(INDEX))
+                    .map_err(GitError::Scratch)?;
+                std::io::copy(&mut from, &mut to).map_err(GitError::Scratch)?;
             }
+            // A repository nothing was ever added to has no index yet.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(GitError::Scratch(error)),
         }
-        let scratch = Self { cwd, index };
+        let scratch = Self { cwd, dir };
         let untracked = scratch
             .checked(&["ls-files", "--others", "--exclude-standard", "-z"])
             .await?;
@@ -414,7 +427,7 @@ impl<'a> Scratch<'a> {
         if !untracked.is_empty() {
             checked_with_input(
                 cwd,
-                Some(scratch.index.path()),
+                Some(&scratch.index()),
                 &[
                     "--literal-pathspecs",
                     "add",
@@ -429,8 +442,12 @@ impl<'a> Scratch<'a> {
         Ok(scratch)
     }
 
+    fn index(&self) -> std::path::PathBuf {
+        self.dir.path().join(INDEX)
+    }
+
     async fn checked(&self, args: &[&str]) -> Result<Vec<u8>, GitError> {
-        checked(self.cwd, Some(self.index.path()), args).await
+        checked(self.cwd, Some(&self.index()), args).await
     }
 
     /// Each file that differs between `against` and the working tree.
@@ -585,4 +602,39 @@ async fn run(
 
 fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).trim().to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    /// The scratch index holds the repository's file names, so it is made
+    /// where only this user can read it, whatever the index's own mode.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_scratch_index_is_private_to_this_user() {
+        use std::os::unix::fs::PermissionsExt;
+        let repo = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .args(args)
+                .current_dir(repo.path())
+                .output()
+                .unwrap()
+                .status;
+            assert!(status.success(), "git {args:?}");
+        };
+        git(&["init", "-q"]);
+        std::fs::write(repo.path().join("secret-plans.txt"), "x\n").unwrap();
+        git(&["add", "secret-plans.txt"]);
+        let own = repo.path().join(".git/index");
+        std::fs::set_permissions(&own, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::write(repo.path().join("untracked.txt"), "y\n").unwrap();
+
+        let scratch = super::Scratch::new(repo.path()).await.unwrap();
+        let mode = |path: &std::path::Path| {
+            std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+        };
+        assert_eq!(mode(scratch.dir.path()), 0o700);
+        assert!(scratch.index().is_file());
+        assert_ne!(std::fs::read(&own).unwrap(), std::fs::read(scratch.index()).unwrap());
+    }
 }

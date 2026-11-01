@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn recorded_sessions_are_live_at_their_first_screen() {
         let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../claude-specs/fixtures/live/pty");
+            .join("../interpret/fixtures/claude_pty/live");
         let mut checked = 0;
         for entry in std::fs::read_dir(&fixtures).expect("pty fixtures") {
             let path = entry.expect("fixture").path().join("io.jsonl");

@@ -115,8 +115,6 @@ TEST_SUPPORT = {
     "patience",
     "testnet",
     "qualification",
-    "claude-specs",
-    "codex-specs",
     "provider-fakes",
     "fake-amux",
     "shot",
@@ -138,10 +136,11 @@ SUPPORT_ALLOWED_LOCAL = {
         "provider-fakes", "release", "shot", "store", "tui", "wire",
     },
     # Qualification owns environment-dependent provider and performance
-    # checks while reusing the network harness rather than shipping it.
-    "qualification": {"node", "provider-fakes", "testnet", "wire"},
-    "claude-specs": {"pty-host", "redaction", "replay-support"},
-    "codex-specs": {"redaction", "replay-support"},
+    # checks while reusing the network harness rather than shipping it. Its
+    # two probes stand in for the providers in the live lane: terminal
+    # Claude's runs on a pseudo-terminal of its own, and both sanitize what
+    # they record before it joins a corpus.
+    "qualification": {"node", "provider-fakes", "pty-host", "redaction", "testnet", "wire"},
     # The fake providers speak each protocol from its recordings, and check
     # what they compose against the protocol crates' types. They never use
     # the host crates, so a host bug cannot hide behind shared host code.
@@ -156,9 +155,8 @@ SUPPORT_ALLOWED_LOCAL = {
     # Replays a dump bundle's stages with the models' properties judged at
     # every step: facts through the interpreter (the journal for
     # comparison), the daemon core from its checkpoint over its store,
-    # records through the session model, state through the views; and
-    # provider recordings for the capture tools. A debugging tool: nothing
-    # that ships links it.
+    # records through the session model, state through the views. A
+    # debugging tool: nothing links it.
     "replay-support": {
         "core-ring", "daemon-core", "interpret", "journal", "models", "redaction", "store",
         "ui-state", "ui-view", "wire",

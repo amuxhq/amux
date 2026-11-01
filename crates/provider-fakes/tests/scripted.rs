@@ -50,9 +50,9 @@ struct Scenario {
 
 fn root(kind: Kind) -> PathBuf {
     let corpus = match kind {
-        Kind::ClaudeSdk => "claude-specs/fixtures/live/sdk",
-        Kind::ClaudePty => "claude-specs/fixtures/live/pty",
-        Kind::Codex => "codex-specs/fixtures/live",
+        Kind::ClaudeSdk => "interpret/fixtures/claude_sdk/live",
+        Kind::ClaudePty => "interpret/fixtures/claude_pty/live",
+        Kind::Codex => "interpret/fixtures/codex/live",
     };
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")

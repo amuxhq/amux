@@ -4,7 +4,7 @@
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../codex-specs/fixtures/live/subagent/io.jsonl",
+    "path": "live/subagent/io.jsonl",
     "format": "codex_io"
   }
 }

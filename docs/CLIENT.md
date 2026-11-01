@@ -35,7 +35,7 @@ Three rules shape the library:
 | [`ui-state`](../crates/ui-state/src/lib.rs) | `SessionState` (one open chat) and `FleetState` (the inventory), updated by messages. No I/O, no clock, no handles. |
 | [`ui-view`](../crates/ui-view/src/lib.rs) | Pure functions from the state to content values: chat rows, the ask card, the composer and overview, the settings view, fleet rows and cards, the review document. |
 | [`ui-runtime`](../crates/ui-runtime/src/lib.rs) | The drivers, `Session` and `Fleet`: subscribe, reconnect, page, send, fetch blobs, and keep a bounded trace for dumps. The fleet holds the one session each live agent has. The only place a chat does I/O. |
-| [`replay-support`](../crates/replay-support/src/lib.rs) | Replaying a dump bundle through the interpreter, the session state and the views, and the recording manifests and capture plumbing the two probes share. |
+| [`replay-support`](../crates/replay-support/src/lib.rs) | Replaying a dump bundle through the interpreter, the session state and the views. |
 | [`redaction`](../crates/redaction/src/lib.rs) | The structural redactor for free text and JSON in reports, captures and specs. |
 
 The terminal client ([`tui`](../crates/tui/src/lib.rs)) and the phone's runtime
@@ -622,18 +622,16 @@ session's window, with a row handed over for every changed key the host held and
 
 ## Replay and redaction
 
-[`replay-support`](../crates/replay-support/src/lib.rs) serves two purposes.
-
-- **Dump bundles.** [`bundle.rs`](../crates/replay-support/src/bundle.rs) opens a bundle the daemon wrote and
-  replays its stages: `AgentDump::replay_facts` runs the agent's facts ring through its interpreter
-  from the checkpoint at the oldest segment (compare the result with the journal the bundle also carries);
-  `AgentDump::session` feeds the store slice through `SessionState` exactly as a Subscribe opening delivers it
-  (snapshot, held rows, CaughtUp); `AgentDump::rows` renders that state through `chat_rows`. An interpreter bug
-  reproduces from the facts, a client bug from the slice. `Bundle::replay_all` (in `replay.rs`, and the
-  `dump-replay` binary) runs all four stages, the daemon core's among them, with the properties judged at every
-  step; see [Debugging](DEBUGGING.md#replaying-a-dump).
-- **Recorded provider traffic.** Recording manifests, sanitizing and the capture plumbing (`live`) let both
-  probes stand in for their provider in the live lane and join its captures to the corpus.
+[`replay-support`](../crates/replay-support/src/lib.rs) replays dump bundles.
+[`bundle.rs`](../crates/replay-support/src/bundle.rs) opens a bundle the daemon wrote and replays its stages:
+`AgentDump::replay_facts` runs the agent's facts ring through its interpreter from the checkpoint at the oldest
+segment (compare the result with the journal the bundle also carries); `AgentDump::session` feeds the store slice
+through `SessionState` exactly as a Subscribe opening delivers it (snapshot, held rows, CaughtUp);
+`AgentDump::rows` renders that state through `chat_rows`. An interpreter bug reproduces from the facts, a client
+bug from the slice. `Bundle::replay_all` (in `replay.rs`, and the `dump-replay` binary) runs all four stages, the
+daemon core's among them, with the properties judged at every step; see [Debugging](DEBUGGING.md#replaying-a-dump).
+Recorded provider traffic (the recording manifests, sanitizing and the capture plumbing both probes share) is the
+live lane's, in `qualification::recording`.
 
 [`redaction`](../crates/redaction/src/lib.rs) is the structural redactor for everything that is not a per-kind
 body: `redact_value` for JSON and `redact_text` for free text replace secrets, machine paths, emails and the local

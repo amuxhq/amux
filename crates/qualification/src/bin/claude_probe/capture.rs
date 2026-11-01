@@ -7,7 +7,7 @@
 //! recorded as `pty` lines. The host's hook commands are wrapped so each
 //! payload is recorded as a `hook` line on its way to the host, and the
 //! transcript a hook names is tailed into `transcript` lines: the recording
-//! has what a claude-specs terminal recording has. Every line carries the
+//! has what a terminal recording in the corpus has. Every line carries the
 //! proxy's `process` id, so one capture directory can hold many runs.
 
 use std::io::{self, Read as _, Write as _};

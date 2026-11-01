@@ -4,7 +4,7 @@
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/live/sdk/cleared/io.jsonl",
+    "path": "live/cleared/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

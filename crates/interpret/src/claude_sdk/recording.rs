@@ -1,5 +1,5 @@
-//! Recorded headless Claude sessions (`claude_sdk_io`: a claude-specs
-//! provider recording, `io.jsonl`) as interpreter events.
+//! Recorded headless Claude sessions (`claude_sdk_io`: a live provider
+//! recording, `io.jsonl`) as interpreter events.
 //!
 //! Stdout lines are facts. What the recording's host wrote to stdin becomes
 //! the inputs that would make this interpreter write the same thing: user

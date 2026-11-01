@@ -12,7 +12,7 @@ use redaction::Redaction;
 use semver::Version;
 use serde_json::{Value, json};
 
-use crate::{IoDirection, IoEvent, Manifest, Recorded, load_recording, load_script, sanitize};
+use super::{IoDirection, IoEvent, Manifest, Recorded, load_recording, load_script, sanitize};
 
 /// When `proxy_env` is set the probe is standing in for `command` on the
 /// PATH: it takes itself off the PATH the real provider inherits, so a
@@ -20,7 +20,7 @@ use crate::{IoDirection, IoEvent, Manifest, Recorded, load_recording, load_scrip
 /// Called first thing in `main`, before any other thread runs.
 pub fn stand_in_for(command: &str, proxy_env: &str) -> io::Result<()> {
     if std::env::var_os(proxy_env).is_some() {
-        let path = crate::path_past_probe(
+        let path = super::path_past_probe(
             &std::env::current_exe()?,
             std::ffi::OsStr::new(command),
             &std::env::var_os("PATH").unwrap_or_default(),

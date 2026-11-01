@@ -696,20 +696,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "claude-specs"
-version = "0.1.0"
-dependencies = [
- "libc",
- "pty-host",
- "redaction",
- "replay-support",
- "semver",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
 name = "client"
 version = "0.2.0"
 dependencies = [
@@ -763,19 +749,6 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "codex-specs"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "redaction",
- "replay-support",
- "semver",
- "serde_json",
- "tokio",
- "tokio-tungstenite",
 ]
 
 [[package]]
@@ -2800,6 +2773,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "chrono",
+ "futures-util",
  "hyper-util",
  "interpret",
  "libc",
@@ -2809,17 +2783,22 @@ dependencies = [
  "pty-host",
  "quinn",
  "rcgen",
+ "redaction",
  "rustls",
+ "semver",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "testnet",
  "thiserror 2.0.20",
  "tokio",
  "tokio-rustls",
+ "tokio-tungstenite",
  "tonic",
  "tower",
  "ui-state",
+ "unicode-width 0.2.2",
  "uuid",
  "vt100",
  "wire",
@@ -3155,10 +3134,7 @@ dependencies = [
  "prost",
  "provider-fakes",
  "redaction",
- "semver",
- "serde",
  "serde_json",
- "sha2",
  "store",
  "tempfile",
  "testnet",
@@ -3166,7 +3142,6 @@ dependencies = [
  "tokio",
  "ui-state",
  "ui-view",
- "unicode-width 0.2.2",
  "uuid",
  "wire",
  "zstd",

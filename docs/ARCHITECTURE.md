@@ -660,10 +660,9 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`patience`](../crates/patience/src/lib.rs) | Waiting in tests: one deadline, one way to fail, and what was last seen. Every test crate waits through it; the harness builds its stream and cursor waits on it. |
 | [`testnet`](../crates/testnet/src/lib.rs) | The many-daemons harness: topologies of production runtimes in one process, faults and observations. See [testnet](TESTNET.md). |
 | [`provider-fakes`](../crates/provider-fakes/src/lib.rs) | Scripted stand-ins for the Claude and Codex binaries, playing authored scripts or recordings. |
-| [`qualification`](../crates/qualification/src/lib.rs) | Environment-dependent checks: live providers and performance baselines on enrolled machines. |
-| [`claude-specs`](../crates/claude-specs/src/lib.rs), [`codex-specs`](../crates/codex-specs/src/bin/codex_probe/main.rs) | Recorded protocol corpora for each provider, and the probes that record them. |
+| [`qualification`](../crates/qualification/src/lib.rs) | Environment-dependent checks: live providers and performance baselines on enrolled machines, and the probes (`claude-probe`, `codex-probe`) that record the live lane's provider traffic and join it to the corpora beside the interpreter goldens. |
 | [`models`](../crates/models/README.md) | The protocol's promises as properties, explored by a checker over the real code. |
-| [`replay-support`](../crates/replay-support/src/lib.rs) | Replays a debug bundle through its four stages with the protocol's properties judged at every step, and manages provider recordings for the capture tools. |
+| [`replay-support`](../crates/replay-support/src/lib.rs) | Replays a debug bundle through its four stages with the protocol's properties judged at every step. |
 | [`fake-amux`](../crates/fake-amux/src/main.rs) | A stand-in `amux` binary running the real supervisor over a scripted daemon. |
 | [`shot`](../crates/shot/README.md) | Deterministic PNG renderings of the terminal client's named states, and its storybook of whole screens. |
 | [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen, the protocol compatibility check, releases. |
@@ -682,9 +681,8 @@ workspace crates, and ignores dev-dependencies. Its rules:
    an edge, or dropping one, is a deliberate edit to the policy. A crate
    missing from the policy fails too.
 2. **Production never depends on test support.** `patience`, `testnet`,
-   `qualification`, `claude-specs`, `codex-specs`, `provider-fakes`,
-   `fake-amux`, `shot`, `models` and `replay-support` may be
-   depended on only by each other.
+   `qualification`, `provider-fakes`, `fake-amux`, `shot`, `models` and
+   `replay-support` may be depended on only by each other.
 3. **The UI never reaches the daemon or a provider.** `model`, `client`,
    `ui-state`, `ui-view`, `ui-runtime`, `tui` and `app-runtime` may not
    reach `node`, `store`, `interpret`, `agent`, `claude`, `claude-protocol`,
@@ -725,7 +723,8 @@ The allowed sets encode the layering above:
 | `app-ffi` | `app-embedded`, `app-runtime`, `client`, `model`, `node`, `ui-view` | the C ABI over both |
 | `amux` | `agent`, `agent-dir`, `analytics`, `claude`, `client`, `log-file`, `node`, `settings`, `tui`, `wire` | the one binary |
 | `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `socket-core`, `store`, `supervisor-core`, `ui-state`, `wire` | the properties, explored over the real cores, store and session state |
-| `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `redaction`, `store`, `ui-state`, `ui-view`, `wire` | replays the four stages, judging the models' properties; a debugging tool nothing that ships links |
+| `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `redaction`, `store`, `ui-state`, `ui-view`, `wire` | replays the four stages, judging the models' properties; a debugging tool nothing links |
+| `qualification` | `node`, `provider-fakes`, `pty-host`, `redaction`, `testnet`, `wire` | the live lane and the performance workloads over the harness; its probes host terminal Claude on a pseudo-terminal of their own and sanitize what they record |
 | `xtask` | `release` | signs releases |
 | `ios-tools` | `app-runtime`, `model`, `ui-view`, `wire` | generates the Swift mirrors |
 

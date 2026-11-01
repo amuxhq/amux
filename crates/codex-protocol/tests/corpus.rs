@@ -21,7 +21,7 @@ fn root() -> PathBuf {
 /// Every io.jsonl recorded from Codex: the live lane's captures.
 fn recordings() -> Vec<PathBuf> {
     let mut found = Vec::new();
-    for dir in ["crates/codex-specs/fixtures/live"] {
+    for dir in ["crates/interpret/fixtures/codex/live"] {
         let mut entries: Vec<_> = std::fs::read_dir(root().join(dir))
             .unwrap_or_else(|error| panic!("{dir}: {error}"))
             .map(|entry| entry.expect("entry").path())

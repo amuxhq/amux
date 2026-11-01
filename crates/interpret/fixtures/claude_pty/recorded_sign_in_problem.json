@@ -14,7 +14,7 @@
     }
   ],
   "recording": {
-    "path": "../../../claude-specs/fixtures/live/pty/sign_in_problem/io.jsonl",
+    "path": "live/sign_in_problem/io.jsonl",
     "format": "claude_pty_io"
   }
 }

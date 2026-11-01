@@ -4,8 +4,8 @@
 
 use std::path::Path;
 
+use qualification::recording::live::{self, Captured, owner_home};
 use redaction::Redaction;
-use replay_support::live::{self, Captured, owner_home};
 use semver::Version;
 
 /// The name the tool server gives itself.
@@ -34,9 +34,10 @@ pub(super) async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Join one live qualification capture to the live corpus as
-/// `fixtures/live/<name>`. The capture is a folder the live lane wrote: the
-/// scenario's app-server processes' `io.jsonl` and `spawn.jsonl`, each line
-/// naming the process it came from and the client it went to or came from.
+/// `crates/interpret/fixtures/codex/live/<name>`. The capture is a folder
+/// the live lane wrote: the scenario's app-server processes' `io.jsonl` and
+/// `spawn.jsonl`, each line naming the process it came from and the client
+/// it went to or came from.
 /// Only amux's lines join: what Codex's own app, attached beside it, caused
 /// reaches amux as what Codex tells it, and the app's own requests are not
 /// amux's to answer. It is sanitized as a recording is, the process names
@@ -64,7 +65,8 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
             })
         })
         .collect();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/live");
+    // The corpus lives beside the interpreter goldens that replay it.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../interpret/fixtures/codex/live");
     let destination = live::join(&root, name, "codex", events, spawns, &rules, |events| {
         let (version, model, session_ids) = captured_facts(events)?;
         Ok(Captured {
@@ -81,13 +83,13 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
 /// The Codex version, model and threads a capture shows, from the server's
 /// answers about its threads.
 fn captured_facts(
-    events: &[replay_support::IoEvent],
+    events: &[qualification::recording::IoEvent],
 ) -> Result<(Version, String, Vec<String>), Box<dyn std::error::Error>> {
     let mut version = None;
     let mut model = None;
     let mut threads = Vec::<String>::new();
     for event in events {
-        if event.direction != replay_support::IoDirection::Read {
+        if event.direction != qualification::recording::IoDirection::Read {
             continue;
         }
         let Ok(frame) = serde_json::from_str::<serde_json::Value>(&event.line) else {

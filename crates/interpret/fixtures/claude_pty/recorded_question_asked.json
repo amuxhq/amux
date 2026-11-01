@@ -14,7 +14,7 @@
     }
   ],
   "recording": {
-    "path": "../../../claude-specs/fixtures/live/pty/question_asked/io.jsonl",
+    "path": "live/question_asked/io.jsonl",
     "format": "claude_pty_io"
   }
 }

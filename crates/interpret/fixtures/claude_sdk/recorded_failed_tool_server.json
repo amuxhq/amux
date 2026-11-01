@@ -4,7 +4,7 @@
     "created_at_ms": 0
   },
   "recording": {
-    "path": "../../../claude-specs/fixtures/live/sdk/failed_tool_server/io.jsonl",
+    "path": "live/failed_tool_server/io.jsonl",
     "format": "claude_sdk_io"
   }
 }

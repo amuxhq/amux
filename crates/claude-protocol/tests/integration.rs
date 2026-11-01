@@ -11,7 +11,7 @@ use serde_json::Value;
 
 /// The Claude corpus both corpus suites read.
 fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../claude-specs/fixtures")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../interpret/fixtures")
 }
 
 /// Where two JSON values differ, as paths with what each side holds.

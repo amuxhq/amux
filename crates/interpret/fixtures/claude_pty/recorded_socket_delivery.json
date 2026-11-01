@@ -34,7 +34,7 @@
     }
   ],
   "recording": {
-    "path": "../../../claude-specs/fixtures/claude-pty/socket_delivery.rows.jsonl",
+    "path": "transcripts/socket_delivery.rows.jsonl",
     "format": "transcript_rows"
   }
 }

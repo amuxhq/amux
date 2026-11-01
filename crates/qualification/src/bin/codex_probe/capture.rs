@@ -3,8 +3,8 @@
 //! `codex`, with `CODEX_CAPTURE_PROXY` set).
 //!
 //! `codex app-server` runs as asked, and every message between it and its
-//! clients is recorded as a codex-specs recording records it: `stdin` for
-//! what a client sent, `stdout` for what the server sent. Over stdio the
+//! clients is recorded as the corpus records it: `stdin` for what a client
+//! sent, `stdout` for what the server sent. Over stdio the
 //! proxy carries the lines itself. On a socket the server listens on one of
 //! the proxy's own and the proxy listens where the host asked, carrying each
 //! client's WebSocket messages across; the first client is recorded as

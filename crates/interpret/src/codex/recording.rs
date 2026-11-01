@@ -1,4 +1,4 @@
-//! Recorded app-server sessions (`codex_io`: a codex-specs recording,
+//! Recorded app-server sessions (`codex_io`: a live recording,
 //! `io.jsonl`) as interpreter events.
 //!
 //! What the server wrote is facts. What the recording's host wrote becomes

@@ -3,8 +3,8 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use qualification::recording::live::{self, Captured, owner_home};
 use redaction::Redaction;
-use replay_support::live::{self, Captured, owner_home};
 use semver::Version;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
@@ -40,9 +40,9 @@ fn usage() -> &'static str {
 /// A `get_settings` answer repeats the recording machine's whole settings
 /// (its environment, plugins, notes about its owner); only what Claude
 /// applied, the model and effort, is kept.
-fn scrub_settings(events: &mut [replay_support::IoEvent]) -> io::Result<()> {
+fn scrub_settings(events: &mut [qualification::recording::IoEvent]) -> io::Result<()> {
     for event in events {
-        if event.direction != replay_support::IoDirection::Read
+        if event.direction != qualification::recording::IoDirection::Read
             || !event.line.contains("\"applied\"")
         {
             continue;
@@ -62,7 +62,9 @@ fn scrub_settings(events: &mut [replay_support::IoEvent]) -> io::Result<()> {
     Ok(())
 }
 
-fn stabilize_pty_transcript_paths(events: &mut [replay_support::IoEvent]) -> io::Result<()> {
+fn stabilize_pty_transcript_paths(
+    events: &mut [qualification::recording::IoEvent],
+) -> io::Result<()> {
     let mut labels = BTreeMap::<String, String>::new();
     for event in events {
         let path_key = match event.transport_id.as_deref() {
@@ -86,9 +88,10 @@ fn stabilize_pty_transcript_paths(events: &mut [replay_support::IoEvent]) -> io:
 }
 
 /// Join one live qualification capture to the live corpus as
-/// `fixtures/live/{sdk,pty}/<name>`. The capture is a folder the live lane
-/// wrote: one provider process's `io.jsonl` and `spawn.jsonl`, and the
-/// `fixture.json` that names its format. It is sanitized as a recording is,
+/// `crates/interpret/fixtures/{claude_sdk,claude_pty}/live/<name>`. The
+/// capture is a folder the live lane wrote: one provider process's
+/// `io.jsonl` and `spawn.jsonl`, and the `fixture.json` that names its
+/// format. It is sanitized as a recording is,
 /// and its manifest records the Claude version and model the capture shows.
 fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let fixture: serde_json::Value =
@@ -133,7 +136,7 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
                 .is_none_or(|id| !beside.iter().any(|beside| beside == id))
         });
         stabilize_pty_transcript_paths(&mut events)?;
-        claude_specs::scrub::transcript(&mut events)?;
+        crate::scrub::transcript(&mut events)?;
     } else {
         scrub_settings(&mut events)?;
     }
@@ -158,7 +161,11 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
             })
         })
         .collect();
-    let root = claude_specs::live_fixtures_root().join(if pty { "pty" } else { "sdk" });
+    // The corpus lives beside the interpreter goldens that replay it.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../interpret/fixtures")
+        .join(if pty { "claude_pty" } else { "claude_sdk" })
+        .join("live");
     let destination = live::join(&root, name, "claude", events, spawns, &rules, |events| {
         let facts = captured_facts(events, pty, launched)?;
         let mut extra = serde_json::Map::new();
@@ -187,7 +194,7 @@ struct CapturedFacts {
 /// The Claude version, model and sessions a capture shows: the SDK's init
 /// message, or a terminal session's transcript rows.
 fn captured_facts(
-    events: &[replay_support::IoEvent],
+    events: &[qualification::recording::IoEvent],
     pty: bool,
     launched: Option<String>,
 ) -> Result<CapturedFacts, Box<dyn std::error::Error>> {
@@ -195,7 +202,7 @@ fn captured_facts(
     let mut models = BTreeMap::<String, usize>::new();
     let mut session_ids = Vec::<String>::new();
     for event in events {
-        if event.direction != replay_support::IoDirection::Read {
+        if event.direction != qualification::recording::IoDirection::Read {
             continue;
         }
         let Ok(frame) = serde_json::from_str::<serde_json::Value>(&event.line) else {

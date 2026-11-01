@@ -4,7 +4,7 @@
 
 use std::io;
 
-use replay_support::IoEvent;
+use qualification::recording::IoEvent;
 
 /// Transcript attachments that carry the recording machine owner's own
 /// context rather than anything the scenario did: their instruction files,
@@ -89,3 +89,6 @@ fn scrub_attachment(event: &mut IoEvent, frame: &mut serde_json::Value) -> io::R
     event.line = serde_json::to_string(frame).map_err(io::Error::other)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

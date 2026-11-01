@@ -7,10 +7,11 @@ app-server socket, so no spec can replay or regenerate them, and a later
 live run replaces them.
 
 This is the whole Codex corpus: every recording of Codex that the
-interpreter's `codex` goldens, the view goldens, the fakes' conformance and
-scripted runs and the strict decode tests read. Each folder is named after
-the live scenario that recorded it, except `turn_round_trip` (the `respond`
-scenario) and `approval_allow` (`decide`).
+interpreter's `codex` goldens (the `recorded_*.json` fixtures beside this
+folder), the view goldens, the fakes' conformance and scripted runs and the
+strict decode tests read. Each folder is named after the live scenario that
+recorded it, except `turn_round_trip` (the `respond` scenario) and
+`approval_allow` (`decide`).
 
 | capture | what it holds |
 |---|---|
@@ -57,5 +58,6 @@ link.
 Each folder is sanitized like a recording: `io.jsonl`, `spawn.jsonl` and a
 `manifest.json` naming the Codex version and model the capture shows. Only
 amux's own client's lines join: what Codex's app caused in `attach` reaches
-amux as what Codex tells it. `codex-probe join <capture dir> <name>` writes
-one from the live run's `target/live/recordings/codex/<scenario>/`.
+amux as what Codex tells it. `codex-probe join <capture dir> <name>` (a
+binary of `crates/qualification`) writes one from the live run's
+`target/live/recordings/codex/<scenario>/`.

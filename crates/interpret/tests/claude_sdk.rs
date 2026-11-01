@@ -1,5 +1,5 @@
 //! The Claude SDK interpreter against the recorded headless sessions in
-//! claude-specs and authored facts for what no recording shows.
+//! fixtures/claude_sdk/live and authored facts for what no recording shows.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

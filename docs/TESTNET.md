@@ -169,8 +169,8 @@ launch settings; a process host, which runs whatever `claude` and `codex` its PA
 wrappers first on its PATH, and so are its agents, their provider children and a daemon started after an update.
 A wrapper finds which agent started it, then runs either the fake that agent was given or the real provider:
 
-- the real provider runs behind its recording probe (`claude-probe`, `codex-probe` from `claude-specs` and
-  `codex-specs`, which must be built beside the other binaries), so every message amux wrote to it and read from
+- the real provider runs behind its recording probe (`claude-probe`, `codex-probe` from `qualification`, which
+  must be built beside the other binaries), so every message amux wrote to it and read from
   it is kept, by host and agent, under the recordings folder (`NetOptions::recordings`, `serve --recordings`;
   under the net's root when none is given);
 - Claude runs with `--setting-sources project --strict-mcp-config`. Codex runs with a scratch Codex home

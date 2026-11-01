@@ -1,7 +1,7 @@
 //! A terminal recording keeps the rows the scenario produced and none of the
 //! recording machine owner's own context.
 
-use replay_support::{IoDirection, IoEvent};
+use qualification::recording::{IoDirection, IoEvent};
 use serde_json::{Value, json};
 
 fn transcript(row: Value) -> IoEvent {
@@ -44,7 +44,7 @@ fn the_api_request_rows_are_left_out() {
         })),
         transcript(json!({"type": "assistant", "uuid": "a1", "requestRef": "r1"})),
     ];
-    claude_specs::scrub::transcript(&mut events).unwrap();
+    super::transcript(&mut events).unwrap();
     let kinds: Vec<_> = rows(&events)
         .iter()
         .map(|row| row["type"].as_str().unwrap().to_owned())
@@ -72,7 +72,7 @@ fn what_the_owner_installed_is_scrubbed() {
             }))
         })
         .collect();
-    claude_specs::scrub::transcript(&mut events).unwrap();
+    super::transcript(&mut events).unwrap();
     for (row, original) in rows(&events).iter().zip(&installed) {
         assert_eq!(
             row["attachment"],
@@ -104,7 +104,7 @@ fn the_environment_and_attribution_are_scrubbed() {
             }))
         })
         .collect();
-    claude_specs::scrub::transcript(&mut events).unwrap();
+    super::transcript(&mut events).unwrap();
     for (row, original) in rows(&events).iter().zip(&owners) {
         assert_eq!(
             row["attachment"],

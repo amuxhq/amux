@@ -12,7 +12,7 @@ use crate::fixtures;
 const TAILER_MARKER: &str = "amux.transcript_ready";
 
 /// The terminal corpus: amux's live captures.
-const ROOTS: [&str; 1] = ["live/pty"];
+const ROOTS: [&str; 1] = ["claude_pty/live"];
 
 enum Line {
     Row(String),

@@ -845,10 +845,19 @@ The interpreters are tested against real provider traffic, recorded in the
 live lane with amux's own agent driving the provider, and sanitized so it
 replays offline:
 
-| Crate | Recordings |
+Each kind's corpus sits beside the goldens that replay it, under
+`crates/interpret/fixtures/<kind>/`:
+
+| Folder | Recordings |
 |---|---|
-| [`claude-specs`](../crates/claude-specs/src/lib.rs) | The live run's captures in `fixtures/live/{sdk,pty}/<scenario>/`: the whole headless Claude and terminal Claude corpora ([their README](../crates/claude-specs/fixtures/live/README.md)), and two transcript captures in `fixtures/claude-pty/` that cannot be regenerated in the tree ([their README](../crates/claude-specs/fixtures/claude-pty/README.md)) |
-| [`codex-specs`](../crates/codex-specs/src/bin/codex_probe/main.rs) | `fixtures/live/<scenario>/`, the live run's captures, driven by amux's own interpreter: the whole Codex corpus ([their README](../crates/codex-specs/fixtures/live/README.md)) |
+| [`claude_sdk/live/<scenario>/`](../crates/interpret/fixtures/claude_sdk/live/README.md) | The whole headless Claude corpus |
+| [`claude_pty/live/<scenario>/`](../crates/interpret/fixtures/claude_pty/live/README.md) | The whole terminal Claude corpus |
+| [`claude_pty/transcripts/`](../crates/interpret/fixtures/claude_pty/transcripts/README.md) | Two transcript captures that cannot be regenerated in the tree |
+| [`codex/live/<scenario>/`](../crates/interpret/fixtures/codex/live/README.md) | The whole Codex corpus |
+
+The probes that record and join them, `claude-probe` and `codex-probe`, are
+binaries of [`qualification`](../crates/qualification/src/lib.rs), with
+the recording manifests and sanitizer they share in its `recording` module.
 
 A recording is a directory holding `manifest.json` (the provider, version and
 model it was recorded with, its content hashes, the fields it observed, and
@@ -871,13 +880,13 @@ part of an ordinary test run.
 # Terminal or headless Claude: run its live scenarios, then join each
 # passing capture.
 just live claude_pty <scenario>...
-cargo run -p claude-specs --bin claude-probe -- join target/live/recordings/claude_pty/<scenario> <name>
+cargo run -p qualification --bin claude-probe -- join target/live/recordings/claude_pty/<scenario> <name>
 just live claude_sdk <scenario>...
-cargo run -p claude-specs --bin claude-probe -- join target/live/recordings/claude_sdk/<scenario> <name>
+cargo run -p qualification --bin claude-probe -- join target/live/recordings/claude_sdk/<scenario> <name>
 
 # Codex, the same way.
 just live codex <scenario>...
-cargo run -p codex-specs --bin codex-probe -- join target/live/recordings/codex/<scenario> <name>
+cargo run -p qualification --bin codex-probe -- join target/live/recordings/codex/<scenario> <name>
 ```
 
 The probe stands in for the provider on the lane's `PATH` and runs the real

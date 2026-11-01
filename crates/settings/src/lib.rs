@@ -103,69 +103,10 @@ pub fn validate_host_name(host_name: &str) -> Result<HostName, ConfigError> {
     HostName::parse(host_name).map_err(|error| ConfigError::Invalid(format!("host_name: {error}")))
 }
 
-/// Per-user runtime directory for the amux socket on Unix.
-///
-/// - macOS: `$TMPDIR/amux/`, or the system's per-user temporary folder when
-///   `TMPDIR` is unset (e.g. `/var/folders/xx/.../T/`)
-/// - Linux: `$XDG_RUNTIME_DIR/amux/` (per-user tmpfs, e.g. `/run/user/1000/`)
-///
-/// Nothing else: a shared folder such as `/tmp` lets another user create the
-/// directory first and answer as the daemon. Without one, the socket must
-/// be configured; see [`InstallationConfig::front_door`].
+/// The front door's file in the installation's root, where it sits beside
+/// the profiles' own sockets.
 #[cfg(unix)]
-pub(crate) fn default_socket_dir() -> Option<PathBuf> {
-    let var = |name| std::env::var_os(name).filter(|value| !value.is_empty());
-    let base = if cfg!(target_os = "macos") {
-        var("TMPDIR")
-            .map(PathBuf::from)
-            .or_else(darwin_user_temp_dir)
-    } else {
-        var("XDG_RUNTIME_DIR").map(PathBuf::from)
-    };
-    base.map(|base| base.join("amux"))
-}
-
-/// The per-user temporary folder macOS keeps for this user whether or not
-/// `TMPDIR` is set; it is what `TMPDIR` normally names.
-#[cfg(target_os = "macos")]
-fn darwin_user_temp_dir() -> Option<PathBuf> {
-    use std::os::unix::ffi::OsStringExt;
-    let mut buffer = vec![0u8; libc::PATH_MAX as usize];
-    // SAFETY: the buffer is writable for its whole length, which is the
-    // length passed; confstr writes at most that many bytes, NUL included.
-    let needed = unsafe {
-        libc::confstr(
-            libc::_CS_DARWIN_USER_TEMP_DIR,
-            buffer.as_mut_ptr().cast(),
-            buffer.len(),
-        )
-    };
-    if needed == 0 || needed > buffer.len() {
-        return None;
-    }
-    buffer.truncate(needed - 1);
-    Some(PathBuf::from(std::ffi::OsString::from_vec(buffer)))
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn darwin_user_temp_dir() -> Option<PathBuf> {
-    None
-}
-
-/// The default socket, or an empty path when this machine has no private
-/// folder for one.
-#[cfg(unix)]
-fn default_socket_path() -> PathBuf {
-    default_socket_dir()
-        .map(|dir| dir.join("amux.sock"))
-        .unwrap_or_default()
-}
-
-#[cfg(windows)]
-fn default_socket_path() -> PathBuf {
-    let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-    PathBuf::from(format!(r"\\.\pipe\amux-{user}"))
-}
+const FRONT_DOOR_SOCKET: &str = "amux.sock";
 
 /// A control-key leader parsed from the `ctrl+<char>` format (e.g. `ctrl+a`).
 #[derive(Debug, Clone)]
@@ -459,7 +400,10 @@ pub struct InstallationConfig {
     pub new_agent: NewAgentSettings,
     /// Where the installation keeps its data: profiles, stores, reports.
     pub root: PathBuf,
-    pub front_door_socket: PathBuf,
+    /// Where the front door listens. Absent means `amux.sock` in the root
+    /// (on Windows, a named pipe); read it through
+    /// [`InstallationConfig::front_door`].
+    pub front_door_socket: Option<PathBuf>,
     /// Where channel manifests live: the supervisor reads
     /// `<releases_url>/<channel>.json`.
     pub releases_url: String,
@@ -489,7 +433,7 @@ impl Default for InstallationConfig {
             keybinds: Keybinds::default(),
             new_agent: NewAgentSettings::default(),
             root: default_data_dir(),
-            front_door_socket: default_socket_path(),
+            front_door_socket: None,
             releases_url: format!("{DEFAULT_CLOUD_URL}/releases"),
             discovery: DiscoverySettings::default(),
             agent: AgentSettings::default(),
@@ -539,8 +483,8 @@ impl InstallationConfig {
             .map_err(|error| ConfigError::Invalid(format!("{}: {error}", path.display())))?;
         let base = path.parent().unwrap();
         config.root = absolute_path(&config.root, base)?;
-        if !config.front_door_socket.as_os_str().is_empty() {
-            config.front_door_socket = socket_path(&config.front_door_socket, base)?;
+        if let Some(socket) = &config.front_door_socket {
+            config.front_door_socket = Some(socket_path(socket, base)?);
         }
         config.path = Some(path);
         config.validate()?;
@@ -557,19 +501,25 @@ impl InstallationConfig {
         }
     }
 
-    /// The front door's socket. Refused when neither the config nor the
-    /// environment gives one: with no per-user runtime folder there is no
-    /// default that another user on the machine could not claim first.
-    pub fn front_door(&self) -> Result<&Path, ConfigError> {
-        if self.front_door_socket.as_os_str().is_empty() {
-            return Err(ConfigError::Invalid(
-                "amux has no private folder for its socket: set XDG_RUNTIME_DIR, or set \
-                 front_door_socket in amux's config file (`amux config set front_door_socket \
-                 <path>`) to a path in a folder only you can write"
-                    .into(),
-            ));
-        }
-        Ok(&self.front_door_socket)
+    /// The front door's socket: the configured one, else `amux.sock` in the
+    /// root. A root too deep for a socket's address still works, since the
+    /// front door is bound and dialled like every other local socket.
+    #[cfg(unix)]
+    pub fn front_door(&self) -> PathBuf {
+        self.front_door_socket
+            .clone()
+            .unwrap_or_else(|| self.root.join(FRONT_DOOR_SOCKET))
+    }
+
+    /// The front door's pipe: the configured one, else one named for the
+    /// user, since a pipe lives in the machine's one pipe namespace rather
+    /// than in the root.
+    #[cfg(windows)]
+    pub fn front_door(&self) -> PathBuf {
+        self.front_door_socket.clone().unwrap_or_else(|| {
+            let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
+            PathBuf::from(format!(r"\\.\pipe\amux-{user}"))
+        })
     }
 
     /// The name this host goes by: the configured one, else
@@ -601,8 +551,8 @@ impl InstallationConfig {
 }
 
 /// Every key the installation's file takes, dotted as `amux config` names
-/// them, in alphabetical order: the leaves of a default config, and the two
-/// that are absent until set.
+/// them, in alphabetical order: the leaves of a default config, and the
+/// three that are absent until set.
 pub fn installation_keys() -> Vec<String> {
     fn leaves(prefix: &str, table: &toml::Table, out: &mut Vec<String>) {
         for (key, value) in table {
@@ -619,7 +569,11 @@ pub fn installation_keys() -> Vec<String> {
     }
     let default = toml::Table::try_from(InstallationConfig::default())
         .expect("the default config serialises");
-    let mut keys = vec!["host_name".to_owned(), "updates".to_owned()];
+    let mut keys = vec![
+        "front_door_socket".to_owned(),
+        "host_name".to_owned(),
+        "updates".to_owned(),
+    ];
     leaves("", &default, &mut keys);
     keys.sort();
     keys
@@ -671,33 +625,40 @@ mod tests {
         InstallationConfig::from_toml(text)
     }
 
-    /// Without a configured socket or a private runtime folder, amux refuses
-    /// to pick one, and says which two settings would give it one.
+    /// The front door sits in the root the file names, resolved beside the
+    /// file like the root itself, unless the file names the socket too.
+    #[cfg(unix)]
     #[test]
-    fn an_unset_socket_is_refused_naming_both_ways_to_set_it() {
+    fn the_front_door_is_in_the_configured_root_unless_set() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        std::fs::write(&path, "front_door_socket = \"\"\n").unwrap();
+        std::fs::write(&path, "root = \"install\"\n").unwrap();
         let config = InstallationConfig::from_file(&path).unwrap();
-        assert_eq!(config.front_door_socket, PathBuf::new());
-        let refusal = config.front_door().unwrap_err().to_string();
-        assert!(
-            refusal.contains("XDG_RUNTIME_DIR") && refusal.contains("front_door_socket"),
-            "{refusal}"
+        let root = std::fs::canonicalize(dir.path()).unwrap().join("install");
+        assert_eq!(config.root, root);
+        assert_eq!(config.front_door(), root.join("amux.sock"));
+        std::fs::write(
+            &path,
+            "root = \"install\"\nfront_door_socket = \"run/door.sock\"\n",
+        )
+        .unwrap();
+        let config = InstallationConfig::from_file(&path).unwrap();
+        assert_eq!(
+            config.front_door(),
+            std::fs::canonicalize(dir.path())
+                .unwrap()
+                .join("run/door.sock")
         );
-        std::fs::write(&path, "front_door_socket = \"run/amux.sock\"\n").unwrap();
-        let config = InstallationConfig::from_file(&path).unwrap();
-        assert!(config.front_door().unwrap().ends_with("run/amux.sock"));
     }
 
-    /// macOS gives every user a private temporary folder, which is where the
-    /// socket goes when `TMPDIR` is unset.
-    #[cfg(target_os = "macos")]
+    /// With no file at all, the front door is in the default root.
+    #[cfg(unix)]
     #[test]
-    fn macos_finds_the_users_temporary_folder_without_tmpdir() {
-        let dir = darwin_user_temp_dir().unwrap();
-        assert!(dir.is_dir(), "{}", dir.display());
-        assert!(dir.starts_with("/var/folders") || dir.starts_with("/private/var/folders"));
+    fn the_default_front_door_is_in_the_data_dir() {
+        assert_eq!(
+            InstallationConfig::default().front_door(),
+            default_data_dir().join("amux.sock")
+        );
     }
 
     #[test]

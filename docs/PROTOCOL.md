@@ -711,17 +711,15 @@ never does, because its directory and journal are its whole interface (see
 | A link stream whose handshake presented a pinned key | `AgentService` and `SessionService`, with that host as the caller | paired daemons, including a phone's embedded daemon |
 | A link stream admitted by an open pairing window | `PairingService` | a host pairing with this one |
 
-The front door's path is the installation setting `front_door_socket`. By
-default it is `amux.sock` in a per-user runtime directory: `$TMPDIR/amux/` on
-macOS (the system's per-user temporary folder when `TMPDIR` is unset) and
-`$XDG_RUNTIME_DIR/amux/` on Linux. A Linux machine without `XDG_RUNTIME_DIR`
-(a container, `su`, cron) has no folder another user cannot create first, so
-there amux refuses to start until `front_door_socket` is set, and says so; the
-CLI and the daemon read the same setting. On Windows it is the named pipe
+The front door is `amux.sock` in the installation's root (`<root>/amux.sock`),
+beside the profiles' sockets, unless the installation setting
+`front_door_socket` names another path; the CLI and the daemon read the same
+config, so they derive the same path. On Windows it is the named pipe
 `\\.\pipe\amux-<user>`. Local sockets are Unix domain sockets on Unix and
 named pipes on Windows (`crates/agent-dir/src/local_socket.rs`); a path too long for a Unix socket
-address is reached through a short symbolic link in the per-user runtime
-directory, so both ends derive the same address from the same path.
+address, as under a deep root, is reached through a short symbolic link in
+a folder only this user can write, so both ends derive the same address from
+the same path.
 
 An agent's `ctl.sock` and `pty.sock` are not part of this surface. The daemon
 dials `ctl.sock` to hand the agent its inputs, and a terminal on the same

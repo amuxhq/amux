@@ -49,9 +49,6 @@ public enum ActOutcome: Codable, Hashable, Sendable {
     case rejected(Refusal)
     /// The connection dropped before the agent answered.
     case notConfirmed
-    /// It never left: the agent's host cannot be reached. The chat holds
-    /// it, shown pending with Cancel, and it goes once the host is back.
-    case held
     /// The call did not reach the agent.
     case failed(String)
 
@@ -67,7 +64,6 @@ public enum ActOutcome: Codable, Hashable, Sendable {
             switch _name {
             case "Done": self = .done
             case "NotConfirmed": self = .notConfirmed
-            case "Held": self = .held
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no ActOutcome is named \(_name)")
@@ -100,9 +96,6 @@ public enum ActOutcome: Codable, Hashable, Sendable {
         case .notConfirmed:
             var _container = encoder.singleValueContainer()
             try _container.encode("NotConfirmed")
-        case .held:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Held")
         case .failed(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .failed)
@@ -1364,9 +1357,6 @@ public enum CardState: Codable, Hashable, Sendable {
     case rejected(Refusal)
     /// The connection dropped before a reply: resend or discard.
     case notConfirmed
-    /// The answer never left: the agent's host cannot be reached, and it
-    /// goes once it is back. Cancel takes it back.
-    case held
     /// The agent exited with the ask open.
     case dismissed
 
@@ -1382,7 +1372,6 @@ public enum CardState: Codable, Hashable, Sendable {
             case "Open": self = .open
             case "Sending": self = .sending
             case "NotConfirmed": self = .notConfirmed
-            case "Held": self = .held
             case "Dismissed": self = .dismissed
             default:
                 throw DecodingError.dataCorruptedError(
@@ -1417,9 +1406,6 @@ public enum CardState: Codable, Hashable, Sendable {
         case .notConfirmed:
             var _container = encoder.singleValueContainer()
             try _container.encode("NotConfirmed")
-        case .held:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Held")
         case .dismissed:
             var _container = encoder.singleValueContainer()
             try _container.encode("Dismissed")
@@ -2325,13 +2311,12 @@ public enum Composer: Codable, Hashable, Sendable {
     /// The agent has exited: the draft goes through ResumeAgent as the new
     /// incarnation's first prompt, one tap.
     case resume
-    /// The chat is not current. Drafting continues, and a send is held
-    /// by the client, shown pending with Cancel, until the chat is current
-    /// again and it goes.
-    case holds(Waiting)
+    /// The chat is not current. Drafting continues; a send is refused at
+    /// once and the draft stays in the composer, which says why.
+    case waiting(Waiting)
 
     private enum Tag: String, CodingKey {
-        case holds = "Holds"
+        case waiting = "Waiting"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2355,8 +2340,8 @@ public enum Composer: Codable, Hashable, Sendable {
                     debugDescription: "a Composer names exactly one variant"))
         }
         switch _tag {
-        case .holds:
-            self = .holds(try _container.decode(Waiting.self, forKey: .holds))
+        case .waiting:
+            self = .waiting(try _container.decode(Waiting.self, forKey: .waiting))
         }
     }
 
@@ -2368,9 +2353,9 @@ public enum Composer: Codable, Hashable, Sendable {
         case .resume:
             var _container = encoder.singleValueContainer()
             try _container.encode("Resume")
-        case .holds(let _value):
+        case .waiting(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .holds)
+            try _container.encode(_value, forKey: .waiting)
         }
     }
 }
@@ -3909,12 +3894,6 @@ public enum InputState: Codable, Hashable, Sendable {
     /// and the person decides. Nothing is resent on its own: it may have
     /// reached the agent, and agents do not drop a person's input sent twice.
     case uncertain
-    /// A prompt or an answer that certainly never left: sent while the chat
-    /// was not current, or refused because the agent's host could not be
-    /// reached. The client holds it, shown pending with Cancel, and sends
-    /// it again under the same id once the host is reachable. It lives only
-    /// as long as this client: closing the client drops it.
-    case held
 
     private enum Tag: String, CodingKey {
         case rejected = "Rejected"
@@ -3929,7 +3908,6 @@ public enum InputState: Codable, Hashable, Sendable {
             case "Queued": self = .queued
             case "Settled": self = .settled
             case "Uncertain": self = .uncertain
-            case "Held": self = .held
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no InputState is named \(_name)")
@@ -3966,9 +3944,6 @@ public enum InputState: Codable, Hashable, Sendable {
         case .uncertain:
             var _container = encoder.singleValueContainer()
             try _container.encode("Uncertain")
-        case .held:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Held")
         }
     }
 }
@@ -6621,9 +6596,6 @@ public enum Underway: Codable, Hashable, Sendable {
     /// neither queued nor in the transcript: only the person can say
     /// whether to send it again or discard it.
     case mayNotHaveArrived
-    /// It never left: the agent's host cannot be reached. It goes once the
-    /// host is back; Cancel takes it back into the draft.
-    case held
 
     private enum Tag: String, CodingKey {
         case sending = "Sending"
@@ -6639,7 +6611,6 @@ public enum Underway: Codable, Hashable, Sendable {
         {
             switch _name {
             case "MayNotHaveArrived": self = .mayNotHaveArrived
-            case "Held": self = .held
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no Underway is named \(_name)")
@@ -6671,9 +6642,6 @@ public enum Underway: Codable, Hashable, Sendable {
         case .mayNotHaveArrived:
             var _container = encoder.singleValueContainer()
             try _container.encode("MayNotHaveArrived")
-        case .held:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Held")
         }
     }
 }

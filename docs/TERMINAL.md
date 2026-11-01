@@ -175,24 +175,23 @@ Enter on a row opens its chat. From top to bottom:
   resumes`), a usage limit reached (`5-hour limit reached · resets 23:24`, in the warning ink; sending stays
   open). One blank line below it, the key line: `shift+tab permission · ctrl+a more` at rest
   (`shift+tab mode` for an agent with modes), `enter queue · ctrl+x
-  interrupt` added while the agent works, `enter resume` once it has exited, `enter holds it · it sends when the
-  host is back` while the host is away (or once caught up, once amux is back, once this machine signs in). What everyone knows (Enter sends, pasting attaches) is not said.
+  interrupt` added while the agent works, `enter resume` once it has exited, `enter can't send until the host is
+  back` while the host is away (or until caught up, until amux is back, until this machine signs in). What everyone knows (Enter sends, pasting attaches) is not said.
 
 The composer takes a draft at any time. Enter sends while the chat is current and the agent is live; while the
 agent works it queues the prompt behind the running turn; when the agent has exited it resumes it with the draft as
 its first prompt (an empty Enter just resumes). A prompt to an idle agent shows at once in the feed, and one to a
-busy agent at once in the queue. A prompt sent while the chat is not current (the host away, the chat catching up,
-this machine's daemon reconnecting) is held: it shows pending in the queue, `sends when desk is back`, with
-`[Cancel]`, and goes by itself under its own id once the host can be reached. A draft left in a
+busy agent at once in the queue. While the chat is not current (the host away, the chat catching up, this
+machine's daemon reconnecting) Enter sends nothing: the words stay in the composer, whose top edge says why, and
+nothing sends them later; once the chat is current, Enter sends them. A refused Enter, and a refusal that puts
+words back, saves the draft to this machine's daemon at once, so a terminal killed before it closes the chat
+still finds them. A draft left in a
 chat for home or another chat waits in its composer until the chat opens again; one cleared before leaving stays
 cleared, as the chat reopens only once this machine's daemon has its copy, and quitting waits for it too. A prompt the agent
 refuses, an exited agent's included, comes back into the composer with the reason, worded from the typed reason
-the view hands over, the same as the phone's; one whose connection dropped before a reply waits in the
-queue as `may not have arrived`, to resend or discard, and nothing is resent by itself. A prompt held while its
-host is away is in the draft this machine's daemon keeps from the moment it is held, ahead of what is typed, so a
-terminal killed before the host is back finds its words in the composer when the chat opens again; a chat reopened
-while it is still held opens with only what was typed, and the words leave the draft once the prompt goes or is
-cancelled back into the composer.
+the view hands over, the same as the phone's; one this machine's daemon could not hand to the host reads `not
+sent: its host is away`. One whose connection dropped before a reply waits in the
+queue as `may not have arrived`, to resend or discard, and nothing is resent by itself.
 
 Scrolled back, a control floats at the bottom centre of the feed, `↓ Jump to Bottom  ctrl+end`, or `↓ 3 new` when
 rows arrived meanwhile; clicking it or Ctrl+End returns to the newest. Because the client reads the mouse, the

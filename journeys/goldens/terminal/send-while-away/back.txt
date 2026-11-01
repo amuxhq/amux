@@ -1,0 +1,34 @@
+
+  backups │ /tmp/journey/aj-xxxxxxxx/net/cabin/work · cabin                                  [Diff] │ [Home]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                              Nothing here yet.
+
+
+
+
+
+
+
+
+
+
+
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Check last night's backup.                                                                           │
+  ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
+
+  ctrl+j newline   shift+tab permission   ctrl+a more

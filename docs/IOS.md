@@ -115,11 +115,7 @@ thread. A chat is a `ChatModel` over an open `Chat`:
   changes, to the profile's own daemon on the phone, as the terminal hands
   its drafts to its machine's (docs/CLIENT.md), so a draft outlives its
   chat's session and the app being closed, and the chat opens with it again.
-  A prompt held for a host that cannot be reached is kept in the draft too,
-  ahead of what is typed, from the moment it is held until it is released
-  and sent, so a phone that closes first finds its words back in the
-  composer; the runtime's fleet keeps it so for every client, whether or
-  not the chat is open (docs/CLIENT.md). Drafts never
+  Drafts never
   leave the device, and removing an account deletes its profile and its
   drafts with it. The daemon forgets a deleted agent's draft, wherever it
   was deleted, and nothing typed into its chat while the page leaves is
@@ -129,15 +125,15 @@ thread. A chat is a `ChatModel` over an open `Chat`:
   before anything is read or uploaded, and one over it is refused in words
   naming the file and the limit. One that fails to store is named with the
   reason in the chat's notice.
-- A send while the chat is not current (catching up, reconnecting, or its
-  host out of reach) is handed to the client library rather than refused:
-  Send stays enabled, the field says when the message goes, and the library
-  holds the prompt, answer or stop and sends it, with the same id, once the
-  host can be reached. A held prompt is drawn pending with "held · sends
-  when desk is back" and a Cancel that returns its words to the draft; a held
-  answer shows on the ask card with Cancel; a held stop shows under the
-  chat's header and on the agent's home row, and the chat's menu offers
-  Cancel Stop.
+- While the chat is not current (catching up, reconnecting, or its host out
+  of reach) Send is off: the message stays in the composer, the empty field
+  says why ("desk is out of reach · your draft is kept"), and nothing sends
+  it later; once the chat is current, Send sends it. A prompt refused
+  because its host could not be reached comes back into the composer with
+  "Not sent: its host is away", as any refused prompt does with its reason.
+  A stop is the exception: one whose host cannot be reached is held, shown
+  under the chat's header and on the agent's home row, and the chat's menu
+  offers Cancel Stop.
 - A draft starting with `/` goes to the library's client commands first:
   what the library runs itself (opening settings, renaming, choosing a
   model) happens on the phone, a word the agent does not take is refused in

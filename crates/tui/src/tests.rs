@@ -771,39 +771,46 @@ fn an_unconfirmed_answer_offers_resend_and_discard() {
     );
 }
 
-/// A held answer says why it is held and when it sends, whole, at 80
-/// columns: the box wraps the sentence rather than cutting it short.
+/// An answer its host could not be reached for never left: the card is
+/// open again to answer, and says it was not sent because the host is
+/// away. Nothing holds it or sends it later.
 #[test]
-fn a_held_answer_says_when_it_sends_whole_at_80_columns() {
+fn an_answer_refused_because_its_host_is_away_opens_the_card_again() {
     let (mut state, at) = fixtures::Named::CodexApproval.state();
     let card = ask_card(&state).unwrap();
     let mut input = ui_view::answer_input(&card, &card.choices[0].answer, "").unwrap();
     input.input_id = b"answer-1".to_vec();
     state.update(Msg::Send(input));
-    state.update(Msg::Sent(b"answer-1".to_vec(), InputOutcome::Held));
-    assert_eq!(ask_card(&state).unwrap().state, CardState::Held);
+    let refused = wire::SendInputResponse {
+        of: Some(wire::send_input_response::Of::Rejected(wire::Rejected {
+            refusal: wire::Refusal::HostUnreachable as i32,
+            detail: None,
+        })),
+    };
+    state.update(Msg::Sent(
+        b"answer-1".to_vec(),
+        InputOutcome::Reply(refused),
+    ));
+    assert_eq!(
+        ask_card(&state).unwrap().state,
+        CardState::Rejected(ui_state::Refusal::of(wire::Refusal::HostUnreachable))
+    );
     let mut view = ChatView::new(b"agent".to_vec(), at, false);
     let (buffer, _) = draw(&mut view, &state, at, 80, 24, theme());
     let screen = text(&buffer);
-    let words: String = screen
-        .lines()
-        .map(|line| line.trim_matches(|c: char| c == ' ' || c == '│'))
-        .collect::<Vec<_>>()
-        .join(" ");
     assert!(
-        !screen.contains('…') && words.contains("It sends when the host is back."),
-        "the held answer's explanation is cut short:\n{screen}"
+        screen.contains("Not sent: its host is away"),
+        "the card does not say why its answer did not go:\n{screen}"
     );
-    assert!(screen.contains("c cancel"), "{screen}");
 }
 
 // --- the composer ----------------------------------------------------------
 
-/// A draft is taken at any time, and Enter always hands it on: while the
-/// chat is not yet current the client library holds it, pending, and sends
-/// it once the chat catches up.
+/// A draft is taken at any time, but Enter sends it only once the chat is
+/// current: before then nothing goes, the words stay in the composer and
+/// its top edge says why. Caught up, the same Enter sends it.
 #[test]
-fn a_draft_is_taken_any_time_and_held_until_the_chat_is_current() {
+fn a_draft_is_taken_any_time_and_sent_only_once_the_chat_is_current() {
     let mut state = SessionState::new(
         fixtures::agent(Kind::ClaudeSdk),
         crate::chat::layout::CAP as usize,
@@ -815,6 +822,10 @@ fn a_draft_is_taken_any_time_and_held_until_the_chat_is_current() {
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     assert!(text(&buffer).contains("catching up"), "{}", text(&buffer));
     let effects = view.key(&state, key(KeyCode::Enter), theme());
+    assert_eq!(effects, vec![], "Enter sent while catching up");
+    assert_eq!(view.editor.text(), "hello", "the draft left the composer");
+    state.update(caught_up(0));
+    let effects = view.key(&state, key(KeyCode::Enter), theme());
     assert_eq!(
         effects,
         vec![ChatEffect::Prompt {
@@ -823,29 +834,6 @@ fn a_draft_is_taken_any_time_and_held_until_the_chat_is_current() {
         }]
     );
     assert!(view.editor.is_empty());
-    // The library holds it, pending, while the chat catches up.
-    let held = wire::Input::new(
-        b"held-1".to_vec(),
-        wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
-                text: "hello".into(),
-                attachments: vec![],
-            })),
-        }),
-    );
-    state.update(Msg::Send(held));
-    assert_eq!(
-        state.input_state(b"held-1"),
-        Some(ui_state::InputState::Held)
-    );
-    let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
-    assert!(
-        text(&buffer).contains("sends when"),
-        "the held prompt shows pending: {}",
-        text(&buffer)
-    );
-    let outcome = state.update(caught_up(0));
-    assert_eq!(outcome.resend.len(), 1, "caught up, it goes");
 }
 
 #[test]
@@ -1060,8 +1048,8 @@ fn detached_keeps_the_rows_and_the_draft() {
     assert!(screen.contains("studio away · not current"), "{screen}");
     assert!(screen.contains("studio is away"), "{screen}");
     assert!(screen.contains("reply number 5"), "{screen}");
-    // What Enter does here is decided elsewhere: the prompt is held to send
-    // when the host is back (round2::a_prompt_sent_while_the_host_is_away_…).
+    // What Enter does here is decided elsewhere: nothing is sent and the
+    // words stay (round2::a_prompt_sent_while_the_host_is_away_…).
     assert_eq!(view.editor.text(), "still typing");
 }
 
@@ -1101,7 +1089,7 @@ fn a_host_out_of_reach_while_this_machine_is_signed_out_names_this_machines_sign
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("it sends once this machine signs in"),
+        screen.contains("can't send until this machine signs in"),
         "{screen}"
     );
 
@@ -1253,7 +1241,10 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
         screen.contains("desk no longer trusts this machine"),
         "{screen}"
     );
-    assert!(screen.contains("it sends once you pair again"), "{screen}");
+    assert!(
+        screen.contains("can't send until you pair again"),
+        "{screen}"
+    );
 
     // Home's top line says how to pair again, and does not count it away.
     let mut fleet_view = crate::home::Home::new(crate::home::Place {

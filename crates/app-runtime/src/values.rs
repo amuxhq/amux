@@ -359,9 +359,6 @@ pub enum ActOutcome {
     Rejected(Refusal),
     /// The connection dropped before the agent answered.
     NotConfirmed,
-    /// It never left: the agent's host cannot be reached. The chat holds
-    /// it, shown pending with Cancel, and it goes once the host is back.
-    Held,
     /// The call did not reach the agent.
     Failed(String),
 }

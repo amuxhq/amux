@@ -20,9 +20,6 @@ public enum AskAction: Equatable, Sendable {
     /// The answer was not confirmed: send it again, or forget it.
     case resend
     case discard
-    /// The answer is held while the host cannot be reached: take it back
-    /// and answer again.
-    case cancelHeld
 }
 
 /// Where a card starts, for a capture of one part-way through: a note being
@@ -130,7 +127,7 @@ public struct AskCardView: View {
     private var showsBody: Bool {
         switch card.state {
         case .open, .rejected: true
-        case .sending, .notConfirmed, .dismissed, .held: false
+        case .sending, .notConfirmed, .dismissed: false
         }
     }
 
@@ -140,7 +137,6 @@ public struct AskCardView: View {
         case .sending: "sending"
         case .rejected: "rejected"
         case .notConfirmed: "not-confirmed"
-        case .held: "held"
         case .dismissed: "dismissed"
         }
     }
@@ -201,17 +197,6 @@ public struct AskCardView: View {
                     choiceButton(String(localized: "Discard"), kind: .outline, id: "ask.discard") {
                         act(.discard)
                     }
-                }
-            }
-        case .held:
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Your answer is held: the agent’s host can’t be reached. It sends when the host is back.")
-                    .designFont(.detail, design)
-                    .foregroundStyle(design.inkMuted.color)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .identified("ask.held", label: String(localized: "Your answer is held"))
-                choiceButton(String(localized: "Cancel"), kind: .outline, id: "ask.held.cancel") {
-                    act(.cancelHeld)
                 }
             }
         case .dismissed:

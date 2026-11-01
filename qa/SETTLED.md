@@ -112,11 +112,14 @@ you are testing still behaves otherwise, that difference is a finding.
 
 ## When a host cannot be reached
 
-- Something that certainly never left (a prompt, an ask's answer, a stop) is
-  held as pending, with Cancel ("sends when desk is back"), and sent once
-  when the host is reachable. If the client closes first, a held prompt goes
-  back to the draft (the phone keeps drafts); a held stop or answer is
-  dropped.
+- A prompt or an ask's answer that cannot go now is refused at once and never
+  leaves the composer or the card: the composer's edge says why (the host
+  away, catching up), and nothing sends it later. A refusal from the daemon
+  because the host could not be reached puts the words back in the composer
+  and says the host is away. The kept draft keeps the words as it keeps any.
+- A stop that certainly never left is held as pending, with Cancel ("sends
+  when desk is back"), and sent once when the host is reachable; if the
+  client closes first it is dropped.
 - Something that may have landed says it "may not have arrived" and offers
   Resend or Discard. It is never resent on its own.
 - Rename and delete fail at once, with the reason. They are never held.

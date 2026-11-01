@@ -217,7 +217,7 @@
     },
     {
       "name": "chat.away",
-      "shows": "A chat whose host is away: it says so, and a prompt sent meanwhile waits until the host is back.",
+      "shows": "A chat whose host is away: it says so, and a message typed meanwhile stays in the composer until the host is back.",
       "clients": ["phone", "terminal"]
     },
     {

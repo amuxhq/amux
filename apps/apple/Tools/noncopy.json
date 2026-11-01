@@ -1217,10 +1217,7 @@
       {"literal": "\"ask.reply.back\"", "context": ".identified(\"ask.reply.back\", label: String(localized: \"Back\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.reply.text\"", "context": ".identified(\"ask.reply.text\", value: replyText)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.reply.send\"", "context": "String(localized: \"Send reply\"), kind: .primary, id: \"ask.reply.send\", enabled: !blank", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"repeat\"", "context": "Image(systemName: \"repeat\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
-      {"literal": "\"held\"", "context": "case .held: \"held\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"ask.held\"", "context": ".identified(\"ask.held\", label: String(localized: \"Your answer is held\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"ask.held.cancel\"", "context": "choiceButton(String(localized: \"Cancel\"), kind: .outline, id: \"ask.held.cancel\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"repeat\"", "context": "Image(systemName: \"repeat\")", "reason": "SF Symbol name, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatComposer.swift": [
       {"literal": "\"gearshape.2\"", "context": "Image(systemName: \"gearshape.2\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
@@ -1261,7 +1258,7 @@
       {"literal": "\"circle.inset.filled\"", "context": "case .current: \"circle.inset.filled\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"chevron.right\"", "context": "Image(systemName: \"chevron.right\")", "reason": "SF Symbol name, not interface copy.", "count": 3},
       {"literal": "\"needs-you\"", "context": "value: child.attention == .needsYou ? \"needs-you\" : nil)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"clock\"", "context": "Image(systemName: \"clock\")", "reason": "SF Symbol name, not interface copy.", "count": 2},
+      {"literal": "\"clock\"", "context": "Image(systemName: \"clock\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"arrow.up.circle\"", "context": "icon(\"arrow.up.circle\", String(localized: \"Send now\"), id: \"\\(id).sendNow\") { model.sendNow(row) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\(id).sendNow\"", "context": "icon(\"arrow.up.circle\", String(localized: \"Send now\"), id: \"\\(id).sendNow\") { model.sendNow(row) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\(id).withdraw\"", "context": "icon(\"pencil\", String(localized: \"Withdraw\"), id: \"\\(id).withdraw\") { model.withdraw(row) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1280,7 +1277,6 @@
       {"literal": "\"arrow.clockwise\"", "context": "icon(\"arrow.clockwise\", String(localized: \"Resend\"), id: \"\\(id).resend\") { model.resend(prompt.inputId) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\(id).resend\"", "context": "icon(\"arrow.clockwise\", String(localized: \"Resend\"), id: \"\\(id).resend\") { model.resend(prompt.inputId) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\(id).discard\"", "context": "icon(\"xmark\", String(localized: \"Discard\"), id: \"\\(id).discard\") { model.discard(prompt.inputId) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"\\(id).cancel\"", "context": "icon(\"xmark\", String(localized: \"Cancel\"), id: \"\\(id).cancel\") { model.cancelHeld(prompt.inputId) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\u{00A0}· \"", "context": "joint: \"\\u{00A0}· \")", "reason": "Separator mark joining the composer chip's facts, not words.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift": [

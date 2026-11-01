@@ -15,7 +15,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use tokio::sync::mpsc;
 use ui_runtime::{Fleet, InputError, Session, Window, inputs};
-use ui_state::{AgentKey, Composer, InputWhat, PhaseView};
+use ui_state::{AgentKey, Composer, PhaseView};
 use ui_view::family_header;
 use wire::{Agent, Attachment, DeleteAgentRequest, Diff, RenameAgentRequest};
 
@@ -356,7 +356,7 @@ fn plain(error: InputError) -> String {
         InputError::Rejected(reason) => {
             format!("not sent: {}", crate::chat::refusal_words(&reason))
         }
-        InputError::Uncertain | InputError::Held => error.to_string(),
+        InputError::Uncertain => error.to_string(),
     }
 }
 
@@ -1113,8 +1113,8 @@ impl App {
             // through the chat's own state: its words return to the
             // composer with why it was not sent.
             ChatEffect::Prompt { text, attachments } => {
-                // The composer as the send left it: a prompt held for an
-                // unreachable host is kept in the draft ahead of it.
+                // The composer as the send left it, so the words sent do not
+                // come back as the draft.
                 self.fleet
                     .keep_draft(&chat.agent, composer_draft(&chat.view.editor));
                 self.spawn(async move {
@@ -1200,22 +1200,6 @@ impl App {
                 None
             }),
             ChatEffect::Discard { id } => session.discard(&id),
-            ChatEffect::Cancel { id } => {
-                let words = match session.state().inputs().get(&id).map(|sent| &sent.what) {
-                    Some(InputWhat::Prompt { text, attachments }) => {
-                        Some((text.clone(), attachments.clone()))
-                    }
-                    _ => None,
-                };
-                session.discard(&id);
-                if let Some((text, attachments)) = words {
-                    chat.view.editor.restore(&text, attachments);
-                }
-                // Its words left the held prompts kept in the draft for the
-                // composer's.
-                self.fleet
-                    .keep_draft(&chat.agent, composer_draft(&chat.view.editor));
-            }
             // Refused by the host (the name taken, the host away), the
             // command goes back to the composer to fix, with why.
             ChatEffect::Rename(name) => {
@@ -1358,8 +1342,8 @@ impl App {
     }
 
     /// What the loop does before each frame: a deleted agent's open chat
-    /// closes to the fleet, and the changed files its overview lists are
-    /// fetched when it asks.
+    /// closes to the fleet, a draft whose words could not go is saved, and
+    /// the changed files its overview lists are fetched when it asks.
     pub fn housekeep(&mut self) {
         if let Some(gone) = self.chat_gone() {
             if gone.deleted {
@@ -1375,6 +1359,10 @@ impl App {
         let Some(chat) = &mut self.chat else {
             return;
         };
+        if chat.view.take_draft_owed() {
+            self.fleet
+                .keep_draft(&chat.agent, composer_draft(&chat.view.editor));
+        }
         let wanted = {
             let state = chat.session.state();
             chat.view.wants_changes(&state)

@@ -54,8 +54,6 @@ pub struct ClientSession {
     pub connection: i32,
     #[prost(uint32, optional, tag = "13")]
     pub exited_under: ::core::option::Option<u32>,
-    #[prost(uint64, tag = "14")]
-    pub reach: u64,
     #[prost(uint64, tag = "15")]
     pub epoch: u64,
     #[prost(message, repeated, tag = "16")]
@@ -130,8 +128,6 @@ pub struct ClientInput {
     pub rejected: ::core::option::Option<super::v1::Rejected>,
     #[prost(bool, tag = "4")]
     pub seen_queued: bool,
-    #[prost(uint64, tag = "5")]
-    pub left_at: u64,
     #[prost(bool, tag = "6")]
     pub in_feed: bool,
 }
@@ -302,7 +298,7 @@ impl ::prost::Name for ClientReloading {
 pub struct ClientSent {
     #[prost(bytes = "vec", tag = "1")]
     pub input_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(oneof = "client_sent::Outcome", tags = "2, 3, 4")]
+    #[prost(oneof = "client_sent::Outcome", tags = "2, 3")]
     pub outcome: ::core::option::Option<client_sent::Outcome>,
 }
 /// Nested message and enum types in `ClientSent`.
@@ -314,9 +310,6 @@ pub mod client_sent {
         /// The transport failed before a reply.
         #[prost(message, tag = "3")]
         Lost(super::ClientLost),
-        /// It never left: held to send once the host is back.
-        #[prost(message, tag = "4")]
-        Held(super::ClientHeld),
     }
 }
 impl ::prost::Name for ClientSent {
@@ -339,18 +332,6 @@ impl ::prost::Name for ClientLost {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.dump.ClientLost".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ClientHeld {}
-impl ::prost::Name for ClientHeld {
-    const NAME: &'static str = "ClientHeld";
-    const PACKAGE: &'static str = "amux.dump";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.dump.ClientHeld".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.dump.ClientHeld".into()
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -390,7 +371,6 @@ pub enum ClientInputState {
     Settled = 2,
     Rejected = 3,
     Uncertain = 4,
-    Held = 5,
 }
 impl ClientInputState {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -404,7 +384,6 @@ impl ClientInputState {
             Self::Settled => "CLIENT_INPUT_STATE_SETTLED",
             Self::Rejected => "CLIENT_INPUT_STATE_REJECTED",
             Self::Uncertain => "CLIENT_INPUT_STATE_UNCERTAIN",
-            Self::Held => "CLIENT_INPUT_STATE_HELD",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -415,7 +394,6 @@ impl ClientInputState {
             "CLIENT_INPUT_STATE_SETTLED" => Some(Self::Settled),
             "CLIENT_INPUT_STATE_REJECTED" => Some(Self::Rejected),
             "CLIENT_INPUT_STATE_UNCERTAIN" => Some(Self::Uncertain),
-            "CLIENT_INPUT_STATE_HELD" => Some(Self::Held),
             _ => None,
         }
     }

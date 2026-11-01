@@ -46,7 +46,7 @@
       "clients": ["terminal", "phone"],
       "topology": "journeys/topologies/terminal-authority.json",
       "phone_topology": "journeys/topologies/phone-authority.json",
-      "claim": "Two machines signed in to one account reach each other only through the relay. A second profile on the laptop opens on its own empty fleet. On the default profile the desk's agent answers a prompt; the laptop then signs out, the desk goes away on screen, and a message written then is held on the laptop and never reaches the desk. Signed in again, the chat is current and the held message reaches the desk once."
+      "claim": "Two machines signed in to one account reach each other only through the relay. A second profile on the laptop opens on its own empty fleet. On the default profile the desk's agent answers a prompt; the laptop then signs out, the desk goes away on screen, and a message written then is not sent: it stays in the composer and never reaches the desk. Signed in again, the chat is current with the message still in the composer, and sent then it reaches the desk once."
     },
     {
       "id": "manage-agent",
@@ -118,7 +118,7 @@
       "clients": ["terminal", "phone"],
       "topology": "journeys/topologies/terminal-flows.json",
       "phone_topology": "journeys/topologies/phone-flows.json",
-      "claim": "With the agent's host out of reach, Enter holds the prompt, shown pending until the host is back, and the host never receives it; with the host back, the held prompt goes by itself and the host holds it once."
+      "claim": "With the agent's host out of reach, a prompt is not sent: it stays in the composer, which says the host is away, and the host never receives it. With the host back the prompt is still in the composer and nothing has sent it; sent then, the host holds it once."
     },
     {
       "id": "send-may-not-have-arrived",

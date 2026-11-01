@@ -320,10 +320,7 @@ fn leave_and_recover(journey: &mut TerminalJourney) -> Proved {
     journey.open_chat(&pane, "keeper")?;
     journey.wait_terms(&pane, &[first, "desk away · not current"])?;
     journey.type_text(&pane, DRAFT)?;
-    journey.wait_terms(
-        &pane,
-        &[DRAFT, "enter holds it", "it sends when the host is back"],
-    )?;
+    journey.wait_terms(&pane, &[DRAFT, "can't send until the host is back"])?;
     journey.frame(&pane, "cached-offline")?;
 
     // Work goes on at the desk while the laptop is cut off; when the link
@@ -380,7 +377,7 @@ fn leave_and_recover(journey: &mut TerminalJourney) -> Proved {
     )?;
     journey.wait_terms(
         &pane,
-        &["reconnecting", DRAFT, "it sends once amux is back"],
+        &["reconnecting", DRAFT, "can't send until amux is back"],
     )?;
     journey.request(
         Control::RestartDaemon {
@@ -391,7 +388,7 @@ fn leave_and_recover(journey: &mut TerminalJourney) -> Proved {
     journey.wait(
         &pane,
         |frame| {
-            frame.contains(DRAFT) && !frame.contains("enter holds it") && frame.contains(second)
+            frame.contains(DRAFT) && !frame.contains("can't send until") && frame.contains(second)
         },
         "the chat live again after the restart",
     )?;
@@ -851,7 +848,7 @@ fn attachment_or_review(journey: &mut TerminalJourney) -> Proved {
 
 fn keep_authority(journey: &mut TerminalJourney) -> Proved {
     let asked = "Are you there?";
-    let held = "Still there?";
+    let unsent = "Still there?";
     // The two machines are one account's, reached only through the relay.
     journey.request(trust("desk", "laptop"), None)?;
     journey.request(trust("laptop", "desk"), None)?;
@@ -885,7 +882,7 @@ fn keep_authority(journey: &mut TerminalJourney) -> Proved {
     reflected_once(&reached, asked)?;
 
     // Signed out, the laptop has no way to the desk: the chat says so and
-    // a message written now is held, never sent.
+    // a message written now stays in the composer, never sent.
     let signed_out = journey.launch("logout", "laptop", &["logout"])?;
     journey.wait_terms(&signed_out, &["Signed default out", "AMUX_EXIT_0"])?;
     // The reason named is this machine's sign-out, never a claim about the
@@ -894,7 +891,7 @@ fn keep_authority(journey: &mut TerminalJourney) -> Proved {
         &pane,
         &[
             "desk away · this machine is signed out",
-            "it sends once this machine signs in",
+            "can't send until this machine signs in",
         ],
     )?;
     journey.home(&pane)?;
@@ -910,17 +907,17 @@ fn keep_authority(journey: &mut TerminalJourney) -> Proved {
     journey.keys(&pane, &["Escape"])?;
     journey.open_chat(&pane, "guarded")?;
     journey.wait_terms(&pane, &["desk away · this machine is signed out"])?;
-    journey.type_text(&pane, held)?;
+    journey.type_text(&pane, unsent)?;
     journey.keys(&pane, &["Enter"])?;
-    journey.wait_terms(&pane, &[held, "sends when desk is back"])?;
+    journey.wait_terms(&pane, &[unsent, "can't send until this machine signs in"])?;
     journey.frame(&pane, "blocked")?;
     std::thread::sleep(Duration::from_secs(2));
     let blocked = journey.chat("desk", "guarded", Some("while-signed-out"))?;
-    never_received(&blocked, held)?;
+    never_received(&blocked, unsent)?;
     let control = negative_control(never_received(&blocked, asked))?;
 
-    // Signed in again: the chat is current and the held message goes by
-    // itself, once.
+    // Signed in again: the chat is current, the message still in the
+    // composer, and Enter sends it, once.
     journey.request(
         Control::SignIn {
             host: "laptop".to_owned(),
@@ -932,29 +929,35 @@ fn keep_authority(journey: &mut TerminalJourney) -> Proved {
         &pane,
         |frame| {
             !frame.contains("not current")
-                && at_rest(frame, &[held, "The relay carries us again."])
-                && !frame.contains("sends when")
+                && frame.contains(unsent)
+                && !frame.contains("can't send until")
         },
+        "the chat current again with the message in the composer",
+    )?;
+    journey.keys(&pane, &["Enter"])?;
+    journey.wait(
+        &pane,
+        |frame| at_rest(frame, &[unsent, "The relay carries us again."]),
         "the reply after signing in",
     )?;
     let after = journey.wait_chat(
         "desk",
         "guarded",
-        |chat| phase(chat) == "IDLE" && prompts(chat, held).len() == 1,
+        |chat| phase(chat) == "IDLE" && prompts(chat, unsent).len() == 1,
         "sent-after-sign-in",
     )?;
     reflected_once(&after, asked)?;
-    reflected_once(&after, held)?;
+    reflected_once(&after, unsent)?;
     journey.frame(&pane, "recovered")?;
     journey.quit_client(&pane)?;
     Ok(vec![
         "a second profile on the laptop opened on its own empty fleet, knowing no desk".to_owned(),
         format!("through the relay the desk received {} once and answered", quoted(asked)),
-        "signed out, the laptop named its own sign-out as the reason the desk was away, in the chat and the hosts overlay, and held the message; the desk never received it".to_owned(),
+        "signed out, the laptop named its own sign-out as the reason the desk was away, in the chat and the hosts overlay, and Enter left the message in the composer; the desk never received it".to_owned(),
         control,
         format!(
-            "signed in again, the chat was current and the held {} went by itself, reached the desk once and was answered",
-            quoted(held)
+            "signed in again, the chat was current with {} still in the composer; Enter sent it, it reached the desk once and was answered",
+            quoted(unsent)
         ),
         "the clients exited 0".to_owned(),
     ])
@@ -1395,17 +1398,37 @@ fn send_while_away(journey: &mut TerminalJourney) -> Proved {
     journey.open_chat(&pane, "backups")?;
     journey.request(sever("cabin", "laptop"), None)?;
     journey.wait_terms(&pane, &["cabin away"])?;
+    // Enter with the cabin away sends nothing: the words stay in the
+    // composer, whose top edge says why.
     journey.type_text(&pane, BACKUP)?;
     journey.keys(&pane, &["Enter"])?;
-    journey.wait_terms(&pane, &[BACKUP, "sends when cabin is back"])?;
+    journey.wait_terms(
+        &pane,
+        &[BACKUP, "cabin is away", "can't send until the host is back"],
+    )?;
     journey.frame(&pane, "away")?;
     std::thread::sleep(Duration::from_secs(2));
     let away = journey.chat("cabin", "backups", Some("while-away"))?;
     never_sent(&away, BACKUP)?;
+    // The cabin back, the draft is still there and nothing sent it.
     journey.request(restore("cabin", "laptop"), None)?;
     journey.wait(
         &pane,
-        |frame| at_rest(frame, &[BACKUP, BACKUP_DONE]) && !frame.contains("sends when"),
+        |frame| {
+            frame.contains(BACKUP)
+                && !frame.contains("cabin away")
+                && !frame.contains("can't send until")
+        },
+        "the composer live again with the draft",
+    )?;
+    journey.frame(&pane, "back")?;
+    let back = journey.chat("cabin", "backups", Some("back"))?;
+    never_sent(&back, BACKUP)?;
+    // Enter now sends it.
+    journey.keys(&pane, &["Enter"])?;
+    journey.wait(
+        &pane,
+        |frame| at_rest(frame, &[BACKUP, BACKUP_DONE]),
         "the reply",
     )?;
     let heard = journey.wait_chat(
@@ -1419,10 +1442,11 @@ fn send_while_away(journey: &mut TerminalJourney) -> Proved {
     journey.frame(&pane, "sent")?;
     journey.quit_client(&pane)?;
     Ok(vec![
-        "with the cabin away, Enter held the prompt to send when the cabin is back, and the cabin never received it"
+        "with the cabin away, Enter sent nothing: the prompt stayed in the composer, whose top edge said the cabin is away, and the cabin never received it"
             .to_owned(),
+        "with the cabin back, the prompt was still in the composer and nothing had sent it".to_owned(),
         format!(
-            "with the cabin back, the held prompt went by itself and the cabin holds {} once",
+            "Enter then sent it, and the cabin holds {} once and answered",
             quoted(BACKUP)
         ),
         control,

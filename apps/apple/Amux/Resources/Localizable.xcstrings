@@ -457,14 +457,14 @@
         }
       }
     },
-    "%@ is out of reach · sends when back" : {
+    "%@ is out of reach · your draft is kept" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ is out of reach · sends when back"
+            "value" : "%@ is out of reach · your draft is kept"
           }
         }
       }
@@ -2281,14 +2281,14 @@
         }
       }
     },
-    "Catching up · sends once caught up" : {
+    "Catching up · your draft is kept" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Catching up · sends once caught up"
+            "value" : "Catching up · your draft is kept"
           }
         }
       }
@@ -4945,14 +4945,14 @@
         }
       }
     },
-    "Reconnecting · sends when %@ is back" : {
+    "Reconnecting · your draft is kept" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reconnecting · sends when %@ is back"
+            "value" : "Reconnecting · your draft is kept"
           }
         }
       }
@@ -7213,30 +7213,6 @@
         }
       }
     },
-    "Your answer is held" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your answer is held"
-          }
-        }
-      }
-    },
-    "Your answer is held: the agent’s host can’t be reached. It sends when the host is back." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your answer is held: the agent’s host can’t be reached. It sends when the host is back."
-          }
-        }
-      }
-    },
     "Your answer was not confirmed. The connection dropped before the agent replied." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift.",
       "extractionState" : "manual",
@@ -8065,18 +8041,6 @@
         }
       }
     },
-    "held · sends when %@ is back" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "held · sends when %@ is back"
-          }
-        }
-      }
-    },
     "host" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/PushPayload.swift.",
       "extractionState" : "manual",
@@ -8257,14 +8221,14 @@
         }
       }
     },
-    "its host can’t be reached" : {
+    "its host is away" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "its host can’t be reached"
+            "value" : "its host is away"
           }
         }
       }

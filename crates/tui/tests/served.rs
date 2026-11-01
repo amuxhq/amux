@@ -722,28 +722,20 @@ async fn unlinking_the_agents_host_never_says_there_is_no_such_agent() {
         .unwrap();
 }
 
-/// A prompt held while its host can't be reached goes back to the draft if
-/// the client closes first, even when it closes abruptly (its pane killed,
-/// no quit to save from): the draft this machine keeps takes the held
-/// prompt as soon as it is held, as the phone's does, in place of the
-/// older draft the daemon kept.
+/// A prompt Enter cannot send because its host can't be reached never
+/// leaves the composer: refused at once while the chat reads away, or
+/// refused by the daemon and put back when the chat still read current.
+/// Either way the words are in the composer, its top edge says the host is
+/// away, nothing holds the prompt to send later, and the draft this machine
+/// keeps has the words before the client quits, so a terminal closed
+/// abruptly (its pane killed, no quit to save from) finds them again.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_held_prompt_is_in_the_kept_draft_before_the_client_quits() {
+async fn a_prompt_for_a_host_that_cannot_be_reached_stays_in_the_composer_and_the_kept_draft() {
     use crossterm::event::KeyCode;
     let (mut net, mut app) = far_chat("far").await;
     let id = net.agent("far").unwrap().id;
     let daemon: std::sync::Arc<dyn client::Client> =
         std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
-    daemon
-        .update_draft(wire::UpdateDraftRequest {
-            agent_id: id.as_bytes().to_vec(),
-            draft: Some(wire::Draft {
-                text: "an older draft".into(),
-                attachments: Vec::new(),
-            }),
-        })
-        .await
-        .unwrap();
     net.sever_link("desk", "laptop").unwrap();
     tokio::time::timeout(PATIENCE, async {
         loop {
@@ -767,25 +759,35 @@ async fn a_held_prompt_is_in_the_kept_draft_before_the_client_quits() {
         press(&mut app, KeyCode::Char(c));
     }
     press(&mut app, KeyCode::Enter);
-    let kept = tokio::time::timeout(PATIENCE, async {
+    let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
+    let screen = tokio::time::timeout(PATIENCE, async {
         loop {
             app.housekeep();
-            let held = app.chat.as_ref().unwrap().session.state().held().count();
-            let draft = daemon
+            terminal.draw(|frame| app.draw(frame)).unwrap();
+            let screen = screen_text(terminal.backend().buffer());
+            let chat = app.chat.as_ref().unwrap();
+            let underway = ui_view::prompts_underway(&chat.session.state());
+            let kept = daemon
                 .get_draft(wire::GetDraftRequest {
                     agent_id: id.as_bytes().to_vec(),
                 })
                 .await
                 .unwrap();
-            if held == 1 && draft.text == "race A" {
-                return draft;
+            if chat.view.editor.text() == "race A"
+                && underway.is_empty()
+                && screen.contains("away")
+                && kept.text == "race A"
+            {
+                return screen;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     })
     .await
-    .expect("the held prompt is kept as the draft while the client runs");
-    assert_eq!(kept.text, "race A");
+    .expect(
+        "the prompt is back in the composer and the kept draft, the edge saying the host is away",
+    );
+    assert!(!screen.contains("sends when"), "{screen}");
     // Closed abruptly: no quit, no drop.
     std::mem::forget(app);
     tokio::time::timeout(Duration::from_secs(60), net.shutdown())

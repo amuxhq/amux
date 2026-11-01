@@ -198,7 +198,7 @@ addresses change. See [embedding](EMBEDDED.md).
 
 | Caller | Where | What it speaks |
 |---|---|---|
-| CLI and terminal client | the front door (`amux.sock` in the per-user runtime directory), then the profile's `profiles/<id>/sock` | `InstallationService` on the front door; `AgentService`, `SessionService` and `ProfileAdminService` on the profile socket |
+| CLI and terminal client | the front door (`<root>/amux.sock`), then the profile's `profiles/<id>/sock` | `InstallationService` on the front door; `AgentService`, `SessionService` and `ProfileAdminService` on the profile socket |
 | phone UI | in process, through [`client::InProcess`](../crates/client/src/lib.rs) | the same `AgentService` and `SessionService` calls |
 | paired daemon | a link stream, after a pinned mutual-TLS handshake | `AgentService` and `SessionService`, answered only for this host's own agents |
 | an agent's tool server | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | `AgentService` and `SessionService`; the socket it arrived on is the caller's identity |
@@ -304,12 +304,14 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
     codex.sock                Codex's app server, for Codex agents; removed when the agent exits
 ```
 
-A Unix socket's path must be short, and an agent directory under a deep
-root is often too long. Then a socket is bound through a link to its folder
-(`agents/<agent_id>` or its `private/`) under `$TMPDIR/amux-<uid>/`, named
-by a hash of the folder; terminal Claude's messaging socket, which Claude
-binds itself in a real directory, gets one there named the same with `.d`.
-The daemon removes both with the agent's directory.
+A Unix socket's path must be short, and a socket under a deep root is often
+too long: an agent's most of all, but the front door and a profile's `sock`
+as well. Then a socket is bound and dialled through a link to its folder
+(the root, `profiles/<profile_id>`, `agents/<agent_id>` or its `private/`)
+under `$TMPDIR/amux-<uid>/`, named by a hash of the folder; terminal
+Claude's messaging socket, which Claude binds itself in a real directory,
+gets one there named the same with `.d`. The daemon removes an agent's with
+the agent's directory.
 
 | Path | Created by | Written by | Read by | Deleted by |
 |---|---|---|---|---|
@@ -333,12 +335,12 @@ their own copies.
 ~/Library/LaunchAgents/sh.amux.supervise.plist
                               the login item `amux init` writes on macOS; ~/.config/systemd/user/amux.service
                               on Linux, and a scheduled task named amux on Windows
-$TMPDIR/amux/amux.sock        the front door, the config's front_door_socket ($XDG_RUNTIME_DIR/amux on Linux;
-                              without either, amux refuses to start until front_door_socket is set)
 $TMPDIR/amux-<uid>/<hash>, <hash>.d
-                              short socket addresses for agents whose paths are too long (see above)
+                              short addresses for sockets whose paths are too long (see above)
 
 <root>/                       the config's `root`; default ~/.local/share/amux ($XDG_DATA_HOME/amux)
+  amux.sock                   the front door; the config's front_door_socket names another
+                              (on Windows the front door is the named pipe \\.\pipe\amux-<user>)
   installation.lock           one daemon per installation
   installation_id             what usage analytics count an install by; minted at the first start that sends them
   generation                  boot id, clean-shutdown flag and a counter a replica compares

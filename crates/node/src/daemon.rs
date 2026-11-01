@@ -476,8 +476,9 @@ pub async fn start(
         sweep.insert(profile, report);
         swept.push((entry, runtime));
     }
-    // A front door that answers belongs to another installation's daemon;
-    // taking its socket would strand that daemon's clients.
+    // This installation's lock is held, so a front door that answers
+    // belongs to another installation's daemon, whose config names the same
+    // socket; taking it would strand that daemon's clients.
     if let Some(path) = &installation.front_door
         && local_socket::connect(path).await.is_ok()
     {

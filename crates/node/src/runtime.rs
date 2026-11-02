@@ -2078,7 +2078,10 @@ mod tests {
             "one spelling per folder"
         );
         assert_eq!(folder("~/src/../src/amux").unwrap(), amux);
-        assert_eq!(folder(&format!("{amux}/")).unwrap(), amux);
+        assert_eq!(
+            folder(&format!("{amux}{}", std::path::MAIN_SEPARATOR)).unwrap(),
+            amux
+        );
 
         // `~name` is somebody's home in a shell; here it is just a name.
         std::fs::create_dir(home.join("~work")).unwrap();

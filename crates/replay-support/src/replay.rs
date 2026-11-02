@@ -439,7 +439,10 @@ impl Bundle {
 /// Replays one client session from its checkpoint, judging the client's
 /// promises at the checkpoint and after every message: how many messages
 /// held, or the first that broke one. Err when a value does not read back.
-fn replay_client(agent: &str, history: &ClientHistory) -> Result<Result<usize, Failing>, String> {
+pub fn replay_client(
+    agent: &str,
+    history: &ClientHistory,
+) -> Result<Result<usize, Failing>, String> {
     let mut state = SessionState::from_wire(history.start.clone())?;
     if let Some((property, detail)) = models::client::judge_session(&state) {
         return Ok(Err(Failing {

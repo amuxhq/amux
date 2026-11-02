@@ -244,10 +244,18 @@ fn client_section(
         start.pending.is_some(),
         rows.len()
     );
+    let kind = start.agent.as_ref().map_or(Kind::Unspecified, Agent::kind);
     for item in rows {
+        // What the session model concluded from the body, which is all a
+        // record keeps of it.
+        let kind = Kind::try_from(item.kind)
+            .ok()
+            .filter(|kind| *kind != Kind::Unspecified)
+            .unwrap_or(kind);
+        let class = ui_state::ItemBody::decode(kind, &item.body).class();
         let _ = writeln!(
             out,
-            "  {} order {} rev {}",
+            "  {} order {} rev {} {class:?}",
             item.key, item.order, item.revision
         );
     }
@@ -263,7 +271,13 @@ fn client_section(
             Some(wire::dump::client_traced::Event::Driver(driver)) => format!("driver {driver}"),
             None => "nothing".to_owned(),
         };
-        let _ = writeln!(out, "{} @{} {what}", traced.seq, time(traced.at_ms));
+        let _ = writeln!(
+            out,
+            "{} @{} {}B {what}",
+            traced.seq,
+            time(traced.at_ms),
+            traced.size
+        );
     }
 }
 

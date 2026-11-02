@@ -4093,8 +4093,9 @@ pub struct DumpRequest {
     /// build that wrote it reads it; a daemon that cannot decode one leaves it
     /// out of the bundle and says so. Unredacted as the client holds it; the
     /// daemon redacts each through its agent's kind before it writes it into the
-    /// bundle, and passes none on to another host. Only a dump of the
-    /// unspecified scope carries them.
+    /// bundle, and passes none on to another host. A dump of the unspecified
+    /// scope carries them whole; a chat's transcript dump and a person's report
+    /// carry only those that are structure-only records.
     #[prost(bytes = "vec", repeated, tag = "4")]
     pub sessions: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     #[prost(enumeration = "DumpScope", tag = "5")]

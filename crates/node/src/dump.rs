@@ -37,7 +37,9 @@
 //!                            redacted by the daemon
 //!   client/sessions/<agent_id>/
 //!                            each session the asking client had open, for a
-//!                            replay of the client:
+//!                            replay of the client: whole in a host's dump,
+//!                            and in a transcript's or a person's report only
+//!                            as its structure-only record:
 //!     checkpoint             the session's state when its trace began, a
 //!                            wire.ClientSession, redacted
 //!     events                 every event its driver saw since, through the
@@ -124,7 +126,7 @@ struct Gather {
     /// slice, journal or part either.
     agents: bool,
     /// The client sessions the request handed in.
-    sessions: bool,
+    sessions: Sessions,
     /// Each covered agent's store slice beside its row.
     slices: bool,
     journals: Journals,
@@ -133,6 +135,17 @@ struct Gather {
     parts: bool,
     /// The daemon's and the supervisor's log tails.
     logs: bool,
+}
+
+/// Which of the client sessions a request hands in a bundle carries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Sessions {
+    None,
+    /// Only structure-only records, which hold no conversation: what may
+    /// leave the machine on its own.
+    Records,
+    /// Each as the client handed it in, whole or a record.
+    All,
 }
 
 /// How much of each own agent's journal a bundle carries.
@@ -153,7 +166,7 @@ impl Gather {
             DumpScope::Unspecified => Gather {
                 core: true,
                 agents: true,
-                sessions: true,
+                sessions: Sessions::All,
                 slices: true,
                 journals: Journals::Tail,
                 parts: true,
@@ -162,7 +175,7 @@ impl Gather {
             DumpScope::Core => Gather {
                 core: true,
                 agents: true,
-                sessions: false,
+                sessions: Sessions::None,
                 slices: false,
                 journals: Journals::FromCursor,
                 parts: false,
@@ -171,7 +184,7 @@ impl Gather {
             DumpScope::Agent => Gather {
                 core: false,
                 agents: true,
-                sessions: false,
+                sessions: Sessions::None,
                 slices: true,
                 journals: Journals::Tail,
                 parts: true,
@@ -180,20 +193,20 @@ impl Gather {
             DumpScope::Transcript => Gather {
                 core: false,
                 agents: true,
-                sessions: false,
+                sessions: Sessions::Records,
                 slices: true,
                 journals: Journals::None,
                 parts: false,
                 logs: false,
             },
             // A person's report carries our own logs and nothing of any
-            // agent's: no store, journal or session, each of which holds
+            // agent's: no store or journal, each of which holds
             // conversation text, and those of agents the person never
-            // looked at.
+            // looked at. Of a chat the client shows, only its record.
             DumpScope::Report => Gather {
                 core: false,
                 agents: false,
-                sessions: false,
+                sessions: Sessions::Records,
                 slices: false,
                 journals: Journals::None,
                 parts: false,
@@ -356,8 +369,15 @@ impl ProfileRuntime {
             None
         };
         let cursors = core.as_ref().map(|core| &core.cursors);
-        let sessions = if gather.sessions {
-            client_sessions(&request.sessions, &rows, &partial, &mut errors)?
+        let sessions = if gather.sessions != Sessions::None {
+            let records_only = gather.sessions == Sessions::Records;
+            client_sessions(
+                &request.sessions,
+                records_only,
+                &rows,
+                &partial,
+                &mut errors,
+            )?
         } else {
             Vec::new()
         };
@@ -623,12 +643,13 @@ fn dump_log(path: &Path, to: &Path) -> io::Result<()> {
     std::fs::write(to, text)
 }
 
-/// One target through the kind's redactor, as the bytes it came back as.
 /// Writes each session the asking client handed in, redacted through its
 /// agent's kind, and returns their manifest entries. A session of an agent
-/// the dump does not cover is named in `errors` and left out.
+/// the dump does not cover, or a whole one where `records_only` asks for
+/// records, is named in `errors` and left out.
 fn client_sessions(
     sessions: &[Vec<u8>],
+    records_only: bool,
     rows: &[AgentRow],
     bundle: &Path,
     errors: &mut Vec<String>,
@@ -643,6 +664,12 @@ fn client_sessions(
             }
         };
         let id = Uuid::from_slice(&history.agent_id).unwrap_or_default();
+        if records_only && !history.structure_only {
+            errors.push(format!(
+                "{id} client session: a whole history, where this dump carries only records"
+            ));
+            continue;
+        }
         let Some(row) = rows.iter().find(|row| row.agent.agent == history.agent_id) else {
             errors.push(format!(
                 "{id} client session: not an agent this dump covers"
@@ -669,6 +696,7 @@ fn client_sessions(
             "checkpoint": at(CLIENT_CHECKPOINT),
             "events": at(CLIENT_EVENTS),
             "traced": events.traced.len(),
+            "structure_only": history.structure_only,
         }));
     }
     Ok(entries)
@@ -685,6 +713,7 @@ fn scope_name(scope: DumpScope) -> &'static str {
     }
 }
 
+/// One target through the kind's redactor, as the bytes it came back as.
 fn redacted(kind: Kind, target: RedactTarget) -> Vec<u8> {
     match interpret::redact(kind, target) {
         RedactTarget::Input(bytes)

@@ -159,6 +159,12 @@ async fn drive(client: Arc<dyn Client>, net: &Net) {
     // so the trace and the state it must replay to are read together.
     let state = session.state();
     assert_eq!(state.trace().replay(), *state);
+    drop(state);
+    // A real driver's trace, paging and sends and all, replays alike from
+    // its record.
+    replay_support::record::replays_alike(&session.history())
+        .expect("the record replays alike")
+        .expect("the window holds");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -356,6 +362,101 @@ async fn a_prompt_for_an_unreachable_host_is_refused_and_goes_only_when_sent_aga
     assert_eq!(prompts, 1, "the prompt reached the agent once");
     kept_reads(&*client, far.as_bytes(), "").await;
     fleet.close(&agent);
+    drop(session);
+    drop(fleet);
+    net.shutdown().await.unwrap();
+}
+
+/// A person's report from a chat on screen: the fleet hands the daemon the
+/// chat's record, which the bundle carries, and nothing the person or the
+/// agent wrote reaches any of its files.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_report_carries_the_on_screen_chats_record_and_none_of_its_words() {
+    const MARKER: &str = "walrus-umbrella-marker";
+    let net = Net::start(
+        Topology::new().host("desk").agent(
+            AgentDecl::new("worker", "desk")
+                .kind(FakeKind::ClaudeSdk)
+                .steps(vec![
+                    text("ready"),
+                    Step::TurnEnd,
+                    text(&format!("the {MARKER} answered")),
+                    Step::TurnEnd,
+                ])
+                .prompt("go"),
+        ),
+    )
+    .await
+    .unwrap();
+    let client: Arc<dyn Client> = Arc::new(grpc(&net).await);
+    let fleet = Fleet::connect(client.clone(), SystemClock).await.unwrap();
+    let worker = net.agent("worker").unwrap().id;
+    let agent = fleet
+        .state()
+        .find(worker.as_bytes())
+        .map(ui_state::agent_key)
+        .unwrap();
+    let session = fleet
+        .open(&agent, Window { tail: 40, cap: CAP })
+        .await
+        .unwrap();
+    until_within(PATIENCE, session.changed(), || {
+        (session.state().caught_up() && says(&session, "ready")).then_some(())
+    })
+    .await;
+    session
+        .send_prompt(&format!("tell the {MARKER}"), Vec::new())
+        .await;
+    until_within(PATIENCE, session.changed(), || {
+        says(&session, &format!("the {MARKER} answered")).then_some(())
+    })
+    .await;
+
+    let records = fleet.on_screen_records();
+    assert_eq!(records.len(), 1, "the one chat on screen");
+    let bundle = client
+        .dump(wire::DumpRequest {
+            reason: "report".to_owned(),
+            sessions: records,
+            scope: wire::DumpScope::Report.into(),
+            ..wire::DumpRequest::default()
+        })
+        .await
+        .unwrap()
+        .report_path;
+    let bundle = std::path::PathBuf::from(bundle);
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(bundle.join("manifest.json")).unwrap()).unwrap();
+    let sessions = manifest["client"]["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 1, "{manifest}");
+    assert_eq!(sessions[0]["structure_only"], true);
+    assert!(
+        bundle
+            .join(sessions[0]["events"].as_str().unwrap())
+            .is_file()
+    );
+    let mut dirs = vec![bundle.clone()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                dirs.push(path);
+                continue;
+            }
+            let bytes = std::fs::read(&path).unwrap();
+            assert!(
+                !bytes
+                    .windows(MARKER.len())
+                    .any(|window| window == MARKER.as_bytes()),
+                "{} holds the chat's words",
+                path.display()
+            );
+        }
+    }
+
+    // Off screen, the fleet's own session is no part of a report.
+    fleet.close(&agent);
+    assert!(fleet.on_screen_records().is_empty());
     drop(session);
     drop(fleet);
     net.shutdown().await.unwrap();

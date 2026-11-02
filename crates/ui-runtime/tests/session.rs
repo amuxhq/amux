@@ -900,7 +900,7 @@ async fn a_transcript_that_fails_its_check_asks_for_a_dump_with_its_trace_cut_th
         "{}",
         request.reason
     );
-    // The session's trace rides along, cut at the message that broke the
+    // The session's record rides along, cut at the message that broke the
     // transcript, for the daemon to redact and write before it answers.
     let [history] = &request.sessions[..] else {
         panic!("{} sessions in the request", request.sessions.len());
@@ -908,6 +908,7 @@ async fn a_transcript_that_fails_its_check_asks_for_a_dump_with_its_trace_cut_th
     let history = <wire::dump::ClientSessionHistory as prost::Message>::decode(history.as_slice())
         .expect("a session");
     assert_eq!(history.agent_id, agent(KIND).agent_id);
+    assert!(history.structure_only, "a check's dump carries the record");
     let events = &history.events.as_ref().expect("events").traced;
     let last = events.last().expect("an event");
     assert!(

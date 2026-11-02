@@ -185,6 +185,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     let client_msg = |of| wire::dump::ClientTraced {
         seq: 0,
         at_ms: 0,
+        size: 0,
         event: Some(wire::dump::client_traced::Event::Msg(
             wire::dump::ClientSessionMsg { of: Some(of) },
         )),
@@ -209,12 +210,14 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
                 wire::dump::ClientTraced {
                     seq: 1,
                     at_ms: 0,
+                    size: 0,
                     event: Some(wire::dump::client_traced::Event::Driver(format!(
                         "GetFailed {{ error: \"Authorization: Bearer {KEY}\" }}"
                     ))),
                 },
             ],
         }),
+        structure_only: false,
     };
     let elsewhere = wire::dump::ClientSessionHistory {
         agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
@@ -645,30 +648,60 @@ async fn each_scope_carries_what_its_stage_replays() {
     assert!(!has(&transcript, "core/"), "{transcript:?}");
 
     // A person's report carries no agent's records, even for a chat the
-    // client had open and handed in: only the manifest and our own logs.
+    // client had open and handed in whole: only the manifest and our own
+    // logs.
     let open_chat = wire::dump::ClientSessionHistory {
         agent_id: one.id.as_bytes().to_vec(),
         ..wire::dump::ClientSessionHistory::default()
     };
-    let request = DumpRequest {
-        scope: wire::DumpScope::Report.into(),
-        sessions: vec![open_chat.encode_to_vec()],
-        ..DumpRequest::default()
+    let record = wire::dump::ClientSessionHistory {
+        structure_only: true,
+        ..open_chat.clone()
     };
-    let bundle = runtime.dump(request).await.unwrap();
-    let report: Vec<String> = tree(&bundle).into_iter().map(|(name, _)| name).collect();
+    let with = |scope: wire::DumpScope, session: &wire::dump::ClientSessionHistory| {
+        let runtime = runtime.clone();
+        let request = DumpRequest {
+            scope: scope.into(),
+            sessions: vec![session.encode_to_vec()],
+            ..DumpRequest::default()
+        };
+        async move {
+            let bundle = runtime.dump(request).await.unwrap();
+            let files: Vec<String> = tree(&bundle).into_iter().map(|(name, _)| name).collect();
+            let manifest: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
+            (files, manifest)
+        }
+    };
+    let (report, manifest) = with(wire::DumpScope::Report, &open_chat).await;
     assert!(
         report
             .iter()
             .all(|file| [MANIFEST, DAEMON_LOG, node::SUPERVISOR_LOG].contains(&file.as_str())),
         "{report:?}"
     );
-    let manifest: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
     assert_eq!(manifest["scope"], "report");
     assert_eq!(manifest["agents"], serde_json::json!([]));
     assert_eq!(manifest["client"]["sessions"], serde_json::json!([]));
     assert!(manifest["core"].is_null(), "{manifest}");
+    assert!(
+        manifest["errors"].to_string().contains("a whole history"),
+        "{manifest}"
+    );
+
+    // The chat's record, which holds no conversation, goes with a report
+    // and with its transcript's dump; a whole session goes with neither.
+    let sessions_dir = format!("client/sessions/{}/", one.id);
+    for scope in [wire::DumpScope::Report, wire::DumpScope::Transcript] {
+        let (files, manifest) = with(scope, &record).await;
+        assert!(has(&files, &sessions_dir), "{scope:?}: {files:?}");
+        assert_eq!(
+            manifest["client"]["sessions"][0]["structure_only"], true,
+            "{manifest}"
+        );
+        let (files, _) = with(scope, &open_chat).await;
+        assert!(!has(&files, "client/"), "{scope:?}: {files:?}");
+    }
 
     kill_all(&runtime).await;
     drop(runtime);

@@ -87,6 +87,7 @@ provider-fakes = { path = "crates/provider-fakes" }
 claude-protocol = { path = "crates/claude-protocol" }
 codex-protocol = { path = "crates/codex-protocol" }
 redaction = { path = "crates/redaction" }
+replay-support = { path = "crates/replay-support" }
 
 # Shared
 portable-pty = "0.9"

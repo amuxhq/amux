@@ -9,6 +9,11 @@ pub struct ClientSessionHistory {
     pub start: ::core::option::Option<ClientSession>,
     #[prost(message, optional, tag = "3")]
     pub events: ::core::option::Option<ClientSessionEvents>,
+    /// The session's record rather than its whole history: every body kept as
+    /// only its arm and the fields the session model reads, and no text,
+    /// names or paths. A person's report and a check's dump carry only this.
+    #[prost(bool, tag = "4")]
+    pub structure_only: bool,
 }
 impl ::prost::Name for ClientSessionHistory {
     const NAME: &'static str = "ClientSessionHistory";
@@ -186,6 +191,10 @@ pub struct ClientTraced {
     /// When, on the driver's clock.
     #[prost(int64, tag = "2")]
     pub at_ms: i64,
+    /// The event's size in bytes as the driver saw it: the message encoded, or
+    /// the driver's description. A record keeps it after emptying the message.
+    #[prost(uint32, tag = "5")]
+    pub size: u32,
     #[prost(oneof = "client_traced::Event", tags = "3, 4")]
     pub event: ::core::option::Option<client_traced::Event>,
 }

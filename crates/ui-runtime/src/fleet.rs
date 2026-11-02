@@ -466,6 +466,24 @@ impl Fleet {
             .collect()
     }
 
+    /// The record of every chat a client shows, each encoded as a dump
+    /// request's session: what a person's report carries of the screen.
+    /// A chat is shown from its [`Fleet::open`] to its last
+    /// [`Fleet::close`]; the sessions the fleet holds off screen are not.
+    pub fn on_screen_records(&self) -> Vec<Vec<u8>> {
+        let shown: Vec<Arc<Session>> = self
+            .inner
+            .sessions()
+            .values()
+            .filter(|slot| slot.viewers > 0)
+            .filter_map(|slot| slot.session.get().cloned())
+            .collect();
+        shown
+            .iter()
+            .map(|session| prost::Message::encode_to_vec(&session.record()))
+            .collect()
+    }
+
     /// The same session, widened for a chat: older rows page in from the
     /// local runtime up to the window's tail. An exited agent's session
     /// opens here. Every open is paired with a [`Fleet::close`].

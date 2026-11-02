@@ -275,7 +275,7 @@ impl Edge {
             )
         };
         if requested_host == Some(self.host_id()) {
-            return Err(Status::invalid_argument("SELF_PAIRING"));
+            return Err(pairing_status(&PairFailure::self_pairing()));
         }
         let secret = match request.secret {
             Some(wire::begin_pair_request::Secret::Pin(pin))
@@ -504,7 +504,7 @@ impl Edge {
     #[doc(hidden)]
     pub async fn trust(&self, peer: &Edge) -> Result<(), Status> {
         if peer.host_id() == self.host_id() || peer.public_key() == self.public_key() {
-            return Err(Status::invalid_argument("SELF_PAIRING"));
+            return Err(pairing_status(&PairFailure::self_pairing()));
         }
         self.ask(ClientRequest::ChangeTrust(TrustChange::Pair {
             host: peer.host_id(),

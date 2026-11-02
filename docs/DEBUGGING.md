@@ -271,8 +271,8 @@ is treated by the name of the field that holds it, from one table in `crates/red
 
 - Bodies and free text (prompts, agent output, error text, item and snapshot bodies, kept blobs and patches)
   become zero bytes of their length, so every size and offset holds. Text that is only whitespace is kept, as the
-  core treats it as empty, and an error's leading protocol label (`SELF_PAIRING: …`) is kept, as the core tells
-  refusals apart by it.
+  core treats it as empty. A pairing refusal's words are blanked too: the core tells refusals apart by their code
+  and typed reason, which are kept.
 - Identifiers the core compares (host and agent names, folders, branches, SSH destinations, accounts, tokens) become
   aliases such as `host-1` and `path-3`, the same value the same alias throughout the bundle. A name ending in a
   number keeps it on its stem's alias (`name-1-2`), and a name the core assigns itself from its word pairs

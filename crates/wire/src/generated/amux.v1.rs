@@ -9223,6 +9223,9 @@ impl ::prost::Name for PairingAbandoned {
         "type.googleapis.com/amux.v1.PairingAbandoned".into()
     }
 }
+/// Why a pairing was refused: sent in the stream, or carried in the details
+/// of the status a refusal ends the stream with, so the other side tells
+/// refusals apart without reading their words.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PairingError {
     #[prost(enumeration = "pairing_error::Reason", tag = "1")]
@@ -9255,6 +9258,8 @@ pub mod pairing_error {
         /// The peer claimed a host this one already trusts under another key.
         /// The detail is the sentence a person is shown, naming that host.
         AlreadyPaired = 7,
+        /// Too many wrong secrets closed the window.
+        Locked = 8,
     }
     impl Reason {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -9271,6 +9276,7 @@ pub mod pairing_error {
                 Self::UserRejected => "USER_REJECTED",
                 Self::SelfPairing => "SELF_PAIRING",
                 Self::AlreadyPaired => "ALREADY_PAIRED",
+                Self::Locked => "LOCKED",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -9284,6 +9290,7 @@ pub mod pairing_error {
                 "USER_REJECTED" => Some(Self::UserRejected),
                 "SELF_PAIRING" => Some(Self::SelfPairing),
                 "ALREADY_PAIRED" => Some(Self::AlreadyPaired),
+                "LOCKED" => Some(Self::Locked),
                 _ => None,
             }
         }

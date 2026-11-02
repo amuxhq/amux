@@ -155,7 +155,11 @@ messages B to A then A to B. Both sides hash the big-endian
 ChaCha20-Poly1305 keys (`aead/A→B`, `aead/B→A`). The sealed identity contains
 the public key and a host name, with direction and transcript in the
 additional authenticated data. `PairingComplete` commits both stores.
-Every secret failure is the same opaque `INVALID_PIN`.
+Every secret failure is the same opaque `INVALID_PIN`. A side that ends the
+stream with a refusal sends a status whose details carry a `PairingError`
+naming its reason (`INVALID_PIN`, `LOCKED` once too many wrong secrets closed
+the window, `TIMEOUT`, `SELF_PAIRING`), which the other side tells refusals
+apart by; the status message is only the words a person is shown.
 
 Pairing never replaces a pinned key. Host ids are not secret (discovery
 advertises them), so a peer that proved the secret but names a host this one

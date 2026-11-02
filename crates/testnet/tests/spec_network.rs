@@ -174,6 +174,16 @@ fn is_invalid_secret(status: &tonic::Status) -> bool {
     status.code() == tonic::Code::PermissionDenied && status.message() == "INVALID_PIN"
 }
 
+/// The pairing reason a refusal's status carries in its details.
+fn pairing_reason(status: &tonic::Status) -> wire::pairing_error::Reason {
+    <wire::Error as prost::Message>::decode(status.details())
+        .ok()
+        .and_then(|error| error.detail::<wire::PairingError>())
+        .map_or(wire::pairing_error::Reason::Unspecified, |error| {
+            error.reason()
+        })
+}
+
 /// A PIN one off from `pin`.
 fn wrong_pin(pin: &str) -> String {
     format!("{:06}", (pin.parse::<u32>().unwrap() + 1) % 1_000_000)
@@ -350,6 +360,11 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
         closed.code() == tonic::Code::PermissionDenied && closed.message() == "PAIRING_LOCKED",
         "the right PIN after five wrong ones reads as a wrong PIN: {closed:?}"
     );
+    assert_eq!(
+        pairing_reason(&closed),
+        wire::pairing_error::Reason::Locked,
+        "the lockout crosses both hops as its typed reason"
+    );
     assert!(edge(&net, "shed").pairing_locked_out());
     assert!(edge(&net, "shed").trusted().is_empty());
     println!("five wrong guesses closed the window; the right PIN then: {closed:?}");
@@ -404,6 +419,10 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
         .expect_err("pairing with itself");
         assert_eq!(refused.code(), tonic::Code::InvalidArgument);
         assert_eq!(refused.message(), "SELF_PAIRING");
+        assert_eq!(
+            pairing_reason(&refused),
+            wire::pairing_error::Reason::SelfPairing
+        );
     }
     assert!(edge(&net, "attic").trusted().is_empty());
     println!("the window expired after its second; self-pairing refused by id and by key");

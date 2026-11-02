@@ -11,10 +11,8 @@
 //!   its length, so every size and offset holds, and zero bytes compress
 //!   to almost nothing.
 //!
-//! Two conclusions the core draws from such text are kept by name rather
-//! than by content: text that is only whitespace is kept (it holds
-//! nothing, and the core treats it as empty), and an error message's
-//! leading protocol label (`SELF_PAIRING: …`) is kept, the rest blanked.
+//! Text that is only whitespace is kept: it holds nothing, and the core
+//! treats it as empty.
 
 use std::collections::HashMap;
 
@@ -25,8 +23,6 @@ pub enum Text {
     Kept,
     /// Replaced by an alias of the class, such as `host`.
     Alias(&'static str),
-    /// Its leading protocol label kept, the rest blanked.
-    Label,
     /// Zero bytes of its length.
     Blank,
 }
@@ -121,8 +117,6 @@ const TEXT: &[(&str, Text)] = &[
     ("permission", Text::Kept),
     ("approval_policy", Text::Kept),
     ("mime", Text::Kept),
-    // An error the core reads a protocol label from.
-    ("message", Text::Label),
 ];
 
 /// Bytes fields that are kept; any other is blanked unless it is a
@@ -168,21 +162,6 @@ pub fn blank(text: &str) -> String {
         return text.to_owned();
     }
     "\0".repeat(text.len())
-}
-
-/// `text` with a leading protocol label (`PAIRING_LOCKED`,
-/// `SELF_PAIRING: …`) kept and the rest blanked: the core tells refusals
-/// apart by that label.
-pub fn labelled(text: &str) -> String {
-    let label = text
-        .bytes()
-        .take_while(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || *byte == b'_')
-        .count();
-    let rest = &text[label..];
-    if label < 2 || !(rest.is_empty() || rest.starts_with(':')) {
-        return blank(text);
-    }
-    format!("{}{}", &text[..label], "\0".repeat(rest.len()))
 }
 
 /// The aliases of one record: each distinct value gets the next number of
@@ -233,7 +212,6 @@ impl Aliases {
         match text(holder, field) {
             Text::Kept => value.to_owned(),
             Text::Alias(class) => self.alias(class, value),
-            Text::Label => labelled(value),
             Text::Blank => blank(value),
         }
     }
@@ -264,16 +242,13 @@ mod tests {
         assert_eq!(aliases.text("Item", "text", "  \n"), "  \n");
         assert_eq!(aliases.text("Item", "key", "toolu_1"), "toolu_1");
         assert_eq!(
-            aliases.text("Error", "message", "SELF_PAIRING: a zebra"),
-            format!("SELF_PAIRING{}", "\0".repeat(9))
+            aliases.text("Error", "message", "Zebra failed"),
+            "\0".repeat(12)
         );
         assert_eq!(
             aliases.text("Error", "message", "PAIRING_LOCKED"),
-            "PAIRING_LOCKED"
-        );
-        assert_eq!(
-            aliases.text("Error", "message", "Zebra failed"),
-            "\0".repeat(12)
+            "\0".repeat(14),
+            "a refusal is told apart by its typed reason, never its words"
         );
         assert_eq!(bytes("agent_id"), Bytes::Kept);
         assert_eq!(bytes("body"), Bytes::Blank);

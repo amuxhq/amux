@@ -287,8 +287,9 @@ fn too_many_wrong_secrets_lock_the_window_out_until_a_new_one_opens() {
     offerer.respond();
     assert_eq!(
         failure(&offerer.take()),
-        Some(PairFailure::new(
+        Some(PairFailure::because(
             ErrorCode::PermissionDenied,
+            Reason::Locked,
             "PAIRING_LOCKED"
         ))
     );
@@ -342,8 +343,9 @@ fn a_conversation_past_its_deadline_ends_and_frees_its_attempt() {
     let out = offerer.take();
     assert_eq!(
         failure(&out),
-        Some(PairFailure::new(
+        Some(PairFailure::because(
             ErrorCode::DeadlineExceeded,
+            Reason::Timeout,
             "PAIRING_TIMEOUT"
         ))
     );
@@ -395,8 +397,9 @@ fn a_joiner_claiming_a_paired_host_under_another_key_is_refused() {
     let (_, said) = converse(&mut offerer, &mut joiner);
     assert_eq!(
         call_ended(&said, 9),
-        Some(Status::Failed(CallError::Pairing(PairFailure::new(
+        Some(Status::Failed(CallError::Pairing(PairFailure::because(
             ErrorCode::AlreadyExists,
+            Reason::AlreadyPaired,
             "Already paired with laptop. Unpair it first."
         ))))
     );
@@ -428,8 +431,9 @@ fn an_offerer_claiming_a_paired_host_under_another_key_is_refused() {
     assert_eq!(pending_token(&said), None, "nobody is asked to confirm");
     assert_eq!(
         failure(&said),
-        Some(PairFailure::new(
+        Some(PairFailure::because(
             ErrorCode::AlreadyExists,
+            Reason::AlreadyPaired,
             "Already paired with desk. Unpair it first."
         ))
     );
@@ -524,8 +528,9 @@ fn an_ssh_pairing_commits_through_the_same_trust_writes() {
     );
     assert_eq!(
         call_ended(&joiner.take(), 4),
-        Some(Status::Failed(CallError::Pairing(PairFailure::new(
+        Some(Status::Failed(CallError::Pairing(PairFailure::because(
             ErrorCode::InvalidArgument,
+            Reason::SelfPairing,
             "SELF_PAIRING"
         ))))
     );

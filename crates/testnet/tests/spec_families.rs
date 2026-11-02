@@ -312,7 +312,12 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
         .expect("the child lives on box");
     assert_eq!(
         own.cwd,
-        net.host("box").unwrap().work.to_string_lossy(),
+        net.host("box")
+            .unwrap()
+            .work
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy(),
         "a directory on the child's host"
     );
     println!(

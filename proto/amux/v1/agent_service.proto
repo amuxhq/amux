@@ -68,6 +68,9 @@ message CreateAgentRequest {
   // (wire::agent_name_problem); the host picks a free one when absent.
   optional string name = 3;
   optional AgentRef parent = 4;
+  // A folder on the agent's host, as the person typed it: the host reads `~`
+  // and a path not from the root as starting at its own home, and keeps the
+  // folder's canonical path as the agent's cwd.
   string cwd = 5;
   // Which interpreter, with that kind's settings.
   oneof agent {

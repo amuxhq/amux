@@ -122,7 +122,8 @@ choice. The create
 carries it as a prompt submission, which can hold nothing but a prompt, and
 names the kind by its arm with that kind's default settings. `name` names it. `host` is a trusted host's name, as a person would say it; the daemon
 resolves it, and omitted it means the caller's own host. `cwd` is a path on
-the host the child runs on: omitted on the caller's host (named or not, by
+the host the child runs on, where `~` and a path not from the root start at
+that host's home: omitted on the caller's host (named or not, by
 any of its names) it is the caller's own working directory, and omitted on
 another host the spawn is refused in words that name that host and ask for
 a folder on it: no folder there is a safe guess, so the caller asks the

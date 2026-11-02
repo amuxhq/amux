@@ -2030,12 +2030,26 @@ fn this_hosts_folder(typed: &str, home: Option<&Path>) -> Result<String, Registr
         return Err(refused(Path::new(typed)));
     };
     match path.canonicalize() {
-        Ok(folder) if folder.is_dir() => folder
+        Ok(folder) if folder.is_dir() => plain(folder)
             .into_os_string()
             .into_string()
             .map_err(|_| refused(&path)),
         _ => Err(refused(&path)),
     }
+}
+
+/// A canonical path in the form programs take as a working directory.
+/// Windows writes a canonical drive path verbatim (`\\?\C:\...`), a form
+/// that `cmd.exe` and many tools an agent runs refuse or print back oddly;
+/// the same folder as `C:\...` is plain. A network share stays verbatim.
+fn plain(folder: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    if let Some(drive) = folder.to_str().and_then(|path| path.strip_prefix(r"\\?\"))
+        && drive.as_bytes().get(1) == Some(&b':')
+    {
+        return PathBuf::from(drive);
+    }
+    folder
 }
 
 /// The id a frame's verdict comes back under: a message's envelope id.
@@ -2054,7 +2068,7 @@ mod tests {
     #[test]
     fn a_typed_folder_is_read_from_the_hosts_home_and_kept_canonical() {
         let temp = tempfile::tempdir().unwrap();
-        let home = temp.path().canonicalize().unwrap();
+        let home = plain(temp.path().canonicalize().unwrap());
         std::fs::create_dir_all(home.join("src/amux")).unwrap();
         let folder = |typed: &str| this_hosts_folder(typed, Some(&home));
         let amux = home
@@ -2098,6 +2112,10 @@ mod tests {
         std::fs::write(home.join("file"), "").unwrap();
         assert!(matches!(folder("file"), Err(RegistryError::BadCwd(_))));
         assert!(matches!(folder(""), Err(RegistryError::BadCwd(_))));
+        assert!(
+            !folder("~").unwrap().starts_with(r"\\?\"),
+            "a drive path is never verbatim"
+        );
         assert!(matches!(
             this_hosts_folder("~/src", None),
             Err(RegistryError::BadCwd(_))

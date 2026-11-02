@@ -604,6 +604,7 @@ impl ProfileRuntime {
     /// `cursor` when the core's part names one, its record the one given
     /// when its core sent one. Returns its manifest entry and what could not
     /// be gathered.
+    #[allow(clippy::too_many_arguments)]
     async fn dump_agent(
         &self,
         row: &AgentRow,

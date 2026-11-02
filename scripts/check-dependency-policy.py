@@ -43,8 +43,9 @@ ALLOWED_LOCAL = {
     # never the agent crate, so the phone can host a runtime without a
     # provider in its graph.
     # interpret only for the dump path's per-kind redactor: the one stated
-    # exception to "the daemon interprets nothing".
-    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
+    # exception to "the daemon interprets nothing". redaction for the table
+    # a dump writes the core's part by, as its structure alone.
+    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "redaction", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
     "amux": {"agent", "agent-dir", "analytics", "client", "log-file", "node", "settings", "tui", "wire"},
     # The release manifest the tool signs and the daemon verifies, and the
     # version stamp a release tool can rewrite in a built binary; the xtask

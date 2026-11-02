@@ -2,16 +2,17 @@
 //! what it is, so the agent's record can stand for the event without
 //! holding anything that was said.
 //!
-//! A provider's fact is JSON and keeps every field name; an input, an
-//! agent message and the agent's other protobuf events keep theirs by the
-//! wire schema's descriptor. Of the values, a skeleton keeps only those
+//! A provider's fact is JSON and keeps its protocol's field names, as
+//! below; an input, an agent message and the agent's other protobuf events
+//! keep theirs by the wire schema's descriptor. Of the values, a skeleton keeps only those
 //! that are not content:
 //!
 //! - the provider's fixed vocabulary: a status-like value its field's
 //!   closed set in [`VOCABULARY`] names, and a protocol's own tags (a
 //!   `type`, `subtype`, `method` or hook event name, as the record's
 //!   variant already keeps them);
-//! - bools and nulls, and numbers outside a tool's input and result;
+//! - bools and nulls, and numbers outside a tool's input and result and
+//!   what a data-keyed map holds;
 //! - a timestamp, and a built-in tool's name.
 //!
 //! Every other string becomes an alias of its value with its size,
@@ -28,9 +29,19 @@
 //! A string that is JSON becomes `{"=json": <skeleton>, "bytes": <n>}`. A
 //! text the provider frames with its own fixed phrases or tags
 //! (`FRAMES`), a link, and a shell command become `{"=text": [...]}`,
-//! the kept frames and separators between the aliases of what they hold.
-//! A field name that does not read as a schema's is aliased like a value,
-//! and every field name inside a tool server's own input or result.
+//! the kept frames and separators between the aliases of what they hold;
+//! a shell command keeps only the shell's name and flag, never the folder
+//! the shell was found in.
+//!
+//! Field names are the protocol's except in the subtrees its protocol
+//! crate names as the data's (`DATA_SUBTREES`: a tool's input and result,
+//! a change's files, a server's schema, per-model tallies). Outside them a
+//! name that reads as a field's is kept, so a field a new provider version
+//! adds shows by name.
+//! Inside them a name is kept only at a path `KEPT` lists for that
+//! subtree, the protocol's own fields there and a built-in tool's; every
+//! other name is aliased like a value, as is every name in JSON written
+//! into a string and in a tool server's own input or result.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -437,16 +448,529 @@ const FRAMES: &[(&str, &str)] = &[
     ("<pasted_content id=\"", "</pasted_content id=\""),
 ];
 
-/// Fields under which a tool's own input or result sits: their contents are
-/// data, so their numbers are sized like their strings.
-const DATA: &[&str] = &[
-    "input",
-    "tool_input",
-    "tool_response",
-    "tool_use_result",
-    "toolUseResult",
-    "arguments",
+/// The paths within each data subtree whose field names are kept, by the
+/// subtree's path: the fields of the protocol's own objects a subtree holds
+/// and, through `@input` and `@result`, a built-in tool's. A `*` is a
+/// position whose key is the data's (a model, a file, a question's id),
+/// itself aliased. A name anywhere else in data is aliased.
+const KEPT: &[(&str, &[&str])] = &[
+    // Claude: a tool's input and result, wherever a frame carries them.
+    ("message.content[].input", &["@input"]),
+    ("event.content_block.input", &["@input"]),
+    ("request.input", &["@input"]),
+    ("tool_input", &["@input"]),
+    ("permission_denials[].tool_input", &["@input"]),
+    ("wire_tool_inputs", &["*.@input"]),
+    ("wireToolInputs", &["*.@input"]),
+    ("tool_use_result", &["@result"]),
+    ("toolUseResult", &["@result"]),
+    ("tool_response", &["@result"]),
+    // A tool result's content blocks.
+    (
+        "message.content[].content",
+        &[
+            "[].type",
+            "[].text",
+            "[].tool_name",
+            "[].source",
+            "[].source.type",
+            "[].source.media_type",
+            "[].source.data",
+        ],
+    ),
+    // Per-model tallies, by model.
+    (
+        "modelUsage",
+        &[
+            "*.inputTokens",
+            "*.outputTokens",
+            "*.cacheReadInputTokens",
+            "*.cacheCreationInputTokens",
+            "*.cacheCreationEphemeral1hInputTokens",
+            "*.cacheCreationEphemeral5mInputTokens",
+            "*.thinkingTokens",
+            "*.webSearchRequests",
+            "*.costUSD",
+            "*.costBasis",
+            "*.contextWindow",
+            "*.maxOutputTokens",
+            "*.canonicalModel",
+            "*.provider",
+        ],
+    ),
+    (
+        "model_usage_since_last_result",
+        &[
+            "*.inputTokens",
+            "*.outputTokens",
+            "*.cacheReadInputTokens",
+            "*.cacheCreationInputTokens",
+            "*.cacheCreationEphemeral1hInputTokens",
+            "*.cacheCreationEphemeral5mInputTokens",
+            "*.thinkingTokens",
+            "*.webSearchRequests",
+            "*.costUSD",
+            "*.costBasis",
+            "*.contextWindow",
+            "*.maxOutputTokens",
+            "*.canonicalModel",
+            "*.provider",
+        ],
+    ),
+    // A tool server's form: its fields are the server's own.
+    ("request.requested_schema", FORM_SCHEMA),
+    ("permission_suggestions", PERMISSION_UPDATES),
+    ("request.permission_suggestions", PERMISSION_UPDATES),
+    // What a control request answers, either way: initialize's catalogue,
+    // a permission's verdict, a form's content (by the server's fields).
+    (
+        "response.response",
+        &[
+            "account",
+            "account.apiKeySource",
+            "account.apiProvider",
+            "account.email",
+            "account.organization",
+            "account.subscriptionType",
+            "account.tokenSource",
+            "action",
+            "agents",
+            "agents[].description",
+            "agents[].model",
+            "agents[].name",
+            "analytics_disabled",
+            "applied",
+            "applied.advisor",
+            "applied.effort",
+            "applied.model",
+            "applied.ultracode",
+            "applied.ultracodeAvailable",
+            "applied.ultracodeRequested",
+            "available_output_styles",
+            "behavior",
+            "capabilities",
+            "claude_code_version",
+            "commands",
+            "commands[].aliases",
+            "commands[].argumentHint",
+            "commands[].builtin",
+            "commands[].description",
+            "commands[].name",
+            "content",
+            "current_permission_mode",
+            "fast_mode_disabled_reason",
+            "fast_mode_state",
+            "feedback_mode",
+            "feedback_mode.kind",
+            "ide_rc_auto_enable_gate",
+            "interrupt",
+            "message",
+            "mode",
+            "model",
+            "models",
+            "models[].description",
+            "models[].displayName",
+            "models[].resolvedModel",
+            "models[].supportedEffortLevels",
+            "models[].supportsAdaptiveThinking",
+            "models[].supportsAutoMode",
+            "models[].supportsEffort",
+            "models[].supportsFastMode",
+            "models[].supportsThinkingOff",
+            "models[].value",
+            "output_style",
+            "pid",
+            "remote_control_auto_connect_default",
+            "remote_control_auto_enable",
+            "remote_control_auto_on_by_default",
+            "remote_control_available",
+            "session_state",
+            "still_queued",
+            "updatedInput",
+            "updatedInput.@input",
+            "updatedPermissions",
+            "updatedPermissions[].type",
+            "updatedPermissions[].mode",
+            "updatedPermissions[].destination",
+            "updatedPermissions[].directories",
+            "updatedPermissions[].behavior",
+            "updatedPermissions[].rules",
+            "updatedPermissions[].rules[].toolName",
+            "updatedPermissions[].rules[].ruleContent",
+            "user_output_styles_dir",
+        ],
+    ),
+    // Terminal Claude's attachment rows and file snapshots.
+    (
+        "attachment",
+        &[
+            "type",
+            "commandMode",
+            "date",
+            "decision",
+            "delivery_id",
+            "exitCode",
+            "hookEvent",
+            "hookName",
+            "humanTurn",
+            "identity",
+            "identity.knowledgeCutoff",
+            "identity.marketingName",
+            "identity.modelId",
+            "isSubAgent",
+            "origin",
+            "origin.kind",
+            "origin.producer",
+            "planExists",
+            "planFilePath",
+            "processId",
+            "prompt",
+            "reminderType",
+            "response",
+            "runId",
+            "scrubbed",
+            "source_uuid",
+            "stderr",
+            "stdout",
+            "text",
+            "timestamp",
+            "toolUseID",
+        ],
+    ),
+    (
+        "snapshot",
+        &[
+            "messageId",
+            "timestamp",
+            "trackedFileBackups",
+            "trackedFileBackups.*.backupFileName",
+            "trackedFileBackups.*.version",
+            "trackedFileBackups.*.backupTime",
+        ],
+    ),
+    // Codex: a tool server's call, its arguments and result.
+    ("params.item.arguments", &["@input"]),
+    ("params.item.result", &["@result"]),
+    // What a command does, as Codex parsed it.
+    ("params.item.commandActions", COMMAND_ACTIONS),
+    ("params.commandActions", COMMAND_ACTIONS),
+    // The files a change touches.
+    (
+        "params.item.changes",
+        &[
+            "[].path",
+            "[].diff",
+            "[].kind",
+            "[].kind.type",
+            "[].kind.move_path",
+        ],
+    ),
+    // A message's input parts.
+    (
+        "params.item.content",
+        &[
+            "[].type",
+            "[].text",
+            "[].text_elements",
+            "[].path",
+            "[].detail",
+            "[].url",
+            "[].name",
+        ],
+    ),
+    (
+        "params.availableDecisions",
+        &[
+            "[].acceptWithExecpolicyAmendment",
+            "[].acceptWithExecpolicyAmendment.execpolicy_amendment",
+            "[].applyNetworkPolicyAmendment",
+            "[].applyNetworkPolicyAmendment.network_policy_amendment",
+            "[].applyNetworkPolicyAmendment.network_policy_amendment.action",
+            "[].applyNetworkPolicyAmendment.network_policy_amendment.host",
+        ],
+    ),
+    (
+        "params.tokenUsage",
+        &[
+            "last",
+            "last.cacheWriteInputTokens",
+            "last.cachedInputTokens",
+            "last.inputTokens",
+            "last.outputTokens",
+            "last.reasoningOutputTokens",
+            "last.totalTokens",
+            "modelContextWindow",
+            "total",
+            "total.cacheWriteInputTokens",
+            "total.cachedInputTokens",
+            "total.inputTokens",
+            "total.outputTokens",
+            "total.reasoningOutputTokens",
+            "total.totalTokens",
+        ],
+    ),
+    (
+        "params.rateLimits",
+        &[
+            "credits",
+            "credits.balance",
+            "credits.hasCredits",
+            "credits.unlimited",
+            "individualLimit",
+            "limitId",
+            "limitName",
+            "normalModelSlug",
+            "planType",
+            "primary",
+            "primary.resetsAt",
+            "primary.usedPercent",
+            "primary.windowDurationMins",
+            "rateLimitReachedType",
+            "secondary",
+            "secondary.resetsAt",
+            "secondary.usedPercent",
+            "secondary.windowDurationMins",
+            "spendControlReached",
+        ],
+    ),
+    ("params.requestedSchema", FORM_SCHEMA),
+    ("params.permissions", PERMISSIONS),
+    ("result.permissions", PERMISSIONS),
+    (
+        "params._meta",
+        &[
+            "codex_approval_kind",
+            "persist",
+            "tool_description",
+            "tool_params",
+            "tool_params_display",
+            "tool_params_display[].display_name",
+            "tool_params_display[].name",
+            "tool_params_display[].value",
+        ],
+    ),
+    // Answers, by the provider's question ids.
+    ("result.answers", &["*.answers"]),
 ];
+
+const FORM_SCHEMA: &[&str] = &["type", "properties", "properties.*.type", "required"];
+
+/// The fields of the built-in tools' inputs (Claude's, and amux's own
+/// tool server's) by path within the input.
+pub(crate) const TOOL_INPUT: &[&str] = &[
+    // Bash, and the shells it starts.
+    "command",
+    "description",
+    "run_in_background",
+    "timeout",
+    "dangerouslyDisableSandbox",
+    "bash_id",
+    "shell_id",
+    "task_id",
+    "block",
+    "filter",
+    // Files.
+    "file_path",
+    "offset",
+    "limit",
+    "pages",
+    "content",
+    "old_string",
+    "new_string",
+    "replace_all",
+    "edits",
+    "edits[].old_string",
+    "edits[].new_string",
+    "edits[].replace_all",
+    "notebook_path",
+    "cell_id",
+    "new_source",
+    "cell_type",
+    "edit_mode",
+    "pattern",
+    "path",
+    "glob",
+    "type",
+    "output_mode",
+    "head_limit",
+    "multiline",
+    // The web.
+    "url",
+    "prompt",
+    "query",
+    "allowed_domains",
+    "blocked_domains",
+    "max_results",
+    // Subagents, skills and tasks.
+    "subagent_type",
+    "model",
+    "name",
+    "skill",
+    "args",
+    "todos",
+    "todos[].content",
+    "todos[].status",
+    "todos[].activeForm",
+    "subject",
+    "activeForm",
+    "taskId",
+    "status",
+    "owner",
+    // Questions and plans.
+    "questions",
+    "questions[].question",
+    "questions[].header",
+    "questions[].multiSelect",
+    "questions[].options",
+    "questions[].options[].label",
+    "questions[].options[].description",
+    "questions[].options[].preview",
+    "answers",
+    "annotations",
+    "annotations.*.notes",
+    "plan",
+    "planFilePath",
+    // amux's own tools.
+    "to",
+    "text",
+    "context",
+    "kind",
+    "cwd",
+    "host",
+    "working_on",
+];
+
+/// The fields of the built-in tools' results, by path within the result.
+pub(crate) const TOOL_RESULT: &[&str] = &[
+    "[].type",
+    "[].text",
+    "type",
+    "content",
+    "content[].type",
+    "content[].text",
+    "structuredContent",
+    "isError",
+    "stdout",
+    "stderr",
+    "interrupted",
+    "isImage",
+    "noOutputExpected",
+    "backgroundTaskId",
+    "outputFile",
+    "filePath",
+    "oldString",
+    "newString",
+    "originalFile",
+    "replaceAll",
+    "userModified",
+    "structuredPatch",
+    "structuredPatch[].oldStart",
+    "structuredPatch[].oldLines",
+    "structuredPatch[].newStart",
+    "structuredPatch[].newLines",
+    "structuredPatch[].lines",
+    "file",
+    "file.type",
+    "file.filePath",
+    "file.content",
+    "file.base64",
+    "file.numLines",
+    "file.startLine",
+    "file.totalLines",
+    "file.originalSize",
+    "file.dimensions",
+    "file.dimensions.displayHeight",
+    "file.dimensions.displayWidth",
+    "file.dimensions.originalHeight",
+    "file.dimensions.originalWidth",
+    "matches",
+    "query",
+    "total_deferred_tools",
+    "agentId",
+    "isAgent",
+    "isAsync",
+    "canContinueAgent",
+    "canReadOutputFile",
+    "description",
+    "prompt",
+    "resolvedModel",
+    "status",
+    "statusChange",
+    "statusChange.from",
+    "statusChange.to",
+    "success",
+    "task",
+    "task.id",
+    "task.subject",
+    "taskId",
+    "updatedFields",
+    "message",
+    "plan",
+    "questions",
+    "questions[].question",
+    "questions[].header",
+    "questions[].multiSelect",
+    "questions[].options",
+    "questions[].options[].label",
+    "questions[].options[].description",
+    "questions[].options[].preview",
+    "answers",
+    "annotations",
+    "annotations.*.notes",
+];
+
+const PERMISSION_UPDATES: &[&str] = &[
+    "[].type",
+    "[].behavior",
+    "[].destination",
+    "[].directories",
+    "[].mode",
+    "[].rules",
+    "[].rules[].toolName",
+    "[].rules[].ruleContent",
+];
+
+const COMMAND_ACTIONS: &[&str] = &["[].type", "[].command", "[].name", "[].path", "[].query"];
+
+const PERMISSIONS: &[&str] = &[
+    "fileSystem",
+    "fileSystem.read",
+    "fileSystem.write",
+    "network",
+    "network.enabled",
+];
+
+/// Whether `path` within data is one `kept` lists: written there, a field
+/// of the protocol's (`Some(false)`), or within a built-in tool's input or
+/// result a `<prefix>@input` or `<prefix>@result` entry places under
+/// `prefix`, a field of the tool's (`Some(true)`). None for a name the
+/// lists do not hold, which is aliased.
+fn keeps(kept: &[&str], path: &str) -> Option<bool> {
+    kept.iter().find_map(|entry| {
+        if *entry == path {
+            return Some(false);
+        }
+        [("@input", TOOL_INPUT), ("@result", TOOL_RESULT)]
+            .iter()
+            .find_map(|(tag, list)| {
+                let rest = path.strip_prefix(entry.strip_suffix(tag)?)?;
+                (!rest.is_empty() && keeps(list, rest).is_some()).then_some(true)
+            })
+    })
+}
+
+/// Whether a data subtree is a tool's own input or result.
+fn tool_data(subtree: &str) -> bool {
+    kept(subtree)
+        .iter()
+        .any(|entry| entry.ends_with("@input") || entry.ends_with("@result"))
+}
+
+fn kept(subtree: &str) -> &'static [&'static str] {
+    KEPT.iter()
+        .find(|(path, _)| *path == subtree)
+        .map_or(&[], |(_, kept)| kept)
+}
 
 /// The protobuf fields that name a model, effort, permission or mode from
 /// the provider's own catalogue, kept as a fact's model is.
@@ -529,13 +1053,78 @@ pub struct Skeleton {
     pub salt: [u8; 16],
 }
 
-/// Where in a fact a value sits.
-#[derive(Clone, Copy, Default)]
+/// Where in a frame a value sits.
+#[derive(Clone, Copy)]
 struct At {
-    /// Inside a tool's input or result.
-    data: bool,
+    /// The frame's data subtrees, and its lists of the protocol's items, by
+    /// path from its root.
+    frame: Frame,
+    /// Inside data: the subtree's path, and the paths within it whose keys
+    /// are kept.
+    data: Option<(&'static str, &'static [&'static str])>,
+    /// Inside data that is no field of the protocol's: a tool's own input
+    /// or result, or what a data-keyed map holds. Its numbers are sized
+    /// like its strings, and no tag is read in it.
+    tool: bool,
     /// Inside a tool server's own input or result.
     server: bool,
+}
+
+/// A frame's data subtrees and item lists, as its protocol crate names them.
+#[derive(Clone, Copy)]
+pub struct Frame {
+    data: &'static [&'static str],
+    items: &'static [&'static str],
+}
+
+impl Frame {
+    /// A provider's frames, or what amux writes to it.
+    pub fn of(kind: wire::Kind) -> Self {
+        match kind {
+            wire::Kind::ClaudeSdk | wire::Kind::ClaudePty => Frame {
+                data: claude_protocol::DATA_SUBTREES,
+                items: &[],
+            },
+            wire::Kind::Codex => Frame {
+                data: codex_protocol::DATA_SUBTREES,
+                items: codex_protocol::ITEM_LISTS,
+            },
+            _ => Frame {
+                data: &[],
+                items: &[],
+            },
+        }
+    }
+}
+
+impl At {
+    fn root(frame: Frame) -> Self {
+        At {
+            frame,
+            data: None,
+            tool: false,
+            server: false,
+        }
+    }
+
+    /// Inside JSON that is all data, whose every key is aliased.
+    fn data(frame: Frame) -> Self {
+        At {
+            frame,
+            data: Some(("", &[])),
+            tool: true,
+            server: false,
+        }
+    }
+}
+
+/// `key` under `path`, as a subtree's path is written.
+fn child(path: &str, key: &str) -> String {
+    if path.is_empty() {
+        key.to_owned()
+    } else {
+        format!("{path}.{key}")
+    }
 }
 
 impl Skeleton {
@@ -592,24 +1181,24 @@ impl Skeleton {
         self.alias(marker, text)
     }
 
-    /// A provider fact's skeleton; a payload that is not JSON is one text.
-    pub fn fact(&self, payload: &[u8]) -> Value {
+    /// A provider fact's skeleton, or one of what amux writes to its
+    /// provider; a payload that is not JSON is one text.
+    pub fn fact(&self, kind: wire::Kind, payload: &[u8]) -> Value {
         match serde_json::from_slice::<Value>(payload) {
-            Ok(value) => self.json(&value, At::default(), "", None),
+            Ok(value) => self.json(&value, At::root(Frame::of(kind)), "", "", None),
             Err(_) => Value::String(self.text(&String::from_utf8_lossy(payload))),
         }
     }
 
-    /// A JSON value's skeleton, outside any tool's data.
-    pub fn value(&self, value: &Value) -> Value {
-        self.json(value, At::default(), "", None)
-    }
-
-    /// `value` under the field `key` of an object whose `type` is `kind`.
-    fn json(&self, value: &Value, at: At, key: &str, kind: Option<&str>) -> Value {
+    /// `value` at `path` under the field `key` of an object whose `type`
+    /// is `kind`. Outside data a field name is the protocol's and kept, as
+    /// a new field must show by name; inside data only the names at the
+    /// paths `KEPT` lists for that subtree are, and every other is aliased
+    /// like a value, its path written `*`.
+    fn json(&self, value: &Value, at: At, path: &str, key: &str, kind: Option<&str>) -> Value {
         match value {
             Value::Null | Value::Bool(_) => value.clone(),
-            Value::Number(number) if at.data => {
+            Value::Number(number) if at.tool => {
                 Value::String(format!("#{}", number.to_string().len()))
             }
             Value::Number(_) => value.clone(),
@@ -617,27 +1206,71 @@ impl Skeleton {
                 .embedded(text, at, key, kind)
                 .or_else(|| (!at.server).then(|| self.framed(text)).flatten())
                 .unwrap_or_else(|| Value::String(self.string(text, at, key, kind))),
-            Value::Array(items) => Value::Array(
-                items
-                    .iter()
-                    .map(|item| self.json(item, at, key, kind))
-                    .collect(),
-            ),
+            Value::Array(items) => {
+                let element = if at.data.is_none()
+                    && (at.frame.items.contains(&path)
+                        || at
+                            .frame
+                            .items
+                            .iter()
+                            .any(|list| path.strip_prefix(list) == Some("[].items")))
+                    && path.ends_with("items")
+                {
+                    "params.item".to_owned()
+                } else {
+                    format!("{path}[]")
+                };
+                Value::Array(
+                    items
+                        .iter()
+                        .map(|item| self.json(item, at, &element, key, kind))
+                        .collect(),
+                )
+            }
             Value::Object(fields) => {
                 let kind = fields.get("type").and_then(Value::as_str);
                 let server = server_tool(fields, kind);
                 let mut out = Map::new();
                 for (name, value) in fields {
-                    let inner = At {
-                        data: at.data || DATA.contains(&name.as_str()) || tool_result(name, kind),
-                        server: at.server || (server && DATA.contains(&name.as_str())),
+                    let entry = match at.data {
+                        Some((_, kept)) => {
+                            let named = child(path, name);
+                            let keep = if at.server { None } else { keeps(kept, &named) };
+                            match keep {
+                                Some(tool) => {
+                                    (name.clone(), (At { tool, ..at }, named), name.as_str())
+                                }
+                                None => (
+                                    self.alias("", name),
+                                    (At { tool: true, ..at }, child(path, "*")),
+                                    "",
+                                ),
+                            }
+                        }
+                        None => {
+                            let path = child(path, name);
+                            let name_out = if schema_name(name) {
+                                name.clone()
+                            } else {
+                                self.alias("", name)
+                            };
+                            let entered = at.frame.data.iter().find(|subtree| **subtree == path);
+                            let inner = match entered {
+                                Some(subtree) => (
+                                    At {
+                                        data: Some((subtree, kept(subtree))),
+                                        server: at.server || (server && tool_data(subtree)),
+                                        ..at
+                                    },
+                                    String::new(),
+                                ),
+                                None => (at, path),
+                            };
+                            (name_out, inner, name.as_str())
+                        }
                     };
-                    let name_out = if at.server || !schema_name(name) {
-                        self.alias("", name)
-                    } else {
-                        name.clone()
-                    };
-                    out.insert(name_out, self.json(value, inner, name, kind));
+                    let (name_out, (inner, path), key) = entry;
+                    out.insert(name_out, self.json(value, inner, &path, key, kind));
                 }
                 Value::Object(out)
             }
@@ -657,7 +1290,7 @@ impl Skeleton {
         {
             return self.named(text);
         }
-        if !at.data {
+        if !at.tool {
             if TAGS.contains(&key) && text.split('/').all(schema_name) {
                 return format!("={text}");
             }
@@ -733,18 +1366,18 @@ impl Skeleton {
     }
 
     /// A command as Codex reports it, wrapped in the user's shell
-    /// (`/bin/zsh -lc '…'`): the shell kept and the script inside aliased,
-    /// so the script aliases as the command the interpreter shows.
+    /// (`/bin/zsh -lc '…'`): the shell's name and flag kept, never the
+    /// folder it was found in (which names the person's home), and the
+    /// script inside aliased, so the script aliases as the command the
+    /// interpreter shows.
     fn shell(&self, text: &str) -> Option<Value> {
         let words = shell_words::split(text).ok()?;
         let [shell, flag, script] = words.as_slice() else {
             return None;
         };
+        let name = shell.rsplit('/').next().unwrap_or_default();
         let known = matches!(flag.as_str(), "-lc" | "-c")
-            && matches!(
-                shell.rsplit('/').next(),
-                Some("bash" | "zsh" | "sh" | "dash" | "ksh" | "fish")
-            )
+            && matches!(name, "bash" | "zsh" | "sh" | "dash" | "ksh" | "fish")
             && !shell.contains(char::is_whitespace);
         // Quoted as Codex quoted it, unless it needed none.
         let quote = if text == format!("{shell} {flag} {script}") {
@@ -754,7 +1387,7 @@ impl Skeleton {
         };
         known.then(|| {
             serde_json::json!({ "=text": [
-                format!("={shell} {flag} {quote}"),
+                format!("={name} {flag} {quote}"),
                 self.text(script),
                 format!("={quote}"),
             ]})
@@ -811,13 +1444,19 @@ impl Skeleton {
     /// A string that holds JSON, as amux's own tool server answers and
     /// some providers write a call's arguments: its skeleton, beside the
     /// text's size. Any other string is None.
+    /// JSON written into a string: the data's, never the protocol's.
     fn embedded(&self, text: &str, at: At, key: &str, kind: Option<&str>) -> Option<Value> {
         if !text.starts_with(['{', '[']) {
             return None;
         }
         let json = serde_json::from_str::<Value>(text).ok()?;
+        let inner = At {
+            data: Some(("", &[])),
+            tool: true,
+            ..at
+        };
         Some(serde_json::json!({
-            "=json": self.json(&json, at, key, kind),
+            "=json": self.json(&json, inner, "", key, kind),
             "bytes": text.len(),
         }))
     }
@@ -914,7 +1553,15 @@ impl Skeleton {
             }
             (Type::Bytes, Raw::Bytes(bytes)) if field.name.ends_with("_json") => {
                 let json = serde_json::from_slice::<Value>(bytes)
-                    .map(|json| self.value(&json))
+                    .map(|json| {
+                        self.json(
+                            &json,
+                            At::data(Frame::of(wire::Kind::Unspecified)),
+                            "",
+                            "",
+                            None,
+                        )
+                    })
                     .unwrap_or(Value::Null);
                 vec![serde_json::json!({ "=json": json, "bytes": bytes.len() })]
             }
@@ -1044,13 +1691,6 @@ fn is_tool_name(key: &str, kind: Option<&str>) -> bool {
                 kind,
                 Some("tool_use" | "server_tool_use" | "mcp_tool_use" | "tool_reference")
             ))
-}
-
-/// Whether the field `name` of an object of type `kind` holds a tool's
-/// result.
-fn tool_result(name: &str, kind: Option<&str>) -> bool {
-    (name == "content" && kind.is_some_and(|kind| kind.ends_with("tool_result")))
-        || (name == "result" && kind == Some("mcpToolCall"))
 }
 
 /// Whether an object is a call of a tool server's tool, whose input and
@@ -1186,7 +1826,7 @@ mod tests {
                 "command": "cat secret.txt", "status": "completed", "exitCode": 0,
                 "aggregatedOutput": "secret\nwords\n"}},
         });
-        let out = SKELETON.fact(&serde_json::to_vec(&fact).unwrap());
+        let out = SKELETON.fact(wire::Kind::ClaudeSdk, &serde_json::to_vec(&fact).unwrap());
         let output = format!("{}/2", h("secret\nwords\n", 13));
         assert_eq!(
             out,
@@ -1218,7 +1858,7 @@ mod tests {
             {"type": "tool_use", "id": "u", "name": "Read",
              "input": {"file_path": "/x", "offset": 120}},
         ]}});
-        let out = SKELETON.fact(&serde_json::to_vec(&fact).unwrap());
+        let out = SKELETON.fact(wire::Kind::ClaudeSdk, &serde_json::to_vec(&fact).unwrap());
         let blocks = &out["message"]["content"];
         assert_eq!(
             blocks[0]["name"],

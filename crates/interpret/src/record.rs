@@ -162,7 +162,7 @@ impl Run {
                     "variant": shape.variant,
                     "bytes": fact.payload.len(),
                     "tools": tools,
-                    "shape": alias.skeleton().fact(&fact.payload),
+                    "shape": alias.skeleton().fact(I::KIND, &fact.payload),
                 })
             }
             Event::Input(input) => {
@@ -278,7 +278,7 @@ impl Run {
             "effects": stepped
                 .effects
                 .iter()
-                .map(|effect| sparse(effect_record(alias, effect)))
+                .map(|effect| sparse(effect_record(alias, I::KIND, effect)))
                 .collect::<Vec<_>>(),
             "pending_messages": alias.ids(&I::pending_messages(state)),
             "typed_unrecorded": I::typed_unrecorded(state),
@@ -390,9 +390,9 @@ fn spec_shape(skeleton: &Skeleton, spec: &AgentSpec) -> Value {
 
 /// The skeleton of what an interpreter wrote to its provider, when it is
 /// JSON: the ids it chose, by alias, for a reply that echoes them.
-fn json_shape(alias: &Alias, bytes: &[u8]) -> Value {
+fn json_shape(alias: &Alias, kind: wire::Kind, bytes: &[u8]) -> Value {
     serde_json::from_slice::<Value>(bytes)
-        .map(|value| alias.skeleton().value(&value))
+        .map(|_| alias.skeleton().fact(kind, bytes))
         .unwrap_or(Value::Null)
 }
 
@@ -449,12 +449,12 @@ fn message(alias: &Alias, envelope: &wire::Envelope) -> Value {
 }
 
 /// An effect by kind, with its size and the id it answers.
-fn effect_record(alias: &Alias, effect: &Effect) -> Value {
+fn effect_record(alias: &Alias, kind: wire::Kind, effect: &Effect) -> Value {
     match effect {
         Effect::ProviderWrite(bytes) => json!({
             "effect": "provider_write",
             "bytes": bytes.len(),
-            "shape": json_shape(alias, bytes),
+            "shape": json_shape(alias, kind, bytes),
         }),
         Effect::Reply { input_id, verdict } => {
             let (accepted, refusal) = match &verdict.of {
@@ -511,7 +511,7 @@ fn effect_record(alias: &Alias, effect: &Effect) -> Value {
         } => json!({
             "effect": "codex_turn_input",
             "bytes": request.len(),
-            "shape": json_shape(alias, request),
+            "shape": json_shape(alias, kind, request),
             "attachments": attachments.len(),
         }),
     }

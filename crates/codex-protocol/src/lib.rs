@@ -34,6 +34,38 @@ use serde_json::{Map, Value};
 pub use server::{ServerNotification, ServerRequest};
 pub use thread::{Thread, Turn};
 
+/// The subtrees of a line, by path from its root (`[]` an array's
+/// element), whose fields are the data's rather than this protocol's: a
+/// tool's arguments and result, the files a change names, a server's
+/// schema and metadata, and the tallies and lists whose shape varies with
+/// what they count.
+pub const DATA_SUBTREES: &[&str] = &[
+    "params.item.commandActions",
+    "params.item.changes",
+    "params.item.arguments",
+    "params.item.result",
+    "params.item.content",
+    "params.commandActions",
+    "params.availableDecisions",
+    "params.tokenUsage",
+    "params.rateLimits",
+    "params.requestedSchema",
+    "params.permissions",
+    "params._meta",
+    "result.permissions",
+    "result.answers",
+    "result.content",
+];
+
+/// The lists of a turn's items, and of a thread's turns that hold them, by
+/// path from a line's root: each item in them is the item a
+/// `params.item` carries.
+pub const ITEM_LISTS: &[&str] = &[
+    "params.turn.items",
+    "params.thread.turns",
+    "result.thread.turns",
+];
+
 /// The fields of an object this crate does not type, kept as written.
 pub type Extra = Map<String, Value>;
 

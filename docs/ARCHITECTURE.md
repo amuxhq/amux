@@ -725,7 +725,7 @@ The allowed sets encode the layering above:
 | `app-ffi` | `app-embedded`, `app-runtime`, `client`, `node`, `ui-state`, `ui-view` | the C ABI over both |
 | `amux` | `agent`, `agent-dir`, `analytics`, `client`, `log-file`, `node`, `settings`, `tui`, `wire` | the one binary |
 | `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `socket-core`, `store`, `supervisor-core`, `ui-state`, `wire` | the properties, explored over the real cores, store and session state |
-| `replay-support` | `core-ring`, `daemon-core`, `journal`, `models`, `store`, `ui-state`, `wire` | replays the core's and the sessions' records, judging the models' properties; a debugging tool nothing links |
+| `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `provider-fakes`, `store`, `ui-state`, `wire` | replays the core's and the sessions' records, judging the models' properties; an agent's record carries no provider's words, so it replays as a stream made up from it through the real interpreter, held to the provider's types by the fakes' conformance; a debugging tool nothing links |
 | `qualification` | `node`, `provider-fakes`, `pty-host`, `redaction`, `testnet`, `wire` | the live lane and the performance workloads over the harness; its probes host terminal Claude on a pseudo-terminal of their own and sanitize what they record |
 | `xtask` | `release` | signs releases |
 | `ios-tools` | `app-runtime`, `ui-state`, `ui-view`, `wire` | generates the Swift mirrors |

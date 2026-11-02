@@ -6,3 +6,4 @@ mod core_replay;
 mod dump_show;
 mod record;
 mod support;
+mod synthetic;

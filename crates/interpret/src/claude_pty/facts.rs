@@ -243,6 +243,8 @@ impl State {
         emit.end_incarnation(exit.clone());
         self.running.clear();
         self.close_all_unknown(emit);
+        // A reply Claude died drawing ends as it was drawn.
+        self.finish_streams(emit);
         self.boundary(emit, BoundaryKind::Exited, exit);
         self.shared.provider_exited();
         self.jobs.clear();

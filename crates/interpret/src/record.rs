@@ -20,11 +20,11 @@
 use std::collections::HashSet;
 
 use serde_json::{Map, Value, json};
-use sha2::Digest as _;
 use wire::AgentSpec;
 
 use crate::ring::Entry;
 use crate::shape::{Name, Structure};
+use crate::skeleton::{Skeleton, input_message, schema_name};
 use crate::{Effect, Event, Interpreter, Stepped};
 
 /// The record of an agent under `spec` whose lifecycle stands as `core`,
@@ -68,6 +68,7 @@ pub fn record<I: Interpreter>(
             "mode": config.mode,
             "effort": config.effort,
             "flags": flags,
+            "spec": spec_shape(&run.alias.skeleton(), spec),
         },
         "core": core,
         "segments": segments,
@@ -161,6 +162,7 @@ impl Run {
                     "variant": shape.variant,
                     "bytes": fact.payload.len(),
                     "tools": tools,
+                    "shape": alias.skeleton().fact(I::KIND, &fact.payload),
                 })
             }
             Event::Input(input) => {
@@ -168,21 +170,38 @@ impl Run {
                 json!({
                     "event": "input",
                     "input_id": alias.id(&input.input_id),
+                    "id_bytes": input.input_id.len(),
                     "arm": shape.arm,
                     "answer": shape.answer,
                     "ask_key": shape.ask_key.map(|key| alias.key(&key)),
                     "target": shape.target.map(|target| alias.id(&target)),
                     "bytes": input.body.len(),
+                    "shape": alias.skeleton().proto(input_message(I::KIND), &input.body),
                 })
             }
             Event::AgentMessage(envelope) => message(alias, envelope),
-            Event::Rename { name } => json!({ "event": "rename", "bytes": name.len() }),
+            Event::Rename { name } => json!({
+                "event": "rename",
+                "bytes": name.len(),
+                "shape": alias.skeleton().text(name),
+            }),
             Event::Tick { at_ms } => json!({ "event": "tick", "at_ms": at_ms }),
             Event::ProviderExit { code } => json!({ "event": "provider_exit", "code": code }),
             Event::DaemonLost => json!({ "event": "daemon_lost" }),
             Event::StopRequested => json!({ "event": "stop" }),
-            Event::Exiting(end) => json!({ "event": "exiting", "cause": end.cause }),
-            Event::Git(facts) => json!({ "event": "git", "git": facts.as_ref().map(git) }),
+            Event::Exiting(end) => json!({
+                "event": "exiting",
+                "cause": end.cause,
+                "detail": end.detail.as_deref().map(|detail| alias.skeleton().text(detail)),
+            }),
+            Event::Git(facts) => json!({
+                "event": "git",
+                "git": facts.as_ref().map(git),
+                "repository": facts.is_some(),
+                "shape": facts.as_ref().map(|facts| {
+                    alias.skeleton().proto("amux.v1.Git", &prost::Message::encode_to_vec(facts))
+                }),
+            }),
         };
         sparse(value)
     }
@@ -233,9 +252,15 @@ impl Run {
                 .iter()
                 .map(|queued| alias.id(&queued.input_id))
                 .collect();
+            let asks: Vec<(String, String)> = I::describe_snapshot(&snapshot.body)
+                .asks
+                .iter()
+                .map(|(ask, item)| (alias.key(ask), alias.key(item)))
+                .collect();
             json!({
                 "phase": snapshot.phase,
                 "queue": queue,
+                "asks": asks,
                 "working_on": snapshot.working_on.is_some(),
                 "background_jobs": snapshot.background_jobs,
                 "bytes": snapshot.body.len(),
@@ -253,7 +278,7 @@ impl Run {
             "effects": stepped
                 .effects
                 .iter()
-                .map(|effect| sparse(effect_record(alias, effect)))
+                .map(|effect| sparse(effect_record(alias, I::KIND, effect)))
                 .collect::<Vec<_>>(),
             "pending_messages": alias.ids(&I::pending_messages(state)),
             "typed_unrecorded": I::typed_unrecorded(state),
@@ -266,14 +291,20 @@ impl Run {
 }
 
 /// The value with every null, false, empty string, list and object left
-/// out, each nested object first.
+/// out, each nested object first. A skeleton (`shape`) is kept whole: its
+/// empty and false values are the event's own.
 fn sparse(value: Value) -> Value {
     match value {
         Value::Object(map) => Value::Object(
             map.into_iter()
-                .map(|(key, value)| (key, sparse(value)))
-                .filter(|(_, value)| match value {
-                    Value::Null | Value::Bool(false) => false,
+                .map(|(key, value)| match key.as_str() {
+                    "shape" => (key, value),
+                    _ => (key, sparse(value)),
+                })
+                .filter(|(key, value)| match value {
+                    Value::Null => false,
+                    _ if key == "shape" => true,
+                    Value::Bool(false) => false,
                     Value::String(text) => !text.is_empty(),
                     Value::Array(list) => !list.is_empty(),
                     Value::Object(map) => !map.is_empty(),
@@ -293,11 +324,7 @@ struct Alias {
 
 impl Alias {
     fn hash(&self, bytes: &[u8]) -> String {
-        let digest = sha2::Sha256::new()
-            .chain_update(self.salt)
-            .chain_update(bytes)
-            .finalize();
-        crate::to_hex(&digest[..6])
+        self.skeleton().hash(bytes)
     }
 
     /// An id's alias; an empty id, which means none, stays empty.
@@ -306,6 +333,10 @@ impl Alias {
             return String::new();
         }
         format!("id-{}", self.hash(bytes))
+    }
+
+    fn skeleton(&self) -> Skeleton {
+        Skeleton { salt: self.salt }
     }
 
     fn ids(&self, ids: &[Vec<u8>]) -> Vec<String> {
@@ -331,21 +362,38 @@ impl Alias {
 
     /// A provider's own name as it is when it reads as a schema's; a tool
     /// server's, or any that reads as data, aliased.
+    ///
+    /// A tool server's tool keeps the `mcp__` Claude names it with, and a
+    /// Codex server's tool (`server/tool`) each part's alias, as an event's
+    /// skeleton does.
     fn name(&self, name: &Name) -> String {
+        let alias = |name: &str| format!("name-{}", self.hash(name.as_bytes()));
         match name {
             Name::Own(name) if schema_name(name) => name.clone(),
-            Name::Own(name) | Name::Server(name) => format!("name-{}", self.hash(name.as_bytes())),
+            Name::Server(name) if name.starts_with("mcp__") => {
+                format!("mcp__{}", alias(&name["mcp__".len()..]))
+            }
+            Name::Server(name) => name.split('/').map(alias).collect::<Vec<_>>().join("/"),
+            Name::Own(name) => alias(name),
         }
     }
 }
 
-/// A name a schema would choose: short, and made of identifier characters.
-fn schema_name(name: &str) -> bool {
-    (1..=48).contains(&name.len())
-        && name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"_-.".contains(&b))
+/// The spec's skeleton, its launch arguments read in order.
+fn spec_shape(skeleton: &Skeleton, spec: &AgentSpec) -> Value {
+    let mut shape = skeleton.proto("amux.v1.AgentSpec", &prost::Message::encode_to_vec(spec));
+    if !spec.provider_args.is_empty() {
+        shape["provider_args"] = skeleton.launch_args(&spec.provider_args);
+    }
+    shape
+}
+
+/// The skeleton of what an interpreter wrote to its provider, when it is
+/// JSON: the ids it chose, by alias, for a reply that echoes them.
+fn json_shape(alias: &Alias, kind: wire::Kind, bytes: &[u8]) -> Value {
+    serde_json::from_slice::<Value>(bytes)
+        .map(|_| alias.skeleton().fact(kind, bytes))
+        .unwrap_or(Value::Null)
 }
 
 /// The folder's git facts as counts: whether there is a branch, never its
@@ -391,6 +439,7 @@ fn message(alias: &Alias, envelope: &wire::Envelope) -> Value {
     };
     json!({
         "event": "agent_message",
+        "shape": alias.skeleton().proto("amux.v1.Envelope", &prost::Message::encode_to_vec(envelope)),
         "id": alias.id(&envelope.id),
         "from": from,
         "report": report,
@@ -400,9 +449,13 @@ fn message(alias: &Alias, envelope: &wire::Envelope) -> Value {
 }
 
 /// An effect by kind, with its size and the id it answers.
-fn effect_record(alias: &Alias, effect: &Effect) -> Value {
+fn effect_record(alias: &Alias, kind: wire::Kind, effect: &Effect) -> Value {
     match effect {
-        Effect::ProviderWrite(bytes) => json!({ "effect": "provider_write", "bytes": bytes.len() }),
+        Effect::ProviderWrite(bytes) => json!({
+            "effect": "provider_write",
+            "bytes": bytes.len(),
+            "shape": json_shape(alias, kind, bytes),
+        }),
         Effect::Reply { input_id, verdict } => {
             let (accepted, refusal) = match &verdict.of {
                 Some(wire::send_input_response::Of::Accepted(accepted)) => {
@@ -439,20 +492,26 @@ fn effect_record(alias: &Alias, effect: &Effect) -> Value {
             json!({ "effect": "hook_answer", "hook": id, "bytes": answer.len() })
         }
         Effect::UserMessage {
-            text, attachments, ..
+            uuid,
+            text,
+            attachments,
         } => json!({
             "effect": "user_message",
+            "id": alias.id(uuid.as_bytes()),
             "bytes": text.len(),
             "attachments": attachments.len(),
         }),
         Effect::FollowTranscript { .. } => json!({ "effect": "follow_transcript" }),
-        Effect::ProviderSession { .. } => json!({ "effect": "provider_session" }),
+        Effect::ProviderSession { id } => {
+            json!({ "effect": "provider_session", "id": alias.id(id.as_bytes()) })
+        }
         Effect::CodexTurnInput {
             request,
             attachments,
         } => json!({
             "effect": "codex_turn_input",
             "bytes": request.len(),
+            "shape": json_shape(alias, kind, request),
             "attachments": attachments.len(),
         }),
     }

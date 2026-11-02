@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::value::RawValue;
 
-use crate::{Fact, claude_common};
+use crate::{Fact, claude_common, skeleton};
 
 /// A name the record keeps.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -195,13 +195,16 @@ fn claude_tool(name: &str) -> Name {
     }
 }
 
-fn names(keys: Vec<String>, server: bool) -> Vec<Name> {
+/// A tool's keys: a tool server's all its own, a built-in tool's its
+/// schema's only when `schema` lists them (None when they are the
+/// protocol's own fields), and any other the data's, aliased as a server's.
+fn names(keys: Vec<String>, server: bool, schema: Option<&[&str]>) -> Vec<Name> {
     keys.into_iter()
         .map(|key| {
-            if server {
-                Name::Server(key)
-            } else {
+            if !server && schema.is_none_or(|schema| schema.contains(&key.as_str())) {
                 Name::Own(key)
+            } else {
+                Name::Server(key)
             }
         })
         .collect()
@@ -241,14 +244,14 @@ pub fn fact(fact: &Fact) -> FactShape {
             tools.push(ToolShape {
                 result: false,
                 name: server.clone(),
-                keys: names(keys(top.tool_input), !own),
+                keys: names(keys(top.tool_input), !own, Some(skeleton::TOOL_INPUT)),
             });
         }
         if top.tool_response.is_some() {
             tools.push(ToolShape {
                 result: true,
                 name: server,
-                keys: names(keys(top.tool_response), !own),
+                keys: names(keys(top.tool_response), !own, Some(skeleton::TOOL_RESULT)),
             });
         }
     } else if let Some(method) = top.method.as_deref() {
@@ -261,8 +264,9 @@ pub fn fact(fact: &Fact) -> FactShape {
         if let Some(ty) = item.ty.as_deref()
             && WORK.contains(&ty)
         {
-            let server = ty == "mcpToolCall";
-            let name = if server {
+            let server =
+                ty == "mcpToolCall" && item.server.as_deref() != Some(crate::AMUX_TOOL_SERVER);
+            let name = if ty == "mcpToolCall" {
                 Name::Server(join(&[item.server.as_deref(), item.tool.as_deref()]))
             } else {
                 Name::Own(ty.to_owned())
@@ -271,10 +275,10 @@ pub fn fact(fact: &Fact) -> FactShape {
             tools.push(ToolShape {
                 result: completed,
                 name: Some(name),
-                keys: if server {
-                    names(keys(item.arguments), true)
+                keys: if ty == "mcpToolCall" {
+                    names(keys(item.arguments), server, Some(skeleton::TOOL_INPUT))
                 } else {
-                    names(keys(params.item), false)
+                    names(keys(params.item), false, None)
                 },
             });
         }
@@ -319,7 +323,7 @@ pub fn fact(fact: &Fact) -> FactShape {
             tools.push(ToolShape {
                 result: false,
                 name: Some(name),
-                keys: names(keys(request.input), server),
+                keys: names(keys(request.input), server, Some(skeleton::TOOL_INPUT)),
             });
         }
         let message = tagged(top.message);
@@ -335,7 +339,7 @@ pub fn fact(fact: &Fact) -> FactShape {
                         tools.push(ToolShape {
                             result: false,
                             name,
-                            keys: names(keys(block.input), server),
+                            keys: names(keys(block.input), server, Some(skeleton::TOOL_INPUT)),
                         });
                     }
                     Some(ty) if ty.ends_with("tool_result") => tools.push(ToolShape {
@@ -351,7 +355,11 @@ pub fn fact(fact: &Fact) -> FactShape {
             tools.push(ToolShape {
                 result: true,
                 name: None,
-                keys: names(keys(top.tool_use_result), false),
+                keys: names(
+                    keys(top.tool_use_result),
+                    false,
+                    Some(skeleton::TOOL_RESULT),
+                ),
             });
         }
     }

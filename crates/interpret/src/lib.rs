@@ -25,6 +25,7 @@ pub mod ring;
 mod serde_pb;
 pub mod shape;
 mod shared;
+pub mod skeleton;
 pub mod unknown;
 
 #[cfg(any(test, feature = "testkind"))]

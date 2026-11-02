@@ -241,24 +241,27 @@ text, and a person's screenshot shows them.
 
 An agent's record is built only when a report is made, from the facts ring the agent already keeps: the agent process
 runs the ring's events through its own interpreter again, from each segment's checkpoint, on the machine that wrote
-them, and keeps what the interpreter concluded, never what was said: no string or JSON value, nothing anyone said or
-any tool read or wrote. For each event it keeps its kind (a provider fact by the kind its protocol tags it as, with
-each tool call's or result's tool name and the keys of its input or result; a person's input by its arm; an agent
-message by its ids; a tick by its time) and size, and what the interpreter concluded: each item opened, updated or
-closed by key and arm, appends by key and size, the snapshot's phase and queue, turn ends, its effects by kind with
-their sizes and the ids they answer, what its two queries (messages pending, typed input unrecorded) answered after
-the step, and the check the step broke. Each segment starts from the interpreter's open items, queue, asks and
-pending inputs by key. Git facts are counts: files and lines changed, and whether there is a branch, never its name.
-The record names the spec's kind, provider, model, permission, mode, effort and launch flags without their values,
-and the provider's version once it reports one, and carries the agent core's lifecycle as the report found it, its
-states by name and its sets by size. Ids, item keys and a tool server's own tool names and keys are aliases, hashed
-with a salt that never leaves the process, so equal values stay equal within one record and none can be looked up.
+them, and keeps what the interpreter concluded and each event's skeleton, never what was said. A skeleton keeps an
+event's field names where the provider's protocol names them, the provider's fixed vocabulary the interpreters
+branch on (a stop reason, an item's status, a permission mode and similar closed sets), bools and timestamps, and
+writes every other value as an alias with its size; the subtrees whose keys are the data's own (a tool's input, a
+change's files) keep only the names the protocol places there, every other key aliased. For each event the record
+also keeps what the interpreter concluded: each item opened, updated or closed by key and arm, appends by key and
+size, the snapshot's phase and queue, turn ends, its effects by kind with their sizes and the ids they answer, what
+its two queries (messages pending, typed input unrecorded) answered after the step, and the check the step broke.
+Each segment starts from the interpreter's open items, queue, asks and pending inputs by key. Git facts are counts:
+files and lines changed, and whether there is a branch, never its name. Of a shell command only the shell's name and
+flag are kept. The record names the spec's kind, provider, model, permission, mode, effort and launch flags without
+their values, and the provider's version once it reports one, and carries the agent core's lifecycle as the report
+found it, its states by name and its sets by size. Aliases are hashed with a salt that never leaves the process, so
+equal values stay equal within one record and none can be looked up.
 
-The interpreter's checks come out in the record as they did live, since they judge the same steps. The agent core's
-own checks and a step over budget are named by the report's reason and trigger; the core's inputs are not kept, so they
-are not replayed, and the lifecycle beside the record is where to look. An interpreter's mistake is read from the
-order of event kinds beside what the interpreter concluded, and a reproduction is a fixture written by hand with the
-same kinds in the same order.
+The interpreter's checks come out in the record as they did live, since they judge the same steps. Because every
+event keeps its skeleton, a record can be turned back into a provider stream: made-up values of the recorded sizes
+where the aliases stood, the same value for the same alias, run through the real interpreter. That stream reproduces
+the check its original broke, at the same step (`replay_support::synthetic`, which only tests and tools use). The agent core's
+own checks and a step over budget are named by the report's reason and trigger; the core's inputs are not kept, so
+they are not replayed, and the lifecycle beside the record is where to look.
 
 ## Replaying a report
 

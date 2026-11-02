@@ -8,3 +8,4 @@ pub mod bundle;
 pub mod record;
 pub mod replay;
 pub mod show;
+pub mod synthetic;

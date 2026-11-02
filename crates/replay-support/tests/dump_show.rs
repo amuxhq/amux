@@ -16,8 +16,15 @@ fn every_section_of_a_bundle_prints() {
     let dumped = support::healthy();
     let agent = dumped.agent();
     let manifest = dumped.manifest();
-    let record =
-        std::fs::read_to_string(dumped.path().join(format!("agents/{agent}/record"))).unwrap();
+    let path = dumped.path().join(format!("agents/{agent}/record"));
+    let record = std::fs::read_to_string(&path).unwrap();
+    // Every event's skeleton makes a record longer than the printer shows
+    // whole, so it names the file instead.
+    let record = format!(
+        "-- record ({} bytes) --\ntext, not printed: {}\n",
+        record.len(),
+        path.display()
+    );
     let text = show::show(dumped.path(), None).expect("the bundle prints");
     for expected in [
         &format!(
@@ -26,7 +33,6 @@ fn every_section_of_a_bundle_prints() {
         ),
         "errors none\n",
         &format!("== agent {agent} (CLAUDE_SDK) ==\n"),
-        "-- record (",
         &record,
         "\n== daemon core ==\n",
         &format!("-- journal of {agent} ("),

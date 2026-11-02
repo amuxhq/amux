@@ -3095,6 +3095,7 @@ dependencies = [
  "models",
  "postcard",
  "prost",
+ "prost-types",
  "provider-fakes",
  "serde_json",
  "store",

@@ -743,6 +743,16 @@ impl<A: OpenAsk> Shared<A> {
         self.open_items.get(key)
     }
 
+    /// The keys of the items still open whose key starts with `prefix`.
+    pub fn open_keys(&self, prefix: &str) -> Vec<String> {
+        self.open_items
+            .range(prefix.to_owned()..)
+            .map(|(key, _)| key)
+            .take_while(|key| key.starts_with(prefix))
+            .cloned()
+            .collect()
+    }
+
     // --- inputs ----------------------------------------------------------
 
     pub fn accept(&mut self, emit: &mut Emit, input_id: &[u8], queued: bool) {

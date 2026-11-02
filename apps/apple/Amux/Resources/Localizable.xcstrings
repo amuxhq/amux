@@ -4741,6 +4741,18 @@
         }
       }
     },
+    "Privacy Policy" : {
+      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy Policy"
+          }
+        }
+      }
+    },
     "Pro is on for this account" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift.",
       "extractionState" : "manual",
@@ -6213,6 +6225,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal Claude changes permission only by cycling through its permissions."
+          }
+        }
+      }
+    },
+    "Terms of Use" : {
+      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terms of Use"
           }
         }
       }

@@ -443,10 +443,11 @@ type is refused rather than stored. Opening a fresh file takes the write lock
 and creates the whole schema in one transaction, stamping the file's
 `application_id` (an amux store) and `user_version` (`SCHEMA_VERSION`). Any
 other SQLite file is refused as foreign, and a store stamped with another
-version, as every store written before a schema change is, fails with
-`OpenError::OtherSchema`: the error names the file, the daemon does not start,
-and the file is left exactly as it was, for the person to move aside. A schema
-change raises `SCHEMA_VERSION`.
+version fails with `OpenError::OtherSchema`: the error names the file, the
+daemon does not start, and the file is left exactly as it was, for the person
+to move aside. `SCHEMA_VERSION` stays 1 until 0.9.0, the first release that
+promises to open stores an older one wrote; until then a schema change keeps
+the version, and stores written under the old schema are deleted by hand.
 
 ### Own rows and replica rows
 

@@ -938,9 +938,7 @@ impl ProfileRuntime {
                 .map(|parent| parent.cwd)
                 .unwrap_or_default();
         }
-        if !Path::new(&request.cwd).is_dir() {
-            return Err(RegistryError::BadCwd(request.cwd));
-        }
+        request.cwd = this_hosts_folder(&request.cwd, std::env::home_dir().as_deref())?;
         let parent = match caller {
             Some(caller) => Some(AgentRef {
                 host_id: self.host().as_bytes().to_vec(),
@@ -2010,11 +2008,118 @@ fn last_settings(body: Option<&[u8]>, kind: Kind) -> spec::Settings {
     }
 }
 
+/// The folder `typed` names on this host. Clients send a folder as the person
+/// typed it, because only the host knows its own home: `~` is the home, and a
+/// path that does not start at the root starts there too, as in a new shell
+/// (the daemon's own working directory means nothing to the person). The
+/// answer is canonical, so one folder has one spelling wherever the fleet
+/// shows or compares it.
+fn this_hosts_folder(typed: &str, home: Option<&Path>) -> Result<String, RegistryError> {
+    let refused = |path: &Path| RegistryError::BadCwd(path.display().to_string());
+    if typed.is_empty() {
+        return Err(RegistryError::BadCwd(String::new()));
+    }
+    let homed = match typed.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with(std::path::is_separator) => {
+            home.map(|home| home.join(rest.trim_start_matches(std::path::is_separator)))
+        }
+        _ if Path::new(typed).is_absolute() => Some(PathBuf::from(typed)),
+        _ => home.map(|home| home.join(typed)),
+    };
+    let Some(path) = homed else {
+        return Err(refused(Path::new(typed)));
+    };
+    match path.canonicalize() {
+        Ok(folder) if folder.is_dir() => plain(folder)
+            .into_os_string()
+            .into_string()
+            .map_err(|_| refused(&path)),
+        _ => Err(refused(&path)),
+    }
+}
+
+/// A canonical path in the form programs take as a working directory.
+/// Windows writes a canonical drive path verbatim (`\\?\C:\...`), a form
+/// that `cmd.exe` and many tools an agent runs refuse or print back oddly;
+/// the same folder as `C:\...` is plain. A network share stays verbatim.
+fn plain(folder: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    if let Some(drive) = folder.to_str().and_then(|path| path.strip_prefix(r"\\?\"))
+        && drive.as_bytes().get(1) == Some(&b':')
+    {
+        return PathBuf::from(drive);
+    }
+    folder
+}
+
 /// The id a frame's verdict comes back under: a message's envelope id.
 fn input_id_of(frame: &CtlFrame) -> Vec<u8> {
     match &frame.of {
         Some(ctl_frame::Of::AgentMessage(envelope)) => envelope.id.clone(),
         Some(ctl_frame::Of::Input(input)) => input.input_id.clone(),
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_typed_folder_is_read_from_the_hosts_home_and_kept_canonical() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = plain(temp.path().canonicalize().unwrap());
+        std::fs::create_dir_all(home.join("src/amux")).unwrap();
+        let folder = |typed: &str| this_hosts_folder(typed, Some(&home));
+        let amux = home
+            .join("src")
+            .join("amux")
+            .into_os_string()
+            .into_string()
+            .unwrap();
+        let home_text = home.to_str().unwrap().to_owned();
+
+        assert_eq!(folder("~").unwrap(), home_text);
+        assert_eq!(folder("~/").unwrap(), home_text);
+        assert_eq!(folder("~/src/amux").unwrap(), amux);
+        assert_eq!(
+            folder("src/amux").unwrap(),
+            amux,
+            "relative is from the home"
+        );
+        assert_eq!(
+            folder("src/amux/").unwrap(),
+            amux,
+            "one spelling per folder"
+        );
+        assert_eq!(folder("~/src/../src/amux").unwrap(), amux);
+        assert_eq!(
+            folder(&format!("{amux}{}", std::path::MAIN_SEPARATOR)).unwrap(),
+            amux
+        );
+
+        // `~name` is somebody's home in a shell; here it is just a name.
+        std::fs::create_dir(home.join("~work")).unwrap();
+        assert_eq!(
+            folder("~work").unwrap(),
+            home.join("~work").into_os_string().into_string().unwrap()
+        );
+
+        let missing = folder("~/nowhere").unwrap_err();
+        assert!(
+            matches!(&missing, RegistryError::BadCwd(path) if *path == home.join("nowhere").display().to_string()),
+            "the refusal names the folder that was looked for: {missing}"
+        );
+        std::fs::write(home.join("file"), "").unwrap();
+        assert!(matches!(folder("file"), Err(RegistryError::BadCwd(_))));
+        assert!(matches!(folder(""), Err(RegistryError::BadCwd(_))));
+        assert!(
+            !folder("~").unwrap().starts_with(r"\\?\"),
+            "a drive path is never verbatim"
+        );
+        assert!(matches!(
+            this_hosts_folder("~/src", None),
+            Err(RegistryError::BadCwd(_))
+        ));
     }
 }

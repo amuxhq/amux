@@ -381,7 +381,11 @@ async fn spawn_writes_spec_one_and_starts_the_agent_process() {
     let spec = spec(&dir, 1);
     assert_eq!(spec.agent_id, id.as_bytes().to_vec());
     assert_eq!(spec.kind(), wire::Kind::ClaudeSdk);
-    assert_eq!(spec.cwd, install.work.to_string_lossy());
+    assert_eq!(
+        std::path::Path::new(&spec.cwd).canonicalize().unwrap(),
+        install.work.canonicalize().unwrap(),
+        "the host keeps the folder it was given"
+    );
     assert_eq!(spec.name, "first");
     assert_eq!(spec.incarnation, 1);
     assert_eq!(spec.provider_command, launch.claude_command);

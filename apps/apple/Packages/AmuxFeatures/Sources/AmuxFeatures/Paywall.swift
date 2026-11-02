@@ -148,14 +148,41 @@ public struct Paywall: View {
     }
 
     /// What is true about every subscription, whichever is chosen. Where it is
-    /// cancelled, and that a subscription bought anywhere else already counts.
+    /// cancelled, that a subscription bought anywhere else already counts, and
+    /// the terms and privacy policy it is sold under — which the App Store
+    /// requires beside any auto-renewing subscription.
     private var terms: some View {
-        Text("Cancel any time in the App Store. A subscription bought on the web carries over.")
-            .designFont(.detail, design)
-            .foregroundStyle(design.inkFaint.color)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 14)
-            .identified("paywall.terms")
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Cancel any time in the App Store. A subscription bought on the web carries over.")
+                .designFont(.detail, design)
+                .foregroundStyle(design.inkFaint.color)
+                .fixedSize(horizontal: false, vertical: true)
+                .identified("paywall.terms")
+            HStack(spacing: 18) {
+                legal("Terms of Use", Self.termsOfUse)
+                    .identified("paywall.terms-of-use", value: Self.termsOfUse.absoluteString)
+                    .reclaimingThumbTarget(y: 14)
+                legal("Privacy Policy", Self.privacyPolicy)
+                    .identified("paywall.privacy-policy", value: Self.privacyPolicy.absoluteString)
+                    .reclaimingThumbTarget(y: 14)
+            }
+        }
+        .padding(.top, 14)
+    }
+
+    /// Apple's standard licence agreement: amux has no terms of its own, and
+    /// this is the one that governs an app that ships none.
+    static let termsOfUse = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
+    static let privacyPolicy = URL(string: "https://amux.sh/privacy-policy/")!
+
+    private func legal(_ title: LocalizedStringKey, _ url: URL) -> some View {
+        Link(destination: url) {
+            Text(title)
+                .designFont(.detail, design)
+                .foregroundStyle(design.accent.color)
+                .thumbTarget(y: 14)
+        }
+        .buttonStyle(.amuxControl)
     }
 
     /// Somebody who already has it. The screen says so and where it came

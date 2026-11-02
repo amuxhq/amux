@@ -311,8 +311,8 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
         .await
         .expect("the child lives on box");
     assert_eq!(
-        own.cwd,
-        net.host("box").unwrap().work.to_string_lossy(),
+        std::path::Path::new(&own.cwd).canonicalize().unwrap(),
+        net.host("box").unwrap().work.canonicalize().unwrap(),
         "a directory on the child's host"
     );
     println!(

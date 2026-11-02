@@ -262,7 +262,7 @@ takes `multipart/form-data`, one section per file, each section's `name` and
 or `frame.txt` and `frame.json`), `trace.jsonl`, and `dump.pb.zst`, the
 profile's dump packed as one `wire.DumpPart` and compressed with zstd.
 
-`report.json` is required and uses `schema_version: 3`. Its `kind` is
+`report.json` is required and uses `schema_version: 1`. Its `kind` is
 `report` for one a person sent and `automatic` for a check's dump, which
 names the check's id in `check` (two or more dot-separated lowercase words)
 and carries no frame. Its `parts` declares the frame, trace and dump as

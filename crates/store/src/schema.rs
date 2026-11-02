@@ -1,11 +1,12 @@
 //! The store's schema. A fresh file is given it whole; any other file must
 //! carry this build's version, or it is refused and left as it is. There
-//! are no migrations: a schema change raises the version, and a store
-//! written under another version is moved aside by the person.
+//! are no migrations.
 
-/// The version of [`SCHEMA`], kept in the file's `user_version`. Raise it
-/// with every change to the schema.
-pub const SCHEMA_VERSION: u32 = 2;
+/// The version of [`SCHEMA`], kept in the file's `user_version`. It stays 1
+/// until a release promises to open stores an older one wrote (0.9.0);
+/// before then a schema change keeps the version, and stores written under
+/// the old schema are deleted by hand.
+pub const SCHEMA_VERSION: u32 = 1;
 
 /// The whole schema, run once on a fresh file.
 pub(crate) const SCHEMA: &str = r#"

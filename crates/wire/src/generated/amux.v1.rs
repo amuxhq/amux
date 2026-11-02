@@ -6681,6 +6681,9 @@ pub struct CreateAgentRequest {
     pub name: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(message, optional, tag = "4")]
     pub parent: ::core::option::Option<AgentRef>,
+    /// A folder on the agent's host, as the person typed it: the host reads `~`
+    /// and a path not from the root as starting at its own home, and keeps the
+    /// folder's canonical path as the agent's cwd.
     #[prost(string, tag = "5")]
     pub cwd: ::prost::alloc::string::String,
     /// The first prompt, with attachments, queued before the agent starts.

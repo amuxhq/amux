@@ -290,7 +290,7 @@ impl Setup {
         }
         let folder = match self.folder.as_str() {
             "" => "+ Folder".to_owned(),
-            folder => text::tilde(folder),
+            folder => self.shown(folder),
         };
         let mut place = vec![(Item::Folder, folder)];
         if self.worktree {
@@ -336,11 +336,24 @@ impl Setup {
                 .into_iter()
                 .map(|folder| {
                     let current = folder == self.folder;
-                    choice(text::tilde(&folder), folder, current)
+                    choice(self.shown(&folder), folder, current)
                 })
                 .collect(),
             Item::Host => hosts(fleet, self, true),
             Item::Name | Item::Worktree => Vec::new(),
+        }
+    }
+
+    /// A folder on the chosen host as the person would write it. Only this
+    /// machine's home is known here, so only this machine's folders are
+    /// shortened to `~`: the host reads a typed `~` as its own home, and a
+    /// remote folder under this machine's home path would come back as
+    /// somewhere else.
+    fn shown(&self, folder: &str) -> String {
+        if self.host == self.local_host {
+            text::tilde(folder)
+        } else {
+            folder.to_owned()
         }
     }
 
@@ -406,7 +419,7 @@ impl Setup {
             Item::Mode => self.apply(NewAgentPick::Mode(some(value))),
             Item::Folder => {
                 if !value.trim().is_empty() {
-                    self.folder = expand_tilde(value.trim());
+                    self.folder = value.trim().to_owned();
                 }
             }
             // A folder names a place on one machine: on another host it
@@ -562,15 +575,6 @@ fn recent_folders(fleet: &FleetState, host: &[u8], current: &str) -> Vec<String>
         }
     }
     folders
-}
-
-fn expand_tilde(path: &str) -> String {
-    match path.strip_prefix('~') {
-        Some(rest) if rest.is_empty() || rest.starts_with('/') => {
-            format!("{}{rest}", std::env::var("HOME").unwrap_or_default())
-        }
-        _ => path.to_owned(),
-    }
 }
 
 /// One choice of a flyover.
@@ -1134,7 +1138,7 @@ impl Form {
         let mut name = Editor::default();
         name.set(setup.name.as_deref().unwrap_or(""), Vec::new());
         let mut folder = Editor::default();
-        folder.set(&text::tilde(&setup.folder), Vec::new());
+        folder.set(&setup.shown(&setup.folder), Vec::new());
         Form {
             field: Field::Name,
             typing: true,
@@ -1173,7 +1177,7 @@ impl Form {
     /// Another host: the folder field follows the folder chosen there.
     fn host_changed(&mut self, setup: &mut Setup, fleet: &FleetState) {
         setup.fill_folder(fleet);
-        self.folder.set(&text::tilde(&setup.folder), Vec::new());
+        self.folder.set(&setup.shown(&setup.folder), Vec::new());
     }
 
     fn text_row(field: Field) -> bool {
@@ -1185,7 +1189,7 @@ impl Form {
         let typed = self.folder.text().trim().to_lowercase();
         recent_folders(fleet, &setup.host, &setup.folder)
             .into_iter()
-            .map(|folder| text::tilde(&folder))
+            .map(|folder| setup.shown(&folder))
             .filter(|folder| typed.is_empty() || folder.to_lowercase().contains(&typed))
             .collect()
     }

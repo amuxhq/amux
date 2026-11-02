@@ -2,7 +2,10 @@
 
 amux is unreleased and in active development. Never preserve backwards
 compatibility — old local protocols, config keys, and public APIs may be
-broken freely. Simplify decisions accordingly. The protobuf schemas are the
+broken freely. Simplify decisions accordingly. Before 0.9.0 nothing is
+versioned up: every version number (store schema, wire protocol, file and
+report formats) stays 1, an incompatible change keeps it, and stale state is
+cleaned up by hand. The protobuf schemas are the
 exception: `amux.v1` is frozen from 0.9.0 and changes only as
 `proto/amux/v1/README.md` allows (add; reserve a retired number,
 never renumber), which `just proto-compat` checks. `amux.dump` is exempt.

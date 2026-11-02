@@ -574,6 +574,10 @@
       {"literal": "\"signing in\"", "context": "\"pair-needs-account.signIn\", label: SigningIn.title, value: \"signing in\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift": [
+      {"literal": "\"paywall.terms-of-use\"", "context": ".identified(\"paywall.terms-of-use\", value: Self.termsOfUse.absoluteString)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"paywall.privacy-policy\"", "context": ".identified(\"paywall.privacy-policy\", value: Self.privacyPolicy.absoluteString)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"https://www.apple.com/legal/internet-services/itunes/dev/stdeula/\"", "context": "static let termsOfUse = URL(string: \"https://www.apple.com/legal/internet-services/itunes/dev/stdeula/\")!", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"https://amux.sh/privacy-policy/\"", "context": "static let privacyPolicy = URL(string: \"https://amux.sh/privacy-policy/\")!", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"paywall\"", "context": ".identified(\"paywall\", value: state)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"buying\"", "context": "case .buying: \"buying\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"confirming\"", "context": "case .confirming: \"confirming\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},

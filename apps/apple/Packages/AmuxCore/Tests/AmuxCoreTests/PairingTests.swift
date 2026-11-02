@@ -74,7 +74,7 @@ final class PairingTests: XCTestCase {
     /// Codes and error fragments keep the one refusal the screen draws.
     func testACodeOrAnErrorFragmentIsNotToldAsWords() {
         for reason in [
-            "INVALID_PIN", "PAIRING_LOCKED", "pairing stream closed",
+            "INVALID_PIN", "pairing stream closed",
             "PROTOCOL_VIOLATION: SELF_PAIRING", "the installation hosts no profile 3",
         ] {
             let pairing = PairingStore()
@@ -83,6 +83,18 @@ final class PairingTests: XCTestCase {
             XCTAssertEqual(pairing.phase, .refused, reason)
             XCTAssertNil(pairing.told, reason)
         }
+    }
+
+    /// A lockout reaches the screen as the runtime's sentence, which it
+    /// writes from the refusal's typed reason.
+    func testALockoutIsToldInTheRuntimesWords() {
+        let locked =
+            "Too many wrong codes closed pairing on that machine. Open pairing there again for a new code."
+        let pairing = PairingStore()
+        pairing.open()
+        pairing.reached(.failure(RuntimeFailure(locked)), attempt: pairing.checking())
+        XCTAssertEqual(pairing.phase, .refused)
+        XCTAssertEqual(pairing.told, locked)
     }
 
     func testARelayOnlyMachineOnAnUnpaidAccountAsksForASubscription() {

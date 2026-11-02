@@ -103,7 +103,7 @@ pub enum EmbeddedError {
     Start(#[from] StartError),
     #[error("the installation hosts no profile {0}")]
     NoProfile(ProfileId),
-    #[error("{}", .0.message())]
+    #[error("{}", refusal(.0))]
     Refused(#[from] tonic::Status),
     #[error("{0}")]
     Profile(#[from] ProfileRefusal),
@@ -118,6 +118,28 @@ pub enum EmbeddedError {
     #[error("binding profile {0}'s link socket afresh: {1}")]
     Rebind(ProfileId, io::Error),
 }
+
+/// A refusal in the words the phone shows. A pairing lockout is told
+/// apart by the typed reason in its details and said as a sentence for the
+/// person, since what they do next differs: a new code from the other
+/// machine. Every other refusal keeps the runtime's words.
+fn refusal(status: &tonic::Status) -> String {
+    let reason = match client::RpcError::from(status.clone()) {
+        client::RpcError::Refused(error) => error
+            .detail::<wire::PairingError>()
+            .map(|error| error.reason()),
+        client::RpcError::Transport(_) => None,
+    };
+    if reason == Some(wire::pairing_error::Reason::Locked) {
+        return PAIRING_LOCKED_WORDS.to_owned();
+    }
+    status.message().to_owned()
+}
+
+/// What the phone says when too many wrong codes closed the other
+/// machine's pairing window.
+pub const PAIRING_LOCKED_WORDS: &str =
+    "Too many wrong codes closed pairing on that machine. Open pairing there again for a new code.";
 
 /// One installation with every profile it hosts, in process.
 pub struct EmbeddedRuntime {

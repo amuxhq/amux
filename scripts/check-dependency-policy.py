@@ -153,10 +153,12 @@ SUPPORT_ALLOWED_LOCAL = {
     # every step: facts through the interpreter (the journal for
     # comparison), the daemon core from its checkpoint over its store,
     # records through the session model, state through the views. A
-    # debugging tool: nothing links it.
+    # debugging tool: nothing links it. An agent's record, which carries no
+    # provider's words, replays as a stream made up from it, held to the
+    # provider's own types through the fakes' conformance.
     "replay-support": {
-        "core-ring", "daemon-core", "interpret", "journal", "models", "redaction", "store",
-        "ui-state", "ui-view", "wire",
+        "core-ring", "daemon-core", "interpret", "journal", "models", "provider-fakes",
+        "redaction", "store", "ui-state", "ui-view", "wire",
     },
     # The protocol's properties, explored over the real code: the store, the
     # journal and the message types, each state-machine core, and the

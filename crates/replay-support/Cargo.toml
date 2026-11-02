@@ -20,6 +20,8 @@ interpret.workspace = true
 journal.workspace = true
 models.workspace = true
 prost.workspace = true
+prost-types.workspace = true
+provider-fakes.workspace = true
 redaction.workspace = true
 serde_json.workspace = true
 store.workspace = true
@@ -37,6 +39,5 @@ path = "tests/integration.rs"
 [dev-dependencies]
 tokio.workspace = true
 postcard.workspace = true
-provider-fakes.workspace = true
 testnet.workspace = true
 uuid.workspace = true

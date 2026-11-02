@@ -261,8 +261,9 @@ pub fn fact(fact: &Fact) -> FactShape {
         if let Some(ty) = item.ty.as_deref()
             && WORK.contains(&ty)
         {
-            let server = ty == "mcpToolCall";
-            let name = if server {
+            let server =
+                ty == "mcpToolCall" && item.server.as_deref() != Some(crate::AMUX_TOOL_SERVER);
+            let name = if ty == "mcpToolCall" {
                 Name::Server(join(&[item.server.as_deref(), item.tool.as_deref()]))
             } else {
                 Name::Own(ty.to_owned())
@@ -271,8 +272,8 @@ pub fn fact(fact: &Fact) -> FactShape {
             tools.push(ToolShape {
                 result: completed,
                 name: Some(name),
-                keys: if server {
-                    names(keys(item.arguments), true)
+                keys: if ty == "mcpToolCall" {
+                    names(keys(item.arguments), server)
                 } else {
                     names(keys(params.item), false)
                 },

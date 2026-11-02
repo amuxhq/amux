@@ -466,24 +466,15 @@ pub async fn rename(client: &mut Client, reference: &str, name: &str) -> Result<
 }
 
 pub async fn dump(
-    client: &mut Client,
     admin: &mut crate::pairing::Admin,
-    references: &[String],
     reason: Option<String>,
     send: bool,
 ) -> Result<()> {
-    let mut agent_ids = Vec::new();
-    for reference in references {
-        agent_ids.push(resolve(client, reference).await?.agent_id);
-    }
     let reason = reason.unwrap_or_default();
     let response = admin
         .dump(DumpRequest {
-            agent_ids,
             reason: reason.clone(),
-            automatic: false,
-            // The command line holds no session open.
-            sessions: Vec::new(),
+            // The command line shows no chat.
             ..DumpRequest::default()
         })
         .await

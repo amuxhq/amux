@@ -36,7 +36,7 @@ pub use golden::{
     check_invariants, claude_pty_input, claude_sdk_input, codex_input, fixture_script, render_item,
     render_steps, replay, run_golden, run_until,
 };
-pub use redact::{redact, redact_message, redact_text, structure_message};
+pub use redact::{redact_text, structure_message};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 pub use serde_pb::{from_hex, to_hex};
@@ -71,11 +71,6 @@ pub trait Interpreter {
     /// step it starts with re-emits every open item in full on its existing
     /// key, and the snapshot.
     fn reincarnate(state: Self::State, spec: &AgentSpec) -> (Self::State, Step);
-
-    /// Removes secrets from a body, a facts-ring entry or a checkpoint while
-    /// keeping its structure; the daemon calls it (through [`redact()`]) on a
-    /// store slice at dump time and the agent process on its own dump part.
-    fn redact(target: RedactTarget) -> RedactTarget;
 
     /// The snapshot body with every field at its explicit unknown.
     fn unknown_snapshot() -> Vec<u8>;
@@ -288,33 +283,6 @@ pub enum Carrier {
     MessagingSocket,
     /// Headless Claude: a user message on stdin.
     Stdin,
-}
-
-/// What [`Interpreter::redact`] works on.
-#[derive(Clone, Debug, PartialEq)]
-pub enum RedactTarget {
-    /// A facts-ring entry that is a provider fact.
-    Fact(Fact),
-    /// A facts-ring entry that is an input: an encoded `wire::Input`.
-    Input(Vec<u8>),
-    /// A facts-ring entry that is an agent message: an encoded
-    /// `wire::Envelope`.
-    AgentMessage(Vec<u8>),
-    /// An encoded checkpoint of the kind's state.
-    Checkpoint(Vec<u8>),
-    /// An encoded `wire::AgentSpec`: its environment values and prompt.
-    Spec(Vec<u8>),
-    /// An encoded `wire::Step` of the kind: its items, appends and
-    /// snapshot, bodies included. A journal frame is one; so is a slice of
-    /// the store written as one step.
-    Step(Vec<u8>),
-    /// An encoded `wire::Agent`, the inventory row: its name, directory,
-    /// what it is working on and its exit cause.
-    Agent(Vec<u8>),
-    /// An encoded `wire::dump::ClientSessionHistory` of the kind: a client's
-    /// session state and the messages since, with the items, snapshots and
-    /// inputs inside them, bodies included.
-    ClientSession(Vec<u8>),
 }
 
 /// An item body as the harness and goldens read it.

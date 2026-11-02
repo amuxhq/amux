@@ -16,17 +16,14 @@ doctest = false
 chrono.workspace = true
 core-ring.workspace = true
 daemon-core.workspace = true
-interpret.workspace = true
 journal.workspace = true
 models.workspace = true
 prost.workspace = true
-redaction.workspace = true
 serde_json.workspace = true
 store.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 ui-state.workspace = true
-ui-view.workspace = true
 wire.workspace = true
 zstd.workspace = true
 
@@ -35,6 +32,7 @@ name = "integration"
 path = "tests/integration.rs"
 
 [dev-dependencies]
+interpret.workspace = true
 tokio.workspace = true
 postcard.workspace = true
 provider-fakes.workspace = true

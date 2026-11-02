@@ -131,7 +131,7 @@ call becomes the agent message it sent.
 
 The state is the checkpoint. Every `State` implements `Checkpoint`: it
 serializes as JSON (protobuf values and byte ids inside it as hex, through
-`serde_pb`) so a dump reader can see it, and `resume` returns the state with
+`serde_pb`) so a person reading it can, and `resume` returns the state with
 the step a resume starts with: every open item again in full on its existing
 key, and the snapshot.
 
@@ -308,37 +308,23 @@ words.
   answer, `user_note: <note>`. A reply interrupts the turn and sends the
   words as the next prompt.
 
-## Redaction
+## What a report carries
 
-Dumps leave the machine, so every body in them is redacted, and only an
-interpreter can decode its bodies. `interpret::redact`
-([`redact.rs`](../crates/interpret/src/redact.rs)) dispatches to the kind's
-`Interpreter::redact` for each `RedactTarget`:
+No body leaves the machine in a report. What a report carries of an agent is its
+record ([`record.rs`](../crates/interpret/src/record.rs)): the facts ring run
+again through the kind's interpreter when the report is made, keeping each
+event's kind and size and what the interpreter concluded, with every id and
+key aliased (see [the agent's record](DEBUGGING.md#the-agents-record)). What it
+carries of the daemon core's protocol messages, `structure_message`
+([`redact.rs`](../crates/interpret/src/redact.rs)) writes as their structure
+alone, walked by descriptor: every text and body zero bytes of its length,
+each value treated by its field's name.
 
-- Protobuf values are walked by their descriptor: every string field is
-  redacted as text, or as JSON when it holds a JSON object or array; every
-  `*_json` bytes field as JSON; the per-kind `body` bytes as the kind's body
-  message. Ids and hashes are kept, and a field the descriptor does not name
-  is dropped.
-- Facts are walked as JSON. A checkpoint is decoded as the kind's state and
-  written again with every protobuf value inside it walked the same way.
-- The values of environment maps are blanked, as are secret-named
-  environment assignments in text and tokens with well-known prefixes.
-  Provider session and thread ids become, wherever they appear,
-  `<SESSION-` followed by eight hex digits of a hash of the id and `>`, so one
-  session stays recognisable across a dump.
-
-Underneath is [`crates/redaction`](../crates/redaction/src/lib.rs), the
-structural redactor for free text and JSON: secret-named keys, known token
-shapes, machine paths, emails, the local user and host. It knows no record's
-schema. The specs' capture sanitizer and reports use it directly.
-
-`crates/interpret/tests/redaction.rs` runs a short session per kind with
-secrets planted in a tool's input and output, the prompts, an answer, an
-environment-bearing payload and the session id, and checks that no planted
-secret survives in any item body, snapshot body, facts-ring entry or
-checkpoint, that each still decodes as what it was, and that redacting again
-changes nothing.
+Free text that does leave, our own logs, goes through
+[`crates/redaction`](../crates/redaction/src/lib.rs) (`redact_text`), which
+masks secret-named assignments, known token shapes, machine paths, emails and
+the local user and host. The provider recordings qualification commits use it
+too.
 
 ## Terminal Claude
 

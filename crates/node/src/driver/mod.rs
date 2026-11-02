@@ -1127,8 +1127,6 @@ impl CoreThread {
                 let core = crate::reports::Core::Daemon;
                 runtime.check_failed(core, &check, admitted.held_back);
                 runtime.dump_unasked(
-                    wire::DumpScope::Core,
-                    Vec::new(),
                     admitted.reason,
                     crate::reports::check_id(core, &check),
                     "the daemon core",

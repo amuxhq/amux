@@ -7,4 +7,3 @@ mod claude_sdk;
 mod codex;
 mod coverage;
 mod record;
-mod redaction;

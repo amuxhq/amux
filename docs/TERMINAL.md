@@ -512,7 +512,7 @@ these; the entries amux and service managers run are hidden from it and listed a
 | `amux resume <agent> [text…]` | Starts a stopped agent again, with an optional first prompt. |
 | `amux rename <agent> <name>` | Renames an agent. |
 | `amux rm <agent>` | Deletes an agent and its history; its children follow on their own hosts, a host that is away once it is back. |
-| `amux dump [agents…]` | Writes a debug bundle for the named agents, or all of them, with an optional `--reason`, and prints its path; `--send` also sends it to the profile's amux account. See [DEBUGGING.md](DEBUGGING.md). |
+| `amux dump` | Writes this host's debug report, with an optional `--reason`, and prints its path; `--send` also sends it to the profile's amux account. See [DEBUGGING.md](DEBUGGING.md). |
 | `amux pair [target]` | Pairs with another host by name (one found nearby or announced by the relay or a paired host), an address, or `user@host` over SSH; on the free plan it refuses a host only the relay reaches before asking for the PIN, and says Pro pairs it. With no target this host opens pairing mode and shows a PIN with what the phone and another computer do with it, or with `--qr` a QR code for the phone's camera. |
 | `amux hosts` | Lists the paired hosts and the hosts that could be paired: found nearby, through a paired host, or on the account through the relay, which on the free plan says Pro pairs it. |
 | `amux unpair <host>` | Stops trusting a paired host, asking first unless `--force`. |

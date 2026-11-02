@@ -4075,31 +4075,24 @@ impl Provider {
         }
     }
 }
-/// Assembles a dump bundle of this host's own records into the reports
-/// directory, redacted.
+/// Assembles a dump bundle of this host's records into the reports
+/// directory: the daemon core's, each own agent's and the asking client's
+/// chats', with our own logs. Every dump carries the same parts.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DumpRequest {
-    /// Empty means every agent of the profile.
-    #[prost(bytes = "vec", repeated, tag = "1")]
-    pub agent_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     #[prost(string, tag = "2")]
     pub reason: ::prost::alloc::string::String,
     /// Produced on an invariant violation or panic rather than on request.
     #[prost(bool, tag = "3")]
     pub automatic: bool,
-    /// The asking client's open sessions, each an encoded
-    /// amux.dump.ClientSessionHistory: the session as its trace began and every
-    /// message since, the client stage of a replay. Opaque here because only the
-    /// build that wrote it reads it; a daemon that cannot decode one leaves it
-    /// out of the bundle and says so. Unredacted as the client holds it; the
-    /// daemon redacts each through its agent's kind before it writes it into the
-    /// bundle, and passes none on to another host. A dump of the unspecified
-    /// scope carries them whole; a chat's transcript dump and a person's report
-    /// carry only those that are structure-only records.
+    /// The records of the chats the asking client shows, each an encoded
+    /// amux.dump.ClientSessionHistory with `structure_only` set: the session as
+    /// its trace began and every message since, with nothing anybody wrote. The
+    /// client stage of a replay. Opaque here because only the build that wrote
+    /// it reads it; the daemon leaves out one that does not decode or is not a
+    /// record, and says so, and passes none on to another host.
     #[prost(bytes = "vec", repeated, tag = "4")]
     pub sessions: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-    #[prost(enumeration = "DumpScope", tag = "5")]
-    pub scope: i32,
     /// The id of the check that broke, for an automatic dump a check asked for.
     #[prost(string, tag = "6")]
     pub check: ::prost::alloc::string::String,
@@ -4130,8 +4123,7 @@ impl ::prost::Name for DumpResponse {
         "type.googleapis.com/amux.v1.DumpResponse".into()
     }
 }
-/// The agent process's part of a dump: its facts ring and checkpoint,
-/// already redacted.
+/// The agent process's part of a dump: its record, built when asked.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DumpPart {
     #[prost(bytes = "vec", tag = "1")]
@@ -4209,52 +4201,6 @@ impl ::prost::Name for SubmitReportResponse {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.SubmitReportResponse".into()
-    }
-}
-/// What a dump carries: what replays the stage its trigger concerns, and only
-/// what this host holds.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum DumpScope {
-    /// Everything this host holds for the named agents: `amux dump` and
-    /// Export Diagnostics.
-    Unspecified = 0,
-    /// The daemon core's checkpoint, inputs and store copy, with the own
-    /// agents' journals from its cursor on.
-    Core = 1,
-    /// One agent's own check: its record and its log's last minute, which
-    /// carry no conversation.
-    Agent = 2,
-    /// One chat: the client's session and its agent's row and slice.
-    Transcript = 3,
-    /// A person's report: the installation's own logs and no agent's records,
-    /// since those hold conversation text.
-    Report = 4,
-}
-impl DumpScope {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "DUMP_SCOPE_UNSPECIFIED",
-            Self::Core => "DUMP_SCOPE_CORE",
-            Self::Agent => "DUMP_SCOPE_AGENT",
-            Self::Transcript => "DUMP_SCOPE_TRANSCRIPT",
-            Self::Report => "DUMP_SCOPE_REPORT",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "DUMP_SCOPE_UNSPECIFIED" => Some(Self::Unspecified),
-            "DUMP_SCOPE_CORE" => Some(Self::Core),
-            "DUMP_SCOPE_AGENT" => Some(Self::Agent),
-            "DUMP_SCOPE_TRANSCRIPT" => Some(Self::Transcript),
-            "DUMP_SCOPE_REPORT" => Some(Self::Report),
-            _ => None,
-        }
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

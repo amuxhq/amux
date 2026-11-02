@@ -1407,10 +1407,10 @@ pub unsafe extern "C" fn amux_profile_fleet_id(profile: *const AmuxProfile) -> u
     unsafe { live_profile(profile) }.map_or(0, |open| open.fleet)
 }
 
-/// Writes a dump of the profile with the fleet's and every open chat's
-/// part: for a person's report, what reproduces this device's screen;
-/// otherwise everything the device holds. The ticket answers
-/// `{"Ok": "<bundle directory>"}` or `{"Err": ..}`.
+/// Writes a dump of the profile with the fleet's part and the record of
+/// every chat on screen: the one bundle, whether it is then saved or sent
+/// with a person's report. The ticket answers `{"Ok": "<bundle
+/// directory>"}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`; `reason` is a NUL-terminated
@@ -1419,7 +1419,6 @@ pub unsafe extern "C" fn amux_profile_fleet_id(profile: *const AmuxProfile) -> u
 pub unsafe extern "C" fn amux_profile_dump(
     profile: *const AmuxProfile,
     reason: *const c_char,
-    for_report: bool,
 ) -> u64 {
     guard(0, || {
         // SAFETY: the caller's contract.
@@ -1429,7 +1428,7 @@ pub unsafe extern "C" fn amux_profile_dump(
         // SAFETY: the caller's contract.
         let reason = unsafe { text(reason) }.unwrap_or_default().to_owned();
         let app = profile.app.clone();
-        profile.act(async move { Answered::from(app.dump(&reason, for_report).await) })
+        profile.act(async move { Answered::from(app.dump(&reason).await) })
     })
 }
 

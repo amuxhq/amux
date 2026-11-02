@@ -1,7 +1,8 @@
-//! Dump assembly: one bundle under reports/ with the redacted store slice,
-//! each agent's part, the last journal segments and the daemon's log, in
-//! the documented layout, with every planted secret absent. Real agent
-//! processes on the fake provider supply their own redacted parts.
+//! Dump assembly: one bundle under reports/ with this host's records (the
+//! daemon core's, each own agent's and the chats a client shows) and our
+//! own logs, in the documented layout, the same whatever asked for it, with
+//! every planted secret and word absent. Real agent processes on the fake
+//! provider build their own records.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -60,7 +61,7 @@ fn holds(haystack: &[u8], secret: &str) -> bool {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
+async fn a_dump_carries_this_hosts_records_and_our_logs_and_no_secret() {
     let install = Install::new();
     let mut launch = install.launch(
         "dump",
@@ -172,63 +173,36 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     .await
     .unwrap();
 
-    // The asking client's open chat, as it hands it in unredacted: the
-    // rows its window held, a send of its own since and a driver act whose
-    // words name a secret.
-    let held = runtime
-        .read_store({
-            let live_key = live_key.clone();
-            move |store| store.cut(&live_key, 100).unwrap()
-        })
-        .await
-        .unwrap();
-    let client_msg = |of| wire::dump::ClientTraced {
-        seq: 0,
-        at_ms: 0,
-        size: 0,
-        event: Some(wire::dump::client_traced::Event::Msg(
-            wire::dump::ClientSessionMsg { of: Some(of) },
-        )),
-    };
-    let session = wire::dump::ClientSessionHistory {
+    // The asking client's chats: one handed in whole, as no client sends
+    // it, which the dump refuses, and one as its record.
+    let whole = wire::dump::ClientSessionHistory {
         agent_id: live.as_bytes().to_vec(),
         start: Some(wire::dump::ClientSession {
             agent: Some(runtime.agent(live).await.unwrap()),
-            snapshot: held.snapshot.clone(),
-            transcript: Some(wire::dump::ClientTranscript {
-                items: held.held.clone(),
-                exhausted: true,
-            }),
             ..wire::dump::ClientSession::default()
         }),
-        events: Some(wire::dump::ClientSessionEvents {
-            traced: vec![
-                client_msg(wire::dump::client_session_msg::Of::Send(sdk_prompt(
-                    b"from-the-client",
-                    &format!("again with {TOKEN}; cc {EMAIL}"),
-                ))),
-                wire::dump::ClientTraced {
-                    seq: 1,
-                    at_ms: 0,
-                    size: 0,
-                    event: Some(wire::dump::client_traced::Event::Driver(format!(
-                        "GetFailed {{ error: \"Authorization: Bearer {KEY}\" }}"
-                    ))),
-                },
-            ],
-        }),
         structure_only: false,
+        ..wire::dump::ClientSessionHistory::default()
     };
-    let elsewhere = wire::dump::ClientSessionHistory {
-        agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+    let record = wire::dump::ClientSessionHistory {
+        agent_id: live.as_bytes().to_vec(),
+        events: Some(wire::dump::ClientSessionEvents {
+            traced: vec![wire::dump::ClientTraced {
+                seq: 1,
+                at_ms: 0,
+                size: 0,
+                event: Some(wire::dump::client_traced::Event::Driver(
+                    "Subscribed { tail: 16 }".to_owned(),
+                )),
+            }],
+        }),
+        structure_only: true,
         ..wire::dump::ClientSessionHistory::default()
     };
     let bundle = runtime
         .dump(DumpRequest {
-            agent_ids: Vec::new(),
             reason: format!("the chat froze; my key is {KEY}"),
-            automatic: false,
-            sessions: vec![session.encode_to_vec(), elsewhere.encode_to_vec()],
+            sessions: vec![whole.encode_to_vec(), record.encode_to_vec()],
             ..DumpRequest::default()
         })
         .await
@@ -255,10 +229,26 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     has(MANIFEST.to_owned());
     has(DAEMON_LOG.to_owned());
     has(node::SUPERVISOR_LOG.to_owned());
-    // The live agent's process sends its own log and never its provider's.
-    has(format!("agents/{live}/part/agent.log"));
+    // Each agent's own log goes beside its record; never its provider's.
+    for id in [live, stopped] {
+        has(format!("agents/{id}/{}", node::AGENT_LOG));
+        assert!(
+            !names.iter().any(|name| name.ends_with("provider.log")),
+            "{names:?}"
+        );
+        assert!(
+            names
+                .iter()
+                .any(|name| name.starts_with(&format!("core/{}/{id}/", node::CORE_JOURNALS))),
+            "{id}'s journal from the core's cursor"
+        );
+    }
+    has(format!("agents/{live}/{}", node::AGENT_RECORD));
+    // Nothing that holds what was said: no row, slice, facts or spec.
     assert!(
-        !names.contains(&format!("agents/{live}/part/provider.log").as_str()),
+        names.iter().all(|name| !name.ends_with(".pb")
+            && !name.contains("facts")
+            && !name.contains("spec.")),
         "{names:?}"
     );
     // Our logs reach back a minute, at the default level.
@@ -266,20 +256,9 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     assert!(daemon_log.contains("INFO started"), "{daemon_log}");
     assert!(!daemon_log.contains("an hour ago"), "{daemon_log}");
     assert!(!daemon_log.contains("wordy"), "{daemon_log}");
-    for id in [live, stopped] {
-        has(format!("agents/{id}/row.pb"));
-        has(format!("agents/{id}/store.pb"));
-        has(format!("agents/{id}/part/spec.1"));
-        assert!(
-            names
-                .iter()
-                .any(|name| name.starts_with(&format!("agents/{id}/journal/"))),
-            "{id}'s journal tail"
-        );
-    }
-    // The core's part: its checkpoint, the inputs since and the store as
-    // of that checkpoint, each redacted, and the store alone, with no WAL
-    // or rollback journal beside it.
+    // The core's record: its checkpoint, the inputs since and the store as
+    // of that checkpoint, the store alone, with no WAL or rollback journal
+    // beside it.
     for name in ["checkpoint", "inputs", "store.sqlite"] {
         has(format!("core/{name}"));
     }
@@ -312,96 +291,32 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         "the store as of the checkpoint holds both agents"
     );
     let restored = daemon_core::Daemon::restore(&checkpoint, copy, scratch.path().join("agents"));
-    assert!(restored.is_ok(), "the core restores from its part");
-
-    let live_part: Vec<&&str> = names
-        .iter()
-        .filter(|name| name.starts_with(&format!("agents/{live}/part/facts/")))
-        .collect();
-    assert!(
-        live_part.iter().any(|name| name.ends_with(".checkpoint")),
-        "the live agent sent its ring and checkpoint: {live_part:?}"
-    );
+    assert!(restored.is_ok(), "the core restores from its record");
 
     let manifest: serde_json::Value =
         serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
     let errors = manifest["errors"].as_array().unwrap();
+    assert_eq!(manifest["trigger"], node::PERSON);
     assert_eq!(manifest["core"]["reads"].as_u64(), Some(reads as u64));
     assert!(
-        errors
-            .iter()
-            .any(|error| error.as_str().unwrap().starts_with(&stopped.to_string())),
-        "the stopped agent's missing ring is named: {errors:?}"
+        errors.iter().any(|error| error
+            .as_str()
+            .unwrap()
+            .starts_with(&format!("{stopped} record"))),
+        "the stopped agent's missing record is named: {errors:?}"
     );
     assert_eq!(manifest["agents"].as_array().unwrap().len(), 2);
-    // The client's session, redacted through the agent's kind, beside a
-    // session of an agent the dump does not cover, which is named instead.
+    // The chat's record, beside the whole session, which is named instead.
     let client = format!("{}/{live}", node::CLIENT_SESSIONS);
     has(format!("{client}/{}", node::CLIENT_CHECKPOINT));
     has(format!("{client}/{}", node::CLIENT_EVENTS));
     let sessions = manifest["client"]["sessions"].as_array().unwrap();
     assert_eq!(sessions.len(), 1, "{sessions:?}");
-    assert_eq!(
-        sessions[0]["checkpoint"].as_str(),
-        Some(format!("{client}/{}", node::CLIENT_CHECKPOINT).as_str())
-    );
-    let elsewhere = uuid::Uuid::from_slice(&elsewhere.agent_id).unwrap();
     assert!(
-        errors.iter().any(|error| error
-            .as_str()
-            .unwrap()
-            .starts_with(&format!("{elsewhere} client session"))),
+        errors
+            .iter()
+            .any(|error| error.as_str().unwrap().contains("a whole history")),
         "{errors:?}"
-    );
-    let start = wire::dump::ClientSession::decode(
-        std::fs::read(bundle.join(&client).join(node::CLIENT_CHECKPOINT))
-            .unwrap()
-            .as_slice(),
-    )
-    .expect("the session's checkpoint reads");
-    let window = start.transcript.unwrap_or_default().items;
-    let shape = |items: &[wire::Item]| -> Vec<(String, u64, u64)> {
-        items
-            .iter()
-            .map(|item| (item.key.clone(), item.order, item.revision))
-            .collect()
-    };
-    assert_eq!(
-        shape(&window),
-        shape(&held.held),
-        "the rows keep their places"
-    );
-    assert!(
-        window.iter().any(|item| item.text.contains("<REDACTED>")),
-        "the client's rows are kept, redacted"
-    );
-    let events = wire::dump::ClientSessionEvents::decode(
-        std::fs::read(bundle.join(&client).join(node::CLIENT_EVENTS))
-            .unwrap()
-            .as_slice(),
-    )
-    .expect("the session's events read");
-    assert_eq!(events.traced.len(), 2);
-
-    let slice = wire::Step::decode(
-        std::fs::read(bundle.join(format!("agents/{live}/store.pb")))
-            .unwrap()
-            .as_slice(),
-    )
-    .unwrap();
-    assert!(slice.snapshot.is_some(), "the slice holds the snapshot");
-    assert!(
-        slice
-            .items
-            .iter()
-            .any(|item| item.text.contains("<REDACTED>")),
-        "the prompt's reflection is kept, redacted"
-    );
-    assert!(
-        slice
-            .items
-            .iter()
-            .all(|item| item.order > 0 && item.revision > 0)
     );
 
     for (name, _) in &files {
@@ -410,7 +325,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
             assert!(!holds(&bytes, secret), "{name} still holds {secret}");
         }
     }
-    // The core's part is not clean for want of anything to redact: the
+    // The core's record is not clean for want of anything to redact: the
     // ring it was taken from holds the prompt's secret.
     let ring_holds = std::fs::read_dir(runtime.dir().join("core-ring"))
         .unwrap()
@@ -418,8 +333,8 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     assert!(ring_holds, "the live ring holds {KEY}");
     transcript.push(format!(
         "planted {} secrets in the prompt, a later input, the model's reply, the provider's \
-         environment, the dump reason, the daemon and supervisor logs and the client's session; none is in any \
-         file of the bundle, as text or hex",
+         environment, the dump reason and the daemon and supervisor logs; none is in any file \
+         of the bundle, as text or hex",
         PLANTED.len()
     ));
     transcript.push(format!(
@@ -433,15 +348,6 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
             .trim()
             .replace('\n', " | ")
     ));
-    transcript.push(format!(
-        "store slice for {live}: {} rows, first reads {:?}",
-        slice.items.len(),
-        slice
-            .items
-            .iter()
-            .find(|item| !item.text.is_empty())
-            .map(|item| &item.text)
-    ));
 
     let packed = node::pack(&bundle).unwrap();
     assert_eq!(
@@ -449,14 +355,8 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         files.len(),
         "one message carries every file"
     );
-    assert!(
-        packed
-            .files
-            .iter()
-            .any(|file| file.name == format!("agents/{live}/row.pb"))
-    );
     transcript.push(format!(
-        "packed for a remote client: {} files, {} bytes",
+        "packed to send: {} files, {} bytes",
         packed.files.len(),
         packed.encoded_len()
     ));
@@ -465,52 +365,6 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     }
 
     kill_all(&runtime).await;
-    drop(runtime);
-    daemon.shutdown().await.unwrap();
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_dump_of_named_agents_covers_only_them_and_an_unknown_one_is_an_error() {
-    let install = Install::new();
-    let daemon = install
-        .start("boot-1", support::synthetic::quiet_launch())
-        .await;
-    let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
-    let mut one = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
-    let two = support::synthetic::SyntheticAgent::new(&install, "two", 1 << 20);
-    one.register(&install);
-    two.register(&install);
-    one.append(&support::synthetic::item("a", "hello"));
-    runtime.ingest(one.id).await.unwrap();
-
-    let bundle = runtime
-        .dump(DumpRequest {
-            agent_ids: vec![one.id.as_bytes().to_vec()],
-            reason: String::new(),
-            automatic: true,
-            ..DumpRequest::default()
-        })
-        .await
-        .unwrap();
-    let agents: Vec<String> = std::fs::read_dir(bundle.join("agents"))
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    assert_eq!(agents, vec![one.id.to_string()]);
-
-    let unknown = runtime
-        .dump(DumpRequest {
-            agent_ids: vec![uuid::Uuid::new_v4().as_bytes().to_vec()],
-            ..DumpRequest::default()
-        })
-        .await
-        .unwrap_err();
-    assert!(matches!(unknown, node::DumpError::NoAgent(_)), "{unknown}");
-    let reports: Vec<PathBuf> = std::fs::read_dir(install.data_dir.join(node::REPORTS))
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .collect();
-    assert_eq!(reports, vec![bundle], "a failed dump leaves nothing behind");
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
@@ -603,13 +457,14 @@ fn git(cwd: &Path, args: &[&str]) {
     );
 }
 
-/// An agent's record keeps what its session did and none of what was said:
-/// a phrase in its prompts, a tool's input and output, a file's name and
-/// the branch it works on reaches no file of an agent's bundle, while the
-/// record, its facts run again through the interpreter when the dump was
-/// made, holds the session's shape and both turns' ends.
+/// A report keeps what a session did and none of what was said: a phrase
+/// in an agent's folder, its branch, a file's name, its prompts, a tool's
+/// input and output and the replies reaches no file of any bundle,
+/// whatever asked for it, while the agent's record, its facts run again
+/// through the interpreter when the dump was made, holds the session's
+/// shape and both turns' ends.
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agents_record_carries_no_words_and_holds_what_its_interpreter_concluded() {
+async fn no_report_carries_a_word_and_an_agents_record_holds_what_its_interpreter_concluded() {
     const MARKER: &str = "PLANTEDmarkerphrase0006";
     let install = Install::new();
     let repo = install.work.join(format!("{MARKER}-folder"));
@@ -691,37 +546,58 @@ async fn an_agents_record_carries_no_words_and_holds_what_its_interpreter_conclu
     .await
     .unwrap();
 
-    let bundle = runtime
-        .dump(DumpRequest {
-            agent_ids: vec![agent.as_bytes().to_vec()],
-            scope: wire::DumpScope::Agent.into(),
-            reason: "a check broke".into(),
-            ..DumpRequest::default()
-        })
-        .await
-        .unwrap();
+    // Whatever asks, a person or a check on any of the cores, the bundle
+    // carries the same parts.
+    let mut bundles = Vec::new();
+    for (automatic, check) in [
+        (false, ""),
+        (true, "daemon.test"),
+        (true, "agent.test"),
+        (true, "transcript.window"),
+    ] {
+        let bundle = runtime
+            .dump(DumpRequest {
+                reason: format!("asked by {check}"),
+                automatic,
+                check: check.to_owned(),
+                ..DumpRequest::default()
+            })
+            .await
+            .unwrap();
+        bundles.push(bundle);
+    }
     kill_all(&runtime).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();
 
-    let files = tree(&bundle);
     let dir = format!("agents/{agent}");
-    assert!(
-        files
-            .iter()
-            .any(|(name, _)| *name == format!("{dir}/record")),
-        "{files:?}"
-    );
-    for (name, _) in &files {
-        let bytes = std::fs::read(bundle.join(name)).unwrap();
-        for planted in [MARKER, &repo.to_string_lossy()] {
-            assert!(
-                !holds(&bytes, planted),
-                "{name} holds {planted}: {}",
-                String::from_utf8_lossy(&bytes)
-            );
+    let parts =
+        |bundle: &Path| -> Vec<String> { tree(bundle).into_iter().map(|(name, _)| name).collect() };
+    for bundle in &bundles {
+        let files = tree(bundle);
+        assert!(
+            files
+                .iter()
+                .any(|(name, _)| *name == format!("{dir}/record")),
+            "{files:?}"
+        );
+        assert_eq!(parts(bundle), parts(&bundles[0]), "the same parts");
+        for (name, _) in &files {
+            let bytes = std::fs::read(bundle.join(name)).unwrap();
+            for planted in [
+                MARKER.to_owned(),
+                MARKER.to_uppercase(),
+                repo.to_string_lossy().into_owned(),
+            ] {
+                assert!(
+                    !holds(&bytes, &planted),
+                    "{name} holds {planted}: {}",
+                    String::from_utf8_lossy(&bytes)
+                );
+            }
         }
     }
+    let bundle = &bundles[0];
 
     let bytes = std::fs::read(bundle.join(&dir).join(node::AGENT_RECORD)).unwrap();
     let record: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
@@ -762,71 +638,21 @@ async fn an_agents_record_carries_no_words_and_holds_what_its_interpreter_conclu
     assert!(events.iter().all(|fed| fed["broken"].is_null()), "{text}");
 }
 
-/// Each scope carries what replays the stage its trigger concerns: the
-/// core's part and the journals it reads for the core, one chat's rows for
-/// a transcript, and for a person's report none of any agent's.
+/// A client's chats go into a dump as their records, whatever asked for
+/// it; a whole session, which holds its chat's conversation, never does.
 #[tokio::test(flavor = "multi_thread")]
-async fn each_scope_carries_what_its_stage_replays() {
+async fn a_dump_carries_a_chats_record_and_never_its_whole_session() {
     let install = Install::new();
     let daemon = install
         .start("boot-1", support::synthetic::quiet_launch())
         .await;
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
     let mut one = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
-    let two = support::synthetic::SyntheticAgent::new(&install, "two", 1 << 20);
     one.register(&install);
-    two.register(&install);
     one.append(&support::synthetic::item("a", "hello"));
     runtime.ingest(one.id).await.unwrap();
     runtime.checkpoint().await.unwrap();
 
-    let dump = |scope: wire::DumpScope, agents: Vec<Vec<u8>>| {
-        let runtime = runtime.clone();
-        async move {
-            let request = DumpRequest {
-                agent_ids: agents,
-                scope: scope.into(),
-                ..DumpRequest::default()
-            };
-            let bundle = runtime.dump(request).await.unwrap();
-            let files: Vec<String> = tree(&bundle).into_iter().map(|(name, _)| name).collect();
-            (bundle, files)
-        }
-    };
-    let has = |files: &[String], path: &str| files.iter().any(|file| file.starts_with(path));
-    let one_dir = format!("agents/{}", one.id);
-
-    let (bundle, core) = dump(wire::DumpScope::Core, Vec::new()).await;
-    assert!(
-        has(&core, "core/checkpoint") && has(&core, "core/store.sqlite"),
-        "{core:?}"
-    );
-    assert!(has(&core, &format!("{one_dir}/row.pb")), "{core:?}");
-    assert!(has(&core, &format!("{one_dir}/journal/")), "{core:?}");
-    assert!(!has(&core, &format!("{one_dir}/store.pb")), "{core:?}");
-    assert!(!has(&core, &format!("{one_dir}/part/")), "{core:?}");
-    let manifest: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
-    assert_eq!(manifest["scope"], "core");
-
-    let (_, transcript) = dump(
-        wire::DumpScope::Transcript,
-        vec![one.id.as_bytes().to_vec()],
-    )
-    .await;
-    assert!(
-        has(&transcript, &format!("{one_dir}/store.pb")),
-        "{transcript:?}"
-    );
-    assert!(
-        !has(&transcript, &format!("{one_dir}/journal/")),
-        "{transcript:?}"
-    );
-    assert!(!has(&transcript, "core/"), "{transcript:?}");
-
-    // A person's report carries no agent's records, even for a chat the
-    // client had open and handed in whole: only the manifest and our own
-    // logs.
     let open_chat = wire::dump::ClientSessionHistory {
         agent_id: one.id.as_bytes().to_vec(),
         ..wire::dump::ClientSessionHistory::default()
@@ -835,49 +661,29 @@ async fn each_scope_carries_what_its_stage_replays() {
         structure_only: true,
         ..open_chat.clone()
     };
-    let with = |scope: wire::DumpScope, session: &wire::dump::ClientSessionHistory| {
-        let runtime = runtime.clone();
-        let request = DumpRequest {
-            scope: scope.into(),
-            sessions: vec![session.encode_to_vec()],
-            ..DumpRequest::default()
-        };
-        async move {
-            let bundle = runtime.dump(request).await.unwrap();
+    let sessions_dir = format!("{}/{}/", node::CLIENT_SESSIONS, one.id);
+    for (automatic, check) in [(false, ""), (true, "transcript.window")] {
+        for (session, carried) in [(&record, true), (&open_chat, false)] {
+            let bundle = runtime
+                .dump(DumpRequest {
+                    automatic,
+                    check: check.to_owned(),
+                    sessions: vec![session.encode_to_vec()],
+                    ..DumpRequest::default()
+                })
+                .await
+                .unwrap();
             let files: Vec<String> = tree(&bundle).into_iter().map(|(name, _)| name).collect();
-            let manifest: serde_json::Value =
-                serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
-            (files, manifest)
+            assert_eq!(
+                files.iter().any(|file| file.starts_with(&sessions_dir)),
+                carried,
+                "{check:?}: {files:?}"
+            );
+            assert!(
+                files.iter().any(|file| file == "core/checkpoint"),
+                "{files:?}"
+            );
         }
-    };
-    let (report, manifest) = with(wire::DumpScope::Report, &open_chat).await;
-    assert!(
-        report
-            .iter()
-            .all(|file| [MANIFEST, DAEMON_LOG, node::SUPERVISOR_LOG].contains(&file.as_str())),
-        "{report:?}"
-    );
-    assert_eq!(manifest["scope"], "report");
-    assert_eq!(manifest["agents"], serde_json::json!([]));
-    assert_eq!(manifest["client"]["sessions"], serde_json::json!([]));
-    assert!(manifest["core"].is_null(), "{manifest}");
-    assert!(
-        manifest["errors"].to_string().contains("a whole history"),
-        "{manifest}"
-    );
-
-    // The chat's record, which holds no conversation, goes with a report
-    // and with its transcript's dump; a whole session goes with neither.
-    let sessions_dir = format!("client/sessions/{}/", one.id);
-    for scope in [wire::DumpScope::Report, wire::DumpScope::Transcript] {
-        let (files, manifest) = with(scope, &record).await;
-        assert!(has(&files, &sessions_dir), "{scope:?}: {files:?}");
-        assert_eq!(
-            manifest["client"]["sessions"][0]["structure_only"], true,
-            "{manifest}"
-        );
-        let (files, _) = with(scope, &open_chat).await;
-        assert!(!has(&files, "client/"), "{scope:?}: {files:?}");
     }
 
     kill_all(&runtime).await;
@@ -1170,9 +976,8 @@ async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
     daemon.shutdown().await.unwrap();
 }
 
-/// An agent's core asking for a dump is a bundle of that agent, written by
-/// the daemon: its part from the process and the daemon's own beside it,
-/// the reason saying which agent asked. The daemon holds a repeat of the
+/// An agent's core asking for a dump is a bundle written by the daemon
+/// with the record the agent sent, the reason saying which agent asked. The daemon holds a repeat of the
 /// same kind back, as twenty agents breaking one invariant would send it.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
@@ -1239,30 +1044,15 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
         let bundle = bundle.unwrap().path();
         let manifest: serde_json::Value =
             serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
-        checks.push(manifest["check"].as_str().unwrap_or_default().to_owned());
-        let agents: Vec<String> = std::fs::read_dir(bundle.join("agents"))
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        assert_eq!(agents, vec![id.clone()], "only the agent that asked");
-        // The record the agent's core sent, and nothing that holds text:
-        // no row, slice, journal or facts.
+        checks.push(manifest["trigger"].as_str().unwrap_or_default().to_owned());
+        // The record the agent's core sent, beside every other part a
+        // dump carries.
         let agent = bundle.join("agents").join(&id);
         assert_eq!(
             std::fs::read(agent.join(node::AGENT_RECORD)).unwrap(),
             support::synthetic::SYNTHETIC_RECORD
         );
-        let files: Vec<String> = tree(&agent).into_iter().map(|(name, _)| name).collect();
-        assert!(
-            files
-                .iter()
-                .all(|file| [node::AGENT_RECORD, node::AGENT_LOG].contains(&file.as_str())),
-            "{files:?}"
-        );
-        assert!(
-            !bundle.join("core").exists(),
-            "the daemon core's part replays nothing an agent's core broke"
-        );
+        assert!(bundle.join("core").join("checkpoint").is_file());
         println!(
             "{}: {}",
             bundle.file_name().unwrap().to_string_lossy(),

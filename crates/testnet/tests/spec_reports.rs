@@ -2,7 +2,8 @@
 //! taken when their screen froze and sent to the account the profile is
 //! signed in to, or kept with the reason it was not; a dump a check asks
 //! for is sent on its own when the installation sends automatic reports,
-//! and counted as a usage event either way.
+//! and counted as a usage event either way. What is sent is what was
+//! saved, byte for byte.
 
 #![cfg(unix)]
 
@@ -11,7 +12,7 @@ use prost::Message as _;
 use provider_fakes::script::Step;
 use support::*;
 use testnet::{AgentDecl, Net, NetOptions, Relay, Topology, until};
-use wire::{BindProfileRequest, DumpFile, DumpRequest, DumpScope, SubmitReportRequest};
+use wire::{BindProfileRequest, DumpFile, DumpRequest, SubmitReportRequest};
 
 use crate::support;
 
@@ -66,7 +67,6 @@ async fn a_report_is_sent_once_signed_in_and_a_checks_dump_goes_on_its_own() {
     let dump = runtime
         .dump(DumpRequest {
             reason: "report a problem".to_owned(),
-            scope: DumpScope::Report.into(),
             ..DumpRequest::default()
         })
         .await
@@ -132,15 +132,27 @@ async fn a_report_is_sent_once_signed_in_and_a_checks_dump_goes_on_its_own() {
     assert_eq!(header["note"], "the row is wrong");
     assert_eq!(header["parts"]["dump"], "present");
     let manifest = carried_manifest(received.file("dump.pb.zst").unwrap());
-    assert_eq!(manifest["scope"], "report");
+    assert_eq!(manifest["trigger"], node::PERSON);
+    // Sent is saved: the header and frame as the report directory keeps
+    // them, and the dump packed from the directory it was saved as.
+    for name in ["report.json", "frame.txt"] {
+        assert_eq!(
+            received.file(name).unwrap(),
+            std::fs::read(report.join(name)).unwrap(),
+            "{name}"
+        );
+    }
+    assert_eq!(
+        received.file("dump.pb.zst").unwrap(),
+        node::archive(&report.join("dump")).unwrap(),
+        "the dump sent is the dump saved"
+    );
 
     // A check that broke: its dump goes on its own, and is counted.
-    runtime
+    let saved = runtime
         .dump(DumpRequest {
-            agent_ids: vec![worker.id.as_bytes().to_vec()],
             reason: "the client's transcript: a test".to_owned(),
             automatic: true,
-            scope: DumpScope::Transcript.into(),
             check: ui_runtime::TRANSCRIPT_CHECK.to_owned(),
             ..DumpRequest::default()
         })
@@ -161,8 +173,32 @@ async fn a_report_is_sent_once_signed_in_and_a_checks_dump_goes_on_its_own() {
     assert_eq!(header["check"], ui_runtime::TRANSCRIPT_CHECK);
     assert!(automatic.file("frame.png").is_none() && automatic.file("frame.txt").is_none());
     let manifest = carried_manifest(automatic.file("dump.pb.zst").unwrap());
-    assert_eq!(manifest["scope"], "transcript");
-    assert_eq!(manifest["check"], ui_runtime::TRANSCRIPT_CHECK);
+    assert_eq!(manifest["trigger"], ui_runtime::TRANSCRIPT_CHECK);
+    assert_eq!(
+        automatic.file("dump.pb.zst").unwrap(),
+        node::archive(&saved).unwrap(),
+        "the dump sent is the dump saved"
+    );
+    // A person's report and a check's carry the same parts, whatever the
+    // trigger: the core's record, the agent's, and our logs.
+    let parts = |archive: &[u8]| -> Vec<String> {
+        let packed = zstd::stream::decode_all(archive).unwrap();
+        wire::DumpPart::decode(packed.as_slice())
+            .unwrap()
+            .files
+            .into_iter()
+            .map(|file| file.name)
+            .collect()
+    };
+    assert_eq!(
+        parts(automatic.file("dump.pb.zst").unwrap()),
+        parts(received.file("dump.pb.zst").unwrap())
+    );
+    assert!(
+        parts(automatic.file("dump.pb.zst").unwrap())
+            .contains(&format!("agents/{}/record", worker.id)),
+        "the agent's record"
+    );
     let counted: Vec<_> = recording
         .events()
         .into_iter()

@@ -587,7 +587,7 @@ async fn the_cli_verbs_work_against_a_started_daemon() {
     let listing = install.ok(&["ls"]).await;
     assert!(line_of(&listing, "aide").contains("claude"), "{listing}");
 
-    let bundle = install.ok(&["dump", "aide", "--reason", "a test"]).await;
+    let bundle = install.ok(&["dump", "--reason", "a test"]).await;
     let bundle = PathBuf::from(bundle.trim());
     assert!(
         bundle.join(node::MANIFEST).is_file(),

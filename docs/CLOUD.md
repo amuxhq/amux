@@ -255,15 +255,16 @@ page on amux.sh when no link comes back.
 
 Reporting is in every build. A profile's runtime (the daemon, or the app's
 embedded runtime) uploads every report: a person's from the terminal or the
-phone, `amux dump --send`, and a check's dump when automatic reports are on
+phone, `amux dump --send`, and a check's report when automatic reports are on
 (see [sending reports](DEBUGGING.md#sending-reports)). `POST /api/reports`
 takes `multipart/form-data`, one section per file, each section's `name` and
 `filename` being the file it carries: `report.json`, the frame (`frame.png`,
 or `frame.txt` and `frame.json`), `trace.jsonl`, and `dump.pb.zst`, the
-profile's dump packed as one `wire.DumpPart` and compressed with zstd.
+report's bundle of this host's records and our logs, the same whatever
+asked for it, packed as one `wire.DumpPart` and compressed with zstd.
 
 `report.json` is required and uses `schema_version: 1`. Its `kind` is
-`report` for one a person sent and `automatic` for a check's dump, which
+`report` for one a person sent and `automatic` for a check's, which
 names the check's id in `check` (two or more dot-separated lowercase words)
 and carries no frame. Its `parts` declares the frame, trace and dump as
 present or absent with a reason. Present parts are sent as their sections;

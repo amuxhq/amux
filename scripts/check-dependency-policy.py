@@ -150,14 +150,12 @@ SUPPORT_ALLOWED_LOCAL = {
     # its storybook, whose chats are recorded sessions replayed through the
     # interpreters.
     "shot": {"interpret", "settings", "tui", "ui-state", "ui-view", "wire"},
-    # Replays a dump bundle's stages with the models' properties judged at
-    # every step: facts through the interpreter (the journal for
-    # comparison), the daemon core from its checkpoint over its store,
-    # records through the session model, state through the views. A
-    # debugging tool: nothing links it.
+    # Replays a report's records with the models' properties judged at every
+    # step: the daemon core from its checkpoint over its store, and each
+    # chat's record through the session model. A debugging tool: nothing
+    # links it.
     "replay-support": {
-        "core-ring", "daemon-core", "interpret", "journal", "models", "redaction", "store",
-        "ui-state", "ui-view", "wire",
+        "core-ring", "daemon-core", "journal", "models", "store", "ui-state", "wire",
     },
     # The protocol's properties, explored over the real code: the store, the
     # journal and the message types, each state-machine core, and the

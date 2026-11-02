@@ -5,44 +5,24 @@ package amux.v1;
 // The diagnostic dump: what a client asks for and gets back, the agent
 // process's part, and a person's report built around one.
 
-// What a dump carries: what replays the stage its trigger concerns, and only
-// what this host holds.
-enum DumpScope {
-  // Everything this host holds for the named agents: `amux dump` and
-  // Export Diagnostics.
-  DUMP_SCOPE_UNSPECIFIED = 0;
-  // The daemon core's checkpoint, inputs and store copy, with the own
-  // agents' journals from its cursor on.
-  DUMP_SCOPE_CORE = 1;
-  // One agent's own check: its record and its log's last minute, which
-  // carry no conversation.
-  DUMP_SCOPE_AGENT = 2;
-  // One chat: the client's session and its agent's row and slice.
-  DUMP_SCOPE_TRANSCRIPT = 3;
-  // A person's report: the installation's own logs and no agent's records,
-  // since those hold conversation text.
-  DUMP_SCOPE_REPORT = 4;
-}
-
-// Assembles a dump bundle of this host's own records into the reports
-// directory, redacted.
+// Assembles a dump bundle of this host's records into the reports
+// directory: the daemon core's, each own agent's and the asking client's
+// chats', with our own logs. Every dump carries the same parts.
 message DumpRequest {
-  // Empty means every agent of the profile.
-  repeated bytes agent_ids = 1;
+  // Once the agents a dump covered, and the scope that chose its parts:
+  // every dump now carries every own agent's record.
+  reserved 1, 5;
+  reserved "agent_ids", "scope";
   string reason = 2;
   // Produced on an invariant violation or panic rather than on request.
   bool automatic = 3;
-  // The asking client's open sessions, each an encoded
-  // amux.dump.ClientSessionHistory: the session as its trace began and every
-  // message since, the client stage of a replay. Opaque here because only the
-  // build that wrote it reads it; a daemon that cannot decode one leaves it
-  // out of the bundle and says so. Unredacted as the client holds it; the
-  // daemon redacts each through its agent's kind before it writes it into the
-  // bundle, and passes none on to another host. A dump of the unspecified
-  // scope carries them whole; a chat's transcript dump and a person's report
-  // carry only those that are structure-only records.
+  // The records of the chats the asking client shows, each an encoded
+  // amux.dump.ClientSessionHistory with `structure_only` set: the session as
+  // its trace began and every message since, with nothing anybody wrote. The
+  // client stage of a replay. Opaque here because only the build that wrote
+  // it reads it; the daemon leaves out one that does not decode or is not a
+  // record, and says so, and passes none on to another host.
   repeated bytes sessions = 4;
-  DumpScope scope = 5;
   // The id of the check that broke, for an automatic dump a check asked for.
   string check = 6;
 }
@@ -52,8 +32,7 @@ message DumpResponse {
   string report_path = 1;
 }
 
-// The agent process's part of a dump: its facts ring and checkpoint,
-// already redacted.
+// The agent process's part of a dump: its record, built when asked.
 message DumpPart {
   bytes dump_id = 1;
   repeated DumpFile files = 2;

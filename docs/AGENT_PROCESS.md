@@ -87,7 +87,7 @@ itself: in its own process group, with stdin and stdout closed and stderr
 appended to `agent.log`, so neither the daemon's terminal nor its death
 reaches the agent. The agent holds `agent.log` and `private/provider.log`
 to 1 MiB each, checking every 30 seconds and moving a log past its cap to
-`<name>.1`; a dump carries the minute of `agent.log` before it, at INFO and above, and never
+`<name>.1`; a report carries the minute of `agent.log` before it, at INFO and above, and never
 `provider.log`, which is the provider's own output.
 
 `agent::run` then:
@@ -200,7 +200,7 @@ final boundary at all gets one with `ENDED_UNEXPECTEDLY` when the next
 incarnation starts; that step carries no `incarnation_end`, since the row
 already says how the earlier incarnation ended.
 
-A dump request is answered in every mode, since a draining agent is often the
+A request for its record is answered in every mode, since a draining agent is often the
 one someone wants to look at.
 
 Nothing a person does in a chat stops the process. A chat's interrupt is the
@@ -253,12 +253,12 @@ version integer, and a frame a reader does not know is ignored.
 | `nudge` | agent → daemon | The journal grew. Sent after every step that wrote bytes; an empty step writes nothing and sends nothing |
 | `input` | daemon → agent | A person's `Input` (a prompt, an answer, an interrupt, a setting, …), its body as the client encoded it |
 | `agent_message` | daemon → agent | An `Envelope` with the sender the daemon set; the recipient's interpreter picks the carrier |
-| `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's part of a dump bundle, answered in any mode |
+| `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's record for a report, answered in any mode |
 | `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |
 | `stop` | daemon → agent | `Stop { kill }`: without `kill`, cancel the turn the provider's own way and exit; with it, kill everything below the provider and its process group at once (the daemon's escalation past the stop deadline) |
 | `children` | daemon → agent | `Children { children }`: the agents directly below this one that are live, on every host its daemon knows of, each with its incarnation, sent when the agent connects with any and whenever the list changes; a one-shot agent waits for each incarnation's last report |
-| `dump` | agent → daemon | `DumpPart`, answering a dump request |
-| `dump_asked` | agent → daemon | `DumpAsked { reason, invariant }`: the agent's core asked for a dump (the invariant it broke, or none for a step over its budget). The daemon writes a bundle of this agent, its part gathered as for any dump, after a limit of its own per kind; one asked with no daemon connected waits, the newest of each kind, and goes right after the next `hello` |
+| `dump` | agent → daemon | `DumpPart` holding the agent's record, answering a dump request |
+| `dump_asked` | agent → daemon | `DumpAsked { reason, invariant, record }`: the agent's core asked for a report (the invariant it broke, or none for a step over its budget), with its record built then. The daemon writes the one report, with that record for this agent, after a limit of its own per kind; one asked with no daemon connected waits, the newest of each kind, and goes right after the next `hello` |
 | `reply` | agent → daemon | `Verdict { id, verdict }`: the interpreter's verdict on an input, keyed by its input id, which the daemon relays as the `SendInput` reply; or on an agent message, keyed by its envelope id, which settles the message's delivery |
 
 Within one step the order is fixed: blobs the step refers to are written
@@ -517,10 +517,10 @@ starts with re-emits every open item in full. A ring that cannot be read
 starts over from nothing. [Checkpoints](INTERPRETERS.md#checkpoints) covers
 what an interpreter must keep.
 
-The agent's part of a dump is these segments, their checkpoints and every
-spec file, each redacted by the kind's interpreter before it leaves the
-process (`dump.rs`). A file that cannot be read is named in `dump-errors`,
-never included unredacted. See [debugging](DEBUGGING.md).
+The agent's part of a report is its record: these segments run again
+through the kind's interpreter from their checkpoints, keeping what it
+concluded and none of what was said (`dump.rs`). The segments themselves
+never leave the machine. See [the agent's record](DEBUGGING.md#the-agents-record).
 
 ## Hooks and the transcript
 

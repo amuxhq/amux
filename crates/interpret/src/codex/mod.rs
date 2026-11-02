@@ -66,9 +66,9 @@ use wire::{
 
 use crate::claude_common::{clip, describe_tasks, or_dash};
 use crate::{
-    Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView, RedactTarget,
-    Shared, SnapshotView, Stepped, agent_message_body, agent_message_key, ask_item, codex_input,
-    human, serde_pb, unknown,
+    Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView, Shared,
+    SnapshotView, Stepped, agent_message_body, agent_message_key, ask_item, codex_input, human,
+    serde_pb, unknown,
 };
 
 /// The slash commands amux runs for Codex: name, description and argument
@@ -1848,12 +1848,6 @@ impl Interpreter for Codex {
         }
         let body = state.body();
         state.shared.finish(emit, body)
-    }
-
-    fn redact(target: RedactTarget) -> RedactTarget {
-        crate::redact::redact_kind::<wire::CodexItem, wire::CodexSnapshot, wire::CodexInput, State>(
-            target,
-        )
     }
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {

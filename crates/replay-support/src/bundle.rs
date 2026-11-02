@@ -1,48 +1,39 @@
-//! Opening a dump bundle, and replaying an agent's stages from what the
-//! bundle carries: the facts ring through the agent's interpreter from the
-//! checkpoint at its oldest segment, the daemon's store slice through the
-//! session model as a Subscribe opening would deliver it, and that state
-//! through the views. A client bug reproduces from the slice; an
-//! interpreter bug from the facts, compared with the journal the bundle
-//! also carries. `replay` runs these and the daemon core's stage with the
-//! properties judged.
+//! Opening a dump bundle: the records it carries, each as a stage replays
+//! it. The layout is the daemon's (see `node::dump`): `manifest.json`; the
+//! daemon core's record under `core/`, its `checkpoint`, the `inputs`
+//! since, the `store.sqlite` as of that checkpoint and each own agent's
+//! journal from its cursor there under `journals/<id>/`; each own agent's
+//! `agents/<id>/record`; and the record of each chat the asking client
+//! showed, under `client/sessions/<id>/`: its `checkpoint` and the
+//! `events` since, which the manifest names.
 //!
-//! The layout is the daemon's (see `node::dump`): `manifest.json`, per
-//! agent `agents/<id>/row.pb`, `store.pb`, `journal/<segment>` and the
-//! agent's own part under `part/`, with `facts/<segment>` and
-//! `facts/<segment>.checkpoint`; the daemon core's part under `core/`:
-//! its `checkpoint`, the `inputs` since and the `store.sqlite` as of that
-//! checkpoint; and each session the asking client had open, under
-//! `client/sessions/<id>/`: its `checkpoint` and the `events` since, which
-//! the manifest names. Which of these a bundle carries is its scope's, as
-//! its manifest says; a part it does not carry is absent from the replay.
-//! An agent's own check carries only `agents/<id>/record` and `agent.log`,
-//! which hold the interpreter's conclusions and replay nothing.
+//! An agent's record is read as it was written, the interpreter's
+//! conclusions by kind, size and alias. Nothing replays it yet: a stage
+//! that turns it into a stream for its interpreter starts from
+//! [`Bundle::agents`].
 //!
 //! A bundle opens from its directory, from a person's report holding it,
-//! or from the `dump.pb.zst` a report was uploaded with.
+//! or from the `dump.pb.zst` a report was sent with.
 
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use interpret::Interpreter;
-use interpret::claude_pty::ClaudePty;
-use interpret::claude_sdk::ClaudeSdk;
-use interpret::codex::Codex;
-use interpret::ring::Entry;
+use daemon_core::AgentId;
 use prost::Message as _;
-use ui_state::{Msg, SessionState};
-use ui_view::{Row, ToolRows};
+use wire::Step;
 use wire::dump::{ClientSession, ClientSessionEvents, ClientTraced};
-use wire::{Agent, CaughtUp, Item, Kind, SessionEvent, Step, session_event};
 
-/// The core's part of a bundle, and its files.
+/// The core's record in a bundle, and its files.
 pub const CORE: &str = "core";
 pub const CORE_CHECKPOINT: &str = "checkpoint";
 pub const CORE_INPUTS: &str = "inputs";
 pub const CORE_STORE: &str = "store.sqlite";
+pub const CORE_JOURNALS: &str = "journals";
+/// Where each agent's record is.
+pub const AGENTS: &str = "agents";
+pub const AGENT_RECORD: &str = "record";
 
 #[derive(Debug, thiserror::Error)]
 pub enum BundleError {
@@ -54,55 +45,33 @@ pub enum BundleError {
         what: &'static str,
         error: String,
     },
-    #[error("agent {0} has no facts in the bundle, so there is nothing to replay")]
-    NoFacts(String),
-    #[error("agent {0}'s oldest facts segment has no checkpoint to start from")]
-    NoCheckpoint(String),
-    #[error("agent {agent}: facts line {line} is not an event this build can read")]
-    Unreadable { agent: String, line: usize },
-    #[error("agent {0} is of no kind this build interprets")]
-    UnknownKind(String),
 }
 
-/// One segment of an agent's facts ring, as the agent's dump part carries
-/// it: already redacted, line for line.
+/// One own agent's record, as its process built it when the dump was
+/// made.
 #[derive(Clone, Debug)]
-pub struct FactsSegment {
-    pub start: u64,
-    /// The interpreter's state before the segment's first entry.
-    pub checkpoint: Option<Vec<u8>>,
-    pub entries: Vec<Entry>,
-}
-
-/// Everything a bundle holds for one agent.
-#[derive(Clone, Debug)]
-pub struct AgentDump {
+pub struct AgentRecord {
     /// The directory name: the agent id.
     pub id: String,
-    /// The inventory row.
-    pub row: Agent,
-    /// The store slice: the snapshot and the newest rows, oldest first.
-    /// None when the dump's scope carries no slice of this agent: the
-    /// core's dump has only its row, for the journal the core reads.
-    pub store: Option<Step>,
-    /// Every whole frame of the journal segments carried, in order.
-    pub journal: Vec<Step>,
-    /// The facts ring's segments, oldest first; empty for an agent that had
-    /// no process to ask.
-    pub facts: Vec<FactsSegment>,
+    pub record: serde_json::Value,
 }
 
-/// The daemon core's part of a bundle: its newest checkpoint, every line
-/// its driver recorded since (each input, and how far each ingest read a
-/// journal), and the store as of that checkpoint.
+/// A journal's segment files: each one's start offset and its bytes.
+pub type Segments = Vec<(u64, Vec<u8>)>;
+
+/// The daemon core's record: its newest checkpoint, every line its driver
+/// recorded since (each input, and how far each ingest read a journal),
+/// the store as of that checkpoint and the journals those reads reach.
 #[derive(Clone, Debug)]
 pub struct CoreDump {
     pub checkpoint: Vec<u8>,
     pub inputs: Vec<daemon_core::Recorded>,
     pub store: PathBuf,
+    /// Each own agent's journal segments, at their offsets.
+    pub journals: BTreeMap<AgentId, Segments>,
 }
 
-/// One session the asking client had open, as the manifest names it.
+/// One chat the asking client showed, as the manifest names it.
 #[derive(Clone, Debug)]
 pub struct ClientDump {
     /// The agent id, as the bundle writes ids.
@@ -122,15 +91,17 @@ pub struct ClientHistory {
 #[derive(Clone, Debug)]
 pub struct Bundle {
     /// Where the bundle's files are: the directory named, the `dump/` of a
-    /// person's report, or where an uploaded archive was unpacked.
+    /// person's report, or where a sent archive was unpacked.
     pub dir: PathBuf,
     /// An unpacked archive's directory, removed with the last clone.
     _unpacked: Option<Arc<tempfile::TempDir>>,
-    pub agents: Vec<AgentDump>,
-    /// None for a bundle taken without the core's part: from a peer, or
-    /// when the core could not be had, as its manifest says.
+    /// Each own agent's record; an agent whose record could not be had is
+    /// named in the manifest's errors instead.
+    pub agents: Vec<AgentRecord>,
+    /// None when the core's record could not be had or was past the
+    /// limit, as the manifest says.
     pub core: Option<CoreDump>,
-    /// Empty when no client was attached: a dump from the command line.
+    /// Empty when no client showed a chat: a dump from the command line.
     pub clients: Vec<ClientDump>,
 }
 
@@ -155,8 +126,18 @@ pub(crate) fn decode<M: prost::Message + Default>(
 /// Segment files in a directory, by the offset their name spells.
 pub(crate) fn segments(dir: &Path) -> Result<Vec<(u64, PathBuf)>, BundleError> {
     let mut found = BTreeMap::new();
-    let listing = match std::fs::read_dir(dir) {
-        Ok(listing) => listing,
+    for (name, path) in listing(dir)? {
+        if let Ok(start) = name.parse::<u64>() {
+            found.insert(start, path);
+        }
+    }
+    Ok(found.into_iter().collect())
+}
+
+/// A directory's entries by name, none when it is not there.
+pub(crate) fn listing(dir: &Path) -> Result<Vec<(String, PathBuf)>, BundleError> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => {
             return Err(BundleError::Read {
@@ -165,21 +146,22 @@ pub(crate) fn segments(dir: &Path) -> Result<Vec<(u64, PathBuf)>, BundleError> {
             });
         }
     };
-    for entry in listing {
+    let mut names = Vec::new();
+    for entry in entries {
         let entry = entry.map_err(|error| BundleError::Read {
             path: dir.to_owned(),
             error,
         })?;
-        let name = entry.file_name();
-        if let Some(start) = name.to_str().and_then(|name| name.parse::<u64>().ok()) {
-            found.insert(start, entry.path());
+        if let Ok(name) = entry.file_name().into_string() {
+            names.push((name, entry.path()));
         }
     }
-    Ok(found.into_iter().collect())
+    names.sort();
+    Ok(names)
 }
 
-fn journal_frames(path: &Path) -> Result<Vec<Step>, BundleError> {
-    let bytes = read(path)?;
+/// Every whole frame of a journal segment, in order.
+pub(crate) fn journal_frames(bytes: &[u8]) -> Vec<Step> {
     let mut frames = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
@@ -188,11 +170,11 @@ fn journal_frames(path: &Path) -> Result<Vec<Step>, BundleError> {
                 frames.push(*step);
                 at += length;
             }
-            // A dump carries whole frames only; anything else ends the read.
+            // A torn tail keeps only its length: it ends the read.
             journal::Frame::Incomplete | journal::Frame::Corrupt => break,
         }
     }
-    Ok(frames)
+    frames
 }
 
 /// Where a bundle's files are, given what was named: a dump's directory
@@ -250,70 +232,38 @@ impl Bundle {
     pub fn open(named: &Path) -> Result<Bundle, BundleError> {
         let (dir, unpacked) = locate(named)?;
         let dir = dir.as_path();
-        let agents_dir = dir.join("agents");
-        let mut ids: Vec<String> = std::fs::read_dir(&agents_dir)
-            .map_err(|error| BundleError::Read {
-                path: agents_dir.clone(),
-                error,
-            })?
-            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
-            .collect();
-        ids.sort();
         let mut agents = Vec::new();
-        for id in ids {
-            let at = agents_dir.join(&id);
-            let mut journal = Vec::new();
-            for (_, path) in segments(&at.join("journal"))? {
-                journal.extend(journal_frames(&path)?);
+        for (id, at) in listing(&dir.join(AGENTS))? {
+            let path = at.join(AGENT_RECORD);
+            if !path.is_file() {
+                continue;
             }
-            let facts_dir = at.join("part").join("facts");
-            let mut facts = Vec::new();
-            for (start, path) in segments(&facts_dir)? {
-                let checkpoint_path = facts_dir.join(format!(
-                    "{}.checkpoint",
-                    path.file_name().unwrap().to_string_lossy()
-                ));
-                let checkpoint = match std::fs::read(&checkpoint_path) {
-                    Ok(bytes) => Some(bytes),
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-                    Err(error) => {
-                        return Err(BundleError::Read {
-                            path: checkpoint_path,
-                            error,
-                        });
-                    }
-                };
-                facts.push(FactsSegment {
-                    start,
-                    checkpoint,
-                    entries: core_ring::inputs(&read(&path)?),
-                });
-            }
-            let store = at.join("store.pb");
-            let row = at.join("row.pb");
-            agents.push(AgentDump {
-                // An agent's own check carries its record and no row.
-                row: if row.is_file() {
-                    decode(&row, "wire.Agent")?
-                } else {
-                    Agent::default()
-                },
-                store: if store.is_file() {
-                    Some(decode(&store, "wire.Step")?)
-                } else {
-                    None
-                },
-                journal,
-                facts,
-                id,
-            });
+            let record =
+                serde_json::from_slice(&read(&path)?).map_err(|error| BundleError::Decode {
+                    path: path.clone(),
+                    what: "JSON record",
+                    error: error.to_string(),
+                })?;
+            agents.push(AgentRecord { id, record });
         }
         let core_dir = dir.join(CORE);
         let core = if core_dir.join(CORE_CHECKPOINT).is_file() {
+            let mut journals = BTreeMap::new();
+            for (name, at) in listing(&core_dir.join(CORE_JOURNALS))? {
+                let Some(agent) = id(&name).map(AgentId) else {
+                    continue;
+                };
+                let mut held = Vec::new();
+                for (start, path) in segments(&at)? {
+                    held.push((start, read(&path)?));
+                }
+                journals.insert(agent, held);
+            }
             Some(CoreDump {
                 checkpoint: read(&core_dir.join(CORE_CHECKPOINT))?,
                 inputs: core_ring::inputs(&read(&core_dir.join(CORE_INPUTS))?),
                 store: core_dir.join(CORE_STORE),
+                journals,
             })
         } else {
             None
@@ -371,106 +321,15 @@ fn client_history(dir: &Path, checkpoint: &str, events: &str) -> Result<ClientHi
     })
 }
 
-impl AgentDump {
-    /// Stage one: the facts ring through the agent's interpreter, from the
-    /// checkpoint at the oldest segment kept. Returns every non-empty step
-    /// in order, as the agent would have journaled them.
-    pub fn replay_facts(&self) -> Result<Vec<Step>, BundleError> {
-        match self.row.kind() {
-            Kind::ClaudePty => self.replay::<ClaudePty>(),
-            Kind::ClaudeSdk => self.replay::<ClaudeSdk>(),
-            Kind::Codex => self.replay::<Codex>(),
-            Kind::Unspecified => Err(BundleError::UnknownKind(self.id.clone())),
-        }
+/// An id from the hyphenated form a bundle writes ids in.
+pub(crate) fn id(name: &str) -> Option<[u8; 16]> {
+    let hex: String = name.chars().filter(|c| *c != '-').collect();
+    if hex.len() != 32 || !hex.is_ascii() {
+        return None;
     }
-
-    fn replay<I: Interpreter>(&self) -> Result<Vec<Step>, BundleError> {
-        let oldest = self
-            .facts
-            .first()
-            .ok_or_else(|| BundleError::NoFacts(self.id.clone()))?;
-        let checkpoint = oldest
-            .checkpoint
-            .as_ref()
-            .ok_or_else(|| BundleError::NoCheckpoint(self.id.clone()))?;
-        let mut state: I::State =
-            interpret::decode_checkpoint(checkpoint).map_err(|error| BundleError::Decode {
-                path: PathBuf::from(format!("{}.checkpoint", oldest.start)),
-                what: "checkpoint",
-                error: error.to_string(),
-            })?;
-        let rerun = interpret::ring::rerun::<I>(
-            &mut state,
-            self.facts
-                .iter()
-                .flat_map(|segment| segment.entries.iter().cloned()),
-        );
-        match rerun.unreadable.first() {
-            Some(&line) => Err(BundleError::Unreadable {
-                agent: self.id.clone(),
-                line,
-            }),
-            None => Ok(rerun.steps),
-        }
+    let mut id = [0; 16];
+    for (at, byte) in id.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&hex[at * 2..at * 2 + 2], 16).ok()?;
     }
-
-    /// Stage two: the store slice through the session model, delivered as
-    /// a Subscribe opening delivers it: the snapshot, the held rows, then
-    /// CaughtUp.
-    pub fn session(&self) -> SessionState {
-        let mut state = SessionState::new(self.row.clone(), usize::MAX);
-        for of in self.opening() {
-            state.update(Msg::Event(SessionEvent { of: Some(of) }));
-        }
-        state
-    }
-
-    /// The events a Subscribe opening delivers for the slice: the
-    /// snapshot, the held rows, then CaughtUp.
-    pub fn opening(&self) -> Vec<session_event::Of> {
-        let mut events = Vec::new();
-        let mut revision = 0;
-        let Some(store) = &self.store else {
-            return Vec::new();
-        };
-        if let Some(snapshot) = &store.snapshot {
-            revision = snapshot.revision;
-            events.push(session_event::Of::Snapshot(snapshot.clone()));
-        }
-        for item in &store.items {
-            revision = revision.max(item.revision);
-            events.push(session_event::Of::Item(item.clone()));
-        }
-        events.push(session_event::Of::CaughtUp(CaughtUp { revision }));
-        events
-    }
-
-    /// Stage three: the rows the views draw for everything the state holds.
-    pub fn rows(state: &SessionState) -> Vec<Row> {
-        let keys: Vec<_> = state
-            .transcript()
-            .iter()
-            .map(|held| held.item.key.clone())
-            .collect();
-        ui_view::chat_rows_for(state, &keys, ToolRows::ShowAll)
-    }
-}
-
-/// Each key's final text across a sequence of steps: full items replace
-/// what came before, appends extend it. How two sequences are compared
-/// when their revisions differ.
-pub fn final_texts<'a>(steps: impl IntoIterator<Item = &'a Step>) -> BTreeMap<String, String> {
-    let mut texts: BTreeMap<String, String> = BTreeMap::new();
-    for step in steps {
-        for Item { key, text, .. } in &step.items {
-            texts.insert(key.clone(), text.clone());
-        }
-        for append in &step.appends {
-            texts
-                .entry(append.key.clone())
-                .or_default()
-                .push_str(&append.text);
-        }
-    }
-    texts
+    Some(id)
 }

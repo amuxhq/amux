@@ -1,6 +1,6 @@
-//! `dump-replay BUNDLE`: replays a dump bundle `amux dump` wrote through
-//! its four stages, judging the protocol's properties at every step, and
-//! prints one line per stage. Exits non-zero when a stage fails, naming the
+//! `dump-replay BUNDLE`: replays the records of a dump bundle `amux dump`
+//! wrote through their stages, judging the protocol's properties at every
+//! step, and prints one line per stage. Exits non-zero when a stage fails, naming the
 //! step and the property it broke.
 
 use std::path::PathBuf;

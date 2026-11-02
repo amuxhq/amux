@@ -44,8 +44,7 @@ use crate::claude_common::{
 };
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
-    RedactTarget, Shared, SnapshotView, Stepped, ask_item, claude_sdk_input, human, serde_pb,
-    unknown,
+    Shared, SnapshotView, Stepped, ask_item, claude_sdk_input, human, serde_pb, unknown,
 };
 
 /// The interpreter for kind `claude_sdk`.
@@ -1003,15 +1002,6 @@ impl Interpreter for ClaudeSdk {
         }
         let body = state.body();
         state.shared.finish(emit, body)
-    }
-
-    fn redact(target: RedactTarget) -> RedactTarget {
-        crate::redact::redact_kind::<
-            wire::ClaudeItem,
-            wire::ClaudeSnapshot,
-            wire::ClaudeSdkInput,
-            State,
-        >(target)
     }
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {

@@ -71,7 +71,7 @@ The supervisor logs to `<data_dir>/supervisor.log`; the daemon logs to
 the config's `root`, `~/.local/share/amux` by default. Each moves its own
 standard error onto its log at start, so a panic lands there, and each log is
 capped at 8 MiB with one previous file beside it (see
-[Debugging](DEBUGGING.md#where-things-are)). A dump carries the minute of
+[Debugging](DEBUGGING.md#where-things-are)). A report carries the minute of
 both before it, at INFO and above.
 
 When the supervisor's core breaks one of its invariants it logs the reason

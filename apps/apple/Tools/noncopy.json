@@ -123,7 +123,7 @@
       {"literal": "\"amux\"", "context": ".appendingPathComponent(\"amux\", isDirectory: true)", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"signed-out\"", "context": "signedOut: StoreBundle(account: AccountId(\"signed-out\")), options: options,", "reason": "Account id, dump reason or trace name recorded for a reader of diagnostics, not interface copy.", "count": 1},
       {"literal": "\"exported from the phone\"", "context": "guard case .success(let directory) = await stores.dump(reason: \"exported from the phone\")", "reason": "Account id, dump reason or trace name recorded for a reader of diagnostics, not interface copy.", "count": 1},
-      {"literal": "\"report\"", "context": "switch await running.dump(reason: \"report\", forReport: true) {", "reason": "Account id, dump reason or trace name recorded for a reader of diagnostics, not interface copy.", "count": 1}
+      {"literal": "\"report\"", "context": "switch await running.dump(reason: \"report\") {", "reason": "Account id, dump reason or trace name recorded for a reader of diagnostics, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/AmuxCloud.swift": [
       {"literal": "\"https://amux.sh\"", "context": "base: URL(string: \"https://amux.sh\")!,", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},

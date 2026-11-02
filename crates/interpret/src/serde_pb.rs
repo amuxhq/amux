@@ -3,14 +3,11 @@
 //! A checkpoint is JSON so a dump reader can see it; protobuf messages and
 //! byte ids inside it are written as lowercase hex of their encoding.
 
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use prost::{Message, Name};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-use crate::redact::Scrubber;
 
 pub fn to_hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
@@ -37,28 +34,8 @@ pub fn from_hex(text: &str) -> Result<Vec<u8>, String> {
         .collect()
 }
 
-thread_local! {
-    /// Set while a checkpoint is written for a dump. Protobuf values reach
-    /// JSON only through these adapters, so this is where each one is
-    /// redacted.
-    static SCRUBBER: RefCell<Option<Scrubber>> = const { RefCell::new(None) };
-}
-
-/// Runs `write` with every protobuf value it serializes redacted by
-/// `scrubber`.
-pub(crate) fn scrubbing<R>(scrubber: &mut Scrubber, write: impl FnOnce() -> R) -> R {
-    SCRUBBER.set(Some(std::mem::take(scrubber)));
-    let written = write();
-    *scrubber = SCRUBBER.take().expect("the scrubber is still set");
-    written
-}
-
 fn encode_msg<T: Message + Name>(msg: &T) -> String {
-    let bytes = msg.encode_to_vec();
-    SCRUBBER.with_borrow_mut(|scrubber| match scrubber {
-        Some(scrubber) => to_hex(&scrubber.message(&format!(".{}", T::full_name()), &bytes)),
-        None => to_hex(&bytes),
-    })
+    to_hex(&msg.encode_to_vec())
 }
 
 fn decode_msg<T: Message + Default, E: serde::de::Error>(text: &str) -> Result<T, E> {
@@ -79,18 +56,12 @@ pub mod bytes {
     }
 }
 
-/// An encoded item body of the interpreter's own kind, as hex; redacted
-/// as that kind's item body while a checkpoint is written for a dump.
+/// An encoded item body of the interpreter's own kind, as hex.
 pub mod item_body {
     use super::*;
 
     pub fn serialize<S: Serializer>(value: &[u8], s: S) -> Result<S::Ok, S::Error> {
-        SCRUBBER
-            .with_borrow_mut(|scrubber| match scrubber {
-                Some(scrubber) => to_hex(&scrubber.item_body(value)),
-                None => to_hex(value),
-            })
-            .serialize(s)
+        to_hex(value).serialize(s)
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {

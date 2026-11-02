@@ -126,8 +126,7 @@ use crate::claude_common::{
 };
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
-    RedactTarget, Shared, SnapshotView, Stepped, ask_item, claude_pty_input, human, serde_pb,
-    unknown,
+    Shared, SnapshotView, Stepped, ask_item, claude_pty_input, human, serde_pb, unknown,
 };
 
 /// The interpreter for kind `claude_pty`.
@@ -1544,15 +1543,6 @@ impl Interpreter for ClaudePty {
             .retain(|prompt| awaiting.contains(&prompt.id));
         let body = state.body();
         state.shared.finish(emit, body)
-    }
-
-    fn redact(target: RedactTarget) -> RedactTarget {
-        crate::redact::redact_kind::<
-            wire::ClaudeItem,
-            wire::ClaudeSnapshot,
-            wire::ClaudePtyInput,
-            State,
-        >(target)
     }
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {

@@ -2045,10 +2045,7 @@ fn report_a_problem(journey: &mut TerminalJourney) -> Proved {
             .map(|path| path.display().to_string())
             .collect()
     };
-    let has_rows = parts
-        .iter()
-        .any(|path| path.file_name().is_some_and(|name| name == "row.pb"));
-    if !dump.join("manifest.json").is_file() || !has_rows {
+    if !dump.join("manifest.json").is_file() || !dump.join("core/checkpoint").is_file() {
         return Err(format!("the dump is not whole: {:?}", named_parts()));
     }
     if !named_parts().iter().any(|part| part.contains("client")) {
@@ -2064,7 +2061,7 @@ fn report_a_problem(journey: &mut TerminalJourney) -> Proved {
         format!("the bundle holds report.json with the mark in cells ({col},{row} 21×1) and both notes"),
         "frame.txt is the chat as it was at the key, without the report's panel".to_owned(),
         "frame.json holds the same 110x34 cells with their colours and styles".to_owned(),
-        "the dump is whole: its manifest, the agents' rows and this client's parts".to_owned(),
+        "the dump is whole: its manifest, the core's record and this client's parts".to_owned(),
         "the parts not captured are declared absent with their reasons, and only this user can read the report"
             .to_owned(),
         "signed in to no account, the client said the report was kept and not sent".to_owned(),

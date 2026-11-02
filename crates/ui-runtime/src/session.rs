@@ -283,13 +283,10 @@ impl Inner {
             why: why.to_owned(),
         });
         let request = DumpRequest {
-            agent_ids: vec![self.agent_id.clone()],
             reason: format!("{TRANSCRIPT_DUMP}{why}"),
             automatic: true,
-            // The record, never the history: a check's dump may be sent
-            // on its own, and the record replays to the same break.
+            // Its record as it stood at the break, which replays to it.
             sessions: vec![cut.record(&self.agent_id).encode_to_vec()],
-            scope: wire::DumpScope::Transcript.into(),
             check: TRANSCRIPT_CHECK.to_owned(),
         };
         let inner = self.clone();
@@ -976,15 +973,15 @@ impl Session {
         self.inner.client.put_blob(request).await
     }
 
-    /// This session as a dump carries it, for a dump this client asks for:
-    /// the state its trace began from and every event since. The daemon
-    /// redacts it through the agent's kind before it writes it.
+    /// This session's whole history: the state its trace began from and
+    /// every event since, which its record is checked against. It never
+    /// goes into a dump.
     pub fn history(&self) -> ClientSessionHistory {
         self.inner.history()
     }
 
-    /// This session's record: its history with nothing anybody wrote, for
-    /// a dump that may leave the device (see [`ui_state::record`]).
+    /// This session's record: its history with nothing anybody wrote, as a
+    /// dump carries it (see [`ui_state::record`]).
     pub fn record(&self) -> ClientSessionHistory {
         self.inner.record()
     }

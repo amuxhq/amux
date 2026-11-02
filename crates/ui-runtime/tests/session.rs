@@ -938,14 +938,13 @@ async fn a_transcript_that_fails_its_check_asks_for_a_dump_with_its_trace_cut_th
         panic!("the driver asked for no dump");
     };
     assert!(request.automatic);
-    assert_eq!(request.agent_ids, vec![agent(KIND).agent_id]);
     assert!(
         request.reason.starts_with(TRANSCRIPT_DUMP) && request.reason.contains("between 1 and 3"),
         "{}",
         request.reason
     );
     // The session's record rides along, cut at the message that broke the
-    // transcript, for the daemon to redact and write before it answers.
+    // transcript, for the daemon to write before it answers.
     let [history] = &request.sessions[..] else {
         panic!("{} sessions in the request", request.sessions.len());
     };

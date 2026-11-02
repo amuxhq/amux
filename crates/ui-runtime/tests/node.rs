@@ -367,30 +367,46 @@ async fn a_prompt_for_an_unreachable_host_is_refused_and_goes_only_when_sent_aga
     net.shutdown().await.unwrap();
 }
 
-/// A person's report from a chat on screen: the fleet hands the daemon the
-/// chat's record, which the bundle carries, and nothing the person or the
-/// agent wrote reaches any of its files.
+/// A report from the terminal while a chat is on screen, whatever asked
+/// for it: the fleet hands the daemon the chat's record, which the bundle
+/// carries beside the core's and the agent's, and nothing anybody wrote
+/// (the agent's name, folder and branch, its prompts, a tool's file name,
+/// input and output, and the replies) reaches any of its files.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_report_carries_the_on_screen_chats_record_and_none_of_its_words() {
+async fn no_report_carries_a_word_of_the_chat_on_screen() {
     const MARKER: &str = "walrus-umbrella-marker";
     let net = Net::start(
         Topology::new().host("desk").agent(
-            AgentDecl::new("worker", "desk")
+            AgentDecl::new(&format!("worker-{MARKER}"), "desk")
                 .kind(FakeKind::ClaudeSdk)
+                .cwd(&format!("work-{MARKER}"))
+                .branch(&format!("{MARKER}-branch"))
                 .steps(vec![
                     text("ready"),
                     Step::TurnEnd,
+                    Step::Tool(provider_fakes::script::Tool {
+                        name: Some("Read".into()),
+                        class: provider_fakes::script::ToolClass::Exploration,
+                        input: Some(serde_json::json!({
+                            "file_path": format!("notes/{MARKER}.txt"),
+                        })),
+                        outcome: provider_fakes::script::Outcome {
+                            output: format!("the file says {MARKER}"),
+                            ..Default::default()
+                        },
+                        wait_for: None,
+                    }),
                     text(&format!("the {MARKER} answered")),
                     Step::TurnEnd,
                 ])
-                .prompt("go"),
+                .prompt(&format!("go, {MARKER}")),
         ),
     )
     .await
     .unwrap();
     let client: Arc<dyn Client> = Arc::new(grpc(&net).await);
     let fleet = Fleet::connect(client.clone(), SystemClock).await.unwrap();
-    let worker = net.agent("worker").unwrap().id;
+    let worker = net.agent(&format!("worker-{MARKER}")).unwrap().id;
     let agent = fleet
         .state()
         .find(worker.as_bytes())
@@ -412,45 +428,62 @@ async fn a_report_carries_the_on_screen_chats_record_and_none_of_its_words() {
     })
     .await;
 
-    let records = fleet.on_screen_records();
-    assert_eq!(records.len(), 1, "the one chat on screen");
-    let bundle = client
-        .dump(wire::DumpRequest {
-            reason: "report".to_owned(),
-            sessions: records,
-            scope: wire::DumpScope::Report.into(),
-            ..wire::DumpRequest::default()
-        })
-        .await
-        .unwrap()
-        .report_path;
-    let bundle = std::path::PathBuf::from(bundle);
-    let manifest: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(bundle.join("manifest.json")).unwrap()).unwrap();
-    let sessions = manifest["client"]["sessions"].as_array().unwrap();
-    assert_eq!(sessions.len(), 1, "{manifest}");
-    assert_eq!(sessions[0]["structure_only"], true);
-    assert!(
-        bundle
-            .join(sessions[0]["events"].as_str().unwrap())
-            .is_file()
-    );
-    let mut dirs = vec![bundle.clone()];
-    while let Some(dir) = dirs.pop() {
-        for entry in std::fs::read_dir(&dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                dirs.push(path);
-                continue;
+    let forms = [
+        MARKER.as_bytes().to_vec(),
+        MARKER.to_uppercase().into_bytes(),
+        MARKER
+            .bytes()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+            .into_bytes(),
+    ];
+    for (automatic, check) in [
+        (false, ""),
+        (true, "daemon.test"),
+        (true, "agent.test"),
+        (true, ui_runtime::TRANSCRIPT_CHECK),
+    ] {
+        let records = fleet.on_screen_records();
+        assert_eq!(records.len(), 1, "the one chat on screen");
+        let bundle = client
+            .dump(wire::DumpRequest {
+                reason: format!("asked by {check}"),
+                automatic,
+                check: check.to_owned(),
+                sessions: records,
+            })
+            .await
+            .unwrap()
+            .report_path;
+        let bundle = std::path::PathBuf::from(bundle);
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(bundle.join("manifest.json")).unwrap()).unwrap();
+        let sessions = manifest["client"]["sessions"].as_array().unwrap();
+        assert_eq!(sessions.len(), 1, "{manifest}");
+        assert!(
+            bundle
+                .join(sessions[0]["events"].as_str().unwrap())
+                .is_file()
+        );
+        assert!(bundle.join(format!("agents/{worker}/record")).is_file());
+        assert!(bundle.join("core/checkpoint").is_file());
+        let mut dirs = vec![bundle.clone()];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    dirs.push(path);
+                    continue;
+                }
+                let bytes = std::fs::read(&path).unwrap();
+                for form in &forms {
+                    assert!(
+                        !bytes.windows(form.len()).any(|window| window == form),
+                        "{check:?}: {} holds what was written",
+                        path.display()
+                    );
+                }
             }
-            let bytes = std::fs::read(&path).unwrap();
-            assert!(
-                !bytes
-                    .windows(MARKER.len())
-                    .any(|window| window == MARKER.as_bytes()),
-                "{} holds the chat's words",
-                path.display()
-            );
         }
     }
 

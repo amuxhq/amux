@@ -310,22 +310,6 @@ cargo = [
 ]
 
 [[suite]]
-name = "interpreter-dump-redaction"
-contract = "Each kind's redactor removes every planted secret from item bodies, snapshots, facts-ring entries and checkpoints, leaves each target decoding as what it was, and changes nothing when run again."
-paths = ["crates/interpret/tests/redaction.rs"]
-recipe = "just suite interpreter-dump-redaction"
-boundary = "Interpreter"
-oracle = "A search for every planted secret, the decoded shape before and after, and idempotence."
-real = []
-substituted = ["provider processes"]
-time = "none"
-capabilities = ["Rust toolchain"]
-lane = "fast"
-evidence = ""
-update = ""
-cargo = [{ package = "interpret", modules = ["redaction"], features = [] }]
-
-[[suite]]
 name = "attachment-elements"
 contract = "Attachments round-trip between positioned text and the element the model sees, placeholders are counted against attachments, and malformed or stray elements stay text and are reported."
 paths = ["crates/attachments/tests", "crates/attachments/src"]

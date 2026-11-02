@@ -1,13 +1,10 @@
-//! The agent's part of a dump, asked for over ctl.sock: the facts ring,
-//! the checkpoint at each segment's start and the specs, with the secrets
-//! the provider, the person and the spec carried taken out by the kind's
-//! own redactor.
+//! The agent's part of a dump, asked for over ctl.sock: its record alone,
+//! which carries none of what the provider, the person or the spec said.
 
 use agent::ExitCause;
-use prost::Message as _;
 use provider_fakes::Step;
 use support::*;
-use wire::{AgentSpec, Kind};
+use wire::Kind;
 
 use crate::support;
 
@@ -46,47 +43,21 @@ fn dumps_without_its_secrets(kind: Kind) {
 
         let part = daemon.dump(b"d1").await;
         let names: Vec<&str> = part.files.iter().map(|file| file.name.as_str()).collect();
-        assert!(
-            names.contains(&"facts/0000000000"),
-            "the ring's segment: {names:?}"
-        );
-        assert!(
-            names.contains(&"facts/0000000000.checkpoint"),
-            "the checkpoint at its start: {names:?}"
-        );
-        assert!(names.contains(&"spec.1"), "the spec: {names:?}");
-        assert!(!names.contains(&agent::DUMP_ERRORS), "{names:?}");
+        assert_eq!(names, [agent::RECORD], "the record alone");
 
         let hex = interpret::to_hex(PLANTED.as_bytes());
-        for file in &part.files {
-            let text = String::from_utf8_lossy(&file.contents);
-            assert!(
-                !text.contains(PLANTED) && !text.contains(&hex),
-                "{} keeps a planted secret:\n{text}",
-                file.name
-            );
-        }
-
-        let facts = part
-            .files
-            .iter()
-            .find(|file| file.name == "facts/0000000000")
-            .unwrap();
-        let facts = String::from_utf8(facts.contents.clone()).unwrap();
-        assert!(facts.contains(r#""event":"input""#), "{facts}");
-        assert!(facts.contains("the key is"), "text around a secret stays");
-        assert!(!facts.contains("unreadable"), "{facts}");
-
-        let spec = part
-            .files
-            .iter()
-            .find(|file| file.name == "spec.1")
-            .unwrap();
-        let spec = AgentSpec::decode(spec.contents.as_slice()).expect("the spec stays a spec");
-        assert_eq!(spec.kind(), kind);
+        let text = String::from_utf8_lossy(&part.files[0].contents);
         assert!(
-            spec.provider_env.contains_key("OPENAI_API_KEY"),
-            "the name stays, the value goes"
+            !text.contains(PLANTED) && !text.contains(&hex),
+            "the record keeps a planted secret:\n{text}"
+        );
+        let record: serde_json::Value =
+            serde_json::from_slice(&part.files[0].contents).expect("the record is JSON");
+        assert!(
+            record["segments"]
+                .as_array()
+                .is_some_and(|segments| !segments.is_empty()),
+            "{record}"
         );
 
         daemon.stop().await;

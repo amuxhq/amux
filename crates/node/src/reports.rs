@@ -199,7 +199,7 @@ impl ProfileRuntime {
             "kind": "automatic",
             "build": crate::version(),
             "created_at_ms": self.clock_now(),
-            "core": core_of(request),
+            "core": core_of_check(&request.check).name(),
             "check": request.check,
             "reason": interpret::redact_text(&request.reason),
             "parts": {
@@ -425,12 +425,14 @@ impl ProfileRuntime {
     }
 }
 
-/// Which core an automatic dump's request is for, as a report names it.
-fn core_of(request: &DumpRequest) -> &'static str {
-    match request.scope() {
-        wire::DumpScope::Agent => Core::Agent.name(),
-        wire::DumpScope::Transcript => Core::Transcript.name(),
-        _ => Core::Daemon.name(),
+/// Which core a check belongs to, by the core its id names first.
+pub(crate) fn core_of_check(check: &str) -> Core {
+    match check.split('.').next() {
+        Some("agent") => Core::Agent,
+        Some("transcript") => Core::Transcript,
+        Some("relay") => Core::Relay,
+        Some("path") => Core::Path,
+        _ => Core::Daemon,
     }
 }
 

@@ -986,11 +986,12 @@ local sockets carry no version at all.
 
 ## Chapter 8: Diagnostics
 
-`ProfileAdminService.Dump` on the profile socket writes a debug report on this host (rows, store
-slices, journal tails and each agent process's own redacted part, as much as
-the request's `scope` asks for) and answers with its path. For an agent
-another host runs, the report holds only this host's row and store slice: no
-host asks another for its side. `ProfileAdminService.SubmitReport` writes a
+`ProfileAdminService.Dump` on the profile socket writes a debug report on this host (the daemon
+core's record, each agent process's record, the records of the chats the
+asking client has on screen and the last minute of our logs: the same parts
+whatever asked for it) and answers with its path. An agent another host
+runs appears only as its row in this host's store: no host asks another for
+its side. `ProfileAdminService.SubmitReport` writes a
 person's report around a dump the client took, with the client's
 `report.json` and frame, and sends it to the profile's account service,
 answering where it is kept and the receipt or why it was not sent.

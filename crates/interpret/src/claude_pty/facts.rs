@@ -1047,6 +1047,7 @@ impl State {
             }
         }
         let Some(tool) = self.tools.get_mut(&id) else {
+            self.shared.result_without_call("a transcript row");
             return;
         };
         let outcome = if rejected {

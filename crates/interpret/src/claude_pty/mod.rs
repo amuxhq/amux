@@ -1563,6 +1563,14 @@ impl Interpreter for ClaudePty {
         state.shared.typed_unrecorded()
     }
 
+    fn input_shape(input: &Input) -> crate::shape::InputShape {
+        crate::shape::claude_pty_input(&input.body)
+    }
+
+    fn structure(state: &Self::State) -> crate::shape::Structure {
+        state.shared.structure(|body| Self::item_shape(body).arm)
+    }
+
     fn unknown_snapshot() -> Vec<u8> {
         unknown::claude().encode_to_vec()
     }

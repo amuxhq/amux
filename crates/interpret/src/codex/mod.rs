@@ -1864,6 +1864,14 @@ impl Interpreter for Codex {
         state.shared.typed_unrecorded()
     }
 
+    fn input_shape(input: &Input) -> crate::shape::InputShape {
+        crate::shape::codex_input(&input.body)
+    }
+
+    fn structure(state: &Self::State) -> crate::shape::Structure {
+        state.shared.structure(|body| Self::item_shape(body).arm)
+    }
+
     fn unknown_snapshot() -> Vec<u8> {
         unknown::codex().encode_to_vec()
     }

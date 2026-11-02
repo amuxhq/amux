@@ -12,15 +12,18 @@
 #![forbid(unsafe_code)]
 
 mod ask_item;
+pub mod checks;
 mod claude_answers;
 mod claude_common;
 pub mod claude_pty;
 pub mod claude_sdk;
 pub mod codex;
 mod golden;
+pub mod record;
 pub mod redact;
 pub mod ring;
 mod serde_pb;
+pub mod shape;
 mod shared;
 pub mod unknown;
 
@@ -88,6 +91,29 @@ pub trait Interpreter {
 
     /// Reads an item body for goldens and invariants.
     fn describe_item(body: &[u8]) -> ItemView;
+
+    /// What the agent's record keeps of a provider fact.
+    fn fact_shape(fact: &Fact) -> shape::FactShape {
+        shape::fact(fact)
+    }
+
+    /// What the agent's record keeps of a person's input: its arm, and the
+    /// ask or queued input it names.
+    fn input_shape(input: &Input) -> shape::InputShape;
+
+    /// What the agent's record keeps of an item body: its arm, and whether
+    /// it can still grow.
+    fn item_shape(body: &[u8]) -> shape::ItemShape {
+        let view = Self::describe_item(body);
+        shape::ItemShape {
+            arm: view.arm,
+            complete: view.complete,
+        }
+    }
+
+    /// What the agent's record keeps of the state: what is open and
+    /// pending, by key.
+    fn structure(state: &Self::State) -> shape::Structure;
 
     /// Reads a snapshot body for goldens and invariants.
     fn describe_snapshot(body: &[u8]) -> SnapshotView;
@@ -189,6 +215,8 @@ pub enum Channel {
 pub struct Stepped {
     pub step: Step,
     pub effects: Vec<Effect>,
+    /// The first of [`checks::CHECKS`] the step broke.
+    pub broken: Option<checks::Violation>,
 }
 
 /// What the agent process does on an interpreter's behalf, in order.

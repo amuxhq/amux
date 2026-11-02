@@ -4221,7 +4221,8 @@ pub enum DumpScope {
     /// The daemon core's checkpoint, inputs and store copy, with the own
     /// agents' journals from its cursor on.
     Core = 1,
-    /// One agent: its process's part, journal, row and slice.
+    /// One agent's own check: its record and its log's last minute, which
+    /// carry no conversation.
     Agent = 2,
     /// One chat: the client's session and its agent's row and slice.
     Transcript = 3,
@@ -11314,6 +11315,14 @@ pub struct DumpAsked {
     /// asked for.
     #[prost(uint32, tag = "4")]
     pub held_back: u32,
+    /// The agent's record through the step that asked, built from its facts
+    /// ring when it asked: each event and what its interpreter concluded of
+    /// it, by kind, size and aliased id, without content. What the daemon
+    /// writes as the bundle's record of the agent, even when the agent has
+    /// exited by the time the bundle is written; empty when it could not be
+    /// built, and then the daemon asks the agent for its part.
+    #[prost(bytes = "vec", tag = "5")]
+    pub record: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for DumpAsked {
     const NAME: &'static str = "DumpAsked";

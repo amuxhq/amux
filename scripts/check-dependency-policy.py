@@ -24,8 +24,10 @@ ALLOWED_LOCAL = {
     # Reads an agent folder's branch and change totals by running git; the
     # agent process and the daemon share it.
     "git-facts": set(),
-    # The pure per-kind step, and the per-kind body redactor beside it.
-    "interpret": {"attachments", "claude-protocol", "codex-protocol", "redaction", "wire"},
+    # The pure per-kind step, and the per-kind body redactor beside it;
+    # core-ring for the check type its every-step checks report as, and for
+    # reading the facts ring an agent's record is built from.
+    "interpret": {"attachments", "claude-protocol", "codex-protocol", "core-ring", "redaction", "wire"},
     # The agent process: its lock, journal and sockets, the interpreter,
     # and the provider hosts, each in a module of its own (`claude`, `codex`).
     "agent": {

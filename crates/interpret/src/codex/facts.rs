@@ -2124,6 +2124,9 @@ impl State {
             }
         }
         let prior = self.works.get(id).cloned();
+        if completed && prior.is_none() {
+            self.shared.result_without_call("item/completed");
+        }
         let status = match item {
             ThreadItem::CommandExecution(command) => command.status.as_str(),
             ThreadItem::FileChange(change) => change.status.as_str(),

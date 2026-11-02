@@ -1,28 +1,75 @@
 //! The agent's part of a dump: what only the agent process holds, redacted
 //! by its own interpreter before it leaves the process.
 //!
-//! The part is the facts ring's segments (the last two, which is all the
-//! ring keeps), the checkpoint at the start of each, every spec file in
-//! the directory, and the agent's own log for the minute before, read
-//! across its `.1` and redacted as text; never the provider's log. Each facts entry is redacted on its own and written back
+//! The part is the agent's record, the facts ring's segments (the last
+//! two, which is all the ring keeps), the checkpoint at the start of each,
+//! every spec file in the directory, and the agent's own log for the
+//! minute before, read across its `.1` and redacted as text; never the
+//! provider's log. Each facts entry is redacted on its own and written back
 //! as a line of the same shape, so a dump reader replays the ring exactly
 //! as the agent would. A file that cannot be read is left out and named in
 //! `dump-errors`, never included unredacted.
+//!
+//! The record is what a dump for the agent's own check carries in place of
+//! all that: the ring run again through this process's interpreter, which
+//! wrote it, keeping only what the interpreter concluded.
 
 use std::path::Path;
 use std::{fs, io};
 
 use interpret::ring::Entry;
 use interpret::{Interpreter, RedactTarget};
-use wire::{DumpFile, DumpPart};
+use wire::{AgentSpec, DumpFile, DumpPart};
 
 use crate::dir;
 
 /// The name of the file listing what could not be read.
 pub const DUMP_ERRORS: &str = "dump-errors";
+/// The name of the agent's record in its part.
+pub const RECORD: &str = "record";
 
-pub(crate) fn part<I: Interpreter>(dir: &Path, dump_id: Vec<u8>) -> DumpPart {
-    let mut files = Vec::new();
+/// The agent's record, encoded: the facts ring under `dir` run through
+/// `I` from each segment's checkpoint, beside the lifecycle `core`.
+pub(crate) fn record<I: Interpreter>(
+    dir: &Path,
+    spec: &AgentSpec,
+    core: serde_json::Value,
+) -> Vec<u8> {
+    let facts = dir.join(dir::PRIVATE).join(dir::FACTS);
+    let mut errors = Vec::new();
+    let mut segments = Vec::new();
+    match journal::segments(&facts) {
+        Ok(starts) => {
+            for start in starts {
+                let name = journal::segment_name(start);
+                let read =
+                    fs::read(core_ring::checkpoint_path(&facts, start)).and_then(|checkpoint| {
+                        Ok((checkpoint, fs::read(journal::segment_path(&facts, start))?))
+                    });
+                match read {
+                    Ok(segment) => segments.push(segment),
+                    // An io error names its kind, never the bytes.
+                    Err(error) => errors.push(format!("facts/{name}: {}", error.kind())),
+                }
+            }
+        }
+        Err(error) => errors.push(format!("{}: {}", dir::FACTS, error.kind())),
+    }
+    let salt = uuid::Uuid::new_v4().into_bytes();
+    let mut record = interpret::record::record::<I>(spec, salt, core, segments);
+    if !errors.is_empty() {
+        record["errors"] = errors.into();
+    }
+    serde_json::to_vec(&record).unwrap_or_default()
+}
+
+pub(crate) fn part<I: Interpreter>(
+    dir: &Path,
+    dump_id: Vec<u8>,
+    spec: &AgentSpec,
+    core: serde_json::Value,
+) -> DumpPart {
+    let mut files = vec![file(RECORD.to_owned(), record::<I>(dir, spec, core))];
     let mut errors = Vec::new();
     let facts = dir.join(dir::PRIVATE).join(dir::FACTS);
     match journal::segments(&facts) {

@@ -369,6 +369,14 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
         state.shared.typed_unrecorded()
     }
 
+    fn input_shape(input: &wire::Input) -> crate::shape::InputShape {
+        crate::shape::claude_sdk_input(&input.body)
+    }
+
+    fn structure(state: &Self::State) -> crate::shape::Structure {
+        state.shared.structure(|body| Self::item_shape(body).arm)
+    }
+
     fn unknown_snapshot() -> Vec<u8> {
         unknown::claude().encode_to_vec()
     }

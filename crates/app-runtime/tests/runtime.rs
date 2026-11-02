@@ -245,12 +245,12 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
     // and no wake is owed until the host takes what the last one brought.
     // The ids only grow above the newest the host holds, and a delta's rows
     // are only of keys the host already held: a new one is read when drawn.
-    let mut ask_moved = false;
+    // The ask is waited for as a delta brings it, not in the live state: an
+    // ask landing just after a turn's take is live before any delta says so.
     let mut above: Vec<String> = Vec::new();
     let card = tokio::time::timeout(PATIENCE, async {
         loop {
             if let Some(delta) = host.turn(&chat).await {
-                ask_moved |= delta.ask.is_some();
                 for row in &delta.rows {
                     assert!(
                         before.contains(&row.id) || above.contains(&row.id),
@@ -267,15 +267,14 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
                     None => {}
                     other => panic!("the window moved other than above: {other:?}"),
                 }
-            }
-            if let Some(card) = chat.ask_card() {
-                return card;
+                if let Some(card) = delta.ask.and_then(|moved| moved.card) {
+                    return card;
+                }
             }
         }
     })
     .await
     .expect("the permission ask");
-    assert!(ask_moved, "the ask moved");
     assert!(!above.is_empty());
     assert_eq!(chat.keys(), [before.clone(), above.clone()].concat());
     let rows = chat.rows_for(&above);

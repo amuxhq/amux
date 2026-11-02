@@ -2072,7 +2072,8 @@ mod tests {
         std::fs::create_dir_all(home.join("src/amux")).unwrap();
         let folder = |typed: &str| this_hosts_folder(typed, Some(&home));
         let amux = home
-            .join("src/amux")
+            .join("src")
+            .join("amux")
             .into_os_string()
             .into_string()
             .unwrap();

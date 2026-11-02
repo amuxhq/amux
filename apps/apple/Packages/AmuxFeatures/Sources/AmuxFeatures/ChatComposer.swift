@@ -55,6 +55,11 @@ struct ComposerBox: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.sentences)
                 .focused(focused)
+                // The field takes the row's whole width from its first
+                // layout. Left to size itself, it wrapped a draft at a
+                // narrower width it had measured earlier, and kept that wrap
+                // until some later layout happened to come.
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 2)
                 .identified("chat.field", label: placeholder, value: model.draft)
             // At an accessibility text size the model's words get a line of

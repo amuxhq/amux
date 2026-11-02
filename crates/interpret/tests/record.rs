@@ -48,6 +48,10 @@ fn a_record_keeps_the_sessions_shape_and_its_checks_and_no_words() {
             "id": "msg_1", "role": "assistant", "content": [
                 {"type": "tool_use", "id": "toolu_1", "name": "Read",
                  "input": {"file_path": format!("/home/{MARKER}.txt")}}]}})),
+        fact(
+            json!({"type": "user", "session_id": "s", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_0", "content": MARKER}]}}),
+        ),
         stream(
             json!({"type": "message_start", "message": {"id": "msg_2", "role": "assistant", "content": []}}),
         ),
@@ -77,21 +81,39 @@ fn a_record_keeps_the_sessions_shape_and_its_checks_and_no_words() {
         json!(["--model", "--settings"])
     );
     let events = record["segments"][0]["events"].as_array().unwrap();
-    assert_eq!(events.len(), 6, "{text}");
+    assert_eq!(events.len(), 7, "{text}");
     assert_eq!(
         events[1]["event"]["tools"],
         json!([{"name": "Read", "keys": ["file_path"]}]),
         "{text}"
     );
-    // The provider died halfway through a message: the replay's last step
-    // breaks the check the live one did.
+    // A result for a call never made breaks its check, and the record
+    // keeps which step broke it.
     let broken: Vec<&Value> = events.iter().map(|fed| &fed["broken"]).collect();
     assert_eq!(
-        broken.last(),
-        Some(&&json!(interpret::checks::EXIT_LEFT_OPEN.id)),
+        broken,
+        [
+            &Value::Null,
+            &Value::Null,
+            &json!(interpret::checks::TOOL_RESULT_WITHOUT_CALL.id),
+            &Value::Null,
+            &Value::Null,
+            &Value::Null,
+            &Value::Null,
+        ],
         "{text}"
     );
-    assert!(broken[..5].iter().all(|broken| broken.is_null()), "{text}");
+    // The provider died halfway through a message, which ends as far as
+    // it streamed.
+    let closed = &events[6]["step"]["items"];
+    assert!(
+        closed
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["arm"] == "message" && item["op"] == "close"),
+        "{text}"
+    );
 }
 
 #[test]

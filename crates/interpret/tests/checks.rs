@@ -121,34 +121,76 @@ fn a_tool_result_for_a_call_never_seen_breaks_its_check() {
 
 #[test]
 fn an_exit_that_leaves_an_item_streaming_breaks_its_check() {
-    // Claude dies halfway through streaming a message.
-    let start = |event: Value| {
-        fact(
-            Channel::Stream,
-            json!({"type": "stream_event", "event": event}),
-        )
-    };
-    let steps = run::<ClaudeSdk>(
-        wire::Kind::ClaudeSdk,
-        vec![
-            start(
-                json!({"type": "message_start", "message": {"id": "msg_1", "role": "assistant", "content": []}}),
-            ),
-            start(
-                json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
-            ),
-            start(
-                json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "half a"}}),
-            ),
-            Event::ProviderExit { code: Some(1) },
-        ],
+    let mut shared =
+        interpret::Shared::<wire::Ask>::new(&spec(wire::Kind::ClaudeSdk), wire::Kind::ClaudeSdk);
+    let mut emit = interpret::Emit::default();
+    shared.item(
+        &mut emit,
+        interpret::ItemDraft {
+            key: "msg_1:0".into(),
+            text: "half a".into(),
+            ..Default::default()
+        },
     );
-    assert_eq!(
-        steps.last(),
-        Some(&Some(checks::EXIT_LEFT_OPEN.id)),
-        "{steps:?}"
-    );
+    assert_eq!(shared.finish(emit, Vec::new()).broken, None);
+    // The provider dies and the interpreter leaves the item streaming.
+    shared.provider_exited();
+    let broken = shared
+        .finish(interpret::Emit::default(), Vec::new())
+        .broken
+        .map(|broken| broken.invariant);
+    assert_eq!(broken, Some(checks::EXIT_LEFT_OPEN));
     quiet_everywhere(checks::EXIT_LEFT_OPEN);
+}
+
+/// Takes the first fixture of `I` that streams an item whose key starts
+/// with `prefix` to that moment, and the provider exits there: the exit
+/// closes what was streaming, and no check breaks.
+fn an_exit_closes_what_streamed<I: Interpreter>(kind: &str, prefix: &str) {
+    let streaming = |step: &wire::Step| {
+        step.items
+            .iter()
+            .any(|item| item.key.starts_with(prefix) && !I::describe_item(&item.body).complete)
+    };
+    let (mut state, _) = fixtures(kind)
+        .iter()
+        .find_map(|fixture| interpret::run_until::<I>(fixture, streaming).unwrap())
+        .unwrap_or_else(|| panic!("no {kind} fixture streams an item under {prefix:?}"));
+    let open = I::structure(&state).open_items;
+    assert!(!open.is_empty());
+    let exit = I::step(&mut state, Event::ProviderExit { code: Some(1) });
+    assert_eq!(exit.broken, None);
+    for (key, _) in open {
+        assert!(
+            exit.step
+                .items
+                .iter()
+                .any(|item| item.key == key && I::describe_item(&item.body).complete),
+            "{kind}: {key} left open: {:?}",
+            exit.step.items
+        );
+    }
+}
+
+#[test]
+fn an_exit_closes_what_each_kind_was_streaming() {
+    an_exit_closes_what_streamed::<ClaudeSdk>("claude_sdk", "msg_");
+    an_exit_closes_what_streamed::<ClaudePty>("claude_pty", "stream:");
+    an_exit_closes_what_streamed::<Codex>("codex", "");
+    // Codex holds a turn's answer for a safety check and dies holding it.
+    let (mut state, _) = Codex::initial(&spec(wire::Kind::Codex));
+    let held = Codex::step(
+        &mut state,
+        fact(
+            Channel::Rpc,
+            json!({"method": "model/safetyBuffering/updated", "params": {
+                "threadId": "t", "turnId": "u", "showBufferingUi": true}}),
+        ),
+    );
+    assert_eq!(Codex::structure(&state).open_items.len(), 1, "{held:?}");
+    let exit = Codex::step(&mut state, Event::ProviderExit { code: Some(1) });
+    assert_eq!(exit.broken, None);
+    assert!(Codex::structure(&state).open_items.is_empty());
 }
 
 #[test]

@@ -381,15 +381,30 @@ fn died_mid_message() -> Vec<Event> {
 }
 
 #[test]
-fn a_provider_dying_mid_message_reproduces_from_its_record() {
+fn a_provider_dying_mid_message_runs_clean_from_the_record_that_broke() {
     let live = broken::<ClaudeSdk>(&spec(wire::Kind::ClaudeSdk), &died_mid_message());
-    assert_eq!(live.last(), Some(&Some(checks::EXIT_LEFT_OPEN.id)));
+    assert!(live.iter().all(Option::is_none), "{live:?}");
     let record: Value = serde_json::from_str(DIED_MID_MESSAGE).unwrap();
     assert!(!DIED_MID_MESSAGE.contains("secret"));
     assert!(!DIED_MID_MESSAGE.contains("someone"));
-    // The record's own last step broke the check, and the stream made up
-    // from it alone breaks it at the same step.
+    // The record's last step broke the exit check, and the stream made up
+    // from the record alone dies at the same step halfway through the
+    // same reply; this interpreter closes the reply there.
     let events = &record["segments"][0]["events"];
     assert_eq!(events[4]["broken"], checks::EXIT_LEFT_OPEN.id);
-    assert_eq!(reproduced(&record), [(4, checks::EXIT_LEFT_OPEN.id)]);
+    let reproduction = synthetic::reproduce(&record).unwrap();
+    assert!(reproduction.broken.is_empty(), "{:?}", reproduction.broken);
+    assert!(matches!(
+        reproduction.synthetic.events[4],
+        Event::ProviderExit { code: Some(1) }
+    ));
+    let streamed = &reproduction.steps[2].step.items;
+    assert_eq!(streamed.len(), 1, "{streamed:?}");
+    assert!(
+        reproduction.steps[4].step.items.iter().any(
+            |item| item.key == streamed[0].key && ClaudeSdk::describe_item(&item.body).complete
+        ),
+        "{:?}",
+        reproduction.steps[4].step.items
+    );
 }

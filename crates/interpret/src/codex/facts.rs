@@ -2646,6 +2646,10 @@ impl State {
             }
         }
         self.settle_open(emit, false, &BTreeSet::new());
+        // No answer follows a safety check the server died holding.
+        for key in self.shared.open_keys("safety:") {
+            self.safety_check(emit, &key["safety:".len()..], false);
+        }
         self.background = None;
         self.shared.provider_exited();
         self.active_turn = None;

@@ -390,7 +390,12 @@ impl State {
         self.exited = true;
         self.unanswered.clear();
         self.early_boundary = None;
-        self.stream = None;
+        // A message Claude died streaming ends as far as it got.
+        if let Some(message) = self.stream.take() {
+            for key in self.shared.open_keys(&format!("{message}:")) {
+                self.close_streamed(emit, key);
+            }
+        }
     }
 
     fn open_ask_keys(&self) -> Vec<String> {
@@ -691,14 +696,7 @@ impl State {
                 let Some(message) = self.stream.clone() else {
                     return;
                 };
-                let key = format!("{message}:{index}");
-                if let Some(open) = self.shared.open_item(&key).cloned() {
-                    let thinking = matches!(
-                        wire::ClaudeItem::decode(open.body.as_slice()).map(|item| item.kind),
-                        Ok(Some(Kind::Thinking(_)))
-                    );
-                    self.close_block(emit, key, open.text, thinking);
-                }
+                self.close_streamed(emit, format!("{message}:{index}"));
             }
             StreamEvent::MessageDelta { usage, .. } => self.context_seen(
                 usage.input_tokens,
@@ -725,6 +723,17 @@ impl State {
                 ..Default::default()
             },
         );
+    }
+
+    /// A streamed block ends as far as it streamed.
+    fn close_streamed(&mut self, emit: &mut Emit, key: String) {
+        if let Some(open) = self.shared.open_item(&key).cloned() {
+            let thinking = matches!(
+                wire::ClaudeItem::decode(open.body.as_slice()).map(|item| item.kind),
+                Ok(Some(Kind::Thinking(_)))
+            );
+            self.close_block(emit, key, open.text, thinking);
+        }
     }
 
     fn close_block(&mut self, emit: &mut Emit, key: String, text: String, thinking: bool) {

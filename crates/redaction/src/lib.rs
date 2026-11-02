@@ -4,6 +4,8 @@
 //! host) and nothing about any record's schema; bodies are redacted per
 //! kind in `interpret`, the only code that can decode them.
 
+pub mod structure;
+
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};

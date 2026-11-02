@@ -43,13 +43,21 @@
 //!     events                 every event its driver saw since, through the
 //!                            one that broke it when one did, a
 //!                            wire.ClientSessionEvents, redacted
-//!   core/                    the daemon core, for a replay of it:
-//!     checkpoint             its newest checkpoint, redacted
+//!   core/                    the daemon core, for a replay of it, as its
+//!                            structure alone (below):
+//!     checkpoint             its newest checkpoint
 //!     inputs                 every input stepped since, and what each
 //!                            ingest read of a journal, one JSON line each
-//!                            (daemon_core::Recorded), redacted
-//!     store.sqlite           the store as of that checkpoint, redacted
+//!                            (daemon_core::Recorded)
+//!     store.sqlite           the store as of that checkpoint
 //! ```
+//!
+//! The daemon core reads no content: it acts on ids, kinds, order, sizes
+//! and time. So its part, and what a check on it carries of each agent,
+//! is the record's structure alone ([`Structure`]): every text and body
+//! zero bytes of its length, every identifier it compares an alias, every
+//! id, count, revision, timing and its randomness as recorded. It still
+//! restores and replays as the original does.
 //!
 //! A bundle holds only what this host has: an agent another host runs has
 //! its row and store slice here and nothing more. Which of these parts a
@@ -64,7 +72,7 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use core_ring::DumpKind;
@@ -107,6 +115,10 @@ const CAPTURE_APART: Duration = Duration::from_millis(100);
 /// for its window: a log written fast enough to pass this in a minute
 /// sends only its newest lines.
 pub const DUMP_LOG_BYTES: u64 = 1 << 20;
+/// The most a check's window of the core may take, compressed: a window
+/// past it sends the check and its counts alone, which says to checkpoint
+/// more often for that failure rather than to send more.
+pub const CHECK_WINDOW_BYTES: usize = 64 << 10;
 /// How long an agent process has to send its part.
 const PART_PATIENCE: Duration = Duration::from_secs(10);
 
@@ -127,6 +139,10 @@ struct Gather {
     sessions: bool,
     /// Each covered agent's store slice beside its row.
     slices: bool,
+    /// Each covered agent's row and slice carry their structure alone, as
+    /// a check's dump does: the check is on a stage that reads no
+    /// content.
+    structured: bool,
     journals: Journals,
     /// The agent process's part: its facts ring, checkpoints, specs and
     /// log tails.
@@ -140,7 +156,7 @@ struct Gather {
 enum Journals {
     None,
     /// From the segment holding the core checkpoint's cursor: what the
-    /// core's replay reads.
+    /// core's replay reads, so as their structure alone.
     FromCursor,
     /// That, and at least the last [`DUMP_SEGMENTS`]: what the facts ring
     /// is compared with.
@@ -155,6 +171,7 @@ impl Gather {
                 agents: true,
                 sessions: true,
                 slices: true,
+                structured: false,
                 journals: Journals::Tail,
                 parts: true,
                 logs: true,
@@ -164,6 +181,7 @@ impl Gather {
                 agents: true,
                 sessions: false,
                 slices: false,
+                structured: true,
                 journals: Journals::FromCursor,
                 parts: false,
                 logs: true,
@@ -173,6 +191,7 @@ impl Gather {
                 agents: true,
                 sessions: false,
                 slices: true,
+                structured: true,
                 journals: Journals::Tail,
                 parts: true,
                 logs: false,
@@ -182,6 +201,7 @@ impl Gather {
                 agents: true,
                 sessions: false,
                 slices: true,
+                structured: false,
                 journals: Journals::None,
                 parts: false,
                 logs: false,
@@ -195,6 +215,7 @@ impl Gather {
                 agents: false,
                 sessions: false,
                 slices: false,
+                structured: false,
                 journals: Journals::None,
                 parts: false,
                 logs: true,
@@ -348,13 +369,27 @@ impl ProfileRuntime {
         std::fs::create_dir_all(&partial)?;
         let mut errors = Vec::new();
         let mut agents = Vec::new();
+        // One for the bundle, so every part of it aliases alike.
+        let structure = Arc::new(Structure::new());
         // The core first: its store copy names the cursor each journal
-        // must reach back to.
+        // must reach back to. A check's window is held to its limit.
+        let limit = request.automatic.then_some(CHECK_WINDOW_BYTES);
         let core = if gather.core {
-            self.dump_core(&partial, &mut errors).await?
+            self.dump_core(&partial, &structure, limit, &mut errors)
+                .await?
         } else {
             None
         };
+        let mut gather = gather;
+        if let Some(over) = core.as_ref().and_then(|core| core.over) {
+            errors.push(format!(
+                "{CORE}: the window since the checkpoint is {over} bytes compressed, over the \
+                 check's {CHECK_WINDOW_BYTES}: only its counts are here"
+            ));
+            if gather.journals == Journals::FromCursor {
+                gather.journals = Journals::None;
+            }
+        }
         let cursors = core.as_ref().map(|core| &core.cursors);
         let sessions = if gather.sessions {
             client_sessions(&request.sessions, &rows, &partial, &mut errors)?
@@ -367,7 +402,14 @@ impl ProfileRuntime {
             // all of its journal came after.
             let cursor = cursors.map(|cursors| cursors.get(&row.agent.agent).copied().unwrap_or(0));
             let (entry, mut failed) = self
-                .dump_agent(row, dump_id.as_bytes(), &partial, gather, cursor)
+                .dump_agent(
+                    row,
+                    dump_id.as_bytes(),
+                    &partial,
+                    gather,
+                    &structure,
+                    cursor,
+                )
                 .await?;
             agents.push(entry);
             errors.append(&mut failed);
@@ -399,6 +441,10 @@ impl ProfileRuntime {
             "core": core.map(|core| serde_json::json!({
                 "inputs": core.inputs,
                 "reads": core.reads,
+                "over_limit": core.over.map(|bytes| serde_json::json!({
+                    "window_bytes": bytes,
+                    "limit": CHECK_WINDOW_BYTES,
+                })),
             })),
             "errors": errors,
         });
@@ -435,11 +481,14 @@ impl ProfileRuntime {
     }
 
     /// The core's part of the bundle: its newest checkpoint, the ring's
-    /// lines since and the store as of that checkpoint, each redacted.
-    /// None, with the reason in `errors`, when it cannot be had.
+    /// lines since and the store as of that checkpoint, each as its
+    /// structure alone; with a `limit`, only the counts of a window past
+    /// it. None, with the reason in `errors`, when it cannot be had.
     async fn dump_core(
         &self,
         bundle: &Path,
+        structure: &Arc<Structure>,
+        limit: Option<usize>,
         errors: &mut Vec<String>,
     ) -> Result<Option<CoreDumped>, DumpError> {
         // The copy waits beside the live store, which holds the same rows,
@@ -464,9 +513,9 @@ impl ProfileRuntime {
             }
         };
         let out = bundle.join(CORE);
-        std::fs::create_dir_all(&out)?;
+        let structure = structure.clone();
         let written = tokio::task::spawn_blocking(move || {
-            let written = write_core(&captured, &scratch, &out);
+            let written = write_core(&captured, &scratch, &out, &structure, limit);
             let _ = std::fs::remove_file(&scratch);
             written
         })
@@ -490,6 +539,7 @@ impl ProfileRuntime {
         dump_id: &[u8],
         bundle: &Path,
         gather: Gather,
+        structure: &Structure,
         cursor: Option<u64>,
     ) -> Result<(serde_json::Value, Vec<String>), DumpError> {
         let id = Uuid::from_slice(&row.agent.agent).unwrap_or_default();
@@ -502,9 +552,14 @@ impl ProfileRuntime {
             errors.push(format!("{id} {what}: {error}"));
         };
 
+        let row_bytes = to_wire(row).encode_to_vec();
         std::fs::write(
             out.join("row.pb"),
-            redacted(kind, RedactTarget::Agent(to_wire(row).encode_to_vec())),
+            if gather.structured {
+                structure.message("amux.v1.Agent", &row_bytes)
+            } else {
+                redacted(kind, RedactTarget::Agent(row_bytes))
+            },
         )?;
         let mut rows = None;
         if gather.slices {
@@ -518,9 +573,14 @@ impl ProfileRuntime {
                 ..Step::default()
             };
             rows = Some(slice.items.len());
+            let slice = slice.encode_to_vec();
             std::fs::write(
                 out.join("store.pb"),
-                redacted(kind, RedactTarget::Step(slice.encode_to_vec())),
+                if gather.structured {
+                    structure.message("amux.v1.Step", &slice)
+                } else {
+                    redacted(kind, RedactTarget::Step(slice))
+                },
             )?;
         }
 
@@ -531,8 +591,15 @@ impl ProfileRuntime {
             Journals::FromCursor => Some(0),
             Journals::Tail => Some(DUMP_SEGMENTS),
         };
+        // The journal the core's replay reads goes as the core reads it:
+        // its structure alone.
+        let frames = if gather.journals == Journals::FromCursor {
+            Frames::Structure(structure)
+        } else {
+            Frames::Kind(kind)
+        };
         if own && let Some(at_least) = at_least {
-            match journal_tail(&dir.join(agent_dir::JOURNAL), kind, cursor, at_least) {
+            match journal_tail(&dir.join(agent_dir::JOURNAL), frames, cursor, at_least) {
                 Ok(segments) => {
                     for (name, bytes) in segments {
                         write_under(&out.join("journal"), &name, &bytes)?;
@@ -705,7 +772,7 @@ fn redacted(kind: Kind, target: RedactTarget) -> Vec<u8> {
 /// keeps its length prefix and loses its bytes.
 fn journal_tail(
     dir: &Path,
-    kind: Kind,
+    frames: Frames<'_>,
     cursor: Option<u64>,
     at_least: usize,
 ) -> io::Result<Vec<(String, Vec<u8>)>> {
@@ -725,7 +792,7 @@ fn journal_tail(
         let mut framed = Vec::with_capacity(bytes.len());
         let mut at = 0;
         while let journal::Frame::Whole(step, len) = journal::decode_frame(&bytes[at..]) {
-            framed.extend(fitted(kind, &step, len));
+            framed.extend(fitted(frames, &step, len));
             at += len;
         }
         let tail = &bytes[at..];
@@ -740,10 +807,22 @@ fn journal_tail(
     Ok(out)
 }
 
+/// How a bundle writes a journal's frames.
+#[derive(Clone, Copy)]
+enum Frames<'s> {
+    /// Redacted by the agent's kind.
+    Kind(Kind),
+    /// As their structure alone.
+    Structure(&'s Structure),
+}
+
 /// A journal frame redacted, as a frame of `len` bytes: the redacted step,
 /// else that step without its texts and bodies, else an empty step.
-fn fitted(kind: Kind, step: &Step, len: usize) -> Vec<u8> {
-    let redacted = redacted(kind, RedactTarget::Step(step.encode_to_vec()));
+fn fitted(frames: Frames<'_>, step: &Step, len: usize) -> Vec<u8> {
+    let redacted = match frames {
+        Frames::Kind(kind) => redacted(kind, RedactTarget::Step(step.encode_to_vec())),
+        Frames::Structure(structure) => structure.message("amux.v1.Step", &step.encode_to_vec()),
+    };
     let mut step = Step::decode(redacted.as_slice()).unwrap_or_default();
     if let Some(frame) = journal::encode_frame_exact(&step, len) {
         return frame;
@@ -773,16 +852,22 @@ struct CoreDumped {
     reads: usize,
     /// Each agent's ingest cursor as of the checkpoint, by agent id.
     cursors: BTreeMap<Vec<u8>, u64>,
+    /// The window's size compressed, when it is past the check's limit and
+    /// so only counted.
+    over: Option<usize>,
 }
 
 /// Writes the core's part from what the core thread handed over: the
-/// checkpoint and ring lines redacted as the core's values, the store copy
-/// at `scratch` redacted in place and moved in.
-fn write_core(captured: &Captured, scratch: &Path, out: &Path) -> Result<CoreDumped, String> {
-    let checkpoint = daemon_core::redact::checkpoint(&captured.checkpoint, &Redact)
-        .map_err(|error| format!("the checkpoint: {error}"))?;
-    let cursors = store::redact::redact_file(scratch, &Redact)
-        .map_err(|error| format!("redacting the store: {error}"))?;
+/// checkpoint and ring lines as their structure, the store copy at
+/// `scratch` redacted to its structure in place and moved in. A window past
+/// `limit` compressed is counted and nothing is written.
+fn write_core(
+    captured: &Captured,
+    scratch: &Path,
+    out: &Path,
+    structure: &Structure,
+    limit: Option<usize>,
+) -> Result<CoreDumped, String> {
     let mut lines = Vec::new();
     let (mut inputs, mut reads) = (0, 0);
     for line in captured.lines.split(|byte| *byte == b'\n') {
@@ -798,9 +883,27 @@ fn write_core(captured: &Captured, scratch: &Path, out: &Path) -> Result<CoreDum
             Recorded::Input(_) => inputs += 1,
             Recorded::Read { .. } => reads += 1,
         }
-        lines.extend(serde_json::to_vec(&recorded.redacted(&Redact)).expect("a line writes"));
+        lines.extend(serde_json::to_vec(&recorded.redacted(structure)).expect("a line writes"));
         lines.push(b'\n');
     }
+    if let Some(limit) = limit {
+        let compressed = zstd::bulk::compress(&lines, 3)
+            .map_err(|error| format!("measuring the window: {error}"))?
+            .len();
+        if compressed > limit {
+            return Ok(CoreDumped {
+                inputs,
+                reads,
+                cursors: BTreeMap::new(),
+                over: Some(compressed),
+            });
+        }
+    }
+    let checkpoint = daemon_core::redact::checkpoint(&captured.checkpoint, structure)
+        .map_err(|error| format!("the checkpoint: {error}"))?;
+    let cursors = store::redact::redact_file(scratch, structure)
+        .map_err(|error| format!("redacting the store: {error}"))?;
+    std::fs::create_dir_all(out).map_err(|error| format!("making {CORE}: {error}"))?;
     let write = |name: &str, bytes: &[u8]| {
         std::fs::write(out.join(name), bytes).map_err(|error| format!("writing {name}: {error}"))
     };
@@ -815,33 +918,41 @@ fn write_core(captured: &Captured, scratch: &Path, out: &Path) -> Result<CoreDum
             .into_iter()
             .map(|(key, cursor)| (key.agent, cursor))
             .collect(),
+        over: None,
     })
 }
 
-/// The redactor the core's values and the store copy go through: protocol
-/// messages by descriptor, free text by the shared rules, an agent's rows
-/// and items by its kind's own redactor.
-struct Redact;
+/// The redactor of what a stage that reads no content is fed: every value
+/// treated by the name of its field (`redaction::structure`), protocol
+/// messages walked by descriptor, content bytes zero bytes of their
+/// length. One per bundle, so an identifier has one alias in every part of
+/// it; a name the core assigned itself is kept, as the core compares the
+/// names it assigns with those it holds.
+pub(crate) struct Structure(Mutex<redaction::structure::Aliases>);
 
-impl store::redact::Redactor for Redact {
-    fn text(&self, text: &str) -> String {
-        interpret::redact_text(text)
+impl Structure {
+    fn new() -> Self {
+        Structure(Mutex::new(redaction::structure::Aliases::new(
+            daemon_core::names::is_assigned,
+        )))
     }
 
     fn message(&self, name: &str, bytes: &[u8]) -> Vec<u8> {
-        interpret::redact_message(name, bytes)
+        interpret::structure_message(name, bytes, &mut self.0.lock().unwrap())
+    }
+}
+
+impl store::redact::Redactor for Structure {
+    fn text(&self, holder: &str, field: &str, text: &str) -> String {
+        self.0.lock().unwrap().text(holder, field, text)
     }
 
-    fn agent(&self, kind: i32, agent: wire::Agent) -> wire::Agent {
-        let kind = Kind::try_from(kind).unwrap_or(Kind::Unspecified);
-        wire::Agent::decode(redacted(kind, RedactTarget::Agent(agent.encode_to_vec())).as_slice())
-            .unwrap_or_default()
+    fn message(&self, name: &str, bytes: &[u8]) -> Vec<u8> {
+        Structure::message(self, name, bytes)
     }
 
-    fn step(&self, kind: i32, step: Step) -> Step {
-        let kind = Kind::try_from(kind).unwrap_or(Kind::Unspecified);
-        Step::decode(redacted(kind, RedactTarget::Step(step.encode_to_vec())).as_slice())
-            .unwrap_or_default()
+    fn content(&self, bytes: &[u8]) -> Vec<u8> {
+        vec![0; bytes.len()]
     }
 }
 
@@ -910,4 +1021,51 @@ pub fn pack(bundle: &Path) -> io::Result<DumpPart> {
         .map(|name| name.to_string_lossy().into_owned().into_bytes())
         .unwrap_or_default();
     Ok(DumpPart { dump_id, files })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_window_past_the_checks_limit_is_counted_and_not_written() {
+        // Randomness does not compress: enough of it passes the limit.
+        let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut lines = Vec::new();
+        for _ in 0..4_000 {
+            let mut bytes = [0; 32];
+            for byte in &mut bytes {
+                seed = seed
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                *byte = (seed >> 56) as u8;
+            }
+            let input = Recorded::Input(Box::new(daemon_core::Input::Entropy(bytes)));
+            lines.extend(serde_json::to_vec(&input).unwrap());
+            lines.push(b'\n');
+        }
+        let captured = Captured {
+            checkpoint: Vec::new(),
+            lines,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join(CORE);
+        let scratch = dir.path().join("store.sqlite");
+        let structure = Structure::new();
+        let core = write_core(
+            &captured,
+            &scratch,
+            &out,
+            &structure,
+            Some(CHECK_WINDOW_BYTES),
+        )
+        .expect("a window past the limit is counted");
+        assert_eq!((core.inputs, core.reads), (4_000, 0));
+        assert!(
+            core.over.is_some_and(|bytes| bytes > CHECK_WINDOW_BYTES),
+            "{:?}",
+            core.over
+        );
+        assert!(!out.exists(), "nothing of the window is written");
+    }
 }

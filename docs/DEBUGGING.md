@@ -102,8 +102,8 @@ Each dump carries what its trigger replays, and its manifest names that scope:
 | Scope | Taken by | Carries |
 | --- | --- | --- |
 | `host` | `amux dump`, Export Diagnostics on the phone | everything this host holds for the named agents, all of them when none are named |
-| `core` | a daemon core check that broke, or a step over budget | `core/`, own agents' journals from the checkpoint's cursor, and the daemon log |
-| `agent` | an agent core check that broke, or a step over budget | that agent's process part, its journal (at least two segments), row and slice |
+| `core` | a daemon core check that broke, or a step over budget | `core/`, own agents' rows and journals from the checkpoint's cursor, all as their structure alone, and the daemon log |
+| `agent` | an agent core check that broke, or a step over budget | that agent's process part, its journal (at least two segments), and its row and slice as their structure alone |
 | `transcript` | a chat whose transcript failed its check | that chat's session, and its agent's row and slice |
 | `report` | a person's report, from the terminal or the phone | the daemon and supervisor logs, and no agent's row, slice, journal or session: those hold conversation text |
 
@@ -179,7 +179,10 @@ reports/dump-<unix ms>-<id>/
 
 Each agent's manifest entry names its kind, whether it is this host's own, its lifecycle and incarnation, how many
 rows the slice holds, and the files its process sent. The manifest's `core` entry counts the core's inputs and
-journal reads; when the core's part could not be had, it is null and `errors` says why. Its `client` entry names
+journal reads; when the core's part could not be had, it is null and `errors` says why. A check's window, from the
+checkpoint to the dump, is held to 64 KiB once compressed: one past it sends no `core/` and no journals, only those
+counts and its size under `over_limit`, which says to checkpoint more often for that failure rather than to send
+more. Its `client` entry names
 each chat session's two files and how many events it carries. An agent with no running
 process has only its specs in `part/`, and its entry in `errors` says its facts ring was not gathered. Protobuf
 files are encoded without a length prefix; journal segments keep the journal's own framing, and every frame keeps
@@ -202,13 +205,31 @@ interpreter can decode its kind's item and snapshot bodies, so the redactor is p
 the agent process applies it to its facts ring, checkpoints and specs when the dump asks, and the daemon applies it
 to every row, store slice, journal frame and client session it writes (the one place the daemon uses per-kind
 code). Free text
-such as the daemon's log goes through the shared rules in `crates/redaction`. The core's part is redacted as the
-core's own values, so it still restores and replays: each protocol message in its checkpoint and inputs is walked
-as that message (an agent's opaque bodies inside them, which no kind is there to decode, are emptied), every other
-text goes through the shared rules, and ids and numbers are kept; its store copy has each row and item redacted by
-its agent's kind and is rebuilt, so nothing the redactor replaced stays in a free page.
+such as the daemon's log goes through the shared rules in `crates/redaction`.
 
-The redactor keeps structure and removes secrets: values under secret-named keys, environment values, tokens with
+The daemon core reads no content: it acts on ids, kinds, order, sizes and time. So its part carries no content
+at all, only the record's structure, and still restores and replays as the original does. The same goes for what a
+`core` dump carries of each agent (its row and the journal the core reads) and for an `agent` dump's row and slice.
+Every value in them, each protocol message walked by its descriptor and each of the core's own values by its type,
+is treated by the name of the field that holds it, from one table in `crates/redaction/src/structure.rs`:
+
+- Bodies and free text (prompts, agent output, error text, item and snapshot bodies, kept blobs and patches)
+  become zero bytes of their length, so every size and offset holds. Text that is only whitespace is kept, as the
+  core treats it as empty, and an error's leading protocol label (`SELF_PAIRING: …`) is kept, as the core tells
+  refusals apart by it.
+- Identifiers the core compares (host and agent names, folders, branches, SSH destinations, accounts, tokens) become
+  aliases such as `host-1` and `path-3`, the same value the same alias throughout the bundle. A name ending in a
+  number keeps it on its stem's alias (`name-1-2`), and a name the core assigns itself from its word pairs
+  (`quiet-otter`) is kept, as the core compares the names it assigns with those it holds.
+- Ids, item keys, counts, revisions, error codes, timings, versions and settings (model, effort, permission mode)
+  are kept, as are network addresses, which the core parses and dials, and public keys, which it compares.
+- The core's randomness is kept, so a replay mints every id the live core did; and so is everything a pairing in
+  the window exchanged, whose values the core checks against what it derives from that randomness and the window's
+  secret. Such a pairing's secret and the peer it paired with can be read from the bundle.
+
+The store copy is redacted in place and rebuilt, so nothing replaced stays in a free page.
+
+Everything else the redactor keeps structure and removes secrets: values under secret-named keys, environment values, tokens with
 known credential prefixes, secret assignments in text, machine paths, email addresses, the local user and host
 name. Provider session and thread ids become a placeholder derived from the id, so one session stays recognisable
 across a dump. Conversation text is kept: a dump shows what the agent said and was told. Read a bundle before

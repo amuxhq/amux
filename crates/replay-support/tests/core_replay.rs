@@ -294,3 +294,66 @@ fn a_ring_missing_a_read_fails_the_reproduction_property() {
     assert_eq!(failing.property, models::single_daemon::REPRODUCES);
     assert_eq!(failing.step, step, "{failing}");
 }
+
+#[test]
+fn a_check_on_the_core_carries_no_content_and_replays() {
+    let marker = support::MARKER;
+    // A marker in any of the forms a bundle could carry it.
+    let forms = [
+        marker.as_bytes().to_vec(),
+        marker.to_uppercase().into_bytes(),
+        marker
+            .bytes()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+            .into_bytes(),
+    ];
+    for dumped in support::marked_core_checks() {
+        let manifest = dumped.manifest();
+        assert_eq!(manifest["scope"], "core");
+        assert!(manifest["core"]["over_limit"].is_null(), "{manifest}");
+        let mut files = Vec::new();
+        list(dumped.path(), dumped.path(), &mut files);
+        for (name, bytes) in &files {
+            for form in &forms {
+                assert!(
+                    !bytes.windows(form.len()).any(|window| window == form),
+                    "{name} holds the marker"
+                );
+            }
+        }
+        let bundle = Bundle::open(dumped.path()).expect("the bundle opens");
+        let core = bundle.core.as_ref().expect("the bundle carries the core");
+        let inputs = core
+            .inputs
+            .iter()
+            .filter(|line| matches!(line, daemon_core::Recorded::Input(_)))
+            .count();
+        assert!(inputs > 0, "the window since the checkpoint has inputs");
+        assert_eq!(bundle.replay_core().expect("the core replays"), None);
+        let verdicts = bundle.replay_all().expect("the bundle replays");
+        println!(
+            "{} files, {} bytes; {}",
+            files.len(),
+            files.iter().map(|(_, bytes)| bytes.len()).sum::<usize>(),
+            verdicts[1]
+        );
+        assert!(
+            matches!(verdicts[1].verdict, Verdict::Holds(_)),
+            "{}",
+            verdicts[1]
+        );
+    }
+}
+
+fn list(root: &std::path::Path, dir: &std::path::Path, out: &mut Vec<(String, Vec<u8>)>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            list(root, &path, out);
+        } else {
+            let name = path.strip_prefix(root).unwrap().display().to_string();
+            out.push((name, std::fs::read(&path).unwrap()));
+        }
+    }
+}

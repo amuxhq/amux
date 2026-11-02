@@ -1,15 +1,16 @@
 //! The core's checkpoint and recorded inputs as a dump carries them:
-//! written again with every protocol message and every text inside them
-//! redacted, and every type, number and id kept, so the copy restores and
-//! replays as the original does.
+//! written again with every protocol message, every text and every content
+//! byte inside them through a redactor, and every type, number and id kept,
+//! so the copy restores and replays as the original does.
 //!
 //! The core decodes no agent's bodies and knows no redaction rules, so the
-//! caller brings the store's [`Redactor`]. The values are walked by serialization: a
-//! protocol message is written by `codec` as its encoding in hex, and says
-//! so on its way through, so the redactor sees it whole and by name;
-//! content bytes, such as a kept blob or a diff's patch, are written as hex
-//! and redacted as text when they are text; every other string is free
-//! text.
+//! caller brings the store's [`Redactor`]. The values are walked by
+//! serialization: a protocol message is written by `codec` as its encoding
+//! in hex, and says so on its way through, so the redactor sees it whole
+//! and by name; content bytes, such as a kept blob or a diff's patch, are
+//! written as hex and handed over as bytes; every other string is handed
+//! over with the name of the field and the type that hold it, so the
+//! redactor decides by name what each one is.
 
 use std::cell::Cell;
 
@@ -29,8 +30,7 @@ pub(crate) enum Opaque {
     Message(&'static str, &'static str),
     /// Hex of an id: kept as it is.
     Verbatim,
-    /// Hex of content bytes, such as a blob or a patch: redacted as text
-    /// when they are UTF-8, kept when they are not.
+    /// Hex of content bytes, such as a blob or a patch.
     Content,
 }
 
@@ -78,22 +78,54 @@ fn redacted<T: Serialize + serde::de::DeserializeOwned>(value: &T, redactor: &dy
     serde_json::from_slice(&json).expect("a redacted core value reads back as its type")
 }
 
+/// Where a value sits: the redactor, and the type and field that hold it.
+/// A field with no name of its own, such as a newtype variant's, is named
+/// by its variant; an element of a sequence or map, by its container's
+/// field.
+#[derive(Clone, Copy)]
+struct At<'r> {
+    redactor: &'r dyn Redactor,
+    holder: &'static str,
+    field: &'static str,
+}
+
+impl<'r> At<'r> {
+    fn top(redactor: &'r dyn Redactor) -> At<'r> {
+        At {
+            redactor,
+            holder: "",
+            field: "",
+        }
+    }
+
+    fn field(self, holder: &'static str, field: &'static str) -> At<'r> {
+        At {
+            holder,
+            field,
+            ..self
+        }
+    }
+}
+
 /// A serializer that hands each string to the redactor on its way to
 /// `inner`.
 struct Redacting<'r, S> {
     inner: S,
-    redactor: &'r dyn Redactor,
+    at: At<'r>,
 }
 
 /// A value whose strings go through the redactor when it is serialized.
 struct Value<'r, T: ?Sized> {
     value: &'r T,
-    redactor: &'r dyn Redactor,
+    at: At<'r>,
 }
 
 impl<'r> Redacting<'r, ()> {
     fn value<T: ?Sized>(value: &'r T, redactor: &'r dyn Redactor) -> Value<'r, T> {
-        Value { value, redactor }
+        Value {
+            value,
+            at: At::top(redactor),
+        }
     }
 }
 
@@ -101,9 +133,18 @@ impl<T: Serialize + ?Sized> Serialize for Value<'_, T> {
     fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
         self.value.serialize(Redacting {
             inner: to,
-            redactor: self.redactor,
+            at: self.at,
         })
     }
+}
+
+/// Whether a string is a typed value written as text, which reads back
+/// only as itself: an address or a uuid. Each is kept, as an address and
+/// an id are wherever a field names them.
+fn typed(text: &str) -> bool {
+    text.parse::<std::net::SocketAddr>().is_ok()
+        || text.parse::<std::net::IpAddr>().is_ok()
+        || uuid::Uuid::try_parse(text).is_ok()
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -123,7 +164,7 @@ fn unhex(text: &str) -> Option<Vec<u8>> {
 /// The compound serializers, each element wrapped the same way.
 struct Compound<'r, C> {
     inner: C,
-    redactor: &'r dyn Redactor,
+    at: At<'r>,
 }
 
 impl<'r, S: Serializer> Serializer for Redacting<'r, S> {
@@ -147,7 +188,10 @@ impl<'r, S: Serializer> Serializer for Redacting<'r, S> {
                 let Some(bytes) = unhex(text) else {
                     return Err(ser::Error::custom("a message that is not hex"));
                 };
-                let redacted = self.redactor.message(&format!("{package}.{name}"), &bytes);
+                let redacted = self
+                    .at
+                    .redactor
+                    .message(&format!("{package}.{name}"), &bytes);
                 self.inner.serialize_str(&hex(&redacted))
             }
             Some(Opaque::Verbatim) => self.inner.serialize_str(text),
@@ -155,14 +199,15 @@ impl<'r, S: Serializer> Serializer for Redacting<'r, S> {
                 let Some(bytes) = unhex(text) else {
                     return Err(ser::Error::custom("content that is not hex"));
                 };
-                match std::str::from_utf8(&bytes) {
-                    Ok(content) => self
-                        .inner
-                        .serialize_str(&hex(self.redactor.text(content).as_bytes())),
-                    Err(_) => self.inner.serialize_str(text),
-                }
+                self.inner
+                    .serialize_str(&hex(&self.at.redactor.content(&bytes)))
             }
-            None => self.inner.serialize_str(&self.redactor.text(text)),
+            None if typed(text) => self.inner.serialize_str(text),
+            None => self.inner.serialize_str(&self.at.redactor.text(
+                self.at.holder,
+                self.at.field,
+                text,
+            )),
         }
     }
 
@@ -215,8 +260,7 @@ impl<'r, S: Serializer> Serializer for Redacting<'r, S> {
         self.inner.serialize_none()
     }
     fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<S::Ok, S::Error> {
-        self.inner
-            .serialize_some(&Redacting::value(value, self.redactor))
+        self.inner.serialize_some(&Value { value, at: self.at })
     }
     fn serialize_unit(self) -> Result<S::Ok, S::Error> {
         self.inner.serialize_unit()
@@ -238,7 +282,7 @@ impl<'r, S: Serializer> Serializer for Redacting<'r, S> {
         value: &T,
     ) -> Result<S::Ok, S::Error> {
         self.inner
-            .serialize_newtype_struct(name, &Redacting::value(value, self.redactor))
+            .serialize_newtype_struct(name, &Value { value, at: self.at })
     }
     fn serialize_newtype_variant<T: Serialize + ?Sized>(
         self,
@@ -247,23 +291,20 @@ impl<'r, S: Serializer> Serializer for Redacting<'r, S> {
         variant: &'static str,
         value: &T,
     ) -> Result<S::Ok, S::Error> {
-        self.inner.serialize_newtype_variant(
-            name,
-            index,
-            variant,
-            &Redacting::value(value, self.redactor),
-        )
+        let at = self.at.field(name, variant);
+        self.inner
+            .serialize_newtype_variant(name, index, variant, &Value { value, at })
     }
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, S::Error> {
         Ok(Compound {
             inner: self.inner.serialize_seq(len)?,
-            redactor: self.redactor,
+            at: self.at,
         })
     }
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, S::Error> {
         Ok(Compound {
             inner: self.inner.serialize_tuple(len)?,
-            redactor: self.redactor,
+            at: self.at,
         })
     }
     fn serialize_tuple_struct(
@@ -273,7 +314,7 @@ impl<'r, S: Serializer> Serializer for Redacting<'r, S> {
     ) -> Result<Self::SerializeTupleStruct, S::Error> {
         Ok(Compound {
             inner: self.inner.serialize_tuple_struct(name, len)?,
-            redactor: self.redactor,
+            at: self.at,
         })
     }
     fn serialize_tuple_variant(
@@ -287,13 +328,13 @@ impl<'r, S: Serializer> Serializer for Redacting<'r, S> {
             inner: self
                 .inner
                 .serialize_tuple_variant(name, index, variant, len)?,
-            redactor: self.redactor,
+            at: self.at.field(name, variant),
         })
     }
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, S::Error> {
         Ok(Compound {
             inner: self.inner.serialize_map(len)?,
-            redactor: self.redactor,
+            at: self.at,
         })
     }
     fn serialize_struct(
@@ -303,7 +344,7 @@ impl<'r, S: Serializer> Serializer for Redacting<'r, S> {
     ) -> Result<Self::SerializeStruct, S::Error> {
         Ok(Compound {
             inner: self.inner.serialize_struct(name, len)?,
-            redactor: self.redactor,
+            at: self.at.field(name, self.at.field),
         })
     }
     fn serialize_struct_variant(
@@ -317,7 +358,7 @@ impl<'r, S: Serializer> Serializer for Redacting<'r, S> {
             inner: self
                 .inner
                 .serialize_struct_variant(name, index, variant, len)?,
-            redactor: self.redactor,
+            at: self.at.field(variant, self.at.field),
         })
     }
 }
@@ -326,10 +367,7 @@ impl<C: SerializeSeq> SerializeSeq for Compound<'_, C> {
     type Ok = C::Ok;
     type Error = C::Error;
     fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), C::Error> {
-        let value = Value {
-            value,
-            redactor: self.redactor,
-        };
+        let value = Value { value, at: self.at };
         self.inner.serialize_element(&value)
     }
     fn end(self) -> Result<C::Ok, C::Error> {
@@ -341,10 +379,7 @@ impl<C: SerializeTuple> SerializeTuple for Compound<'_, C> {
     type Ok = C::Ok;
     type Error = C::Error;
     fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), C::Error> {
-        let value = Value {
-            value,
-            redactor: self.redactor,
-        };
+        let value = Value { value, at: self.at };
         self.inner.serialize_element(&value)
     }
     fn end(self) -> Result<C::Ok, C::Error> {
@@ -356,10 +391,7 @@ impl<C: SerializeTupleStruct> SerializeTupleStruct for Compound<'_, C> {
     type Ok = C::Ok;
     type Error = C::Error;
     fn serialize_field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), C::Error> {
-        let value = Value {
-            value,
-            redactor: self.redactor,
-        };
+        let value = Value { value, at: self.at };
         self.inner.serialize_field(&value)
     }
     fn end(self) -> Result<C::Ok, C::Error> {
@@ -371,10 +403,7 @@ impl<C: SerializeTupleVariant> SerializeTupleVariant for Compound<'_, C> {
     type Ok = C::Ok;
     type Error = C::Error;
     fn serialize_field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), C::Error> {
-        let value = Value {
-            value,
-            redactor: self.redactor,
-        };
+        let value = Value { value, at: self.at };
         self.inner.serialize_field(&value)
     }
     fn end(self) -> Result<C::Ok, C::Error> {
@@ -388,15 +417,12 @@ impl<C: SerializeMap> SerializeMap for Compound<'_, C> {
     fn serialize_key<T: Serialize + ?Sized>(&mut self, key: &T) -> Result<(), C::Error> {
         let key = Value {
             value: key,
-            redactor: self.redactor,
+            at: self.at,
         };
         self.inner.serialize_key(&key)
     }
     fn serialize_value<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), C::Error> {
-        let value = Value {
-            value,
-            redactor: self.redactor,
-        };
+        let value = Value { value, at: self.at };
         self.inner.serialize_value(&value)
     }
     fn end(self) -> Result<C::Ok, C::Error> {
@@ -414,7 +440,7 @@ impl<C: SerializeStruct> SerializeStruct for Compound<'_, C> {
     ) -> Result<(), C::Error> {
         let value = Value {
             value,
-            redactor: self.redactor,
+            at: self.at.field(self.at.holder, key),
         };
         self.inner.serialize_field(key, &value)
     }
@@ -436,7 +462,7 @@ impl<C: SerializeStructVariant> SerializeStructVariant for Compound<'_, C> {
     ) -> Result<(), C::Error> {
         let value = Value {
             value,
-            redactor: self.redactor,
+            at: self.at.field(self.at.holder, key),
         };
         self.inner.serialize_field(key, &value)
     }
@@ -463,10 +489,11 @@ mod tests {
     const PLANTED: &[u8] = b"PLANTED";
 
     /// Replaces the planted word in place, so every message stays one, and
-    /// remembers the message names it was handed.
+    /// remembers the message names and the fields it was handed.
     #[derive(Default)]
     struct Swap {
         names: RefCell<BTreeSet<String>>,
+        fields: RefCell<BTreeSet<String>>,
     }
 
     fn swap(bytes: &[u8]) -> Vec<u8> {
@@ -484,14 +511,12 @@ mod tests {
             self.names.borrow_mut().insert(name.to_owned());
             swap(bytes)
         }
-        fn text(&self, text: &str) -> String {
+        fn text(&self, holder: &str, field: &str, text: &str) -> String {
+            self.fields.borrow_mut().insert(format!("{holder}.{field}"));
             String::from_utf8(swap(text.as_bytes())).expect("still text")
         }
-        fn agent(&self, _: i32, agent: wire::Agent) -> wire::Agent {
-            agent
-        }
-        fn step(&self, _: i32, step: store::Step) -> store::Step {
-            step
+        fn content(&self, bytes: &[u8]) -> Vec<u8> {
+            swap(bytes)
         }
     }
 
@@ -565,6 +590,11 @@ mod tests {
                 outcome: crate::AttemptOutcome::Failed("refused by REMOVED".into()),
             }
         );
+        assert!(
+            redactor.fields.borrow().contains("AttemptOutcome.Failed"),
+            "a newtype variant's text is named by its variant: {:?}",
+            redactor.fields.borrow()
+        );
         let read = Recorded::Read {
             agent: AgentId([1; 16]),
             seen: 42,
@@ -584,10 +614,41 @@ mod tests {
                 failed: Some("disk REMOVED".into()),
             }
         );
+        assert!(
+            redactor.fields.borrow().contains("Read.failed"),
+            "a struct variant's field is named with its variant: {:?}",
+            redactor.fields.borrow()
+        );
     }
 
     #[test]
-    fn a_kept_blob_and_a_patch_are_redacted_as_text_and_binary_content_is_kept() {
+    fn a_typed_value_written_as_text_is_kept() {
+        // A redactor that empties every text it is handed, the worst it can
+        // do: what reads back only as itself still reads back.
+        struct Empty;
+        impl Redactor for Empty {
+            fn text(&self, _: &str, _: &str, _: &str) -> String {
+                String::new()
+            }
+            fn message(&self, _: &str, bytes: &[u8]) -> Vec<u8> {
+                bytes.to_vec()
+            }
+            fn content(&self, bytes: &[u8]) -> Vec<u8> {
+                bytes.to_vec()
+            }
+        }
+        let input = Input::AttemptEnded {
+            host: HostId([0x50; 16]),
+            attempt: crate::AttemptId(3),
+            outcome: crate::AttemptOutcome::Linked {
+                addr: Some("10.0.0.4:7000".parse().unwrap()),
+            },
+        };
+        assert_eq!(input.redacted(&Empty), input);
+    }
+
+    #[test]
+    fn a_kept_blob_and_a_patch_go_to_the_redactor_as_bytes() {
         use crate::JobId;
         use crate::payload::{JobResult, Patch};
 
@@ -613,14 +674,15 @@ mod tests {
         assert_eq!(
             redacted,
             compared(b"+token = REMOVED\n"),
-            "only the content's text changed"
+            "only the content changed"
         );
 
         let binary = [0xff, 0xfe, b'P', b'L', b'A', b'N', b'T', b'E', b'D'];
+        let swapped = [0xff, 0xfe, b'R', b'E', b'M', b'O', b'V', b'E', b'D'];
         assert_eq!(
             compared(&binary).redacted(&redactor),
-            compared(&binary),
-            "content that is not text is kept as it is"
+            compared(&swapped),
+            "content that is not text goes the same way"
         );
     }
 }

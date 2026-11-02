@@ -97,6 +97,97 @@ pub fn healthy() -> Dumped {
     Dumped { dir }
 }
 
+/// What [`marked_core_checks`] plants in everything a person or a provider
+/// writes.
+pub const MARKER: &str = "zebracorn";
+
+/// A check's dump of the daemon core on each of two linked hosts, the
+/// agent's own and the one following it, after a run that carries
+/// [`MARKER`] in its prompts, the provider's output, both host names, the
+/// agent's name and its folder: one turn before the hosts checkpoint and
+/// one after, so the window since the checkpoint carries it too.
+pub fn marked_core_checks() -> Vec<Dumped> {
+    let desk = format!("desk-{MARKER}");
+    let lap = format!("lap-{MARKER}");
+    let worker = format!("worker-{MARKER}");
+    let text = |chunk: &str| Step::Text {
+        chunks: vec![chunk.to_owned()],
+    };
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let net = Net::start(
+            Topology::new()
+                .host(&desk)
+                .host(&lap)
+                .link(&desk, &lap)
+                .agent(
+                    AgentDecl::new(&worker, &desk)
+                        .cwd(&format!("work-{MARKER}"))
+                        .steps(vec![
+                            Step::Thinking {
+                                text: format!("thinking of the {MARKER}"),
+                            },
+                            text(&format!("the first {MARKER} answer")),
+                            Step::TurnEnd,
+                            text(&format!("the second {MARKER} answer")),
+                            Step::TurnEnd,
+                        ])
+                        .prompt(&format!("the first {MARKER} question")),
+                ),
+        )
+        .await
+        .unwrap();
+        net.turn_ended(&worker, 1).await.unwrap();
+        net.current(&lap, &worker).await.unwrap();
+        for host in [&desk, &lap] {
+            net.runtime(host).unwrap().checkpoint().await.unwrap();
+        }
+        net.send(&worker, &format!("the second {MARKER} question"))
+            .await
+            .unwrap();
+        net.turn_ended(&worker, 2).await.unwrap();
+        net.current(&lap, &worker).await.unwrap();
+        let mut dumped = Vec::new();
+        for host in [&desk, &lap] {
+            let runtime = net.runtime(host).unwrap();
+            // Not clean for want of anything to clean: what the core's part
+            // is taken from carries the marker, as text or as the hex of the
+            // messages its ring records.
+            let hex: String = MARKER.bytes().map(|byte| format!("{byte:02x}")).collect();
+            let holds = |bytes: &[u8]| {
+                [MARKER, hex.as_str()].iter().any(|form| {
+                    bytes
+                        .windows(form.len())
+                        .any(|window| window == form.as_bytes())
+                })
+            };
+            let ring = std::fs::read_dir(runtime.dir().join("core-ring"))
+                .unwrap()
+                .any(|entry| holds(&std::fs::read(entry.unwrap().path()).unwrap()));
+            let store = holds(&std::fs::read(runtime.dir().join("store.sqlite")).unwrap());
+            assert!(ring || store, "{host}'s core holds the marker");
+            let written = runtime
+                .dump(wire::DumpRequest {
+                    reason: "a check on the core".to_owned(),
+                    automatic: true,
+                    scope: wire::DumpScope::Core.into(),
+                    check: "daemon.test".to_owned(),
+                    ..wire::DumpRequest::default()
+                })
+                .await
+                .unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            copy_dir(&written, dir.path());
+            dumped.push(Dumped { dir });
+        }
+        net.shutdown().await.unwrap();
+        dumped
+    })
+}
+
 /// The healthy bundle with the core's part a build would have written whose
 /// core recorded the highest generation a stream opened under as more than
 /// it was. Its checkpoint holds that record at 2 under a run of generation

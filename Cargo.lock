@@ -2110,6 +2110,7 @@ dependencies = [
  "provider-fakes",
  "quinn",
  "rcgen",
+ "redaction",
  "relay-core",
  "release",
  "reqwest",

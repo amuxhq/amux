@@ -24,19 +24,47 @@ pub enum TraceEvent<M> {
     Driver(DriverEvent),
 }
 
+/// What kind of failure the driver saw, never its words: a refusal's
+/// message may be another host's, and is not this client's to put in a
+/// dump.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DriverError {
+    /// The local runtime did not answer, or the connection failed.
+    Transport,
+    /// The runtime answered with an error: its code, and the amux reason
+    /// when it gave one.
+    Refused {
+        code: wire::ErrorCode,
+        reason: Option<wire::ErrorReason>,
+    },
+    /// What arrived did not decode.
+    Undecodable,
+}
+
+impl From<&client::RpcError> for DriverError {
+    fn from(error: &client::RpcError) -> DriverError {
+        match error {
+            client::RpcError::Transport(_) => DriverError::Transport,
+            client::RpcError::Refused(refused) => DriverError::Refused {
+                code: refused.code(),
+                reason: refused.reason(),
+            },
+        }
+    }
+}
+
 /// The driver's own acts, recorded between the messages they caused.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DriverEvent {
     Subscribed {
         tail: u32,
     },
-    SubscribeFailed {
-        error: String,
-    },
+    /// The local runtime did not answer the subscribe.
+    SubscribeFailed,
     /// The stream ended; `error` when the transport failed rather than the
     /// runtime closing it.
     StreamEnded {
-        error: Option<String>,
+        error: Option<DriverError>,
     },
     /// The runtime closed the stream after Lagged: reopened at once (a
     /// session with a tail).
@@ -52,14 +80,14 @@ pub enum DriverEvent {
     },
     GetFailed {
         key: String,
-        error: String,
+        error: DriverError,
     },
     Page {
         before: Option<u64>,
         limit: u32,
     },
     PageFailed {
-        error: String,
+        error: DriverError,
     },
     Blob {
         hash: Vec<u8>,
@@ -70,7 +98,7 @@ pub enum DriverEvent {
     },
     CatalogueFailed {
         hash: Vec<u8>,
-        error: String,
+        error: DriverError,
     },
     /// The window changed: widened for a chat on screen, or narrowed to
     /// the few rows the fleet holds off screen.
@@ -84,7 +112,7 @@ pub enum DriverEvent {
     Resumed,
     /// The runtime refused to serve the stream again; the driver stopped.
     Ended {
-        error: String,
+        error: DriverError,
     },
     /// The transcript failed its own check: the profile was asked for a
     /// dump with this session's part.
@@ -92,7 +120,7 @@ pub enum DriverEvent {
         why: String,
     },
     DumpFailed {
-        error: String,
+        error: DriverError,
     },
 }
 

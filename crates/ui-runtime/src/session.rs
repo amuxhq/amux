@@ -27,7 +27,7 @@ use wire::{
     SendInputResponse, SessionEvent, SubscribeSessionRequest, send_input_response, session_event,
 };
 
-use crate::trace::{DriverEvent, DriverTrace, Ring, TraceEvent};
+use crate::trace::{DriverError, DriverEvent, DriverTrace, Ring, TraceEvent};
 
 /// Prefixes the reason of a dump a chat's transcript asked for.
 pub const TRANSCRIPT_DUMP: &str = "the client's transcript: ";
@@ -260,7 +260,7 @@ impl Inner {
                 }
                 Err(error) => self.note(DriverEvent::GetFailed {
                     key: key.clone(),
-                    error: error.to_string(),
+                    error: DriverError::from(&error),
                 }),
             }
         }
@@ -296,7 +296,7 @@ impl Inner {
         tokio::spawn(async move {
             if let Err(error) = inner.client.dump(request).await {
                 inner.note(DriverEvent::DumpFailed {
-                    error: error.to_string(),
+                    error: DriverError::from(&error),
                 });
             }
         });
@@ -363,8 +363,8 @@ impl Inner {
         };
         let fetched = match self.client.get_blob(request).await {
             Ok(fetched) => wire::Catalogue::decode(fetched.bytes.as_slice())
-                .map_err(|error| format!("the catalogue does not decode: {error}")),
-            Err(error) => Err(error.to_string()),
+                .map_err(|_| DriverError::Undecodable),
+            Err(error) => Err(DriverError::from(&error)),
         };
         match fetched {
             Ok(catalogue) => {
@@ -764,7 +764,7 @@ impl Session {
             }
             Err(error) => {
                 self.inner.note(DriverEvent::PageFailed {
-                    error: error.to_string(),
+                    error: DriverError::from(&error),
                 });
                 if error.reason() == Some(wire::ErrorReason::HostUnreachable) {
                     Err(PageError::OriginUnreachable)
@@ -1114,7 +1114,7 @@ async fn pump(inner: Arc<Inner>, stream: Option<EventStream<SessionEvent>>, ende
             }
             End::Closed(error) => {
                 inner.note(DriverEvent::StreamEnded {
-                    error: error.map(|error| error.to_string()),
+                    error: error.as_ref().map(DriverError::from),
                 });
                 inner.apply(Msg::Connection(Connection::Reconnecting));
                 true
@@ -1138,8 +1138,8 @@ async fn pump(inner: Arc<Inner>, stream: Option<EventStream<SessionEvent>>, ende
                     inner.apply(Msg::Connection(Connection::Live));
                     stream = Some(opened);
                 }
-                Err(RpcError::Transport(error)) => {
-                    inner.note(DriverEvent::SubscribeFailed { error });
+                Err(RpcError::Transport(_)) => {
+                    inner.note(DriverEvent::SubscribeFailed);
                     if !wait {
                         inner.apply(Msg::Connection(Connection::Reconnecting));
                     }
@@ -1147,7 +1147,7 @@ async fn pump(inner: Arc<Inner>, stream: Option<EventStream<SessionEvent>>, ende
                 }
                 Err(error) => {
                     inner.note(DriverEvent::Ended {
-                        error: error.to_string(),
+                        error: DriverError::from(&error),
                     });
                     inner.model().ended = Some(error);
                     inner.changed.send_replace(());

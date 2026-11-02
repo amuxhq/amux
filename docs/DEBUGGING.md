@@ -221,7 +221,8 @@ catalogue hash) and of its body the open asks' keys, terminal Claude's announced
 Claude's tasks by id and state, and whether its view switched away. A row keeps its key, order, revision, kind,
 input id, time and attachment hashes; an input its arm and the ask key or queued input it names; the agent and host
 their ids, kind and states. Every text, name, path and an agent's own words for a refusal or an exit are emptied,
-and each event keeps the size it had. The driver's own acts are kept as they are. The manifest marks a record
+and each event keeps the size it had. The driver's own acts are kept as they are: they name keys, counts and the
+kind of each error it met (its code and amux reason), never an error's words, which may be another host's. The manifest marks a record
 `structure_only`, and the daemon writes no whole session into a transcript dump or a report.
 
 A record replays through the same session model to the same windows, runs, inputs, activity and failed checks as the

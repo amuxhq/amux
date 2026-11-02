@@ -26,7 +26,7 @@ use wire::{
 use crate::Backoff;
 use crate::drafts::Drafts;
 use crate::session::{Catalogues, Session};
-use crate::trace::{DriverEvent, DriverTrace, Ring, Structure as _, TraceEvent};
+use crate::trace::{DriverError, DriverEvent, DriverTrace, Ring, Structure as _, TraceEvent};
 
 /// The rows a session holds while it is off screen: enough for the fleet
 /// row's second line, which reads what the agent last said or is running.
@@ -730,7 +730,7 @@ async fn pump(inner: Arc<Inner>, stream: EventStream<InventoryEvent>, ended: Opt
             }
             End::Closed(error) => {
                 inner.note(DriverEvent::StreamEnded {
-                    error: error.map(|error| error.to_string()),
+                    error: error.as_ref().map(DriverError::from),
                 });
                 inner.apply(FleetMsg::Connection(Connection::Reconnecting));
                 true
@@ -748,8 +748,8 @@ async fn pump(inner: Arc<Inner>, stream: EventStream<InventoryEvent>, ended: Opt
                     inner.apply(FleetMsg::Connection(Connection::Live));
                     stream = Some(opened);
                 }
-                Err(RpcError::Transport(error)) => {
-                    inner.note(DriverEvent::SubscribeFailed { error });
+                Err(RpcError::Transport(_)) => {
+                    inner.note(DriverEvent::SubscribeFailed);
                     if !wait {
                         inner.apply(FleetMsg::Connection(Connection::Reconnecting));
                     }
@@ -757,7 +757,7 @@ async fn pump(inner: Arc<Inner>, stream: EventStream<InventoryEvent>, ended: Opt
                 }
                 Err(error) => {
                     inner.note(DriverEvent::Ended {
-                        error: error.to_string(),
+                        error: DriverError::from(&error),
                     });
                     inner.model().ended = Some(error);
                     inner.changed.send_replace(());

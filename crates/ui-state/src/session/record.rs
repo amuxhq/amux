@@ -39,8 +39,9 @@ pub fn record(history: ClientSessionHistory) -> ClientSessionHistory {
                         client_traced::Event::Msg(msg) => {
                             client_traced::Event::Msg(message(kind, msg))
                         }
-                        // The driver's own acts name keys, counts and its
-                        // errors; nothing in them comes from a body.
+                        // The driver's own acts name keys, counts and the
+                        // kinds of its errors, never their words; nothing
+                        // in them comes from a body.
                         driver @ client_traced::Event::Driver(_) => driver,
                     }),
                     ..traced

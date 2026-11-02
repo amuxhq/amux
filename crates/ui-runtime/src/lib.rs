@@ -21,7 +21,9 @@ pub use fleet::{Fleet, FleetGuard, HELD_ROWS, OpenError, Stop, Window};
 pub use session::{
     Changes, InputError, PageError, Sent, Session, StateGuard, TRANSCRIPT_CHECK, TRANSCRIPT_DUMP,
 };
-pub use trace::{DriverEvent, DriverTrace, Structure, TRACE_EVENTS, TraceEvent, Traced};
+pub use trace::{
+    DriverError, DriverEvent, DriverTrace, Structure, TRACE_EVENTS, TraceEvent, Traced,
+};
 
 /// The first wait before reconnecting to the local runtime.
 pub const RECONNECT_FIRST_MS: i64 = 250;

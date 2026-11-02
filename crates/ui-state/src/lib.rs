@@ -28,6 +28,6 @@ pub use inputs::{
 pub use model::Key;
 pub use session::{
     Activity, ActivityKind, BlobStatus, Composer, Connection, Msg, Outcome, PhaseView, QueueRow,
-    SessionState, Waiting,
+    SessionState, Waiting, record,
 };
 pub use transcript::{Held, Run, RunIndex, Transcript};

@@ -471,9 +471,11 @@ fn run<I: Interpreter>(events: Vec<Event>) -> BTreeSet<&'static str> {
                             )),
                         },
                     )),
+                    size: 0,
                 })
                 .collect(),
         }),
+        structure_only: false,
     };
     planted.extend(check::<I>(
         "client session",

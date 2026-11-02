@@ -4316,6 +4316,8 @@ dependencies = [
  "futures-util",
  "prost",
  "provider-fakes",
+ "replay-support",
+ "serde_json",
  "testnet",
  "thiserror 2.0.20",
  "tokio",

@@ -104,14 +104,14 @@ Each dump carries what its trigger replays, and its manifest names that scope:
 | `host` | `amux dump`, Export Diagnostics on the phone | everything this host holds for the named agents, all of them when none are named |
 | `core` | a daemon core check that broke, or a step over budget | `core/`, own agents' rows and journals from the checkpoint's cursor, all as their structure alone, and the daemon log |
 | `agent` | an agent core check that broke, or a step over budget | that agent's process part, its journal (at least two segments), and its row and slice as their structure alone |
-| `transcript` | a chat whose transcript failed its check | that chat's session, and its agent's row and slice |
-| `report` | a person's report, from the terminal or the phone | the daemon and supervisor logs, and no agent's row, slice, journal or session: those hold conversation text |
+| `transcript` | a chat whose transcript failed its check | that chat's session record, and its agent's row and slice |
+| `report` | a person's report, from the terminal or the phone | the daemon and supervisor logs, the record of each chat the client hands in, and no agent's row, slice, journal or whole session: those hold conversation text |
 
 Some dumps nobody asks for. When the daemon's core breaks one of its cheap invariants, or a step runs over its
 budget, the daemon writes a bundle whose `reason` starts `the daemon core: ` and whose manifest says `automatic`.
 A chat whose transcript fails its own check when the stream catches up or resets asks for one too, with the
-reason starting `the client's transcript: ` and that chat's session inside, its trace cut at the message the check
-failed at. An agent process whose core breaks one of its invariants, or takes a step over its budget, says so on its
+reason starting `the client's transcript: ` and that chat's session record inside, its trace cut at the message the
+check failed at. An agent process whose core breaks one of its invariants, or takes a step over its budget, says so on its
 stderr (`the agent core: `) and asks its daemon for a dump of it over the control connection; the daemon writes the bundle, reason starting
 `an agent's core: ` and naming the agent, with the agent's facts ring and checkpoints for the interpreter stage.
 Every check has a stable id, its core's name and its own (`daemon.generation_fell`, `agent.taken_still_pending`,
@@ -167,12 +167,13 @@ reports/dump-<unix ms>-<id>/
   core/inputs                   every input the core stepped since, and how far each ingest read
                                 an agent's journal, one JSON line each
   core/store.sqlite             the profile's store as of that checkpoint
-  client/sessions/<agent id>/   each chat the asking client had open:
+  client/sessions/<agent id>/   each chat the asking client had open, whole in a host dump and as
+                                its record (see below) in a transcript's or a report's:
     checkpoint                  its state when its trace began (a wire.ClientSession: the rows its
                                 window held, its inputs and every value the session model keeps)
     events                      every event its driver saw since, through the one that broke it when
-                                one did (a wire.ClientSessionEvents: each message, and the driver's
-                                own acts as it describes them)
+                                one did (a wire.ClientSessionEvents: each message with its size in
+                                bytes, and the driver's own acts as it describes them)
   client/fleet/state.txt        the fleet's part, when the client adds one: the structure of its
   client/fleet/trace.txt        state and its driver trace, with no names, paths or message text
 ```
@@ -182,8 +183,8 @@ rows the slice holds, and the files its process sent. The manifest's `core` entr
 journal reads; when the core's part could not be had, it is null and `errors` says why. A check's window, from the
 checkpoint to the dump, is held to 64 KiB once compressed: one past it sends no `core/` and no journals, only those
 counts and its size under `over_limit`, which says to checkpoint more often for that failure rather than to send
-more. Its `client` entry names
-each chat session's two files and how many events it carries. An agent with no running
+more. Its `client` entry names each chat session's two files, how many events it carries and whether it is a
+record. An agent with no running
 process has only its specs in `part/`, and its entry in `errors` says its facts ring was not gathered. Protobuf
 files are encoded without a length prefix; journal segments keep the journal's own framing, and every frame keeps
 its length, so an offset in the store or in `core/inputs` names the same frame in the bundle. A frame still being
@@ -197,6 +198,28 @@ randomness the bundle never holds.
 A client hands the daemon its open chats inside the dump call, and the daemon writes them, redacted through each
 agent's kind, before the bundle is complete; the fleet's part the client writes into the bundle once the daemon has
 answered. `amux dump` from a terminal holds no chat open, so its bundle carries only the host's parts.
+
+### A session's record
+
+A chat's rows reach a client already interpreted, so its session can be recorded as what the session model concludes
+rather than what anybody wrote. A record is the session's history with every body emptied to its arm (prompt,
+message, tool call, ask and so on) and the few fields the model reads from it: whether a message, thinking or
+reasoning block is complete; a tool call's state, its parent's key, whether its subagent finished and whether its
+input is a task list; an error's retry, attempt, limit and retry time; headless Claude's status; whether Codex's
+safety check runs; and the kind of Codex's work. A snapshot keeps its envelope (phase, queue by input id, times,
+catalogue hash) and of its body the open asks' keys, terminal Claude's announced calls by id and time, headless
+Claude's tasks by id and state, and whether its view switched away. A row keeps its key, order, revision, kind,
+input id, time and attachment hashes; an input its arm and the ask key or queued input it names; the agent and host
+their ids, kind and states. Every text, name, path and an agent's own words for a refusal or an exit are emptied,
+and each event keeps the size it had. The driver's own acts are kept as they are. The manifest marks a record
+`structure_only`, and the daemon writes no whole session into a transcript dump or a report.
+
+A record replays through the same session model to the same windows, runs, inputs, activity and failed checks as the
+whole history: `replay_support::record::replays_alike` replays both and names the first message after which they
+differ, which would be a body field the model reads and the record leaves out. The replay-support suite holds every
+interpreter fixture's session to that, healthy and with a row skipped, and a real node's chat in the ui-runtime
+suite too. What a record cannot show is how the rows were drawn: wrapping, glyph widths and markdown depend on the
+text, and a person's screenshot shows them.
 
 ## Redaction
 

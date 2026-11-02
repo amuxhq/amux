@@ -286,7 +286,9 @@ impl Inner {
             agent_ids: vec![self.agent_id.clone()],
             reason: format!("{TRANSCRIPT_DUMP}{why}"),
             automatic: true,
-            sessions: vec![cut.history(&self.agent_id).encode_to_vec()],
+            // The record, never the history: a check's dump may be sent
+            // on its own, and the record replays to the same break.
+            sessions: vec![cut.record(&self.agent_id).encode_to_vec()],
             scope: wire::DumpScope::Transcript.into(),
             check: TRANSCRIPT_CHECK.to_owned(),
         };
@@ -304,6 +306,10 @@ impl Inner {
     /// oldest segment began from.
     fn history(&self) -> ClientSessionHistory {
         self.model().trace.trace().history(&self.agent_id)
+    }
+
+    fn record(&self) -> ClientSessionHistory {
+        self.model().trace.trace().record(&self.agent_id)
     }
 
     /// On screen, fetches the catalogue the newest snapshot names unless
@@ -976,6 +982,12 @@ impl Session {
     pub fn history(&self) -> ClientSessionHistory {
         self.inner.history()
     }
+
+    /// This session's record: its history with nothing anybody wrote, for
+    /// a dump that may leave the device (see [`ui_state::record`]).
+    pub fn record(&self) -> ClientSessionHistory {
+        self.inner.record()
+    }
 }
 
 impl Drop for Session {
@@ -1003,22 +1015,39 @@ impl DriverTrace<SessionState, Msg> {
         let traced = self
             .events
             .iter()
-            .map(|traced| ClientTraced {
-                seq: traced.seq,
-                at_ms: traced.at_ms,
-                event: Some(match &traced.event {
-                    TraceEvent::Msg(msg) => client_traced::Event::Msg(msg.to_wire()),
-                    TraceEvent::Driver(driver) => {
-                        client_traced::Event::Driver(format!("{driver:?}"))
+            .map(|traced| {
+                let (event, size) = match &traced.event {
+                    TraceEvent::Msg(msg) => {
+                        let msg = msg.to_wire();
+                        let size = msg.encoded_len();
+                        (client_traced::Event::Msg(msg), size)
                     }
-                }),
+                    TraceEvent::Driver(driver) => {
+                        let driver = format!("{driver:?}");
+                        let size = driver.len();
+                        (client_traced::Event::Driver(driver), size)
+                    }
+                };
+                ClientTraced {
+                    seq: traced.seq,
+                    at_ms: traced.at_ms,
+                    event: Some(event),
+                    size: u32::try_from(size).unwrap_or(u32::MAX),
+                }
             })
             .collect();
         ClientSessionHistory {
             agent_id: agent_id.to_vec(),
             start: Some(self.start.to_wire()),
             events: Some(ClientSessionEvents { traced }),
+            structure_only: false,
         }
+    }
+
+    /// The trace's record: its history with every body, text, name and
+    /// path emptied and each event's size kept.
+    pub fn record(&self, agent_id: &[u8]) -> ClientSessionHistory {
+        ui_state::record(self.history(agent_id))
     }
 }
 

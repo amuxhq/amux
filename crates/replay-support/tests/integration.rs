@@ -4,4 +4,5 @@
 mod bundle;
 mod core_replay;
 mod dump_show;
+mod record;
 mod support;

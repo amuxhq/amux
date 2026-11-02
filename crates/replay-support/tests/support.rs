@@ -280,6 +280,7 @@ pub fn client_violation() -> Dumped {
         seq: seq as u64 + 1,
         at_ms: 0,
         event: Some(event),
+        size: 0,
     })
     .collect::<Vec<_>>();
 

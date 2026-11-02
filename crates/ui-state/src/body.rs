@@ -92,6 +92,138 @@ impl ItemBody {
     }
 }
 
+/// An item body as a session's record carries it: the arm it decoded as,
+/// and of its fields only those [`ItemBody::class`] reads, so the record
+/// draws every conclusion the model draws and holds nothing anybody wrote.
+/// Those fields are whether a message or thinking block is complete; a
+/// tool call's state, its parent's key, whether its subagent finished and
+/// whether its input is a task list; an error's retry, attempt, limit and
+/// time; headless Claude's status; whether Codex's safety check runs; and
+/// the arm of Codex's work. Every other field, text and value is emptied.
+/// A body this build cannot decode becomes an empty one, which reads the
+/// same.
+pub fn item_structure(kind: Kind, body: &[u8]) -> Vec<u8> {
+    match ItemBody::decode(kind, body) {
+        ItemBody::Claude(kind) => ClaudeItem {
+            kind: Some(claude_structure(kind)),
+        }
+        .encode_to_vec(),
+        ItemBody::Codex(kind) => CodexItem {
+            kind: Some(codex_structure(kind)),
+        }
+        .encode_to_vec(),
+        ItemBody::Undecodable => Vec::new(),
+    }
+}
+
+fn claude_structure(kind: wire::claude_item::Kind) -> wire::claude_item::Kind {
+    use wire::claude_item::Kind as Claude;
+    match kind {
+        Claude::Message(text) => Claude::Message(wire::Text {
+            complete: text.complete,
+        }),
+        Claude::Thinking(thinking) => Claude::Thinking(wire::Thinking {
+            complete: thinking.complete,
+        }),
+        Claude::Tool(tool) => Claude::Tool(tool_structure(tool)),
+        Claude::ApiError(error) => Claude::ApiError(api_error_structure(error)),
+        Claude::Status(status) => Claude::Status(wire::Status {
+            status: status.status,
+            word: String::new(),
+        }),
+        Claude::Prompt(_) => Claude::Prompt(Default::default()),
+        Claude::Turn(_) => Claude::Turn(Default::default()),
+        Claude::Compaction(_) => Claude::Compaction(Default::default()),
+        Claude::AgentMessage(_) => Claude::AgentMessage(Default::default()),
+        Claude::Boundary(_) => Claude::Boundary(Default::default()),
+        Claude::Slash(_) => Claude::Slash(Default::default()),
+        Claude::Unrecognized(_) => Claude::Unrecognized(Default::default()),
+        Claude::Steer(_) => Claude::Steer(Default::default()),
+        Claude::Ask(_) => Claude::Ask(Default::default()),
+        Claude::Plan(_) => Claude::Plan(Default::default()),
+        Claude::Task(_) => Claude::Task(Default::default()),
+        Claude::ModelSwitch(_) => Claude::ModelSwitch(Default::default()),
+    }
+}
+
+fn codex_structure(kind: wire::codex_item::Kind) -> wire::codex_item::Kind {
+    use wire::codex_item::Kind as Codex;
+    match kind {
+        Codex::Message(text) => Codex::Message(wire::Text {
+            complete: text.complete,
+        }),
+        Codex::WorkingNote(text) => Codex::WorkingNote(wire::Text {
+            complete: text.complete,
+        }),
+        Codex::Reasoning(reasoning) => Codex::Reasoning(wire::Reasoning {
+            complete: reasoning.complete,
+            summary: Vec::new(),
+        }),
+        Codex::Work(work) => Codex::Work(work_structure(work)),
+        Codex::Error(error) => Codex::Error(api_error_structure(error)),
+        Codex::SafetyCheck(check) => Codex::SafetyCheck(wire::SafetyCheck {
+            running: check.running,
+        }),
+        Codex::Prompt(_) => Codex::Prompt(Default::default()),
+        Codex::Turn(_) => Codex::Turn(Default::default()),
+        Codex::Steer(_) => Codex::Steer(Default::default()),
+        Codex::Boundary(_) => Codex::Boundary(Default::default()),
+        Codex::AgentMessage(_) => Codex::AgentMessage(Default::default()),
+        Codex::Unrecognized(_) => Codex::Unrecognized(Default::default()),
+        Codex::Verdict(_) => Codex::Verdict(Default::default()),
+        Codex::Ask(_) => Codex::Ask(Default::default()),
+        Codex::Plan(_) => Codex::Plan(Default::default()),
+        Codex::CommandOutput(_) => Codex::CommandOutput(Default::default()),
+    }
+}
+
+fn tool_structure(tool: wire::ToolCall) -> wire::ToolCall {
+    use wire::tool_input::Of;
+    let task_list = matches!(
+        tool.input.as_ref().and_then(|input| input.of.as_ref()),
+        Some(Of::TaskList(_))
+    );
+    wire::ToolCall {
+        state: tool.state,
+        parent_key: tool.parent_key,
+        subagent: tool.subagent.map(|progress| wire::SubagentProgress {
+            finished: progress.finished,
+            ..Default::default()
+        }),
+        input: task_list.then(|| wire::ToolInput {
+            of: Some(Of::TaskList(wire::Empty {})),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+fn work_structure(work: wire::Work) -> wire::Work {
+    use wire::work::Of;
+    wire::Work {
+        of: work.of.map(|of| match of {
+            Of::Command(_) => Of::Command(Default::default()),
+            Of::FileChange(_) => Of::FileChange(Default::default()),
+            Of::Mcp(_) => Of::Mcp(Default::default()),
+            Of::WebSearch(_) => Of::WebSearch(Default::default()),
+            Of::Image(_) => Of::Image(Default::default()),
+            Of::Collab(_) => Of::Collab(Default::default()),
+        }),
+        state: work.state,
+        ..Default::default()
+    }
+}
+
+fn api_error_structure(error: wire::ApiError) -> wire::ApiError {
+    wire::ApiError {
+        will_retry: error.will_retry,
+        attempt: error.attempt,
+        max_attempts: error.max_attempts,
+        retry_at_ms: error.retry_at_ms,
+        ..Default::default()
+    }
+}
+
 /// What the session model needs to know about an item, whatever its kind.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ItemClass {
@@ -376,6 +508,73 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
         Kind::Unspecified => {}
     }
     state
+}
+
+/// A snapshot body as a session's record carries it: of its fields only
+/// those the session model reads, an ask's key and the item it points at,
+/// terminal Claude's announced calls by id and time, headless Claude's
+/// tasks by id and state, and whether its view switched away. What a
+/// client draws from the rest (the model's name, the meters, the task
+/// list) is out of the record.
+pub fn snapshot_structure(kind: Kind, body: &[u8]) -> Vec<u8> {
+    match kind {
+        Kind::ClaudePty | Kind::ClaudeSdk => {
+            let Ok(snapshot) = ClaudeSnapshot::decode(body) else {
+                return Vec::new();
+            };
+            ClaudeSnapshot {
+                asks: snapshot
+                    .asks
+                    .into_iter()
+                    .map(|ask| Ask {
+                        key: ask.key,
+                        item_key: ask.item_key,
+                        ..Default::default()
+                    })
+                    .collect(),
+                running_calls: snapshot
+                    .running_calls
+                    .into_iter()
+                    .map(|call| wire::RunningCall {
+                        tool_use_id: call.tool_use_id,
+                        since_ms: call.since_ms,
+                        ..Default::default()
+                    })
+                    .collect(),
+                active_tasks: snapshot
+                    .active_tasks
+                    .into_iter()
+                    .map(|task| Task {
+                        task_id: task.task_id,
+                        state: task.state,
+                        ..Default::default()
+                    })
+                    .collect(),
+                switched_away: snapshot.switched_away,
+                ..Default::default()
+            }
+            .encode_to_vec()
+        }
+        Kind::Codex => {
+            let Ok(snapshot) = CodexSnapshot::decode(body) else {
+                return Vec::new();
+            };
+            CodexSnapshot {
+                asks: snapshot
+                    .asks
+                    .into_iter()
+                    .map(|ask| CodexAsk {
+                        key: ask.key,
+                        item_key: ask.item_key,
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            }
+            .encode_to_vec()
+        }
+        Kind::Unspecified => Vec::new(),
+    }
 }
 
 impl AgentState {

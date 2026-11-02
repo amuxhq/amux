@@ -19,6 +19,13 @@
 //!                            redacted as text
 //!   supervisor.log           the same of the supervisor's, when there is one
 //!   agents/<agent_id>/
+//!     record                 the agent's record: its facts ring run again
+//!                            through its interpreter when the dump was
+//!                            made, each event and what was concluded of it
+//!                            by kind, size and alias, without content (an
+//!                            agent's own check)
+//!     agent.log              the agent's own log for the minute before,
+//!                            beside the record (an agent's own check)
 //!     row.pb                 the inventory row, a wire.Agent
 //!     store.pb               the store slice: one wire.Step holding the
 //!                            snapshot and the newest rows, oldest first, with
@@ -30,7 +37,7 @@
 //!                            and a torn tail kept as its length alone
 //!                            (own agents)
 //!     part/...               the agent process's part, as it sent it:
-//!                            facts/<segment>, facts/<segment>.checkpoint,
+//!                            its record, facts/<segment>, facts/<segment>.checkpoint,
 //!                            spec.<n>, the minute of agent.log before it,
 //!                            and dump-errors when it had any. An
 //!                            agent with no process has only its specs here,
@@ -121,6 +128,8 @@ pub const DUMP_LOG_BYTES: u64 = 1 << 20;
 /// past it sends the check and its counts alone, which says to checkpoint
 /// more often for that failure rather than to send more.
 pub const CHECK_WINDOW_BYTES: usize = 64 << 10;
+/// Where an agent's record lives in its bundle directory and in its part.
+pub const AGENT_RECORD: &str = "record";
 /// How long an agent process has to send its part.
 const PART_PATIENCE: Duration = Duration::from_secs(10);
 
@@ -151,6 +160,12 @@ struct Gather {
     parts: bool,
     /// The daemon's and the supervisor's log tails.
     logs: bool,
+    /// Each covered agent's inventory row, which carries its name, folder
+    /// and what it works on.
+    rows: bool,
+    /// Each covered agent's record and its log tail, and nothing else of
+    /// it: what explains an agent's own check, without content.
+    records: bool,
 }
 
 /// Which of the client sessions a request hands in a bundle carries.
@@ -188,6 +203,8 @@ impl Gather {
                 journals: Journals::Tail,
                 parts: true,
                 logs: true,
+                rows: true,
+                records: false,
             },
             DumpScope::Core => Gather {
                 core: true,
@@ -198,16 +215,22 @@ impl Gather {
                 journals: Journals::FromCursor,
                 parts: false,
                 logs: true,
+                rows: true,
+                records: false,
             },
+            // An agent's own check: its record, which carries no content,
+            // and our log beside it.
             DumpScope::Agent => Gather {
                 core: false,
                 agents: true,
                 sessions: Sessions::None,
-                slices: true,
-                structured: true,
-                journals: Journals::Tail,
-                parts: true,
+                slices: false,
+                structured: false,
+                journals: Journals::None,
+                parts: false,
                 logs: false,
+                rows: false,
+                records: true,
             },
             DumpScope::Transcript => Gather {
                 core: false,
@@ -218,6 +241,8 @@ impl Gather {
                 journals: Journals::None,
                 parts: false,
                 logs: false,
+                rows: true,
+                records: false,
             },
             // A person's report carries our own logs and nothing of any
             // agent's: no store or journal, each of which holds
@@ -232,6 +257,8 @@ impl Gather {
                 journals: Journals::None,
                 parts: false,
                 logs: true,
+                rows: false,
+                records: false,
             },
         }
     }
@@ -271,8 +298,18 @@ impl ProfileRuntime {
     /// unredacted. An automatic one a check asked for is sent on when the
     /// installation sends automatic reports.
     pub async fn dump(self: &Arc<Self>, request: DumpRequest) -> Result<PathBuf, DumpError> {
+        self.dump_with(request, None).await
+    }
+
+    /// [`Self::dump`], with the record an agent's core sent when it asked,
+    /// which stands in for asking the agent for it.
+    async fn dump_with(
+        self: &Arc<Self>,
+        request: DumpRequest,
+        record: Option<Vec<u8>>,
+    ) -> Result<PathBuf, DumpError> {
         let rows = self.dump_rows(&request.agent_ids).await?;
-        let bundle = self.write_dump(&request, rows).await?;
+        let bundle = self.write_dump(&request, rows, record).await?;
         if request.automatic {
             if request.scope() == DumpScope::Transcript {
                 self.check_failed(crate::reports::Core::Transcript, &request.check, 0);
@@ -292,6 +329,19 @@ impl ProfileRuntime {
         reason: String,
         check: String,
         whose: &'static str,
+    ) {
+        self.dump_unasked_with(scope, agent_ids, reason, check, whose, None);
+    }
+
+    /// [`Self::dump_unasked`], with the record an asking agent sent.
+    fn dump_unasked_with(
+        self: &Arc<Self>,
+        scope: DumpScope,
+        agent_ids: Vec<Vec<u8>>,
+        reason: String,
+        check: String,
+        whose: &'static str,
+        record: Option<Vec<u8>>,
     ) {
         let mut dumps = self.core_dumps.lock().unwrap();
         // A profile shutting down has stopped waiting for dumps: one
@@ -313,7 +363,7 @@ impl ProfileRuntime {
                 scope: scope.into(),
                 check,
             };
-            match runtime.dump(request).await {
+            match runtime.dump_with(request, record).await {
                 Ok(bundle) => tracing::warn!(bundle = %bundle.display(), whose, "dumped"),
                 Err(error) => tracing::error!(%error, whose, "dumping failed"),
             }
@@ -323,10 +373,7 @@ impl ProfileRuntime {
     }
 
     /// An agent's core asked for a dump over its control connection: a
-    /// bundle of that agent, whose facts ring and checkpoints replay as the
-    /// interpreter stage and the daemon's parts as the core's, after this
-    /// host's own limit per kind. The agent's lifecycle state is not a
-    /// replay stage; the reason carries what its core said of it.
+    /// bundle of that agent's record, after this host's own limit per kind.
     pub(crate) fn agent_asked(self: &Arc<Self>, id: Uuid, asked: wire::DumpAsked) {
         // An agent from before checks had ids names its check by sentence.
         let check = if asked.invariant.is_empty() {
@@ -354,12 +401,13 @@ impl ProfileRuntime {
         self.check_failed(core, &check, held_back + u64::from(asked.held_back));
         let reason =
             core_ring::with_suppressed(format!("{prefix}{id}: {}", asked.reason), held_back);
-        self.dump_unasked(
+        self.dump_unasked_with(
             DumpScope::Agent,
             vec![id.as_bytes().to_vec()],
             reason,
             crate::reports::check_id(core, &check),
             "an agent's core",
+            (!asked.record.is_empty()).then_some(asked.record),
         );
     }
 
@@ -367,6 +415,7 @@ impl ProfileRuntime {
         &self,
         request: &DumpRequest,
         rows: Vec<AgentRow>,
+        record: Option<Vec<u8>>,
     ) -> Result<PathBuf, DumpError> {
         let gather = Gather::of(request.scope());
         let dump_id = Uuid::new_v4();
@@ -429,6 +478,7 @@ impl ProfileRuntime {
                     gather,
                     &structure,
                     cursor,
+                    record.as_deref(),
                 )
                 .await?;
             agents.push(entry);
@@ -551,8 +601,9 @@ impl ProfileRuntime {
     }
 
     /// One agent's directory in the bundle, its journal reaching back to
-    /// `cursor` when the core's part names one. Returns its manifest entry
-    /// and what could not be gathered.
+    /// `cursor` when the core's part names one, its record the one given
+    /// when its core sent one. Returns its manifest entry and what could not
+    /// be gathered.
     async fn dump_agent(
         &self,
         row: &AgentRow,
@@ -561,6 +612,7 @@ impl ProfileRuntime {
         gather: Gather,
         structure: &Structure,
         cursor: Option<u64>,
+        record: Option<&[u8]>,
     ) -> Result<(serde_json::Value, Vec<String>), DumpError> {
         let id = Uuid::from_slice(&row.agent.agent).unwrap_or_default();
         let kind = Kind::try_from(row.kind).unwrap_or(Kind::Unspecified);
@@ -572,15 +624,48 @@ impl ProfileRuntime {
             errors.push(format!("{id} {what}: {error}"));
         };
 
-        let row_bytes = to_wire(row).encode_to_vec();
-        std::fs::write(
-            out.join("row.pb"),
-            if gather.structured {
-                structure.message("amux.v1.Agent", &row_bytes)
-            } else {
-                redacted(kind, RedactTarget::Agent(row_bytes))
-            },
-        )?;
+        if gather.rows {
+            let row_bytes = to_wire(row).encode_to_vec();
+            std::fs::write(
+                out.join("row.pb"),
+                if gather.structured {
+                    structure.message("amux.v1.Agent", &row_bytes)
+                } else {
+                    redacted(kind, RedactTarget::Agent(row_bytes))
+                },
+            )?;
+        }
+        let dir = self.agent_dir(id);
+        let mut recorded = false;
+        if own && gather.records {
+            // The record the asking core sent, which outlives its process;
+            // else the record the process keeps now.
+            let record = match record {
+                Some(record) => Some(record.to_vec()),
+                None => self.agent_part(id, dump_id).await.and_then(|part| {
+                    part.files
+                        .into_iter()
+                        .find(|file| file.name == AGENT_RECORD)
+                        .map(|file| file.contents)
+                }),
+            };
+            match record {
+                Some(record) => {
+                    std::fs::write(out.join(AGENT_RECORD), record)?;
+                    recorded = true;
+                }
+                None => note("record", &"no process answered, and none was sent"),
+            }
+            let since = log_file::unix_ms_now() - log_file::DUMP_WINDOW_MS;
+            match log_file::window(&dir.join(agent_dir::AGENT_LOG), since, log_file::AGENT_CAP) {
+                Ok(Some(window)) => std::fs::write(
+                    out.join(agent_dir::AGENT_LOG),
+                    interpret::redact_text(&String::from_utf8_lossy(&window)),
+                )?,
+                Ok(None) => {}
+                Err(error) => note("agent.log", &error),
+            }
+        }
         let mut rows = None;
         if gather.slices {
             let key = row.agent.clone();
@@ -605,7 +690,6 @@ impl ProfileRuntime {
         }
 
         let mut part_files = Vec::new();
-        let dir = self.agent_dir(id);
         let at_least = match gather.journals {
             Journals::None => None,
             Journals::FromCursor => Some(0),
@@ -668,6 +752,7 @@ impl ProfileRuntime {
             "incarnation": row.incarnation,
             "rows": rows,
             "part": part_files,
+            "record": recorded,
         });
         Ok((entry, errors))
     }

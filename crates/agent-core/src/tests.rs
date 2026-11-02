@@ -372,3 +372,36 @@ fn an_exits_words_carry_no_terminal_codes() {
     let end = ExitCause::Unstarted("no \u{9b}31mclaude".into()).end();
     assert_eq!(end.detail.as_deref(), Some("the provider: no claude"));
 }
+
+/// A step that breaks one of the interpreter's checks asks for a dump as
+/// one that breaks the core's own does.
+#[test]
+fn a_step_that_breaks_an_interpreters_check_asks_for_a_dump() {
+    let spec = spec(false, None);
+    let mut run = Run::start(&spec);
+    run.on(Input::DaemonDials { connection: DAEMON });
+    run.fact(json!({"type": "ready"}));
+    run.fact(json!({"type": "text", "id": "m1", "delta": "half a"}));
+    let out = run.on(Input::ProviderExited { code: Some(1) });
+    assert!(
+        matches!(dumps(&out).as_slice(), [DumpReason::Violation(violation)]
+            if violation.invariant == interpret::checks::EXIT_LEFT_OPEN),
+        "{out:?}"
+    );
+}
+
+/// The lifecycle a dump carries names its states and counts its sets,
+/// and holds no id.
+#[test]
+fn the_lifecycles_summary_holds_states_and_counts() {
+    let spec = spec(false, None);
+    let mut run = Run::start(&spec);
+    run.on(Input::DaemonDials { connection: DAEMON });
+    run.fact(json!({"type": "ready"}));
+    run.prompt("p1", "hello");
+    let summary = run.agent.summary();
+    assert_eq!(summary["mode"], "running", "{summary}");
+    assert_eq!(summary["connected"], true, "{summary}");
+    let text = summary.to_string();
+    assert!(!text.contains("p1") && !text.contains("hello"), "{text}");
+}

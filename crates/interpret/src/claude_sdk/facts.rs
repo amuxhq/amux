@@ -997,6 +997,7 @@ impl State {
         let output = tool_result_text(content);
         let now = self.shared.now_ms();
         let Some(tool) = self.tools.get_mut(id) else {
+            self.shared.result_without_call("a user message");
             return;
         };
         let denied = tool

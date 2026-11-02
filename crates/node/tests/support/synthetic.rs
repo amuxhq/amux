@@ -25,6 +25,8 @@ use super::{Install, PATIENCE, until};
 /// What daemons in these tests start with: nothing is ever spawned.
 /// The one file a synthetic agent sends as its part of a dump.
 pub const SYNTHETIC_PART: &str = "synthetic";
+/// The record a synthetic agent's core sends when it asks for a dump.
+pub const SYNTHETIC_RECORD: &[u8] = b"a synthetic agent's record";
 
 pub fn quiet_launch() -> Launch {
     Launch {
@@ -357,8 +359,10 @@ impl SyntheticAgent {
     }
 
     /// Asks the daemon for a dump as an agent's core does: for a broken
-    /// invariant, or for a step over its budget when `invariant` is empty.
-    pub async fn ask_for_dump(&self, reason: &str, invariant: &str) {
+    /// invariant, or for a step over its budget when `invariant` is empty,
+    /// sending `record` with the ask; with none, the daemon asks the agent
+    /// for its part.
+    pub async fn ask_for_dump(&self, reason: &str, invariant: &str, record: &[u8]) {
         let check = if invariant.is_empty() {
             ""
         } else {
@@ -369,6 +373,7 @@ impl SyntheticAgent {
             invariant: invariant.to_owned(),
             check: check.to_owned(),
             held_back: 0,
+            record: record.to_vec(),
         }))
         .await;
     }

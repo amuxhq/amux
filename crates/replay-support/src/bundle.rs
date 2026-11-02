@@ -16,6 +16,8 @@
 //! `client/sessions/<id>/`: its `checkpoint` and the `events` since, which
 //! the manifest names. Which of these a bundle carries is its scope's, as
 //! its manifest says; a part it does not carry is absent from the replay.
+//! An agent's own check carries only `agents/<id>/record` and `agent.log`,
+//! which hold the interpreter's conclusions and replay nothing.
 //!
 //! A bundle opens from its directory, from a person's report holding it,
 //! or from the `dump.pb.zst` a report was uploaded with.
@@ -288,8 +290,14 @@ impl Bundle {
                 });
             }
             let store = at.join("store.pb");
+            let row = at.join("row.pb");
             agents.push(AgentDump {
-                row: decode(&at.join("row.pb"), "wire.Agent")?,
+                // An agent's own check carries its record and no row.
+                row: if row.is_file() {
+                    decode(&row, "wire.Agent")?
+                } else {
+                    Agent::default()
+                },
                 store: if store.is_file() {
                     Some(decode(&store, "wire.Step")?)
                 } else {

@@ -102,11 +102,13 @@ impl Asks {
     /// Asks the connected daemon for a dump once it has the Hello, or keeps
     /// the ask until it does.
     /// `check` is `None` for a step over its budget.
+    /// `record` is the agent's record through the step that asked.
     fn ask(
         &mut self,
         daemon: Option<&Daemon>,
         admitted: core_ring::Admitted,
         check: Option<agent_core::Check>,
+        record: Vec<u8>,
     ) {
         let frame = CtlFrame {
             of: Some(ctl_frame::Of::DumpAsked(wire::DumpAsked {
@@ -114,6 +116,7 @@ impl Asks {
                 invariant: check.map_or_else(String::new, |check| check.sentence.to_owned()),
                 check: check.map_or_else(String::new, |check| check.id.to_owned()),
                 held_back: u32::try_from(admitted.held_back).unwrap_or(u32::MAX),
+                record,
             })),
         };
         match daemon {
@@ -633,8 +636,9 @@ impl<I: Interpreter> Driver<I> {
                     let now = now_ms(self.clock.as_ref());
                     if let Some(admitted) = limited_dump_reason(&mut self.dumps, &reason, now) {
                         eprintln!("amux agent: {}", admitted.reason);
+                        let record = self.record().await;
                         self.asks
-                            .ask(self.daemon.as_ref(), admitted, reason.check());
+                            .ask(self.daemon.as_ref(), admitted, reason.check(), record);
                     }
                     Ok(())
                 }
@@ -647,6 +651,19 @@ impl<I: Interpreter> Driver<I> {
             }
         }
         Ok(())
+    }
+
+    /// The agent's record through the last step, built now from the facts
+    /// ring, which already holds that step's event. Sent with the ask, it
+    /// reaches the dump even when this process ends before the daemon
+    /// could ask it for its part, as it does on the provider's exit.
+    async fn record(&self) -> Vec<u8> {
+        let dir = self.dir.clone();
+        let spec = self.spec.clone();
+        let core = self.agent.summary();
+        tokio::task::spawn_blocking(move || crate::dump::record::<I>(&dir, &spec, core))
+            .await
+            .unwrap_or_default()
     }
 
     /// Runs a job off the step; its result comes back as an input.
@@ -663,8 +680,10 @@ impl<I: Interpreter> Driver<I> {
             }
             AgentJob::DumpPart { dump_id } => {
                 let dir = self.dir.clone();
+                let spec = self.spec.clone();
+                let core = self.agent.summary();
                 tokio::task::spawn_blocking(move || {
-                    let part = crate::dump::part::<I>(&dir, dump_id);
+                    let part = crate::dump::part::<I>(&dir, dump_id, &spec, core);
                     let _ = done.send((id, JobResult::DumpPart(part)));
                 });
             }
@@ -871,6 +890,7 @@ mod tests {
             Some(&connected),
             admitted("the agent core: one", 3),
             Some(ONE),
+            b"the record".to_vec(),
         );
         let first = asked(sent.try_recv().expect("asked at once"));
         assert_eq!(
@@ -878,13 +898,30 @@ mod tests {
                 first.reason.as_str(),
                 first.invariant.as_str(),
                 first.check.as_str(),
-                first.held_back
+                first.held_back,
+                first.record.as_slice(),
             ),
-            ("the agent core: one", ONE.sentence, ONE.id, 3)
+            (
+                "the agent core: one",
+                ONE.sentence,
+                ONE.id,
+                3,
+                b"the record".as_slice()
+            )
         );
 
-        asks.ask(None, admitted("the agent core: two, older", 0), Some(TWO));
-        asks.ask(None, admitted("the agent core: two", 0), Some(TWO));
+        asks.ask(
+            None,
+            admitted("the agent core: two, older", 0),
+            Some(TWO),
+            Vec::new(),
+        );
+        asks.ask(
+            None,
+            admitted("the agent core: two", 0),
+            Some(TWO),
+            Vec::new(),
+        );
         assert!(sent.try_recv().is_err(), "nothing goes with no daemon");
         // A daemon that has dialled in but not yet been sent the Hello
         // reads the Hello first.
@@ -894,6 +931,7 @@ mod tests {
             Some(&next),
             admitted("the agent core: a slow step", 0),
             None,
+            Vec::new(),
         );
         assert!(sent.try_recv().is_err(), "nothing goes before the Hello");
         next.greeted = true;

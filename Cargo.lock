@@ -1762,6 +1762,7 @@ dependencies = [
  "chrono",
  "claude-protocol",
  "codex-protocol",
+ "core-ring",
  "prost",
  "prost-types",
  "redaction",

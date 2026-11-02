@@ -585,6 +585,183 @@ async fn a_conversation_reaches_no_log_amux_writes() {
     }
 }
 
+/// Runs git in `cwd` with a fixed identity.
+fn git(cwd: &Path, args: &[&str]) {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.com")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.com")
+        .output()
+        .expect("git runs");
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// An agent's record keeps what its session did and none of what was said:
+/// a phrase in its prompts, a tool's input and output, a file's name and
+/// the branch it works on reaches no file of an agent's bundle, while the
+/// record, its facts run again through the interpreter when the dump was
+/// made, holds the session's shape and both turns' ends.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agents_record_carries_no_words_and_holds_what_its_interpreter_concluded() {
+    const MARKER: &str = "PLANTEDmarkerphrase0006";
+    let install = Install::new();
+    let repo = install.work.join(format!("{MARKER}-folder"));
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", &format!("{MARKER}-branch")]);
+    std::fs::write(repo.join("README"), "first\n").unwrap();
+    git(&repo, &["add", "README"]);
+    git(&repo, &["commit", "-q", "-m", MARKER]);
+    let file = repo.join(format!("{MARKER}.txt"));
+    std::fs::write(&file, format!("{MARKER}\n")).unwrap();
+    std::fs::write(repo.join("README"), format!("first\n{MARKER}\n")).unwrap();
+    let launch = install.launch(
+        "recorded",
+        vec![
+            text(&format!("reading {MARKER}")),
+            provider_fakes::script::Step::Tool(provider_fakes::script::Tool {
+                name: Some("Read".into()),
+                class: provider_fakes::script::ToolClass::Exploration,
+                input: Some(serde_json::json!({ "file_path": file })),
+                outcome: provider_fakes::script::Outcome {
+                    output: format!("the file says {MARKER}"),
+                    ..Default::default()
+                },
+                wait_for: None,
+            }),
+            text(&format!("it said {MARKER}")),
+            provider_fakes::script::Step::TurnEnd,
+        ],
+    );
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &install);
+    let agent = id_of(
+        &runtime
+            .spawn(
+                create(&repo, "reader", Some(&format!("read {MARKER}"))),
+                None,
+            )
+            .await
+            .unwrap(),
+    );
+    until("the first turn to end", || async {
+        let phase = runtime.agent(agent).await.unwrap().phase;
+        (phase == Phase::Idle as i32)
+            .then_some(())
+            .ok_or_else(|| format!("phase {phase}"))
+    })
+    .await
+    .unwrap();
+    runtime
+        .send_input(&wire::SendInputRequest {
+            agent_id: agent.as_bytes().to_vec(),
+            input: Some(sdk_prompt(b"later", &format!("and {MARKER} again"))),
+        })
+        .await
+        .unwrap();
+    let key = store::AgentKey::new(
+        runtime.host().as_bytes().to_vec(),
+        agent.as_bytes().to_vec(),
+    );
+    until("the later input's reflection", || async {
+        let key = key.clone();
+        runtime
+            .read_store(move |store| store.item_by_input(&key, b"later").unwrap())
+            .await
+            .unwrap()
+            .map(|_| ())
+            .ok_or("no row carries it")
+    })
+    .await
+    .unwrap();
+    until("the folder's git facts", || async {
+        let row = runtime.agent(agent).await.unwrap();
+        row.git
+            .as_ref()
+            .and_then(|git| git.uncommitted)
+            .map(|_| ())
+            .ok_or("no change totals on the row")
+    })
+    .await
+    .unwrap();
+
+    let bundle = runtime
+        .dump(DumpRequest {
+            agent_ids: vec![agent.as_bytes().to_vec()],
+            scope: wire::DumpScope::Agent.into(),
+            reason: "a check broke".into(),
+            ..DumpRequest::default()
+        })
+        .await
+        .unwrap();
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+
+    let files = tree(&bundle);
+    let dir = format!("agents/{agent}");
+    assert!(
+        files
+            .iter()
+            .any(|(name, _)| *name == format!("{dir}/record")),
+        "{files:?}"
+    );
+    for (name, _) in &files {
+        let bytes = std::fs::read(bundle.join(name)).unwrap();
+        for planted in [MARKER, &repo.to_string_lossy()] {
+            assert!(
+                !holds(&bytes, planted),
+                "{name} holds {planted}: {}",
+                String::from_utf8_lossy(&bytes)
+            );
+        }
+    }
+
+    let bytes = std::fs::read(bundle.join(&dir).join(node::AGENT_RECORD)).unwrap();
+    let record: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(record["settings"]["kind"], "KIND_CLAUDE_SDK");
+    assert_eq!(record["core"]["mode"], "running", "{}", record["core"]);
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    let events: Vec<&serde_json::Value> = record["segments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|segment| segment["events"].as_array().unwrap())
+        .collect();
+    // What the session did, by kind: the tool and its input's keys, both
+    // prompts, the replies.
+    let read = serde_json::json!({"name": "Read", "keys": ["file_path"]});
+    assert!(
+        events.iter().any(|fed| fed["event"]["tools"]
+            .as_array()
+            .is_some_and(|tools| tools.contains(&read))),
+        "{text}"
+    );
+    for shape in [r#""arm":"prompt""#, r#""variant":"assistant""#] {
+        assert!(text.contains(shape), "no {shape} in {text}");
+    }
+    // The folder's changes as counts, the branch only as being there.
+    assert!(
+        events.iter().any(|fed| fed["event"]["event"] == "git"
+            && fed["event"]["git"]["branch"] == true
+            && fed["event"]["git"]["uncommitted"][0].as_u64() >= Some(2)),
+        "{text}"
+    );
+    // Both turns ended in the replay as they did live, and no check broke.
+    let turn_ends = events
+        .iter()
+        .filter(|fed| !fed["step"]["turn_end"].is_null())
+        .count();
+    assert_eq!(turn_ends, 2, "{text}");
+    assert!(events.iter().all(|fed| fed["broken"].is_null()), "{text}");
+}
+
 /// Each scope carries what replays the stage its trigger concerns: the
 /// core's part and the journals it reads for the core, one chat's rows for
 /// a transcript, and for a person's report none of any agent's.
@@ -850,7 +1027,8 @@ async fn a_clean_shutdown_ends_a_dump_still_waiting_for_an_agents_part() {
     // The agent asks once it is connected, so the dump asks it for its part:
     // one started before the connection would skip the part and finish at
     // once.
-    silent.ask_for_dump("a step ran long", "").await;
+    // Without a record, as from an agent whose record could not be built.
+    silent.ask_for_dump("a step ran long", "", &[]).await;
     let reports = install.data_dir.join(node::REPORTS);
     until("a dump under way", || {
         let partial = std::fs::read_dir(&reports)
@@ -1015,12 +1193,17 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
 
     let violation = format!("the agent core: {INVARIANT}: two asks open");
-    asking.ask_for_dump(&violation, INVARIANT).await;
-    asking.ask_for_dump(&violation, INVARIANT).await;
+    asking
+        .ask_for_dump(&violation, INVARIANT, support::synthetic::SYNTHETIC_RECORD)
+        .await;
+    asking
+        .ask_for_dump(&violation, INVARIANT, support::synthetic::SYNTHETIC_RECORD)
+        .await;
     asking
         .ask_for_dump(
             "the agent core: a step took 12 µs, over its budget of 0 µs",
             "",
+            support::synthetic::SYNTHETIC_RECORD,
         )
         .await;
     let reasons = until("both kinds' bundles", || async {
@@ -1062,12 +1245,20 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(agents, vec![id.clone()], "only the agent that asked");
-        let part = bundle
-            .join("agents")
-            .join(&id)
-            .join("part")
-            .join(support::synthetic::SYNTHETIC_PART);
-        assert!(part.is_file(), "the agent's own part: {}", part.display());
+        // The record the agent's core sent, and nothing that holds text:
+        // no row, slice, journal or facts.
+        let agent = bundle.join("agents").join(&id);
+        assert_eq!(
+            std::fs::read(agent.join(node::AGENT_RECORD)).unwrap(),
+            support::synthetic::SYNTHETIC_RECORD
+        );
+        let files: Vec<String> = tree(&agent).into_iter().map(|(name, _)| name).collect();
+        assert!(
+            files
+                .iter()
+                .all(|file| [node::AGENT_RECORD, node::AGENT_LOG].contains(&file.as_str())),
+            "{files:?}"
+        );
         assert!(
             !bundle.join("core").exists(),
             "the daemon core's part replays nothing an agent's core broke"
@@ -1142,7 +1333,21 @@ async fn an_agents_step_over_its_budget_leaves_a_bundle_of_that_agent() {
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(agents, vec![id_text], "the agent that asked");
+    assert_eq!(agents, vec![id_text.clone()], "the agent that asked");
+    // The record the agent sent with its ask, built from its facts ring
+    // when it asked.
+    let record = std::fs::read(
+        bundles[0]
+            .join("agents")
+            .join(&id_text)
+            .join(node::AGENT_RECORD),
+    )
+    .unwrap();
+    let record: serde_json::Value = serde_json::from_slice(&record).unwrap();
+    assert!(
+        !record["segments"].as_array().unwrap().is_empty(),
+        "{record}"
+    );
     println!(
         "{}: {}",
         bundles[0].file_name().unwrap().to_string_lossy(),

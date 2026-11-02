@@ -103,7 +103,7 @@ Each dump carries what its trigger replays, and its manifest names that scope:
 | --- | --- | --- |
 | `host` | `amux dump`, Export Diagnostics on the phone | everything this host holds for the named agents, all of them when none are named |
 | `core` | a daemon core check that broke, or a step over budget | `core/`, own agents' rows and journals from the checkpoint's cursor, all as their structure alone, and the daemon log |
-| `agent` | an agent core check that broke, or a step over budget | that agent's process part, its journal (at least two segments), and its row and slice as their structure alone |
+| `agent` | an agent core check that broke, or a step over budget | that agent's record and its own log's last minute: no row, slice, journal or facts, so no conversation text |
 | `transcript` | a chat whose transcript failed its check | that chat's session record, and its agent's row and slice |
 | `report` | a person's report, from the terminal or the phone | the daemon and supervisor logs, the record of each chat the client hands in, and no agent's row, slice, journal or whole session: those hold conversation text |
 
@@ -111,9 +111,15 @@ Some dumps nobody asks for. When the daemon's core breaks one of its cheap invar
 budget, the daemon writes a bundle whose `reason` starts `the daemon core: ` and whose manifest says `automatic`.
 A chat whose transcript fails its own check when the stream catches up or resets asks for one too, with the
 reason starting `the client's transcript: ` and that chat's session record inside, its trace cut at the message the
-check failed at. An agent process whose core breaks one of its invariants, or takes a step over its budget, says so on its
-stderr (`the agent core: `) and asks its daemon for a dump of it over the control connection; the daemon writes the bundle, reason starting
-`an agent's core: ` and naming the agent, with the agent's facts ring and checkpoints for the interpreter stage.
+check failed at. An agent process whose core breaks one of its invariants, or whose interpreter breaks one of its own
+checks, or that takes a step over its budget, says so on its stderr (`the agent core: `) and asks its daemon for a
+dump of it over the control connection, sending its [record](#the-agents-record), built then, with the ask; the
+daemon writes the bundle, reason starting `an agent's core: ` and naming the agent, with that record, which it writes
+even when the agent has exited since. Every interpreter is judged by the same checks after every step, whatever its kind: every
+tool result answers a call the interpreter saw (`agent.tool_result_without_call`), the provider's exit leaves no turn
+open and no item streaming (`agent.exit_left_open`), an ask that closed is never answered later
+(`agent.closed_ask_answered`), and every item key is opened before it is updated or closed, and never reopened
+(`agent.item_before_open`).
 Every check has a stable id, its core's name and its own (`daemon.generation_fell`, `agent.taken_still_pending`,
 `transcript.window`; a step over budget is `<core>.over_budget`), which the manifest's `check` names beside the
 sentence in `reason`. The relay, the path machine and the supervisor log the same kind of reason (`the relay core: `,
@@ -162,7 +168,11 @@ reports/dump-<unix ms>-<id>/
     part/spec.<n>               the spec of each incarnation
     part/agent.log              the agent's own log across its .1 for the minute before, at INFO and
                                 above, redacted; the provider's log never goes
+    part/record                 the agent's record (see below)
     part/dump-errors            anything the agent process could not read
+    record                      an agent's own check: the record the agent sent, in place of all of
+    agent.log                   the above but its log's last minute (the row.pb, store.pb and
+                                journal are not written)
   core/checkpoint               the daemon core's newest checkpoint
   core/inputs                   every input the core stepped since, and how far each ingest read
                                 an agent's journal, one JSON line each
@@ -221,6 +231,29 @@ interpreter fixture's session to that, healthy and with a row skipped, and a rea
 suite too. What a record cannot show is how the rows were drawn: wrapping, glyph widths and markdown depend on the
 text, and a person's screenshot shows them.
 
+### The agent's record
+
+An agent's record is built only when a dump is made, from the facts ring the agent already keeps: the agent process
+runs the ring's events through its own interpreter again, from each segment's checkpoint, on the machine that wrote
+them, and keeps what the interpreter concluded, never what was said: no string or JSON value, nothing anyone said or
+any tool read or wrote. For each event it keeps its kind (a provider fact by the kind its protocol tags it as, with
+each tool call's or result's tool name and the keys of its input or result; a person's input by its arm; an agent
+message by its ids; a tick by its time) and size, and what the interpreter concluded: each item opened, updated or
+closed by key and arm, appends by key and size, the snapshot's phase and queue, turn ends, its effects by kind with
+their sizes and the ids they answer, what its two queries (messages pending, typed input unrecorded) answered after
+the step, and the check the step broke. Each segment starts from the interpreter's open items, queue, asks and
+pending inputs by key. Git facts are counts: files and lines changed, and whether there is a branch, never its name.
+The record names the spec's kind, provider, model, permission, mode, effort and launch flags without their values,
+and the provider's version once it reports one, and carries the agent core's lifecycle as the dump found it, its
+states by name and its sets by size. Ids, item keys and a tool server's own tool names and keys are aliases, hashed
+with a salt that never leaves the process, so equal values stay equal within one record and none can be looked up.
+
+The interpreter's checks come out in the record as they did live, since they judge the same steps. The agent core's
+own checks and a step over budget are named by the dump's reason and check; the core's inputs are not kept, so they
+are not replayed, and the lifecycle beside the record is where to look. An interpreter's mistake is read from the
+order of event kinds beside what the interpreter concluded, and a reproduction is a fixture written by hand with the
+same kinds in the same order.
+
 ## Redaction
 
 Everything in a dump is redacted before it is written, and before it leaves the process that produced it. Only an
@@ -232,7 +265,7 @@ such as the daemon's log goes through the shared rules in `crates/redaction`.
 
 The daemon core reads no content: it acts on ids, kinds, order, sizes and time. So its part carries no content
 at all, only the record's structure, and still restores and replays as the original does. The same goes for what a
-`core` dump carries of each agent (its row and the journal the core reads) and for an `agent` dump's row and slice.
+`core` dump carries of each agent (its row and the journal the core reads).
 Every value in them, each protocol message walked by its descriptor and each of the core's own values by its type,
 is treated by the name of the field that holds it, from one table in `crates/redaction/src/structure.rs`:
 
@@ -397,7 +430,8 @@ Three things send:
 - **`amux dump --send`**, a `host` dump sent with a header of its own.
 - **A check's dump**, sent right after it is written when the installation's `auto_reports` setting is on
   (`amux config set auto_reports true`, read at each dump; on the phone, **Send Automatic Reports**). It is off by
-  default because a dump keeps conversation text. Its `report.json` says `kind: automatic`, names the core and
+  default because a dump keeps conversation text; an agent's own check's carries only its record. Its
+  `report.json` says `kind: automatic`, names the core and
   the check's id, and carries the redacted reason and no frame.
 
 What the account service does with reports is on [Cloud](CLOUD.md); the report screen itself is on [the iPhone

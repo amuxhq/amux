@@ -18,6 +18,7 @@ use wire::{
     envelope, sender,
 };
 
+use crate::checks::{self, Watch};
 use crate::{Effect, Stepped, reply, serde_pb};
 
 /// An open ask as the shared list needs to see it. Implemented by the
@@ -393,6 +394,9 @@ pub struct Shared<A: OpenAsk> {
     /// there stays for the next incarnation rather than going to a
     /// provider about to be closed.
     leaving: bool,
+    /// What the checks after every step watch.
+    #[serde(skip)]
+    watch: Watch,
 }
 
 impl<A: OpenAsk> Shared<A> {
@@ -422,6 +426,7 @@ impl<A: OpenAsk> Shared<A> {
             turn_on_reflection: false,
             stopping: false,
             leaving: false,
+            watch: Watch::default(),
         };
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
             shared.prompted(&entry.text);
@@ -456,13 +461,94 @@ impl<A: OpenAsk> Shared<A> {
     }
 
     /// Finishes a step: appends a Snapshot if anything a client draws from
-    /// it changed.
+    /// it changed, and judges the step by every interpreter's checks.
     pub fn finish(&mut self, mut emit: Emit, body: Vec<u8>) -> Stepped {
         self.snapshot_into(&mut emit, body, false);
+        self.judge(&emit);
         Stepped {
             step: emit.step,
             effects: emit.effects,
+            broken: self.watch.finish(),
         }
+    }
+
+    /// The checks that read the whole step; the others are judged where
+    /// the step does what they watch.
+    fn judge(&mut self, emit: &Emit) {
+        if self.watch.exited {
+            if self.turn.current().is_some() {
+                self.watch
+                    .broke(checks::EXIT_LEFT_OPEN, "a turn is still running");
+            }
+            if !self.open_items.is_empty() {
+                let detail = format!("{} items are still streaming", self.open_items.len());
+                self.watch.broke(checks::EXIT_LEFT_OPEN, detail);
+            }
+        }
+        for effect in &emit.effects {
+            if let Effect::Reply { input_id, verdict } = effect
+                && matches!(verdict.of, Some(wire::send_input_response::Of::Accepted(_)))
+                && self
+                    .watch
+                    .answers
+                    .iter()
+                    .any(|(answer, open)| answer == input_id && !open)
+            {
+                self.watch.broke(
+                    checks::CLOSED_ASK_ANSWERED,
+                    "an answer to an ask that was not open was accepted",
+                );
+            }
+        }
+        if emit
+            .step
+            .appends
+            .iter()
+            .any(|append| !self.open_items.contains_key(&append.key))
+        {
+            self.watch.broke(
+                checks::ITEM_BEFORE_OPEN,
+                "an append names an item that is not open",
+            );
+        }
+    }
+
+    /// What is open and pending, by key, for the agent's record; `arm`
+    /// reads an item body's arm.
+    pub fn structure(&self, arm: impl Fn(&[u8]) -> String) -> crate::shape::Structure {
+        crate::shape::Structure {
+            open_items: self
+                .open_items
+                .iter()
+                .map(|(key, item)| (key.clone(), arm(&item.body)))
+                .collect(),
+            queue: self
+                .queue
+                .entries()
+                .iter()
+                .map(|entry| entry.input_id.clone())
+                .collect(),
+            asks: self
+                .asks
+                .open_asks()
+                .iter()
+                .map(|ask| (ask.key().to_owned(), ask.item_key().to_owned()))
+                .collect(),
+            submitted: self.submitted.clone(),
+            pending_messages: self.pending_messages.iter().cloned().collect(),
+            turn: self.turn.current().map(|turn| turn.id),
+            phase: self.phase() as i32,
+        }
+    }
+
+    /// A tool's result arrived for a call this interpreter never saw, so it
+    /// has nowhere to go: the call's fact was missed or misread. `fact`
+    /// names the kind of fact the result came in.
+    pub fn result_without_call(&mut self, fact: &str) {
+        self.watch.broke(
+            checks::TOOL_RESULT_WITHOUT_CALL,
+            format!("a result in {fact} for a call it never saw"),
+        );
     }
 
     /// The step a resume starts with: every open item in full on its known
@@ -593,7 +679,14 @@ impl<A: OpenAsk> Shared<A> {
         };
         if draft.complete {
             self.open_items.remove(&item.key);
+            self.watch.closed(&item.key);
         } else {
+            if !self.open_items.contains_key(&item.key) && self.watch.was_closed(&item.key) {
+                self.watch.broke(
+                    checks::ITEM_BEFORE_OPEN,
+                    "an item was opened again after its final state",
+                );
+            }
             self.open_items.insert(item.key.clone(), item.clone());
         }
         // A step's items commit before its appends, and a key appears once
@@ -870,6 +963,7 @@ impl<A: OpenAsk> Shared<A> {
     /// ask that is not open is refused as `REFUSAL_CLOSED_ASK` and writes nothing.
     pub fn answer(&mut self, emit: &mut Emit, input_id: &[u8], ask_key: &str) -> Option<A> {
         let ask = self.asks.close(ask_key);
+        self.watch.answers.push((input_id.to_vec(), ask.is_some()));
         if ask.is_none() {
             self.reject(emit, input_id, Refusal::ClosedAsk);
         }
@@ -1007,6 +1101,7 @@ impl<A: OpenAsk> Shared<A> {
     /// The provider is gone: no turn runs and nothing is submitted. A turn
     /// cut short has no TurnEnd; the daemon reports the incarnation failed.
     pub fn provider_exited(&mut self) -> Option<OpenTurn> {
+        self.watch.exited = true;
         self.started = false;
         // A clean exit stops its jobs; a provider killed alone may orphan
         // them, but nothing reports on them any more either way.

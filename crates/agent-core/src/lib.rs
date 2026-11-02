@@ -395,6 +395,8 @@ struct Touched {
     taken: Vec<Vec<u8>>,
     /// The lifecycle's decision to end the incarnation, made in this step.
     decided: Option<Decided>,
+    /// The first of the interpreter's checks a step it took broke.
+    broken: Option<Violation>,
 }
 
 /// What the lifecycle saw when it decided to end the incarnation.
@@ -480,7 +482,7 @@ impl<I: Interpreter> Agent<I> {
             agent.apply(
                 Stepped {
                     step,
-                    effects: Vec::new(),
+                    ..Stepped::default()
                 },
                 out,
             );
@@ -513,6 +515,34 @@ impl<I: Interpreter> Agent<I> {
             core_ring::finish_step(started, self.life.params.budget, 0, checked)
                 .map(|reason| Output::Dump { reason }),
         );
+    }
+
+    /// The lifecycle as it stands, as a dump of the agent carries it: each
+    /// state by name and each set by its size, with no id and no cause's
+    /// words.
+    pub fn summary(&self) -> serde_json::Value {
+        let life = &self.life;
+        let cause = |cause: &ExitCause| cause.end().cause;
+        let mode = match &life.mode {
+            Mode::Running => "running".to_owned(),
+            Mode::Draining(Drain::DaemonLost) => "draining/daemon_lost".to_owned(),
+            Mode::Draining(Drain::Stop) => "draining/stop".to_owned(),
+            Mode::Exiting { cause: exiting, .. } => format!("exiting/{}", cause(exiting)),
+        };
+        serde_json::json!({
+            "incarnation": life.incarnation,
+            "one_shot": life.params.one_shot,
+            "connected": life.connection.is_some(),
+            "grace_armed": life.grace.is_some(),
+            "mode": mode,
+            "pending": life.pending.queued.len(),
+            "drain_deadline": life.ask.is_some(),
+            "phase": life.turn.phase as i32,
+            "children_owe_reports": !life.awaited.none(),
+            "asked_to_exit": life.asked_to_exit.as_ref().map(cause),
+            "reading_git": life.git.reading.is_some(),
+            "exited": life.exited.as_ref().map(cause),
+        })
     }
 
     /// The incarnation this core runs.
@@ -562,7 +592,9 @@ impl<I: Interpreter> Agent<I> {
     ///   running, or at a drain deadline;
     /// - the pending set never holds an input the journal recorded as taken;
     /// - the drain timer waits on one open ask at most, and only while the
-    ///   agent drains for a lost daemon with an ask open.
+    ///   agent drains for a lost daemon with an ask open;
+    ///
+    /// and then whichever of the interpreter's own checks its steps broke.
     pub fn check_step_invariants(&self) -> Result<(), Violation> {
         if let Some(decided) = &self.touched.decided
             && decided.cause.decided_by_the_lifecycle()
@@ -602,7 +634,10 @@ impl<I: Interpreter> Agent<I> {
                 });
             }
         }
-        Ok(())
+        match &self.touched.broken {
+            Some(broken) => Err(broken.clone()),
+            None => Ok(()),
+        }
     }
 
     /// The core as of this step, serialized: the interpreter's state, which
@@ -974,6 +1009,9 @@ impl<I: Interpreter> Agent<I> {
     fn feed_one(&mut self, event: Event, out: &mut Vec<Output>) {
         out.push(Output::Record(Entry::of(&event)));
         let stepped = I::step(&mut self.interpreter, event);
+        if self.touched.broken.is_none() {
+            self.touched.broken.clone_from(&stepped.broken);
+        }
         self.apply(stepped, out);
     }
 
@@ -981,7 +1019,9 @@ impl<I: Interpreter> Agent<I> {
     /// a provider written to only once the step that explains it is on
     /// disk, and a step never names bytes that are not.
     fn apply(&mut self, stepped: Stepped, out: &mut Vec<Output>) {
-        let Stepped { mut step, effects } = stepped;
+        let Stepped {
+            mut step, effects, ..
+        } = stepped;
         // Marked here, not by the interpreter: only the process knows its
         // children and whether it is leaving.
         if step.turn_end.is_some() {

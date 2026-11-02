@@ -707,7 +707,7 @@ The allowed sets encode the layering above:
 | `wire`, `settings`, `redaction`, `log-file`, `release`, `analytics`, `git-facts`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code |
 | `journal`, `store`, `agent-dir`, `attachments` | `wire` | |
 | `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
-| `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `redaction`, `wire` | the pure step and its body redactor |
+| `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `redaction`, `wire` | the pure step, its body redactor, the checks every kind's steps meet, and the agent's record built from its facts ring |
 | `daemon-core` | at most `core-ring`, `journal`, `store`, `wire` | holds the store, reads journals, records its inputs |
 | `relay-core` | at most `daemon-core` | built from the daemon core's link and routing state |
 | `path-core` | at most `daemon-core` | names links and reports dumps as the daemon core does |

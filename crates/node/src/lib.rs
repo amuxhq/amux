@@ -65,8 +65,8 @@ pub use driver::{
     Subscription,
 };
 pub use dump::{
-    CLIENT_CHECKPOINT, CLIENT_EVENTS, CLIENT_SESSIONS, DAEMON_LOG, DumpError, MANIFEST,
-    SUPERVISOR_LOG, pack,
+    AGENT_RECORD, CLIENT_CHECKPOINT, CLIENT_EVENTS, CLIENT_SESSIONS, DAEMON_LOG, DumpError,
+    MANIFEST, SUPERVISOR_LOG, pack,
 };
 #[cfg(not(target_os = "ios"))]
 pub use edge::mdns_discovery;

@@ -14,7 +14,8 @@ enum DumpScope {
   // The daemon core's checkpoint, inputs and store copy, with the own
   // agents' journals from its cursor on.
   DUMP_SCOPE_CORE = 1;
-  // One agent: its process's part, journal, row and slice.
+  // One agent's own check: its record and its log's last minute, which
+  // carry no conversation.
   DUMP_SCOPE_AGENT = 2;
   // One chat: the client's session and its agent's row and slice.
   DUMP_SCOPE_TRANSCRIPT = 3;

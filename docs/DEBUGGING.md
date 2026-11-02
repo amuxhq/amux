@@ -14,8 +14,8 @@ and how to narrow a problem to one stage.
    directory. The bounded records it is built from roll over as the agents keep working.
 2. **Read the bundle's `manifest.json`.** Its `errors` list says what could not be gathered (an agent process that
    did not answer, a record past the size limit), so a missing file is never a mystery.
-3. **Replay it.** `dump-replay` steps the daemon core and each chat on screen through their records and names the
-   step that broke ([replaying a report](#replaying-a-report)).
+3. **Replay it.** `just repro <the report's folder>` steps each agent's record, the daemon core and each chat on
+   screen through their stages and names the step that broke ([reproducing a report](#reproducing-a-report)).
 4. **Read the logs** for the moment it happened: the report carries the daemon's, the supervisor's and each agent's
    last minute; on the machine itself there is also the provider's `private/provider.log`, which no report carries.
 5. **Turn it into a test** at the boundary you found, before fixing it (see [Testing](TESTING.md)).
@@ -171,12 +171,11 @@ key is opened before it is updated or closed, and never reopened (`agent.item_be
 Every check has a stable id, its core's name and its own (`daemon.generation_fell`, `agent.taken_still_pending`,
 `transcript.window`; a step over budget is `<core>.over_budget`), which is the manifest's `trigger`. The relay, the
 path machine and the supervisor log the same kind of reason (`the relay core: `, `the supervisor core: `), and the
-relay and the supervisor write a text file beside it: the reason, the core's state when the driver's window began,
+relay and the supervisor write a JSON file beside it: the reason, the core's state when the driver's window began,
 every input stepped since (at least the last 256) and the state now. The supervisor writes
-`<data_dir>/reports/supervisor-<unix ms>-<id>.txt`; a relay writes `relay-<unix ms>-<id>.txt` into `reports/` under its
+`<data_dir>/reports/supervisor-<unix ms>-<id>.json`; a relay writes `relay-<unix ms>-<id>.json` into `reports/` under its
 `state_dir` (see [running the relay](CLOUD.md#running-the-relay)), and a daemon's own relay core into the
-installation's `reports/`. Neither core is a replay stage and nothing replays these files: they are what a person
-turns into a step test of that core by hand. Each process reports one per kind of reason (one per broken invariant,
+installation's `reports/`. `just repro` replays either ([reproducing a report](#reproducing-a-report)). Each process reports one per kind of reason (one per broken invariant,
 one for steps over budget) every ten minutes, and the daemon writes one agent-asked report per kind in the same
 interval, however many agents ask; the next one of that kind says how many were held back since. Every core times its
 steps against a budget of its own: the daemon's 100 ms, the relay's 1 ms, and the agent's and the supervisor's 10 ms.
@@ -259,68 +258,72 @@ equal values stay equal within one record and none can be looked up.
 The interpreter's checks come out in the record as they did live, since they judge the same steps. Because every
 event keeps its skeleton, a record can be turned back into a provider stream: made-up values of the recorded sizes
 where the aliases stood, the same value for the same alias, run through the real interpreter. That stream reproduces
-the check its original broke, at the same step (`replay_support::synthetic`, which only tests and tools use). The agent core's
+the check its original broke, at the same step (`replay_support::synthetic`; see [replaying a
+report](#replaying-a-report)). The agent core's
 own checks and a step over budget are named by the report's reason and trigger; the core's inputs are not kept, so
 they are not replayed, and the lifecycle beside the record is where to look.
 
 ## Replaying a report
 
-A report runs. `dump-replay` replays a bundle's records through their stages, in the order a row passes through
-them, with the protocol's properties (the sentences the models in `crates/models` check) judged at every step, and
-prints one line per stage:
+A report runs. `just repro` replays a bundle's records through their stages, in the order a row passes through
+them, with the protocol's properties (the sentences the models in `crates/models` check) and the interpreters' checks
+judged at every step, and prints one line per stage:
 
 ```sh
-cargo build -p replay-support --bins
-target/debug/dump-replay reports/dump-<unix ms>-<id>
+just repro reports/dump-<unix ms>-<id>
 ```
 
 ```text
+== dump-<unix ms>-<id> ==
+agent        holds   1 agent record as made-up streams, 38 events, each step judged
 daemon core  holds   38 inputs from the checkpoint, each step judged
 session      holds   1 client session from its checkpoint, 7 messages, each judged
+kept target/repro/dump-<unix ms>-<id>
+to make it a test: …
 ```
 
 | Stage | Replays | Judged |
 | --- | --- | --- |
+| agent | each agent's record turned into a provider stream: every event made from its skeleton in order, a made-up value of the recorded size wherever an alias stood, the same value for the same alias, and the ids the interpreter chose learned from it as the stream is made; then that stream through the interpreter of the record's kind | after each event: the interpreter's checks (`agent.tool_result_without_call` and the rest), and whether the record says the live step broke the same check at the same event |
 | daemon core | the core restored from `core/checkpoint` over a copy of `core/store.sqlite`, fed every input in `core/inputs` with each journal it reads cut to where the live step found it, and a commit the live step had refused refused again | after each input: the core asks for no dump, its store keeps every invariant it checks, every row it answers is committed, and every journal read finds what the live one found (a checkpoint plus the inputs since reproduces the state) |
 | session | each chat's record restored from its `checkpoint` and fed every message in its `events` | at the checkpoint and after each message: the window is one block |
 
-A stage that fails prints `FAILS`, the step (the input counted from one, for the core; the message counted from one
-after the checkpoint, for a client session, with its place in the trace), the property's sentence and what broke it,
-and the command exits non-zero. A client session the manifest names whose files are missing or do not read fails
-the session stage as `unreadable`, never holds. The first stage that fails is the culprit. A stage the bundle carries
-nothing for prints `absent` and why: a report from the command line shows no chat. When every stage holds, the fault
-is in a driver, an interpreter or presentation: the agents' records and our logs are where to look.
+A stage that fails prints `FAILS`, the step (the event counted from one, for an agent; the input counted from one,
+for the core; the message counted from one after the checkpoint, for a client session, with its place in the trace),
+the property's sentence and what broke it, and the command exits non-zero. A client session the manifest names whose
+files are missing or do not read fails the session stage as `unreadable`, never holds. The first stage that fails is
+the culprit. A stage the bundle carries nothing for prints `absent` and why: a report from the command line shows no
+chat. When every stage holds, the fault is in a driver or presentation: our logs are where to look.
 
 A report the core asked for because one of its invariants broke replays to the step that broke it, naming the
-invariant. A report a chat asked for because its transcript failed its check replays that chat from its checkpoint to
+invariant. A report an agent asked for because its interpreter broke a check replays its record to the event that
+broke it. A report a chat asked for because its transcript failed its check replays that chat from its checkpoint to
 the first message that left the window broken, which can come before the CaughtUp the client checked it at. Replay it
 with the build that wrote it: a build with the bug fixed steps the same inputs through the fix and holds, unless the
-state the checkpoint carries was already broken, in which case it fails at the same step.
+state the checkpoint carries was already broken, in which case it fails at the same step. An agent's record replayed
+by a build whose interpreter no longer breaks the check holds, and says that the live steps broke it.
 
-An agent's record is not replayed yet: it is read beside the stages, in `dump-show`. Its events by kind, in order,
-beside what the interpreter concluded of each, show an interpreter's mistake, and a reproduction is a fixture with
-the same kinds in the same order.
-
-Both tools open a report's bundle directory, a report directory (its bundle is under `dump/`), or a report's
-`dump.pb.zst` as downloaded from the account service, which they unpack into a temporary directory first.
 `dump-show` prints everything in a bundle as text: the manifest, each agent's record, each chat's record, the core's
-record with its store's rows and journals, and every other file.
+record with its store's rows and journals, and every other file. Both tools open a report's bundle directory, a
+report directory (its bundle is under `dump/`), or a report's `dump.pb.zst` as downloaded from the account service,
+which they unpack first.
 
-The same is a library, `replay-support` (`crates/replay-support/src/bundle.rs` and `replay.rs`):
+The same is a library, `replay-support` (`crates/replay-support/src/bundle.rs`, `replay.rs` and `synthetic.rs`):
 
 ```rust
 let bundle = Bundle::open(path)?;
-let verdicts = bundle.replay_all()?;            // one StageVerdict per stage, as dump-replay prints them
+let verdicts = bundle.replay_all()?;            // one StageVerdict per stage, as repro prints them
 let failing = bundle.replay_core()?;            // the core's first failing step and its property, or None
 for agent in &bundle.agents {
-    let record = &agent.record;                 // the agent's record, as its process built it
+    let reproduction = synthetic::reproduce(&agent.record)?;   // the made-up stream, its steps and checks broken
 }
 ```
 
 The simplest way to work on a bundle is a scratch test beside `crates/replay-support/tests/core_replay.rs`, which
 replays bundles the same way: a real daemon's `amux dump` on a testnet net, written at test time by the build under
 test, and that bundle with a broken core checkpoint or a chat's record missing a row planted in it
-(`crates/replay-support/tests/support.rs`).
+(`crates/replay-support/tests/support.rs`); `crates/replay-support/tests/synthetic.rs` does the same for an agent's
+record, from a committed one.
 
 ### Narrowing a problem to one stage
 
@@ -328,14 +331,80 @@ Find the item that looks wrong by its key, then compare layer by layer:
 
 | Compare | If they differ | The bug is in |
 | --- | --- | --- |
-| The agent's record: each event's kind and what the interpreter concluded of it | The interpreter decided wrong for that order of events | the interpreter: write a fixture with the same kinds in the same order in `crates/interpret/fixtures` |
+| The agent's record replayed as a made-up stream (`just repro`), each event's skeleton beside what the interpreter concluded of it | The interpreter decided wrong for that order of events | the interpreter: write a fixture with the same events in the same order in `crates/interpret/fixtures` |
 | The core's replay against its record | The core stepped wrong | `daemon-core`: the failing step is the test |
-| A chat's record replayed (`dump-replay`, `dump-show` prints its events) | The order the client saw explains what it drew | `ui-state` or the session driver |
+| A chat's record replayed (`just repro`, `dump-show` prints its events) | The order the client saw explains what it drew | `ui-state` or the session driver |
 | The screen against the record | The renderer drew the right rows wrong | the terminal or the phone: the person's frozen screen shows how |
 
 On the machine itself, with nothing leaving it, the facts ring, the journal and the store hold the words too: the
 provider's output in the ring, the interpreter's steps in the journal and the rows in the store, each readable by the
-person whose machine it is.
+person whose machine it is. `just repro` pointed at the installation replays the ring itself through the interpreter.
+
+## Reproducing a report
+
+`just repro` takes whatever a problem left behind, replays every stage it carries, keeps a copy under `target/repro/`
+(ignored by git) and says how to make a test of it. It is a tool for developers, built from the repository; nothing
+ships it.
+
+```sh
+just repro 0b1c…e9                          # a sent report, by the id the account service gave it
+just repro reports/<user id>/<report id>    # a sent report, by the prefix its files are stored under
+just repro ~/Downloads/dump.pb.zst          # a report's archive
+just repro ~/.local/share/amux/reports/report-<unix ms>-<id>   # a saved report's folder
+just repro ~/.local/share/amux              # an installation on this machine
+just repro /var/lib/amux-relay/reports/relay-<unix ms>-<id>.json   # a relay's or the supervisor's report
+```
+
+**A sent report** is fetched from the bucket the account service stores reports in, under
+`reports/<user id>/<report id>/`. A report id alone is found by listing `reports/`; a prefix is listed as given. Every
+file of the report (`report.json`, the frame, `dump.pb.zst`) is downloaded into `target/repro/<report id>/` and the
+archive is unpacked beside it as `dump/`. Where the bucket is and the key that reads it come from the environment,
+and nothing else names them:
+
+| Variable | Holds |
+| --- | --- |
+| `AMUX_REPORTS_S3_ENDPOINT` | the S3-compatible store's address, `https://` and host, without the bucket |
+| `AMUX_REPORTS_S3_BUCKET` | the bucket's name |
+| `AMUX_REPORTS_S3_ACCESS_KEY_ID` | a read-only access key's id |
+| `AMUX_REPORTS_S3_SECRET_ACCESS_KEY` | its secret |
+| `AMUX_REPORTS_S3_REGION` | the signing region; `auto` when unset, as R2 signs |
+
+Each request is signed by `curl --aws-sigv4`, which reads its options, the key among them, on its standard input, so
+the key never appears in a process listing. A report the bucket does not hold, or a refused key, says so and names
+the request.
+
+**A report** on this machine, its folder or its archive, is copied into `target/repro/<its folder's name>/` and
+replayed as above.
+
+**An installation**, the root of an amux installation on this machine (normally `~/.local/share/amux`), replays
+from what each profile keeps rather than from a report, so nothing is turned into structure or made up:
+
+| Stage | Replays | Judged |
+| --- | --- | --- |
+| interpreter | each agent's facts ring through the interpreter of its newest spec's kind, each segment from the checkpoint written at its start | after each event: the interpreter's checks; and the newest segment's steps against the end of the agent's journal, which a resume from that checkpoint must reproduce |
+| daemon core | the core restored from the newest checkpoint in the profile's `core-ring/`, over a copy of the store's main file, fed every input recorded since, each journal laid out as the live step read it | as for a report |
+
+While the daemon runs, or after it was killed, the store's main file holds what the ring's newest checkpoint saw
+(the WAL beside it holds the rest), so the two replay together. A clean stop moves every commit into the main file,
+past the checkpoint, and the core's stage then says it cannot be replayed. The copy under
+`target/repro/installation-<profile id>/` holds what the agents and people said: it is for this machine, never for
+the repository.
+
+**A relay's or the supervisor's report** (a `relay-…` or `supervisor-…` JSON file) restores the core at the window's
+start, steps it through every input, and names the first input after which one of the core's own invariants broke
+(`relay.forwards_only_paid_pairs`, `supervisor.no_startable_binary` and the rest), or says that it held and ended in
+the state the report ends with. A step over its budget is the replaying machine's timing and is not judged.
+
+```text
+== relay-1793660261139-3f2a9c1d.json ==
+relay core   FAILS   fails at step 2 (Packet { from: LinkId(1), dst: HostId([…]) }): "packets flow between two links only while both are up, on one account and paid, or both pinned": links 1 and 2 are paired while one is down, unpaid, expired or on another account
+```
+
+A report becomes a test where the stage that failed is tested: a report's folder under
+`crates/replay-support/tests/fixtures/` replayed with `Bundle::open(..).replay_all()`, an agent's record alone with
+`synthetic::reproduce` (as `crates/replay-support/tests/synthetic.rs` replays `claude_sdk_died_mid_message.json`), a
+relay's or supervisor's report with `window::replay`, or, once the step is understood, the step itself as a test of
+the core or a fixture of the interpreter.
 
 ## A report from the terminal
 

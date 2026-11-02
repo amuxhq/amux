@@ -618,9 +618,9 @@ session's window, with a row handed over for every changed key the host held and
 
 [`replay-support`](../crates/replay-support/src/lib.rs) replays reports.
 [`bundle.rs`](../crates/replay-support/src/bundle.rs) opens a bundle the daemon wrote: the daemon core's record,
-each agent's record and each chat's record. `Bundle::replay_all` (in `replay.rs`, and the `dump-replay` binary)
-replays the core from its checkpoint and each chat's record through `SessionState`, with the properties judged at
-every step; see [Debugging](DEBUGGING.md#replaying-a-report). `record::replays_alike` holds a chat's record to
+each agent's record and each chat's record. `Bundle::replay_all` (in `replay.rs`, and `just repro`) replays each
+agent's record as a made-up stream through its interpreter, the core from its checkpoint and each chat's record
+through `SessionState`, with the properties judged at every step; see [Debugging](DEBUGGING.md#replaying-a-report). `record::replays_alike` holds a chat's record to
 replaying as its whole history does.
 Recorded provider traffic (the recording manifests, sanitizing and the capture plumbing both probes share) is the
 live lane's, in `qualification::recording`.

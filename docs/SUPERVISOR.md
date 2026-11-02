@@ -75,12 +75,14 @@ capped at 8 MiB with one previous file beside it (see
 both before it, at INFO and above.
 
 When the supervisor's core breaks one of its invariants it logs the reason
-and writes `<data_dir>/reports/supervisor-<unix ms>-<id>.txt`: the reason, the
-core's state when its window began, every input stepped since (at least the
-last 256) and its state now, under a header naming this build. The file
-holds what the log does (manifests, paths, exit codes, failures), no secret.
-One is written per kind of reason every ten minutes. Nothing replays it; it
-is what a step test of the supervisor core is written from by hand.
+and writes `<data_dir>/reports/supervisor-<unix ms>-<id>.json`: the reason,
+the core's state when its window began, every input stepped since (at least
+the last 256) and its state now, as JSON, with the build that wrote it. The
+file holds what the log does (manifests, paths, exit codes, failures), no
+secret. One is written per kind of reason every ten minutes. `just repro`
+replays it: the core from the window's start through every input, naming the
+first invariant broken (see
+[Debugging](DEBUGGING.md#reproducing-a-report)).
 
 ## Login items
 

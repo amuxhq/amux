@@ -17,6 +17,50 @@ use ui_state::{Connection, Msg, SessionState};
 use wire::dump::{ClientSessionEvents, ClientTraced, client_traced};
 use wire::{SessionEvent, session_event};
 
+/// The `repro` binary run on `named`, keeping its copy in a directory
+/// removed after it.
+pub fn repro(named: &Path) -> std::process::Output {
+    let keep = tempfile::tempdir().unwrap();
+    std::process::Command::new(env!("CARGO_BIN_EXE_repro"))
+        .arg(named)
+        .arg("--keep")
+        .arg(keep.path())
+        .output()
+        .expect("repro runs")
+}
+
+/// The bundle in `dir` packed as a report is sent: one `wire.DumpPart`
+/// holding every file, compressed.
+pub fn pack(dir: &Path) -> Vec<u8> {
+    fn files(root: &Path, dir: &Path, out: &mut Vec<wire::DumpFile>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                files(root, &path, out);
+                continue;
+            }
+            let name = path
+                .strip_prefix(root)
+                .unwrap()
+                .iter()
+                .map(|part| part.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/");
+            out.push(wire::DumpFile {
+                name,
+                contents: std::fs::read(&path).unwrap(),
+            });
+        }
+    }
+    let mut packed = Vec::new();
+    files(dir, dir, &mut packed);
+    let part = wire::DumpPart {
+        dump_id: Vec::new(),
+        files: packed,
+    };
+    zstd::bulk::compress(&part.encode_to_vec(), 3).unwrap()
+}
+
 /// A bundle in a directory of its own, removed with it.
 pub struct Dumped {
     dir: tempfile::TempDir,

@@ -293,7 +293,7 @@ cargo = [{ package = "provider-fakes", modules = ["conformance", "scripted"], fe
 [[suite]]
 name = "interpreter-emissions"
 contract = "Each kind's interpreter turns its recorded and authored facts into the reviewed items, snapshots and effects, and every chat-vocabulary row a kind can show has a place in its bodies and a golden that shows it."
-paths = ["crates/interpret/src", "crates/interpret/fixtures", "crates/interpret/tests/claude_pty.rs", "crates/interpret/tests/claude_sdk.rs", "crates/interpret/tests/codex.rs", "crates/interpret/tests/coverage.rs", "crates/interpret/tests/vocabulary.toml"]
+paths = ["crates/interpret/src", "crates/interpret/fixtures", "crates/interpret/tests/claude_pty.rs", "crates/interpret/tests/claude_sdk.rs", "crates/interpret/tests/codex.rs", "crates/interpret/tests/coverage.rs", "crates/interpret/tests/checks.rs", "crates/interpret/tests/record.rs", "crates/interpret/tests/vocabulary.toml"]
 recipe = "just suite interpreter-emissions"
 boundary = "Interpreter"
 oracle = "Reviewed emission goldens, explicit intermediate outcomes, and the vocabulary catalogue checked against every kind's goldens."
@@ -306,7 +306,7 @@ evidence = "crates/interpret/fixtures"
 update = "INTERPRET_UPDATE_GOLDENS=1 just test-crate interpret, then review the golden diff."
 cargo = [
   { package = "interpret", kind = "lib", targets = ["interpret"], features = [] },
-  { package = "interpret", modules = ["claude_pty", "claude_sdk", "codex", "coverage"], features = [] },
+  { package = "interpret", modules = ["checks", "claude_pty", "claude_sdk", "codex", "coverage", "record"], features = [] },
 ]
 
 [[suite]]
@@ -346,21 +346,21 @@ cargo = [{ package = "qualification", modules = ["recording"], features = [] }]
 
 [[suite]]
 name = "dump-bundle-replay"
-contract = "A dump bundle a real daemon writes on a testnet net replays through its four stages with the models' properties judged at every step: its facts through the interpreter to what the journal holds, the daemon core from its checkpoint through every input since, its store slice through the session model, and that state through the views; `dump-replay` prints one line per stage and a ring the replay does not reproduce fails, naming the step and the property."
-paths = ["crates/replay-support/src/replay.rs", "crates/replay-support/src/bin/dump-replay.rs", "crates/replay-support/tests/bundle.rs", "crates/replay-support/tests/core_replay.rs", "crates/replay-support/tests/support.rs"]
+contract = "`repro` replays what a problem left behind through every stage it carries, with the models' properties and the interpreters' and cores' checks judged at every step: a report a real daemon writes on a testnet net (its folder or its archive) through each agent's record as a made-up stream, the daemon core from its checkpoint and each chat's record; a testnet host's installation through each agent's real facts ring against its journal and the core from its own ring over its store; and a relay's or the supervisor's window report through its core. It prints one line per stage, keeps a copy, and a step that breaks fails, naming the step and what it broke. A fetch signs each request for the bucket the environment names; against a local S3 stand-in, ignored unless asked for, a report fetched by its id replays."
+paths = ["crates/replay-support/src/replay.rs", "crates/replay-support/src/repro.rs", "crates/replay-support/src/fetch.rs", "crates/replay-support/src/window.rs", "crates/replay-support/src/bin/repro.rs", "crates/replay-support/tests/bundle.rs", "crates/replay-support/tests/core_replay.rs", "crates/replay-support/tests/repro.rs", "crates/replay-support/tests/support.rs"]
 recipe = "just suite dump-bundle-replay"
 boundary = "Client model"
-oracle = "Equality between replayed steps and the journaled ones, the models' properties after every replayed step, and the views drawn from the replayed session."
-real = ["a daemon runtime and its agent process on a testnet net", "the dump bundle it writes", "the daemon core", "the store"]
-substituted = ["provider by the scripted fake", "the core's drivers in the replay"]
+oracle = "The models' properties and the checks after every replayed step, the journal's frames against the replayed facts, the window's end state, the binary's output and exit status, and the requests a fetch makes."
+real = ["a daemon runtime and its agent process on a testnet net", "the dump bundle it writes", "its installation folder", "the daemon core", "the interpreters", "the relay and supervisor cores", "the store", "curl"]
+substituted = ["provider by the scripted fake", "the core's drivers in the replay", "the reports bucket by a SeaweedFS container in the ignored fetch test"]
 time = "driven"
-capabilities = ["desktop"]
+capabilities = ["desktop", "docker for the ignored fetch test"]
 lane = "fast"
-evidence = ""
+evidence = "`just repro WHAT` prints each stage and keeps the copy under target/repro/"
 update = ""
 cargo = [
-  { package = "replay-support", kind = "bin", targets = ["dump-replay"], features = [] },
-  { package = "replay-support", modules = ["bundle", "core_replay"], features = [] },
+  { package = "replay-support", kind = "bin", targets = ["repro"], features = [] },
+  { package = "replay-support", modules = ["bundle", "core_replay", "record", "repro", "synthetic"], features = [] },
 ]
 
 [[suite]]

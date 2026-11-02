@@ -155,10 +155,13 @@ SUPPORT_ALLOWED_LOCAL = {
     # chat's record through the session model. A debugging tool: nothing
     # links it. An agent's record, which carries no provider's words,
     # replays as a stream made up from it through the real interpreter, held
-    # to the provider's own types through the fakes' conformance.
+    # to the provider's own types through the fakes' conformance; on the
+    # machine that wrote it, the facts ring replays through the interpreter
+    # as it is. The relay's and the supervisor's reports replay through
+    # their cores.
     "replay-support": {
         "core-ring", "daemon-core", "interpret", "journal", "models", "provider-fakes",
-        "store", "ui-state", "wire",
+        "relay-core", "store", "supervisor-core", "ui-state", "wire",
     },
     # The protocol's properties, explored over the real code: the store, the
     # journal and the message types, each state-machine core, and the

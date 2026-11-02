@@ -7,10 +7,10 @@
 //! showed, under `client/sessions/<id>/`: its `checkpoint` and the
 //! `events` since, which the manifest names.
 //!
-//! An agent's record is read as it was written, the interpreter's
-//! conclusions by kind, size and alias. Nothing replays it yet: a stage
-//! that turns it into a stream for its interpreter starts from
-//! [`Bundle::agents`].
+//! An agent's record is read as it was written, each event's skeleton
+//! and the interpreter's conclusions by kind, size and alias; the agent
+//! stage turns it back into a stream for its interpreter
+//! ([`crate::synthetic`]).
 //!
 //! A bundle opens from its directory, from a person's report holding it,
 //! or from the `dump.pb.zst` a report was sent with.

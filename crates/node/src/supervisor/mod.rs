@@ -314,7 +314,7 @@ impl Dumps {
         data_dir: &Path,
     ) -> Option<io::Result<PathBuf>> {
         let said = self.reason(reason, now_ms)?;
-        let text = self.window.render("the supervisor core", &said, core);
+        let text = self.window.render("supervisor", &said, core);
         let written = window::write(&data_dir.join(crate::REPORTS), "supervisor", &text);
         match &written {
             Ok(file) => tracing::error!(
@@ -938,31 +938,32 @@ mod tests {
         );
         let name = file.file_name().unwrap().to_string_lossy().into_owned();
         assert!(
-            name.starts_with("supervisor-") && name.ends_with(".txt"),
+            name.starts_with("supervisor-") && name.ends_with(".json"),
             "{name}"
         );
         let text = std::fs::read_to_string(&file).unwrap();
         println!("{}\n{text}", file.display());
-        let header = format!("the supervisor core, amux {}\n", crate::version());
-        assert!(text.starts_with(&header), "{text}");
-        assert!(
-            text.contains(&format!(
-                "reason: {SUPERVISOR_CORE_DUMP}an invariant failed: at most one daemon is in \
-                 the serving phase: forced by the test"
-            )),
-            "{text}"
+        let written: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(written["core"], "supervisor");
+        assert_eq!(written["amux"], crate::version());
+        assert_eq!(
+            written["reason"],
+            format!(
+                "{SUPERVISOR_CORE_DUMP}an invariant failed: at most one daemon is in the \
+                 serving phase: forced by the test"
+            ),
         );
-        assert!(
-            text.contains("state at the window's start:\nSupervisor {"),
-            "{text}"
-        );
-        assert!(
-            text.contains("inputs since (4):\n1 Tick { now_ms: 1005 }\n"),
-            "{text}"
-        );
-        assert!(text.contains("4 Terminate\n"), "{text}");
-        assert!(text.contains("state now:\nSupervisor {"), "{text}");
-        assert!(text.contains("stopping: true"), "the state now: {text}");
+        let inputs: Vec<core::Input> = serde_json::from_value(written["inputs"].clone()).unwrap();
+        assert_eq!(inputs.len(), 4);
+        assert_eq!(inputs[0], core::Input::Tick { now_ms: 1_005 });
+        assert_eq!(inputs[3], core::Input::Terminate);
+        let mut replayed: Supervisor = serde_json::from_value(written["start"].clone()).unwrap();
+        for input in inputs {
+            replayed.step(input, &mut Vec::new());
+        }
+        let now: Supervisor = serde_json::from_value(written["now"].clone()).unwrap();
+        assert_eq!(replayed, now, "the start and the inputs make the state now");
+        assert_eq!(now, core, "the state now as written");
         // Held back within the interval: no second file.
         assert!(dumps.dump(&broke, 1_011, &core, data_dir.path()).is_none());
     }

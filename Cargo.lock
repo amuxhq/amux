@@ -3097,8 +3097,11 @@ dependencies = [
  "prost",
  "prost-types",
  "provider-fakes",
+ "relay-core",
+ "serde",
  "serde_json",
  "store",
+ "supervisor-core",
  "tempfile",
  "testnet",
  "thiserror 2.0.20",
@@ -3668,6 +3671,7 @@ dependencies = [
  "core-ring",
  "release",
  "semver",
+ "serde",
  "uuid",
 ]
 

@@ -37,15 +37,18 @@ use std::time::Instant;
 
 use daemon_core::payload::ForwardRefusal;
 use daemon_core::{Check, DumpReason, HostId, LinkId, StepBudget, Violation};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// An account, by the id its tokens carry. A daemon's links are all one
 /// account's.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub struct UserId(pub [u8; 16]);
 
 /// What an account's plan lets its hosts do through the relay, as its
 /// connection tokens name it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Tier {
     /// Hosts reach the relay, but no packet is forwarded between them.
@@ -68,7 +71,7 @@ pub const REFUSED_PER_LINK: usize = 256;
 
 /// Which of the two links a crossed dial makes both sides keep: each pair
 /// of hosts agrees on it from their ids alone.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DialOrder {
     /// The link both sides keep when both directions connect.
     Preferred,
@@ -90,7 +93,7 @@ impl DialOrder {
 }
 
 /// Everything that can happen to the relay, decoded by the driver.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Input {
     /// A link authenticated: by a token naming its account and plan, or by
     /// a pinned key, which no plan governs (`tier: None`). `instance` is
@@ -195,7 +198,7 @@ pub const CHECKS: &[Check] = &[
 ];
 
 /// One link that is up.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct RelayLink {
     user: UserId,
     host: HostId,
@@ -223,6 +226,32 @@ impl RelayLink {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Adjacency {
     hosts: BTreeMap<UserId, BTreeMap<HostId, BTreeSet<LinkId>>>,
+}
+
+/// Written as its (account, host, links) entries: JSON names a map's
+/// entries by string, and neither id is one.
+impl Serialize for Adjacency {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(
+            self.hosts.iter().flat_map(|(user, hosts)| {
+                hosts.iter().map(move |(host, links)| (user, host, links))
+            }),
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for Adjacency {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut adjacency = Adjacency::default();
+        for (user, host, links) in
+            Vec::<(UserId, HostId, BTreeSet<LinkId>)>::deserialize(deserializer)?
+        {
+            for link in links {
+                adjacency.add(user, host, link);
+            }
+        }
+        Ok(adjacency)
+    }
 }
 
 impl Adjacency {
@@ -326,9 +355,9 @@ struct Told {
 
 /// The relay's whole state: the links up, which hosts of one account may
 /// reach each other, the pairs forwarded between, the refusals recently
-/// told, and its step budget. Cloned and printed by a driver keeping its
-/// recent history for a dump.
-#[derive(Clone, Debug)]
+/// told, and its step budget. Cloned and written by a driver keeping its
+/// recent history for a dump, and read back to replay it.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Relay {
     /// The relay's own host: a packet addressed to it has nothing to reach.
     own: HostId,
@@ -337,10 +366,38 @@ pub struct Relay {
     /// The pairs forwarded between, by each link of them: symmetric.
     pairs: BTreeMap<LinkId, BTreeSet<LinkId>>,
     /// When each sender's link was last told a destination is refused.
+    #[serde(with = "entries")]
     refused: BTreeMap<(LinkId, HostId), u64>,
     now_ms: u64,
+    /// Cleared as each step begins, so nothing between steps.
+    #[serde(skip)]
     touched: Touched,
     budget: StepBudget,
+}
+
+/// A map written as a list of its entries, for keys JSON cannot name.
+mod entries {
+    use std::collections::BTreeMap;
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub(super) fn serialize<S: Serializer, K: Serialize, V: Serialize>(
+        map: &BTreeMap<K, V>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(map)
+    }
+
+    pub(super) fn deserialize<'de, D, K, V>(deserializer: D) -> Result<BTreeMap<K, V>, D::Error>
+    where
+        D: Deserializer<'de>,
+        K: Deserialize<'de> + Ord,
+        V: Deserialize<'de>,
+    {
+        Ok(Vec::<(K, V)>::deserialize(deserializer)?
+            .into_iter()
+            .collect())
+    }
 }
 
 /// Two relays are equal when they hold the same links, pairs and refusals

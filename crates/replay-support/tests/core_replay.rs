@@ -4,8 +4,6 @@
 //! one of every trigger after a run marked in everything anybody wrote.
 //! `support` says how each is written.
 
-use std::process::Command;
-
 use replay_support::bundle::Bundle;
 use replay_support::replay::{Failing, Stage, Verdict};
 
@@ -26,19 +24,17 @@ fn every_stage_of_a_healthy_dump_holds() {
 
     let verdicts = bundle.replay_all().expect("the bundle replays");
     let stages: Vec<Stage> = verdicts.iter().map(|verdict| verdict.stage).collect();
-    assert_eq!(stages, [Stage::Core, Stage::Session]);
-    assert!(
-        matches!(verdicts[0].verdict, Verdict::Holds(_)),
-        "{}",
-        verdicts[0]
-    );
+    assert_eq!(stages, [Stage::Agent, Stage::Core, Stage::Session]);
+    for verdict in &verdicts[..2] {
+        assert!(matches!(verdict.verdict, Verdict::Holds(_)), "{verdict}");
+    }
     // `amux dump` from the command line shows no chat: the session stage
     // has nothing to replay, and says so.
     assert!(bundle.clients.is_empty());
     assert!(
-        matches!(verdicts[1].verdict, Verdict::Absent(_)),
+        matches!(verdicts[2].verdict, Verdict::Absent(_)),
         "{}",
-        verdicts[1]
+        verdicts[2]
     );
 }
 
@@ -89,8 +85,8 @@ fn a_dump_a_client_asked_for_replays_its_session_to_the_failing_message() {
     let [failing] = failing[..] else {
         panic!("one stage fails: {verdicts:?}");
     };
-    assert_eq!(verdicts[1].stage, Stage::Session);
-    assert!(matches!(verdicts[1].verdict, Verdict::Fails(_)));
+    assert_eq!(verdicts[2].stage, Stage::Session);
+    assert!(matches!(verdicts[2].verdict, Verdict::Fails(_)));
     assert_eq!(failing.property, models::client::ONE_BLOCK);
     // Messages count from the checkpoint: Connection, Opening, Snapshot,
     // the row at order 1, then the row at order 3 with order 2 never
@@ -104,15 +100,12 @@ fn a_dump_a_client_asked_for_replays_its_session_to_the_failing_message() {
 }
 
 #[test]
-fn dump_replay_names_the_clients_failing_message_and_the_property() {
+fn repro_names_the_clients_failing_message_and_the_property() {
     let dumped = support::client_violation();
-    let output = Command::new(env!("CARGO_BIN_EXE_dump-replay"))
-        .arg(dumped.path())
-        .output()
-        .expect("dump-replay runs");
+    let output = support::repro(dumped.path());
     let stdout = String::from_utf8_lossy(&output.stdout);
     println!(
-        "$ dump-replay <a client's violation>\n{stdout}exit status {:?}\n",
+        "$ repro <a client's violation>\n{stdout}exit status {:?}\n",
         output.status.code()
     );
     assert_eq!(output.status.code(), Some(1));
@@ -151,7 +144,7 @@ fn a_client_session_the_manifest_names_that_cannot_be_read_fails_the_stage() {
         }
         let bundle = Bundle::open(scratch.path()).expect("the bundle opens");
         let verdicts = bundle.replay_all().expect("the bundle replays");
-        let session = &verdicts[1];
+        let session = &verdicts[2];
         println!("{what}: {session}");
         assert_eq!(session.stage, Stage::Session);
         let Verdict::Unreadable(why) = &session.verdict else {
@@ -160,38 +153,39 @@ fn a_client_session_the_manifest_names_that_cannot_be_read_fails_the_stage() {
         assert!(why.contains(&agent), "{why}");
         assert!(session.verdict.failed());
 
-        let output = Command::new(env!("CARGO_BIN_EXE_dump-replay"))
-            .arg(scratch.path())
-            .output()
-            .expect("dump-replay runs");
+        let output = support::repro(scratch.path());
         assert_eq!(output.status.code(), Some(1), "{what}");
     }
 }
 
 #[test]
-fn dump_replay_prints_one_line_per_stage() {
+fn repro_prints_one_line_per_stage() {
     let dumped = support::healthy();
-    let output = Command::new(env!("CARGO_BIN_EXE_dump-replay"))
-        .arg(dumped.path())
-        .output()
-        .expect("dump-replay runs");
+    let output = support::repro(dumped.path());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    println!("$ dump-replay <a healthy dump>\n{stdout}");
+    println!("$ repro <a healthy dump>\n{stdout}");
     assert!(
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
     let lines: Vec<&str> = stdout.lines().collect();
-    assert_eq!(lines.len(), 2, "{stdout}");
+    assert_eq!(lines.len(), 6, "{stdout}");
+    assert!(lines[0].starts_with("== "), "{stdout}");
     assert!(
-        lines[0].starts_with("daemon core") && lines[0].contains(" holds "),
+        lines[1].starts_with("agent") && lines[1].contains(" holds "),
         "{stdout}"
     );
     assert!(
-        lines[1].starts_with("session") && lines[1].contains(" absent "),
+        lines[2].starts_with("daemon core") && lines[2].contains(" holds "),
         "{stdout}"
     );
+    assert!(
+        lines[3].starts_with("session") && lines[3].contains(" absent "),
+        "{stdout}"
+    );
+    assert!(lines[4].starts_with("kept "), "{stdout}");
+    assert!(lines[5].starts_with("to make it a test: "), "{stdout}");
 }
 
 #[test]
@@ -235,15 +229,12 @@ fn a_dump_the_core_asked_for_replays_to_its_failing_step_and_names_the_invariant
 }
 
 #[test]
-fn dump_replay_exits_non_zero_naming_the_step_and_the_property() {
+fn repro_exits_non_zero_naming_the_step_and_the_property() {
     let dumped = support::core_violation();
-    let output = Command::new(env!("CARGO_BIN_EXE_dump-replay"))
-        .arg(dumped.path())
-        .output()
-        .expect("dump-replay runs");
+    let output = support::repro(dumped.path());
     let stdout = String::from_utf8_lossy(&output.stdout);
     println!(
-        "$ dump-replay <a core's violation>\n{stdout}exit status {:?}\n",
+        "$ repro <a core's violation>\n{stdout}exit status {:?}\n",
         output.status.code()
     );
     assert_eq!(output.status.code(), Some(1));
@@ -334,13 +325,16 @@ fn no_report_of_any_trigger_carries_a_word_and_each_core_replays() {
             manifest["trigger"],
             files.len(),
             files.iter().map(|(_, bytes)| bytes.len()).sum::<usize>(),
-            verdicts[0]
+            verdicts[1]
         );
         assert!(
-            matches!(verdicts[0].verdict, Verdict::Holds(_)),
+            matches!(verdicts[1].verdict, Verdict::Holds(_)),
             "{}",
-            verdicts[0]
+            verdicts[1]
         );
+        for verdict in &verdicts {
+            assert!(!verdict.verdict.failed(), "{verdict}");
+        }
     }
     let mut expected: Vec<String> = support::TRIGGERS
         .iter()

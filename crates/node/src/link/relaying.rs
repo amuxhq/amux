@@ -258,7 +258,7 @@ impl Relaying {
             admitted.held_back,
         );
         let relay = lock(&self.core).clone();
-        let text = window.render("the relay core", &reason, &relay);
+        let text = window.render("relay", &reason, &relay);
         match window::write(dir, "relay", &text) {
             Ok(file) => tracing::error!(
                 %reason,
@@ -1287,8 +1287,9 @@ mod tests {
 
     /// A dump the relay core asks for leaves a file in the reports
     /// directory: the reason, the core's state when the window began,
-    /// every input stepped since and the state now. A relay whose budget is
-    /// zero asks at its first step measured over it.
+    /// every input stepped since and the state now, each read back as the
+    /// core's own. A relay whose budget is zero asks at its first step
+    /// measured over it.
     #[test]
     fn a_dump_the_relay_core_asks_for_is_a_file_of_its_state_and_inputs() {
         let reports = tempfile::tempdir().unwrap();
@@ -1316,41 +1317,35 @@ mod tests {
         };
         let name = file.file_name().unwrap().to_string_lossy().into_owned();
         assert!(
-            name.starts_with("relay-") && name.ends_with(".txt"),
+            name.starts_with("relay-") && name.ends_with(".json"),
             "{name}"
         );
         let text = std::fs::read_to_string(file).unwrap();
         println!("{}\n{text}", file.display());
-        let header = format!("the relay core, amux {}\n", crate::version());
-        assert!(text.starts_with(&header), "{text}");
+        let written: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(written["core"], "relay");
+        assert_eq!(written["amux"], crate::version());
+        let reason = written["reason"].as_str().unwrap();
         assert!(
-            text.contains(&format!("reason: {RELAY_CORE_DUMP}"))
-                && text.contains("over its budget of 0 µs"),
+            reason.starts_with(RELAY_CORE_DUMP) && reason.contains("over its budget of 0 µs"),
             "{text}"
         );
-        assert!(
-            text.contains("state at the window's start:\nRelay {"),
-            "{text}"
-        );
+        let start: Relay = serde_json::from_value(written["start"].clone()).unwrap();
+        let now: Relay = serde_json::from_value(written["now"].clone()).unwrap();
         // Steps quicker than the clock's microsecond pass the budget, so
         // the window may have moved on from the first tick: it holds an
         // unbroken run of ticks ending with the one that asked.
-        let held: usize = text
-            .split_once("inputs since (")
-            .and_then(|(_, rest)| rest.split_once("):"))
-            .and_then(|(count, _)| count.parse().ok())
-            .expect("the dump counts its inputs");
-        let first = now_ms - held as u64 + 1;
-        assert!(
-            text.contains(&format!("\n1 Tick {{ now_ms: {first} }}\n")),
-            "{text}"
-        );
-        assert!(
-            text.contains(&format!("\n{held} Tick {{ now_ms: {now_ms} }}\n")),
-            "{text}"
-        );
-        assert!(text.contains("state now:\nRelay {"), "{text}");
-        assert!(text.contains(&format!("now_ms: {now_ms},")), "{text}");
+        let inputs: Vec<Input> = serde_json::from_value(written["inputs"].clone()).unwrap();
+        let first = now_ms - inputs.len() as u64 + 1;
+        let ticks: Vec<Input> = (first..=now_ms)
+            .map(|now_ms| Input::Tick { now_ms })
+            .collect();
+        assert_eq!(inputs, ticks);
+        let mut replayed = start;
+        for input in inputs {
+            replayed.step(input, &mut Vec::new());
+        }
+        assert_eq!(replayed, now, "the start and the inputs make the state now");
     }
 
     #[test]

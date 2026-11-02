@@ -36,6 +36,7 @@ tower = { workspace = true }
 webpki-roots = { workspace = true }
 # The dump path's redactor: the one place the daemon decodes a body.
 interpret = { workspace = true }
+redaction = { workspace = true }
 journal = { workspace = true }
 prost = { workspace = true }
 reqwest = { workspace = true }

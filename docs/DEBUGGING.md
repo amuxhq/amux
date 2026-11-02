@@ -302,7 +302,7 @@ The bundle, `reports/report-<unix ms>-<id>/`, readable by its user only:
 
 | File | Contents |
 | --- | --- |
-| `report.json` | The header (schema 3): build, time, note, marks in cells, the viewport in cells, and every part declared present or absent with a reason |
+| `report.json` | The header (schema 1): build, time, note, marks in cells, the viewport in cells, and every part declared present or absent with a reason |
 | `frame.txt` | The frozen screen as text, without the report's own panel |
 | `frame.json` | The same cells with their colours and styles: each row as runs of one style from their first column, a colour as `#rrggbb`, `ansi:N` or `default` (the terminal's own ink or ground, whose values `default` records) |
 | `dump/…` | The profile's dump, as above, with this client's fleet and open chat parts under `client/` |
@@ -338,7 +338,7 @@ The bundle, in the runtime's `reports/report-<unix ms>-<id>/`, holds:
 
 A report leaves a machine one way: the runtime (the daemon, or the app's embedded runtime) uploads it to the account
 service of the account its profile is signed in to, as `POST /api/reports`, multipart, with the profile's bearer.
-The sections are `report.json` (schema 3), the client's frame files (`frame.png`, or `frame.txt` and `frame.json`),
+The sections are `report.json` (schema 1), the client's frame files (`frame.png`, or `frame.txt` and `frame.json`),
 `trace.jsonl` where there is one, and `dump.pb.zst`: the bundle packed as one `wire.DumpPart` and compressed with
 zstd, which the replay tools open as it is. A failure the service might not repeat (a server error, a timeout, no
 answer) is tried twice more, five and then ten seconds later; after that, or after a refusal, the bundle stays in

@@ -58,7 +58,7 @@ use super::{DESKTOP_REFERENCE_STATE, Machine};
 pub const LEVELS: [usize; 3] = [10, 100, 1_000];
 /// Where a machine's baseline lives, under the model's directory.
 pub const BASELINE_ROOT: &str = "perf/relay";
-const SCHEMA: u32 = 2;
+const SCHEMA: u32 = 1;
 const RELAY_NAME: &str = "localhost";
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// The relay's new QUIC handshakes a minute from one address over UDP,
@@ -851,9 +851,9 @@ mod tests {
     }
 
     #[test]
-    fn a_baseline_without_admissions_is_refused() {
+    fn a_baseline_of_another_schema_is_refused() {
         let mut baseline = curve(1_000.0, 1.0, 2.0);
-        baseline.schema = 1;
+        baseline.schema = SCHEMA + 1;
         assert!(compare(&curve(1_000.0, 1.0, 2.0), &baseline).is_err());
     }
 

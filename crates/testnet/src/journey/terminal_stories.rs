@@ -1987,8 +1987,8 @@ fn report_a_problem(journey: &mut TerminalJourney) -> Proved {
     {
         return Err(format!("report.json declares {header}"));
     }
-    if header["schema_version"] != 3 || header["kind"] != "report" {
-        return Err(format!("report.json is not a schema 3 report: {header}"));
+    if header["schema_version"] != node::REPORT_SCHEMA || header["kind"] != "report" {
+        return Err(format!("report.json is not this build's report: {header}"));
     }
     let reason = &header["parts"]["trace"]["absent"]["reason"];
     if reason.is_null() || *reason == "" {

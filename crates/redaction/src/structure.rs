@@ -4,8 +4,11 @@
 //! like:
 //!
 //! - an identifier the core compares (a host's or an agent's name, a
-//!   folder, a branch, a token) becomes a stable alias such as `host-1`
-//!   or `path-3`, so values that were equal stay equal and no others do;
+//!   folder, a branch, a token) becomes a stable alias of its own length
+//!   such as `host-1xx` or `path-3xxxxx`, so values that were equal stay
+//!   equal and no others do, and every size and offset holds;
+//! - an attachment's hash, which is the hash of the person's file, becomes
+//!   an alias of its length too, so the blobs a record names still match;
 //! - an id, a key, a version or a setting is kept as it is;
 //! - everything else (prompts, output, error text) becomes zero bytes of
 //!   its length, so every size and offset holds, and zero bytes compress
@@ -31,6 +34,8 @@ pub enum Text {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Bytes {
     Kept,
+    /// Replaced by an alias of its length ([`Aliases::hash`]).
+    Alias,
     Blank,
 }
 
@@ -123,7 +128,6 @@ const TEXT: &[(&str, Text)] = &[
 /// message, which is walked.
 const BYTES_KEPT: &[&str] = &[
     "id",
-    "hash",
     "agent",
     "agent_ids",
     "dst",
@@ -149,7 +153,9 @@ pub fn text(holder: &str, field: &str) -> Text {
 
 /// How the bytes in `field` are treated.
 pub fn bytes(field: &str) -> Bytes {
-    if field.ends_with("_id") || BYTES_KEPT.contains(&field) {
+    if field == "hash" {
+        Bytes::Alias
+    } else if field.ends_with("_id") || BYTES_KEPT.contains(&field) {
         Bytes::Kept
     } else {
         Bytes::Blank
@@ -164,14 +170,24 @@ pub fn blank(text: &str) -> String {
     "\0".repeat(text.len())
 }
 
-/// The aliases of one record: each distinct value gets the next number of
-/// the class it was first seen under, and keeps it wherever it appears,
-/// whatever field holds it. A value ending in `-<number>` keeps that
-/// suffix on its stem's alias, so a name and the name the core derived
-/// from it by suffix stay related.
+/// The aliases of one record. Each distinct value gets a token of exactly
+/// its own length in bytes and keeps it wherever it appears, whatever
+/// field holds it, so a value's alias fits wherever the value did: a
+/// journal frame keeps its length, and every offset after it holds.
+///
+/// A token is its class and a number padded with `x` (`host-1xx` for an
+/// eight-byte host name) where that fits; a value too short for that is
+/// its class's first letter and a base-36 number (`b01` for a three-byte
+/// branch), and a one-byte value a single base-36 digit. Distinct values
+/// get distinct tokens until a length runs out of them: past 36 one-byte
+/// values, or 1,296 two-byte ones of a class, in one record, later ones
+/// share a token. A trailing number is the value's like the rest of it
+/// (`ENG-4521` keeps none of `4521`); a name the core assigned itself is
+/// kept whole, number and all.
 pub struct Aliases {
     of: HashMap<String, String>,
-    counts: HashMap<&'static str, u32>,
+    counts: HashMap<(&'static str, usize), u64>,
+    hashes: HashMap<Vec<u8>, Vec<u8>>,
     kept: fn(&str) -> bool,
 }
 
@@ -182,6 +198,7 @@ impl Aliases {
         Aliases {
             of: HashMap::new(),
             counts: HashMap::new(),
+            hashes: HashMap::new(),
             kept,
         }
     }
@@ -190,21 +207,39 @@ impl Aliases {
         if value.is_empty() || (self.kept)(value) {
             return value.to_owned();
         }
-        if let Some((stem, number)) = value.rsplit_once('-')
-            && !stem.is_empty()
-            && !number.is_empty()
-            && number.bytes().all(|byte| byte.is_ascii_digit())
-        {
-            return format!("{}-{number}", self.alias(class, stem));
-        }
         if let Some(alias) = self.of.get(value) {
             return alias.clone();
         }
-        let count = self.counts.entry(class).or_default();
+        let len = value.len();
+        // One-byte tokens are digits whatever their class, so they share
+        // one count.
+        let counted = if len == 1 { ("", 1) } else { (class, len) };
+        let count = self.counts.entry(counted).or_default();
         *count += 1;
-        let alias = format!("{class}-{count}");
+        let alias = token(class, *count, len);
         self.of.insert(value.to_owned(), alias.clone());
         alias
+    }
+
+    /// A hash as an alias of its length: the record's count of distinct
+    /// hashes, big-endian at its end. The same hash gets the same alias
+    /// throughout the record.
+    pub fn hash(&mut self, value: &[u8]) -> Vec<u8> {
+        if value.is_empty() {
+            return Vec::new();
+        }
+        let next = self.hashes.len() as u64 + 1;
+        self.hashes
+            .entry(value.to_vec())
+            .or_insert_with(|| {
+                let mut alias = vec![0; value.len()];
+                let count = next.to_be_bytes();
+                let width = count.len().min(alias.len());
+                let at = alias.len() - width;
+                alias[at..].copy_from_slice(&count[count.len() - width..]);
+                alias
+            })
+            .clone()
     }
 
     /// The string in `field` of `holder`, as the table treats it.
@@ -217,27 +252,109 @@ impl Aliases {
     }
 }
 
+/// The `count`th token of `class` for a value of `len` bytes.
+fn token(class: &str, count: u64, len: usize) -> String {
+    const DIGITS: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    let long = format!("{class}-{count}");
+    if long.len() <= len {
+        return format!("{long:x<len$}");
+    }
+    let (lead, width) = match len {
+        1 => ("", 1),
+        _ => (&class[..1], len - 1),
+    };
+    let mut digits = vec![b'0'; width];
+    let mut rest = count;
+    for digit in digits.iter_mut().rev() {
+        *digit = DIGITS[(rest % 36) as usize];
+        rest /= 36;
+    }
+    format!("{lead}{}", String::from_utf8(digits).expect("ASCII digits"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn equal_values_alias_alike_and_keep_a_derived_suffix() {
-        let mut aliases = Aliases::new(|name| name == "quiet-otter");
+    fn equal_values_alias_alike_each_to_its_own_length() {
+        let mut aliases = Aliases::new(|name| name == "quiet-otter" || name == "quiet-otter-2");
         let desk = aliases.alias("host", "desk zebra");
-        assert_eq!(desk, "host-1");
+        assert_eq!(desk, "host-1xxxx");
         assert_eq!(aliases.alias("name", "desk zebra"), desk, "one map");
         assert_eq!(aliases.alias("name", "worker"), "name-1");
-        assert_eq!(aliases.alias("name", "worker-2"), "name-1-2");
+        assert_eq!(
+            aliases.alias("name", "worker-2"),
+            "name-1xx",
+            "no suffix kept"
+        );
+        assert_eq!(aliases.alias("name", "planner"), "name-1x");
         assert_eq!(aliases.alias("name", "quiet-otter"), "quiet-otter");
+        assert_eq!(aliases.alias("name", "quiet-otter-2"), "quiet-otter-2");
         assert_eq!(aliases.alias("name", ""), "");
+    }
+
+    #[test]
+    fn a_trailing_number_is_the_persons_and_goes_with_the_rest() {
+        let mut aliases = Aliases::new(|_| false);
+        let ticket = aliases.alias("branch", "ENG-4521");
+        assert_eq!(ticket, "branch-1");
+        assert!(!ticket.contains("4521"));
+        assert_eq!(aliases.alias("branch", "ENG-4522"), "branch-2");
+    }
+
+    #[test]
+    fn a_short_value_gets_a_short_token_and_stays_apart() {
+        let mut aliases = Aliases::new(|_| false);
+        assert_eq!(aliases.alias("branch", "main"), "b001");
+        assert_eq!(aliases.alias("branch", "dev"), "b01");
+        assert_eq!(aliases.alias("branch", "trunk"), "b0001");
+        assert_eq!(aliases.alias("host", "a"), "1");
+        assert_eq!(
+            aliases.alias("name", "b"),
+            "2",
+            "one-byte tokens share a count"
+        );
+        assert_eq!(aliases.alias("path", "/"), "3");
+        // Every value of a length gets its own token while there are any.
+        let mut seen = std::collections::HashSet::new();
+        for n in 0..1_000u32 {
+            let token = aliases.alias("name", &format!("{n:03}"));
+            assert_eq!(token.len(), 3);
+            assert!(seen.insert(token), "{n} shares a token");
+        }
+    }
+
+    #[test]
+    fn a_multibyte_value_keeps_its_length_in_bytes() {
+        let mut aliases = Aliases::new(|_| false);
+        let value = "café-ü";
+        assert_eq!(aliases.alias("name", value).len(), value.len());
+    }
+
+    #[test]
+    fn hashes_alias_alike_to_their_length() {
+        let mut aliases = Aliases::new(|_| false);
+        let first = aliases.hash(&[0xab; 32]);
+        assert_eq!(first.len(), 32);
+        assert_ne!(first, vec![0xab; 32]);
+        assert_eq!(
+            aliases.hash(&[0xab; 32]),
+            first,
+            "the same hash, the same alias"
+        );
+        let second = aliases.hash(&[0xcd; 32]);
+        assert_ne!(second, first);
+        assert_eq!(aliases.hash(&[0xef; 2]).len(), 2);
+        assert_eq!(aliases.hash(&[]), Vec::<u8>::new());
+        assert_eq!(bytes("hash"), Bytes::Alias);
     }
 
     #[test]
     fn the_table_decides_by_field_name() {
         let mut aliases = Aliases::new(|_| false);
-        assert_eq!(aliases.text("Host", "name", "desk"), "host-1");
-        assert_eq!(aliases.text("Agent", "cwd", "/src/zebra"), "path-1");
+        assert_eq!(aliases.text("Host", "name", "desk"), "h001");
+        assert_eq!(aliases.text("Agent", "cwd", "/src/zebra"), "path-1xxxx");
         assert_eq!(aliases.text("Item", "text", "a zebra"), "\0".repeat(7));
         assert_eq!(aliases.text("Item", "text", "  \n"), "  \n");
         assert_eq!(aliases.text("Item", "key", "toolu_1"), "toolu_1");

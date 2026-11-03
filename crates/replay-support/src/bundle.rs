@@ -196,8 +196,7 @@ pub fn locate(named: &Path) -> Result<(PathBuf, Option<Arc<tempfile::TempDir>>),
         what: "a packed dump",
         error,
     };
-    let packed = zstd::stream::decode_all(read(&archive)?.as_slice())
-        .map_err(|error| unreadable(error.to_string()))?;
+    let packed = unpacked_at_most(&read(&archive)?, UNPACKED_LIMIT).map_err(unreadable)?;
     let part =
         wire::DumpPart::decode(packed.as_slice()).map_err(|error| unreadable(error.to_string()))?;
     let unpacked = tempfile::tempdir().map_err(|error| BundleError::Read {
@@ -205,15 +204,9 @@ pub fn locate(named: &Path) -> Result<(PathBuf, Option<Arc<tempfile::TempDir>>),
         error,
     })?;
     for file in part.files {
-        let relative = Path::new(&file.name);
-        if file.name.is_empty()
-            || !relative
-                .components()
-                .all(|component| matches!(component, std::path::Component::Normal(_)))
-        {
+        let Some(path) = under(unpacked.path(), &file.name) else {
             return Err(unreadable(format!("a file named {:?}", file.name)));
-        }
-        let path = unpacked.path().join(relative);
+        };
         let written = path
             .parent()
             .map_or(Ok(()), std::fs::create_dir_all)
@@ -226,6 +219,37 @@ pub fn locate(named: &Path) -> Result<(PathBuf, Option<Arc<tempfile::TempDir>>),
 /// A person's report keeps its dump here, and sends it packed as this.
 const DUMP_DIR: &str = "dump";
 const ARCHIVE: &str = "dump.pb.zst";
+/// The most a packed dump unpacks to: far past any report's limits (each
+/// record 64 KiB compressed, each log 1 MiB), so only an archive that is
+/// not a report stops here.
+pub const UNPACKED_LIMIT: u64 = 256 << 20;
+
+/// `packed` decompressed, or why not: an archive that unpacks past `limit`
+/// is refused before it is held whole.
+pub fn unpacked_at_most(packed: &[u8], limit: u64) -> Result<Vec<u8>, String> {
+    use std::io::Read as _;
+    let decoder = zstd::stream::Decoder::new(packed).map_err(|error| error.to_string())?;
+    let mut unpacked = Vec::new();
+    decoder
+        .take(limit + 1)
+        .read_to_end(&mut unpacked)
+        .map_err(|error| error.to_string())?;
+    if unpacked.len() as u64 > limit {
+        return Err(format!("it unpacks past {limit} bytes"));
+    }
+    Ok(unpacked)
+}
+
+/// `relative` under `dir`, when it is a relative path that stays there:
+/// a name a bundle or its manifest supplies never reaches outside it.
+pub fn under(dir: &Path, relative: &str) -> Option<PathBuf> {
+    let path = Path::new(relative);
+    (!relative.is_empty()
+        && path
+            .components()
+            .all(|component| matches!(component, std::path::Component::Normal(_))))
+    .then(|| dir.join(path))
+}
 
 impl Bundle {
     /// The bundle `named` holds; see [`locate`].
@@ -311,10 +335,13 @@ fn client_history(dir: &Path, checkpoint: &str, events: &str) -> Result<ClientHi
     if checkpoint.is_empty() || events.is_empty() {
         return Err("the manifest names no checkpoint or no events".to_owned());
     }
+    let within = |named: &str| {
+        under(dir, named).ok_or_else(|| format!("the manifest names {named:?}, outside the bundle"))
+    };
     let start: ClientSession =
-        decode(&dir.join(checkpoint), "wire.ClientSession").map_err(|error| error.to_string())?;
+        decode(&within(checkpoint)?, "wire.ClientSession").map_err(|error| error.to_string())?;
     let events: ClientSessionEvents =
-        decode(&dir.join(events), "wire.ClientSessionEvents").map_err(|error| error.to_string())?;
+        decode(&within(events)?, "wire.ClientSessionEvents").map_err(|error| error.to_string())?;
     Ok(ClientHistory {
         start,
         events: events.traced,

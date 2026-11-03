@@ -79,6 +79,7 @@ fn structure(name: &str, bytes: &[u8], aliases: &mut redaction::structure::Alias
                     Type::Message => structure(&field.type_name, payload, aliases),
                     Type::Bytes => match redaction::structure::bytes(&field.name) {
                         Bytes::Kept => payload.to_vec(),
+                        Bytes::Alias => aliases.hash(payload),
                         Bytes::Blank => vec![0; payload.len()],
                     },
                     // Packed repeated numbers carry no text.

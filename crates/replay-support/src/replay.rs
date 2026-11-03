@@ -170,14 +170,20 @@ impl Bundle {
     /// live one failed. The first failing step and its property, or None
     /// when the stage holds.
     pub fn replay_core(&self) -> Result<Option<Failing>, BundleError> {
-        let Some(core) = &self.core else {
-            return Ok(None);
-        };
         let scratch = tempfile::tempdir().map_err(|error| BundleError::Read {
             path: std::env::temp_dir(),
             error,
         })?;
-        let store_path = scratch.path().join("store.sqlite");
+        self.replay_core_in(scratch.path())
+    }
+
+    /// [`Bundle::replay_core`] in `scratch`, which keeps the store the
+    /// replay ends with as `store.sqlite`, to compare with the live one.
+    pub fn replay_core_in(&self, scratch: &Path) -> Result<Option<Failing>, BundleError> {
+        let Some(core) = &self.core else {
+            return Ok(None);
+        };
+        let store_path = scratch.join("store.sqlite");
         std::fs::copy(&core.store, &store_path).map_err(|error| BundleError::Read {
             path: core.store.clone(),
             error,
@@ -190,7 +196,7 @@ impl Bundle {
                 error: error.to_string(),
             })?;
         let checkpoint_path = self.dir.join(crate::bundle::CORE).join("checkpoint");
-        let agents = scratch.path().join("agents");
+        let agents = scratch.join("agents");
         let mut daemon =
             Daemon::restore(&core.checkpoint, store, agents.clone()).map_err(|error| {
                 BundleError::Decode {

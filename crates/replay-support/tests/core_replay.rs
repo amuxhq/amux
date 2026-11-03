@@ -38,6 +38,35 @@ fn every_stage_of_a_healthy_dump_holds() {
     );
 }
 
+/// The core's record replays to the rows the live core holds, every text
+/// and body at its length: a journal frame whose branch is shorter than
+/// any alias of the kind `branch-1` keeps its git facts and its snapshot's
+/// body, so the replayed core ingests what the live one did.
+#[test]
+fn the_replayed_core_ingests_the_rows_the_live_one_holds() {
+    let (dumped, live) = support::with_git();
+    assert!(
+        live.iter().any(|row| row.contains("git Some((Some(4)")),
+        "the live row is on a four-byte branch: {live:#?}"
+    );
+    let bundle = Bundle::open(dumped.path()).expect("the bundle opens");
+    let core = bundle.core.as_ref().expect("the bundle carries the core");
+    assert!(
+        core.inputs
+            .iter()
+            .any(|line| matches!(line, daemon_core::Recorded::Read { .. })),
+        "the core read the journal since its checkpoint"
+    );
+    let scratch = tempfile::tempdir().unwrap();
+    assert_eq!(bundle.replay_core_in(scratch.path()).unwrap(), None);
+    let host = uuid::Uuid::parse_str(dumped.manifest()["host"].as_str().unwrap())
+        .unwrap()
+        .into_bytes();
+    let replayed =
+        store::Sqlite::open(&scratch.path().join("store.sqlite"), host.to_vec()).unwrap();
+    assert_eq!(support::shapes(&replayed), live);
+}
+
 #[test]
 fn a_dump_a_client_asked_for_replays_its_session_to_the_failing_message() {
     let dumped = support::client_violation();
@@ -155,6 +184,40 @@ fn a_client_session_the_manifest_names_that_cannot_be_read_fails_the_stage() {
 
         let output = support::repro(scratch.path());
         assert_eq!(output.status.code(), Some(1), "{what}");
+    }
+}
+
+/// The manifest names where a session's files are; a name that leads out
+/// of the bundle is not read, even where a file is there to read.
+#[test]
+fn a_session_the_manifest_places_outside_the_bundle_is_not_read() {
+    let dumped = support::client_violation();
+    let agent = dumped.agent();
+    let scratch = tempfile::tempdir().unwrap();
+    let bundle_dir = scratch.path().join("bundle");
+    copy_dir(dumped.path(), &bundle_dir);
+    // The session's files, moved beside the bundle and named from inside it.
+    let outside = scratch.path().join("outside");
+    copy_dir(
+        &bundle_dir.join(format!("client/sessions/{agent}")),
+        &outside,
+    );
+    let manifest_path = bundle_dir.join("manifest.json");
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+    for (field, named) in [
+        ("checkpoint", "../outside/checkpoint".to_owned()),
+        ("events", outside.join("events").display().to_string()),
+    ] {
+        let mut placed = manifest.clone();
+        placed["client"]["sessions"][0][field] = serde_json::Value::String(named.clone());
+        std::fs::write(&manifest_path, serde_json::to_vec(&placed).unwrap()).unwrap();
+        let bundle = Bundle::open(&bundle_dir).expect("the bundle opens");
+        let verdicts = bundle.replay_all().expect("the bundle replays");
+        let Verdict::Unreadable(why) = &verdicts[2].verdict else {
+            panic!("{named}: {}", verdicts[2]);
+        };
+        assert!(why.contains("outside the bundle"), "{why}");
     }
 }
 
@@ -348,6 +411,55 @@ fn no_report_of_any_trigger_carries_a_word_and_each_core_replays() {
         .collect();
     expected.extend(expected.clone());
     assert_eq!(triggers, expected, "each trigger on each host");
+}
+
+/// A daemon's log, which a report carries, names the hosts it pairs and
+/// links with by id and never by name: each daemon here runs as a process
+/// writing its own log, paired with the other for real.
+#[test]
+fn a_daemons_log_names_no_other_host() {
+    const BOX: &str = "PLANTEDbox";
+    const DESK: &str = "PLANTEDdesk";
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let mut net = testnet::Net::start_with(
+            testnet::Topology::new(),
+            testnet::NetOptions {
+                clock: testnet::ClockMode::Wall,
+                ..testnet::NetOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+        for name in [format!("box-{BOX}"), format!("desk-{DESK}")] {
+            net.add_host(testnet::HostDecl {
+                name,
+                lan: true,
+                process: true,
+                ..testnet::HostDecl::default()
+            })
+            .await
+            .unwrap();
+        }
+        let (r#box, desk) = (format!("box-{BOX}"), format!("desk-{DESK}"));
+        net.add_link(&desk, &r#box).await.unwrap();
+        assert!(net.link_up(&desk, &r#box).await);
+        let log = |host: &str| {
+            std::fs::read_to_string(net.host(host).unwrap().data_dir.join("daemon.log")).unwrap()
+        };
+        let (box_log, desk_log) = (log(&r#box), log(&desk));
+        assert!(
+            box_log.contains("paired") && box_log.contains("event=up"),
+            "the pairing and the link are logged:\n{box_log}"
+        );
+        for (whose, log, other) in [("box", &box_log, DESK), ("desk", &desk_log, BOX)] {
+            assert!(!log.contains(other), "{whose}'s log names {other}:\n{log}");
+        }
+        net.shutdown().await.unwrap();
+    });
 }
 
 fn list(root: &std::path::Path, dir: &std::path::Path, out: &mut Vec<(String, Vec<u8>)>) {

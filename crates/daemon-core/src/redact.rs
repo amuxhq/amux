@@ -32,6 +32,8 @@ pub(crate) enum Opaque {
     Verbatim,
     /// Hex of content bytes, such as a blob or a patch.
     Content,
+    /// Hex of a blob's hash.
+    Hash,
 }
 
 thread_local! {
@@ -201,6 +203,13 @@ impl<'r, S: Serializer> Serializer for Redacting<'r, S> {
                 };
                 self.inner
                     .serialize_str(&hex(&self.at.redactor.content(&bytes)))
+            }
+            Some(Opaque::Hash) => {
+                let Some(bytes) = unhex(text) else {
+                    return Err(ser::Error::custom("a hash that is not hex"));
+                };
+                self.inner
+                    .serialize_str(&hex(&self.at.redactor.hash(&bytes)))
             }
             None if typed(text) => self.inner.serialize_str(text),
             None => self.inner.serialize_str(&self.at.redactor.text(
@@ -518,6 +527,9 @@ mod tests {
         fn content(&self, bytes: &[u8]) -> Vec<u8> {
             swap(bytes)
         }
+        fn hash(&self, bytes: &[u8]) -> Vec<u8> {
+            bytes.iter().map(|byte| !byte).collect()
+        }
     }
 
     fn holds(bytes: &[u8]) -> bool {
@@ -636,6 +648,9 @@ mod tests {
             fn content(&self, bytes: &[u8]) -> Vec<u8> {
                 bytes.to_vec()
             }
+            fn hash(&self, bytes: &[u8]) -> Vec<u8> {
+                bytes.to_vec()
+            }
         }
         let input = Input::AttemptEnded {
             host: HostId([0x50; 16]),
@@ -648,24 +663,24 @@ mod tests {
     }
 
     #[test]
-    fn a_kept_blob_and_a_patch_go_to_the_redactor_as_bytes() {
+    fn a_kept_blob_a_patch_and_its_hash_go_to_the_redactor_as_bytes() {
         use crate::JobId;
         use crate::payload::{JobResult, Patch};
 
         let redactor = Swap::default();
-        let compared = |bytes: &[u8]| {
+        let compared = |bytes: &[u8], hash: u8| {
             Recorded::Input(Box::new(Input::JobDone {
                 job: JobId(4),
                 result: JobResult::Compared {
                     diff: wire::Diff::default(),
                     patch: Some(Patch {
-                        hash: vec![8; 32],
+                        hash: vec![hash; 32],
                         bytes: bytes.to_vec(),
                     }),
                 },
             }))
         };
-        let planted = compared(b"+token = PLANTED\n");
+        let planted = compared(b"+token = PLANTED\n", 8);
         let in_hex = hex(PLANTED);
         let carries = |line: &Recorded| serde_json::to_string(line).unwrap().contains(&in_hex);
         assert!(carries(&planted), "the line carries the content in hex");
@@ -673,15 +688,15 @@ mod tests {
         assert!(!carries(&redacted), "the planted word is gone");
         assert_eq!(
             redacted,
-            compared(b"+token = REMOVED\n"),
-            "only the content changed"
+            compared(b"+token = REMOVED\n", !8),
+            "only the content and the hash changed"
         );
 
         let binary = [0xff, 0xfe, b'P', b'L', b'A', b'N', b'T', b'E', b'D'];
         let swapped = [0xff, 0xfe, b'R', b'E', b'M', b'O', b'V', b'E', b'D'];
         assert_eq!(
-            compared(&binary).redacted(&redactor),
-            compared(&swapped),
+            compared(&binary, 8).redacted(&redactor),
+            compared(&swapped, !8),
             "content that is not text goes the same way"
         );
     }

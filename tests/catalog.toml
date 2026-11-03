@@ -453,6 +453,25 @@ update = ""
 cargo = [{ package = "node", modules = ["addresses", "agent_names", "analytics", "blobs", "catalogue", "diff", "dump", "forwarded_send", "front_door", "host_catalogue", "hosts", "messaging", "peer_service", "push", "registry", "resumption", "single_daemon", "worktree"], features = [] }]
 
 [[suite]]
+name = "client-install"
+contract = "A client's first call installs a bundled amux or a download whose signed manifest and hash check out, sets it up and starts it, places nothing it did not verify, and leaves an answering installation alone."
+paths = ["crates/installer"]
+recipe = "just suite client-install"
+boundary = "System composition"
+oracle = "The installer's outcome and steps, the installed file's bytes, and the front door answering."
+real = ["built amux binary", "amux daemon", "signed release manifests", "loopback HTTP", "Unix sockets"]
+substituted = ["release server by a loopback stand-in", "home directory by a temporary one"]
+time = "real"
+capabilities = ["desktop", "Unix"]
+lane = "system"
+evidence = ""
+update = ""
+cargo = [
+  { package = "installer", kind = "lib", targets = ["installer"], features = [] },
+  { package = "installer", kind = "test", targets = ["install"], features = [] },
+]
+
+[[suite]]
 name = "supervisor-update"
 contract = "The supervisor activates a new build, rolls back after failed starts, refuses a rejected build, finishes an interrupted rollback and restarts the daemon, with every step taken by the shipped supervisor code."
 paths = ["crates/node/tests/supervisor.rs", "crates/fake-amux/src"]

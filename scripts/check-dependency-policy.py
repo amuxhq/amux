@@ -48,6 +48,10 @@ ALLOWED_LOCAL = {
     # shares both without building the daemon.
     "release": set(),
     "xtask": {"release"},
+    # What a client calls to find, install and start amux: the front door
+    # from the settings, a download checked against the release manifest,
+    # and the local socket it waits on, without linking the daemon.
+    "installer": {"agent-dir", "release", "settings"},
     # The Swift mirrors of the view values are generated from their
     # definitions, so the generator reads them.
     "ios-tools": {"app-runtime", "ui-state", "ui-view", "wire"},

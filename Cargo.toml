@@ -17,6 +17,7 @@ members = [
     "crates/daemon-core",
     "crates/fake-amux",
     "crates/git-facts",
+    "crates/installer",
     "crates/interpret",
     "crates/ios-tools",
     "crates/journal",

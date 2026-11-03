@@ -1754,6 +1754,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "installer"
+version = "0.1.0"
+dependencies = [
+ "agent-dir",
+ "libc",
+ "provider-fakes",
+ "release",
+ "reqwest",
+ "serde_json",
+ "settings",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "interpret"
 version = "0.1.0"
 dependencies = [

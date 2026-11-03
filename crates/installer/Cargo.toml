@@ -1,0 +1,27 @@
+[package]
+name = "installer"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Finds amux on this machine, installs it when it is missing, and starts it: what every client calls first"
+publish = false
+
+[dependencies]
+agent-dir = { workspace = true }
+release = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+settings = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[dev-dependencies]
+provider-fakes = { workspace = true }
+release = { workspace = true, features = ["test-key"] }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }

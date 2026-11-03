@@ -11,6 +11,7 @@
 use std::collections::{HashSet, VecDeque};
 
 pub use core_ring::{Check, Violation};
+use serde::{Deserialize, Serialize};
 
 pub const TOOL_RESULT_WITHOUT_CALL: Check = Check {
     id: "agent.tool_result_without_call",
@@ -40,12 +41,14 @@ pub const CHECKS: &[Check] = &[
 /// How many closed item keys are remembered, so a key opened again after
 /// its final item is seen. A reopened key is almost always the next fact
 /// or two after the close; older keys are forgotten rather than carried in
-/// every checkpoint.
+/// every checkpoint without end.
 const CLOSED_REMEMBERED: usize = 1024;
 
 /// What the checks watch: the step in progress, and the keys closed lately.
-/// Held in memory only, never checkpointed: a resumed interpreter's checks
-/// start from what it does next, and they never judge two states unequal.
+/// The keys closed are checkpointed with the rest of the interpreter's
+/// state, so an item closed before a checkpoint and opened again after it
+/// breaks its check in a replay from that checkpoint as it did live. The
+/// step in progress is empty between steps, where checkpoints are taken.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Watch {
     /// The first violation in the step in progress.
@@ -60,8 +63,25 @@ pub(crate) struct Watch {
 }
 
 impl PartialEq for Watch {
-    fn eq(&self, _: &Self) -> bool {
-        true
+    fn eq(&self, other: &Self) -> bool {
+        self.closed == other.closed
+    }
+}
+
+impl Serialize for Watch {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.closed.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Watch {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let closed = VecDeque::<String>::deserialize(deserializer)?;
+        Ok(Watch {
+            closed_set: closed.iter().cloned().collect(),
+            closed,
+            ..Watch::default()
+        })
     }
 }
 

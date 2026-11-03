@@ -395,7 +395,6 @@ pub struct Shared<A: OpenAsk> {
     /// provider about to be closed.
     leaving: bool,
     /// What the checks after every step watch.
-    #[serde(skip)]
     watch: Watch,
 }
 

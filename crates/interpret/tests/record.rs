@@ -196,3 +196,53 @@ fn a_checkpoint_this_build_cannot_read_runs_no_event() {
         json!([{"checkpoint": null, "events": []}])
     );
 }
+
+/// An item closed just before the facts ring rotates and opened again just
+/// after breaks its check live, and the record's replay from the second
+/// segment's checkpoint breaks it at the same event, as the checkpoint
+/// carries the keys the checks remember closing.
+#[test]
+fn an_item_reopened_across_a_checkpoint_breaks_its_check_in_the_record() {
+    let spec = AgentSpec {
+        agent_id: b"agent".to_vec(),
+        kind: wire::Kind::Codex as i32,
+        incarnation: 1,
+        ..AgentSpec::default()
+    };
+    let item = |method: &str, text: &str| {
+        Event::Fact(Fact {
+            channel: Channel::Rpc,
+            payload: serde_json::to_vec(&json!({"method": method, "params": {
+                "threadId": "t", "turnId": "u",
+                "item": {"type": "agentMessage", "id": "msg_1", "text": text}}}))
+            .unwrap(),
+        })
+    };
+    let (mut state, _) = Codex::initial(&spec);
+    let first_checkpoint = interpret::encode_checkpoint(&state);
+    let before = [item("item/started", ""), item("item/completed", "done")];
+    for event in &before {
+        assert!(Codex::step(&mut state, event.clone()).broken.is_none());
+    }
+    let rotated = interpret::encode_checkpoint(&state);
+    let after = item("item/started", "");
+    let live = Codex::step(&mut state, after.clone()).broken;
+    assert_eq!(
+        live.map(|broken| broken.invariant.id),
+        Some(interpret::checks::ITEM_BEFORE_OPEN.id)
+    );
+    let record = interpret::record::record::<Codex>(
+        &spec,
+        [3; 16],
+        Value::Null,
+        [
+            (first_checkpoint, before.iter().flat_map(line).collect()),
+            (rotated, line(&after)),
+        ],
+    );
+    assert_eq!(
+        record["segments"][1]["events"][0]["broken"],
+        interpret::checks::ITEM_BEFORE_OPEN.id,
+        "{record}"
+    );
+}

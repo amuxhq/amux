@@ -55,8 +55,8 @@
 //! recorded. It still restores and replays as the original does.
 //!
 //! Each record is held to [`RECORD_LIMIT`] once compressed: one past it is
-//! left out and its size named under `over_limit`, which says to checkpoint
-//! more often, or to record less, rather than to send more.
+//! left out and its size named under `over_limit`. The core's is measured
+//! whole, its checkpoint, inputs, store copy and journals together.
 //!
 //! Everything protobuf is encoded without a length prefix except journal
 //! segments, which keep the journal's own framing. [`pack`] turns a bundle
@@ -284,8 +284,8 @@ impl ProfileRuntime {
         let core = self.dump_core(&partial, &own, &mut errors).await?;
         if let Some(over) = core.as_ref().and_then(|core| core.over) {
             errors.push(format!(
-                "{CORE}: the window since the checkpoint is {over} bytes compressed, over the \
-                 limit of {RECORD_LIMIT}: only its counts are here"
+                "{CORE}: the record is {over} bytes compressed, over the limit of \
+                 {RECORD_LIMIT}: only its counts are here"
             ));
         }
         let agents = self
@@ -596,7 +596,7 @@ fn journal_from(
         let mut framed = Vec::with_capacity(bytes.len());
         let mut at = 0;
         while let journal::Frame::Whole(step, len) = journal::decode_frame(&bytes[at..]) {
-            framed.extend(fitted(structure, &step, len));
+            framed.extend(fitted(structure, &step, len)?);
             at += len;
         }
         let tail = &bytes[at..];
@@ -611,31 +611,16 @@ fn journal_from(
     Ok(out)
 }
 
-/// A journal frame as its structure, as a frame of `len` bytes: an alias
-/// can be longer or shorter than what it stands for, so the step is padded
-/// to the length or, where it no longer fits, written without its texts.
-fn fitted(structure: &Structure, step: &Step, len: usize) -> Vec<u8> {
+/// A journal frame as its structure, as a frame of `len` bytes. Every
+/// alias is as long as what it stands for and every blank as long as its
+/// text, so the step is never longer than it was and is padded to its
+/// length; one that would not fit is an error rather than a frame that
+/// says less than the live one did.
+fn fitted(structure: &Structure, step: &Step, len: usize) -> io::Result<Vec<u8>> {
     let redacted = structure.message("amux.v1.Step", &step.encode_to_vec());
-    let mut step = Step::decode(redacted.as_slice()).unwrap_or_default();
-    if let Some(frame) = journal::encode_frame_exact(&step, len) {
-        return frame;
-    }
-    for item in &mut step.items {
-        item.text.clear();
-        item.body.clear();
-        item.attachments.clear();
-    }
-    for append in &mut step.appends {
-        append.text.clear();
-    }
-    if let Some(snapshot) = &mut step.snapshot {
-        snapshot.body.clear();
-        snapshot.working_on = None;
-        snapshot.git = None;
-    }
+    let step = Step::decode(redacted.as_slice()).map_err(io::Error::other)?;
     journal::encode_frame_exact(&step, len)
-        .or_else(|| journal::encode_frame_exact(&Step::default(), len))
-        .unwrap_or_else(|| vec![0; len])
+        .ok_or_else(|| io::Error::other(format!("a frame of {len} bytes grew past its length")))
 }
 
 /// What the core's record in a bundle holds, for the manifest.
@@ -643,7 +628,7 @@ struct CoreDumped {
     /// Inputs, and lines saying what an ingest read.
     inputs: usize,
     reads: usize,
-    /// The window's size compressed, when it is past the limit and so only
+    /// The record's size compressed, when it is past the limit and so only
     /// counted.
     over: Option<usize>,
 }
@@ -651,8 +636,10 @@ struct CoreDumped {
 /// Writes the core's record from what the core thread handed over: the
 /// checkpoint and ring lines as their structure, the store copy at
 /// `scratch` redacted to its structure in place and moved in, and each of
-/// `journals` from its cursor in that store. A window past the limit
-/// compressed is counted and nothing is written.
+/// `journals` from its cursor in that store. A record past the limit
+/// compressed, all of it together, is counted and nothing of it is left
+/// written; the ring's lines alone are measured first, so a window that
+/// cannot fit costs no store copy.
 fn write_core(
     captured: &Captured,
     scratch: &Path,
@@ -713,11 +700,50 @@ fn write_core(
                 .map_err(|error| format!("writing {id}'s journal: {error}"))?;
         }
     }
+    let size = compressed(out).map_err(|error| format!("measuring {CORE}: {error}"))?;
+    let over = (size > RECORD_LIMIT).then_some(size);
+    if over.is_some() {
+        std::fs::remove_dir_all(out).map_err(|error| format!("removing {CORE}: {error}"))?;
+    }
     Ok(CoreDumped {
         inputs,
         reads,
-        over: None,
+        over,
     })
+}
+
+/// Every file under `dir`, in path order, compressed together as a bundle
+/// is sent: the size a record takes against [`RECORD_LIMIT`]. Streamed, so
+/// a large store copy is never held whole.
+fn compressed(dir: &Path) -> io::Result<usize> {
+    struct Counted(usize);
+    impl io::Write for Counted {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0 += bytes.len();
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut files = Vec::new();
+    let mut stack = vec![dir.to_owned()];
+    while let Some(at) = stack.pop() {
+        for entry in std::fs::read_dir(&at)? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                stack.push(entry.path());
+            } else {
+                files.push(entry.path());
+            }
+        }
+    }
+    files.sort();
+    let mut encoder = zstd::stream::Encoder::new(Counted(0), 3)?;
+    for file in files {
+        io::copy(&mut std::fs::File::open(file)?, &mut encoder)?;
+    }
+    Ok(encoder.finish()?.0)
 }
 
 /// The redactor of what the daemon core is fed: every value treated by
@@ -750,6 +776,10 @@ impl store::redact::Redactor for Structure {
 
     fn content(&self, bytes: &[u8]) -> Vec<u8> {
         vec![0; bytes.len()]
+    }
+
+    fn hash(&self, bytes: &[u8]) -> Vec<u8> {
+        self.0.lock().unwrap().hash(bytes)
     }
 }
 
@@ -832,5 +862,100 @@ mod tests {
             core.over
         );
         assert!(!out.exists(), "nothing of the window is written");
+    }
+
+    /// A journal frame through the core's structure keeps its length,
+    /// however short what an alias stands for, and its attachment's hash
+    /// is an alias, the same in every frame.
+    #[test]
+    fn a_frame_keeps_its_length_and_aliases_its_hashes() {
+        let hash = vec![0xab; 32];
+        let step = |key: &str| Step {
+            items: vec![wire::Item {
+                key: key.to_owned(),
+                text: "a zebra".to_owned(),
+                attachments: vec![wire::Attachment {
+                    of: Some(wire::attachment::Of::Image(wire::BlobRef {
+                        hash: hash.clone(),
+                        name: "zebra.png".to_owned(),
+                        mime: "image/png".to_owned(),
+                        size: 3,
+                    })),
+                }],
+                ..Default::default()
+            }],
+            snapshot: Some(wire::Snapshot {
+                working_on: Some("a zebra".to_owned()),
+                git: Some(wire::Git {
+                    branch: Some("main".to_owned()),
+                    base_branch: Some("m".to_owned()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let structure = Structure::new();
+        let mut aliased = Vec::new();
+        for key in ["first", "second"] {
+            let live = journal::encode_frame(&step(key));
+            let frame = fitted(&structure, &step(key), live.len()).expect("the frame fits");
+            assert_eq!(frame.len(), live.len());
+            let journal::Frame::Whole(recorded, _) = journal::decode_frame(&frame) else {
+                panic!("the frame decodes");
+            };
+            let git = recorded.snapshot.as_ref().unwrap().git.clone().unwrap();
+            assert_eq!(git.branch.as_ref().map(String::len), Some(4));
+            assert_ne!(git.branch.as_deref(), Some("main"));
+            assert_eq!(git.base_branch.as_ref().map(String::len), Some(1));
+            let Some(wire::attachment::Of::Image(blob)) = &recorded.items[0].attachments[0].of
+            else {
+                panic!("the attachment is kept");
+            };
+            assert_eq!(blob.hash.len(), hash.len());
+            assert_ne!(blob.hash, hash);
+            aliased.push(blob.hash.clone());
+        }
+        assert_eq!(aliased[0], aliased[1], "one hash, one alias");
+    }
+
+    #[test]
+    fn a_record_whose_store_passes_the_limit_is_counted_and_not_written() {
+        // The window is empty, so the ring's lines fit; the store copy is
+        // what passes the limit, its rows keyed by ids that do not compress.
+        let dir = tempfile::tempdir().unwrap();
+        let scratch = dir.path().join("store.sqlite");
+        let host = vec![1; 16];
+        let mut store = store::Sqlite::open(&scratch, host.clone()).unwrap();
+        let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+        for _ in 0..6_000 {
+            let mut agent = vec![0; 16];
+            for byte in &mut agent {
+                seed = seed
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                *byte = (seed >> 56) as u8;
+            }
+            let row = AgentRow::new(
+                store::AgentKey::new(host.clone(), agent),
+                wire::Kind::ClaudeSdk,
+                "/src/amux",
+            );
+            store.put_agent(&row).unwrap();
+        }
+        let daemon = daemon_core::Daemon::new(store, daemon_core::StartOptions::default());
+        let captured = Captured {
+            checkpoint: daemon.checkpoint(),
+            lines: Vec::new(),
+        };
+        drop(daemon);
+        let out = dir.path().join(CORE);
+        let core = write_core(&captured, &scratch, &out, &[]).expect("the record is counted");
+        assert!(
+            core.over.is_some_and(|bytes| bytes > RECORD_LIMIT),
+            "{:?}",
+            core.over
+        );
+        assert!(!out.exists(), "nothing of the record is written");
     }
 }

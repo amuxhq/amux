@@ -260,6 +260,11 @@ fn marked() -> String {
     format!("the {MARKER} said")
 }
 
+/// The hash of a file somebody attached: theirs as much as its name.
+fn hash(file: &str) -> Vec<u8> {
+    format!("{MARKER}:{file}").into_bytes()
+}
+
 fn blob(hash: &[u8]) -> wire::BlobRef {
     wire::BlobRef {
         hash: hash.to_vec(),
@@ -286,7 +291,7 @@ fn marked_history() -> ClientSessionHistory {
         text: marked(),
         attachments: vec![
             wire::Attachment {
-                of: Some(wire::attachment::Of::Image(blob(b"image"))),
+                of: Some(wire::attachment::Of::Image(blob(&hash("image")))),
             },
             wire::Attachment {
                 of: Some(wire::attachment::Of::Text(wire::InlineText {
@@ -369,7 +374,7 @@ fn marked_history() -> ClientSessionHistory {
         input_id: b"queued".to_vec(),
         text: marked(),
         attachments: vec![wire::Attachment {
-            of: Some(wire::attachment::Of::File(blob(b"file"))),
+            of: Some(wire::attachment::Of::File(blob(&hash("file")))),
         }],
         steer: false,
         sender: None,
@@ -396,7 +401,7 @@ fn marked_history() -> ClientSessionHistory {
             of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
                 text: marked(),
                 attachments: vec![wire::Attachment {
-                    of: Some(wire::attachment::Of::Image(blob(b"sent-image"))),
+                    of: Some(wire::attachment::Of::Image(blob(&hash("sent-image")))),
                 }],
             })),
         },
@@ -459,7 +464,7 @@ fn marked_history() -> ClientSessionHistory {
             }),
         ),
         Msg::Blob {
-            hash: b"image".to_vec(),
+            hash: hash("image"),
             status: ui_state::BlobStatus::Failed(marked()),
         },
         Msg::Page {
@@ -504,6 +509,32 @@ fn nothing_anybody_wrote_reaches_a_sessions_record() {
         !holds(&record.encode_to_vec()),
         "the record holds the marker: {record:?}"
     );
+    // A row's attachment and the blob that arrives for it still match:
+    // their hash is one alias of its length.
+    let fetched: Vec<Vec<u8>> = record
+        .events
+        .iter()
+        .flat_map(|events| &events.traced)
+        .filter_map(|traced| match &traced.event {
+            Some(wire::dump::client_traced::Event::Msg(wire::dump::ClientSessionMsg {
+                of: Some(wire::dump::client_session_msg::Of::Blob(blob)),
+            })) => Some(blob.hash.clone()),
+            _ => None,
+        })
+        .collect();
+    let attached: Vec<Vec<u8>> = record
+        .start
+        .iter()
+        .flat_map(|start| start.transcript.iter().flat_map(|window| &window.items))
+        .flat_map(|item| &item.attachments)
+        .filter_map(|attachment| match &attachment.of {
+            Some(wire::attachment::Of::Image(blob)) => Some(blob.hash.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(fetched.len(), 1, "{fetched:?}");
+    assert_eq!(fetched[0].len(), hash("image").len());
+    assert!(attached.contains(&fetched[0]), "{attached:?} {fetched:?}");
     // The same conclusions: the tool in flight, the retry, the compaction,
     // the ask and the announced call all survive.
     replays_alike(&whole)

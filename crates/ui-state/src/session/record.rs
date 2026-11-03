@@ -6,6 +6,11 @@
 //! and the keys and ids it names. Everything else is emptied, so the record
 //! replays through the same model to the same windows, runs, inputs and
 //! failed checks as the whole history, and holds no text, name or path.
+//! An attachment's hash is the hash of a person's file, so each is an
+//! alias of its length, the same throughout the record: a row still
+//! matches the blob that arrives for it.
+
+use std::collections::HashMap;
 
 use wire::dump::{
     ClientBlob, ClientCatalogue, ClientInput, ClientPage, ClientSent, ClientSession,
@@ -22,6 +27,8 @@ use crate::body::{item_structure, named_kind, snapshot_structure};
 /// The record of a session's history: the same checkpoint and events, each
 /// event's size kept, with every body, text, name and path emptied.
 pub fn record(history: ClientSessionHistory) -> ClientSessionHistory {
+    let mut hashes = Hashes::default();
+    let hashes = &mut hashes;
     let kind = history
         .start
         .as_ref()
@@ -29,7 +36,7 @@ pub fn record(history: ClientSessionHistory) -> ClientSessionHistory {
         .map_or(Kind::Unspecified, Agent::kind);
     ClientSessionHistory {
         agent_id: history.agent_id,
-        start: history.start.map(|start| session(kind, start)),
+        start: history.start.map(|start| session(kind, start, hashes)),
         events: history.events.map(|events| ClientSessionEvents {
             traced: events
                 .traced
@@ -37,7 +44,7 @@ pub fn record(history: ClientSessionHistory) -> ClientSessionHistory {
                 .map(|traced| ClientTraced {
                     event: traced.event.map(|event| match event {
                         client_traced::Event::Msg(msg) => {
-                            client_traced::Event::Msg(message(kind, msg))
+                            client_traced::Event::Msg(message(kind, msg, hashes))
                         }
                         // The driver's own acts name keys, counts and the
                         // kinds of its errors, never their words; nothing
@@ -52,19 +59,52 @@ pub fn record(history: ClientSessionHistory) -> ClientSessionHistory {
     }
 }
 
-fn session(kind: Kind, start: ClientSession) -> ClientSession {
-    let items = |items: Vec<Item>| items.into_iter().map(|held| item(kind, held)).collect();
-    let window = |held: ClientTranscript| ClientTranscript {
-        items: items(held.items),
+/// The hashes of one record, each as an alias of its length: the record's
+/// count of distinct hashes, big-endian at its end.
+#[derive(Default)]
+struct Hashes(HashMap<Vec<u8>, Vec<u8>>);
+
+impl Hashes {
+    fn alias(&mut self, hash: Vec<u8>) -> Vec<u8> {
+        if hash.is_empty() {
+            return hash;
+        }
+        let next = self.0.len() as u64 + 1;
+        self.0
+            .entry(hash)
+            .or_insert_with_key(|hash| {
+                let mut alias = vec![0; hash.len()];
+                let count = next.to_be_bytes();
+                let width = count.len().min(alias.len());
+                let at = alias.len() - width;
+                alias[at..].copy_from_slice(&count[count.len() - width..]);
+                alias
+            })
+            .clone()
+    }
+}
+
+fn items(kind: Kind, items: Vec<Item>, hashes: &mut Hashes) -> Vec<Item> {
+    items
+        .into_iter()
+        .map(|held| item(kind, held, hashes))
+        .collect()
+}
+
+fn session(kind: Kind, start: ClientSession, hashes: &mut Hashes) -> ClientSession {
+    let mut window = |held: ClientTranscript| ClientTranscript {
+        items: items(kind, held.items, hashes),
         exhausted: held.exhausted,
     };
+    let transcript = start.transcript.map(&mut window);
+    let pending = start.pending.map(&mut window);
     ClientSession {
         agent: start.agent.map(agent),
         host: start.host.map(host),
         snapshot: start.snapshot.map(|held| snapshot(kind, held)),
         catalogue: start.catalogue.map(catalogue),
-        transcript: start.transcript.map(window),
-        pending: start.pending.map(window),
+        transcript,
+        pending,
         inputs: start
             .inputs
             .into_iter()
@@ -74,23 +114,23 @@ fn session(kind: Kind, start: ClientSession) -> ClientSession {
                 ..held
             })
             .collect(),
-        blobs: start.blobs.into_iter().map(blob).collect(),
-        arrivals: items(start.arrivals),
+        blobs: start
+            .blobs
+            .into_iter()
+            .map(|held| blob(held, hashes))
+            .collect(),
+        arrivals: items(kind, start.arrivals, hashes),
         ..start
     }
 }
 
-fn message(kind: Kind, msg: ClientSessionMsg) -> ClientSessionMsg {
+fn message(kind: Kind, msg: ClientSessionMsg, hashes: &mut Hashes) -> ClientSessionMsg {
     use client_session_msg::Of;
     ClientSessionMsg {
         of: msg.of.map(|of| match of {
-            Of::Event(held) => Of::Event(event(kind, held)),
+            Of::Event(held) => Of::Event(event(kind, held, hashes)),
             Of::Page(page) => Of::Page(ClientPage {
-                items: page
-                    .items
-                    .into_iter()
-                    .map(|held| item(kind, held))
-                    .collect(),
+                items: items(kind, page.items, hashes),
                 ..page
             }),
             Of::Send(held) => Of::Send(input(held)),
@@ -105,7 +145,7 @@ fn message(kind: Kind, msg: ClientSessionMsg) -> ClientSessionMsg {
             }),
             Of::Entry(held) => Of::Entry(agent(held)),
             Of::Host(held) => Of::Host(host(held)),
-            Of::Blob(held) => Of::Blob(blob(held)),
+            Of::Blob(held) => Of::Blob(blob(held, hashes)),
             Of::Catalogue(held) => Of::Catalogue(catalogue(held)),
             other @ (Of::Connection(_)
             | Of::DiscardInputId(_)
@@ -116,12 +156,12 @@ fn message(kind: Kind, msg: ClientSessionMsg) -> ClientSessionMsg {
     }
 }
 
-fn event(kind: Kind, event: SessionEvent) -> SessionEvent {
+fn event(kind: Kind, event: SessionEvent, hashes: &mut Hashes) -> SessionEvent {
     use session_event::Of;
     SessionEvent {
         of: event.of.map(|of| match of {
             Of::Snapshot(held) => Of::Snapshot(snapshot(kind, held)),
-            Of::Item(held) => Of::Item(item(kind, held)),
+            Of::Item(held) => Of::Item(item(kind, held, hashes)),
             Of::Append(append) => Of::Append(wire::Append {
                 key: append.key,
                 base_revision: append.base_revision,
@@ -137,7 +177,7 @@ fn event(kind: Kind, event: SessionEvent) -> SessionEvent {
     }
 }
 
-fn item(kind: Kind, item: Item) -> Item {
+fn item(kind: Kind, item: Item, hashes: &mut Hashes) -> Item {
     let body = item_structure(named_kind(item.kind).unwrap_or(kind), &item.body);
     Item {
         key: item.key,
@@ -145,19 +185,23 @@ fn item(kind: Kind, item: Item) -> Item {
         revision: item.revision,
         input_id: item.input_id,
         text: String::new(),
-        attachments: item.attachments.into_iter().map(attachment).collect(),
+        attachments: item
+            .attachments
+            .into_iter()
+            .map(|held| attachment(held, hashes))
+            .collect(),
         kind: item.kind,
         body,
         at_ms: item.at_ms,
     }
 }
 
-/// An attachment by its arm and the hash of the bytes it names: what a
-/// row redraws on when those bytes arrive.
-fn attachment(held: Attachment) -> Attachment {
+/// An attachment by its arm and the alias of the hash of the bytes it
+/// names: what a row redraws on when those bytes arrive.
+fn attachment(held: Attachment, hashes: &mut Hashes) -> Attachment {
     use attachment::Of;
-    let blob = |blob: wire::BlobRef| wire::BlobRef {
-        hash: blob.hash,
+    let mut blob = |blob: wire::BlobRef| wire::BlobRef {
+        hash: hashes.alias(blob.hash),
         size: blob.size,
         ..Default::default()
     };
@@ -336,8 +380,9 @@ fn catalogue(held: ClientCatalogue) -> ClientCatalogue {
     }
 }
 
-fn blob(held: ClientBlob) -> ClientBlob {
+fn blob(held: ClientBlob, hashes: &mut Hashes) -> ClientBlob {
     ClientBlob {
+        hash: hashes.alias(held.hash),
         failed: String::new(),
         ..held
     }

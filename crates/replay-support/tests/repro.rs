@@ -612,6 +612,53 @@ fn a_fetch_signs_each_request_for_the_bucket_the_environment_names() {
     );
 }
 
+/// A prefix names one report, `reports/<user>/<id>`, both plain names:
+/// its id becomes the folder it is downloaded into, which is emptied
+/// first, so nothing else names a folder. Anything else is refused before
+/// a bucket is asked for.
+#[test]
+fn only_a_reports_user_and_id_prefix_is_fetched() {
+    assert_eq!(fetch::report_prefix("reports/u/0a"), Some(("u", "0a")));
+    assert_eq!(fetch::report_prefix("reports/u/0a/"), Some(("u", "0a")));
+    for named in [
+        "reports/",
+        "reports",
+        "reports/u",
+        "reports/u/",
+        "reports/x/..",
+        "reports/../x",
+        "reports/u/.",
+        "reports//0a",
+        "reports/u/0a/extra",
+        "elsewhere/u/0a",
+    ] {
+        assert_eq!(fetch::report_prefix(named), None, "{named}");
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let keep = scratch.path().join("repro");
+    std::fs::create_dir_all(&keep).unwrap();
+    let beside = scratch.path().join("beside");
+    std::fs::write(&beside, b"kept").unwrap();
+    for named in ["reports/x/..", "reports/"] {
+        let refused = repro(named, &keep, || Err("a bucket was asked for".to_owned())).unwrap_err();
+        assert!(
+            refused.contains("reports/<user>/<id>"),
+            "{named}: {refused}"
+        );
+        let refused = bucket("http://127.0.0.1:9")
+            .fetch(named, &keep)
+            .unwrap_err();
+        assert!(
+            refused.contains("reports/<user>/<id>"),
+            "{named}: {refused}"
+        );
+    }
+    assert!(
+        beside.is_file() && keep.is_dir(),
+        "nothing outside a report's folder goes"
+    );
+}
+
 /// A report fetched by its id from a local S3-compatible store that checks
 /// every request's signature, laid out as the account service lays
 /// reports out, replays as the folder it was sent from. Needs docker; it

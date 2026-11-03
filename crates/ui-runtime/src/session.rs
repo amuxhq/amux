@@ -403,7 +403,7 @@ impl Inner {
     }
 
     async fn fetch_blob(self: Arc<Self>, hash: Vec<u8>) {
-        self.note(DriverEvent::Blob { hash: hash.clone() });
+        self.note(DriverEvent::Blob);
         self.apply(Msg::Blob {
             hash: hash.clone(),
             status: BlobStatus::Fetching,

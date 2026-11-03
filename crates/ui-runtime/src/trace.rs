@@ -89,9 +89,9 @@ pub enum DriverEvent {
     PageFailed {
         error: DriverError,
     },
-    Blob {
-        hash: Vec<u8>,
-    },
+    /// A blob was fetched; the message after it names the blob, so a
+    /// record can alias its hash where this description could not.
+    Blob,
     /// The chat on screen names a catalogue this client does not hold.
     Catalogue {
         hash: Vec<u8>,

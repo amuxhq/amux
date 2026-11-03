@@ -64,9 +64,9 @@ pub fn repro(
         unpack(&kept)?;
         return Ok(vec![report_run(name, kept)?]);
     }
-    if fetch::report_id(named).is_none() && !named.starts_with("reports/") {
+    if fetch::report_id(named).is_none() && fetch::report_prefix(named).is_none() {
         return Err(format!(
-            "{named} is no file or folder here, nor a report id or the prefix of one"
+            "{named} is no file or folder here, nor a report id or a reports/<user>/<id> prefix"
         ));
     }
     let kept = bucket()?.fetch(named, created(keep)?)?;

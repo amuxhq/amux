@@ -105,3 +105,31 @@ fn a_dump_with_no_chat_on_screen_has_no_session_stage() {
         .unwrap();
     assert!(matches!(session.verdict, Verdict::Absent(_)), "{session}");
 }
+
+/// An archive is unpacked only up to a limit far past any report's, so one
+/// that inflates past it is refused before it is held whole.
+#[test]
+fn an_archive_that_unpacks_past_the_limit_is_refused() {
+    use std::io::Write as _;
+
+    use replay_support::bundle::{UNPACKED_LIMIT, unpacked_at_most};
+
+    let packed = zstd::bulk::compress(&[0; 4096], 3).unwrap();
+    assert_eq!(unpacked_at_most(&packed, 4096).unwrap().len(), 4096);
+    let refused = unpacked_at_most(&packed, 4095).unwrap_err();
+    assert!(refused.contains("past 4095 bytes"), "{refused}");
+
+    let report = tempfile::tempdir().unwrap();
+    let archive = report.path().join("dump.pb.zst");
+    let mut encoder =
+        zstd::stream::Encoder::new(std::fs::File::create(&archive).unwrap(), 3).unwrap();
+    let chunk = vec![0; 1 << 20];
+    for _ in 0..=(UNPACKED_LIMIT >> 20) {
+        encoder.write_all(&chunk).unwrap();
+    }
+    encoder.finish().unwrap();
+    let Err(refused) = Bundle::open(&archive) else {
+        panic!("an archive past the limit opens");
+    };
+    assert!(refused.to_string().contains("unpacks past"), "{refused}");
+}

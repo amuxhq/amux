@@ -184,14 +184,10 @@ impl Bucket {
                 (id, keys)
             }
             None => {
-                let prefix = format!("{}/", named.trim_end_matches('/'));
-                let id = prefix
-                    .trim_end_matches('/')
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or_default()
-                    .to_owned();
-                (id, self.list(&prefix)?)
+                let (user, id) = report_prefix(named).ok_or_else(|| {
+                    format!("{named:?} is neither a report id nor a reports/<user>/<id> prefix")
+                })?;
+                (id.to_owned(), self.list(&format!("{REPORTS}{user}/{id}/"))?)
             }
         };
         if keys.is_empty() {
@@ -218,6 +214,16 @@ pub fn report_id(named: &str) -> Option<String> {
     let hex: String = named.chars().filter(|c| *c != '-').collect();
     (hex.len() == 32 && hex.chars().all(|c| c.is_ascii_hexdigit()))
         .then(|| hex.to_ascii_lowercase())
+}
+
+/// The user and report a prefix names, when it is `reports/<user>/<id>`
+/// (a trailing `/` allowed) and both are plain names: the id becomes the
+/// folder the report is downloaded into, so nothing else is taken.
+pub fn report_prefix(named: &str) -> Option<(&str, &str)> {
+    let rest = named.strip_prefix(REPORTS)?;
+    let rest = rest.strip_suffix('/').unwrap_or(rest);
+    let (user, id) = rest.split_once('/')?;
+    (plain(user) && plain(id)).then_some((user, id))
 }
 
 /// A file name with no way out of the directory it is written into.

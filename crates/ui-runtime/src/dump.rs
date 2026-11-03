@@ -3,13 +3,12 @@
 //! driver's own acts go in; an inventory row's names, paths and status text
 //! stay out. What the fleet adds is the one thing the daemon cannot
 //! reproduce, the order this client saw things in. A chat's session goes
-//! to the daemon whole instead (see `Session::history`), which redacts it
-//! per kind, the only code that can decode it.
+//! to the daemon as its record instead (see `ui_state::record`).
 
 use std::fmt::Write as _;
 
 use ui_state::{FleetMsg, FleetState};
-use wire::{Agent, HostEntry, InventoryEvent, inventory_event};
+use wire::{Agent, HostEntry, InventoryEvent, host_entry, inventory_event, trusted};
 
 use crate::session::hex;
 use crate::trace::Structure;
@@ -84,9 +83,41 @@ fn agent(agent: &Agent) -> String {
 
 fn host_entry(host: &HostEntry) -> String {
     format!(
-        "{} {:?} generation={}",
+        "{} {} generation={}",
         hex(host.host_id()),
-        host.standing,
+        standing(host.standing.as_ref()),
         host.generation
     )
+}
+
+/// A host's standing by its kind, flags and counts: never the names of the
+/// neighbours that announce it or a dial's error, which are other hosts'
+/// words.
+fn standing(standing: Option<&host_entry::Standing>) -> String {
+    use host_entry::Standing;
+    use trusted::Reach;
+    match standing {
+        Some(Standing::Trusted(trusted)) => {
+            let reach = match &trusted.reach {
+                Some(Reach::Online(route)) => format!(
+                    "online {:?}",
+                    wire::RouteKind::try_from(*route).unwrap_or_default()
+                ),
+                Some(Reach::Away(_)) => "away".to_owned(),
+                Some(Reach::Offline(offline)) => format!(
+                    "offline dial_error={} revoked={}",
+                    offline.last_dial_error.is_some(),
+                    offline.revoked
+                ),
+                None => "unreached".to_owned(),
+            };
+            format!("trusted {reach} current={}", trusted.current)
+        }
+        Some(Standing::Candidate(candidate)) => format!(
+            "candidate addrs={} announced_by={}",
+            candidate.addrs.len(),
+            candidate.announced_by.len()
+        ),
+        None => "no standing".to_owned(),
+    }
 }

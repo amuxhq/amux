@@ -96,12 +96,16 @@ never what anybody wrote: no message, prompt, tool input or output, file name, f
   its own check includes its record, cut at the message that failed.
 - **Our own logs**: the daemon's, the supervisor's when amux runs under one, and each own agent's `agent.log`, each
   with its `.1` for the minute before the report, at INFO and above, at most 1 MiB of each, with secrets, machine
-  paths, email addresses and this machine's user and host names masked. The provider's own log never goes.
+  paths, email addresses and this machine's user and host names masked. A path is masked to its end, spaces and
+  all, where a quote or the log's `key=value` field says where that is. The logs name other hosts by id, and no
+  project folder. The provider's own log never goes.
 - **For a person's report**, the note, the marks they drew and the frozen screen, beside the bundle (see [a report
   from the terminal](#a-report-from-the-terminal) and [from the phone](#a-report-from-the-phone)).
 
 Each record is held to 64 KiB once compressed: one past it is left out, and the manifest names its size under
-`over_limit` and says why in `errors`. For the core, that says to checkpoint more often rather than to send more.
+`over_limit` and says why in `errors`. The core's record is measured whole, its checkpoint, inputs, store copy and
+journals together; the store copy holds every row the profile keeps, so a profile with more than a few thousand
+items has its core's record left out.
 
 ```text
 reports/dump-<unix ms>-<id>/
@@ -124,7 +128,8 @@ reports/dump-<unix ms>-<id>/
     events                      every event its driver saw since, through the one that broke it when
                                 one did (a wire.ClientSessionEvents)
   client/fleet/state.txt        the fleet's part: the structure of its state and its driver trace,
-  client/fleet/trace.txt        with no names, paths or message text
+  client/fleet/trace.txt        with no names, paths, message text or dial errors; each host's
+                                standing by its kind, flags and counts
 ```
 
 The bundle is assembled under a dotted name beside its final one and renamed into place when complete, so a
@@ -201,17 +206,24 @@ one table in `crates/redaction/src/structure.rs`, and it still restores and repl
   core treats it as empty. A pairing refusal's words are blanked too: the core tells refusals apart by their code
   and typed reason, which are kept.
 - Identifiers the core compares (host and agent names, folders, branches, SSH destinations, accounts, tokens) become
-  aliases such as `host-1` and `path-3`, the same value the same alias throughout the record. A name ending in a
-  number keeps it on its stem's alias (`name-1-2`), and a name the core assigns itself from its word pairs
-  (`quiet-otter`) is kept, as the core compares the names it assigns with those it holds.
+  aliases of exactly their own length in bytes, the same value the same alias throughout the record: the class and
+  a number padded with `x` (`host-1xx` for an eight-byte host name) where that fits, and the class's first letter
+  and a base-36 number where it does not (`b001` for `main`). A one-byte value becomes one base-36 digit, so past
+  36 of them in a record, or 1,296 two-byte values of a class, values share an alias. A trailing number is part of
+  the value (`ENG-4521` keeps nothing of `4521`). A name the core assigns itself from its word pairs
+  (`quiet-otter`, `quiet-otter-2`) is kept, as the core compares the names it assigns with those it holds.
+- An attachment's or a patch's hash, the hash of the person's file, becomes an alias of its length, the same hash
+  the same alias, so the blobs the record names still match.
 - Ids, item keys, counts, revisions, error codes, timings, versions and settings (model, effort, permission mode)
   are kept, as are network addresses, which the core parses and dials, and public keys, which it compares.
 - The core's randomness is kept, so a replay mints every id the live core did; and so is everything a pairing in
   the window exchanged, whose values the core checks against what it derives from that randomness and the window's
   secret. Such a pairing's secret and the peer it paired with can be read from the bundle.
 
-The store copy is rewritten in place and rebuilt, so nothing replaced stays in a free page. A journal frame whose
-aliases changed its length is written to its original length, without its texts where it no longer fits.
+The store copy is rewritten in place and rebuilt, so nothing replaced stays in a free page. As every alias and blank
+has its value's length, each journal frame is written to its own length with everything it held, and the replayed
+core ingests the rows the live one did; a frame that would not fit leaves the core's record out, with the reason in
+`errors`, rather than one that says less.
 
 ### A session's record
 
@@ -223,7 +235,8 @@ input is a task list; an error's retry, attempt, limit and retry time; headless 
 safety check runs; and the kind of Codex's work. A snapshot keeps its envelope (phase, queue by input id, times,
 catalogue hash) and of its body the open asks' keys, terminal Claude's announced calls by id and time, headless
 Claude's tasks by id and state, and whether its view switched away. A row keeps its key, order, revision, kind,
-input id, time and attachment hashes; an input its arm and the ask key or queued input it names; the agent and host
+input id, time and its attachments' hashes as aliases of their length, the same hash the same alias throughout the
+record, so a row still matches the blob that arrives for it; an input its arm and the ask key or queued input it names; the agent and host
 their ids, kind and states. Every text, name, path and an agent's own words for a refusal or an exit are emptied,
 and each event keeps the size it had. The driver's own acts are kept as they are: they name keys, counts and the
 kind of each error it met (its code and amux reason), never an error's words, which may be another host's. A record is marked
@@ -317,7 +330,8 @@ by a build whose interpreter no longer breaks the check holds, and says that the
 `dump-show` prints everything in a bundle as text: the manifest, each agent's record, each chat's record, the core's
 record with its store's rows and journals, and every other file. Both tools open a report's bundle directory, a
 report directory (its bundle is under `dump/`), or a report's `dump.pb.zst` as downloaded from the account service,
-which they unpack first.
+which they unpack first, refusing one that unpacks past 256 MiB. A file the manifest names is read only from inside
+the bundle.
 
 The same is a library, `replay-support` (`crates/replay-support/src/bundle.rs`, `replay.rs` and `synthetic.rs`):
 
@@ -367,7 +381,8 @@ just repro /var/lib/amux-relay/reports/relay-<unix ms>-<id>.json   # a relay's o
 ```
 
 **A sent report** is fetched from the bucket the account service stores reports in, under
-`reports/<user id>/<report id>/`. A report id alone is found by listing `reports/`; a prefix is listed as given. Every
+`reports/<user id>/<report id>/`. A report id alone is found by listing `reports/`; a prefix must be exactly
+`reports/<user id>/<report id>`, two plain names, as the report id names the folder it is kept in. Every
 file of the report (`report.json`, the frame, `dump.pb.zst`) is downloaded into `target/repro/<report id>/` and the
 archive is unpacked beside it as `dump/`. Where the bucket is and the key that reads it come from the environment,
 and nothing else names them:

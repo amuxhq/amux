@@ -142,6 +142,127 @@ pub fn healthy() -> Dumped {
     Dumped { dir }
 }
 
+/// `amux dump` on a net of one host and one headless Claude agent in a git
+/// repository on `main`, a branch shorter than any alias of the kind
+/// `branch-1`, after two turns; beside it each of the live store's rows as
+/// [`shapes`] writes them, read once the dump was taken.
+pub fn with_git() -> (Dumped, Vec<String>) {
+    let text = |chunk: &str| Step::Text {
+        chunks: vec![chunk.to_owned()],
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let live = runtime.block_on(async {
+        let net = Net::start(
+            Topology::new().host("desk").agent(
+                AgentDecl::new("worker", "desk")
+                    .cwd("work")
+                    .branch("main")
+                    .steps(vec![
+                        text("first answer"),
+                        Step::TurnEnd,
+                        text("second answer"),
+                        Step::TurnEnd,
+                    ])
+                    .prompt("first question"),
+            ),
+        )
+        .await
+        .unwrap();
+        net.turn_ended("worker", 1).await.unwrap();
+        net.send("worker", "second question").await.unwrap();
+        net.turn_ended("worker", 2).await.unwrap();
+        let runtime = net.runtime("desk").unwrap();
+        testnet::until("the row's git facts", || async {
+            let on_branch = runtime
+                .read_store(|store| {
+                    store.agents().unwrap().iter().any(|row| {
+                        row.git
+                            .as_ref()
+                            .is_some_and(|git| git.branch.as_deref() == Some("main"))
+                    })
+                })
+                .await
+                .unwrap();
+            on_branch.then_some(()).ok_or("no branch on the row")
+        })
+        .await
+        .unwrap();
+        let written = runtime
+            .dump(wire::DumpRequest {
+                reason: "a net with git facts".to_owned(),
+                ..wire::DumpRequest::default()
+            })
+            .await
+            .unwrap();
+        let live = runtime.read_store(shapes).await.unwrap();
+        drop(runtime);
+        copy_dir(&written, dir.path());
+        net.shutdown().await.unwrap();
+        live
+    });
+    (Dumped { dir }, live)
+}
+
+/// Each agent's row and every item it holds as a core's record keeps them:
+/// ids, orders, revisions, kinds and states as they are, and of every text,
+/// body and name its length, so a live store and a replayed one compare.
+pub fn shapes(store: &Sqlite) -> Vec<String> {
+    let git = |git: &Option<wire::Git>| {
+        git.as_ref().map(|git| {
+            (
+                git.branch.as_ref().map(String::len),
+                git.base_branch.as_ref().map(String::len),
+                git.uncommitted,
+                git.on_branch,
+            )
+        })
+    };
+    let mut shapes = Vec::new();
+    for row in store.agents().unwrap() {
+        let snapshot = row.snapshot.as_ref().map(|snapshot| {
+            (
+                snapshot.revision,
+                snapshot.phase,
+                snapshot.body.len(),
+                snapshot.working_on.as_ref().map(String::len),
+                git(&snapshot.git),
+                snapshot.queue.len(),
+            )
+        });
+        shapes.push(format!(
+            "agent {:?} kind {} name {} cwd {} lifecycle {} phase {} working_on {:?} git {:?} \
+             snapshot {snapshot:?} cursor {}",
+            row.agent.agent,
+            row.kind,
+            row.name.len(),
+            row.cwd.len(),
+            row.lifecycle,
+            row.phase,
+            row.working_on.as_ref().map(String::len),
+            git(&row.git),
+            row.ingest_cursor,
+        ));
+        let page = store.page(&row.agent, None, u32::MAX).unwrap();
+        for item in page.items {
+            shapes.push(format!(
+                "  item {} order {} revision {} kind {} text {} body {} attachments {}",
+                item.key,
+                item.order,
+                item.revision,
+                item.kind,
+                item.text.len(),
+                item.body.len(),
+                item.attachments.len()
+            ));
+        }
+    }
+    shapes
+}
+
 /// What [`marked`] plants in everything a person or a provider writes.
 pub const MARKER: &str = "zebracorn";
 

@@ -587,8 +587,8 @@ async fn establish(me: &Inner, peer: HostId, carrier: Arc<QuicCarrier>) -> Resul
     );
     let abort_on_failure = AbortTaskOnDrop(connector_task.abort_handle());
     match tokio::time::timeout(LINK_ESTABLISHMENT_TIMEOUT, established).await {
-        Ok(Ok(Ok(host))) => {
-            tracing::info!(peer_name = %host.name, "link established");
+        Ok(Ok(Ok(_))) => {
+            tracing::info!(%peer, "link established");
             keep_link(me, connector_task, abort_on_failure);
             Ok(())
         }

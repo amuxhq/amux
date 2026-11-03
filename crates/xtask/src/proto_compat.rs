@@ -13,12 +13,14 @@
 //!   reused, or a value moved to another number while its old one stands;
 //! - a service or method gone, or a method whose request, response or
 //!   streaming no longer reads as before, since a method's name is its gRPC
-//!   path.
+//!   path;
+//! - a message or an enum gone.
 //!
 //! Names are otherwise free. A field or method whose type is renamed, or
 //! swapped for another message, is compared structurally: the new type must
-//! read every number the old one wrote. Deleting a message nothing names any
-//! more is free.
+//! read every number the old one wrote. A message or enum is only ever
+//! added, so one whose name is gone is a break unless something that named
+//! it now names another type read in its place, which is a rename.
 //!
 //! The baseline is the newest release tag behind HEAD, read from the
 //! descriptor set committed with it, so the check needs no build of the old
@@ -139,6 +141,28 @@ pub fn breaks(old: &FileDescriptorSet, new: &FileDescriptorSet) -> Vec<String> {
             None => check.found.push(format!("service {name} is gone")),
         }
     }
+    // Only now is every rename known: each type read in place of another.
+    let renamed: BTreeSet<&str> = check.compared.iter().map(|(was, _)| was.as_str()).collect();
+    let mut gone = Vec::new();
+    for (what, old, new) in [
+        (
+            "message",
+            check.old.messages.keys().collect::<Vec<_>>(),
+            &check.new.messages.keys().collect::<BTreeSet<_>>(),
+        ),
+        (
+            "enum",
+            check.old.enums.keys().collect(),
+            &check.new.enums.keys().collect(),
+        ),
+    ] {
+        for name in old {
+            if !new.contains(name) && !renamed.contains(name.as_str()) {
+                gone.push(format!("{what} {name} is gone"));
+            }
+        }
+    }
+    check.found.extend(gone);
     check.found
 }
 
@@ -586,6 +610,32 @@ mod tests {
         assert_eq!(check(BASE, &unstreamed).len(), 1);
         let gone = BASE.replace("service Things", "service Stuff");
         assert_eq!(check(BASE, &gone), ["service .amux.v1.Things is gone"]);
+    }
+
+    #[test]
+    fn a_message_or_an_enum_is_never_deleted() {
+        let unused = format!(
+            "{BASE} message Spare {{ string note = 1; }} enum Mood {{ MOOD_UNSPECIFIED = 0; }}"
+        );
+        assert_eq!(
+            check(&unused, BASE),
+            [
+                "message .amux.v1.Spare is gone",
+                "enum .amux.v1.Mood is gone"
+            ]
+        );
+        // Gone with the field that named it, its number reserved: the
+        // field may go, its type may not.
+        let dropped = BASE.replace("Kind kind = 6;", "reserved 6;").replace(
+            "enum Kind { KIND_UNSPECIFIED = 0; KIND_A = 1; KIND_B = 2; }",
+            "",
+        );
+        assert_eq!(check(BASE, &dropped), ["enum .amux.v1.Kind is gone"]);
+        let nested = "message Outer { message Inner { string text = 1; } Inner inner = 1; }";
+        assert_eq!(
+            check(nested, "message Outer { reserved 1; }"),
+            ["message .amux.v1.Outer.Inner is gone"]
+        );
     }
 
     #[test]

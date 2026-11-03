@@ -15,7 +15,7 @@ report.cancel | Cancel |  | 20,66,40,36
 report.send | Retry |  | 350,66,27,36
  | Drag a box around anything wrong. Each box takes a note. |  | 16,663,342,16
  | Not sent: amux.sh could not take this report |  | 16,693,298,18
- | Includes this screen and the available session and host records. |  | 16,824,295,32
+ | Includes this screen and amux’s own logs, never your conversations. |  | 16,824,314,32
  | Cancel |  | 20,66,40,36
  | Report a Problem |  | 131,73,140,21
  | Retry |  | 351,66,27,36

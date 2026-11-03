@@ -18,6 +18,7 @@ use wire::{
     envelope, sender,
 };
 
+use crate::checks::{self, Watch};
 use crate::{Effect, Stepped, reply, serde_pb};
 
 /// An open ask as the shared list needs to see it. Implemented by the
@@ -393,6 +394,8 @@ pub struct Shared<A: OpenAsk> {
     /// there stays for the next incarnation rather than going to a
     /// provider about to be closed.
     leaving: bool,
+    /// What the checks after every step watch.
+    watch: Watch,
 }
 
 impl<A: OpenAsk> Shared<A> {
@@ -422,6 +425,7 @@ impl<A: OpenAsk> Shared<A> {
             turn_on_reflection: false,
             stopping: false,
             leaving: false,
+            watch: Watch::default(),
         };
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
             shared.prompted(&entry.text);
@@ -456,13 +460,94 @@ impl<A: OpenAsk> Shared<A> {
     }
 
     /// Finishes a step: appends a Snapshot if anything a client draws from
-    /// it changed.
+    /// it changed, and judges the step by every interpreter's checks.
     pub fn finish(&mut self, mut emit: Emit, body: Vec<u8>) -> Stepped {
         self.snapshot_into(&mut emit, body, false);
+        self.judge(&emit);
         Stepped {
             step: emit.step,
             effects: emit.effects,
+            broken: self.watch.finish(),
         }
+    }
+
+    /// The checks that read the whole step; the others are judged where
+    /// the step does what they watch.
+    fn judge(&mut self, emit: &Emit) {
+        if self.watch.exited {
+            if self.turn.current().is_some() {
+                self.watch
+                    .broke(checks::EXIT_LEFT_OPEN, "a turn is still running");
+            }
+            if !self.open_items.is_empty() {
+                let detail = format!("{} items are still streaming", self.open_items.len());
+                self.watch.broke(checks::EXIT_LEFT_OPEN, detail);
+            }
+        }
+        for effect in &emit.effects {
+            if let Effect::Reply { input_id, verdict } = effect
+                && matches!(verdict.of, Some(wire::send_input_response::Of::Accepted(_)))
+                && self
+                    .watch
+                    .answers
+                    .iter()
+                    .any(|(answer, open)| answer == input_id && !open)
+            {
+                self.watch.broke(
+                    checks::CLOSED_ASK_ANSWERED,
+                    "an answer to an ask that was not open was accepted",
+                );
+            }
+        }
+        if emit
+            .step
+            .appends
+            .iter()
+            .any(|append| !self.open_items.contains_key(&append.key))
+        {
+            self.watch.broke(
+                checks::ITEM_BEFORE_OPEN,
+                "an append names an item that is not open",
+            );
+        }
+    }
+
+    /// What is open and pending, by key, for the agent's record; `arm`
+    /// reads an item body's arm.
+    pub fn structure(&self, arm: impl Fn(&[u8]) -> String) -> crate::shape::Structure {
+        crate::shape::Structure {
+            open_items: self
+                .open_items
+                .iter()
+                .map(|(key, item)| (key.clone(), arm(&item.body)))
+                .collect(),
+            queue: self
+                .queue
+                .entries()
+                .iter()
+                .map(|entry| entry.input_id.clone())
+                .collect(),
+            asks: self
+                .asks
+                .open_asks()
+                .iter()
+                .map(|ask| (ask.key().to_owned(), ask.item_key().to_owned()))
+                .collect(),
+            submitted: self.submitted.clone(),
+            pending_messages: self.pending_messages.iter().cloned().collect(),
+            turn: self.turn.current().map(|turn| turn.id),
+            phase: self.phase() as i32,
+        }
+    }
+
+    /// A tool's result arrived for a call this interpreter never saw, so it
+    /// has nowhere to go: the call's fact was missed or misread. `fact`
+    /// names the kind of fact the result came in.
+    pub fn result_without_call(&mut self, fact: &str) {
+        self.watch.broke(
+            checks::TOOL_RESULT_WITHOUT_CALL,
+            format!("a result in {fact} for a call it never saw"),
+        );
     }
 
     /// The step a resume starts with: every open item in full on its known
@@ -593,7 +678,14 @@ impl<A: OpenAsk> Shared<A> {
         };
         if draft.complete {
             self.open_items.remove(&item.key);
+            self.watch.closed(&item.key);
         } else {
+            if !self.open_items.contains_key(&item.key) && self.watch.was_closed(&item.key) {
+                self.watch.broke(
+                    checks::ITEM_BEFORE_OPEN,
+                    "an item was opened again after its final state",
+                );
+            }
             self.open_items.insert(item.key.clone(), item.clone());
         }
         // A step's items commit before its appends, and a key appears once
@@ -648,6 +740,16 @@ impl<A: OpenAsk> Shared<A> {
 
     pub fn open_item(&self, key: &str) -> Option<&Item> {
         self.open_items.get(key)
+    }
+
+    /// The keys of the items still open whose key starts with `prefix`.
+    pub fn open_keys(&self, prefix: &str) -> Vec<String> {
+        self.open_items
+            .range(prefix.to_owned()..)
+            .map(|(key, _)| key)
+            .take_while(|key| key.starts_with(prefix))
+            .cloned()
+            .collect()
     }
 
     // --- inputs ----------------------------------------------------------
@@ -870,6 +972,7 @@ impl<A: OpenAsk> Shared<A> {
     /// ask that is not open is refused as `REFUSAL_CLOSED_ASK` and writes nothing.
     pub fn answer(&mut self, emit: &mut Emit, input_id: &[u8], ask_key: &str) -> Option<A> {
         let ask = self.asks.close(ask_key);
+        self.watch.answers.push((input_id.to_vec(), ask.is_some()));
         if ask.is_none() {
             self.reject(emit, input_id, Refusal::ClosedAsk);
         }
@@ -1007,6 +1110,7 @@ impl<A: OpenAsk> Shared<A> {
     /// The provider is gone: no turn runs and nothing is submitted. A turn
     /// cut short has no TurnEnd; the daemon reports the incarnation failed.
     pub fn provider_exited(&mut self) -> Option<OpenTurn> {
+        self.watch.exited = true;
         self.started = false;
         // A clean exit stops its jobs; a provider killed alone may orphan
         // them, but nothing reports on them any more either way.
@@ -1032,7 +1136,9 @@ impl<A: OpenAsk> Shared<A> {
     /// Set from the status tool call; never cleared automatically.
     pub fn set_working_on(&mut self, working_on: Option<String>) {
         self.declared = true;
-        self.working_on = working_on.filter(|text| !text.trim().is_empty());
+        self.working_on = working_on
+            .map(|text| without_terminal_codes(&text))
+            .filter(|text| !text.trim().is_empty());
     }
 
     /// A prompt handed to the provider: what the agent works on, until it
@@ -1041,7 +1147,9 @@ impl<A: OpenAsk> Shared<A> {
         if self.declared {
             return;
         }
-        if let Some(line) = first_line(text).filter(|line| !line.starts_with('/')) {
+        if let Some(line) =
+            first_line(&without_terminal_codes(text)).filter(|line| !line.starts_with('/'))
+        {
             self.working_on = Some(line);
         }
     }
@@ -1049,6 +1157,54 @@ impl<A: OpenAsk> Shared<A> {
     pub fn working_on(&self) -> Option<&str> {
         self.working_on.as_deref()
     }
+}
+
+/// Text an agent or its provider wrote, as a wire field carries it: without
+/// the colour, cursor and link codes a terminal program writes (CSI and OSC
+/// sequences, in their escaped and their one-character C1 forms, and the
+/// other escapes) or any other control character but a newline and a tab.
+/// Clients print these fields as they are, `amux ls` straight to a
+/// terminal, so every field made of a provider's or an agent's words goes
+/// through this one cleaner.
+pub fn without_terminal_codes(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    // CSI: parameters and intermediates, then one final byte.
+    let csi = |chars: &mut std::iter::Peekable<std::str::Chars>| {
+        for c in chars.by_ref() {
+            if ('\u{40}'..='\u{7e}').contains(&c) {
+                break;
+            }
+        }
+    };
+    // OSC: up to BEL or ST, in either form.
+    let osc = |chars: &mut std::iter::Peekable<std::str::Chars>| {
+        while let Some(c) = chars.next() {
+            if c == '\u{7}' || c == '\u{9c}' {
+                break;
+            }
+            if c == '\u{1b}' && chars.peek() == Some(&'\\') {
+                chars.next();
+                break;
+            }
+        }
+    };
+    while let Some(c) = chars.next() {
+        match c {
+            '\u{1b}' => match chars.next() {
+                Some('[') => csi(&mut chars),
+                Some(']') => osc(&mut chars),
+                // A two-character escape.
+                _ => {}
+            },
+            '\u{9b}' => csi(&mut chars),
+            '\u{9d}' => osc(&mut chars),
+            '\n' | '\t' => out.push(c),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// The working_on a status tool call declares: `{"working_on": string |
@@ -1592,6 +1748,20 @@ mod tests {
             ..Default::default()
         };
         Shared::new(&spec, wire::Kind::Unspecified)
+    }
+
+    /// What an agent says it works on is printed by `amux ls` as it is, so
+    /// terminal codes in it, from the status tool or a prompt, never reach
+    /// the field.
+    #[test]
+    fn working_on_carries_no_terminal_codes() {
+        let mut shared = shared();
+        shared.prompted("\u{1b}]52;c;cHduZWQ=\u{7}Fix the \u{9b}2Jparser");
+        assert_eq!(shared.working_on(), Some("Fix the parser"));
+        shared.set_working_on(Some("\u{1b}[31mSplitting\u{1b}[0m\u{8} it".into()));
+        assert_eq!(shared.working_on(), Some("Splitting it"));
+        shared.set_working_on(Some("\u{1b}[2J".into()));
+        assert_eq!(shared.working_on(), None);
     }
 
     #[test]

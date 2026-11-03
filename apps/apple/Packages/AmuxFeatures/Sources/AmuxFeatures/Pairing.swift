@@ -379,10 +379,12 @@ public struct PairByCode: View {
                 // already used and a code nobody issued. Telling them apart
                 // is exactly what somebody guessing codes would want, so the
                 // screen does not, and the digits have already gone.
-                Text(refused)
+                // A refusal the core wrote out for the person is the one
+                // exception: it says what to do, and no guess learns from it.
+                Text(model.told ?? refused)
                     .designFont(.detail, design)
                     .foregroundStyle(design.removed.color)
-                    .identified("pin.refused", value: refused)
+                    .identified("pin.refused", value: model.told ?? refused)
             case .checking:
                 HStack(spacing: 8) {
                     StateMark(state: .working)
@@ -546,7 +548,7 @@ public struct PairConfirmation: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
                     .identified("pair-confirm.name", value: peer.name)
-                Explain(String(localized: "Its agents will be on this phone, and you can start new ones on it. This invitation expires \(expiry(peer))."))
+                Explain(String(localized: "You’ll see its agents here and can start new ones, which run on that machine as you. Pair only with your own machines. This invitation expires \(expiry(peer))."))
                     .padding(.top, 14)
                     .identified("pair-confirm.expiry", value: expiry(peer))
                 Spacer(minLength: 22)
@@ -616,10 +618,13 @@ public struct PairConfirmation: View {
         ) { EmptyView() }
     }
 
+    /// One refusal for every invitation that did not work, or the core's own
+    /// words where it wrote them for the person.
     private var refused: some View {
         PairingPanel(
-            title: String(localized: "That invitation didn’t work"),
-            detail: String(localized: "Get a new one from the host."),
+            title: model.told == nil
+                ? String(localized: "That invitation didn’t work") : String(localized: "Not paired"),
+            detail: model.told ?? String(localized: "Get a new one from the host."),
             identifier: "pair-confirm.refused"
         ) {
             Button { actions(.cancel) } label: {

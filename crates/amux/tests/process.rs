@@ -37,6 +37,9 @@ fn binaries() -> &'static Path {
 struct Install {
     root: tempfile::TempDir,
     config: PathBuf,
+    /// The installation's root, which the config names.
+    data: PathBuf,
+    /// The front door, which the config leaves to its default in the root.
     socket: PathBuf,
     work: PathBuf,
     daemon: Option<Child>,
@@ -46,6 +49,11 @@ struct Install {
 
 impl Install {
     fn new(steps: Vec<Step>) -> Self {
+        Self::rooted_at(steps, "data")
+    }
+
+    /// An installation whose root is `data` in the temporary directory.
+    fn rooted_at(steps: Vec<Step>, data: &str) -> Self {
         let root = tempfile::tempdir().expect("a temp dir");
         let bin = root.path().join("bin");
         let work = root.path().join("work");
@@ -64,21 +72,22 @@ impl Install {
             .unwrap(),
         )
         .unwrap();
-        let socket = root.path().join("amux.sock");
+        let data = root.path().join(data);
+        let socket = data.join("amux.sock");
         let config = root.path().join("config.toml");
         std::fs::write(
             &config,
             format!(
-                "root = {:?}\nfront_door_socket = {:?}\nsupervisor = false\n\
+                "root = {:?}\nsupervisor = false\n\
                  [agent]\ngrace_secs = {GRACE_SECS}\ndrain_secs = 5\n",
-                root.path().join("data").display().to_string(),
-                socket.display().to_string(),
+                data.display().to_string(),
             ),
         )
         .unwrap();
         Self {
             root,
             config,
+            data,
             socket,
             work,
             daemon: None,
@@ -185,7 +194,7 @@ impl Install {
     }
 
     fn agent_dir(&self, id: &[u8]) -> PathBuf {
-        let profiles = self.root.path().join("data").join("profiles");
+        let profiles = self.data.join("profiles");
         let profile = std::fs::read_dir(&profiles)
             .unwrap()
             .next()
@@ -578,7 +587,7 @@ async fn the_cli_verbs_work_against_a_started_daemon() {
     let listing = install.ok(&["ls"]).await;
     assert!(line_of(&listing, "aide").contains("claude"), "{listing}");
 
-    let bundle = install.ok(&["dump", "aide", "--reason", "a test"]).await;
+    let bundle = install.ok(&["dump", "--reason", "a test"]).await;
     let bundle = PathBuf::from(bundle.trim());
     assert!(
         bundle.join(node::MANIFEST).is_file(),
@@ -618,4 +627,20 @@ async fn the_cli_verbs_work_against_a_started_daemon() {
     install.detached = false;
     assert!(install.front_door().await.is_none());
     install.run_daemon().await;
+}
+
+/// A root too deep for a Unix socket's address still has its front door
+/// there, and the CLI finds it, as it finds the profile's socket beside it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_root_too_deep_for_a_socket_address_still_serves() {
+    let mut install = Install::rooted_at(Vec::new(), &"deep".repeat(30));
+    assert!(install.socket.as_os_str().len() > 108);
+    install.detached = true;
+    assert!(install.ok(&["server", "start"]).await.contains("Started"));
+    assert!(install.socket.exists(), "{}", install.socket.display());
+    assert!(install.ok(&["profile", "ls"]).await.contains("default"));
+    assert_eq!(install.ok(&["ls"]).await, "No agents.\n");
+    assert!(install.ok(&["server", "stop"]).await.contains("Stopped"));
+    install.detached = false;
+    assert!(install.front_door().await.is_none());
 }

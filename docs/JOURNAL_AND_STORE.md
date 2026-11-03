@@ -323,8 +323,8 @@ commit point and no lock is needed. The one other connection is the passive
 WAL checkpoint, which the driver runs as a job off the core thread (see
 Durability). A write is an ordinary commit, left to the WAL and the next
 checkpoint, unless it is `Durability::Synced`: that transaction runs with
-`synchronous=FULL` and `fullfsync`, and only pairing, unpairing, a key
-replacement and a pairing's rollback ask for it.
+`synchronous=FULL` and `fullfsync`, and only pairing, unpairing and a
+pairing's rollback ask for it.
 
 The runtime's interface is `store::Sqlite`, in
 [`crates/store/src/sqlite.rs`](../crates/store/src/sqlite.rs):
@@ -421,7 +421,7 @@ The rest:
 | `deliveries` | The daemon's outbox to parents: a child's report that a turn ended (`text` is its last message, `outcome` how the turn ended, `last` whether it was the incarnation's last) or, with `exited` set, that the incarnation ended without a last report (`exit_cause` and `exit_detail` say how, as the row's do; always the incarnation's last), so each child incarnation sends exactly one last report. Keyed by child, incarnation, `exited` and turn id; the parent is the one the child's row names. Holds a copy of the message, because retention may remove the child's transcript while a parent is offline. |
 | `notifications` | The push outbox: one row per turn into `needs_you`, keyed by agent and snapshot revision, with a due time (`due_at_ms`) and the push's `name`, `working_on` and `text`, built from envelope fields only. Deleted unsent if the phase leaves `needs_you` first, and with the agent. |
 | `hosts` | One row per peer host: the generation its inventory last reported, for the host entry this machine publishes. |
-| `trusted_hosts` | One row per paired host: its pinned key, name, when it was paired, whether it is on the account, what it last said of itself (signed in, platform), its SSH target, the addresses it last answered at and the addresses it listed with their sources (both JSON). Pairing, unpairing, a key replacement and a rollback commit synced; the rest are ordinary commits. |
+| `trusted_hosts` | One row per paired host: its pinned key, name, when it was paired, whether it is on the account, what it last said of itself (signed in, platform), its SSH target, the addresses it last answered at and the addresses it listed with their sources (both JSON). Pairing, unpairing and a rollback commit synced; the rest are ordinary commits. |
 | `drafts` | This machine's clients' unsent draft per agent, an encoded `amux.v1.Draft`. Deleted when it is emptied and when the agent goes. |
 | `recent_directories` | The directories agents were started in, with when each was last used: the 200 newest are kept, and a directory stays after the agents that ran there are deleted. |
 

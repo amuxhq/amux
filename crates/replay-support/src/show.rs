@@ -1,38 +1,22 @@
 //! A dump bundle as text: everything `node::dump` wrote, in sections an
 //! agent triaging a bug can read and grep, with nothing in the bundle left
-//! out.
-//!
-//! Journaled steps print in the interpreter's emission-golden format, so a
-//! journal compares line for line with a replay of the facts behind it;
-//! when the bundle carries facts, that replay is printed too, or only
-//! confirmed when it matches the end of the journal. Facts lines and
-//! checkpoints are JSON already and print as written, unparsed, so a line
-//! the redactor replaced with `{"event":"unreadable"}` hides nothing after
-//! it.
+//! out. Records print as written: what this build cannot read still shows.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use interpret::Interpreter;
-use interpret::claude_pty::ClaudePty;
-use interpret::claude_sdk::ClaudeSdk;
-use interpret::codex::Codex;
 use serde_json::Value;
-use wire::{Agent, AgentSpec, Item, Kind, Step};
+use wire::Kind;
 
 use crate::bundle::{
-    AgentDump, Bundle, BundleError, CORE, CORE_CHECKPOINT, CORE_INPUTS, CORE_STORE, CoreDump,
-    decode, read, segments,
+    AgentRecord, Bundle, BundleError, CORE, CORE_CHECKPOINT, CORE_INPUTS, CORE_JOURNALS,
+    CORE_STORE, CoreDump, journal_frames, read, segments,
 };
 
 /// The largest file of no known shape printed whole; anything larger is
 /// named with its path for the reader to open.
 const SHORT_TEXT: usize = 16 << 10;
-
-/// Every frame of a journal or replay carries this label: a journal
-/// records no event, and a shared label keeps the two comparable.
-const LABEL: &str = "step";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ShowError {
@@ -45,7 +29,7 @@ pub enum ShowError {
 }
 
 /// The bundle at `dir` as text; with `agent`, only the agents whose id
-/// starts with it or whose name is it.
+/// starts with it.
 pub fn show(named: &Path, agent: Option<&str>) -> Result<String, ShowError> {
     let (dir, _unpacked) = crate::bundle::locate(named)?;
     let dir = dir.as_path();
@@ -60,12 +44,10 @@ pub fn show(named: &Path, agent: Option<&str>) -> Result<String, ShowError> {
             error: error.to_string(),
         })?;
     let bundle = Bundle::open(dir)?;
-    let chosen: Vec<&AgentDump> = bundle
+    let chosen: Vec<&AgentRecord> = bundle
         .agents
         .iter()
-        .filter(|dump| {
-            agent.is_none_or(|wanted| dump.id.starts_with(wanted) || dump.row.name == wanted)
-        })
+        .filter(|dump| agent.is_none_or(|wanted| dump.id.starts_with(wanted)))
         .collect();
     if let Some(wanted) = agent
         && chosen.is_empty()
@@ -73,7 +55,7 @@ pub fn show(named: &Path, agent: Option<&str>) -> Result<String, ShowError> {
         let held = bundle
             .agents
             .iter()
-            .map(|dump| format!("{} ({})", dump.id, dump.row.name))
+            .map(|dump| dump.id.clone())
             .collect::<Vec<_>>()
             .join(", ");
         return Err(ShowError::NoAgent {
@@ -99,7 +81,7 @@ pub fn show(named: &Path, agent: Option<&str>) -> Result<String, ShowError> {
     }
 
     // What no section above showed, so nothing in the bundle is invisible:
-    // the daemon's log, a client's parts.
+    // our logs, a client's parts.
     let skipped: Vec<PathBuf> = bundle
         .agents
         .iter()
@@ -125,35 +107,6 @@ pub fn show(named: &Path, agent: Option<&str>) -> Result<String, ShowError> {
     Ok(out)
 }
 
-/// Steps in the emission-golden format for an agent of `kind`, numbered
-/// from `first`. None for a kind this build does not interpret.
-pub fn render_steps(kind: Kind, first: usize, steps: &[Step]) -> Option<String> {
-    let labelled = steps.iter().map(|step| (LABEL, step));
-    Some(match kind {
-        Kind::ClaudePty => interpret::render_steps::<ClaudePty>(first, labelled),
-        Kind::ClaudeSdk => interpret::render_steps::<ClaudeSdk>(first, labelled),
-        Kind::Codex => interpret::render_steps::<Codex>(first, labelled),
-        Kind::Unspecified => return None,
-    })
-}
-
-fn render_item(kind: Kind, item: &Item) -> String {
-    fn of<I: Interpreter>(item: &Item) -> String {
-        interpret::render_item::<I>(item)
-    }
-    match kind {
-        Kind::ClaudePty => of::<ClaudePty>(item),
-        Kind::ClaudeSdk => of::<ClaudeSdk>(item),
-        Kind::Codex => of::<Codex>(item),
-        Kind::Unspecified => format!(
-            "item {} at={} text={}",
-            item.key,
-            item.at_ms,
-            Value::String(item.text.clone())
-        ),
-    }
-}
-
 fn summary(out: &mut String, manifest: &Value) {
     let text = |key: &str| match &manifest[key] {
         Value::String(text) => text.clone(),
@@ -162,7 +115,7 @@ fn summary(out: &mut String, manifest: &Value) {
     };
     let _ = writeln!(out, "== dump {} ==", text("dump_id"));
     let _ = writeln!(out, "reason {}", manifest["reason"]);
-    let _ = writeln!(out, "automatic {}", text("automatic"));
+    let _ = writeln!(out, "trigger {}", text("trigger"));
     let _ = writeln!(
         out,
         "created {}",
@@ -192,9 +145,6 @@ fn summary(out: &mut String, manifest: &Value) {
     );
 }
 
-/// The daemon core's part: its checkpoint, every recorded line as written,
-/// and each agent row of the store as of the checkpoint, with how far its
-/// journal was committed.
 /// A client's session: the state its trace began from, then every event
 /// its driver saw, one line each.
 fn client_section(
@@ -244,10 +194,21 @@ fn client_section(
         start.pending.is_some(),
         rows.len()
     );
+    let kind = start
+        .agent
+        .as_ref()
+        .map_or(Kind::Unspecified, wire::Agent::kind);
     for item in rows {
+        // What the session model concluded from the body, which is all a
+        // record keeps of it.
+        let kind = Kind::try_from(item.kind)
+            .ok()
+            .filter(|kind| *kind != Kind::Unspecified)
+            .unwrap_or(kind);
+        let class = ui_state::ItemBody::decode(kind, &item.body).class();
         let _ = writeln!(
             out,
-            "  {} order {} rev {}",
+            "  {} order {} rev {} {class:?}",
             item.key, item.order, item.revision
         );
     }
@@ -263,7 +224,13 @@ fn client_section(
             Some(wire::dump::client_traced::Event::Driver(driver)) => format!("driver {driver}"),
             None => "nothing".to_owned(),
         };
-        let _ = writeln!(out, "{} @{} {what}", traced.seq, time(traced.at_ms));
+        let _ = writeln!(
+            out,
+            "{} @{} {}B {what}",
+            traced.seq,
+            time(traced.at_ms),
+            traced.size
+        );
     }
 }
 
@@ -335,6 +302,34 @@ fn core_section(
         }
     }
     shown.insert(at.join(CORE_STORE));
+
+    for (agent, held) in &core.journals {
+        let frames: usize = held
+            .iter()
+            .map(|(_, bytes)| journal_frames(bytes).len())
+            .sum();
+        let _ = writeln!(
+            out,
+            "-- journal of {} ({} segments, {frames} frames from the checkpoint's cursor) --",
+            id(&agent.0),
+            held.len()
+        );
+        let dir = at.join(CORE_JOURNALS).join(id(&agent.0));
+        for (start, bytes) in held {
+            for step in journal_frames(bytes) {
+                let _ = writeln!(
+                    out,
+                    "segment {start}: {} items, {} appends, snapshot {}",
+                    step.items.len(),
+                    step.appends.len(),
+                    step.snapshot.is_some()
+                );
+            }
+        }
+        for (_, path) in segments(&dir)? {
+            shown.insert(path);
+        }
+    }
     Ok(())
 }
 
@@ -348,252 +343,54 @@ fn core_store_rows(path: &Path) -> Result<Vec<store::AgentRow>, String> {
     store.agents().map_err(|error| error.to_string())
 }
 
+/// An agent's record: what its manifest entry says, the shape of the
+/// record, and the record as written.
 fn agent_section(
     out: &mut String,
     shown: &mut BTreeSet<PathBuf>,
     dir: &Path,
-    dump: &AgentDump,
+    dump: &AgentRecord,
     entry: Option<&Value>,
 ) -> Result<(), BundleError> {
-    let at = dir.join("agents").join(&dump.id);
-    let kind = dump.row.kind();
+    let path = dir
+        .join(crate::bundle::AGENTS)
+        .join(&dump.id)
+        .join(crate::bundle::AGENT_RECORD);
+    let record = &dump.record;
     let _ = writeln!(
         out,
-        "\n== agent {} ({}, {}) ==",
+        "\n== agent {} ({}) ==",
         dump.id,
-        dump.row.name,
-        named(kind.as_str_name(), "KIND_")
+        record["settings"]["kind"]
+            .as_str()
+            .map_or("-", |kind| kind.trim_start_matches("KIND_"))
     );
     if let Some(entry) = entry {
         let _ = writeln!(out, "manifest {entry}");
     }
-
-    let _ = writeln!(out, "-- row --");
-    row(out, &dump.row);
-    shown.insert(at.join("row.pb"));
-
-    let _ = writeln!(out, "-- journal ({} frames) --", dump.journal.len());
-    match render_steps(kind, 0, &dump.journal) {
-        Some(text) => out.push_str(&text),
-        None => {
-            let _ = writeln!(out, "not rendered: no interpreter for this kind");
-        }
-    }
-    for (_, path) in segments(&at.join("journal"))? {
-        shown.insert(path);
-    }
-    if !dump.facts.is_empty() {
-        replay(out, dump);
-    }
-
-    if let Some(slice) = &dump.store {
-        let _ = writeln!(out, "-- store ({} rows) --", slice.items.len());
-        store(out, kind, slice);
-        shown.insert(at.join("store.pb"));
-    }
-
-    let facts_dir = at.join("part").join("facts");
-    for (_, path) in segments(&facts_dir)? {
-        let name = path.file_name().unwrap().to_string_lossy().into_owned();
-        let text = String::from_utf8_lossy(&read(&path)?).into_owned();
-        let lines: Vec<&str> = text.lines().filter(|line| !line.is_empty()).collect();
-        let _ = writeln!(out, "-- facts {name} ({} lines) --", lines.len());
-        let checkpoint = facts_dir.join(format!("{name}.checkpoint"));
-        if checkpoint.is_file() {
-            let bytes = read(&checkpoint)?;
-            let _ = writeln!(out, "checkpoint {}", String::from_utf8_lossy(&bytes).trim());
-            shown.insert(checkpoint);
-        } else {
-            let _ = writeln!(out, "checkpoint none");
-        }
-        for line in lines {
-            let _ = writeln!(out, "{line}");
-        }
-        shown.insert(path);
-    }
-
-    let mut part = Vec::new();
-    walk(&at.join("part"), &mut part);
-    part.retain(|path| !shown.contains(path));
-    for path in part {
-        let name = path
-            .strip_prefix(at.join("part"))
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .replace('\\', "/");
-        if name.starts_with("spec.")
-            && let Ok(spec) = decode::<AgentSpec>(&path, "wire.AgentSpec")
-        {
-            let _ = writeln!(out, "-- part {name} (wire.AgentSpec) --");
-            spec_lines(out, spec);
-        } else {
-            file(out, &format!("part {name}"), &path)?;
-        }
-        shown.insert(path);
-    }
-    Ok(())
-}
-
-fn row(out: &mut String, agent: &Agent) {
-    let mut line = |key: &str, value: String| {
-        let _ = writeln!(out, "{key} {value}");
-    };
-    line("agent_id", id(&agent.agent_id));
-    line("host_id", id(&agent.host_id));
-    line("kind", named(agent.kind().as_str_name(), "KIND_"));
-    line("name", Value::String(agent.name.clone()).to_string());
-    line("cwd", agent.cwd.clone());
-    line(
-        "parent",
-        agent.parent.as_ref().map_or("-".into(), |parent| {
-            format!("{} on {}", id(&parent.agent_id), id(&parent.host_id))
-        }),
-    );
-    line("created", time(agent.created_at_ms));
-    line(
-        "lifecycle",
-        named(agent.lifecycle().as_str_name(), "LIFECYCLE_"),
-    );
-    line(
-        "exit_cause",
-        format!(
-            "{}{}",
-            named(agent.exit_cause().as_str_name(), "EXIT_CAUSE_"),
-            agent
-                .exit_detail
-                .as_ref()
-                .map(|detail| format!(" {detail:?}"))
-                .unwrap_or_default()
-        ),
-    );
-    line(
-        "phase",
-        format!(
-            "{} since {}",
-            named(agent.phase().as_str_name(), "PHASE_"),
-            time(agent.phase_since_ms)
-        ),
-    );
-    line(
-        "working_on",
-        agent
-            .working_on
-            .as_ref()
-            .map_or("-".into(), |text| Value::String(text.clone()).to_string()),
-    );
-    line("incarnation", agent.incarnation.to_string());
-    line(
-        "git",
-        agent.git.as_ref().map_or("-".into(), |git| {
-            let totals = |totals: &Option<wire::ChangeTotals>| {
-                totals.as_ref().map_or("-".to_owned(), |totals| {
-                    format!("{}f+{}-{}", totals.files, totals.added, totals.removed)
-                })
-            };
-            format!(
-                "branch={} base={} uncommitted={} on_branch={}",
-                git.branch.as_deref().unwrap_or("-"),
-                git.base_branch.as_deref().unwrap_or("-"),
-                totals(&git.uncommitted),
-                totals(&git.on_branch)
-            )
-        }),
-    );
-}
-
-/// A spec with its ids readable and its environment in a stable order; the
-/// rest as its debug form, on one line.
-fn spec_lines(out: &mut String, mut spec: AgentSpec) {
-    let env: BTreeMap<_, _> = std::mem::take(&mut spec.provider_env).into_iter().collect();
-    let _ = writeln!(out, "agent_id {}", id(&std::mem::take(&mut spec.agent_id)));
-    let _ = writeln!(out, "provider_env {env:?}");
-    let _ = writeln!(out, "{spec:?}");
-}
-
-/// The facts replayed through the interpreter. Journal and facts ring both
-/// end at the dump, so the replay is numbered to end where the journal
-/// does, and compared with the journal's frames it overlaps.
-fn replay(out: &mut String, dump: &AgentDump) {
-    let replayed = match dump.replay_facts() {
-        Ok(replayed) => replayed,
-        Err(error) => {
-            let _ = writeln!(out, "-- replay --\nnot replayed: {error}");
-            return;
-        }
-    };
-    let kind = dump.row.kind();
-    let overlap = replayed.len().min(dump.journal.len());
-    let first = dump.journal.len() - overlap;
-    let ours = render_steps(kind, first, &replayed[replayed.len() - overlap..]);
-    let theirs = render_steps(kind, first, &dump.journal[first..]);
-    let _ = writeln!(out, "-- replay ({} steps) --", replayed.len());
-    if overlap == replayed.len() && ours == theirs {
-        let _ = writeln!(
-            out,
-            "the replay of the facts is the journal from frame {first} on, line for line"
-        );
-        return;
-    }
+    let segments = record["segments"].as_array().map_or(&[][..], Vec::as_slice);
+    let events: usize = segments
+        .iter()
+        .map(|segment| segment["events"].as_array().map_or(0, Vec::len))
+        .sum();
+    let broken: Vec<&Value> = segments
+        .iter()
+        .flat_map(|segment| segment["events"].as_array().map_or(&[][..], Vec::as_slice))
+        .filter(|event| !event["broken"].is_null())
+        .map(|event| &event["broken"])
+        .collect();
     let _ = writeln!(
         out,
-        "the replay of the facts differs from the journal; frames numbered to end with it"
+        "{} segments, {events} events, {} broken checks",
+        segments.len(),
+        broken.len()
     );
-    if let (Some(ours), Some(theirs)) = (&ours, &theirs) {
-        let (mut frame, mut lines) = ("-", (ours.lines(), theirs.lines()));
-        loop {
-            match (lines.0.next(), lines.1.next()) {
-                (Some(a), Some(b)) if a == b => {
-                    if let Some(header) = a.strip_prefix("## ") {
-                        frame = header.split(' ').next().unwrap_or("-");
-                    }
-                }
-                (None, None) => break,
-                (a, b) => {
-                    let _ = writeln!(
-                        out,
-                        "first difference in frame {frame}: journal {:?}, replay {:?}",
-                        b.unwrap_or("<end>"),
-                        a.unwrap_or("<end>")
-                    );
-                    break;
-                }
-            }
-        }
+    for check in broken {
+        let _ = writeln!(out, "broken {check}");
     }
-    let first = dump.journal.len().saturating_sub(replayed.len());
-    if let Some(text) = render_steps(kind, first, &replayed) {
-        out.push_str(&text);
-    }
-}
-
-fn store(out: &mut String, kind: Kind, slice: &Step) {
-    for item in &slice.items {
-        let _ = writeln!(
-            out,
-            "order={} revision={} {}",
-            item.order,
-            item.revision,
-            render_item(kind, item)
-        );
-    }
-    match &slice.snapshot {
-        Some(snapshot) => {
-            let _ = writeln!(out, "snapshot revision={}", snapshot.revision);
-            let alone = Step {
-                snapshot: Some(snapshot.clone()),
-                ..Step::default()
-            };
-            // The snapshot's lines without the frame header.
-            if let Some(text) = render_steps(kind, 0, &[alone]) {
-                for line in text.lines().skip(1) {
-                    let _ = writeln!(out, "{line}");
-                }
-            }
-        }
-        None => {
-            let _ = writeln!(out, "snapshot none");
-        }
-    }
+    file(out, "record", &path)?;
+    shown.insert(path);
+    Ok(())
 }
 
 /// A file of no known shape: whole when it is short text, else its path.
@@ -633,10 +430,6 @@ fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
             found.push(path);
         }
     }
-}
-
-fn named(name: &str, prefix: &str) -> String {
-    name.trim_start_matches(prefix).to_owned()
 }
 
 /// A 16-byte id as a UUID, anything else as hex.

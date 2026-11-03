@@ -521,22 +521,92 @@ async fn a_draft_outlives_its_chat_with_this_devices_daemon() {
     net.shutdown().await.unwrap();
 }
 
+/// The phone's dump, which Export Diagnostics shares and a person's report
+/// sends, is the one bundle: the fleet's part, the record of the chat on
+/// screen, the core's and the agent's records, and none of what anybody
+/// wrote (the agent's name, folder and branch, its prompts, a tool's file
+/// name, input and output, and the replies) in any of its files.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_dump_carries_the_fleet_and_every_open_chat() {
-    let net = Net::start(topology()).await.unwrap();
+async fn the_phones_dump_carries_the_records_and_no_word_of_the_chat_on_screen() {
+    const MARKER: &str = "pangolin-teapot-marker";
+    let name = format!("worker-{MARKER}");
+    let net = Net::start(
+        Topology::new().host("desk").agent(
+            AgentDecl::new(&name, "desk")
+                .kind(FakeKind::ClaudeSdk)
+                .cwd(&format!("work-{MARKER}"))
+                .branch(&format!("{MARKER}-branch"))
+                .steps(vec![
+                    Step::Tool(Tool {
+                        name: Some("Read".into()),
+                        class: ToolClass::Exploration,
+                        input: Some(serde_json::json!({
+                            "file_path": format!("notes/{MARKER}.txt"),
+                        })),
+                        outcome: provider_fakes::script::Outcome {
+                            output: format!("the file says {MARKER}"),
+                            ..Default::default()
+                        },
+                        wait_for: None,
+                    }),
+                    text(&format!("turn one {MARKER}")),
+                    Step::TurnEnd,
+                ])
+                .prompt(&format!("go, {MARKER}")),
+        ),
+    )
+    .await
+    .unwrap();
     let (runtime, mut host) = open(&net).await;
-    let chat = opened(&runtime, &worker(&net), 50).await;
+    let agent = net.agent(&name).unwrap();
+    let key = AgentKey {
+        host: agent.host_id.as_bytes().to_vec(),
+        agent: agent.id.as_bytes().to_vec(),
+    };
+    let chat = opened(&runtime, &key, 50).await;
     until(&mut host, &chat, "the first turn", |chat| {
         says(chat, "turn one")
     })
     .await;
-    let bundle = runtime.dump("asked for in a test", false).await.unwrap();
+    let bundle = runtime.dump("report").await.unwrap();
     assert!(bundle.join("manifest.json").is_file());
     assert!(bundle.join("client/fleet/state.txt").is_file());
-    let sessions = std::fs::read_dir(bundle.join("client/sessions"))
-        .expect("the open chat's part")
-        .count();
-    assert_eq!(sessions, 1);
+    assert!(
+        bundle
+            .join(format!("client/sessions/{}/events", agent.id))
+            .is_file(),
+        "the record of the chat on screen"
+    );
+    assert!(bundle.join(format!("agents/{}/record", agent.id)).is_file());
+    assert!(bundle.join("core/checkpoint").is_file());
+    let forms = [
+        MARKER.as_bytes().to_vec(),
+        MARKER.to_uppercase().into_bytes(),
+        MARKER
+            .bytes()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+            .into_bytes(),
+    ];
+    let mut dirs = vec![bundle.clone()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                dirs.push(path);
+                continue;
+            }
+            let bytes = std::fs::read(&path).unwrap();
+            for form in &forms {
+                assert!(
+                    !bytes.windows(form.len()).any(|window| window == form),
+                    "{} holds what was written",
+                    path.display()
+                );
+            }
+        }
+    }
+    drop(chat);
     net.shutdown().await.unwrap();
 }
 

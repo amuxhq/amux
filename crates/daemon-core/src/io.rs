@@ -82,7 +82,7 @@ pub enum Input {
     /// The account's plan changed: what the relay carries changed with it.
     PlanChanged,
 
-    /// The host's trust ended or is being replaced.
+    /// The host's trust ended.
     HostForgotten {
         host: HostId,
     },
@@ -641,9 +641,6 @@ pub enum ShellWork {
         store: Box<crate::trust::TrustStore>,
         changed: Option<(HostId, crate::trust::TrustChanged)>,
     },
-    /// The host's key will not be replaced after all: what waited on the
-    /// replacement goes on.
-    ReplacementEnded { host: HostId },
     /// Whether the pairing window is open, and whether too many wrong
     /// secrets closed the last one, said when either moves.
     PairWindow { active: bool, locked_out: bool },
@@ -681,9 +678,6 @@ pub enum Job {
     /// cut leaves the old file or the new one, and the new one is on the
     /// drive before the job is done.
     Fsync { path: PathBuf, bytes: Vec<u8> },
-    /// Close every connection to `host`: its key is being replaced, and
-    /// nothing opened under the old one may outlive it.
-    TeardownHost { host: HostId },
     /// Run a passive WAL checkpoint on a connection to the profile store
     /// of the job's own, so the store's main file holds every commit; one
     /// that cannot move the whole WAL fails.

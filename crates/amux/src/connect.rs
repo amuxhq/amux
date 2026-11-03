@@ -52,17 +52,18 @@ pub async fn channel(path: &Path) -> std::io::Result<Channel> {
 
 /// The front door, if a daemon answers on it now.
 pub async fn front_door_now(config: &InstallationConfig) -> Option<Channel> {
-    channel(&config.front_door_socket).await.ok()
+    channel(&config.front_door()).await.ok()
 }
 
 /// The front door. A client that finds no daemon starts nothing: without a
 /// supervisor the daemon belongs to whatever service manager runs it, so
 /// the client says so and waits for it to come up.
 pub async fn front_door(config: &InstallationConfig) -> Result<Channel> {
+    let path = config.front_door();
     if let Some(channel) = front_door_now(config).await {
         return Ok(channel);
     }
-    let path = config.front_door_socket.display();
+    let path = path.display();
     match config.supervisor {
         false => eprintln!(
             "No amux daemon is answering on {path}. This install has no supervisor, so the \

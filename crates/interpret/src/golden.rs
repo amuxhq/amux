@@ -229,6 +229,8 @@ struct Frame {
     effects: Vec<Effect>,
     /// The pending agent-message set after this frame.
     pending: Vec<Vec<u8>>,
+    /// The check the step broke, if any.
+    broken: Option<crate::checks::Violation>,
 }
 
 /// What [`run_golden`] found.
@@ -338,6 +340,8 @@ pub struct Replayed {
     pub replies: Vec<(Vec<u8>, SendInputResponse)>,
     /// The catalogue this frame wrote, with its hash, when it wrote one.
     pub catalogue: Option<(Vec<u8>, wire::Catalogue)>,
+    /// The check the step broke, if any.
+    pub broken: Option<crate::checks::Violation>,
 }
 
 /// Runs one fixture through interpreter `I` and returns its emission, frame
@@ -390,6 +394,7 @@ pub fn replay<I: Interpreter>(fixture: &Path) -> Result<Vec<Replayed>, String> {
                 step: frame.step,
                 replies,
                 catalogue,
+                broken: frame.broken,
             }
         })
         .collect())
@@ -484,6 +489,16 @@ pub fn run_golden<I: Interpreter>(fixture: &Path) -> GoldenReport {
         .map(|frame| frame.step.clone())
         .collect::<Vec<_>>();
     report.violations = check_invariants::<I>(&steps, &parsed.end);
+    // The checks the live agent judges every step by.
+    report
+        .violations
+        .extend(frames.iter().enumerate().filter_map(|(index, frame)| {
+            let broken = frame.broken.as_ref()?;
+            Some(format!(
+                "frame {index} ({}): {}: {}",
+                frame.label, broken.invariant.id, broken.detail
+            ))
+        }));
     report.violations.extend(check_resumes(&frames));
     report.failures = check_expectations::<I>(&frames, &script);
 
@@ -1115,6 +1130,7 @@ fn execute<I: Interpreter>(
         step: first,
         effects: Vec::new(),
         pending: I::pending_messages(&state),
+        broken: None,
     }];
     let round_trip = |state: &I::State| -> Result<(I::State, Step), String> {
         let bytes = encode_checkpoint(state);
@@ -1131,6 +1147,7 @@ fn execute<I: Interpreter>(
                 step,
                 effects: Vec::new(),
                 pending: I::pending_messages(&state),
+                broken: None,
             });
         }
         match &scripted.action {
@@ -1141,6 +1158,7 @@ fn execute<I: Interpreter>(
                     step: stepped.step,
                     effects: stepped.effects,
                     pending: I::pending_messages(&state),
+                    broken: stepped.broken,
                 });
             }
             Action::Checkpoint => {
@@ -1151,6 +1169,7 @@ fn execute<I: Interpreter>(
                     step,
                     effects: Vec::new(),
                     pending: I::pending_messages(&state),
+                    broken: None,
                 });
             }
         }
@@ -1162,6 +1181,7 @@ fn execute<I: Interpreter>(
             step,
             effects: Vec::new(),
             pending: I::pending_messages(&state),
+            broken: None,
         });
     }
     Ok(frames)

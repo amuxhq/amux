@@ -476,20 +476,22 @@ async fn a_step_over_its_budget_leaves_the_supervisors_state_and_inputs_file() {
     assert_eq!(files.len(), 1, "{files:?}");
     let name = files[0].file_name().unwrap().to_string_lossy().into_owned();
     assert!(
-        name.starts_with("supervisor-") && name.ends_with(".txt"),
+        name.starts_with("supervisor-") && name.ends_with(".json"),
         "{name}"
     );
     let text = std::fs::read_to_string(&files[0]).unwrap();
-    let reason = text.lines().find(|line| line.starts_with("reason: "));
-    println!("{}\n{}", files[0].display(), reason.unwrap_or_default());
+    let written: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let reason = written["reason"].as_str().unwrap_or_default();
+    println!("{}\n{reason}", files[0].display());
     assert!(
-        reason.is_some_and(|reason| reason.starts_with(&format!(
-            "reason: {}a step took ",
+        reason.starts_with(&format!(
+            "{}a step took ",
             node::supervisor::SUPERVISOR_CORE_DUMP
-        )) && reason.contains(", over its budget of 0 µs")),
+        )) && reason.contains(", over its budget of 0 µs"),
         "{text}"
     );
-    assert!(text.contains("state now:\nSupervisor {"), "{text}");
+    assert_eq!(written["core"], "supervisor", "{text}");
+    assert!(written["now"]["params"].is_object(), "{text}");
     fixture.signal_supervisor(libc::SIGTERM);
     assert!(fixture.supervisor_exit().await.success());
     // Every step ran over, and the file stayed one.

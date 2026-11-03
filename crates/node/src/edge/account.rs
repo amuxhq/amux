@@ -141,9 +141,23 @@ impl Account {
     }
 
     /// Forgets the credential and keeps the binding. A refresh under way
-    /// finishes first.
+    /// finishes first. The refresh token is revoked at its service first,
+    /// so a copy taken earlier stops working; a service that cannot be
+    /// reached or refuses is warned of, and the sign-out goes ahead.
     pub(crate) async fn sign_out(&self) -> io::Result<()> {
         let _change = self.changes.lock().await;
+        if let Some(record) = self.record()
+            && let Some(refresh) = &record.refresh_token
+            && let Err(error) =
+                oauth::revoke_refresh_token(record.service.as_str(), &record.client_id, refresh)
+                    .await
+        {
+            tracing::warn!(
+                %error,
+                service = record.service.as_str(),
+                "could not revoke the refresh token; signing out here anyway"
+            );
+        }
         self.forget_relay_token()?;
         if let Some(record) = self.record() {
             self.write(AccountRecord {

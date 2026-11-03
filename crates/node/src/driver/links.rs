@@ -43,6 +43,13 @@ impl CoreLinks {
         runtime.driver().resumed(up).await
     }
 
+    /// Whether the core pins `key` for `peer`; a profile gone pins nothing.
+    pub(crate) async fn pins(&self, peer: HostId, key: Vec<u8>) -> bool {
+        self.look(move |daemon| daemon.trust().pubkey_for_host(peer) == Some(key.as_slice()))
+            .await
+            .unwrap_or(false)
+    }
+
     /// Asks the core for a channel to `peer` over `link`: the id to open
     /// it under, or why it is not opened.
     pub(crate) async fn want_channel(

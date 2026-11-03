@@ -159,7 +159,10 @@ five minutes, plus a chat a push is bringing current.
 
 App startup does not require an account. The phone is one installation of
 the daemon with one profile per account, as a desktop is; the daemon's
-profile registry creates, binds, signs out and deletes them.
+profile registry creates, binds, signs out and deletes them. The installation
+directory is excluded from iCloud and computer backups: it holds each
+profile's device key and tokens, which would let whoever has the backup act
+as the phone, so a new or restored phone pairs again.
 
 - With nobody signed in, the installation holds one unbound profile and the
   app shows its fleet. The first sign-in binds that profile, keeping its key,
@@ -310,7 +313,7 @@ seen only by the app, which records them on the account on screen
 choice is kept in the app's defaults and handed to the runtime at start and
 on every change. Only the App Store build sends. **Send Automatic Reports**
 beside it, off by default, is handed over the same way: with it on, the
-runtime sends the dump one of amux's checks takes to the account on screen
+runtime sends the report one of amux's checks takes to the account on screen
 ([sending reports](DEBUGGING.md#sending-reports)).
 
 A "needs you" notification's payload names a host and an agent under its
@@ -359,13 +362,13 @@ over it; the person can mark rectangles and write a note. There is no shake
 gesture. The offer and the report are drawn over whichever surface is on
 top, a sheet included: the app hands them down as `ReportLayers`, every
 surface that can be on top carries `surface()`, and the last of those to
-appear draws them. The app takes the profile's `report` dump the moment the
-frame freezes, and on Send hands the runtime what only it has
+appear draws them. The app takes the report's bundle (the same one Export
+Diagnostics saves) the moment the frame freezes, and on Send hands the runtime what only it has
 (`ReportAssembly`): a `report.json` declaring the frame present and the
 trace absent (the phone records none), and the frozen `frame.png`. The runtime
-writes them beside the dump and uploads the report (`Profile.submitReport`), as
-it does the terminal's; the dump carries the tail of the installation's
-`runtime.log` redacted. The build stamps its checkout revision into the app, and each report carries it as
+writes them beside the bundle and uploads the report (`Profile.submitReport`), as
+it does the terminal's; the bundle carries the minute of the installation's
+`runtime.log` before it, masked. The build stamps its checkout revision into the app, and each report carries it as
 `git_sha`.
 
 A report is sent to the account on screen; with nobody signed in, Send is

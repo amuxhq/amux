@@ -2124,6 +2124,9 @@ impl State {
             }
         }
         let prior = self.works.get(id).cloned();
+        if completed && prior.is_none() {
+            self.shared.result_without_call("item/completed");
+        }
         let status = match item {
             ThreadItem::CommandExecution(command) => command.status.as_str(),
             ThreadItem::FileChange(change) => change.status.as_str(),
@@ -2643,6 +2646,12 @@ impl State {
             }
         }
         self.settle_open(emit, false, &BTreeSet::new());
+        // No answer follows a safety check the server died holding.
+        for key in self.shared.open_keys("safety:") {
+            if let Some(id) = key.strip_prefix("safety:") {
+                self.safety_check(emit, id, false);
+            }
+        }
         self.background = None;
         self.shared.provider_exited();
         self.active_turn = None;

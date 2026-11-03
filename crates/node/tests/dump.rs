@@ -1,7 +1,8 @@
-//! Dump assembly: one bundle under reports/ with the redacted store slice,
-//! each agent's part, the last journal segments and the daemon's log, in
-//! the documented layout, with every planted secret absent. Real agent
-//! processes on the fake provider supply their own redacted parts.
+//! Dump assembly: one bundle under reports/ with this host's records (the
+//! daemon core's, each own agent's and the chats a client shows) and our
+//! own logs, in the documented layout, the same whatever asked for it, with
+//! every planted secret and word absent. Real agent processes on the fake
+//! provider build their own records.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -60,7 +61,7 @@ fn holds(haystack: &[u8], secret: &str) -> bool {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
+async fn a_dump_carries_this_hosts_records_and_our_logs_and_no_secret() {
     let install = Install::new();
     let mut launch = install.launch(
         "dump",
@@ -72,16 +73,33 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     launch
         .provider_env
         .insert("DEPLOY_SECRET".to_owned(), ENV_SECRET.to_owned());
+    // Stamped as the processes' formatter stamps lines: one from long
+    // before the dump, which its window leaves out, one below the default
+    // level, and the minute before it.
+    let stamped = |ago_ms: i64| {
+        let at = chrono::DateTime::from_timestamp_millis(log_file::unix_ms_now() - ago_ms).unwrap();
+        at.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
+    };
     let log = install.path("daemon.log");
     std::fs::write(
         &log,
-        format!("INFO started\nWARN a relay call failed: Authorization: Bearer {KEY}\n"),
+        format!(
+            "{}  INFO an hour ago\n{}  INFO started\n{} DEBUG wordy\n{}  WARN a relay call failed: \
+             Authorization: Bearer {KEY}\n",
+            stamped(3_600_000),
+            stamped(1_000),
+            stamped(1_000),
+            stamped(1_000),
+        ),
     )
     .unwrap();
     let supervisor_log = install.path("supervisor.log");
     std::fs::write(
         &supervisor_log,
-        format!("INFO restarting the daemon with GITHUB_TOKEN={TOKEN}\n"),
+        format!(
+            "{}  INFO restarting the daemon with GITHUB_TOKEN={TOKEN}\n",
+            stamped(1_000)
+        ),
     )
     .unwrap();
     let options = node::StartOptions {
@@ -155,60 +173,36 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     .await
     .unwrap();
 
-    // The asking client's open chat, as it hands it in unredacted: the
-    // rows its window held, a send of its own since and a driver act whose
-    // words name a secret.
-    let held = runtime
-        .read_store({
-            let live_key = live_key.clone();
-            move |store| store.cut(&live_key, 100).unwrap()
-        })
-        .await
-        .unwrap();
-    let client_msg = |of| wire::dump::ClientTraced {
-        seq: 0,
-        at_ms: 0,
-        event: Some(wire::dump::client_traced::Event::Msg(
-            wire::dump::ClientSessionMsg { of: Some(of) },
-        )),
-    };
-    let session = wire::dump::ClientSessionHistory {
+    // The asking client's chats: one handed in whole, as no client sends
+    // it, which the dump refuses, and one as its record.
+    let whole = wire::dump::ClientSessionHistory {
         agent_id: live.as_bytes().to_vec(),
         start: Some(wire::dump::ClientSession {
             agent: Some(runtime.agent(live).await.unwrap()),
-            snapshot: held.snapshot.clone(),
-            transcript: Some(wire::dump::ClientTranscript {
-                items: held.held.clone(),
-                exhausted: true,
-            }),
             ..wire::dump::ClientSession::default()
         }),
-        events: Some(wire::dump::ClientSessionEvents {
-            traced: vec![
-                client_msg(wire::dump::client_session_msg::Of::Send(sdk_prompt(
-                    b"from-the-client",
-                    &format!("again with {TOKEN}; cc {EMAIL}"),
-                ))),
-                wire::dump::ClientTraced {
-                    seq: 1,
-                    at_ms: 0,
-                    event: Some(wire::dump::client_traced::Event::Driver(format!(
-                        "GetFailed {{ error: \"Authorization: Bearer {KEY}\" }}"
-                    ))),
-                },
-            ],
-        }),
+        structure_only: false,
+        ..wire::dump::ClientSessionHistory::default()
     };
-    let elsewhere = wire::dump::ClientSessionHistory {
-        agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+    let record = wire::dump::ClientSessionHistory {
+        agent_id: live.as_bytes().to_vec(),
+        events: Some(wire::dump::ClientSessionEvents {
+            traced: vec![wire::dump::ClientTraced {
+                seq: 1,
+                at_ms: 0,
+                size: 0,
+                event: Some(wire::dump::client_traced::Event::Driver(
+                    "Subscribed { tail: 16 }".to_owned(),
+                )),
+            }],
+        }),
+        structure_only: true,
         ..wire::dump::ClientSessionHistory::default()
     };
     let bundle = runtime
         .dump(DumpRequest {
-            agent_ids: Vec::new(),
             reason: format!("the chat froze; my key is {KEY}"),
-            automatic: false,
-            sessions: vec![session.encode_to_vec(), elsewhere.encode_to_vec()],
+            sessions: vec![whole.encode_to_vec(), record.encode_to_vec()],
             ..DumpRequest::default()
         })
         .await
@@ -235,24 +229,36 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     has(MANIFEST.to_owned());
     has(DAEMON_LOG.to_owned());
     has(node::SUPERVISOR_LOG.to_owned());
-    // The live agent's process sends the tails of its own log and its
-    // provider's.
-    has(format!("agents/{live}/part/agent.log"));
-    has(format!("agents/{live}/part/provider.log"));
+    // Each agent's own log goes beside its record; never its provider's.
     for id in [live, stopped] {
-        has(format!("agents/{id}/row.pb"));
-        has(format!("agents/{id}/store.pb"));
-        has(format!("agents/{id}/part/spec.1"));
+        has(format!("agents/{id}/{}", node::AGENT_LOG));
+        assert!(
+            !names.iter().any(|name| name.ends_with("provider.log")),
+            "{names:?}"
+        );
         assert!(
             names
                 .iter()
-                .any(|name| name.starts_with(&format!("agents/{id}/journal/"))),
-            "{id}'s journal tail"
+                .any(|name| name.starts_with(&format!("core/{}/{id}/", node::CORE_JOURNALS))),
+            "{id}'s journal from the core's cursor"
         );
     }
-    // The core's part: its checkpoint, the inputs since and the store as
-    // of that checkpoint, each redacted, and the store alone, with no WAL
-    // or rollback journal beside it.
+    has(format!("agents/{live}/{}", node::AGENT_RECORD));
+    // Nothing that holds what was said: no row, slice, facts or spec.
+    assert!(
+        names.iter().all(|name| !name.ends_with(".pb")
+            && !name.contains("facts")
+            && !name.contains("spec.")),
+        "{names:?}"
+    );
+    // Our logs reach back a minute, at the default level.
+    let daemon_log = std::fs::read_to_string(bundle.join(DAEMON_LOG)).unwrap();
+    assert!(daemon_log.contains("INFO started"), "{daemon_log}");
+    assert!(!daemon_log.contains("an hour ago"), "{daemon_log}");
+    assert!(!daemon_log.contains("wordy"), "{daemon_log}");
+    // The core's record: its checkpoint, the inputs since and the store as
+    // of that checkpoint, the store alone, with no WAL or rollback journal
+    // beside it.
     for name in ["checkpoint", "inputs", "store.sqlite"] {
         has(format!("core/{name}"));
     }
@@ -285,96 +291,32 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         "the store as of the checkpoint holds both agents"
     );
     let restored = daemon_core::Daemon::restore(&checkpoint, copy, scratch.path().join("agents"));
-    assert!(restored.is_ok(), "the core restores from its part");
-
-    let live_part: Vec<&&str> = names
-        .iter()
-        .filter(|name| name.starts_with(&format!("agents/{live}/part/facts/")))
-        .collect();
-    assert!(
-        live_part.iter().any(|name| name.ends_with(".checkpoint")),
-        "the live agent sent its ring and checkpoint: {live_part:?}"
-    );
+    assert!(restored.is_ok(), "the core restores from its record");
 
     let manifest: serde_json::Value =
         serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
     let errors = manifest["errors"].as_array().unwrap();
+    assert_eq!(manifest["trigger"], node::PERSON);
     assert_eq!(manifest["core"]["reads"].as_u64(), Some(reads as u64));
     assert!(
-        errors
-            .iter()
-            .any(|error| error.as_str().unwrap().starts_with(&stopped.to_string())),
-        "the stopped agent's missing ring is named: {errors:?}"
+        errors.iter().any(|error| error
+            .as_str()
+            .unwrap()
+            .starts_with(&format!("{stopped} record"))),
+        "the stopped agent's missing record is named: {errors:?}"
     );
     assert_eq!(manifest["agents"].as_array().unwrap().len(), 2);
-    // The client's session, redacted through the agent's kind, beside a
-    // session of an agent the dump does not cover, which is named instead.
+    // The chat's record, beside the whole session, which is named instead.
     let client = format!("{}/{live}", node::CLIENT_SESSIONS);
     has(format!("{client}/{}", node::CLIENT_CHECKPOINT));
     has(format!("{client}/{}", node::CLIENT_EVENTS));
     let sessions = manifest["client"]["sessions"].as_array().unwrap();
     assert_eq!(sessions.len(), 1, "{sessions:?}");
-    assert_eq!(
-        sessions[0]["checkpoint"].as_str(),
-        Some(format!("{client}/{}", node::CLIENT_CHECKPOINT).as_str())
-    );
-    let elsewhere = uuid::Uuid::from_slice(&elsewhere.agent_id).unwrap();
     assert!(
-        errors.iter().any(|error| error
-            .as_str()
-            .unwrap()
-            .starts_with(&format!("{elsewhere} client session"))),
+        errors
+            .iter()
+            .any(|error| error.as_str().unwrap().contains("a whole history")),
         "{errors:?}"
-    );
-    let start = wire::dump::ClientSession::decode(
-        std::fs::read(bundle.join(&client).join(node::CLIENT_CHECKPOINT))
-            .unwrap()
-            .as_slice(),
-    )
-    .expect("the session's checkpoint reads");
-    let window = start.transcript.unwrap_or_default().items;
-    let shape = |items: &[wire::Item]| -> Vec<(String, u64, u64)> {
-        items
-            .iter()
-            .map(|item| (item.key.clone(), item.order, item.revision))
-            .collect()
-    };
-    assert_eq!(
-        shape(&window),
-        shape(&held.held),
-        "the rows keep their places"
-    );
-    assert!(
-        window.iter().any(|item| item.text.contains("<REDACTED>")),
-        "the client's rows are kept, redacted"
-    );
-    let events = wire::dump::ClientSessionEvents::decode(
-        std::fs::read(bundle.join(&client).join(node::CLIENT_EVENTS))
-            .unwrap()
-            .as_slice(),
-    )
-    .expect("the session's events read");
-    assert_eq!(events.traced.len(), 2);
-
-    let slice = wire::Step::decode(
-        std::fs::read(bundle.join(format!("agents/{live}/store.pb")))
-            .unwrap()
-            .as_slice(),
-    )
-    .unwrap();
-    assert!(slice.snapshot.is_some(), "the slice holds the snapshot");
-    assert!(
-        slice
-            .items
-            .iter()
-            .any(|item| item.text.contains("<REDACTED>")),
-        "the prompt's reflection is kept, redacted"
-    );
-    assert!(
-        slice
-            .items
-            .iter()
-            .all(|item| item.order > 0 && item.revision > 0)
     );
 
     for (name, _) in &files {
@@ -383,7 +325,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
             assert!(!holds(&bytes, secret), "{name} still holds {secret}");
         }
     }
-    // The core's part is not clean for want of anything to redact: the
+    // The core's record is not clean for want of anything to redact: the
     // ring it was taken from holds the prompt's secret.
     let ring_holds = std::fs::read_dir(runtime.dir().join("core-ring"))
         .unwrap()
@@ -391,8 +333,8 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     assert!(ring_holds, "the live ring holds {KEY}");
     transcript.push(format!(
         "planted {} secrets in the prompt, a later input, the model's reply, the provider's \
-         environment, the dump reason, the daemon and supervisor logs and the client's session; none is in any \
-         file of the bundle, as text or hex",
+         environment, the dump reason and the daemon and supervisor logs; none is in any file \
+         of the bundle, as text or hex",
         PLANTED.len()
     ));
     transcript.push(format!(
@@ -406,15 +348,6 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
             .trim()
             .replace('\n', " | ")
     ));
-    transcript.push(format!(
-        "store slice for {live}: {} rows, first reads {:?}",
-        slice.items.len(),
-        slice
-            .items
-            .iter()
-            .find(|item| !item.text.is_empty())
-            .map(|item| &item.text)
-    ));
 
     let packed = node::pack(&bundle).unwrap();
     assert_eq!(
@@ -422,14 +355,8 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         files.len(),
         "one message carries every file"
     );
-    assert!(
-        packed
-            .files
-            .iter()
-            .any(|file| file.name == format!("agents/{live}/row.pb"))
-    );
     transcript.push(format!(
-        "packed for a remote client: {} files, {} bytes",
+        "packed to send: {} files, {} bytes",
         packed.files.len(),
         packed.encoded_len()
     ));
@@ -442,125 +369,322 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     daemon.shutdown().await.unwrap();
 }
 
+/// Our logs carry no conversation: a phrase in a prompt, the model's reply
+/// and a later input reaches neither what the daemon logs, at its default
+/// level, nor the agent's own log.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_dump_of_named_agents_covers_only_them_and_an_unknown_one_is_an_error() {
+async fn a_conversation_reaches_no_log_amux_writes() {
+    const MARKER: &str = "PLANTEDmarkerphrase0004";
+    let log = support::captured_log();
     let install = Install::new();
-    let daemon = install
-        .start("boot-1", support::synthetic::quiet_launch())
-        .await;
-    let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
-    let mut one = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
-    let two = support::synthetic::SyntheticAgent::new(&install, "two", 1 << 20);
-    one.register(&install);
-    two.register(&install);
-    one.append(&support::synthetic::item("a", "hello"));
-    runtime.ingest(one.id).await.unwrap();
-
-    let bundle = runtime
-        .dump(DumpRequest {
-            agent_ids: vec![one.id.as_bytes().to_vec()],
-            reason: String::new(),
-            automatic: true,
-            ..DumpRequest::default()
+    let launch = install.launch(
+        "quiet",
+        vec![
+            text(&format!("the answer is {MARKER}")),
+            provider_fakes::script::Step::TurnEnd,
+        ],
+    );
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &install);
+    let prompt = format!("please say {MARKER}");
+    let agent = id_of(
+        &runtime
+            .spawn(create(&install.work, "talker", Some(&prompt)), None)
+            .await
+            .unwrap(),
+    );
+    until("the first turn to end", || async {
+        let phase = runtime.agent(agent).await.unwrap().phase;
+        (phase == Phase::Idle as i32)
+            .then_some(())
+            .ok_or_else(|| format!("phase {phase}"))
+    })
+    .await
+    .unwrap();
+    runtime
+        .send_input(&wire::SendInputRequest {
+            agent_id: agent.as_bytes().to_vec(),
+            input: Some(sdk_prompt(b"later", &format!("and {MARKER} again"))),
         })
         .await
         .unwrap();
-    let agents: Vec<String> = std::fs::read_dir(bundle.join("agents"))
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    assert_eq!(agents, vec![one.id.to_string()]);
-
-    let unknown = runtime
-        .dump(DumpRequest {
-            agent_ids: vec![uuid::Uuid::new_v4().as_bytes().to_vec()],
-            ..DumpRequest::default()
-        })
-        .await
-        .unwrap_err();
-    assert!(matches!(unknown, node::DumpError::NoAgent(_)), "{unknown}");
-    let reports: Vec<PathBuf> = std::fs::read_dir(install.data_dir.join(node::REPORTS))
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .collect();
-    assert_eq!(reports, vec![bundle], "a failed dump leaves nothing behind");
+    let key = store::AgentKey::new(
+        runtime.host().as_bytes().to_vec(),
+        agent.as_bytes().to_vec(),
+    );
+    until("the later input's reflection", || async {
+        let key = key.clone();
+        runtime
+            .read_store(move |store| store.item_by_input(&key, b"later").unwrap())
+            .await
+            .unwrap()
+            .map(|_| ())
+            .ok_or("no row carries it")
+    })
+    .await
+    .unwrap();
+    let agent_log = std::fs::read(install.agent_dir(agent).join(node::AGENT_LOG)).unwrap();
+    kill_all(&runtime).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();
+
+    let daemon_log = log.lock().unwrap().clone();
+    assert!(!daemon_log.is_empty(), "the daemon logged something");
+    for (name, bytes) in [("the daemon's log", &daemon_log), ("agent.log", &agent_log)] {
+        assert!(
+            !contains(bytes, MARKER),
+            "{name} holds the conversation: {}",
+            String::from_utf8_lossy(bytes)
+        );
+    }
 }
 
-/// Each scope carries what replays the stage its trigger concerns: the
-/// core's part and the journals it reads for the core, one chat's rows for
-/// a transcript, and for a person's report every row but slices only of
-/// the chats the client had open.
+/// Runs git in `cwd` with a fixed identity.
+fn git(cwd: &Path, args: &[&str]) {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.com")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.com")
+        .output()
+        .expect("git runs");
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A report keeps what a session did and none of what was said: a phrase
+/// in an agent's folder, its branch, a file's name, its prompts, a tool's
+/// input and output and the replies reaches no file of any bundle,
+/// whatever asked for it, while the agent's record, its facts run again
+/// through the interpreter when the dump was made, holds the session's
+/// shape and both turns' ends.
 #[tokio::test(flavor = "multi_thread")]
-async fn each_scope_carries_what_its_stage_replays() {
+async fn no_report_carries_a_word_and_an_agents_record_holds_what_its_interpreter_concluded() {
+    const MARKER: &str = "PLANTEDmarkerphrase0006";
+    let install = Install::new();
+    let repo = install.work.join(format!("{MARKER}-folder"));
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", &format!("{MARKER}-branch")]);
+    std::fs::write(repo.join("README"), "first\n").unwrap();
+    git(&repo, &["add", "README"]);
+    git(&repo, &["commit", "-q", "-m", MARKER]);
+    let file = repo.join(format!("{MARKER}.txt"));
+    std::fs::write(&file, format!("{MARKER}\n")).unwrap();
+    std::fs::write(repo.join("README"), format!("first\n{MARKER}\n")).unwrap();
+    let launch = install.launch(
+        "recorded",
+        vec![
+            text(&format!("reading {MARKER}")),
+            provider_fakes::script::Step::Tool(provider_fakes::script::Tool {
+                name: Some("Read".into()),
+                class: provider_fakes::script::ToolClass::Exploration,
+                input: Some(serde_json::json!({ "file_path": file })),
+                outcome: provider_fakes::script::Outcome {
+                    output: format!("the file says {MARKER}"),
+                    ..Default::default()
+                },
+                wait_for: None,
+            }),
+            text(&format!("it said {MARKER}")),
+            provider_fakes::script::Step::TurnEnd,
+        ],
+    );
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &install);
+    let agent = id_of(
+        &runtime
+            .spawn(
+                create(&repo, "reader", Some(&format!("read {MARKER}"))),
+                None,
+            )
+            .await
+            .unwrap(),
+    );
+    until("the first turn to end", || async {
+        let phase = runtime.agent(agent).await.unwrap().phase;
+        (phase == Phase::Idle as i32)
+            .then_some(())
+            .ok_or_else(|| format!("phase {phase}"))
+    })
+    .await
+    .unwrap();
+    runtime
+        .send_input(&wire::SendInputRequest {
+            agent_id: agent.as_bytes().to_vec(),
+            input: Some(sdk_prompt(b"later", &format!("and {MARKER} again"))),
+        })
+        .await
+        .unwrap();
+    let key = store::AgentKey::new(
+        runtime.host().as_bytes().to_vec(),
+        agent.as_bytes().to_vec(),
+    );
+    until("the later input's reflection", || async {
+        let key = key.clone();
+        runtime
+            .read_store(move |store| store.item_by_input(&key, b"later").unwrap())
+            .await
+            .unwrap()
+            .map(|_| ())
+            .ok_or("no row carries it")
+    })
+    .await
+    .unwrap();
+    until("the folder's git facts", || async {
+        let row = runtime.agent(agent).await.unwrap();
+        row.git
+            .as_ref()
+            .and_then(|git| git.uncommitted)
+            .map(|_| ())
+            .ok_or("no change totals on the row")
+    })
+    .await
+    .unwrap();
+
+    // Whatever asks, a person or a check on any of the cores, the bundle
+    // carries the same parts.
+    let mut bundles = Vec::new();
+    for (automatic, check) in [
+        (false, ""),
+        (true, "daemon.test"),
+        (true, "agent.test"),
+        (true, "transcript.window"),
+    ] {
+        let bundle = runtime
+            .dump(DumpRequest {
+                reason: format!("asked by {check}"),
+                automatic,
+                check: check.to_owned(),
+                ..DumpRequest::default()
+            })
+            .await
+            .unwrap();
+        bundles.push(bundle);
+    }
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+
+    let dir = format!("agents/{agent}");
+    let parts =
+        |bundle: &Path| -> Vec<String> { tree(bundle).into_iter().map(|(name, _)| name).collect() };
+    for bundle in &bundles {
+        let files = tree(bundle);
+        assert!(
+            files
+                .iter()
+                .any(|(name, _)| *name == format!("{dir}/record")),
+            "{files:?}"
+        );
+        assert_eq!(parts(bundle), parts(&bundles[0]), "the same parts");
+        for (name, _) in &files {
+            let bytes = std::fs::read(bundle.join(name)).unwrap();
+            for planted in [
+                MARKER.to_owned(),
+                MARKER.to_uppercase(),
+                repo.to_string_lossy().into_owned(),
+            ] {
+                assert!(
+                    !holds(&bytes, &planted),
+                    "{name} holds {planted}: {}",
+                    String::from_utf8_lossy(&bytes)
+                );
+            }
+        }
+    }
+    let bundle = &bundles[0];
+
+    let bytes = std::fs::read(bundle.join(&dir).join(node::AGENT_RECORD)).unwrap();
+    let record: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(record["settings"]["kind"], "KIND_CLAUDE_SDK");
+    assert_eq!(record["core"]["mode"], "running", "{}", record["core"]);
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    let events: Vec<&serde_json::Value> = record["segments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|segment| segment["events"].as_array().unwrap())
+        .collect();
+    // What the session did, by kind: the tool and its input's keys, both
+    // prompts, the replies.
+    let read = serde_json::json!({"name": "Read", "keys": ["file_path"]});
+    assert!(
+        events.iter().any(|fed| fed["event"]["tools"]
+            .as_array()
+            .is_some_and(|tools| tools.contains(&read))),
+        "{text}"
+    );
+    for shape in [r#""arm":"prompt""#, r#""variant":"assistant""#] {
+        assert!(text.contains(shape), "no {shape} in {text}");
+    }
+    // The folder's changes as counts, the branch only as being there.
+    assert!(
+        events.iter().any(|fed| fed["event"]["event"] == "git"
+            && fed["event"]["git"]["branch"] == true
+            && fed["event"]["git"]["uncommitted"][0].as_u64() >= Some(2)),
+        "{text}"
+    );
+    // Both turns ended in the replay as they did live, and no check broke.
+    let turn_ends = events
+        .iter()
+        .filter(|fed| !fed["step"]["turn_end"].is_null())
+        .count();
+    assert_eq!(turn_ends, 2, "{text}");
+    assert!(events.iter().all(|fed| fed["broken"].is_null()), "{text}");
+}
+
+/// A client's chats go into a dump as their records, whatever asked for
+/// it; a whole session, which holds its chat's conversation, never does.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dump_carries_a_chats_record_and_never_its_whole_session() {
     let install = Install::new();
     let daemon = install
         .start("boot-1", support::synthetic::quiet_launch())
         .await;
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
     let mut one = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
-    let two = support::synthetic::SyntheticAgent::new(&install, "two", 1 << 20);
     one.register(&install);
-    two.register(&install);
     one.append(&support::synthetic::item("a", "hello"));
     runtime.ingest(one.id).await.unwrap();
     runtime.checkpoint().await.unwrap();
 
-    let dump = |scope: wire::DumpScope, agents: Vec<Vec<u8>>| {
-        let runtime = runtime.clone();
-        async move {
-            let request = DumpRequest {
-                agent_ids: agents,
-                scope: scope.into(),
-                ..DumpRequest::default()
-            };
-            let bundle = runtime.dump(request).await.unwrap();
-            let files: Vec<String> = tree(&bundle).into_iter().map(|(name, _)| name).collect();
-            (bundle, files)
-        }
+    let open_chat = wire::dump::ClientSessionHistory {
+        agent_id: one.id.as_bytes().to_vec(),
+        ..wire::dump::ClientSessionHistory::default()
     };
-    let has = |files: &[String], path: &str| files.iter().any(|file| file.starts_with(path));
-    let one_dir = format!("agents/{}", one.id);
-
-    let (bundle, core) = dump(wire::DumpScope::Core, Vec::new()).await;
-    assert!(
-        has(&core, "core/checkpoint") && has(&core, "core/store.sqlite"),
-        "{core:?}"
-    );
-    assert!(has(&core, &format!("{one_dir}/row.pb")), "{core:?}");
-    assert!(has(&core, &format!("{one_dir}/journal/")), "{core:?}");
-    assert!(!has(&core, &format!("{one_dir}/store.pb")), "{core:?}");
-    assert!(!has(&core, &format!("{one_dir}/part/")), "{core:?}");
-    let manifest: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
-    assert_eq!(manifest["scope"], "core");
-
-    let (_, transcript) = dump(
-        wire::DumpScope::Transcript,
-        vec![one.id.as_bytes().to_vec()],
-    )
-    .await;
-    assert!(
-        has(&transcript, &format!("{one_dir}/store.pb")),
-        "{transcript:?}"
-    );
-    assert!(
-        !has(&transcript, &format!("{one_dir}/journal/")),
-        "{transcript:?}"
-    );
-    assert!(!has(&transcript, "core/"), "{transcript:?}");
-
-    let (_, report) = dump(wire::DumpScope::Report, Vec::new()).await;
-    assert!(has(&report, "core/checkpoint"), "{report:?}");
-    assert!(
-        has(&report, &format!("agents/{}/row.pb", two.id)),
-        "{report:?}"
-    );
-    assert!(
-        !report.iter().any(|file| file.ends_with("store.pb")),
-        "no chat was open, so no slice: {report:?}"
-    );
+    let record = wire::dump::ClientSessionHistory {
+        structure_only: true,
+        ..open_chat.clone()
+    };
+    let sessions_dir = format!("{}/{}/", node::CLIENT_SESSIONS, one.id);
+    for (automatic, check) in [(false, ""), (true, "transcript.window")] {
+        for (session, carried) in [(&record, true), (&open_chat, false)] {
+            let bundle = runtime
+                .dump(DumpRequest {
+                    automatic,
+                    check: check.to_owned(),
+                    sessions: vec![session.encode_to_vec()],
+                    ..DumpRequest::default()
+                })
+                .await
+                .unwrap();
+            let files: Vec<String> = tree(&bundle).into_iter().map(|(name, _)| name).collect();
+            assert_eq!(
+                files.iter().any(|file| file.starts_with(&sessions_dir)),
+                carried,
+                "{check:?}: {files:?}"
+            );
+            assert!(
+                files.iter().any(|file| file == "core/checkpoint"),
+                "{files:?}"
+            );
+        }
+    }
 
     kill_all(&runtime).await;
     drop(runtime);
@@ -709,7 +833,8 @@ async fn a_clean_shutdown_ends_a_dump_still_waiting_for_an_agents_part() {
     // The agent asks once it is connected, so the dump asks it for its part:
     // one started before the connection would skip the part and finish at
     // once.
-    silent.ask_for_dump("a step ran long", "").await;
+    // Without a record, as from an agent whose record could not be built.
+    silent.ask_for_dump("a step ran long", "", &[]).await;
     let reports = install.data_dir.join(node::REPORTS);
     until("a dump under way", || {
         let partial = std::fs::read_dir(&reports)
@@ -851,9 +976,8 @@ async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
     daemon.shutdown().await.unwrap();
 }
 
-/// An agent's core asking for a dump is a bundle of that agent, written by
-/// the daemon: its part from the process and the daemon's own beside it,
-/// the reason saying which agent asked. The daemon holds a repeat of the
+/// An agent's core asking for a dump is a bundle written by the daemon
+/// with the record the agent sent, the reason saying which agent asked. The daemon holds a repeat of the
 /// same kind back, as twenty agents breaking one invariant would send it.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
@@ -874,12 +998,17 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
 
     let violation = format!("the agent core: {INVARIANT}: two asks open");
-    asking.ask_for_dump(&violation, INVARIANT).await;
-    asking.ask_for_dump(&violation, INVARIANT).await;
+    asking
+        .ask_for_dump(&violation, INVARIANT, support::synthetic::SYNTHETIC_RECORD)
+        .await;
+    asking
+        .ask_for_dump(&violation, INVARIANT, support::synthetic::SYNTHETIC_RECORD)
+        .await;
     asking
         .ask_for_dump(
             "the agent core: a step took 12 µs, over its budget of 0 µs",
             "",
+            support::synthetic::SYNTHETIC_RECORD,
         )
         .await;
     let reasons = until("both kinds' bundles", || async {
@@ -915,22 +1044,15 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
         let bundle = bundle.unwrap().path();
         let manifest: serde_json::Value =
             serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
-        checks.push(manifest["check"].as_str().unwrap_or_default().to_owned());
-        let agents: Vec<String> = std::fs::read_dir(bundle.join("agents"))
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        assert_eq!(agents, vec![id.clone()], "only the agent that asked");
-        let part = bundle
-            .join("agents")
-            .join(&id)
-            .join("part")
-            .join(support::synthetic::SYNTHETIC_PART);
-        assert!(part.is_file(), "the agent's own part: {}", part.display());
-        assert!(
-            !bundle.join("core").exists(),
-            "the daemon core's part replays nothing an agent's core broke"
+        checks.push(manifest["trigger"].as_str().unwrap_or_default().to_owned());
+        // The record the agent's core sent, beside every other part a
+        // dump carries.
+        let agent = bundle.join("agents").join(&id);
+        assert_eq!(
+            std::fs::read(agent.join(node::AGENT_RECORD)).unwrap(),
+            support::synthetic::SYNTHETIC_RECORD
         );
+        assert!(bundle.join("core").join("checkpoint").is_file());
         println!(
             "{}: {}",
             bundle.file_name().unwrap().to_string_lossy(),
@@ -951,6 +1073,72 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
     .await
     .unwrap();
     drop(other);
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// A report is held to one limit: the record of what asked goes in first,
+/// and one that leaves no room puts the core's record out, counted.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_asking_agents_record_goes_first_and_what_finds_no_room_is_counted() {
+    let install = Install::new();
+    install.expect_core_dumps();
+    let mut asking = support::synthetic::SyntheticAgent::new(&install, "asking", 1 << 20);
+    asking.register(&install);
+    asking.go_live();
+    let daemon = install
+        .start("boot-1", support::synthetic::quiet_launch())
+        .await;
+    let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
+
+    // Bytes that do not compress, nearly the whole limit of them.
+    let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+    let record: Vec<u8> = (0..node::REPORT_LIMIT - (1 << 10))
+        .map(|_| {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (seed >> 56) as u8
+        })
+        .collect();
+    asking
+        .ask_for_dump(
+            "the agent core: one open ask at most",
+            "one open ask at most",
+            &record,
+        )
+        .await;
+    until("the bundle", || async {
+        (!install.core_dumps().is_empty())
+            .then_some(())
+            .ok_or("no bundle")
+    })
+    .await
+    .unwrap();
+    let bundle = std::fs::read_dir(install.data_dir.join(node::REPORTS))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.join(MANIFEST).is_file())
+        .unwrap();
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
+    let agent = bundle.join("agents").join(asking.id.to_string());
+    assert_eq!(
+        std::fs::read(agent.join(node::AGENT_RECORD)).unwrap(),
+        record
+    );
+    assert!(
+        !bundle.join("core").exists(),
+        "the core's record found no room"
+    );
+    let over = &manifest["core"]["over_limit"];
+    assert!(
+        over["bytes"].as_u64().unwrap() > over["room"].as_u64().unwrap(),
+        "{manifest:#}"
+    );
+    assert_eq!(manifest["left_out"], 1, "{manifest:#}");
+    assert_eq!(manifest["limit"], node::REPORT_LIMIT, "{manifest:#}");
+
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
@@ -1001,7 +1189,21 @@ async fn an_agents_step_over_its_budget_leaves_a_bundle_of_that_agent() {
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(agents, vec![id_text], "the agent that asked");
+    assert_eq!(agents, vec![id_text.clone()], "the agent that asked");
+    // The record the agent sent with its ask, built from its facts ring
+    // when it asked.
+    let record = std::fs::read(
+        bundles[0]
+            .join("agents")
+            .join(&id_text)
+            .join(node::AGENT_RECORD),
+    )
+    .unwrap();
+    let record: serde_json::Value = serde_json::from_slice(&record).unwrap();
+    assert!(
+        !record["segments"].as_array().unwrap().is_empty(),
+        "{record}"
+    );
     println!(
         "{}: {}",
         bundles[0].file_name().unwrap().to_string_lossy(),

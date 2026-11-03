@@ -101,6 +101,27 @@ pub fn decode(line: &[u8]) -> Result<Row, DecodeError> {
     Ok(Row::deserialize(object).expect("a row decodes from any object"))
 }
 
+/// The field names [`decode`] types at each place of a row (see
+/// [`crate::Fields`]); None for a line that is not a JSON object.
+pub fn fields(line: &[u8]) -> Option<crate::Fields> {
+    crate::probe::probe(line, crate::DATA_SUBTREES, crate::DATA_MAPS, |line| {
+        // A row of a kind this crate does not know is still read for the
+        // fields every row has.
+        if let Ok(Row::System(SystemRow::Unknown(raw)) | Row::Unknown(raw)) = decode(line)
+            && let Some(object) = raw.raw.as_object()
+        {
+            const EVERY_ROW: &[&str] = &["type", "subtype", "sessionId", "version"];
+            crate::probe::heard_at(
+                "",
+                object
+                    .keys()
+                    .filter(|key| !EVERY_ROW.contains(&key.as_str()))
+                    .cloned(),
+            );
+        }
+    })
+}
+
 /// Decodes one row, failing on anything [`decode`] would keep without
 /// knowing it.
 pub fn strict(line: &[u8]) -> Result<Row, Drift> {

@@ -99,7 +99,7 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
             daemon_log: Some(log),
             // A supervised daemon is handed its supervisor's pipe.
             supervisor_log: pipe.is_some().then(|| config.root.join(SUPERVISOR_LOG)),
-            front_door: Some(config.front_door_socket.clone()),
+            front_door: Some(config.front_door()),
             edge: edge_options(config),
             analytics: telemetry(config),
             auto_reports: auto_reports(config),
@@ -115,7 +115,7 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
         tracing::info!(
             version = node::version(),
             root = %config.root.display(),
-            front_door = %config.front_door_socket.display(),
+            front_door = %config.front_door().display(),
             generation = daemon.generation().counter,
             "serving"
         );
@@ -185,7 +185,7 @@ fn auto_reports(config: &InstallationConfig) -> node::AutoReports {
 /// relays use.
 fn edge_options(config: &InstallationConfig) -> node::EdgeOptions {
     node::EdgeOptions {
-        host_name: config.host_name(),
+        host_name: config.host_name().into(),
         kinds: node::local_kinds(),
         lan: Some(node::LanOptions::default()),
         discovery: Some(node::mdns_discovery()),

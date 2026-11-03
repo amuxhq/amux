@@ -193,8 +193,9 @@ fn supervise(inherited: Option<Inherited>) {
         .ok()
         .map(|manifest_url| UpdateSource {
             channel: "stable".to_owned(),
+            keys: node::release::feed_keys(&manifest_url)
+                .expect("debug builds trust the test key from a loopback feed"),
             manifest_url,
-            keys: node::release::release_keys().expect("debug builds trust the test key"),
         });
     let updates = Arc::new(move || UpdatePolicy {
         auto: source.is_some(),

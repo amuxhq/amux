@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -10,6 +10,13 @@ use tokio::time::Instant;
 
 pub(crate) const QUIC_HANDSHAKE_RATE_LIMIT: usize = 10;
 const QUIC_HANDSHAKE_RATE_WINDOW: Duration = Duration::from_secs(60);
+/// How many of a source's attempts a window may give back. A link is
+/// proof enough of a paired host, but at the relay any signed-in account
+/// brings one up, so unbounded give-backs would let one account churn
+/// handshakes from one address without limit. One a second still lets a
+/// phone opened again and again, or a household behind one address,
+/// relink freely.
+const QUIC_HANDSHAKE_REFUND_LIMIT: usize = 60;
 pub(crate) const QUIC_HANDSHAKE_CONCURRENCY: usize = 128;
 /// How soon one connection attempt may be sent a Retry again. A client that
 /// lost its Retry sends its Initial again only after a probe timeout, about
@@ -17,17 +24,23 @@ pub(crate) const QUIC_HANDSHAKE_CONCURRENCY: usize = 128;
 /// connection, which answers every packet, a Retry included, with another
 /// close.
 const QUIC_RETRY_REPEAT_INTERVAL: Duration = Duration::from_millis(500);
+/// How many sources a listener counts attempts for at once. Every source
+/// that sends an Initial is counted for the window, and one sender can
+/// send from as many addresses as it has; past this, the source counted
+/// longest ago is forgotten first.
+const QUIC_RETRY_SOURCES: usize = 65_536;
 
 /// Which QUIC handshakes a listener takes on, before quinn allocates any
 /// connection or TLS state for them: the daemon's listener and the relay's
 /// decide alike. A sender whose address is unproven is answered with a
-/// Retry; each source may start `QUIC_HANDSHAKE_RATE_LIMIT` attempts a
-/// window, a token from an earlier connection skipping the Retry but not
-/// the limit; and at most `QUIC_HANDSHAKE_CONCURRENCY` handshakes run at
-/// once. An attempt that brings up a link, a paired host's or a signed-in
-/// one's, is given back to its source, so a phone opened again and again,
-/// each launch dialling afresh, is never shut out, while a stranger's
-/// attempts all count. A sender whose address needs no proof (one carried
+/// Retry; each source (an IPv4 address, or an IPv6 /64) may start
+/// `QUIC_HANDSHAKE_RATE_LIMIT` attempts a window, a token from an earlier
+/// connection skipping the Retry but not the limit; and at most
+/// `QUIC_HANDSHAKE_CONCURRENCY` handshakes run at once. An attempt that
+/// brings up a link, a paired host's or a signed-in one's, is given back
+/// to its source, up to `QUIC_HANDSHAKE_REFUND_LIMIT` a window, so a phone
+/// opened again and again, each launch dialling afresh, is never shut
+/// out, while a stranger's attempts all count. A sender whose address needs no proof (one carried
 /// by a forwarder that admitted it, or over a byte stream it opened) skips
 /// the Retry and the per-source limit, not the concurrency.
 #[derive(Debug)]
@@ -49,6 +62,7 @@ impl HandshakeAdmission {
         Self {
             retries: Arc::new(Mutex::new(RetryAdmission::new(
                 rate,
+                QUIC_HANDSHAKE_REFUND_LIMIT,
                 QUIC_HANDSHAKE_RATE_WINDOW,
                 QUIC_RETRY_REPEAT_INTERVAL,
             ))),
@@ -71,18 +85,19 @@ impl HandshakeAdmission {
         let mut spent = None;
         if !proven {
             let attempt = incoming.orig_dst_cid();
+            let counted = counted_source(source.ip());
             let mut retries = lock(&self.retries);
             let admission = if incoming.remote_address_validated() {
-                retries.admit_validated(source.ip(), attempt)
+                retries.admit_validated(counted, attempt)
             } else {
-                retries.admit(source.ip(), attempt)
+                retries.admit(counted, attempt)
             };
             drop(retries);
             match admission {
                 Admission::Retry if incoming.remote_address_validated() => {
                     spent = Some(Spent {
                         retries: self.retries.clone(),
-                        source: source.ip(),
+                        source: counted,
                         attempt,
                     });
                 }
@@ -137,6 +152,19 @@ impl HandshakeAdmission {
 
 type Attempts = RetryAdmission<IpAddr, quinn::ConnectionId>;
 
+/// The source a handshake from `ip` counts against: an IPv4 address, or
+/// the /64 an IPv6 address is in, since one IPv6 host is commonly given a
+/// whole /64 and could otherwise start a fresh budget from each address.
+fn counted_source(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => IpAddr::V6(Ipv6Addr::from_bits(v6.to_bits() & !u128::from(u64::MAX))),
+        },
+        v4 => v4,
+    }
+}
+
 fn lock(attempts: &Mutex<Attempts>) -> std::sync::MutexGuard<'_, Attempts> {
     attempts.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -174,7 +202,8 @@ impl std::fmt::Debug for Spent {
 }
 
 /// Which unvalidated QUIC Initials a listener answers with a Retry. Each
-/// source may start `limit` connection attempts per window. An attempt is
+/// source may start `limit` connection attempts per window, and as many
+/// again as it was given back, up to `refunds`. An attempt is
 /// named by its original destination connection id, so the same attempt
 /// arriving again, after a lost Retry or from a closing client answering
 /// each Retry with a close, spends nothing and is answered at most once per
@@ -184,9 +213,16 @@ impl std::fmt::Debug for Spent {
 #[derive(Debug)]
 struct RetryAdmission<K, A> {
     limit: usize,
+    refunds: usize,
     window: Duration,
     repeat: Duration,
+    sources: usize,
     entries: HashMap<K, VecDeque<Attempt<A>>>,
+    /// Every attempt counted, oldest first, by its source and when it was
+    /// counted: what ages out of the window, or is forgotten first, is
+    /// found at its front. An attempt given back stays here until it
+    /// reaches the front.
+    order: VecDeque<(Instant, K)>,
 }
 
 #[derive(Debug)]
@@ -194,6 +230,9 @@ struct Attempt<A> {
     id: A,
     first: Instant,
     last: Instant,
+    /// Given back: it counts against the source only once the window's
+    /// give-backs run out.
+    refunded: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -208,15 +247,28 @@ enum Admission {
 
 impl<K, A> RetryAdmission<K, A>
 where
-    K: Eq + Hash,
+    K: Eq + Hash + Clone,
     A: Eq,
 {
-    fn new(limit: usize, window: Duration, repeat: Duration) -> Self {
+    fn new(limit: usize, refunds: usize, window: Duration, repeat: Duration) -> Self {
+        Self::with_sources(limit, refunds, window, repeat, QUIC_RETRY_SOURCES)
+    }
+
+    fn with_sources(
+        limit: usize,
+        refunds: usize,
+        window: Duration,
+        repeat: Duration,
+        sources: usize,
+    ) -> Self {
         Self {
             limit,
+            refunds,
             window,
             repeat,
+            sources,
             entries: HashMap::new(),
+            order: VecDeque::new(),
         }
     }
 
@@ -226,7 +278,7 @@ where
 
     fn admit_at(&mut self, source: K, attempt: A, now: Instant) -> Admission {
         self.prune(now);
-        let attempts = self.entries.entry(source).or_default();
+        let attempts = self.entries.entry(source.clone()).or_default();
         if let Some(known) = attempts.iter_mut().find(|known| known.id == attempt) {
             if now.duration_since(known.last) < self.repeat {
                 return Admission::Repeat;
@@ -234,14 +286,16 @@ where
             known.last = now;
             return Admission::Retry;
         }
-        if attempts.len() >= self.limit {
+        if full(attempts, self.limit, self.refunds) {
             return Admission::Refused;
         }
         attempts.push_back(Attempt {
             id: attempt,
             first: now,
             last: now,
+            refunded: false,
         });
+        self.counted(source, now);
         Admission::Retry
     }
 
@@ -255,43 +309,87 @@ where
 
     fn admit_validated_at(&mut self, source: K, attempt: A, now: Instant) -> Admission {
         self.prune(now);
-        let attempts = self.entries.entry(source).or_default();
+        let attempts = self.entries.entry(source.clone()).or_default();
         if attempts.iter().any(|known| known.id == attempt) {
             return Admission::Retry;
         }
-        if attempts.len() >= self.limit {
+        if full(attempts, self.limit, self.refunds) {
             return Admission::Refused;
         }
         attempts.push_back(Attempt {
             id: attempt,
             first: now,
             last: now,
+            refunded: false,
         });
+        self.counted(source, now);
         Admission::Retry
     }
 
-    /// Gives `attempt` back to `source`'s limit.
-    fn refund(&mut self, source: K, attempt: A) {
-        if let Some(attempts) = self.entries.get_mut(&source) {
-            attempts.retain(|known| known.id != attempt);
-            if attempts.is_empty() {
+    /// An attempt of `source`'s was counted at `now`. Past the sources
+    /// counted at once, or the attempts they may hold, those counted
+    /// longest ago are forgotten.
+    fn counted(&mut self, source: K, now: Instant) {
+        self.order.push_back((now, source));
+        while self.entries.len() > self.sources
+            || self.order.len() > self.sources.saturating_mul(self.limit)
+        {
+            let Some((first, source)) = self.order.pop_front() else {
+                break;
+            };
+            // The source's oldest attempt, unless it was given back or its
+            // source forgotten and counted afresh since.
+            if self
+                .entries
+                .get(&source)
+                .and_then(VecDeque::front)
+                .is_some_and(|oldest| oldest.first == first)
+            {
                 self.entries.remove(&source);
             }
         }
     }
 
+    /// Gives `attempt` back to `source`'s limit. It stays listed until its
+    /// window passes, so the give-backs a window allows are counted.
+    fn refund(&mut self, source: K, attempt: A) {
+        if let Some(known) = self
+            .entries
+            .get_mut(&source)
+            .and_then(|attempts| attempts.iter_mut().find(|known| known.id == attempt))
+        {
+            known.refunded = true;
+        }
+    }
+
+    /// Lets go of the attempts that aged out of the window, from the
+    /// front of the order they were counted in: no pass over every source.
     fn prune(&mut self, now: Instant) {
-        let window = self.window;
-        self.entries.retain(|_, attempts| {
+        while let Some((first, _)) = self.order.front()
+            && *first + self.window <= now
+        {
+            let (_, source) = self.order.pop_front().expect("just seen");
+            let Some(attempts) = self.entries.get_mut(&source) else {
+                continue;
+            };
             while attempts
                 .front()
-                .is_some_and(|attempt| attempt.first + window <= now)
+                .is_some_and(|attempt| attempt.first + self.window <= now)
             {
                 attempts.pop_front();
             }
-            !attempts.is_empty()
-        });
+            if attempts.is_empty() {
+                self.entries.remove(&source);
+            }
+        }
     }
+}
+
+/// Whether a source with `attempts` this window may start no more: those
+/// given back count only beyond the `refunds` a window allows.
+fn full<A>(attempts: &VecDeque<Attempt<A>>, limit: usize, refunds: usize) -> bool {
+    let refunded = attempts.iter().filter(|attempt| attempt.refunded).count();
+    attempts.len() - refunded.min(refunds) >= limit
 }
 
 #[cfg(test)]
@@ -299,7 +397,12 @@ mod tests {
     use super::*;
 
     fn admission(limit: usize) -> RetryAdmission<&'static str, u32> {
-        RetryAdmission::new(limit, Duration::from_secs(60), Duration::from_millis(500))
+        RetryAdmission::new(
+            limit,
+            QUIC_HANDSHAKE_REFUND_LIMIT,
+            Duration::from_secs(60),
+            Duration::from_millis(500),
+        )
     }
 
     #[test]
@@ -312,6 +415,38 @@ mod tests {
         assert_eq!(retries.admit_at("other", 3, start), Admission::Retry);
         let later = start + Duration::from_secs(60);
         assert_eq!(retries.admit_at("peer", 3, later), Admission::Retry);
+    }
+
+    /// One sender can send from as many addresses as it has: the table
+    /// counts a bounded number of sources, forgetting the one counted
+    /// longest ago, and lets aged attempts go without a pass over all.
+    #[test]
+    fn retry_admission_counts_a_bounded_number_of_sources() {
+        let start = Instant::now();
+        let mut retries = RetryAdmission::with_sources(
+            2,
+            QUIC_HANDSHAKE_REFUND_LIMIT,
+            Duration::from_secs(60),
+            Duration::from_millis(500),
+            3,
+        );
+        for (n, source) in ["a", "b", "c", "d"].into_iter().enumerate() {
+            let at = start + Duration::from_secs(n as u64);
+            assert_eq!(retries.admit_at(source, 1, at), Admission::Retry);
+        }
+        assert_eq!(retries.entries.len(), 3);
+        assert!(!retries.entries.contains_key("a"), "the oldest went");
+        // "b" still counts its attempt: one more fills its limit.
+        let now = start + Duration::from_secs(5);
+        assert_eq!(retries.admit_at("b", 2, now), Admission::Retry);
+        assert_eq!(retries.admit_at("b", 3, now), Admission::Refused);
+
+        // Past the window everything ages out, given back or not.
+        retries.refund("c", 1);
+        let later = start + Duration::from_secs(70);
+        assert_eq!(retries.admit_at("e", 1, later), Admission::Retry);
+        assert_eq!(retries.entries.len(), 1);
+        assert_eq!(retries.order.len(), 1);
     }
 
     #[test]
@@ -363,5 +498,32 @@ mod tests {
             );
         }
         assert_eq!(retries.admit_at("peer", 5, start), Admission::Refused);
+    }
+
+    #[test]
+    fn a_source_is_given_back_only_so_many_attempts_a_window() {
+        let start = Instant::now();
+        let mut retries =
+            RetryAdmission::new(1, 2, Duration::from_secs(60), Duration::from_millis(500));
+        for attempt in 1..=3 {
+            assert_eq!(retries.admit_at("peer", attempt, start), Admission::Retry);
+            retries.refund("peer", attempt);
+        }
+        // The third give-back is past the window's two: it still counts.
+        assert_eq!(retries.admit_at("peer", 4, start), Admission::Refused);
+        let later = start + Duration::from_secs(60);
+        assert_eq!(retries.admit_at("peer", 4, later), Admission::Retry);
+    }
+
+    #[test]
+    fn an_ipv6_source_is_counted_by_its_64() {
+        let counted = |ip: &str| counted_source(ip.parse().unwrap());
+        assert_eq!(
+            counted("2001:db8:1:2:aaaa::1"),
+            counted("2001:db8:1:2:bbbb:cccc:dddd:eeee")
+        );
+        assert_ne!(counted("2001:db8:1:2::1"), counted("2001:db8:1:3::1"));
+        assert_eq!(counted("::ffff:192.0.2.7"), counted("192.0.2.7"));
+        assert_ne!(counted("192.0.2.7"), counted("192.0.2.8"));
     }
 }

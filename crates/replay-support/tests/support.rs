@@ -2,7 +2,8 @@
 //! test, so a bundle always reads under the layout its reader expects. A
 //! healthy bundle is a real daemon's `amux dump`; the two that break a
 //! property are that bundle with the break planted, as a build with the bug
-//! would have written it.
+//! would have written it; and the marked ones are a run with a marker in
+//! everything anybody wrote, dumped for every kind of trigger.
 
 use std::path::Path;
 
@@ -10,12 +11,55 @@ use daemon_core::payload::ClientRequest;
 use daemon_core::{CallId, Daemon, Input, Recorded, StartOptions};
 use prost::Message as _;
 use provider_fakes::script::Step;
-use replay_support::bundle::Bundle;
 use store::{AgentKey, AgentRow, Sqlite};
 use testnet::{AgentDecl, Net, Topology};
 use ui_state::{Connection, Msg, SessionState};
 use wire::dump::{ClientSessionEvents, ClientTraced, client_traced};
 use wire::{SessionEvent, session_event};
+
+/// The `repro` binary run on `named`, keeping its copy in a directory
+/// removed after it.
+pub fn repro(named: &Path) -> std::process::Output {
+    let keep = tempfile::tempdir().unwrap();
+    std::process::Command::new(env!("CARGO_BIN_EXE_repro"))
+        .arg(named)
+        .arg("--keep")
+        .arg(keep.path())
+        .output()
+        .expect("repro runs")
+}
+
+/// The bundle in `dir` packed as a report is sent: one `wire.DumpPart`
+/// holding every file, compressed.
+pub fn pack(dir: &Path) -> Vec<u8> {
+    fn files(root: &Path, dir: &Path, out: &mut Vec<wire::DumpFile>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                files(root, &path, out);
+                continue;
+            }
+            let name = path
+                .strip_prefix(root)
+                .unwrap()
+                .iter()
+                .map(|part| part.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/");
+            out.push(wire::DumpFile {
+                name,
+                contents: std::fs::read(&path).unwrap(),
+            });
+        }
+    }
+    let mut packed = Vec::new();
+    files(dir, dir, &mut packed);
+    let part = wire::DumpPart {
+        dump_id: Vec::new(),
+        files: packed,
+    };
+    zstd::bulk::compress(&part.encode_to_vec(), 3).unwrap()
+}
 
 /// A bundle in a directory of its own, removed with it.
 pub struct Dumped {
@@ -29,11 +73,12 @@ impl Dumped {
 
     /// The one agent's id, as the bundle names it.
     pub fn agent(&self) -> String {
-        let bundle = Bundle::open(self.path()).expect("the bundle opens");
-        let [agent] = &bundle.agents[..] else {
-            panic!("{} agents in the bundle", bundle.agents.len());
+        let manifest = self.manifest();
+        let agents = manifest["agents"].as_array().unwrap();
+        let [agent] = &agents[..] else {
+            panic!("{} agents in the bundle", agents.len());
         };
-        agent.id.clone()
+        agent["agent_id"].as_str().unwrap().to_owned()
     }
 
     pub fn manifest(&self) -> serde_json::Value {
@@ -97,7 +142,242 @@ pub fn healthy() -> Dumped {
     Dumped { dir }
 }
 
-/// The healthy bundle with the core's part a build would have written whose
+/// `amux dump` on a net of one host and one headless Claude agent in a git
+/// repository on `main`, a branch shorter than any alias of the kind
+/// `branch-1`, after two turns; beside it each of the live store's rows as
+/// [`shapes`] writes them, read once the dump was taken.
+pub fn with_git() -> (Dumped, Vec<String>) {
+    let text = |chunk: &str| Step::Text {
+        chunks: vec![chunk.to_owned()],
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let live = runtime.block_on(async {
+        let net = Net::start(
+            Topology::new().host("desk").agent(
+                AgentDecl::new("worker", "desk")
+                    .cwd("work")
+                    .branch("main")
+                    .steps(vec![
+                        text("first answer"),
+                        Step::TurnEnd,
+                        text("second answer"),
+                        Step::TurnEnd,
+                    ])
+                    .prompt("first question"),
+            ),
+        )
+        .await
+        .unwrap();
+        net.turn_ended("worker", 1).await.unwrap();
+        net.send("worker", "second question").await.unwrap();
+        net.turn_ended("worker", 2).await.unwrap();
+        let runtime = net.runtime("desk").unwrap();
+        testnet::until("the row's git facts", || async {
+            let on_branch = runtime
+                .read_store(|store| {
+                    store.agents().unwrap().iter().any(|row| {
+                        row.git
+                            .as_ref()
+                            .is_some_and(|git| git.branch.as_deref() == Some("main"))
+                    })
+                })
+                .await
+                .unwrap();
+            on_branch.then_some(()).ok_or("no branch on the row")
+        })
+        .await
+        .unwrap();
+        let written = runtime
+            .dump(wire::DumpRequest {
+                reason: "a net with git facts".to_owned(),
+                ..wire::DumpRequest::default()
+            })
+            .await
+            .unwrap();
+        let live = runtime.read_store(shapes).await.unwrap();
+        drop(runtime);
+        copy_dir(&written, dir.path());
+        net.shutdown().await.unwrap();
+        live
+    });
+    (Dumped { dir }, live)
+}
+
+/// Each agent's row and every item it holds as a core's record keeps them:
+/// ids, orders, revisions, kinds and states as they are, and of every text,
+/// body and name its length, so a live store and a replayed one compare.
+pub fn shapes(store: &Sqlite) -> Vec<String> {
+    let git = |git: &Option<wire::Git>| {
+        git.as_ref().map(|git| {
+            (
+                git.branch.as_ref().map(String::len),
+                git.base_branch.as_ref().map(String::len),
+                git.uncommitted,
+                git.on_branch,
+            )
+        })
+    };
+    let mut shapes = Vec::new();
+    for row in store.agents().unwrap() {
+        let snapshot = row.snapshot.as_ref().map(|snapshot| {
+            (
+                snapshot.revision,
+                snapshot.phase,
+                snapshot.body.len(),
+                snapshot.working_on.as_ref().map(String::len),
+                git(&snapshot.git),
+                snapshot.queue.len(),
+            )
+        });
+        shapes.push(format!(
+            "agent {:?} kind {} name {} cwd {} lifecycle {} phase {} working_on {:?} git {:?} \
+             snapshot {snapshot:?} cursor {}",
+            row.agent.agent,
+            row.kind,
+            row.name.len(),
+            row.cwd.len(),
+            row.lifecycle,
+            row.phase,
+            row.working_on.as_ref().map(String::len),
+            git(&row.git),
+            row.ingest_cursor,
+        ));
+        let page = store.page(&row.agent, None, u32::MAX).unwrap();
+        for item in page.items {
+            shapes.push(format!(
+                "  item {} order {} revision {} kind {} text {} body {} attachments {}",
+                item.key,
+                item.order,
+                item.revision,
+                item.kind,
+                item.text.len(),
+                item.body.len(),
+                item.attachments.len()
+            ));
+        }
+    }
+    shapes
+}
+
+/// What [`marked`] plants in everything a person or a provider writes.
+pub const MARKER: &str = "zebracorn";
+
+/// Every kind of trigger a bundle can have: a person, and a check on each
+/// core that asks for one.
+pub const TRIGGERS: &[(bool, &str)] = &[
+    (false, ""),
+    (true, "daemon.test"),
+    (true, "agent.test"),
+    (true, "transcript.window"),
+];
+
+/// A dump for each of [`TRIGGERS`] on each of two linked hosts, the
+/// agent's own and the one following it, after a run that carries
+/// [`MARKER`] in both host names, the agent's name, its folder and branch,
+/// its prompts, a tool's file name, input and output, and the provider's
+/// replies: one turn before the hosts checkpoint and one after, so the
+/// window since the checkpoint carries it too.
+pub fn marked() -> Vec<Dumped> {
+    let desk = format!("desk-{MARKER}");
+    let lap = format!("lap-{MARKER}");
+    let worker = format!("worker-{MARKER}");
+    let text = |chunk: &str| Step::Text {
+        chunks: vec![chunk.to_owned()],
+    };
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let net = Net::start(
+            Topology::new()
+                .host(&desk)
+                .host(&lap)
+                .link(&desk, &lap)
+                .agent(
+                    AgentDecl::new(&worker, &desk)
+                        .cwd(&format!("work-{MARKER}"))
+                        .branch(&format!("{MARKER}-branch"))
+                        .steps(vec![
+                            Step::Thinking {
+                                text: format!("thinking of the {MARKER}"),
+                            },
+                            Step::Tool(provider_fakes::script::Tool {
+                                name: Some("Read".into()),
+                                class: provider_fakes::script::ToolClass::Exploration,
+                                input: Some(serde_json::json!({
+                                    "file_path": format!("notes/{MARKER}.txt"),
+                                })),
+                                outcome: provider_fakes::script::Outcome {
+                                    output: format!("the file says {MARKER}"),
+                                    ..Default::default()
+                                },
+                                wait_for: None,
+                            }),
+                            text(&format!("the first {MARKER} answer")),
+                            Step::TurnEnd,
+                            text(&format!("the second {MARKER} answer")),
+                            Step::TurnEnd,
+                        ])
+                        .prompt(&format!("the first {MARKER} question")),
+                ),
+        )
+        .await
+        .unwrap();
+        net.turn_ended(&worker, 1).await.unwrap();
+        net.current(&lap, &worker).await.unwrap();
+        for host in [&desk, &lap] {
+            net.runtime(host).unwrap().checkpoint().await.unwrap();
+        }
+        net.send(&worker, &format!("the second {MARKER} question"))
+            .await
+            .unwrap();
+        net.turn_ended(&worker, 2).await.unwrap();
+        net.current(&lap, &worker).await.unwrap();
+        let mut dumped = Vec::new();
+        for host in [&desk, &lap] {
+            let runtime = net.runtime(host).unwrap();
+            // Not clean for want of anything to clean: what the core's
+            // record is taken from carries the marker, as text or as the
+            // hex of the messages its ring records.
+            let hex: String = MARKER.bytes().map(|byte| format!("{byte:02x}")).collect();
+            let holds = |bytes: &[u8]| {
+                [MARKER, hex.as_str()].iter().any(|form| {
+                    bytes
+                        .windows(form.len())
+                        .any(|window| window == form.as_bytes())
+                })
+            };
+            let ring = std::fs::read_dir(runtime.dir().join("core-ring"))
+                .unwrap()
+                .any(|entry| holds(&std::fs::read(entry.unwrap().path()).unwrap()));
+            let store = holds(&std::fs::read(runtime.dir().join("store.sqlite")).unwrap());
+            assert!(ring || store, "{host}'s core holds the marker");
+            for &(automatic, check) in TRIGGERS {
+                let written = runtime
+                    .dump(wire::DumpRequest {
+                        reason: format!("asked by {check}"),
+                        automatic,
+                        check: check.to_owned(),
+                        ..wire::DumpRequest::default()
+                    })
+                    .await
+                    .unwrap();
+                let dir = tempfile::tempdir().unwrap();
+                copy_dir(&written, dir.path());
+                dumped.push(Dumped { dir });
+            }
+        }
+        net.shutdown().await.unwrap();
+        dumped
+    })
+}
+
+/// The healthy bundle with the core's record a build would have written whose
 /// core recorded the highest generation a stream opened under as more than
 /// it was. Its checkpoint holds that record at 2 under a run of generation
 /// 1, and the inputs since open a stream: the replay breaks "the generation
@@ -158,20 +438,43 @@ pub fn core_violation() -> Dumped {
     dumped
 }
 
-/// The healthy bundle with the session a client had open, as a session
-/// driver that dropped the row at order 2 would have traced it: the
-/// session as its trace began, then the connection, the stream's Opening,
-/// and the store's opening cut without that row, through its CaughtUp. The
-/// replay breaks the window's one block at the row at order 3, the fifth
-/// message.
+/// The healthy bundle with the record of a chat a client showed, as a
+/// session driver that dropped the row at order 2 would have traced it:
+/// the session as its trace began, then the connection, the stream's
+/// Opening, and the store's opening cut without that row, through its
+/// CaughtUp. The replay breaks the window's one block at the row at order
+/// 3, the fifth message.
 pub fn client_violation() -> Dumped {
     let dumped = healthy();
-    let bundle = Bundle::open(dumped.path()).unwrap();
-    let agent = &bundle.agents[0];
-    let opening = agent
-        .opening()
-        .into_iter()
-        .filter(|of| !matches!(of, session_event::Of::Item(item) if item.order == 2));
+    let agent = dumped.agent();
+    let id = uuid::Uuid::parse_str(&agent).unwrap().into_bytes().to_vec();
+    let host = uuid::Uuid::parse_str(dumped.manifest()["host"].as_str().unwrap())
+        .unwrap()
+        .into_bytes()
+        .to_vec();
+    let row = wire::Agent {
+        agent_id: id.clone(),
+        host_id: host,
+        kind: wire::Kind::ClaudeSdk as i32,
+        lifecycle: wire::Lifecycle::Live as i32,
+        ..wire::Agent::default()
+    };
+    let item = |order: u64| wire::Item {
+        key: format!("item-{order}"),
+        order,
+        revision: order + 1,
+        kind: wire::Kind::ClaudeSdk as i32,
+        ..wire::Item::default()
+    };
+    let opening = [
+        session_event::Of::Snapshot(wire::Snapshot {
+            revision: 1,
+            ..wire::Snapshot::default()
+        }),
+        session_event::Of::Item(item(1)),
+        session_event::Of::Item(item(3)),
+        session_event::Of::CaughtUp(wire::CaughtUp { revision: 4 }),
+    ];
     let msgs = [
         Msg::Connection(Connection::Live),
         Msg::Event(SessionEvent {
@@ -189,14 +492,15 @@ pub fn client_violation() -> Dumped {
         seq: seq as u64 + 1,
         at_ms: 0,
         event: Some(event),
+        size: 0,
     })
     .collect::<Vec<_>>();
 
-    let at = format!("client/sessions/{}", agent.id);
+    let at = format!("client/sessions/{agent}");
     std::fs::create_dir_all(dumped.path().join(&at)).unwrap();
     let checkpoint = format!("{at}/checkpoint");
     let events = format!("{at}/events");
-    let start = SessionState::new(agent.row.clone(), 16).to_wire();
+    let start = SessionState::new(row, 16).to_wire();
     std::fs::write(dumped.path().join(&checkpoint), start.encode_to_vec()).unwrap();
     let count = traced.len();
     std::fs::write(
@@ -206,29 +510,13 @@ pub fn client_violation() -> Dumped {
     .unwrap();
     let mut manifest = dumped.manifest();
     manifest["client"]["sessions"] = serde_json::json!([{
-        "agent_id": agent.id,
+        "agent_id": agent,
         "checkpoint": checkpoint,
         "events": events,
         "traced": count,
     }]);
     dumped.set_manifest(&manifest);
     dumped
-}
-
-/// A redaction placeholder with its category set aside: the facts and the
-/// journal are redacted apart, and name the fake provider's account email
-/// `<REDACTED_IDENTIFIER>` and `<REDACTED_EMAIL>`.
-pub fn placeholders_aside(text: &str) -> String {
-    let mut out = String::new();
-    let mut rest = text;
-    while let Some(at) = rest.find("<REDACTED_") {
-        out.push_str(&rest[..at]);
-        let end = rest[at..].find('>').map_or(rest.len(), |end| at + end + 1);
-        out.push_str("<REDACTED>");
-        rest = &rest[end..];
-    }
-    out.push_str(rest);
-    out
 }
 
 pub fn copy_dir(from: &Path, to: &Path) {

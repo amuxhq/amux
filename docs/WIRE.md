@@ -23,8 +23,8 @@ different versions talking. Host-to-host links, pairing and the relay are in
 | [`link.proto`](../proto/amux/v1/link.proto), [`pairing_service.proto`](../proto/amux/v1/pairing_service.proto) | Host-to-host link control, and pairing |
 | [`installation_service.proto`](../proto/amux/v1/installation_service.proto) | `InstallationService`: the installation and its profiles |
 | [`profile_admin_service.proto`](../proto/amux/v1/profile_admin_service.proto) | `ProfileAdminService`: one profile's account, pairing, peers and dump |
-| [`dump.proto`](../proto/amux/v1/dump.proto) | The diagnostic dump's request, answer and parts |
-| [`amux/dump/session.proto`](../crates/wire/proto/amux/dump/session.proto) | `amux.dump`: a client's session history as a dump carries it, outside the wire's promises |
+| [`dump.proto`](../proto/amux/v1/dump.proto) | The debug report's request, answer and parts |
+| [`amux/dump/session.proto`](../crates/wire/proto/amux/dump/session.proto) | `amux.dump`: a chat's session record as a report carries it, outside the wire's promises |
 | [`google/rpc/`](../proto/google/rpc/) | `google.rpc.Status`, `Code` and `ErrorInfo`, vendored from googleapis |
 
 ## Where clients call
@@ -117,7 +117,7 @@ reason `VERSION_MISMATCH`; see [Versions](#versions).
 | `UpdateDraft(UpdateDraftRequest)` | `Draft` | Keeps the unsent draft of an agent's composer on this machine, for its clients; an empty draft forgets it. Never synced to other machines |
 | `GetDraft(GetDraftRequest)` | `Draft` | The draft this machine keeps for an agent |
 
-A debug bundle is `ProfileAdminService.Dump(DumpRequest)`, answered with where it was written; it carries the asking client's open chats for the daemon to redact and write in, and the `scope` of what it holds (see [debugging](DEBUGGING.md)). `SubmitReport(SubmitReportRequest)` writes a person's report around such a bundle and sends it to the profile's account. Both are served only on the profile's socket, never on an agent's.
+A debug bundle is `ProfileAdminService.Dump(DumpRequest)`, answered with where it was written; it carries the records of the chats the asking client has on screen, and the daemon writes them into the one report beside its own records (see [debugging](DEBUGGING.md)). `SubmitReport(SubmitReportRequest)` writes a person's report around such a bundle and sends it to the profile's account. Both are served only on the profile's socket, never on an agent's.
 
 There are no unary list calls: a listing is `SubscribeInventory` read to
 `CaughtUp`. There is no status call: what an agent is working on is a field of
@@ -751,7 +751,7 @@ with that release; `just proto-compat <ref>` checks against any other ref. A
 break both ends of a link must take is a new `PROTOCOL_VERSION`, not an edit.
 
 What a client writes into a dump is `amux.dump`, outside these promises:
-`DumpRequest.sessions` carries each session as bytes, and only the build that
+`DumpRequest.sessions` carries each session's record as bytes, and only the build that
 wrote it reads it back.
 
 After any edit to a `.proto`, run `just protobuf` to regenerate the committed

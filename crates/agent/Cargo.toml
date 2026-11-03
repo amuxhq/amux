@@ -33,6 +33,7 @@ tonic = { workspace = true }
 tower = { workspace = true }
 uuid = { workspace = true }
 wire = { workspace = true, features = ["grpc"] }
+zstd = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 # Codex's app-server socket speaks WebSocket.

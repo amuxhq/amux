@@ -42,6 +42,18 @@ pub fn assign_name(start: u128, taken: &dyn Fn(&str) -> bool) -> String {
         .expect("an unbounded search finds a free name")
 }
 
+/// Whether `name` is one [`assign_name`] could give: a word pair, with or
+/// without a number after it. Such a name comes from these lists and an
+/// agent's random id, not from a person.
+pub fn is_assigned(name: &str) -> bool {
+    let pair = match name.rsplit_once('-') {
+        Some((pair, n)) if !n.is_empty() && n.bytes().all(|byte| byte.is_ascii_digit()) => pair,
+        _ => name,
+    };
+    pair.split_once('-')
+        .is_some_and(|(first, second)| FIRST.contains(&first) && SECOND.contains(&second))
+}
+
 /// `name` when `taken` does not claim it, else the first of `name-2`,
 /// `name-3`, ... it does not claim, shortening `name` where the suffix would
 /// pass the longest name allowed.
@@ -65,6 +77,15 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
+
+    #[test]
+    fn an_assigned_name_is_known_with_or_without_its_number() {
+        assert!(is_assigned("quiet-otter"));
+        assert!(is_assigned("quiet-otter-12"));
+        assert!(!is_assigned("quiet-zebra"));
+        assert!(!is_assigned("worker"));
+        assert!(!is_assigned("worker-2"));
+    }
 
     #[test]
     fn every_pair_is_distinct_and_branch_safe() {

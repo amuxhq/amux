@@ -126,8 +126,7 @@ use crate::claude_common::{
 };
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
-    RedactTarget, Shared, SnapshotView, Stepped, ask_item, claude_pty_input, human, serde_pb,
-    unknown,
+    Shared, SnapshotView, Stepped, ask_item, claude_pty_input, human, serde_pb, unknown,
 };
 
 /// The interpreter for kind `claude_pty`.
@@ -1546,21 +1545,20 @@ impl Interpreter for ClaudePty {
         state.shared.finish(emit, body)
     }
 
-    fn redact(target: RedactTarget) -> RedactTarget {
-        crate::redact::redact_kind::<
-            wire::ClaudeItem,
-            wire::ClaudeSnapshot,
-            wire::ClaudePtyInput,
-            State,
-        >(target)
-    }
-
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {
         state.shared.pending_messages().iter().cloned().collect()
     }
 
     fn typed_unrecorded(state: &Self::State) -> bool {
         state.shared.typed_unrecorded()
+    }
+
+    fn input_shape(input: &Input) -> crate::shape::InputShape {
+        crate::shape::claude_pty_input(&input.body)
+    }
+
+    fn structure(state: &Self::State) -> crate::shape::Structure {
+        state.shared.structure(|body| Self::item_shape(body).arm)
     }
 
     fn unknown_snapshot() -> Vec<u8> {

@@ -187,6 +187,52 @@ async fn pairing_pin(net: &Net) -> (String, Vec<String>) {
     (pin, started.addrs)
 }
 
+/// Five wrong codes close the desk's pairing window; the right code after
+/// that is a lockout, which the phone tells apart by its typed reason and
+/// says as a sentence the person can act on.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_phone_locked_out_of_pairing_says_so_in_words() {
+    let net = Net::start(Topology::new().host_decl(HostDecl {
+        name: "desk".into(),
+        lan: true,
+        ..HostDecl::default()
+    }))
+    .await
+    .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let embedded = EmbeddedRuntime::start_with(
+        &config(dir.path()),
+        loopback(),
+        Arc::new(SystemClock),
+        queue(),
+    )
+    .await
+    .unwrap();
+    let phone = only_profile(&embedded).await;
+    let desk = net.host("desk").unwrap();
+    let (pin, addrs) = pairing_pin(&net).await;
+    let request = |pin: String| PairRequest::Pin {
+        host_id: desk.host_id.as_bytes().to_vec(),
+        pin,
+        addrs: addrs.clone(),
+    };
+    let wrong = if pin == "000000" { "111111" } else { "000000" };
+    for _ in 0..5 {
+        let refused = embedded
+            .begin_pair(phone, &request(wrong.to_owned()))
+            .await
+            .expect_err("a wrong code");
+        assert_ne!(refused.to_string(), app_embedded::PAIRING_LOCKED_WORDS);
+    }
+    let locked = embedded
+        .begin_pair(phone, &request(pin))
+        .await
+        .expect_err("the right code after the cap");
+    assert_eq!(locked.to_string(), app_embedded::PAIRING_LOCKED_WORDS);
+    embedded.shutdown().await.unwrap();
+    net.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
     let net = Net::start(

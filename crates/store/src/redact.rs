@@ -1,31 +1,45 @@
-//! A store file made fit for a dump: every value that may carry a secret
+//! A store file made fit for a dump: every value that may carry content
 //! redacted in place, and the file rebuilt so nothing it replaced stays in
 //! a free page.
 //!
 //! The store decodes no agent's bodies and knows no redaction rules, so the
 //! caller brings a [`Redactor`]; the store only says which values are
-//! which. Ids, cursors, revisions, orders and enumerations are kept, so the
-//! copy reads, and serves, as the original does. The daemon's core walks
-//! its own checkpoint and recorded inputs through the same redactor.
+//! which, each text by the name of the field it is. Ids, cursors,
+//! revisions, orders and enumerations are kept, so the copy reads, and
+//! serves, as the original does. The daemon's core walks its own checkpoint
+//! and recorded inputs through the same redactor.
 
 use std::path::Path;
 
 use prost::Message as _;
 use rusqlite::{Connection, OptionalExtension as _, params};
 
-use crate::{AgentKey, Item, Snapshot, Step, StoreError, decode_attachments, encode_attachments};
+use crate::{AgentKey, Item, Snapshot, StoreError, decode_attachments, encode_attachments};
 
 /// What a dump's redaction does to a store's and a core's values.
 pub trait Redactor {
-    /// Free text.
-    fn text(&self, text: &str) -> String;
+    /// The text held in `field` of `holder`, the short name of the type or
+    /// table that holds it (`Agent`), or empty when nothing names one.
+    fn text(&self, holder: &str, field: &str, text: &str) -> String;
     /// An encoded protocol message, by its full name (`amux.v1.Item`),
     /// redacted and encoded again.
     fn message(&self, name: &str, bytes: &[u8]) -> Vec<u8>;
-    /// An agent's row fields of its kind, as one `wire.Agent`.
-    fn agent(&self, kind: i32, agent: wire::Agent) -> wire::Agent;
-    /// Items or a snapshot of an agent of `kind`, as one `wire.Step`.
-    fn step(&self, kind: i32, step: Step) -> Step;
+    /// Content bytes the core only hands on, such as a kept blob or a
+    /// patch.
+    fn content(&self, bytes: &[u8]) -> Vec<u8>;
+    /// A blob's hash, which is the hash of a person's file.
+    fn hash(&self, bytes: &[u8]) -> Vec<u8>;
+}
+
+/// `message` through the redactor as the message it is; one that no longer
+/// decodes is its default.
+fn redacted<M: prost::Message + prost::Name + Default>(redactor: &dyn Redactor, message: &M) -> M {
+    M::decode(
+        redactor
+            .message(&M::full_name(), &message.encode_to_vec())
+            .as_slice(),
+    )
+    .unwrap_or_default()
 }
 
 /// Redacts the store file at `path`, which nothing else has open: the
@@ -46,7 +60,8 @@ pub fn redact_file(
     let tx = conn.transaction()?;
     agents(&tx, redactor)?;
     items(&tx, redactor)?;
-    let text = |value: Option<String>| value.map(|value| redactor.text(&value));
+    let text =
+        |field: &str, value: Option<String>| value.map(|value| redactor.text("", field, &value));
     {
         let mut read = tx.prepare("SELECT rowid, text, exit_detail FROM deliveries")?;
         let rows = read
@@ -57,7 +72,7 @@ pub fn redact_file(
         for (rowid, body, detail) in rows {
             tx.execute(
                 "UPDATE deliveries SET text = ?2, exit_detail = ?3 WHERE rowid = ?1",
-                params![rowid, text(body), text(detail)],
+                params![rowid, text("text", body), text("exit_detail", detail)],
             )?;
         }
         let mut read = tx.prepare("SELECT rowid, name, working_on, text FROM notifications")?;
@@ -74,7 +89,12 @@ pub fn redact_file(
         for (rowid, name, working_on, body) in rows {
             tx.execute(
                 "UPDATE notifications SET name = ?2, working_on = ?3, text = ?4 WHERE rowid = ?1",
-                params![rowid, text(name), text(working_on), redactor.text(&body)],
+                params![
+                    rowid,
+                    text("name", name),
+                    text("working_on", working_on),
+                    redactor.text("", "text", &body)
+                ],
             )?;
         }
     }
@@ -106,8 +126,8 @@ fn hosts_drafts_and_directories(
             "UPDATE trusted_hosts SET name = ?2, ssh = ?3 WHERE host_id = ?1",
             params![
                 host,
-                redactor.text(&name),
-                ssh.map(|ssh| redactor.text(&ssh))
+                redactor.text("", "host", &name),
+                ssh.map(|ssh| redactor.text("", "ssh", &ssh))
             ],
         )?;
     }
@@ -133,7 +153,7 @@ fn hosts_drafts_and_directories(
             "INSERT INTO recent_directories (path, last_used_ms) VALUES (?1, ?2) \
              ON CONFLICT (path) DO UPDATE SET \
              last_used_ms = max(last_used_ms, excluded.last_used_ms)",
-            params![redactor.text(&path), used],
+            params![redactor.text("", "path", &path), used],
         )?;
     }
     Ok(())
@@ -172,9 +192,9 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
             .map(|bytes| wire::Git::decode(bytes.as_slice()))
             .transpose()
             .map_err(|error| StoreError::Corrupt(error.to_string()))?;
-        let agent = redactor.agent(
-            kind,
-            wire::Agent {
+        let agent = redacted(
+            redactor,
+            &wire::Agent {
                 kind,
                 name,
                 cwd,
@@ -188,19 +208,7 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
             .map(|bytes| Snapshot::decode(bytes.as_slice()))
             .transpose()
             .map_err(|error| StoreError::Corrupt(error.to_string()))?
-            .map(|snapshot| {
-                redactor
-                    .step(
-                        kind,
-                        Step {
-                            snapshot: Some(snapshot),
-                            ..Step::default()
-                        },
-                    )
-                    .snapshot
-                    .unwrap_or_default()
-                    .encode_to_vec()
-            });
+            .map(|snapshot| redacted(redactor, &snapshot).encode_to_vec());
         tx.execute(
             "UPDATE agents SET name = ?2, cwd = ?3, exit_detail = ?4, working_on = ?5, \
              git = ?6, snapshot = ?7 WHERE rowid = ?1",
@@ -252,17 +260,7 @@ fn items(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(), 
             attachments: decode_attachments(attachments.as_deref().unwrap_or_default())?,
             ..Item::default()
         };
-        let item = redactor
-            .step(
-                kind,
-                Step {
-                    items: vec![item],
-                    ..Step::default()
-                },
-            )
-            .items
-            .pop()
-            .unwrap_or_default();
+        let item = redacted(redactor, &item);
         let attachments = had_attachments.then(|| encode_attachments(&item.attachments));
         tx.execute(
             "UPDATE items SET text = ?2, attachments = ?3, body = ?4 WHERE rowid = ?1",

@@ -259,6 +259,83 @@ async fn an_agent_sends_input_only_to_its_own_children() {
     crash(daemon, runtime).await;
 }
 
+/// Every call on a named agent from an agent's tools socket reaches only
+/// the caller's own children, and the children it starts take their kind's
+/// defaults: no permission mode or provider arguments of its choosing.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_acts_only_on_its_own_children_and_starts_them_with_defaults() {
+    let install = Install::new();
+    let mut caller = SyntheticAgent::new(&install, "caller", SEGMENTS);
+    caller.register(&install);
+    caller.go_live();
+    let mut stranger = SyntheticAgent::new(&install, "stranger", SEGMENTS);
+    stranger.register(&install);
+    stranger.go_live();
+    let (daemon, runtime) = start(&install, "boot-1").await;
+    let tools = ClientApi::new(&runtime, Some(caller.id));
+    let id = || stranger.id.as_bytes().to_vec();
+
+    let refusals = [
+        tools
+            .rename_agent(Request::new(wire::RenameAgentRequest {
+                agent_id: id(),
+                name: "mine".into(),
+            }))
+            .await
+            .unwrap_err(),
+        tools
+            .resume_agent(Request::new(wire::ResumeAgentRequest {
+                agent_id: id(),
+                ..Default::default()
+            }))
+            .await
+            .unwrap_err(),
+        tools
+            .delete_agent(Request::new(wire::DeleteAgentRequest { agent_id: id() }))
+            .await
+            .unwrap_err(),
+        tools
+            .list_items(Request::new(wire::ListItemsRequest {
+                agent_id: id(),
+                ..Default::default()
+            }))
+            .await
+            .unwrap_err(),
+    ];
+    for refused in refusals {
+        assert_eq!(refused.code(), Code::PermissionDenied, "{refused:?}");
+    }
+    let row = |agent_id: Vec<u8>| {
+        let runtime = runtime.clone();
+        async move {
+            runtime
+                .read_store(move |store| store.agent_by_id(&agent_id).unwrap())
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(row(id()).await.unwrap().name, "stranger");
+
+    let never_ask = wire::CreateAgentRequest {
+        agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+        cwd: install.work.display().to_string(),
+        agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
+            wire::ClaudeCreateConfig {
+                permission: Some("bypassPermissions".into()),
+                ..Default::default()
+            },
+        )),
+        ..Default::default()
+    };
+    let refused = tools
+        .create_agent(Request::new(never_ask.clone()))
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::PermissionDenied);
+    assert!(row(never_ask.agent_id).await.is_none(), "no child was made");
+    crash(daemon, runtime).await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     let install = Install::new();

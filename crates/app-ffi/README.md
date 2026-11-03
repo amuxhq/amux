@@ -91,7 +91,7 @@ runtime's; the app tells it what only the app knows.
 (the start's `StartConfig.telemetry` is its first value), and off holds back
 what is waiting too. `amux_runtime_set_auto_reports(rt, on)` follows the
 app's Send Automatic Reports setting (first value `StartConfig.auto_reports`):
-whether a dump a check takes is sent to the account on its own.
+whether a report a check takes is sent to the account on its own.
 `amux_runtime_feed(rt, input_json, &error)` feeds the
 app's life as a `Lifecycle`: `"Foreground"` says the app came to the front,
 counted at most once an hour; `"Background"` sends what is waiting, for a
@@ -167,8 +167,7 @@ fingerprint), `amux_profile_confirm_pair` and `amux_profile_abandon_pair`
 (the person's decision), `amux_profile_unpair`, `amux_profile_roster` (this
 device's identity in the profile and the machines it trusts),
 `amux_profile_create_agent`, `amux_profile_directories`,
-`amux_profile_agent_act` (rename, stop, delete), `amux_profile_dump` (with
-`for_report`, the narrower dump a person's report carries) and
+`amux_profile_agent_act` (rename, stop, delete), `amux_profile_dump` (the one dump, saved or sent) and
 `amux_profile_submit_report` (writes the report around that dump and sends
 it, answering a `ReportSent`).
 `amux_session_discard` forgets a not-confirmed input at once, and
@@ -187,7 +186,7 @@ failure. The `debug-tools` feature, which only driving builds carry, lets
 
 `just test-crate app-ffi` drives the C functions against a desk served in
 process: pairing by PIN, the fleet, a chat's rows by key, a permission
-answered by position, a question answered with picks, paging and a dump, and
+answered by position, a question answered with picks, paging and a report, and
 the profile registry (create, the list moving, per-profile identity and source
 policy, delete and the refusal to delete the last).
 A confinement test holds the loop's shape: the header declares no function

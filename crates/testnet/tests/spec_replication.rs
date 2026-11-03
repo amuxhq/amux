@@ -674,8 +674,8 @@ fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
 }
 
 /// A dump taken where another host's agent is only a replica holds what
-/// this host has of it, its row and slice, and asks the agent's host for
-/// nothing: that host's side is in its own dump. Planted secrets stay out of
+/// this host's core has of it, and asks the agent's host for nothing: that
+/// host's side is in its own dump. Planted secrets stay out of
 /// every file.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dump_of_a_replica_holds_only_this_hosts_side() {
@@ -708,14 +708,12 @@ async fn a_dump_of_a_replica_holds_only_this_hosts_side() {
         })
         .collect();
     let has = |prefix: &str| files.iter().any(|file| file.starts_with(prefix));
-    let at = format!("agents/{}", worker.id);
-    assert!(has(&format!("{at}/row.pb")), "{files:#?}");
-    assert!(has(&format!("{at}/store.pb")), "{files:#?}");
+    // The laptop's core holds the replica's row, structure alone; the
+    // agent's own record and journal are the desk's.
+    assert!(has("core/store.sqlite"), "{files:#?}");
     for elsewhere in [
-        format!("{at}/journal/"),
-        format!("{at}/part/"),
-        format!("{at}/host/"),
-        "hosts/".to_owned(),
+        format!("agents/{}/", worker.id),
+        format!("core/journals/{}/", worker.id),
     ] {
         assert!(!has(&elsewhere), "{elsewhere} is the desk's: {files:#?}");
     }

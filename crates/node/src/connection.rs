@@ -14,11 +14,9 @@ use crate::HostId;
 use crate::driver::CoreLinks;
 use crate::link::{ChannelClass, ChannelError, ChannelKey, ChannelPool};
 use crate::routing::{LinkCloseRequest, LiveRoute, Route, core_host, host_from_core};
-use crate::transport::Replacing;
 
 pub struct ConnectionManager {
     channels: Arc<ChannelPool>,
-    replacing: Replacing,
     analytics: analytics::Analytics,
 }
 
@@ -26,7 +24,6 @@ impl ConnectionManager {
     pub(crate) fn new(channels: Arc<ChannelPool>, analytics: analytics::Analytics) -> Arc<Self> {
         Arc::new(Self {
             channels,
-            replacing: Replacing::default(),
             analytics,
         })
     }
@@ -59,10 +56,6 @@ impl ConnectionManager {
         let peer = host_from_core(host);
         self.channels
             .drop_route(peer, Route::from_core(peer, route));
-    }
-
-    pub(crate) fn replacing(&self) -> Replacing {
-        self.replacing.clone()
     }
 
     /// A channel for calls to `peer`.
@@ -207,18 +200,6 @@ impl ConnectionManager {
             .map_or(LiveRoute::Offline, LiveRoute::from_wire)
     }
 
-    /// `peer`'s key is being replaced: its links close, and no stream from
-    /// it is admitted until the replacement ends.
-    pub(crate) async fn teardown_host(&self, peer: HostId) {
-        self.forget(peer);
-        self.replacing.begin(peer);
-        self.channels
-            .link_registry()
-            .close_host(peer, LinkCloseRequest::TrustReplaced)
-            .await;
-        self.forget(peer);
-    }
-
     /// Ends live access to `peer` — its links and the streams on them,
     /// channels and our own routes — without forgetting the relay's word
     /// that it is online.
@@ -236,10 +217,6 @@ impl ConnectionManager {
             .close_host(peer, LinkCloseRequest::Revoked)
             .await;
         self.forget(peer);
-    }
-
-    pub(crate) fn finish_host_replacement(&self, peer: HostId) {
-        self.replacing.finish(peer);
     }
 
     /// Opens a channel to `peer` on `route`, while the core still lists it.

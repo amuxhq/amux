@@ -23,6 +23,9 @@ message PairMessage {
 message PairingComplete {}
 message PairingAbandoned {}
 
+// Why a pairing was refused: sent in the stream, or carried in the details
+// of the status a refusal ends the stream with, so the other side tells
+// refusals apart without reading their words.
 message PairingError {
   enum Reason {
     REASON_UNSPECIFIED = 0;
@@ -32,6 +35,11 @@ message PairingError {
     TIMEOUT = 4;
     USER_REJECTED = 5;
     SELF_PAIRING = 6;
+    // The peer claimed a host this one already trusts under another key.
+    // The detail is the sentence a person is shown, naming that host.
+    ALREADY_PAIRED = 7;
+    // Too many wrong secrets closed the window.
+    LOCKED = 8;
   }
 
   Reason reason = 1;

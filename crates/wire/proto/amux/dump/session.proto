@@ -18,6 +18,10 @@ message ClientSessionHistory {
   bytes agent_id = 1;
   ClientSession start = 2;
   ClientSessionEvents events = 3;
+  // The session's record rather than its whole history: every body kept as
+  // only its arm and the fields the session model reads, and no text,
+  // names or paths. A person's report and a check's dump carry only this.
+  bool structure_only = 4;
 }
 
 // A client's session state: the rows and every value the session model
@@ -116,6 +120,9 @@ message ClientTraced {
     // Something the driver did that is not a message, as it describes it.
     string driver = 4;
   }
+  // The event's size in bytes as the driver saw it: the message encoded, or
+  // the driver's description. A record keeps it after emptying the message.
+  uint32 size = 5;
 }
 
 // A message the session model applies.

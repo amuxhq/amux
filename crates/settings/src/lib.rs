@@ -6,8 +6,7 @@ use std::process::Command;
 use gethostname::gethostname;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-
-const MAX_HOST_NAME_BYTES: usize = 256;
+pub use wire::HostName;
 
 fn xdg_dir(env_var: &str, default_suffix: &str) -> PathBuf {
     if let Ok(value) = std::env::var(env_var) {
@@ -67,13 +66,15 @@ fn system_host_name() -> String {
 /// The name a host goes by when the config names none: the Mac's Computer
 /// Name where there is one, otherwise the system hostname without its mDNS
 /// `.local` suffix. On a Mac this runs a subprocess, so the daemon resolves
-/// it once at start.
-pub fn default_host_name() -> String {
+/// it once at start. A system name that is no host name (a long one, say)
+/// is made the nearest one rather than refused: a host must start with no
+/// configuration.
+pub fn default_host_name() -> HostName {
     #[cfg(target_os = "macos")]
     if let Some(name) = macos_computer_name() {
-        return name;
+        return HostName::lossy(&name);
     }
-    system_host_name()
+    HostName::lossy(&system_host_name())
 }
 
 #[cfg(target_os = "macos")]
@@ -97,48 +98,15 @@ fn fallback_host_name(host_name: &str) -> String {
         .to_string()
 }
 
-/// Apply the validation shared by persisted settings and setup prompts.
-pub fn validate_host_name(host_name: &str) -> Result<(), ConfigError> {
-    if host_name.is_empty() {
-        return Err(ConfigError::Invalid("host_name must not be empty".into()));
-    }
-    if host_name.len() > MAX_HOST_NAME_BYTES {
-        return Err(ConfigError::Invalid(format!(
-            "host_name must be at most {MAX_HOST_NAME_BYTES} bytes"
-        )));
-    }
-    Ok(())
+/// The host name a configured `host_name` is, or why it is none.
+pub fn validate_host_name(host_name: &str) -> Result<HostName, ConfigError> {
+    HostName::parse(host_name).map_err(|error| ConfigError::Invalid(format!("host_name: {error}")))
 }
 
-/// Per-user runtime directory for the amux socket on Unix.
-///
-/// - macOS: `$TMPDIR/amux/` (already per-user, e.g. `/var/folders/xx/.../T/`)
-/// - Linux: `$XDG_RUNTIME_DIR/amux/` (per-user tmpfs, e.g. `/run/user/1000/`)
-/// - Fallback: `/tmp/amux-<uid>/` (UID-embedded for isolation)
+/// The front door's file in the installation's root, where it sits beside
+/// the profiles' own sockets.
 #[cfg(unix)]
-pub(crate) fn default_socket_dir() -> PathBuf {
-    if cfg!(target_os = "macos") {
-        if let Ok(tmpdir) = std::env::var("TMPDIR") {
-            return PathBuf::from(tmpdir).join("amux");
-        }
-    } else if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
-        return PathBuf::from(runtime_dir).join("amux");
-    }
-    // Fallback: embed UID for per-user isolation
-    let uid = unsafe { libc::getuid() };
-    PathBuf::from(format!("/tmp/amux-{uid}"))
-}
-
-#[cfg(unix)]
-fn default_socket_path() -> PathBuf {
-    default_socket_dir().join("amux.sock")
-}
-
-#[cfg(windows)]
-fn default_socket_path() -> PathBuf {
-    let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-    PathBuf::from(format!(r"\\.\pipe\amux-{user}"))
-}
+const FRONT_DOOR_SOCKET: &str = "amux.sock";
 
 /// A control-key leader parsed from the `ctrl+<char>` format (e.g. `ctrl+a`).
 #[derive(Debug, Clone)]
@@ -432,7 +400,10 @@ pub struct InstallationConfig {
     pub new_agent: NewAgentSettings,
     /// Where the installation keeps its data: profiles, stores, reports.
     pub root: PathBuf,
-    pub front_door_socket: PathBuf,
+    /// Where the front door listens. Absent means `amux.sock` in the root
+    /// (on Windows, a named pipe); read it through
+    /// [`InstallationConfig::front_door`].
+    pub front_door_socket: Option<PathBuf>,
     /// Where channel manifests live: the supervisor reads
     /// `<releases_url>/<channel>.json`.
     pub releases_url: String,
@@ -462,7 +433,7 @@ impl Default for InstallationConfig {
             keybinds: Keybinds::default(),
             new_agent: NewAgentSettings::default(),
             root: default_data_dir(),
-            front_door_socket: default_socket_path(),
+            front_door_socket: None,
             releases_url: format!("{DEFAULT_CLOUD_URL}/releases"),
             discovery: DiscoverySettings::default(),
             agent: AgentSettings::default(),
@@ -512,7 +483,9 @@ impl InstallationConfig {
             .map_err(|error| ConfigError::Invalid(format!("{}: {error}", path.display())))?;
         let base = path.parent().unwrap();
         config.root = absolute_path(&config.root, base)?;
-        config.front_door_socket = socket_path(&config.front_door_socket, base)?;
+        if let Some(socket) = &config.front_door_socket {
+            config.front_door_socket = Some(socket_path(socket, base)?);
+        }
         config.path = Some(path);
         config.validate()?;
         Ok(config)
@@ -523,15 +496,40 @@ impl InstallationConfig {
     pub fn validate(&self) -> Result<(), ConfigError> {
         self.updates()?;
         match &self.host_name {
-            Some(host_name) => validate_host_name(host_name),
+            Some(host_name) => validate_host_name(host_name).map(drop),
             None => Ok(()),
         }
     }
 
+    /// The front door's socket: the configured one, else `amux.sock` in the
+    /// root. A root too deep for a socket's address still works, since the
+    /// front door is bound and dialled like every other local socket.
+    #[cfg(unix)]
+    pub fn front_door(&self) -> PathBuf {
+        self.front_door_socket
+            .clone()
+            .unwrap_or_else(|| self.root.join(FRONT_DOOR_SOCKET))
+    }
+
+    /// The front door's pipe: the configured one, else one named for the
+    /// user, since a pipe lives in the machine's one pipe namespace rather
+    /// than in the root.
+    #[cfg(windows)]
+    pub fn front_door(&self) -> PathBuf {
+        self.front_door_socket.clone().unwrap_or_else(|| {
+            let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
+            PathBuf::from(format!(r"\\.\pipe\amux-{user}"))
+        })
+    }
+
     /// The name this host goes by: the configured one, else
-    /// [`default_host_name`].
-    pub fn host_name(&self) -> String {
-        self.host_name.clone().unwrap_or_else(default_host_name)
+    /// [`default_host_name`]. A configured name [`Self::validate`] refuses
+    /// is taken as the nearest host name to it.
+    pub fn host_name(&self) -> HostName {
+        match &self.host_name {
+            Some(host_name) => HostName::lossy(host_name),
+            None => default_host_name(),
+        }
     }
 
     /// The configured channel as the manifests name it.
@@ -553,8 +551,8 @@ impl InstallationConfig {
 }
 
 /// Every key the installation's file takes, dotted as `amux config` names
-/// them, in alphabetical order: the leaves of a default config, and the two
-/// that are absent until set.
+/// them, in alphabetical order: the leaves of a default config, and the
+/// three that are absent until set.
 pub fn installation_keys() -> Vec<String> {
     fn leaves(prefix: &str, table: &toml::Table, out: &mut Vec<String>) {
         for (key, value) in table {
@@ -571,7 +569,11 @@ pub fn installation_keys() -> Vec<String> {
     }
     let default = toml::Table::try_from(InstallationConfig::default())
         .expect("the default config serialises");
-    let mut keys = vec!["host_name".to_owned(), "updates".to_owned()];
+    let mut keys = vec![
+        "front_door_socket".to_owned(),
+        "host_name".to_owned(),
+        "updates".to_owned(),
+    ];
     leaves("", &default, &mut keys);
     keys.sort();
     keys
@@ -621,6 +623,42 @@ mod tests {
 
     fn installation(text: &str) -> Result<InstallationConfig, ConfigError> {
         InstallationConfig::from_toml(text)
+    }
+
+    /// The front door sits in the root the file names, resolved beside the
+    /// file like the root itself, unless the file names the socket too.
+    #[cfg(unix)]
+    #[test]
+    fn the_front_door_is_in_the_configured_root_unless_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "root = \"install\"\n").unwrap();
+        let config = InstallationConfig::from_file(&path).unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap().join("install");
+        assert_eq!(config.root, root);
+        assert_eq!(config.front_door(), root.join("amux.sock"));
+        std::fs::write(
+            &path,
+            "root = \"install\"\nfront_door_socket = \"run/door.sock\"\n",
+        )
+        .unwrap();
+        let config = InstallationConfig::from_file(&path).unwrap();
+        assert_eq!(
+            config.front_door(),
+            std::fs::canonicalize(dir.path())
+                .unwrap()
+                .join("run/door.sock")
+        );
+    }
+
+    /// With no file at all, the front door is in the default root.
+    #[cfg(unix)]
+    #[test]
+    fn the_default_front_door_is_in_the_data_dir() {
+        assert_eq!(
+            InstallationConfig::default().front_door(),
+            default_data_dir().join("amux.sock")
+        );
     }
 
     #[test]
@@ -759,7 +797,7 @@ mod tests {
     #[test]
     fn validate_accepts_long_host_name() {
         let config = InstallationConfig {
-            host_name: Some("a".repeat(MAX_HOST_NAME_BYTES)),
+            host_name: Some("a".repeat(wire::MAX_HOST_NAME_CHARS)),
             ..InstallationConfig::default()
         };
         assert!(config.validate().is_ok());
@@ -768,7 +806,7 @@ mod tests {
     #[test]
     fn validate_rejects_oversized_host_name() {
         let config = InstallationConfig {
-            host_name: Some("a".repeat(MAX_HOST_NAME_BYTES + 1)),
+            host_name: Some("a".repeat(wire::MAX_HOST_NAME_CHARS + 1)),
             ..InstallationConfig::default()
         };
         let err = config.validate().unwrap_err();
@@ -776,8 +814,23 @@ mod tests {
     }
 
     #[test]
+    fn validate_rejects_a_host_name_with_control_characters() {
+        let config = InstallationConfig {
+            host_name: Some("desk\u{1b}]52;c;aGk=\u{7}".to_owned()),
+            ..InstallationConfig::default()
+        };
+        let err = config.validate().unwrap_err();
+        assert!(err.to_string().contains("control"), "{err}");
+    }
+
+    #[test]
     fn an_unnamed_host_goes_by_a_default_name() {
-        assert!(!InstallationConfig::default().host_name().is_empty());
+        assert!(
+            !InstallationConfig::default()
+                .host_name()
+                .as_str()
+                .is_empty()
+        );
     }
 
     #[test]

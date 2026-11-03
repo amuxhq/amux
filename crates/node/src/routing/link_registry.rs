@@ -22,6 +22,7 @@ use crate::link::QuicCarrier;
 use crate::link::link_log::PathKind;
 use crate::link::paths::PathDriver;
 use crate::link::relaying::Relaying;
+use crate::link::socket::{Account, HostKey};
 use crate::routing::types::{LinkId, core_host, host_from_core};
 use crate::routing::{Host, RuntimeInstance, host_to_wire};
 use crate::{HostId, Tier};
@@ -176,7 +177,9 @@ struct LinkWriter {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) enum LinkCloseRequest {
     OutgoingQueueFull,
-    TrustReplaced,
+    /// This host is letting its peer links go: its profile stopped
+    /// dialling or is shutting down.
+    Released,
     Superseded,
     /// This host no longer trusts the peer: the link closes saying
     /// USER_REVOKED, in the close message and as the connection's own
@@ -311,7 +314,10 @@ impl LinkRegistry {
             self.relaying.admitted(
                 link.core(),
                 outgoing_tx.clone(),
-                host.id,
+                HostKey {
+                    account: Account(self.user.0),
+                    host: host.id,
+                },
                 carrier.clone(),
                 through,
             );
@@ -540,7 +546,7 @@ impl LinkRegistry {
                 .iter()
                 .filter(|(_, writer)| writer.role == LinkRole::Peer)
                 .map(|(link, writer)| {
-                    let _ = writer.close_tx.try_send(LinkCloseRequest::TrustReplaced);
+                    let _ = writer.close_tx.try_send(LinkCloseRequest::Released);
                     (*link, writer.closed.clone())
                 })
                 .collect::<Vec<_>>()

@@ -8,6 +8,9 @@ on:
   schedule:
     - cron: "0 3 * * *"
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
@@ -20,7 +23,7 @@ jobs:
     # networks. Leave room for the uploads.
     timeout-minutes: 270
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Select Xcode 26.6
         run: |
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
@@ -29,12 +32,12 @@ jobs:
         run: |
           xcrun simctl list runtimes --json | jq -e '.runtimes[] | select(.identifier == "com.apple.CoreSimulator.SimRuntime.iOS-26-5" and .isAvailable == true)'
           xcrun simctl list devicetypes --json | jq -e '.devicetypes[] | select(.identifier == "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro")'
-      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
       # The gate's cache: this job builds the same bridge and tools, and a
       # cache of its own was evicted between the green runs that saved it.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: ios-gate
           save-if: false
@@ -53,7 +56,7 @@ jobs:
         run: just ios captures
       - name: Upload journeys, the audit and component snapshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ios-captures
           path: |

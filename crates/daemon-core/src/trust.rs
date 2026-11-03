@@ -12,12 +12,10 @@
 //! being moved into its main file waits, with any behind it, until the
 //! move is done.
 //!
-//! Replacing a host's key closes everything opened under the old one
-//! first: the old key stops being trusted at once, the driver tears the
-//! host's connections down as [`Job::TeardownHost`], and the new key is
-//! written after.
+//! A host's key is never replaced: trusting a paired host under another
+//! key is refused, and the person unpairs the old host first.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::net::SocketAddr;
 use std::time::Instant;
 
@@ -26,8 +24,8 @@ use store::{Durability, Sqlite, TrustedHost};
 use uuid::Uuid;
 
 use crate::Daemon;
-use crate::ids::{CallId, HostId, JobId, PairingId};
-use crate::io::{Job, Output, ShellWork};
+use crate::ids::{CallId, HostId, PairingId};
+use crate::io::{Output, ShellWork};
 use crate::payload::{CallError, PeerAddress, Response, Status};
 use crate::serve::answered;
 
@@ -68,12 +66,10 @@ pub struct TrustEntry {
     pub listed: Vec<PeerAddress>,
 }
 
-/// The paired hosts by id, and the hosts whose key is being replaced:
-/// those are trusted under no key until the replacement is written.
+/// The paired hosts by id.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TrustStore {
     entries: BTreeMap<Uuid, TrustEntry>,
-    replacement_pending: BTreeSet<Uuid>,
 }
 
 /// What a pairing did to the store.
@@ -81,10 +77,6 @@ pub struct TrustStore {
 pub enum PairingUpdate {
     Inserted,
     Updated,
-    /// The host is paired under another key: its connections must close
-    /// before the new key is written.
-    PubkeyReplacementRequired,
-    ReplacedPubkey,
 }
 
 /// Why a store or a change of it is refused.
@@ -94,6 +86,8 @@ pub enum TrustError {
     BadPubkey { actual: usize },
     /// Another host is paired under this key.
     DuplicatePubkey(Uuid),
+    /// The host is paired, as `name`, under another key.
+    PairedUnderAnotherKey { host: Uuid, name: String },
     /// The host is not paired.
     NotTrusted(Uuid),
     /// The store refused the change, in its words.
@@ -109,6 +103,9 @@ impl std::fmt::Display for TrustError {
             ),
             TrustError::DuplicatePubkey(host) => {
                 write!(f, "public key is already trusted for host {host}")
+            }
+            TrustError::PairedUnderAnotherKey { host, name } => {
+                write!(f, "host {host} ({name}) is paired under another key")
             }
             TrustError::NotTrusted(host) => write!(f, "peer {host} is not trusted"),
             TrustError::Write(error) => write!(f, "cannot save the trust store: {error}"),
@@ -147,10 +144,7 @@ impl TrustStore {
                 }
             })
             .collect();
-        TrustStore {
-            entries,
-            replacement_pending: BTreeSet::new(),
-        }
+        TrustStore { entries }
     }
 
     /// The store's row for `host_id`, or `None` when it is not paired.
@@ -195,10 +189,7 @@ impl TrustStore {
                 )
             })
             .collect();
-        TrustStore {
-            entries,
-            replacement_pending: BTreeSet::new(),
-        }
+        TrustStore { entries }
     }
 
     pub fn entry(&self, host_id: Uuid) -> Option<&TrustEntry> {
@@ -215,7 +206,7 @@ impl TrustStore {
         self.entries.is_empty()
     }
 
-    /// The paired hosts, a host whose key is being replaced among them.
+    /// The paired hosts.
     pub fn paired_hosts(&self) -> Vec<HostId> {
         self.entries
             .keys()
@@ -231,19 +222,18 @@ impl TrustStore {
     pub fn host_id_for_pubkey(&self, pubkey: &[u8]) -> Option<Uuid> {
         self.entries
             .iter()
-            .filter(|(host_id, _)| !self.replacement_pending.contains(host_id))
             .find_map(|(host_id, entry)| (entry.pubkey == pubkey).then_some(*host_id))
     }
 
     pub fn pubkey_for_host(&self, host_id: Uuid) -> Option<&[u8]> {
-        if self.replacement_pending.contains(&host_id) {
-            return None;
-        }
         self.entries
             .get(&host_id)
             .map(|entry| entry.pubkey.as_slice())
     }
 
+    /// Trusts `host_id` under `pubkey`, or keeps what pairing it again
+    /// under the key it has says. A host paired under another key is
+    /// refused: a key is never replaced.
     pub fn upsert_paired_peer(
         &mut self,
         host_id: Uuid,
@@ -256,9 +246,6 @@ impl TrustStore {
         if let Some(existing_host_id) = self.other_host_for_pubkey(host_id, &pubkey) {
             return Err(TrustError::DuplicatePubkey(existing_host_id));
         }
-        if self.replacement_pending.contains(&host_id) {
-            return Ok(PairingUpdate::PubkeyReplacementRequired);
-        }
         match self.entries.get_mut(&host_id) {
             Some(entry) if entry.pubkey == pubkey => {
                 entry.name = name;
@@ -267,43 +254,10 @@ impl TrustStore {
                 }
                 Ok(PairingUpdate::Updated)
             }
-            Some(_) => {
-                self.replacement_pending.insert(host_id);
-                Ok(PairingUpdate::PubkeyReplacementRequired)
-            }
-            None => {
-                self.entries
-                    .insert(host_id, TrustEntry::paired(pubkey, name, reachability));
-                Ok(PairingUpdate::Inserted)
-            }
-        }
-    }
-
-    pub fn replace_paired_peer_after_teardown(
-        &mut self,
-        host_id: Uuid,
-        pubkey: Vec<u8>,
-        name: String,
-        reachability: impl Into<Option<Reachability>>,
-    ) -> Result<PairingUpdate, TrustError> {
-        let reachability = reachability.into();
-        validate_pubkey(&pubkey)?;
-        if let Some(existing_host_id) = self.other_host_for_pubkey(host_id, &pubkey) {
-            return Err(TrustError::DuplicatePubkey(existing_host_id));
-        }
-        self.replacement_pending.remove(&host_id);
-        match self.entries.get_mut(&host_id) {
-            Some(entry) if entry.pubkey == pubkey => {
-                entry.name = name;
-                if let Some(reachability) = reachability {
-                    entry.reached(reachability);
-                }
-                Ok(PairingUpdate::Updated)
-            }
-            Some(entry) => {
-                *entry = TrustEntry::paired(pubkey, name, reachability);
-                Ok(PairingUpdate::ReplacedPubkey)
-            }
+            Some(entry) => Err(TrustError::PairedUnderAnotherKey {
+                host: host_id,
+                name: entry.name.clone(),
+            }),
             None => {
                 self.entries
                     .insert(host_id, TrustEntry::paired(pubkey, name, reachability));
@@ -313,7 +267,6 @@ impl TrustStore {
     }
 
     pub fn remove(&mut self, host_id: Uuid) -> Option<TrustEntry> {
-        self.replacement_pending.remove(&host_id);
         self.entries.remove(&host_id)
     }
 
@@ -532,56 +485,14 @@ struct Queued {
     waiter: Option<Waiter>,
 }
 
-/// A key replacement waiting for the host's connections under the old key
-/// to close.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-struct Replacing {
-    queued: Queued,
-    job: JobId,
-}
-
-/// The paired hosts as the store holds them, a key replacement under way
-/// and the changes waiting behind it. The paired hosts are the store's, so
-/// a checkpoint leaves them out and a restored core reads them from the
-/// store it was taken beside; which keys are being replaced it keeps.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+/// The paired hosts as the store holds them, and the changes waiting to
+/// be made. The paired hosts are the store's, so a checkpoint leaves them
+/// out and a restored core reads them from the store it was taken beside.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Trust {
+    #[serde(skip)]
     store: TrustStore,
-    replacing: Option<Replacing>,
     queue: VecDeque<Queued>,
-}
-
-/// What a checkpoint keeps of [`Trust`].
-#[derive(Serialize, Deserialize)]
-struct TrustCheckpoint {
-    replacement_pending: BTreeSet<Uuid>,
-    replacing: Option<Replacing>,
-    queue: VecDeque<Queued>,
-}
-
-impl Serialize for Trust {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        TrustCheckpoint {
-            replacement_pending: self.store.replacement_pending.clone(),
-            replacing: self.replacing.clone(),
-            queue: self.queue.clone(),
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Trust {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let checkpoint = TrustCheckpoint::deserialize(deserializer)?;
-        Ok(Trust {
-            store: TrustStore {
-                entries: BTreeMap::new(),
-                replacement_pending: checkpoint.replacement_pending,
-            },
-            replacing: checkpoint.replacing,
-            queue: checkpoint.queue,
-        })
-    }
 }
 
 impl Trust {
@@ -601,18 +512,6 @@ impl Trust {
 
     pub fn store(&self) -> &TrustStore {
         &self.store
-    }
-
-    pub(crate) fn jobs(&self, out: &mut Vec<JobId>) {
-        out.extend(self.replacing.as_ref().map(|replacing| replacing.job));
-    }
-
-    pub(crate) fn canonical(&self, ids: &crate::fingerprint::Ids) -> Trust {
-        let mut trust = self.clone();
-        if let Some(replacing) = &mut trust.replacing {
-            replacing.job = ids.jobs.get(replacing.job);
-        }
-        trust
     }
 }
 
@@ -661,13 +560,11 @@ impl Daemon {
         self.next_trust_change(out);
     }
 
-    /// Makes the changes waiting, in order, until one must wait: for a key
-    /// replacement's teardown, or for the WAL to finish moving into the
-    /// main file (no commit may land while it moves, nor in the step that
-    /// serialized the core beside it).
+    /// Makes the changes waiting, in order, until they must wait for the
+    /// WAL to finish moving into the main file (no commit may land while
+    /// it moves, nor in the step that serialized the core beside it).
     pub(crate) fn next_trust_change(&mut self, out: &mut Vec<Output>) {
-        while self.trust.replacing.is_none()
-            && !self.checkpoints.holding()
+        while !self.checkpoints.holding()
             && !self.touched.serialized
             && let Some(queued) = self.trust.queue.pop_front()
         {
@@ -737,7 +634,6 @@ impl Daemon {
                 TrustChanged::Unchanged
             }),
             TrustChange::Restore { host, entry } => {
-                staged.replacement_pending.remove(host);
                 match entry {
                     Some(entry) => staged.entries.insert(*host, entry.clone()),
                     None => staged.entries.remove(host),
@@ -756,23 +652,6 @@ impl Daemon {
                 return;
             }
         };
-        if changed == TrustChanged::Paired(PairingUpdate::PubkeyReplacementRequired) {
-            // The old key stops being trusted now, before anything opened
-            // under it is closed.
-            let host = queued.change.host();
-            let job = self.pending.mint();
-            self.trust.store.replacement_pending.insert(host);
-            self.begin_replacement(HostId(*host.as_bytes()));
-            self.trust_published(None, out);
-            out.push(Output::Job {
-                id: job,
-                op: Job::TeardownHost {
-                    host: HostId(*host.as_bytes()),
-                },
-            });
-            self.trust.replacing = Some(Replacing { queued, job });
-            return;
-        }
         self.commit_trust(queued, staged, changed, out);
     }
 
@@ -810,9 +689,6 @@ impl Daemon {
         if let Err(error) = written {
             let error = error.to_string();
             tracing::warn!(%error, %host, "cannot save the trust store");
-            if self.trust.store.replacement_pending.contains(&host) {
-                self.end_replacement(host, out);
-            }
             self.trust_change_ended(queued.waiter, Err(TrustError::Write(error)), out);
             return;
         }
@@ -826,61 +702,7 @@ impl Daemon {
         // address it answered at, an SSH destination, the account.
         self.tell_paths(id, out);
         self.reconsider(id, out);
-        if changed == TrustChanged::Paired(PairingUpdate::ReplacedPubkey) {
-            self.finish_replacement(id);
-        }
         self.trust_change_ended(queued.waiter, Ok(changed), out);
-    }
-
-    /// A key replacement's teardown finished; returns whether `job` was
-    /// one. Whatever the teardown said, nothing of the old key is trusted
-    /// any more: the replacement is written on.
-    pub(crate) fn trust_job_done(&mut self, job: JobId, out: &mut Vec<Output>) -> bool {
-        if self
-            .trust
-            .replacing
-            .as_ref()
-            .is_none_or(|replacing| replacing.job != job)
-        {
-            return false;
-        }
-        let Replacing { queued, .. } = self.trust.replacing.take().expect("a replacement");
-        let host = queued.change.host();
-        let TrustChange::Pair {
-            pubkey,
-            name,
-            reachability,
-            ..
-        } = &queued.change
-        else {
-            unreachable!("only a pairing replaces a key");
-        };
-        let mut replaced = self.trust.store.clone();
-        match replaced.replace_paired_peer_after_teardown(
-            host,
-            pubkey.clone(),
-            name.clone(),
-            reachability.clone(),
-        ) {
-            Ok(update) => self.commit_trust(queued, replaced, TrustChanged::Paired(update), out),
-            Err(error) => {
-                self.end_replacement(host, out);
-                self.trust_change_ended(queued.waiter, Err(error), out);
-            }
-        }
-        self.next_trust_change(out);
-        true
-    }
-
-    /// A key replacement that will not be written: the old key is trusted
-    /// again, and the host's connections may open under it.
-    fn end_replacement(&mut self, host: Uuid, out: &mut Vec<Output>) {
-        self.trust.store.replacement_pending.remove(&host);
-        self.finish_replacement(HostId(*host.as_bytes()));
-        self.trust_published(Some((host, TrustChanged::Unchanged)), out);
-        out.push(Output::Shell(ShellWork::ReplacementEnded {
-            host: HostId(*host.as_bytes()),
-        }));
     }
 
     /// The shell's handshakes read trust from the store as published, and

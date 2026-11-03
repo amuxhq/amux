@@ -153,9 +153,23 @@ messages B to A then A to B. Both sides hash the big-endian
 `PROTOCOL_VERSION` and length-prefixed SPAKE2 messages. HKDF-SHA256 with salt
 `amux-pair-spake2-v1` derives confirmation keys (`kc/A`, `kc/B`) and
 ChaCha20-Poly1305 keys (`aead/A→B`, `aead/B→A`). The sealed identity contains
-the public key and a name of at most 256 bytes, with direction and transcript
-in the additional authenticated data. `PairingComplete` commits both stores.
-Every secret failure is the same opaque `INVALID_PIN`.
+the public key and a host name, with direction and transcript in the
+additional authenticated data. `PairingComplete` commits both stores.
+Every secret failure is the same opaque `INVALID_PIN`. A side that ends the
+stream with a refusal sends a status whose details carry a `PairingError`
+naming its reason (`INVALID_PIN`, `LOCKED` once too many wrong secrets closed
+the window, `TIMEOUT`, `SELF_PAIRING`), which the other side tells refusals
+apart by; the status message is only the words a person is shown.
+
+Pairing never replaces a pinned key. Host ids are not secret (discovery
+advertises them), so a peer that proved the secret but names a host this one
+already trusts under another key is refused: the responder sends
+`ALREADY_PAIRED` with the sentence the joiner's person is shown,
+`Already paired with <name>. Unpair it first.`, and keeps its window open; a
+joiner that meets such a responder refuses before asking its person to
+confirm, with the same words (as a wrong secret, when discovery found the
+machine). SSH pairing refuses the same way. A machine whose key changed is
+unpaired on the other side and paired again.
 
 Before trust exists, an open pairing window lets the dispatcher admit one
 anonymous channel to `PairingService`. SPAKE2 authenticates that exchange and
@@ -434,15 +448,25 @@ completes.
 **The resumed identity.** A resumed handshake presents no certificate: the
 ticket names the key the host proved when it was issued. The listener holds
 the link's early streams until its daemon core has decided that key is still
-the one pinned for the host the `Hello` names; a host whose pin was removed,
-or is being replaced, is refused with the revocation close (`USER_REVOKED`)
-before any early call is served, and the dialler reads it as the revocation.
+the one pinned for the host the `Hello` names; a host whose pin was removed
+is refused with the revocation close (`USER_REVOKED`) before any early call
+is served, and the dialler reads it as the revocation.
 
 ### Link control
 
 The connector opens the first bidirectional stream as control. Each control
 message is protobuf encoded after a big-endian `u32` byte length and is bounded
-by `MESSAGE_SIZE_LIMIT` (16 MiB). The complete control vocabulary is:
+by `MESSAGE_SIZE_LIMIT` (16 MiB), save the first in each direction, the `Hello`
+or the `HelloAck`, which is read before anything has checked its sender and is
+bounded by `HELLO_SIZE_LIMIT` (64 KiB). Every host a handshake or a
+`NeighborUp` describes has a non-nil id, a host name, a version of at most 64
+bytes and at most 64 kinds, or the link is closed as a protocol error. A host
+name is printable text of 1 to 64 characters, trimmed, with no control
+characters (C0, C1, DEL) and no invisible formatting ones (Unicode's category
+Cf, such as bidirectional overrides and zero-width characters); pairing and
+local discovery refuse any other name, and a configured `host_name` is held to
+the same rule, while a name taken from the system or a phone is cut and cleaned
+to one. The complete control vocabulary is:
 
 - `Hello`: supported protocol versions, this host, the current neighbor
   snapshot, the sender's runtime instance id, every interface address the
@@ -691,14 +715,15 @@ never does, because its directory and journal are its whole interface (see
 | A link stream whose handshake presented a pinned key | `AgentService` and `SessionService`, with that host as the caller | paired daemons, including a phone's embedded daemon |
 | A link stream admitted by an open pairing window | `PairingService` | a host pairing with this one |
 
-The front door's path is the installation setting `front_door_socket`. By
-default it is `amux.sock` in a per-user runtime directory: `$TMPDIR/amux/` on
-macOS, `$XDG_RUNTIME_DIR/amux/` on Linux, `/tmp/amux-<uid>/` when neither is
-set, and the named pipe `\\.\pipe\amux-<user>` on Windows. Local sockets are
-Unix domain sockets on Unix and named pipes on Windows
-(`crates/agent-dir/src/local_socket.rs`); a path too long for a Unix socket
-address is reached through a short symbolic link in the per-user runtime
-directory, so both ends derive the same address from the same path.
+The front door is `amux.sock` in the installation's root (`<root>/amux.sock`),
+beside the profiles' sockets, unless the installation setting
+`front_door_socket` names another path; the CLI and the daemon read the same
+config, so they derive the same path. On Windows it is the named pipe
+`\\.\pipe\amux-<user>`. Local sockets are Unix domain sockets on Unix and
+named pipes on Windows (`crates/agent-dir/src/local_socket.rs`); a path too long for a Unix socket
+address, as under a deep root, is reached through a short symbolic link in
+a folder only this user can write, so both ends derive the same address from
+the same path.
 
 An agent's `ctl.sock` and `pty.sock` are not part of this surface. The daemon
 dials `ctl.sock` to hand the agent its inputs, and a terminal on the same
@@ -910,10 +935,16 @@ Each agent's `tools.sock` serves the same `AgentService` and
 starts the agent's process, and whatever arrives on it is from that agent, so
 no request carries an agent id or a token claiming one. On that socket:
 
-- `CreateAgent` makes the caller the child's parent.
+- `CreateAgent` makes the caller the child's parent, and takes only the
+  kind's default settings, as the spawn tool sends them: a permission mode,
+  model, effort or provider arguments are refused, being the person's to
+  choose.
 - `SendMessage` stamps the caller as the message's sender.
-- `SendInput` goes only to one of the caller's own direct children; the stop
-  tool's interrupt is the input an agent sends.
+- Every call on a named agent (`SendInput`, `StopAgent`, `RenameAgent`,
+  `ResumeAgent`, `DeleteAgent`, the blob, diff, draft and session reads) goes
+  only to one of the caller's own direct children, refused with
+  `PERMISSION_DENIED` otherwise; the stop tool's interrupt is the input an
+  agent sends. An agent reaches any other agent by messaging it.
 
 [Agent tools](AGENT_TOOLS.md) describes the tool server that dials it.
 
@@ -955,11 +986,12 @@ local sockets carry no version at all.
 
 ## Chapter 8: Diagnostics
 
-`ProfileAdminService.Dump` on the profile socket writes a debug report on this host (rows, store
-slices, journal tails and each agent process's own redacted part, as much as
-the request's `scope` asks for) and answers with its path. For an agent
-another host runs, the report holds only this host's row and store slice: no
-host asks another for its side. `ProfileAdminService.SubmitReport` writes a
+`ProfileAdminService.Dump` on the profile socket writes a debug report on this host (the daemon
+core's record, each agent process's record, the records of the chats the
+asking client has on screen and the last minute of our logs: the same parts
+whatever asked for it) and answers with its path. An agent another host
+runs appears only as its row in this host's store: no host asks another for
+its side. `ProfileAdminService.SubmitReport` writes a
 person's report around a dump the client took, with the client's
 `report.json` and frame, and sends it to the profile's account service,
 answering where it is kept and the receipt or why it was not sent.

@@ -1254,9 +1254,15 @@ async fn read_control_messages(
     mut recv: EarlyRecv,
     sender: mpsc::Sender<io::Result<wire::Message>>,
 ) {
+    // A link's first message, its Hello or the answer to one, is read
+    // before anything has checked who sent it: a relay reads one from any
+    // signed-in account, and a host one on a resumed link before it has
+    // checked the peer's key. Only it is held to the Hello's own bound.
+    let mut limit = wire::HELLO_SIZE_LIMIT;
     loop {
-        match read_proto::<wire::Message>(&mut recv, wire::MESSAGE_SIZE_LIMIT).await {
+        match read_proto::<wire::Message>(&mut recv, limit).await {
             Ok(Some(message)) => {
+                limit = wire::MESSAGE_SIZE_LIMIT;
                 if sender.send(Ok(message)).await.is_err() {
                     return;
                 }
@@ -2076,25 +2082,116 @@ mod tests {
         .await;
         client.link(&server).await.unwrap();
 
-        // The peer is paired again under a new key; the old key's holder
-        // still has the session behind the client's ticket.
+        // The peer is unpaired and paired again under a new key; the old
+        // key's holder still has the session behind the client's ticket.
         let replacement = DeviceIdentity::for_test(server_identity.host_id);
-        client
-            .trust
-            .write()
-            .unwrap()
-            .upsert_paired_peer(
-                replacement.host_id,
-                replacement.public_key().to_vec(),
-                "peer".to_string(),
-                None,
-            )
-            .unwrap();
+        {
+            let mut trust = client.trust.write().unwrap();
+            trust.remove(replacement.host_id).unwrap();
+            trust
+                .upsert_paired_peer(
+                    replacement.host_id,
+                    replacement.public_key().to_vec(),
+                    "peer".to_string(),
+                    None,
+                )
+                .unwrap();
+        }
         assert!(
             client.link(&server).await.is_err(),
             "the old key's holder is refused"
         );
         assert_eq!(tickets.redeemed(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_client_presenting_no_certificate_is_issued_no_ticket() {
+        let server_identity = DeviceIdentity::for_test(HostId::new_v4());
+        let paired = DeviceIdentity::for_test(HostId::new_v4());
+        let tickets = SessionTickets::in_memory(HOST_TICKETS);
+        let server = ticket_server(
+            &server_identity,
+            &paired,
+            &tickets,
+            ANY_PORT.parse().unwrap(),
+        )
+        .await;
+        let client = LinkEndpoint::bind(ANY_PORT.parse().unwrap(), None).unwrap();
+        let accept = async {
+            let connection = server.endpoint.accept().await.unwrap().await.unwrap();
+            let (mut send, mut recv) = connection.accept_bi().await.unwrap();
+            let mut byte = [0];
+            recv.read_exact(&mut byte).await.unwrap();
+            send.write_all(&byte).await.unwrap();
+            send.finish().unwrap();
+            connection.closed().await;
+        };
+        let connect = async {
+            let connection = client
+                .connect_with(
+                    crate::transport::pairing_quic_client_config().unwrap(),
+                    server.local_addr().unwrap(),
+                    "amux-pairing.local",
+                )
+                .unwrap()
+                .await
+                .unwrap();
+            let (mut send, mut recv) = connection.open_bi().await.unwrap();
+            send.write_all(b"t").await.unwrap();
+            let mut byte = [0];
+            recv.read_exact(&mut byte).await.unwrap();
+            connection.close(0_u32.into(), b"done");
+        };
+        tokio::join!(accept, connect);
+        assert_eq!(tickets.kept(), 0, "a stranger's link keeps no ticket");
+    }
+
+    #[tokio::test]
+    async fn a_ticket_of_a_host_unpaired_since_is_dropped_and_its_certificate_refused() {
+        let server_identity = DeviceIdentity::for_test(HostId::new_v4());
+        let client = TicketClient::new(&server_identity);
+        let tickets = SessionTickets::in_memory(HOST_TICKETS);
+        let trust = trust_for(&client.identity);
+        let server = LinkEndpoint::bind(
+            ANY_PORT.parse().unwrap(),
+            Some(
+                server_identity
+                    .quic_server_config(trust.clone(), &tickets)
+                    .unwrap(),
+            ),
+        )
+        .unwrap();
+        client.link(&server).await.unwrap();
+        assert_eq!(tickets.kept(), 1);
+
+        trust.write().unwrap().remove(client.identity.host_id);
+        let config = client
+            .endpoint
+            .client_config(&client.identity, &client.trust, client.peer)
+            .unwrap();
+        let accept = async {
+            let incoming = server.endpoint.accept().await.unwrap();
+            assert!(incoming.await.is_err(), "the host takes no link");
+        };
+        let connect = async {
+            let connection = client
+                .endpoint
+                .connect_with(config, server.local_addr().unwrap(), DEVICE_SERVER_NAME)
+                .unwrap()
+                .await;
+            // The refusal can follow a handshake that looked done.
+            match connection {
+                Ok(connection) => connection.closed().await,
+                Err(error) => error,
+            }
+        };
+        let ((), refused) = tokio::join!(accept, connect);
+        assert!(
+            refused_as_revoked(&refused),
+            "the full handshake refuses the unpaired host's certificate: {refused}"
+        );
+        assert_eq!(tickets.redeemed(), 0, "the ticket is not honoured");
+        assert_eq!(tickets.kept(), 0, "and is gone from the store");
     }
 
     /// What a host read off one link: for each stream the dialler opened,

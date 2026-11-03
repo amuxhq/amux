@@ -90,8 +90,7 @@ pub struct PeerAddress {
 pub enum ChannelError {
     /// The link it was asked on is not up.
     NoLink,
-    /// No key is pinned for the peer: it is not paired, or its pairing is
-    /// being replaced.
+    /// No key is pinned for the peer: it is not paired.
     Unpinned,
 }
 
@@ -165,6 +164,7 @@ pub enum ClientRequest {
     PutBlob {
         #[serde(with = "codec::message")]
         request: wire::PutBlobRequest,
+        #[serde(with = "codec::hash")]
         hash: Vec<u8>,
         #[serde(with = "codec::sized")]
         bytes: Vec<u8>,
@@ -172,6 +172,7 @@ pub enum ClientRequest {
     /// A replica's blob its origin sent, kept for the next reader.
     KeepBlob {
         agent_id: Vec<u8>,
+        #[serde(with = "codec::hash")]
         hash: Vec<u8>,
         #[serde(with = "codec::sized")]
         bytes: Vec<u8>,
@@ -342,6 +343,7 @@ pub enum PeerFailure {
 /// A diff's patch, as a blob to write.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Patch {
+    #[serde(with = "codec::hash")]
     pub hash: Vec<u8>,
     #[serde(with = "codec::content")]
     pub bytes: Vec<u8>,

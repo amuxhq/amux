@@ -1470,52 +1470,6 @@ pub(crate) fn launched_permission(args: &[String]) -> Option<String> {
     launch_arg(args, "--permission-mode")
 }
 
-/// Claude's text as a wire field carries it: without the colour, cursor
-/// and link codes a terminal program writes (CSI and OSC sequences, in
-/// their escaped and their one-character C1 forms, and the other escapes)
-/// or any other control character but a newline and a tab. Every field
-/// made of Claude's words goes through this one cleaner.
-pub(crate) fn without_terminal_codes(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    // CSI: parameters and intermediates, then one final byte.
-    let csi = |chars: &mut std::iter::Peekable<std::str::Chars>| {
-        for c in chars.by_ref() {
-            if ('\u{40}'..='\u{7e}').contains(&c) {
-                break;
-            }
-        }
-    };
-    // OSC: up to BEL or ST, in either form.
-    let osc = |chars: &mut std::iter::Peekable<std::str::Chars>| {
-        while let Some(c) = chars.next() {
-            if c == '\u{7}' || c == '\u{9c}' {
-                break;
-            }
-            if c == '\u{1b}' && chars.peek() == Some(&'\\') {
-                chars.next();
-                break;
-            }
-        }
-    };
-    while let Some(c) = chars.next() {
-        match c {
-            '\u{1b}' => match chars.next() {
-                Some('[') => csi(&mut chars),
-                Some(']') => osc(&mut chars),
-                // A two-character escape.
-                _ => {}
-            },
-            '\u{9b}' => csi(&mut chars),
-            '\u{9d}' => osc(&mut chars),
-            '\n' | '\t' => out.push(c),
-            c if c.is_control() => {}
-            c => out.push(c),
-        }
-    }
-    out
-}
-
 /// The models an initialize answer says take Claude's auto permission, by
 /// the value Claude lists ("haiku") and the model it resolves to
 /// ("claude-haiku-5-5"), which is how Claude's rows and hooks name the

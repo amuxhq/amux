@@ -300,7 +300,7 @@ impl ProfileRuntime {
                 Ok(answer)
             }
             Err(error) => {
-                tracing::warn!(provider = provider_word(provider), folder = %folder.display(), %error, "asking what the provider offers in a folder failed");
+                tracing::warn!(provider = provider_word(provider), %error, "asking what the provider offers in a folder failed");
                 self.host_catalogue(provider).await
             }
         }

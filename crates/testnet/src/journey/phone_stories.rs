@@ -2303,13 +2303,17 @@ fn report(journey: &mut PhoneJourney) -> Proved {
     }
     std::fs::copy(&screen, journey.output.join("uploaded-frame.png"))
         .map_err(|error| error.to_string())?;
-    // The dump inside it carries this phone's copy of the agent the desk
-    // lists, the one whose row the report froze.
+    // The dump inside it carries this phone's records: its core's, which
+    // holds the desk's agent as its structure, and its fleet's.
     let dumped = strings(&retry["dump_files"]);
-    if !dumped.contains(&format!("agents/{agent}/row.pb")) {
-        return Err(format!(
-            "the report's dump holds no copy of the desk's agent: {dumped:?}"
-        ));
+    for part in [
+        "core/checkpoint",
+        "core/store.sqlite",
+        "client/fleet/state.txt",
+    ] {
+        if !dumped.iter().any(|file| file == part) {
+            return Err(format!("the report's dump holds no {part}: {dumped:?}"));
+        }
     }
     journey.wait_inventory(
         "desk",
@@ -2329,7 +2333,7 @@ fn report(journey: &mut PhoneJourney) -> Proved {
             "Retry handed the account service the same report ({}) and came back with receipt report-1",
             files.join(", ")
         ),
-        "the report that left the phone carries the note, the frozen screen and a dump holding the agent the desk lists".to_owned(),
+        "the report that left the phone carries the note, the frozen screen and a dump of this phone's records".to_owned(),
     ])
 }
 

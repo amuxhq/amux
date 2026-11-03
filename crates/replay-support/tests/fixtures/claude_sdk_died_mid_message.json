@@ -1,0 +1,164 @@
+{
+  "core": null,
+  "segments": [
+    {
+      "checkpoint": {
+        "asks": [],
+        "open_items": [],
+        "pending_messages": [],
+        "phase": 1,
+        "queue": [],
+        "submitted": [],
+        "turn": null,
+        "typed_unrecorded": false
+      },
+      "events": [
+        {
+          "event": {
+            "bytes": 166,
+            "channel": "stream",
+            "event": "fact",
+            "shape": {
+              "claude_code_version": "=2.1.312",
+              "cwd": "@/@dc22de08702b~20",
+              "model": "%0a8e152c6ca1=claude-opus-5-5",
+              "permissionMode": "%5fef2f0101ea=default",
+              "session_id": "@1f84f988ce23~1",
+              "subtype": "=init",
+              "type": "=system"
+            },
+            "variant": "system/init"
+          }
+        },
+        {
+          "event": {
+            "bytes": 158,
+            "channel": "stream",
+            "event": "fact",
+            "shape": {
+              "event": {
+                "message": {
+                  "content": [],
+                  "id": "@6664360016d9~5",
+                  "role": "%7cdf06e20b3b=assistant",
+                  "usage": {
+                    "input_tokens": 12
+                  }
+                },
+                "type": "=message_start"
+              },
+              "session_id": "@1f84f988ce23~1",
+              "type": "=stream_event"
+            },
+            "variant": "stream_event/message_start"
+          },
+          "step": {
+            "snapshot": {
+              "background_jobs": 0,
+              "bytes": 14,
+              "phase": 1
+            }
+          }
+        },
+        {
+          "event": {
+            "bytes": 131,
+            "channel": "stream",
+            "event": "fact",
+            "shape": {
+              "event": {
+                "content_block": {
+                  "text": "=",
+                  "type": "%1fd9e8781bf4=text"
+                },
+                "index": 0,
+                "type": "=content_block_start"
+              },
+              "session_id": "@1f84f988ce23~1",
+              "type": "=stream_event"
+            },
+            "variant": "stream_event/content_block_start/text"
+          },
+          "step": {
+            "items": [
+              {
+                "arm": "message",
+                "bytes": 2,
+                "key": "key-ab1240b13d57",
+                "op": "open"
+              }
+            ]
+          }
+        },
+        {
+          "event": {
+            "bytes": 151,
+            "channel": "stream",
+            "event": "fact",
+            "shape": {
+              "event": {
+                "delta": {
+                  "text": "@cdf7b464da47~22",
+                  "type": "=text_delta"
+                },
+                "index": 0,
+                "type": "=content_block_delta"
+              },
+              "session_id": "@1f84f988ce23~1",
+              "type": "=stream_event"
+            },
+            "variant": "stream_event/content_block_delta/text_delta"
+          },
+          "step": {
+            "appends": [
+              [
+                "key-ab1240b13d57",
+                22
+              ]
+            ]
+          }
+        },
+        {
+          "broken": "agent.exit_left_open",
+          "event": {
+            "code": 1,
+            "event": "provider_exit"
+          },
+          "step": {
+            "incarnation_end": 4,
+            "items": [
+              {
+                "arm": "boundary",
+                "bytes": 19,
+                "key": "boundary:de30153ec839",
+                "op": "whole"
+              }
+            ],
+            "snapshot": {
+              "background_jobs": 0,
+              "bytes": 16,
+              "phase": 1
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "effort": null,
+    "flags": [],
+    "kind": "KIND_CLAUDE_SDK",
+    "mode": null,
+    "model": null,
+    "permission": null,
+    "provider": "claude",
+    "spec": {
+      "agent_id": "@10bf842f9680~5",
+      "created_at_ms": 1000,
+      "incarnation": 1,
+      "kind": 2,
+      "provider_command": "@/@8cd8dd4d0b12~20"
+    },
+    "version": "2.1.312"
+  }
+}

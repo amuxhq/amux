@@ -6,7 +6,8 @@ use std::sync::Arc;
 use client::{ManualClock, RpcError};
 use support::*;
 use ui_runtime::{
-    DriverEvent, InputError, PageError, Session, TRACE_EVENTS, TRANSCRIPT_DUMP, TraceEvent,
+    DriverError, DriverEvent, InputError, PageError, Session, TRACE_EVENTS, TRANSCRIPT_DUMP,
+    TraceEvent,
 };
 use ui_state::{Composer, Connection, InputOutcome, InputState, Refusal, Waiting};
 use wire::{
@@ -685,6 +686,49 @@ async fn an_agent_the_runtime_no_longer_serves_ends_the_session() {
     assert!(clock.sleeping().is_empty(), "nothing retries");
 }
 
+#[tokio::test]
+async fn a_refusals_words_reach_no_trace_only_its_kind() {
+    let clock = ManualClock::new(0);
+    let (session, mut calls, feed) = open_caught_up(&clock, 1).await;
+    drop(feed);
+    clock.armed(250).await;
+    clock.advance(250);
+    let words = "the far host says zebra";
+    calls
+        .refuse_subscribe(RpcError::Refused(wire::Error::because(
+            wire::ErrorReason::HostUnreachable,
+            words,
+        )))
+        .await;
+    until(session.changed(), || session.ended()).await;
+    let ended = format!(
+        "{:?}",
+        DriverEvent::Ended {
+            error: DriverError::Refused {
+                code: ErrorCode::FailedPrecondition,
+                reason: Some(wire::ErrorReason::HostUnreachable),
+            },
+        }
+    );
+    for history in [session.history(), session.record()] {
+        let drivers: Vec<_> = history
+            .events
+            .unwrap_or_default()
+            .traced
+            .into_iter()
+            .filter_map(|traced| match traced.event {
+                Some(wire::dump::client_traced::Event::Driver(driver)) => Some(driver),
+                _ => None,
+            })
+            .collect();
+        assert!(drivers.contains(&ended), "{drivers:?}");
+        assert!(
+            !drivers.iter().any(|driver| driver.contains("zebra")),
+            "{drivers:?}"
+        );
+    }
+}
+
 fn keys(session: &Session) -> Vec<String> {
     session.state().transcript().keys().cloned().collect()
 }
@@ -894,20 +938,20 @@ async fn a_transcript_that_fails_its_check_asks_for_a_dump_with_its_trace_cut_th
         panic!("the driver asked for no dump");
     };
     assert!(request.automatic);
-    assert_eq!(request.agent_ids, vec![agent(KIND).agent_id]);
     assert!(
         request.reason.starts_with(TRANSCRIPT_DUMP) && request.reason.contains("between 1 and 3"),
         "{}",
         request.reason
     );
-    // The session's trace rides along, cut at the message that broke the
-    // transcript, for the daemon to redact and write before it answers.
+    // The session's record rides along, cut at the message that broke the
+    // transcript, for the daemon to write before it answers.
     let [history] = &request.sessions[..] else {
         panic!("{} sessions in the request", request.sessions.len());
     };
     let history = <wire::dump::ClientSessionHistory as prost::Message>::decode(history.as_slice())
         .expect("a session");
     assert_eq!(history.agent_id, agent(KIND).agent_id);
+    assert!(history.structure_only, "a check's dump carries the record");
     let events = &history.events.as_ref().expect("events").traced;
     let last = events.last().expect("an event");
     assert!(

@@ -33,9 +33,9 @@ Three rules shape the library:
 | [`client`](../crates/client/src/lib.rs) | The `Client` trait: the one seam both clients call the runtime through, with a gRPC implementation over the profile socket and an in-process one for the phone. |
 | [`ui-state`](../crates/ui-state/src/lib.rs) | `SessionState` (one open chat) and `FleetState` (the inventory), updated by messages. No I/O, no clock, no handles. Also the plain shared values ([`model.rs`](../crates/ui-state/src/model.rs)): `Key`, `AgentKey`, `Attention`, `Connection`, `BlobStatus`, `Composer`, `Waiting`, `PhaseView`, `Activity`, `InputState`, from which the Swift mirrors are generated. |
 | [`ui-view`](../crates/ui-view/src/lib.rs) | Pure functions from the state to content values: chat rows, the ask card, the composer and overview, the settings view, fleet rows and cards, the review document. |
-| [`ui-runtime`](../crates/ui-runtime/src/lib.rs) | The drivers, `Session` and `Fleet`: subscribe, reconnect, page, send, fetch blobs, and keep a bounded trace for dumps. The fleet holds the one session each live agent has. The only place a chat does I/O. |
-| [`replay-support`](../crates/replay-support/src/lib.rs) | Replaying a dump bundle through the interpreter, the session state and the views. |
-| [`redaction`](../crates/redaction/src/lib.rs) | The structural redactor for free text and JSON in reports, captures and specs. |
+| [`ui-runtime`](../crates/ui-runtime/src/lib.rs) | The drivers, `Session` and `Fleet`: subscribe, reconnect, page, send, fetch blobs, and keep a bounded trace for reports. The fleet holds the one session each live agent has. The only place a chat does I/O. |
+| [`replay-support`](../crates/replay-support/src/lib.rs) | Replaying a report's records through the daemon core and the session state. |
+| [`redaction`](../crates/redaction/src/lib.rs) | The structural redactor for free text and JSON in our logs and in provider recordings. |
 
 The terminal client ([`tui`](../crates/tui/src/lib.rs)) and the phone's runtime
 ([`app-runtime`](../crates/app-runtime/src/lib.rs)) sit on top. The dependency policy
@@ -280,7 +280,7 @@ host, and from its replica for another host's agent even while that host is away
 | `working_tree_review()` | The agent's working-tree `Diff` and the patch it names, for a review page. |
 | `ended()` | Set when the runtime refuses to serve the chat again, as when the agent was deleted. |
 | `suspended()` | Whether the stream is dropped because the phone left the foreground. |
-| `trace()`, `history()` | The bounded trace, and the same in the form a dump carries it. |
+| `trace()`, `history()`, `record()` | The bounded trace, the same as wire values, and that with nothing anybody wrote: the form a report carries it in. |
 | `close()` | Drops the stream. Nothing is flushed; results of calls still in flight change nothing. |
 
 The acts that wait on the agent return `InputError::Rejected(refusal)` or `InputError::Uncertain` when they do
@@ -309,14 +309,15 @@ host did. It also holds the sessions:
 | `open(agent, window)` | The same session widened to a chat's `Window { tail, cap }`: older rows page in from the local runtime up to the tail. An exited agent's session opens here. |
 | `close(agent)` | The chat left the screen. The last close narrows a live agent's session back to its few rows and drops an exited agent's. Every `open` is paired with a `close`. |
 | `set_foreground(foreground)` | The phone leaving or returning to the foreground: every session's stream is dropped, or reopened with a tail. |
-| `sessions()` | Every session held, for a dump. |
+| `sessions()` | Every session held. |
+| `on_screen_records()` | The record of every chat on screen, which a report carries. |
 | `stop(agent)` | A person's stop. One whose host cannot be reached (`UNAVAILABLE`, or reason `HOST_UNREACHABLE`: the daemon wrote nothing) never left: it is held, `FleetState::stop_held` and the card's `stop_held` say so, and it goes the next time the agent's host is listed online, the failed call counting as the host away even while its row still read online (as when this client's own daemon restarts). `Stop::Held` says it was held. Rename and delete are never held. |
 | `cancel_stop(agent)` | Takes a held stop back. |
 
 **The trace.** Each driver keeps a bounded trace (between 200 and `TRACE_EVENTS` = 400 events, memory only) of
 every message it applied and every act of its own (`DriverEvent`: subscribed, stream ended, backoff, re-tail,
 page requested, Get, blob fetch), together with a clone of the state taken when the trace's oldest segment
-began. `DriverTrace::replay()` rebuilds the final state from that start, which is what makes a dump replayable
+began. `DriverTrace::replay()` rebuilds the final state from that start, which is what makes a report replayable
 rather than only inspectable: the order this client saw things in is the one thing the runtime's rows cannot
 reproduce. `history()` is that trace as wire values (`wire.ClientSessionHistory`): the start state with the rows
 its window held and every value the session model keeps, each message, and each driver act as it describes itself.
@@ -615,22 +616,19 @@ session's window, with a row handed over for every changed key the host held and
 
 ## Replay and redaction
 
-[`replay-support`](../crates/replay-support/src/lib.rs) replays dump bundles.
-[`bundle.rs`](../crates/replay-support/src/bundle.rs) opens a bundle the daemon wrote and replays its stages:
-`AgentDump::replay_facts` runs the agent's facts ring through its interpreter from the checkpoint at the oldest
-segment (compare the result with the journal the bundle also carries); `AgentDump::session` feeds the store slice
-through `SessionState` exactly as a Subscribe opening delivers it (snapshot, held rows, CaughtUp);
-`AgentDump::rows` renders that state through `chat_rows`. An interpreter bug reproduces from the facts, a client
-bug from the slice. `Bundle::replay_all` (in `replay.rs`, and the `dump-replay` binary) runs all four stages, the
-daemon core's among them, with the properties judged at every step; see [Debugging](DEBUGGING.md#replaying-a-dump).
+[`replay-support`](../crates/replay-support/src/lib.rs) replays reports.
+[`bundle.rs`](../crates/replay-support/src/bundle.rs) opens a bundle the daemon wrote: the daemon core's record,
+each agent's record and each chat's record. `Bundle::replay_all` (in `replay.rs`, and `just repro`) replays each
+agent's record as a made-up stream through its interpreter, the core from its checkpoint and each chat's record
+through `SessionState`, with the properties judged at every step; see [Debugging](DEBUGGING.md#replaying-a-report). `record::replays_alike` holds a chat's record to
+replaying as its whole history does.
 Recorded provider traffic (the recording manifests, sanitizing and the capture plumbing both probes share) is the
 live lane's, in `qualification::recording`.
 
-[`redaction`](../crates/redaction/src/lib.rs) is the structural redactor for everything that is not a per-kind
-body: `redact_value` for JSON and `redact_text` for free text replace secrets, machine paths, emails and the local
-user and host with fixed placeholders and count what they replaced in a `RedactionSummary`. It knows key names
-and text shapes, never a record's schema; item and snapshot bodies are redacted per kind inside `interpret`, the
-only code that can decode them.
+[`redaction`](../crates/redaction/src/lib.rs) masks what is left of free text: `redact_value` for JSON and
+`redact_text` for text replace secrets, machine paths, emails and the local user and host with fixed placeholders
+and count what they replaced in a `RedactionSummary`. Our logs in a report and the provider recordings
+qualification commits go through it; a report's records carry no text to mask.
 
 ## Tests
 
@@ -640,6 +638,6 @@ only code that can decode them.
 | `crates/ui-view/tests/` | View goldens replayed from every interpreter fixture of all three kinds (`goldens.rs`), authored goldens, row invariants over random windows (`views.rs`), and the interpreter accepting each card's answers (`answers.rs`). Rewrite goldens with `UI_VIEW_UPDATE_GOLDENS=1` and review the diff. | `just test-crate ui-view` |
 | `crates/ui-runtime/tests/` | The drivers against an in-memory runtime whose every answer and clock tick the test controls (opening, reconnect and re-tail, uncertain inputs, paging, blobs, traces and dump parts), and against a real daemon in process running an agent on a fake provider, through both clients. | `just test-crate ui-runtime` |
 | `crates/client/tests/seam.rs` | Both `Client` implementations answer alike against one real daemon. | `just test-crate client` |
-| `crates/replay-support/tests/` | Dump bundles a test net writes, replayed through their four stages and printed by the dump printer. | `just test-crate replay-support` |
+| `crates/replay-support/tests/` | Reports a test net writes, replayed through the core and session stages and printed by the dump printer. | `just test-crate replay-support` |
 
 [TESTING.md](TESTING.md) places these in the suite catalogue.

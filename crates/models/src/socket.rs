@@ -1133,7 +1133,7 @@ impl Machine for SocketModel {
                 let side = s.side_mut(who);
                 side.probes += 1;
                 let round = side.round;
-                if let Ok(wire) = side.peers.wire(Peer::Host(other.id()), path) {
+                if let Ok(wire) = side.peers.wire(Peer::Host(other.id().into()), path) {
                     let WireTo::Udp(to) = wire.to else {
                         return None;
                     };
@@ -1191,7 +1191,7 @@ impl Machine for SocketModel {
                     }
                     let peer = conn.server.id();
                     match side.peers.carrying(peer) {
-                        Some(path) => match side.peers.wire(Peer::Host(peer), path) {
+                        Some(path) => match side.peers.wire(Peer::Host(peer.into()), path) {
                             Ok(wire) => conn.sent_on.contains(&wire),
                             Err(NoPath(_)) => true,
                         },

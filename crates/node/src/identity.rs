@@ -200,8 +200,9 @@ impl DeviceIdentity {
         trust_store: SharedTrustStore,
         tickets: &std::sync::Arc<SessionTickets>,
     ) -> Result<quinn::ServerConfig, IdentityError> {
-        let tls = self.server_tls_config(trust_store)?;
-        quic_server_config_issuing(tls, tickets, self.liveness).map_err(IdentityError::TlsConfig)
+        let tls = self.server_tls_config(trust_store.clone())?;
+        quic_server_config_issuing(tls, tickets, Some(trust_store), self.liveness)
+            .map_err(IdentityError::TlsConfig)
     }
 
     pub(crate) fn quic_client_config_for_peer(
@@ -243,17 +244,26 @@ impl DeviceIdentity {
 }
 
 /// A QUIC server configuration from `tls` that issues one session ticket
-/// per link from `tickets` and accepts early data on it. rustls allows
+/// per link from `tickets` and accepts early data on it; where `pinning`
+/// is given, only to a client presenting a certificate it pins
+/// ([`PinnedSessions`](crate::link::resumption::PinnedSessions)). rustls allows
 /// 0-RTT only while no stateless ticketer is set, so the store keeps
 /// every ticket's session; quinn's address-validation tokens come from
 /// the store's secret, so a restarted server still honours them.
 pub(crate) fn quic_server_config_issuing(
     mut tls: ServerConfig,
     tickets: &std::sync::Arc<SessionTickets>,
+    pinning: Option<SharedTrustStore>,
     liveness: LinkLiveness,
 ) -> Result<quinn::ServerConfig, String> {
     tls.alpn_protocols = vec![QUIC_ALPN.to_vec()];
-    tls.session_storage = tickets.clone();
+    tls.session_storage = match pinning {
+        Some(trust) => std::sync::Arc::new(crate::link::resumption::PinnedSessions::new(
+            tickets.clone(),
+            trust,
+        )),
+        None => tickets.clone(),
+    };
     // One ticket per link: the client offers one on its next link, and
     // every ticket issued is an entry the store keeps for a week.
     tls.send_tls13_tickets = 1;
@@ -710,7 +720,7 @@ mod tests {
     use std::sync::{Arc, Barrier};
     use std::time::Duration;
 
-    use daemon_core::trust::PairingUpdate;
+    use daemon_core::trust::TrustError;
     use rustls::pki_types::{CertificateDer, UnixTime};
     use tempfile::TempDir;
 
@@ -846,7 +856,7 @@ mod tests {
     }
 
     #[test]
-    fn pinned_server_cert_verifier_reads_live_trust_store_updates_and_replacements() {
+    fn pinned_server_cert_verifier_reads_live_trust_store_updates() {
         let peer_dir = temp_data_dir();
         let peer = identity_in(peer_dir.path()).unwrap();
         let rotated_peer = DeviceIdentity::for_test(peer.host_id);
@@ -856,6 +866,14 @@ mod tests {
         let server_name = ServerName::try_from("peer.amux.invalid").unwrap();
         let peer_cert = CertificateDer::from(peer.certificate_der().unwrap());
         let rotated_cert = CertificateDer::from(rotated_peer.certificate_der().unwrap());
+        let pair = |identity: &DeviceIdentity| {
+            trust_store.write().unwrap().upsert_paired_peer(
+                peer.host_id,
+                identity.public_key().to_vec(),
+                "peer".to_string(),
+                Reachability::Cloud,
+            )
+        };
 
         assert!(
             verifier
@@ -863,54 +881,28 @@ mod tests {
                 .is_err()
         );
 
-        trust_store
-            .write()
-            .unwrap()
-            .upsert_paired_peer(
-                peer.host_id,
-                peer.public_key().to_vec(),
-                "peer".to_string(),
-                Reachability::Cloud,
-            )
-            .unwrap();
+        pair(&peer).unwrap();
         verifier
             .verify_server_cert(&peer_cert, &[], &server_name, &[], now)
             .unwrap();
 
-        assert_eq!(
-            trust_store
-                .write()
-                .unwrap()
-                .upsert_paired_peer(
-                    peer.host_id,
-                    rotated_peer.public_key().to_vec(),
-                    "peer-rotated".to_string(),
-                    Reachability::Cloud
-                )
-                .unwrap(),
-            PairingUpdate::PubkeyReplacementRequired
-        );
-        assert!(
-            verifier
-                .verify_server_cert(&peer_cert, &[], &server_name, &[], now)
-                .is_err()
-        );
+        // Another key for the paired host is refused; the pinned one stays.
+        assert!(matches!(
+            pair(&rotated_peer),
+            Err(TrustError::PairedUnderAnotherKey { .. })
+        ));
+        verifier
+            .verify_server_cert(&peer_cert, &[], &server_name, &[], now)
+            .unwrap();
         assert!(
             verifier
                 .verify_server_cert(&rotated_cert, &[], &server_name, &[], now)
                 .is_err()
         );
 
-        trust_store
-            .write()
-            .unwrap()
-            .replace_paired_peer_after_teardown(
-                peer.host_id,
-                rotated_peer.public_key().to_vec(),
-                "peer-rotated".to_string(),
-                Reachability::Cloud,
-            )
-            .unwrap();
+        // Unpaired and paired again, only the new key is trusted.
+        trust_store.write().unwrap().remove(peer.host_id).unwrap();
+        pair(&rotated_peer).unwrap();
         assert!(
             verifier
                 .verify_server_cert(&peer_cert, &[], &server_name, &[], now)

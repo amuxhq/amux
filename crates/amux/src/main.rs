@@ -113,16 +113,14 @@ enum Command {
     Rename { agent: String, name: String },
     /// Delete an agent, its history and its children.
     Rm { agent: String },
-    /// Gather what amux knows about the named agents, or all of them, into
-    /// one directory for a bug report.
+    /// Save a report of this host into one directory: the records of its
+    /// daemon core, its agents and the chats on screen, and our own logs,
+    /// with nothing anybody wrote.
     Dump {
-        agents: Vec<String>,
-        /// What looks wrong, kept with the dump.
+        /// What looks wrong, kept with the report.
         #[arg(long)]
         reason: Option<String>,
-        /// Send the dump to the amux account this profile is signed in to,
-        /// as a report. It holds what agents were told and said, redacted of
-        /// secrets.
+        /// Also send it to the amux account this profile is signed in to.
         #[arg(long)]
         send: bool,
     },
@@ -494,7 +492,13 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                     Some(wanted) => Some(connect::select(&mut door.clone(), Some(wanted)).await?),
                     None => None,
                 };
-                pairing::login(door, selected.as_ref(), &cloud_url).await
+                pairing::login(
+                    door,
+                    selected.as_ref(),
+                    &cloud_url,
+                    config.host_name().as_str(),
+                )
+                .await
             }
             Command::Logout => {
                 let selected = connect::profile(&config, profile).await?;
@@ -562,14 +566,10 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                         verbs::rename(&mut client, &agent, &name).await
                     }
                     Command::Rm { agent } => verbs::delete(&mut client, &agent).await,
-                    Command::Dump {
-                        agents,
-                        reason,
-                        send,
-                    } => {
+                    Command::Dump { reason, send } => {
                         let selected = connect::profile(&config, profile).await?;
                         let mut admin = connect::admin_of(&selected).await?;
-                        verbs::dump(&mut client, &mut admin, &agents, reason, send).await
+                        verbs::dump(&mut admin, reason, send).await
                     }
                     _ => unreachable!("dispatched above"),
                 }

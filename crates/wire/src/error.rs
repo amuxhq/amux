@@ -37,11 +37,14 @@ impl Status {
             domain: DOMAIN.to_owned(),
             metadata: Default::default(),
         };
-        let mut status = Status::new(code, message);
-        status
-            .details
-            .push(prost_types::Any::from_msg(&info).expect("a message encodes into a Vec"));
-        status
+        Status::new(code, message).with_detail(&info)
+    }
+
+    /// The status with `detail` added to its details.
+    pub fn with_detail<M: prost::Name>(mut self, detail: &M) -> Status {
+        self.details
+            .push(prost_types::Any::from_msg(detail).expect("a message encodes into a Vec"));
+        self
     }
 
     /// The code, or UNKNOWN for a number this build does not know.

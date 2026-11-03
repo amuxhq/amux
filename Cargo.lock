@@ -43,6 +43,7 @@ dependencies = [
  "tower",
  "uuid",
  "wire",
+ "zstd",
 ]
 
 [[package]]
@@ -278,6 +279,7 @@ dependencies = [
  "provider-fakes",
  "schemars",
  "serde",
+ "serde_json",
  "testnet",
  "tokio",
  "ui-runtime",
@@ -1762,6 +1764,7 @@ dependencies = [
  "chrono",
  "claude-protocol",
  "codex-protocol",
+ "core-ring",
  "prost",
  "prost-types",
  "redaction",
@@ -2110,6 +2113,7 @@ dependencies = [
  "provider-fakes",
  "quinn",
  "rcgen",
+ "redaction",
  "relay-core",
  "release",
  "reqwest",
@@ -3092,16 +3096,18 @@ dependencies = [
  "models",
  "postcard",
  "prost",
+ "prost-types",
  "provider-fakes",
- "redaction",
+ "relay-core",
+ "serde",
  "serde_json",
  "store",
+ "supervisor-core",
  "tempfile",
  "testnet",
  "thiserror 2.0.20",
  "tokio",
  "ui-state",
- "ui-view",
  "uuid",
  "wire",
  "zstd",
@@ -3408,11 +3414,12 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "gethostname",
- "libc",
  "serde",
  "serde_ignored",
+ "tempfile",
  "thiserror 2.0.20",
  "toml",
+ "wire",
 ]
 
 [[package]]
@@ -3665,6 +3672,7 @@ dependencies = [
  "core-ring",
  "release",
  "semver",
+ "serde",
  "uuid",
 ]
 
@@ -4278,6 +4286,7 @@ dependencies = [
  "ui-view",
  "unicode-segmentation",
  "unicode-width 0.2.2",
+ "windows-sys 0.61.2",
  "wire",
 ]
 
@@ -4313,6 +4322,8 @@ dependencies = [
  "futures-util",
  "prost",
  "provider-fakes",
+ "replay-support",
+ "serde_json",
  "testnet",
  "thiserror 2.0.20",
  "tokio",

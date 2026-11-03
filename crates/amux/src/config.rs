@@ -24,10 +24,11 @@ pub fn get(path: &Path, key: &str) -> Result<()> {
     } else {
         InstallationConfig::default()
     };
-    // The two settings that are absent until set resolve as the daemon
+    // The settings that are absent until set resolve as the daemon
     // resolves them.
     let value = match key {
-        "host_name" => toml::Value::String(config.host_name()),
+        "front_door_socket" => toml::Value::String(config.front_door().display().to_string()),
+        "host_name" => toml::Value::String(config.host_name().into()),
         "updates" => toml::Value::try_from(config.updates()?)?,
         _ => {
             let table = toml::Value::try_from(&config)?;

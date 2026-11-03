@@ -41,8 +41,9 @@ the client `cli` with the device flow and the same scopes.
 | Path | Method | Called by | For |
 | --- | --- | --- | --- |
 | `/connect/authorize` | browser | app | Sign-in in the system browser, with a PKCE challenge and a state. Every sign-in sends `prompt=select_account`; signing back into a listed account adds `login_hint=<its address>`. |
-| `/connect/deviceauthorization` | POST | `amux login` | The desktop's device-code sign-in. |
+| `/connect/deviceauthorization` | POST | `amux login` | The desktop's device-code sign-in. Sends `device_name`, the machine's host name, which the approval page shows. |
 | `/connect/token` | POST | app, profile runtime | The app redeems its code here. A profile refreshes here as the client the token was issued to. Refresh tokens rotate: the one that comes back replaces the one spent. |
+| `/connect/revocation` | POST | profile runtime | A sign-out revokes the profile's refresh token here first (`token`, `token_type_hint=refresh_token`, the client it was issued to), so a copy taken earlier stops working. A failure is logged and the sign-out goes ahead. |
 | `/connect/userinfo` | GET | app | Who signed in: `sub`, `email`, `name`. `sub` is the account identifier everything else is keyed by. |
 | `/api/graphql` | POST | app | The access read, below. |
 | `/api/connect` | GET | profile runtime | A relay credential, below. |
@@ -254,15 +255,16 @@ page on amux.sh when no link comes back.
 
 Reporting is in every build. A profile's runtime (the daemon, or the app's
 embedded runtime) uploads every report: a person's from the terminal or the
-phone, `amux dump --send`, and a check's dump when automatic reports are on
+phone, `amux dump --send`, and a check's report when automatic reports are on
 (see [sending reports](DEBUGGING.md#sending-reports)). `POST /api/reports`
 takes `multipart/form-data`, one section per file, each section's `name` and
 `filename` being the file it carries: `report.json`, the frame (`frame.png`,
 or `frame.txt` and `frame.json`), `trace.jsonl`, and `dump.pb.zst`, the
-profile's dump packed as one `wire.DumpPart` and compressed with zstd.
+report's bundle of this host's records and our logs, the same whatever
+asked for it, packed as one `wire.DumpPart` and compressed with zstd.
 
 `report.json` is required and uses `schema_version: 1`. Its `kind` is
-`report` for one a person sent and `automatic` for a check's dump, which
+`report` for one a person sent and `automatic` for a check's, which
 names the check's id in `check` (two or more dot-separated lowercase words)
 and carries no frame. Its `parts` declares the frame, trace and dump as
 present or absent with a reason. Present parts are sent as their sections;

@@ -117,8 +117,8 @@ it nothing in Work.
   that holds nothing yet, else it creates a new profile named after the
   account. A profile that already has agents or paired hosts asks before it
   is signed in to an account.
-- `amux logout` signs the profile out. Its key, its paired hosts and its
-  agents stay; signing in to the same account later picks up where it left
+- `amux logout` signs the profile out, revoking its sign-in at amux.sh
+  first. Its key, its paired hosts and its agents stay; signing in to the same account later picks up where it left
   off, with no pairing again.
 - `amux profile ls` lists the profiles. `amux profile new`,
   `amux profile rename` and `amux profile rm` manage them. Deleting a
@@ -187,9 +187,14 @@ public key. From then on, every connection between them starts with both
 sides proving they hold the key the other remembers. Nothing else, not an
 account, not a server, grants that trust.
 
-A paired host can operate your agents in that profile: open their chats,
-send prompts, start, stop and delete them. It cannot change who your machine
-trusts, pair on your behalf, or stop your amux.
+A paired host can do anything with your agents that you could through amux:
+open chats, send prompts, and start, stop and delete agents in any folder
+with any permission settings. That means it can run commands as you, so pair
+only machines you control. amux itself gives it no way to change who your
+machine trusts, pair on your behalf, or stop your amux, though an agent it
+starts can run any command you could. Agents load a folder's own Claude
+settings and hooks, so start agents only in folders whose code you'd be happy
+to run.
 
 ## Reaching a host
 

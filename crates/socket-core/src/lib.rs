@@ -164,6 +164,12 @@ fn encode_probe_kind(kind: u8, from: HostId, nonce: u64) -> [u8; PROBE_LEN] {
 pub const UNCLAIMED_PEER_TIMEOUT_MS: u64 = 60_000;
 /// How often arrivals look for peers past [`UNCLAIMED_PEER_TIMEOUT_MS`].
 pub const UNCLAIMED_PEER_SWEEP_MS: u64 = 5_000;
+/// How many peers the socket holds before it lets go at once of a quarter
+/// of those it learned of only from what arrived, the longest unheard
+/// first. Anyone can make it mint one, by sending from a new address or
+/// delivering in a new host's name, faster than a minute's silence lets
+/// them go; a host this host keeps never counts against it.
+pub const CROWDED_PEERS: usize = 65_536;
 
 /// How often an arrival on one path from one host is reported to the path
 /// machines: often enough to keep a working path from being probed, rare
@@ -229,12 +235,38 @@ fn stand_in_ip_for(ip: IpAddr) -> IpAddr {
     }
 }
 
+/// The account a relay admitted a host's link on, by the id its token
+/// carries. A daemon's links are all one account's: the default.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Account(pub [u8; 16]);
+
+/// Who a named peer is: a host, on an account. A relay serves every
+/// account on one socket, and a host id is only what a link's handshake
+/// claims, so a relay names each peer by the account its link signed in
+/// to as well: a link claiming another account's host is a peer of its
+/// own, with a route of its own. A daemon names its peers by host alone,
+/// which a [`HostId`] converts to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct HostKey {
+    pub account: Account,
+    pub host: HostId,
+}
+
+impl From<HostId> for HostKey {
+    fn from(host: HostId) -> Self {
+        Self {
+            account: Account::default(),
+            host,
+        }
+    }
+}
+
 /// Who a stand-in stands for. A sender that has not said who it is (the
 /// first packets of a link someone dialled to us) is known only by the path
 /// it came on, until [`Peers::name`] gives it its host.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Peer {
-    Host(HostId),
+    Host(HostKey),
     Unnamed(Path),
 }
 
@@ -434,6 +466,9 @@ pub struct Peers<K> {
     next_port: u16,
     /// When arrivals next look for unclaimed peers past their time.
     next_sweep_ms: Option<u64>,
+    /// The number of peers at which minting another first crowds out the
+    /// unclaimed.
+    crowded_at: usize,
     peers: HashMap<Peer, PeerState>,
     by_stand_in: HashMap<SocketAddr, Peer>,
     /// The host each direct or punched address leads to, learned from the
@@ -442,8 +477,8 @@ pub struct Peers<K> {
     /// named at a new one or its route is removed, so an address a host
     /// left and another took (a reused LAN address, a NAT's port given to
     /// someone else) never maps to the host that left.
-    by_addr: HashMap<SocketAddr, HostId>,
-    by_framed: HashMap<PathId, HostId>,
+    by_addr: HashMap<SocketAddr, HostKey>,
+    by_framed: HashMap<PathId, HostKey>,
     /// Each forwarding link's forwarder, by a stand-in of the forwarder's,
     /// and what kind of path a link carried through it is.
     forwarding: HashMap<LinkId, (SocketAddr, K)>,
@@ -453,7 +488,7 @@ pub struct Peers<K> {
     /// does.
     reporting: bool,
     /// When an arrival on each path from each host was last reported.
-    reported: HashMap<(HostId, Path), u64>,
+    reported: HashMap<(HostKey, Path), u64>,
     /// How many of this host's own dialled connections are at each
     /// stand-in, while they last.
     dialled: HashMap<SocketAddr, usize>,
@@ -465,6 +500,7 @@ impl<K> Default for Peers<K> {
             next_stand_in: 0,
             next_port: 0,
             next_sweep_ms: None,
+            crowded_at: CROWDED_PEERS,
             peers: HashMap::new(),
             by_stand_in: HashMap::new(),
             by_addr: HashMap::new(),
@@ -493,6 +529,7 @@ impl<K: Hash> Hash for Peers<K> {
         self.next_stand_in.hash(state);
         self.next_port.hash(state);
         self.next_sweep_ms.hash(state);
+        self.crowded_at.hash(state);
         sorted(self.peers.iter()).hash(state);
         sorted(self.by_stand_in.iter()).hash(state);
         sorted(self.by_addr.iter()).hash(state);
@@ -512,8 +549,8 @@ impl<K: Forwarding> Peers<K> {
     /// The address quinn dials and hears `host` at. It changes only when
     /// the host is named afresh at a stand-in it was first heard at
     /// unnamed; the earlier one keeps reaching it.
-    pub fn stand_in(&mut self, host: HostId, now_ms: u64) -> SocketAddr {
-        self.claim(Peer::Host(host), now_ms)
+    pub fn stand_in(&mut self, host: impl Into<HostKey>, now_ms: u64) -> SocketAddr {
+        self.claim(Peer::Host(host.into()), now_ms)
     }
 
     /// The address quinn dials to reach whoever answers at `addr`, before
@@ -534,7 +571,7 @@ impl<K: Forwarding> Peers<K> {
     /// The host behind a stand-in, if it has said who it is.
     pub fn peer_of(&self, stand_in: SocketAddr) -> Option<HostId> {
         match self.by_stand_in.get(&stand_in)? {
-            Peer::Host(host) => Some(*host),
+            Peer::Host(key) => Some(key.host),
             Peer::Unnamed(_) => None,
         }
     }
@@ -599,7 +636,8 @@ impl<K: Forwarding> Peers<K> {
     /// forgotten until it is heard again.
     ///
     /// True when the stand-in is the host's.
-    pub fn name(&mut self, stand_in: SocketAddr, host: HostId, now_ms: u64) -> bool {
+    pub fn name(&mut self, stand_in: SocketAddr, host: impl Into<HostKey>, now_ms: u64) -> bool {
+        let host: HostKey = host.into();
         let (path, left) = match self.by_stand_in.get(&stand_in).copied() {
             Some(Peer::Unnamed(path)) => (path, None),
             Some(Peer::Host(named)) if named == host => return true,
@@ -666,7 +704,8 @@ impl<K: Forwarding> Peers<K> {
     /// the path the old link last used, which may be dead, and a connection
     /// from the host on any path names it afresh. Its next link, or a
     /// route set on one path, takes the release back.
-    pub fn release(&mut self, host: HostId) {
+    pub fn release(&mut self, host: impl Into<HostKey>) {
+        let host: HostKey = host.into();
         if let Some(held) = self.peers.get_mut(&Peer::Host(host)) {
             held.released = true;
         }
@@ -678,7 +717,8 @@ impl<K: Forwarding> Peers<K> {
     /// its stand-in where it was. A relay sees a host at a new stand-in each
     /// time its NAT rebinds or it relaunches, so a host it never let go of
     /// would leave one more behind each time, for the life of the relay.
-    pub fn let_go(&mut self, host: HostId) {
+    pub fn let_go(&mut self, host: impl Into<HostKey>) {
+        let host: HostKey = host.into();
         if let Some(held) = self.peers.get_mut(&Peer::Host(host)) {
             held.expiry = Expiry::Silent;
         }
@@ -686,7 +726,8 @@ impl<K: Forwarding> Peers<K> {
 
     /// `host` holds a link to this relay again: it is kept until it is let
     /// go.
-    pub fn keep(&mut self, host: HostId) {
+    pub fn keep(&mut self, host: impl Into<HostKey>) {
+        let host: HostKey = host.into();
         if let Some(held) = self.peers.get_mut(&Peer::Host(host)) {
             held.expiry = Expiry::Kept;
         }
@@ -711,7 +752,8 @@ impl<K: Forwarding> Peers<K> {
     }
 
     /// `host` has a link again: its route is trusted once more.
-    pub fn reclaim(&mut self, host: HostId) {
+    pub fn reclaim(&mut self, host: impl Into<HostKey>) {
+        let host: HostKey = host.into();
         if let Some(held) = self.peers.get_mut(&Peer::Host(host)) {
             held.released = false;
         }
@@ -719,7 +761,8 @@ impl<K: Forwarding> Peers<K> {
 
     /// Whether `host`'s route is one a dial should trust: something
     /// carries it on one path and its last link has not gone since.
-    pub fn trusted_route(&self, host: HostId) -> Option<Path> {
+    pub fn trusted_route(&self, host: impl Into<HostKey>) -> Option<Path> {
+        let host: HostKey = host.into();
         let held = self.peers.get(&Peer::Host(host))?;
         match held.route {
             Route::Carrying(path) if !held.released => Some(path),
@@ -728,7 +771,8 @@ impl<K: Forwarding> Peers<K> {
     }
 
     /// The path carrying `host` now, when one path does.
-    pub fn carrying(&self, host: HostId) -> Option<Path> {
+    pub fn carrying(&self, host: impl Into<HostKey>) -> Option<Path> {
+        let host: HostKey = host.into();
         match &self.peers.get(&Peer::Host(host))?.route {
             Route::Carrying(path) => Some(*path),
             Route::Unset | Route::All(_) => None,
@@ -736,14 +780,16 @@ impl<K: Forwarding> Peers<K> {
     }
 
     /// Carries `host`'s packets on one path.
-    pub fn set_carrying(&mut self, host: HostId, path: Path, now_ms: u64) {
+    pub fn set_carrying(&mut self, host: impl Into<HostKey>, path: Path, now_ms: u64) {
+        let host: HostKey = host.into();
         self.set_route(host, Route::Carrying(path), now_ms);
     }
 
     /// Sends none of `host`'s packets until a path is named again: the one
     /// carrying them is one this host may no longer use. A packet from the
     /// host on it does not bring it back.
-    pub fn stop_carrying(&mut self, host: HostId) {
+    pub fn stop_carrying(&mut self, host: impl Into<HostKey>) {
+        let host: HostKey = host.into();
         if let Some(held) = self.peers.get_mut(&Peer::Host(host)) {
             held.route = Route::Unset;
             held.flight = None;
@@ -758,11 +804,12 @@ impl<K: Forwarding> Peers<K> {
     /// late is sent the first flight's packets that went out before it.
     pub fn send_on_all(
         &mut self,
-        host: HostId,
+        host: impl Into<HostKey>,
         mut paths: Vec<Path>,
         through_relay: bool,
         now_ms: u64,
     ) {
+        let host: HostKey = host.into();
         if through_relay {
             for (link, (_, kind)) in &self.forwarding {
                 let path = Path::Forwarded(*link);
@@ -788,11 +835,12 @@ impl<K: Forwarding> Peers<K> {
     /// last went, is dialled on it. Answers the stand-in quinn dials.
     pub fn dial_on_all(
         &mut self,
-        host: HostId,
+        host: impl Into<HostKey>,
         paths: Vec<Path>,
         through_relay: bool,
         now_ms: u64,
     ) -> SocketAddr {
+        let host: HostKey = host.into();
         let stand_in = self.stand_in(host, now_ms);
         if self.trusted_route(host).is_none() {
             self.send_on_all(host, paths, through_relay, now_ms);
@@ -806,7 +854,13 @@ impl<K: Forwarding> Peers<K> {
     /// already carries is dialled on it. A route left by a link that has
     /// gone may be a dead path: the dial goes through the forwarder it was
     /// asked to go through. Answers the stand-in quinn dials.
-    pub fn dial_through(&mut self, host: HostId, through: LinkId, now_ms: u64) -> SocketAddr {
+    pub fn dial_through(
+        &mut self,
+        host: impl Into<HostKey>,
+        through: LinkId,
+        now_ms: u64,
+    ) -> SocketAddr {
+        let host: HostKey = host.into();
         let stand_in = self.stand_in(host, now_ms);
         if self.trusted_route(host).is_none() {
             self.set_carrying(host, Path::Forwarded(through), now_ms);
@@ -822,9 +876,11 @@ impl<K: Forwarding> Peers<K> {
     /// stand-in of whoever answered there: the handshake proved that is
     /// `host`, so the stand-in becomes its, and quinn keeps the address it
     /// dialled. A host carried some other way than this connection is not.
-    pub fn linked(&mut self, host: HostId, stand_in: SocketAddr, now_ms: u64) -> bool {
-        self.peer_of(stand_in) == Some(host)
-            || (self.peer_of(stand_in).is_none()
+    pub fn linked(&mut self, host: impl Into<HostKey>, stand_in: SocketAddr, now_ms: u64) -> bool {
+        let host: HostKey = host.into();
+        let named = self.by_stand_in.get(&stand_in).copied();
+        named == Some(Peer::Host(host))
+            || (!matches!(named, Some(Peer::Host(_)))
                 && matches!(self.path_of(stand_in), Some(Path::Direct(_)))
                 && self.name(stand_in, host, now_ms))
     }
@@ -1047,7 +1103,7 @@ impl<K: Forwarding> Peers<K> {
                 };
                 Ok(Wire {
                     to,
-                    behind: Some(host),
+                    behind: Some(host.host),
                 })
             }
         }
@@ -1098,6 +1154,7 @@ impl<K: Forwarding> Peers<K> {
         handshake: bool,
         now_ms: u64,
     ) -> Heard<K> {
+        let host = HostKey::from(host);
         self.sweep(now_ms);
         let stand_in = self.heard(Peer::Host(host), now_ms, Expiry::Silent);
         let mut again = None;
@@ -1143,8 +1200,11 @@ impl<K: Forwarding> Peers<K> {
     /// handshake names it: quinn would drop its answers arriving as the
     /// host's. One that only sent this host something unnamed does not:
     /// a host started afresh hears from its peer's last connection to its
-    /// last run at the address that peer then probes from.
+    /// last run at the address that peer then probes from. A probe names a
+    /// host by its id alone, so it teaches a relay, which names its peers
+    /// by account as well, nothing: hosts probe each other, not the relay.
     pub fn probed_from(&mut self, host: HostId, arrival: Arrival) {
+        let host = HostKey::from(host);
         let dialled = |state: &PeerState| !matches!(state.expiry, Expiry::Unnamed { .. });
         if let Arrival::Udp(addr) = arrival
             && self.peers.contains_key(&Peer::Host(host))
@@ -1197,6 +1257,9 @@ impl<K: Forwarding> Peers<K> {
     /// none.
     fn mint(&mut self, peer: Peer, now_ms: u64, expiry: Expiry) -> &mut PeerState {
         if !self.peers.contains_key(&peer) {
+            if expiry != Expiry::Kept && self.peers.len() >= self.crowded_at {
+                self.crowd_out();
+            }
             let stand_in = self.new_stand_in(peer);
             let route = match peer {
                 Peer::Host(_) => Route::Unset,
@@ -1260,12 +1323,8 @@ impl<K: Forwarding> Peers<K> {
         // it is silent: the link's owner removes the link, and with it the
         // routes through it. A phone suspended for minutes hears its relay
         // again before QUIC's idle timer closes the relay's link.
-        let forwarders: HashSet<Peer> = self
-            .forwarding
-            .values()
-            .filter_map(|(via, _)| self.by_stand_in.get(via).copied())
-            .collect();
-        let gone: Vec<Peer> = self
+        let forwarders = self.forwarders();
+        let gone: HashSet<Peer> = self
             .peers
             .iter()
             .filter(|(peer, _)| !forwarders.contains(peer))
@@ -1281,14 +1340,40 @@ impl<K: Forwarding> Peers<K> {
             })
             .map(|(peer, _)| *peer)
             .collect();
-        for peer in gone {
-            self.forget(peer);
+        self.forget_all(&gone);
+    }
+
+    /// The peers forwarding links reach their forwarders by.
+    fn forwarders(&self) -> HashSet<Peer> {
+        self.forwarding
+            .values()
+            .filter_map(|(via, _)| self.by_stand_in.get(via).copied())
+            .collect()
+    }
+
+    /// Lets go of a quarter of the peers held only for what arrived, those
+    /// unheard from longest, in one pass over the rest: until enough more
+    /// are minted to crowd the socket again, minting costs no pass.
+    fn crowd_out(&mut self) {
+        let forwarders = self.forwarders();
+        let mut unclaimed: Vec<(u64, Peer)> = self
+            .peers
+            .iter()
+            .filter(|(peer, state)| state.expiry != Expiry::Kept && !forwarders.contains(peer))
+            .map(|(peer, state)| (state.heard_ms, *peer))
+            .collect();
+        let count = unclaimed.len().div_ceil(4);
+        if count > 0 {
+            unclaimed.select_nth_unstable(count - 1);
+            let gone = unclaimed[..count].iter().map(|(_, peer)| *peer).collect();
+            self.forget_all(&gone);
         }
+        self.crowded_at = (self.peers.len() + CROWDED_PEERS / 4).max(CROWDED_PEERS);
     }
 
     /// Arrivals on `path` are `host`'s from now on. Whoever the address
     /// led to before loses it from its route: one address, one host.
-    fn learn(&mut self, host: HostId, path: Path) {
+    fn learn(&mut self, host: HostKey, path: Path) {
         let previous = match path {
             Path::Direct(addr) | Path::Punched(addr) => self.by_addr.insert(addr, host),
             Path::Framed(id) => self.by_framed.insert(id, host),
@@ -1302,25 +1387,41 @@ impl<K: Forwarding> Peers<K> {
     }
 
     /// No address leads to `host` any more: it left them all.
-    fn unlearn_addresses(&mut self, host: HostId) {
+    fn unlearn_addresses(&mut self, host: HostKey) {
         self.by_addr.retain(|_, owner| *owner != host);
     }
 
     /// Forgets `peer`: its stand-ins, a host's addresses and the
     /// forwarding links it was the forwarder of, which it returns.
     fn forget(&mut self, peer: Peer) -> Vec<LinkId> {
+        self.forget_all(&HashSet::from([peer]))
+    }
+
+    /// Forgets every one of `gone` as [`Peers::forget`] does, in one pass
+    /// over the socket's maps however many go.
+    fn forget_all(&mut self, gone: &HashSet<Peer>) -> Vec<LinkId> {
+        if gone.is_empty() {
+            return Vec::new();
+        }
         let by_stand_in = &self.by_stand_in;
         let forwarded: Vec<LinkId> = self
             .forwarding
             .iter()
-            .filter(|(_, (via, _))| by_stand_in.get(via) == Some(&peer))
+            .filter(|(_, (via, _))| by_stand_in.get(via).is_some_and(|held| gone.contains(held)))
             .map(|(link, _)| *link)
             .collect();
-        self.by_stand_in.retain(|_, held| *held != peer);
-        self.peers.remove(&peer);
-        if let Peer::Host(host) = peer {
-            self.unlearn_addresses(host);
-            self.reported.retain(|(reported, _), _| *reported != host);
+        self.by_stand_in.retain(|_, held| !gone.contains(held));
+        let mut hosts = HashSet::new();
+        for peer in gone {
+            self.peers.remove(peer);
+            if let Peer::Host(host) = peer {
+                hosts.insert(*host);
+            }
+        }
+        if !hosts.is_empty() {
+            self.by_addr.retain(|_, owner| !hosts.contains(owner));
+            self.reported
+                .retain(|(reported, _), _| !hosts.contains(reported));
         }
         // The links it forwarded go with it, and so do the routes through
         // them, as when a forwarding link is removed.
@@ -1348,7 +1449,10 @@ impl<K: Forwarding> Peers<K> {
             return None;
         }
         self.reported.insert((host, path), now_ms);
-        Some(PathEvent::Arrived { peer: host, path })
+        Some(PathEvent::Arrived {
+            peer: host.host,
+            path,
+        })
     }
 
     /// Carries `host` on `route`. Addresses its earlier routes took still
@@ -1359,7 +1463,7 @@ impl<K: Forwarding> Peers<K> {
     /// path it settles on is the first to answer, which may be something
     /// turning the dial away (an endpoint left by the host's last run, a
     /// machine with another key), so no later dial trusts it alone.
-    fn set_route(&mut self, host: HostId, route: Route, now_ms: u64) {
+    fn set_route(&mut self, host: HostKey, route: Route, now_ms: u64) {
         self.claim(Peer::Host(host), now_ms);
         for path in route.paths() {
             self.learn(host, *path);
@@ -1409,22 +1513,20 @@ impl<K: Forwarding> Peers<K> {
     /// unrouted, and forgotten if this host never named, routed or dialled
     /// it.
     fn unroute(&mut self, gone: Path) {
-        let mut left = Vec::new();
+        let mut left = HashSet::new();
         for (peer, held) in &mut self.peers {
             match &mut held.route {
                 Route::Carrying(path) if *path == gone => {
                     held.route = Route::Unset;
                     if held.expiry != Expiry::Kept {
-                        left.push(*peer);
+                        left.insert(*peer);
                     }
                 }
                 Route::All(paths) => paths.retain(|path| *path != gone),
                 _ => {}
             }
         }
-        for peer in left {
-            self.forget(peer);
-        }
+        self.forget_all(&left);
     }
 
     /// The forwarding link whose forwarder is `peer`, if one is.

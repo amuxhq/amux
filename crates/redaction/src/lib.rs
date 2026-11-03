@@ -4,6 +4,8 @@
 //! host) and nothing about any record's schema; bodies are redacted per
 //! kind in `interpret`, the only code that can decode them.
 
+pub mod structure;
+
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -279,10 +281,14 @@ pub fn redact_text(input: &str, rules: &Redaction, summary: &mut RedactionSummar
         "/root/",
         "/opt/",
         "/usr/local/",
+        "/srv/",
+        "/mnt/",
+        "/media/",
+        "/data/",
     ] {
         value = redact_spans(&value, marker, PATH_PLACEHOLDER, &mut summary.machine_paths);
     }
-    value = redact_windows_user_paths(&value, summary);
+    value = redact_drive_paths(&value, summary);
     // The host's full name before its short one, which it contains.
     for identifier in [&rules.hostname, &rules.user].into_iter().flatten() {
         if !identifier.is_empty() && identifier != IDENTIFIER_PLACEHOLDER {
@@ -494,26 +500,83 @@ fn redact_word(input: &str, needle: &str, replacement: &str, count: &mut u64) ->
 }
 
 fn redact_spans(input: &str, marker: &str, replacement: &str, count: &mut u64) -> String {
+    let starts = input
+        .match_indices(marker)
+        .map(|(at, _)| (at, marker.len()));
+    redact_from(input, starts, replacement, count)
+}
+
+/// Replaces what starts at each of `starts` (where, and the length of the
+/// marker found there) through to where it ends ([`span_end`]).
+fn redact_from(
+    input: &str,
+    starts: impl Iterator<Item = (usize, usize)>,
+    replacement: &str,
+    count: &mut u64,
+) -> String {
     let mut output = String::with_capacity(input.len());
-    let mut remainder = input;
-    while let Some(start) = remainder.find(marker) {
-        output.push_str(&remainder[..start]);
-        let token = &remainder[start..];
-        let end = token
-            .char_indices()
-            .skip_while(|(index, _)| *index < marker.len())
-            .find(|(_, character)| {
-                character.is_whitespace()
-                    || matches!(character, '"' | '\'' | ',' | ';' | ')' | ']' | '}')
-            })
-            .map(|(index, _)| index)
-            .unwrap_or(token.len());
+    let mut kept = 0;
+    for (start, marker) in starts {
+        if start < kept {
+            continue;
+        }
+        output.push_str(&input[kept..start]);
         output.push_str(replacement);
-        remainder = &token[end..];
         *count += 1;
+        kept = span_end(input, start, marker);
     }
-    output.push_str(remainder);
+    output.push_str(&input[kept..]);
     output
+}
+
+/// Where a path or a token found at `start` ends. A path may hold spaces,
+/// so where the text says where it ends, that is its end: a quoted one
+/// runs to its closing quote, and the value of a `key=value` field, as
+/// our logs write a path, to the field's end. Anywhere else it ends at
+/// the first space or closing punctuation.
+fn span_end(input: &str, start: usize, marker: usize) -> usize {
+    let body = start + marker;
+    let line_end = input[body..].find('\n').map_or(input.len(), |at| body + at);
+    match input[..start].chars().next_back() {
+        Some(quote @ ('"' | '\'')) => {
+            if let Some(at) = input[body..line_end].find(quote) {
+                return body + at;
+            }
+        }
+        Some('=') => return field_end(input, body, line_end),
+        _ => {}
+    }
+    input[body..]
+        .char_indices()
+        .find(|(_, character)| {
+            character.is_whitespace()
+                || matches!(character, '"' | '\'' | ',' | ';' | ')' | ']' | '}')
+        })
+        .map_or(input.len(), |(at, _)| body + at)
+}
+
+/// Where the value of a `key=value` field starting at `from` ends: before
+/// the space that starts the next field (`name=`), or at the end of its
+/// line.
+fn field_end(input: &str, from: usize, line_end: usize) -> usize {
+    let line = &input[from..line_end];
+    for (at, character) in line.char_indices() {
+        if !character.is_whitespace() {
+            continue;
+        }
+        let next = line[at..].trim_start();
+        let name = next
+            .bytes()
+            .take_while(|byte| is_word_byte(*byte) || *byte == b'.')
+            .count();
+        if name > 0
+            && !next.as_bytes()[0].is_ascii_digit()
+            && next.as_bytes().get(name) == Some(&b'=')
+        {
+            return from + at;
+        }
+    }
+    from + line.trim_end().len()
 }
 
 fn is_email_local_byte(byte: u8) -> bool {
@@ -566,23 +629,24 @@ fn redact_email_addresses(input: &str, summary: &mut RedactionSummary) -> String
     output
 }
 
-fn redact_windows_user_paths(input: &str, summary: &mut RedactionSummary) -> String {
+/// Windows paths: a drive letter standing as a word of its own, then `:\`
+/// or `:/`.
+fn redact_drive_paths(input: &str, summary: &mut RedactionSummary) -> String {
     let bytes = input.as_bytes();
-    for (index, character) in input.char_indices() {
-        if index + 9 > bytes.len() {
-            break;
-        }
-        if character.is_ascii_alphabetic()
-            && bytes.get(index + 1) == Some(&b':')
-            && matches!(bytes.get(index + 2), Some(b'\\') | Some(b'/'))
-            && bytes[index + 3..index + 8].eq_ignore_ascii_case(b"users")
-            && matches!(bytes.get(index + 8), Some(b'\\') | Some(b'/'))
-        {
-            let marker = &input[index..index + 9];
-            return redact_spans(input, marker, PATH_PLACEHOLDER, &mut summary.machine_paths);
-        }
-    }
-    input.to_string()
+    let starts = (0..bytes.len().saturating_sub(3)).filter(|&at| {
+        bytes[at].is_ascii_alphabetic()
+            && (at == 0 || !is_word_byte(bytes[at - 1]))
+            && bytes[at + 1] == b':'
+            && matches!(bytes[at + 2], b'\\' | b'/')
+            && !matches!(bytes[at + 3], b'\\' | b'/')
+            && !bytes[at + 3].is_ascii_whitespace()
+    });
+    redact_from(
+        input,
+        starts.map(|at| (at, 3)),
+        PATH_PLACEHOLDER,
+        &mut summary.machine_paths,
+    )
 }
 
 #[cfg(test)]
@@ -658,6 +722,52 @@ mod tests {
         assert!(text.contains(SECRET_PLACEHOLDER));
         assert!(text.contains(EMAIL_PLACEHOLDER));
         assert!(summary.secrets >= 2 && summary.personal_identifiers >= 1);
+    }
+
+    #[test]
+    fn a_path_runs_to_its_fields_end_or_its_closing_quote() {
+        let mut summary = RedactionSummary::default();
+        let line = "WARN node: asking failed folder=/Users/x/Client Work/Acme error=denied\n\
+                    WARN node: kept path=\"/srv/Client Work/a b\" more\n\
+                    WARN node: at dir=/mnt/backup/Client Work\n";
+        let text = redact_text(line, &Redaction::default(), &mut summary);
+        assert_eq!(
+            text,
+            "WARN node: asking failed folder=<MACHINE_PATH> error=denied\n\
+             WARN node: kept path=\"<MACHINE_PATH>\" more\n\
+             WARN node: at dir=<MACHINE_PATH>\n"
+        );
+        for gone in ["Client", "Work", "Acme", "backup"] {
+            assert!(!text.contains(gone), "{gone} survived in {text}");
+        }
+        assert_eq!(summary.machine_paths, 3);
+        // Elsewhere a space ends a path, as nothing says where it ends.
+        assert_eq!(
+            redact_text("in /srv/a then", &Redaction::default(), &mut summary),
+            "in <MACHINE_PATH> then"
+        );
+    }
+
+    #[test]
+    fn every_root_and_drive_path_is_masked() {
+        let mut summary = RedactionSummary::default();
+        let text = redact_text(
+            "/srv/acme /mnt/acme /media/acme /data/acme D:\\work\\acme e:/acme \
+             C:\\Users\\someone\\acme cwd=Z:\\Client Work\\acme",
+            &Redaction::default(),
+            &mut summary,
+        );
+        assert!(!text.contains("acme"), "{text}");
+        assert_eq!(summary.machine_paths, 8, "{text}");
+        assert_eq!(
+            redact_text(
+                "http://example.com a:b x:\\ y: z://",
+                &Redaction::default(),
+                &mut RedactionSummary::default()
+            ),
+            "http://example.com a:b x:\\ y: z://",
+            "a scheme, a ratio or a bare drive is no path"
+        );
     }
 
     #[test]

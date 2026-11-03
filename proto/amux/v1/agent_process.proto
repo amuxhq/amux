@@ -137,6 +137,9 @@ message CtlFrame {
 
 message AgentDumpRequest {
   bytes dump_id = 1;
+  // The most the agent's record may take compressed: what is left of the
+  // report's limit when the daemon asks. Zero is the report's whole limit.
+  uint64 limit = 2;
 }
 
 // Why an agent's core asked for a dump.
@@ -151,6 +154,13 @@ message DumpAsked {
   // How many like it the agent's own limit held back since the last it
   // asked for.
   uint32 held_back = 4;
+  // The agent's record through the step that asked, built from its facts
+  // ring when it asked: each event and what its interpreter concluded of
+  // it, by kind, size and aliased id, without content. What the daemon
+  // writes as the bundle's record of the agent, even when the agent has
+  // exited by the time the bundle is written; empty when it could not be
+  // built, and then the daemon asks the agent for its part.
+  bytes record = 5;
 }
 
 message Rename {

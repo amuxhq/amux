@@ -148,19 +148,47 @@ async fn the_fleet_dump_part_writes_no_names_paths_or_status_text() {
     const WORKING_ON: &str = "PLANTEDworkingon0003";
     const EXIT: &str = "PLANTEDexit0004";
     const HOST: &str = "PLANTEDhost0005";
+    const NEIGHBOUR: &str = "PLANTEDneighbour0006";
+    const DIAL_ERROR: &str = "PLANTEDdialerror0007";
+    const CANDIDATE_ADDR: &str = "PLANTEDaddr0008";
     let (client, mut calls) = runtime();
     let open = tokio::spawn(Fleet::connect(client, ManualClock::new(0)));
     let feed = calls.inventory().await;
-    feed.send(wire::InventoryEvent {
+    let host = |id: &[u8], name: &str, standing| wire::InventoryEvent {
         of: Some(wire::inventory_event::Of::Host(wire::HostEntry {
             host: Some(wire::Host {
-                host_id: b"host-a".to_vec(),
-                name: HOST.into(),
+                host_id: id.to_vec(),
+                name: name.into(),
                 ..Default::default()
             }),
+            standing: Some(standing),
             ..Default::default()
         })),
-    });
+    };
+    use wire::host_entry::Standing;
+    feed.send(host(
+        b"host-a",
+        HOST,
+        Standing::Trusted(wire::Trusted {
+            reach: Some(wire::trusted::Reach::Offline(wire::Offline {
+                last_dial_error: Some(DIAL_ERROR.into()),
+                revoked: false,
+            })),
+            current: false,
+        }),
+    ));
+    feed.send(host(
+        b"host-b",
+        HOST,
+        Standing::Candidate(wire::Candidate {
+            addrs: vec![CANDIDATE_ADDR.into()],
+            announced_by: vec![wire::Host {
+                host_id: b"host-a".to_vec(),
+                name: NEIGHBOUR.into(),
+                ..Default::default()
+            }],
+        }),
+    ));
     feed.send(inventory_agent(wire::Agent {
         name: NAME.into(),
         cwd: CWD.into(),
@@ -172,9 +200,27 @@ async fn the_fleet_dump_part_writes_no_names_paths_or_status_text() {
     feed.send(inventory_caught_up());
     let fleet = open.await.unwrap().expect("the fleet opens");
     let part = fleet.dump_part();
-    for secret in [NAME, CWD, WORKING_ON, EXIT, HOST] {
+    for secret in [
+        NAME,
+        CWD,
+        WORKING_ON,
+        EXIT,
+        HOST,
+        NEIGHBOUR,
+        DIAL_ERROR,
+        CANDIDATE_ADDR,
+    ] {
         assert_eq!(part_holds(&part, secret), None, "{secret} is in the dump");
     }
+    let state = String::from_utf8(part.files[0].contents.clone()).unwrap();
+    assert!(
+        state.contains("trusted offline dial_error=true revoked=false current=false"),
+        "{state}"
+    );
+    assert!(
+        state.contains("candidate addrs=1 announced_by=1"),
+        "{state}"
+    );
     let trace = String::from_utf8(part.files[1].contents.clone()).unwrap();
     assert!(trace.contains("Agent 686f73742d61/61 Codex"), "{trace}");
     assert!(trace.contains("CaughtUp rev=0"), "{trace}");

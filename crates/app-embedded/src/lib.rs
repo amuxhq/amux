@@ -24,15 +24,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use app_runtime::values::{
-    AccountBinding, AccountView, Bearer, BillingInterval, Found, Identity, PairedPeer, PaywallFrom,
-    PendingPair, RelayLink, Roster,
+    Bearer, BillingInterval, Found, Identity, PairedPeer, PaywallFrom, PendingPair, Roster,
 };
 pub use app_runtime::values::{PairRequest, ProfileView, StartConfig, UsageEvent};
 use client::{Client, Clock, InProcess};
 use node::{
-    ClientApi, Cloud, CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, LanOptions,
-    ProfileRefusal, ProfileRuntime, ProfileState, Registry, Relay, SignIn, SourcePolicy,
-    StartError, StartOptions, Tier,
+    CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, LanOptions, ProfileRefusal,
+    ProfileRuntime, Registry, SourcePolicy, StartError, StartOptions,
 };
 pub use node::{Cores, ProfileId};
 pub use phone::Phone;
@@ -130,17 +128,6 @@ pub struct EmbeddedRuntime {
     /// The app's automatic-reports setting, read before every dump is sent.
     auto_reports: Arc<AtomicBool>,
     analytics: Option<analytics::Flusher>,
-}
-
-/// The registry's bell: it rings whenever the profile list moves, and the
-/// list is read afresh with [`EmbeddedRuntime::profiles`].
-pub struct ProfileWatch(tokio::sync::watch::Receiver<()>);
-
-impl ProfileWatch {
-    /// Waits for the list to move; none once the daemon stops.
-    pub async fn moved(&mut self) -> Option<()> {
-        self.0.changed().await.ok()
-    }
 }
 
 impl EmbeddedRuntime {
@@ -340,58 +327,31 @@ impl EmbeddedRuntime {
 
     // --- the registry ------------------------------------------------------
 
-    /// Every profile, oldest first.
-    pub fn profiles(&self) -> Result<Vec<ProfileView>, EmbeddedError> {
-        Ok(self.registry.list()?.iter().map(profile_view).collect())
-    }
-
-    /// Rings for every move of the profile list from now on.
-    pub fn watch_profiles(&self) -> Result<ProfileWatch, EmbeddedError> {
-        Ok(ProfileWatch(self.registry.subscribe()?))
-    }
-
-    /// A new profile nobody has signed in on.
-    pub async fn create_profile(&self, label: Option<&str>) -> Result<ProfileView, EmbeddedError> {
-        Ok(profile_view(&self.registry.create(label).await?))
-    }
-
-    /// Deletes a profile: its key, the machines it trusts and its store.
-    /// The installation keeps at least one.
-    pub async fn delete_profile(&self, profile: ProfileId) -> Result<(), EmbeddedError> {
-        Ok(self.registry.delete(profile).await?)
-    }
-
-    /// Binds a profile to an account with the refresh token the app's
-    /// sign-in obtained; the relay link comes up from there. Named, the
-    /// profile is adopted even when it paired machines before; unnamed,
-    /// the registry picks the profile already bound to that account, else
-    /// one that holds nothing, else a new one. `client_id` is the OAuth
-    /// client the token was issued to, which is the only one it refreshes
-    /// under.
-    pub async fn bind(
-        &self,
-        profile: Option<ProfileId>,
-        cloud_url: &str,
-        client_id: &str,
-        refresh_token: &str,
-    ) -> Result<ProfileView, EmbeddedError> {
-        let bound = self
-            .registry
-            .bind(SignIn {
-                profile,
-                cloud_url: cloud_url.to_owned(),
-                refresh_token: refresh_token.to_owned(),
-                client_id: client_id.to_owned(),
-                adopt: profile.is_some(),
-            })
-            .await?;
-        Ok(profile_view(&bound))
-    }
-
-    /// Signs a profile out: its relay link goes down and its refresh token
-    /// is forgotten, but it stays tied to its account.
-    pub async fn sign_out(&self, profile: ProfileId) -> Result<ProfileView, EmbeddedError> {
-        Ok(profile_view(&self.registry.sign_out(profile).await?))
+    /// The installation's front door, called in process: the same calls a
+    /// desktop client makes over the daemon's socket, so the app manages
+    /// profiles through one seam whichever runtime it has.
+    pub fn installation(&self) -> Result<Arc<dyn client::Installation>, EmbeddedError> {
+        let door = self
+            .daemon
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .as_ref()
+            .map(|daemon| daemon.front_door())
+            .ok_or(ProfileRefusal::Stopping)?;
+        let registry = self.registry.clone();
+        let open: client::OpenProfile = Arc::new(move |id: &[u8]| {
+            let refused =
+                |code, message: String| client::RpcError::Refused(wire::Error::new(code, message));
+            let profile = ProfileId::from_slice(id).map_err(|_| {
+                refused(
+                    wire::ErrorCode::InvalidArgument,
+                    "a profile id is 16 bytes".into(),
+                )
+            })?;
+            in_process(&registry, profile)
+                .map_err(|error| refused(wire::ErrorCode::NotFound, error.to_string()))
+        });
+        Ok(Arc::new(client::InProcessInstallation::new(door, open)))
     }
 
     /// Every profile whose trust store holds `host_id`, oldest first.
@@ -413,17 +373,7 @@ impl EmbeddedRuntime {
     /// A profile's client services in process, as its chats and fleet call
     /// them, with its administration for the dump.
     pub fn client(&self, profile: ProfileId) -> Result<Arc<dyn Client>, EmbeddedError> {
-        let runtime = self.runtime(profile)?;
-        let admin = self
-            .daemon
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .as_ref()
-            .map(|daemon| daemon.profile_admin(profile))
-            .ok_or(EmbeddedError::NoProfile(profile))?;
-        Ok(Arc::new(
-            InProcess::new(ClientApi::new(&runtime, None)).with_admin(Arc::new(admin)),
-        ))
+        Ok(in_process(&self.registry, profile)?)
     }
 
     /// Runs `work` where the profile's core steps, between two of its
@@ -688,30 +638,10 @@ fn fingerprint(pubkey: &[u8]) -> String {
         .collect()
 }
 
-fn profile_view(state: &ProfileState) -> ProfileView {
-    let account = state.account.clone().unwrap_or_default();
-    ProfileView {
-        id: state.id.to_string(),
-        label: state.label.clone(),
-        subject: account.subject,
-        account: AccountView {
-            binding: match state.cloud {
-                Cloud::Unbound => AccountBinding::Unbound,
-                Cloud::SignedIn(_) => AccountBinding::SignedIn,
-                Cloud::SignedOut => AccountBinding::SignedOut,
-            },
-            email: account.email.unwrap_or_default(),
-            name: account.name.unwrap_or_default(),
-            picture: account.picture.unwrap_or_default(),
-            pro: state.cloud.connected().map(|(tier, _)| tier == Tier::Pro),
-            relay: match &state.cloud {
-                Cloud::Unbound | Cloud::SignedOut => RelayLink::Off,
-                Cloud::SignedIn(Relay::Connecting) => RelayLink::Connecting,
-                Cloud::SignedIn(Relay::Connected { .. }) => RelayLink::Connected,
-                Cloud::SignedIn(Relay::Retrying) => RelayLink::Retrying,
-                Cloud::SignedIn(Relay::SignInAgain) => RelayLink::SignInAgain,
-                Cloud::SignedIn(Relay::VersionMismatch) => RelayLink::VersionMismatch,
-            },
-        },
-    }
+/// A profile's client services and administration, called in process.
+fn in_process(registry: &Registry, profile: ProfileId) -> Result<Arc<dyn Client>, ProfileRefusal> {
+    let (service, admin) = registry.in_process(profile)?;
+    Ok(Arc::new(
+        InProcess::new(service).with_admin(Arc::new(admin)),
+    ))
 }

@@ -1059,6 +1059,26 @@ public struct AskSummary: Codable, Hashable, Sendable {
     }
 }
 
+/// How a desktop app attaches to amux on this machine, which it does not
+/// host: the daemon's profiles and agents, reached over its sockets.
+public struct AttachConfig: Codable, Hashable, Sendable {
+    /// The installation's config file; none is the default one, which is
+    /// what every app uses outside tests.
+    public var config: String?
+    /// How many rows a chat opens with.
+    public var tail: UInt32?
+
+    public init(config: String?, tail: UInt32?) {
+        self.config = config
+        self.tail = tail
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case config
+        case tail
+    }
+}
+
 /// What a chip or placeholder shows before any bytes arrive: the
 /// reference's name, type and size.
 public enum AttachmentView: Codable, Hashable, Sendable {
@@ -3944,6 +3964,95 @@ public enum InputState: Codable, Hashable, Sendable {
         case .uncertain:
             var _container = encoder.singleValueContainer()
             try _container.encode("Uncertain")
+        }
+    }
+}
+
+/// What a desktop app asks of the installer before it attaches.
+public struct InstallOptions: Codable, Hashable, Sendable {
+    /// The copy of `amux` the app carries, installed when amux is missing;
+    /// none downloads the stable channel's build.
+    public var bundled: String?
+    /// The installation's config file; none is the default one.
+    public var config: String?
+    /// Whether a fresh install starts at login.
+    public var loginItem: Bool?
+
+    public init(bundled: String?, config: String?, loginItem: Bool?) {
+        self.bundled = bundled
+        self.config = config
+        self.loginItem = loginItem
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case bundled
+        case config
+        case loginItem = "login_item"
+    }
+}
+
+/// What the installer found or did.
+public enum Installed: Codable, Hashable, Sendable {
+    /// amux was already answering; nothing was touched.
+    case running
+    /// amux was installed but stopped, and is now started.
+    case started
+    /// amux was installed, set up and started: from the app's own copy, or
+    /// downloaded.
+    case installed(version: String, bundled: Bool)
+
+    private enum Tag: String, CodingKey {
+        case installed = "Installed"
+    }
+
+    private enum InstalledKeys: String, CodingKey {
+        case version
+        case bundled
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "Running": self = .running
+            case "Started": self = .started
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no Installed is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a Installed names exactly one variant"))
+        }
+        switch _tag {
+        case .installed:
+            let _fields = try _container.nestedContainer(
+                keyedBy: InstalledKeys.self, forKey: .installed)
+            self = .installed(
+                version: try _fields.decode(String.self, forKey: .version),
+                bundled: try _fields.decode(Bool.self, forKey: .bundled))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .running:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Running")
+        case .started:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Started")
+        case .installed(let version, let bundled):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: InstalledKeys.self, forKey: .installed)
+            try _fields.encode(version, forKey: .version)
+            try _fields.encode(bundled, forKey: .bundled)
         }
     }
 }

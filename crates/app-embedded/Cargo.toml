@@ -22,6 +22,7 @@ uuid = { workspace = true }
 wire = { workspace = true, features = ["grpc"] }
 
 [dev-dependencies]
+futures-util = { workspace = true }
 ui-state = { workspace = true }
 patience = { workspace = true }
 provider-fakes = { workspace = true }

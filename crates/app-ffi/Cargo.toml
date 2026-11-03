@@ -21,19 +21,25 @@ debug-tools = []
 app-embedded = { workspace = true }
 app-runtime = { workspace = true }
 client = { workspace = true }
+futures-util = { workspace = true }
 ui-state = { workspace = true }
 node = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 ui-view = { workspace = true }
+wire = { workspace = true }
+
+# Installing amux is a desktop app's first call; the phone hosts its own
+# runtime and has nothing to install.
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+installer = { workspace = true }
 
 [dev-dependencies]
 libc = { workspace = true }
 provider-fakes = { workspace = true }
 tempfile = { workspace = true }
 testnet = { workspace = true }
-wire = { workspace = true }
 
 [build-dependencies]
 cbindgen = { version = "0.29", default-features = false }

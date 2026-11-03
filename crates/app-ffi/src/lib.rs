@@ -94,8 +94,14 @@ pub struct AmuxRuntime {
 /// What the runtime, its profiles and its chats share.
 struct Shared {
     phone: Phone,
+    /// The profiles, managed the same way whether the installation is
+    /// hosted here or is a daemon this app attached to.
+    installation: Arc<dyn client::Installation>,
     outbox: Arc<Outbox>,
 }
+
+/// What a phone-only call answers on an app attached to a daemon.
+const ATTACHED: &str = "an app attached to amux does not host its profiles; ask the daemon";
 
 /// One profile's fleet and chats.
 pub struct AmuxProfile {
@@ -115,7 +121,8 @@ pub struct AmuxChat {
 }
 
 impl AmuxRuntime {
-    fn embedded(&self) -> &Arc<EmbeddedRuntime> {
+    /// The installation hosted in process; none when attached.
+    fn embedded(&self) -> Option<&Arc<EmbeddedRuntime>> {
         self.shared.embedded()
     }
 
@@ -151,8 +158,8 @@ impl AmuxProfile {
 }
 
 impl Shared {
-    fn embedded(&self) -> &Arc<EmbeddedRuntime> {
-        self.phone.embedded()
+    fn embedded(&self) -> Option<&Arc<EmbeddedRuntime>> {
+        self.phone.hosted()
     }
 
     fn handle(&self) -> &Handle {
@@ -177,11 +184,11 @@ impl Shared {
         T: Serialize + Send + 'static,
         F: Future<Output = T> + Send + 'static,
     {
-        let embedded = self.embedded().clone();
+        let installation = self.installation.clone();
         let outbox = self.outbox.clone();
         self.act(async move {
             let answer = act.await;
-            outbox.post_profiles(&embedded);
+            outbox.post_profiles(installation.as_ref()).await;
             answer
         })
     }
@@ -253,11 +260,16 @@ impl Outbox {
     }
 
     /// Posts the profile list as it stands now; a list that cannot be read
-    /// is left for the registry's watch to post.
-    fn post_profiles(&self, embedded: &EmbeddedRuntime) {
-        if let Ok(profiles) = embedded.profiles() {
-            self.post(|waiting| waiting.profiles = Some(profiles));
+    /// is left for the profile stream to post.
+    async fn post_profiles(&self, installation: &dyn client::Installation) {
+        if let Ok(profiles) = installation.list_profiles().await {
+            self.post_listed(&profiles);
         }
+    }
+
+    fn post_listed(&self, profiles: &[wire::Profile]) {
+        let views = profiles.iter().map(ProfileView::from).collect();
+        self.post(|waiting| waiting.profiles = Some(views));
     }
 
     /// What waits for the app, each view that moved as its delta. Called
@@ -377,6 +389,33 @@ const STOPPED: &str = "{\"Err\":\"the runtime has stopped\"}";
 pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxRuntime>, String> {
     let phone = Phone::start(config, overrides, Arc::new(client::SystemClock))
         .map_err(|error| error.to_string())?;
+    let installation = phone
+        .embedded()
+        .installation()
+        .map_err(|error| error.to_string())?;
+    serve(phone, installation, config.tail)
+}
+
+/// Attaches to the daemon answering on `front_door` (`<root>/amux.sock`):
+/// the same runtime as [`start`], with the profiles and their agents the
+/// daemon's, reached over its sockets, and nothing hosted here.
+pub fn attach(front_door: &std::path::Path, tail: u32) -> Result<Box<AmuxRuntime>, String> {
+    let phone = Phone::attached().map_err(|error| error.to_string())?;
+    let door = front_door.to_owned();
+    let installation = phone
+        .wait(async move { client::GrpcInstallation::connect(&door).await })
+        .ok_or("the runtime has stopped")?
+        .map_err(|error| format!("amux is not answering on {}: {error}", front_door.display()))?;
+    serve(phone, Arc::new(installation), tail)
+}
+
+/// Serves the profile list to the app: posted now, for the first step, and
+/// again whenever the installation's profile stream says it moved.
+fn serve(
+    phone: Phone,
+    installation: Arc<dyn client::Installation>,
+    tail: u32,
+) -> Result<Box<AmuxRuntime>, String> {
     let outbox = Arc::new(Outbox {
         tickets: AtomicU64::new(0),
         fleets: AtomicU64::new(0),
@@ -384,26 +423,36 @@ pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxR
         open: Mutex::new(HashMap::new()),
         ring: Box::new(phone.bell()),
     });
-    // The watch begins before the list is first read, so no move falls
-    // between them.
+    // The stream begins before the list is first read, so no move falls
+    // between them; its first message is the list as it stands.
+    let watching = installation.clone();
     let mut moves = phone
-        .embedded()
-        .watch_profiles()
+        .wait(async move { watching.subscribe_profiles().await })
+        .ok_or("the runtime has stopped")?
         .map_err(|error| error.to_string())?;
     // The list as the start left it waits for the first step, so the app
     // has it before anything else the runtime hands over.
-    outbox.post_profiles(phone.embedded());
-    let watching = phone.embedded().clone();
+    let listing = installation.clone();
+    let listed = phone
+        .wait(async move { listing.list_profiles().await })
+        .ok_or("the runtime has stopped")?
+        .map_err(|error| error.to_string())?;
+    outbox.post_listed(&listed);
     let posting = outbox.clone();
     let watch = phone.handle().spawn(async move {
-        while moves.moved().await.is_some() {
-            posting.post_profiles(&watching);
+        use futures_util::StreamExt as _;
+        while let Some(Ok(moved)) = moves.next().await {
+            posting.post_listed(&moved.profiles);
         }
     });
     Ok(Box::new(AmuxRuntime {
-        shared: Arc::new(Shared { phone, outbox }),
+        shared: Arc::new(Shared {
+            phone,
+            installation,
+            outbox,
+        }),
         watch: Some(watch),
-        tail: config.tail,
+        tail,
     }))
 }
 
@@ -411,7 +460,11 @@ pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxR
 /// caught up with the profile's store.
 pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<AmuxProfile>, String> {
     let shared = runtime.shared.clone();
-    let embedded = shared.embedded().clone();
+    let installation = shared.installation.clone();
+    let clock: Arc<dyn client::Clock> = match shared.embedded() {
+        Some(embedded) => embedded.clock(),
+        None => Arc::new(client::SystemClock),
+    };
     let outbox = shared.outbox.clone();
     let fleet = outbox.fleets.fetch_add(1, Ordering::SeqCst) + 1;
     let app = shared
@@ -424,13 +477,24 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
                 };
                 outbox.redraw(fleet, chat)
             });
-            let client = embedded
-                .client(profile)
+            let listed = installation
+                .list_profiles()
+                .await
                 .map_err(|error| error.to_string())?;
-            let host = embedded
-                .host_id(profile)
+            let described = listed
+                .iter()
+                .find(|listed| listed.id == profile.as_bytes())
+                .ok_or_else(|| format!("the installation hosts no profile {profile}"))?;
+            let client = installation
+                .open_profile(described)
+                .await
                 .map_err(|error| error.to_string())?;
-            AppRuntime::open(client, embedded.clock(), host, host_wake)
+            let host = client
+                .get_device_identity()
+                .await
+                .map_err(|error| error.to_string())?
+                .host_id;
+            AppRuntime::open(client, clock, host, host_wake)
                 .await
                 .map_err(|error| error.to_string())
         })
@@ -757,6 +821,96 @@ pub unsafe extern "C" fn amux_runtime_start(
     }
 }
 
+/// Attaches to amux on this machine, from an `AttachConfig` as JSON: the
+/// same runtime `amux_runtime_start` answers, with the daemon's profiles
+/// and their agents, reached over its sockets, and nothing hosted here.
+/// Calls that only an installation hosted here can answer (pairing from
+/// this device, its roster, a bearer) answer that they are the phone's.
+/// Install amux first (`amux_install`). Null on failure, with the reason in
+/// `error` when it is not null, which the caller frees.
+///
+/// # Safety
+/// `config` is a NUL-terminated string; `error` is null or writable.
+#[cfg(not(target_os = "ios"))]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_runtime_attach(
+    config: *const c_char,
+    error: *mut *mut c_char,
+) -> *mut AmuxRuntime {
+    let attached = guard(
+        Err("the runtime panicked while attaching".to_owned()),
+        || {
+            // SAFETY: the caller's contract.
+            let config: app_runtime::values::AttachConfig = unsafe { parse(config) }
+                .ok_or_else(|| "the attach configuration is not an AttachConfig".to_owned())?;
+            let door = installer::front_door(config.config.as_deref())
+                .map_err(|error| error.to_string())?;
+            attach(&door, config.tail)
+        },
+    );
+    match attached {
+        Ok(runtime) => Box::into_raw(runtime),
+        Err(reason) => {
+            // SAFETY: the caller's contract.
+            unsafe { fail(error, reason) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Makes sure amux is installed and answering, from `InstallOptions` as
+/// JSON, and answers what it did as an `Installed`: it returns at once when
+/// amux answers, starts an installed one that is stopped, and otherwise
+/// installs the app's own copy or the stable channel's build, checked
+/// against its signed manifest, and starts it. Blocks for as long as that
+/// takes, so call it off the main thread. Null on failure, with the reason
+/// in `error` when it is not null, which the caller frees.
+///
+/// # Safety
+/// `options` is a NUL-terminated string; `error` is null or writable.
+#[cfg(not(target_os = "ios"))]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_install(
+    options: *const c_char,
+    error: *mut *mut c_char,
+) -> *mut c_char {
+    let installed = guard(Err("installing panicked".to_owned()), || {
+        // SAFETY: the caller's contract.
+        let options: app_runtime::values::InstallOptions = unsafe { parse(options) }
+            .ok_or_else(|| "the options are not InstallOptions".to_owned())?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| error.to_string())?;
+        let options = installer::Options {
+            bundled: options.bundled,
+            login_item: options.login_item,
+            config: options.config,
+        };
+        let outcome = runtime
+            .block_on(installer::ensure(&options, |_| {}))
+            .map_err(|error| error.to_string())?;
+        Ok(match outcome {
+            installer::Outcome::Running => app_runtime::values::Installed::Running,
+            installer::Outcome::Started => app_runtime::values::Installed::Started,
+            installer::Outcome::Installed { version, source } => {
+                app_runtime::values::Installed::Installed {
+                    version,
+                    bundled: source == installer::Source::Bundled,
+                }
+            }
+        })
+    });
+    match installed {
+        Ok(installed) => owned(&installed),
+        Err(reason) => {
+            // SAFETY: the caller's contract.
+            unsafe { fail(error, reason) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
 /// A descriptor that becomes readable whenever something waits for
 /// `amux_runtime_step`: inputs for the cores, views to redraw, answers to
 /// acts. The app watches it from the queue it steps on; no Rust thread
@@ -854,17 +1008,21 @@ pub unsafe extern "C" fn amux_runtime_feed(
 }
 
 fn feed(runtime: &AmuxRuntime, input: Lifecycle) -> Result<(), String> {
+    // A daemon keeps its own links and analytics; an attached app's life
+    // is nothing to it.
+    let Some(embedded) = runtime.embedded().cloned() else {
+        return Ok(());
+    };
     match input {
         Lifecycle::Foreground => {
             {
                 let _entered = runtime.handle().enter();
-                runtime.embedded().client_opened();
+                embedded.client_opened();
             }
-            resume(runtime)?;
+            resume(runtime, embedded)?;
         }
-        Lifecycle::Woken => resume(runtime)?,
+        Lifecycle::Woken => resume(runtime, embedded)?,
         Lifecycle::Background => {
-            let embedded = runtime.embedded().clone();
             runtime
                 .shared
                 .phone
@@ -872,7 +1030,6 @@ fn feed(runtime: &AmuxRuntime, input: Lifecycle) -> Result<(), String> {
                 .ok_or("the runtime has stopped")?;
         }
         Lifecycle::Suspending => {
-            let embedded = runtime.embedded().clone();
             runtime
                 .shared
                 .phone
@@ -885,7 +1042,6 @@ fn feed(runtime: &AmuxRuntime, input: Lifecycle) -> Result<(), String> {
                 .map_err(|error| error.to_string())?;
         }
         Lifecycle::NetworkChanged => {
-            let embedded = runtime.embedded().clone();
             runtime
                 .shared
                 .phone
@@ -897,8 +1053,7 @@ fn feed(runtime: &AmuxRuntime, input: Lifecycle) -> Result<(), String> {
     Ok(())
 }
 
-fn resume(runtime: &AmuxRuntime) -> Result<(), String> {
-    let embedded = runtime.embedded().clone();
+fn resume(runtime: &AmuxRuntime, embedded: Arc<EmbeddedRuntime>) -> Result<(), String> {
     runtime
         .shared
         .phone
@@ -981,17 +1136,19 @@ where
             return 0;
         };
         // SAFETY: the caller's contract.
-        match unsafe { profile_id(profile) } {
-            Some(profile) => runtime.act(act(runtime.embedded().clone(), profile)),
-            None => {
+        match (unsafe { profile_id(profile) }, runtime.embedded()) {
+            (Some(profile), Some(embedded)) => runtime.act(act(embedded.clone(), profile)),
+            (None, _) => {
                 runtime.act(async { Answered::<T>::Err("the profile is not a profile id".into()) })
             }
+            (_, None) => runtime.act(async { Answered::<T>::Err(ATTACHED.into()) }),
         }
     })
 }
 
-/// As [`profile_act`], for an act that changes the profile list: the list
-/// it left is posted before its answer.
+/// As [`profile_act`], for an act on the installation's profiles, through
+/// whichever installation the app has: the list it left is posted before
+/// its answer.
 ///
 /// # Safety
 /// As for [`profile_act`].
@@ -1002,7 +1159,7 @@ unsafe fn profile_act_on_profiles<T, F, Fut>(
 ) -> u64
 where
     T: Serialize + Send + 'static,
-    F: FnOnce(Arc<EmbeddedRuntime>, ProfileId) -> Fut,
+    F: FnOnce(Arc<dyn client::Installation>, ProfileId) -> Fut,
     Fut: Future<Output = Answered<T>> + Send + 'static,
 {
     guard(0, || {
@@ -1014,12 +1171,17 @@ where
         match unsafe { profile_id(profile) } {
             Some(profile) => runtime
                 .shared
-                .act_on_profiles(act(runtime.embedded().clone(), profile)),
+                .act_on_profiles(act(runtime.shared.installation.clone(), profile)),
             None => {
                 runtime.act(async { Answered::<T>::Err("the profile is not a profile id".into()) })
             }
         }
     })
+}
+
+/// A profile's description as the app holds it, from the installation's.
+fn view(profile: Result<wire::Profile, client::RpcError>) -> Answered<ProfileView> {
+    Answered::from(profile.map(|profile| ProfileView::from(&profile)))
 }
 
 // --- the profile registry ------------------------------------------------
@@ -1036,10 +1198,14 @@ pub unsafe extern "C" fn amux_runtime_create_profile(runtime: *const AmuxRuntime
         let Some(runtime) = (unsafe { live_runtime(runtime) }) else {
             return 0;
         };
-        let embedded = runtime.embedded().clone();
-        runtime
-            .shared
-            .act_on_profiles(async move { Answered::from(embedded.create_profile(None).await) })
+        let installation = runtime.shared.installation.clone();
+        runtime.shared.act_on_profiles(async move {
+            view(
+                installation
+                    .create_profile(wire::CreateProfileRequest::default())
+                    .await,
+            )
+        })
     })
 }
 
@@ -1057,8 +1223,14 @@ pub unsafe extern "C" fn amux_runtime_delete_profile(
 ) -> u64 {
     // SAFETY: the caller's contract.
     unsafe {
-        profile_act_on_profiles(runtime, profile, |embedded, profile| async move {
-            Answered::from(embedded.delete_profile(profile).await)
+        profile_act_on_profiles(runtime, profile, |installation, profile| async move {
+            Answered::from(
+                installation
+                    .delete_profile(wire::DeleteProfileRequest {
+                        profile_id: profile.as_bytes().to_vec(),
+                    })
+                    .await,
+            )
         })
     }
 }
@@ -1096,14 +1268,26 @@ pub unsafe extern "C" fn amux_runtime_bind(
         let token = unsafe { text(refresh_token) }
             .unwrap_or_default()
             .to_owned();
-        let embedded = runtime.embedded().clone();
+        let installation = runtime.shared.installation.clone();
         runtime.shared.act_on_profiles(async move {
             let profile = match named.map(|named| named.parse::<ProfileId>()) {
                 None => None,
                 Some(Ok(profile)) => Some(profile),
                 Some(Err(_)) => return Answered::Err("the profile is not a profile id".into()),
             };
-            Answered::from(embedded.bind(profile, &url, &client, &token).await)
+            // A profile the person named is theirs to sign in, whatever it
+            // already holds.
+            view(
+                installation
+                    .bind_profile(wire::BindProfileRequest {
+                        profile_id: profile.map(|profile| profile.as_bytes().to_vec()),
+                        cloud_url: url,
+                        staged_refresh_token: token,
+                        adopt_non_pristine: profile.is_some(),
+                        client_id: client,
+                    })
+                    .await,
+            )
         })
     })
 }
@@ -1120,8 +1304,35 @@ pub unsafe extern "C" fn amux_runtime_sign_out(
 ) -> u64 {
     // SAFETY: the caller's contract.
     unsafe {
-        profile_act_on_profiles(runtime, profile, |embedded, profile| async move {
-            Answered::from(embedded.sign_out(profile).await)
+        profile_act_on_profiles(runtime, profile, |installation, profile| async move {
+            let signed_out = async {
+                let listed = installation.list_profiles().await?;
+                let described = listed
+                    .iter()
+                    .find(|listed| listed.id == profile.as_bytes())
+                    .ok_or_else(|| {
+                        client::RpcError::Refused(wire::Error::new(
+                            wire::ErrorCode::NotFound,
+                            format!("no profile {profile}"),
+                        ))
+                    })?;
+                installation
+                    .open_profile(described)
+                    .await?
+                    .sign_out()
+                    .await?;
+                let listed = installation.list_profiles().await?;
+                listed
+                    .into_iter()
+                    .find(|listed| listed.id == profile.as_bytes())
+                    .ok_or_else(|| {
+                        client::RpcError::Refused(wire::Error::new(
+                            wire::ErrorCode::NotFound,
+                            format!("no profile {profile}"),
+                        ))
+                    })
+            };
+            view(signed_out.await)
         })
     }
 }
@@ -1145,7 +1356,9 @@ pub unsafe extern "C" fn amux_runtime_trusting_profiles(
         };
         // SAFETY: the caller's contract.
         let host_id: Option<Vec<u8>> = unsafe { parse(host_id) };
-        let embedded = runtime.embedded().clone();
+        let Some(embedded) = runtime.embedded().cloned() else {
+            return runtime.act(async { Answered::<()>::Err(ATTACHED.into()) });
+        };
         runtime.act(async move {
             let Some(host_id) = host_id else {
                 return Answered::Err("the host id is not a byte array".into());
@@ -1204,7 +1417,9 @@ pub unsafe extern "C" fn amux_runtime_list_sources(
         let shown = unsafe { profile_id(profile) };
         // Switching opens and closes sources, which run on the pool.
         let _entered = runtime.handle().enter();
-        runtime.embedded().list_sources(shown);
+        if let Some(embedded) = runtime.embedded() {
+            embedded.list_sources(shown);
+        }
     });
 }
 
@@ -1225,7 +1440,9 @@ pub unsafe extern "C" fn amux_runtime_source_policy_listed(
         };
         // SAFETY: the caller's contract.
         unsafe { profile_id(profile) }.is_some_and(|profile| {
-            runtime.embedded().source_policy(profile).ok() == Some(SourcePolicy::Listed)
+            runtime.embedded().is_some_and(|embedded| {
+                embedded.source_policy(profile).ok() == Some(SourcePolicy::Listed)
+            })
         })
     })
 }
@@ -1249,7 +1466,9 @@ pub unsafe extern "C" fn amux_runtime_discovered(
         // SAFETY: the caller's contract.
         if let Some(found) = unsafe { parse::<Vec<Found>>(found) } {
             let _entered = runtime.handle().enter();
-            runtime.embedded().discovered(found);
+            if let Some(embedded) = runtime.embedded() {
+                embedded.discovered(found);
+            }
         }
     });
 }
@@ -1302,8 +1521,10 @@ pub unsafe extern "C" fn amux_runtime_refresh_entitlement(
 pub unsafe extern "C" fn amux_runtime_set_telemetry(runtime: *const AmuxRuntime, on: bool) {
     guard((), || {
         // SAFETY: the caller's contract.
-        if let Some(runtime) = unsafe { live_runtime(runtime) } {
-            runtime.embedded().set_telemetry(on);
+        if let Some(runtime) = unsafe { live_runtime(runtime) }
+            && let Some(embedded) = runtime.embedded()
+        {
+            embedded.set_telemetry(on);
         }
     });
 }
@@ -1316,8 +1537,10 @@ pub unsafe extern "C" fn amux_runtime_set_telemetry(runtime: *const AmuxRuntime,
 pub unsafe extern "C" fn amux_runtime_set_auto_reports(runtime: *const AmuxRuntime, on: bool) {
     guard((), || {
         // SAFETY: the caller's contract.
-        if let Some(runtime) = unsafe { live_runtime(runtime) } {
-            runtime.embedded().set_auto_reports(on);
+        if let Some(runtime) = unsafe { live_runtime(runtime) }
+            && let Some(embedded) = runtime.embedded()
+        {
+            embedded.set_auto_reports(on);
         }
     });
 }
@@ -1341,8 +1564,8 @@ pub unsafe extern "C" fn amux_runtime_record(
         };
         // SAFETY: the caller's contract.
         let (profile, event) = unsafe { (profile_id(profile), parse::<UsageEvent>(event)) };
-        if let Some(event) = event {
-            runtime.embedded().record(profile, event);
+        if let (Some(event), Some(embedded)) = (event, runtime.embedded()) {
+            embedded.record(profile, event);
         }
     });
 }
@@ -1493,7 +1716,10 @@ pub unsafe extern "C" fn amux_profile_begin_pair(
         };
         // SAFETY: the caller's contract.
         let request: Option<PairRequest> = unsafe { parse(request) };
-        let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
+        let Some(embedded) = profile.shared.embedded().cloned() else {
+            return profile.act(async { Answered::<()>::Err(ATTACHED.into()) });
+        };
+        let id = profile.profile;
         profile.act(async move {
             let Some(request) = request else {
                 return Answered::Err("the request is not a PairRequest".into());
@@ -1520,7 +1746,10 @@ pub unsafe extern "C" fn amux_profile_confirm_pair(
         };
         // SAFETY: the caller's contract.
         let token: Option<Vec<u8>> = unsafe { parse(token) };
-        let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
+        let Some(embedded) = profile.shared.embedded().cloned() else {
+            return profile.act(async { Answered::<()>::Err(ATTACHED.into()) });
+        };
+        let id = profile.profile;
         profile.act(async move {
             let Some(token) = token else {
                 return Answered::Err("the token is not a byte array".into());
@@ -1546,7 +1775,10 @@ pub unsafe extern "C" fn amux_profile_abandon_pair(
         };
         // SAFETY: the caller's contract.
         let token: Option<Vec<u8>> = unsafe { parse(token) };
-        let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
+        let Some(embedded) = profile.shared.embedded().cloned() else {
+            return profile.act(async { Answered::<()>::Err(ATTACHED.into()) });
+        };
+        let id = profile.profile;
         profile.act(async move {
             let Some(token) = token else {
                 return Answered::Err("the token is not a byte array".into());
@@ -1572,7 +1804,10 @@ pub unsafe extern "C" fn amux_profile_unpair(
         };
         // SAFETY: the caller's contract.
         let host_id: Option<Vec<u8>> = unsafe { parse(host_id) };
-        let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
+        let Some(embedded) = profile.shared.embedded().cloned() else {
+            return profile.act(async { Answered::<()>::Err(ATTACHED.into()) });
+        };
+        let id = profile.profile;
         profile.act(async move {
             let Some(host_id) = host_id else {
                 return Answered::Err("the host id is not a byte array".into());
@@ -1594,7 +1829,10 @@ pub unsafe extern "C" fn amux_profile_roster(profile: *const AmuxProfile) -> u64
         let Some(profile) = (unsafe { live_profile(profile) }) else {
             return 0;
         };
-        let (embedded, id) = (profile.shared.embedded().clone(), profile.profile);
+        let Some(embedded) = profile.shared.embedded().cloned() else {
+            return profile.act(async { Answered::<()>::Err(ATTACHED.into()) });
+        };
+        let id = profile.profile;
         profile.act(async move { Answered::from(embedded.roster(id)) })
     })
 }

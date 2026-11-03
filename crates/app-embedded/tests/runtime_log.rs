@@ -75,9 +75,14 @@ async fn app(embedded: &EmbeddedRuntime, profile: ProfileId) -> AppRuntime {
 
 /// The one profile a fresh installation has.
 async fn only_profile(embedded: &EmbeddedRuntime) -> ProfileId {
-    let profiles = embedded.profiles().unwrap();
+    let profiles = embedded
+        .installation()
+        .unwrap()
+        .list_profiles()
+        .await
+        .unwrap();
     assert_eq!(profiles.len(), 1, "{profiles:?}");
-    profiles[0].id.parse().unwrap()
+    ProfileId::from_slice(&profiles[0].id).unwrap()
 }
 
 /// The runtime traces into the log the app names, and a dump carries it as

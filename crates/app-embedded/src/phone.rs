@@ -22,7 +22,9 @@ use crate::{EdgeOverrides, EmbeddedError, EmbeddedRuntime, StartConfig};
 /// How long a stop gives the transport's tasks to end.
 const STOP_WITHIN: Duration = Duration::from_secs(5);
 
-/// The embedded installation with its cores on the caller's queue.
+/// The embedded installation with its cores on the caller's queue; or,
+/// attached to a daemon on this machine, no installation and no cores, only
+/// the transport and the wake.
 pub struct Phone {
     // Dropped first, while the transport its tasks run on is still up.
     embedded: Option<Arc<EmbeddedRuntime>>,
@@ -57,6 +59,26 @@ impl Phone {
             .ok_or_else(stopped)??;
         phone.embedded = Some(Arc::new(embedded));
         Ok(phone)
+    }
+
+    /// The transport and the wake alone, for an app that reaches a daemon
+    /// on this machine instead of hosting the installation: nothing steps
+    /// on the caller's queue but what the app hands over.
+    pub fn attached() -> Result<Phone, EmbeddedError> {
+        let wake = Arc::new(Wake::new()?);
+        let ringing = wake.clone();
+        Ok(Phone {
+            cores: node::Cores::new(move || ringing.ring()),
+            wake,
+            transport: Transport::start()?,
+            embedded: None,
+        })
+    }
+
+    /// The installation hosted in process; none when attached to a
+    /// daemon.
+    pub fn hosted(&self) -> Option<&Arc<EmbeddedRuntime>> {
+        self.embedded.as_ref()
     }
 
     pub fn embedded(&self) -> &Arc<EmbeddedRuntime> {

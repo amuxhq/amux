@@ -11,9 +11,11 @@ use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 
+mod installation;
 pub use agent_dir::{Clock, ManualClock, SystemClock};
 use async_trait::async_trait;
 use futures_util::{Stream, StreamExt as _};
+pub use installation::{GrpcInstallation, InProcessInstallation, Installation, OpenProfile};
 use prost::Message as _;
 use tonic::{Code, Request, Status};
 use wire::agent_service_server::AgentService;
@@ -138,6 +140,11 @@ pub trait Client: Send + Sync + 'static {
         request: wire::UpdateDraftRequest,
     ) -> Result<wire::Draft, RpcError>;
     async fn get_draft(&self, request: wire::GetDraftRequest) -> Result<wire::Draft, RpcError>;
+    /// Signs the profile out: its relay link goes down and its refresh
+    /// token is forgotten, but it stays tied to its account.
+    async fn sign_out(&self) -> Result<(), RpcError>;
+    /// This profile's identity as its peers pin it.
+    async fn get_device_identity(&self) -> Result<wire::DeviceIdentity, RpcError>;
 }
 
 /// One implementation of [`Client`] per way of reaching the services:
@@ -256,6 +263,15 @@ macro_rules! client_impl {
             ) -> Result<wire::Draft, RpcError> {
                 Ok($call!(self, sessions, get_draft, request).await?.into_inner())
             }
+
+            async fn sign_out(&self) -> Result<(), RpcError> {
+                $call!(self, admin, sign_out, wire::Empty {}).await?;
+                Ok(())
+            }
+
+            async fn get_device_identity(&self) -> Result<wire::DeviceIdentity, RpcError> {
+                Ok($call!(self, admin, get_device_identity, wire::Empty {}).await?.into_inner())
+            }
         }
     };
 }
@@ -265,6 +281,23 @@ where
     S: Stream<Item = Result<T, Status>> + Send + 'static,
 {
     Box::pin(stream.map(|item| item.map_err(RpcError::from)))
+}
+
+/// A gRPC channel over the local socket at `path`, which redials it on the
+/// next call after the connection drops.
+pub async fn local_channel(path: &Path) -> Result<tonic::transport::Channel, RpcError> {
+    let path = path.to_owned();
+    tonic::transport::Endpoint::from_static("http://amux.local")
+        .connect_with_connector(tower::service_fn(move |_| {
+            let path = path.clone();
+            async move {
+                agent_dir::local_socket::connect(&path)
+                    .await
+                    .map(hyper_util::rt::TokioIo::new)
+            }
+        }))
+        .await
+        .map_err(|error| RpcError::Transport(error.to_string()))
 }
 
 /// The daemon's client service over a profile's local socket.
@@ -281,19 +314,7 @@ pub struct GrpcClient {
 impl GrpcClient {
     /// Connects to the client socket at `path`.
     pub async fn connect(path: &Path) -> Result<GrpcClient, RpcError> {
-        let path = path.to_owned();
-        let channel = tonic::transport::Endpoint::from_static("http://amux.local")
-            .connect_with_connector(tower::service_fn(move |_| {
-                let path = path.clone();
-                async move {
-                    agent_dir::local_socket::connect(&path)
-                        .await
-                        .map(hyper_util::rt::TokioIo::new)
-                }
-            }))
-            .await
-            .map_err(|error| RpcError::Transport(error.to_string()))?;
-        Ok(GrpcClient::new(channel))
+        Ok(GrpcClient::new(local_channel(path).await?))
     }
 
     pub fn new(channel: tonic::transport::Channel) -> GrpcClient {

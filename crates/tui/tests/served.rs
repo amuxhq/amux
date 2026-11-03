@@ -257,6 +257,12 @@ impl client::Client for SlowClearing {
     ) -> Result<wire::Draft, client::RpcError> {
         self.inner.get_draft(request).await
     }
+    async fn sign_out(&self) -> Result<(), client::RpcError> {
+        self.inner.sign_out().await
+    }
+    async fn get_device_identity(&self) -> Result<wire::DeviceIdentity, client::RpcError> {
+        self.inner.get_device_identity().await
+    }
     async fn subscribe_inventory(
         &self,
     ) -> Result<client::EventStream<wire::InventoryEvent>, client::RpcError> {

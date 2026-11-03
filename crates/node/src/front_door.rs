@@ -27,7 +27,7 @@ use crate::grpc::{self, status, wire_error};
 use crate::registry::{ProfileRefusal, ProfileState, Registry, SignIn};
 
 /// A profile as the front door describes it.
-pub(crate) fn info(state: ProfileState) -> wire::Profile {
+pub fn info(state: ProfileState) -> wire::Profile {
     use wire::cloud_standing::Standing;
     use wire::relay_link::State;
     let standing = match &state.cloud {
@@ -57,6 +57,7 @@ pub(crate) fn info(state: ProfileState) -> wire::Profile {
         email: account.email.unwrap_or_default(),
         account_name: account.name.unwrap_or_default(),
         picture_url: account.picture.unwrap_or_default(),
+        account_subject: account.subject,
         access: state.access.map(access),
         cloud: Some(wire::CloudStanding {
             standing: Some(standing),

@@ -15,6 +15,7 @@ use app_runtime::values::{
 };
 use app_runtime::{AppRuntime, Wake};
 use client::SystemClock;
+use futures_util::StreamExt as _;
 use node::SourcePolicy;
 use patience::{PATIENCE, until};
 use provider_fakes::script::Step;
@@ -118,7 +119,7 @@ async fn pair(
 
 /// The one profile a fresh installation has.
 async fn only_profile(embedded: &EmbeddedRuntime) -> ProfileId {
-    let profiles = embedded.profiles().unwrap();
+    let profiles = profiles(embedded).await;
     assert_eq!(profiles.len(), 1, "{profiles:?}");
     profiles[0].id.parse().unwrap()
 }
@@ -241,13 +242,7 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
     assert_eq!(peer.name, "desk");
     // The profile that paired the desk is the one that trusts it; a
     // profile made since trusts nothing.
-    let other: ProfileId = embedded
-        .create_profile(None)
-        .await
-        .unwrap()
-        .id
-        .parse()
-        .unwrap();
+    let other: ProfileId = create(&embedded).await.id.parse().unwrap();
     assert_eq!(
         embedded.trusting(desk.host_id.as_bytes()).unwrap(),
         vec![phone]
@@ -272,8 +267,8 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
             .unwrap(),
         vec![other]
     );
-    embedded.delete_profile(other).await.unwrap();
-    assert_eq!(embedded.profiles().unwrap().len(), 1);
+    delete(&embedded, other).await.unwrap();
+    assert_eq!(profiles(&embedded).await.len(), 1);
 
     let app = app(&embedded, phone).await;
     converse(&app, &net).await;
@@ -330,7 +325,7 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
     .await;
 
     // The installation keeps at least one profile.
-    assert!(embedded.delete_profile(phone).await.is_err());
+    assert!(delete(&embedded, phone).await.is_err());
 
     drop(app);
     embedded.shutdown().await.unwrap();
@@ -438,20 +433,73 @@ async fn a_phone_links_to_its_desk_again_once_its_browser_finds_the_desk_back() 
 }
 
 /// One profile as the profile list shows it.
-fn listed(embedded: &EmbeddedRuntime, profile: ProfileId) -> ProfileView {
+async fn listed(embedded: &EmbeddedRuntime, profile: ProfileId) -> ProfileView {
     let id = profile.to_string();
-    embedded
-        .profiles()
-        .unwrap()
+    profiles(embedded)
+        .await
         .into_iter()
         .find(|view| view.id == id)
         .expect("the profile is listed")
 }
 
+// The profile calls the app makes, through the installation's front door
+// in process, as a desktop client makes them over the daemon's socket.
+
+async fn profiles(embedded: &EmbeddedRuntime) -> Vec<ProfileView> {
+    let installation = embedded.installation().unwrap();
+    let listed = installation.list_profiles().await.unwrap();
+    listed.iter().map(ProfileView::from).collect()
+}
+
+async fn create(embedded: &EmbeddedRuntime) -> ProfileView {
+    let installation = embedded.installation().unwrap();
+    let made = installation
+        .create_profile(wire::CreateProfileRequest::default())
+        .await
+        .unwrap();
+    ProfileView::from(&made)
+}
+
+async fn delete(embedded: &EmbeddedRuntime, profile: ProfileId) -> Result<(), client::RpcError> {
+    let installation = embedded.installation().unwrap();
+    installation
+        .delete_profile(wire::DeleteProfileRequest {
+            profile_id: profile.as_bytes().to_vec(),
+        })
+        .await
+}
+
+/// Binds as the phone does: a profile the person named is adopted whatever
+/// it holds.
+async fn bind(
+    embedded: &EmbeddedRuntime,
+    profile: Option<ProfileId>,
+    cloud_url: &str,
+    client_id: &str,
+    refresh_token: &str,
+) -> Result<ProfileView, client::RpcError> {
+    let installation = embedded.installation().unwrap();
+    let bound = installation
+        .bind_profile(wire::BindProfileRequest {
+            profile_id: profile.map(|profile| profile.as_bytes().to_vec()),
+            cloud_url: cloud_url.to_owned(),
+            staged_refresh_token: refresh_token.to_owned(),
+            adopt_non_pristine: profile.is_some(),
+            client_id: client_id.to_owned(),
+        })
+        .await?;
+    Ok(ProfileView::from(&bound))
+}
+
+async fn sign_out(embedded: &EmbeddedRuntime, profile: ProfileId) -> ProfileView {
+    embedded.client(profile).unwrap().sign_out().await.unwrap();
+    listed(embedded, profile).await
+}
+
 /// Waits until a profile's relay link says `wanted`.
 async fn relay_link(embedded: &EmbeddedRuntime, profile: ProfileId, wanted: RelayLink) {
     until(&format!("the relay link to say {wanted:?}"), || async {
-        let relay = listed(embedded, profile).account.relay;
+        let relay = listed(embedded, profile).await.account.relay;
         (relay == wanted)
             .then_some(())
             .ok_or_else(|| format!("relay link {relay:?}"))
@@ -485,18 +533,27 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
     )
     .await
     .unwrap();
-    let mut watch = embedded.watch_profiles().unwrap();
-    let ada = only_profile(&embedded).await;
-    embedded
-        .bind(Some(ada), relay.url(), "mobile", &Relay::login("ada"))
+    let mut watch = embedded
+        .installation()
+        .unwrap()
+        .subscribe_profiles()
         .await
         .unwrap();
+    let ada = only_profile(&embedded).await;
+    bind(
+        &embedded,
+        Some(ada),
+        relay.url(),
+        "mobile",
+        &Relay::login("ada"),
+    )
+    .await
+    .unwrap();
     relay_link(&embedded, ada, RelayLink::Connected).await;
 
     // A second account signs in: the registry makes it a profile of its
     // own, and the watch announces it.
-    let bob = embedded
-        .bind(None, relay.url(), "mobile", &Relay::login("bob"))
+    let bob = bind(&embedded, None, relay.url(), "mobile", &Relay::login("bob"))
         .await
         .unwrap();
     assert_eq!(bob.subject, "bob");
@@ -504,12 +561,15 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
     assert_ne!(bob, ada);
     tokio::time::timeout(PATIENCE, async {
         loop {
-            watch.moved().await.expect("the watch ended");
-            if embedded
-                .profiles()
-                .unwrap()
+            let moved = watch
+                .next()
+                .await
+                .expect("the stream ended")
+                .expect("the stream failed");
+            if moved
+                .profiles
                 .iter()
-                .any(|view| view.subject == "bob")
+                .any(|profile| profile.account_subject == "bob")
             {
                 break;
             }
@@ -520,26 +580,28 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
     relay_link(&embedded, bob, RelayLink::Connected).await;
 
     // Both accounts' relay links stay up together.
-    assert_eq!(listed(&embedded, ada).account.relay, RelayLink::Connected);
+    assert_eq!(
+        listed(&embedded, ada).await.account.relay,
+        RelayLink::Connected
+    );
 
     // Signing out keeps the profile tied to its account, and signing back
     // in finds it again.
-    let out = embedded.sign_out(bob).await.unwrap();
+    let out = sign_out(&embedded, bob).await;
     assert_eq!(out.account.binding, AccountBinding::SignedOut);
     assert_eq!(out.subject, "bob");
     assert_eq!(out.account.email, "bob@example.com");
     // A signed-out profile has no relay link.
     relay_link(&embedded, bob, RelayLink::Off).await;
-    let again = embedded
-        .bind(None, relay.url(), "mobile", &Relay::login("bob"))
+    let again = bind(&embedded, None, relay.url(), "mobile", &Relay::login("bob"))
         .await
         .unwrap();
     assert_eq!(again.id, bob.to_string());
-    assert_eq!(embedded.profiles().unwrap().len(), 2);
+    assert_eq!(profiles(&embedded).await.len(), 2);
 
     // Removing an account deletes its profile.
-    embedded.delete_profile(bob).await.unwrap();
-    let left = embedded.profiles().unwrap();
+    delete(&embedded, bob).await.unwrap();
+    let left = profiles(&embedded).await;
     assert_eq!(left.len(), 1);
     assert_eq!(left[0].subject, "ada");
 
@@ -580,10 +642,15 @@ async fn a_phone_signed_in_to_the_account_reaches_its_hosts_over_the_relay() {
     let phone = only_profile(&embedded).await;
     let before = relay.refreshed_as().len();
     // The first sign-in names the profile the phone had before any account.
-    let bound = embedded
-        .bind(Some(phone), relay.url(), "mobile", &Relay::login("ada"))
-        .await
-        .unwrap();
+    let bound = bind(
+        &embedded,
+        Some(phone),
+        relay.url(),
+        "mobile",
+        &Relay::login("ada"),
+    )
+    .await
+    .unwrap();
     assert_eq!(bound.id, phone.to_string());
     assert_eq!(bound.subject, "ada");
     assert_eq!(
@@ -592,7 +659,7 @@ async fn a_phone_signed_in_to_the_account_reaches_its_hosts_over_the_relay() {
     );
     // The token refreshes as the client that obtained it.
     assert_eq!(relay.refreshed_as()[before..], ["mobile"]);
-    let account = listed(&embedded, phone).account;
+    let account = listed(&embedded, phone).await.account;
     assert_eq!(account.binding, AccountBinding::SignedIn);
     assert_eq!(account.email, "ada@example.com");
     assert_eq!(
@@ -600,15 +667,15 @@ async fn a_phone_signed_in_to_the_account_reaches_its_hosts_over_the_relay() {
         "access-ada"
     );
     relay_link(&embedded, phone, RelayLink::Connected).await;
-    assert_eq!(listed(&embedded, phone).account.pro, Some(true));
+    assert_eq!(listed(&embedded, phone).await.account.pro, Some(true));
     // What the account buys changes (a purchase, or here a lapse) and the
     // phone asks at once rather than waiting for the link's next refresh.
     relay.set_tier("ada", node::harness::Tier::Free);
     embedded.refresh_entitlement(phone).await.unwrap();
-    assert_eq!(listed(&embedded, phone).account.pro, Some(false));
+    assert_eq!(listed(&embedded, phone).await.account.pro, Some(false));
     relay.set_tier("ada", node::harness::Tier::Pro);
     embedded.refresh_entitlement(phone).await.unwrap();
-    assert_eq!(listed(&embedded, phone).account.pro, Some(true));
+    assert_eq!(listed(&embedded, phone).await.account.pro, Some(true));
     // The account lists its hosts; pairing is what makes one trusted. The
     // desk listens on no local network: the pairing goes over the relay.
     let (pin, _) = pairing_pin(&net).await;

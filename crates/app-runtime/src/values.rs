@@ -61,6 +61,46 @@ pub struct StartConfig {
     pub auto_reports: bool,
 }
 
+/// How a desktop app attaches to amux on this machine, which it does not
+/// host: the daemon's profiles and agents, reached over its sockets.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AttachConfig {
+    /// The installation's config file; none is the default one, which is
+    /// what every app uses outside tests.
+    #[serde(default)]
+    pub config: Option<PathBuf>,
+    /// How many rows a chat opens with.
+    #[serde(default = "default_tail")]
+    pub tail: u32,
+}
+
+/// What a desktop app asks of the installer before it attaches.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InstallOptions {
+    /// The copy of `amux` the app carries, installed when amux is missing;
+    /// none downloads the stable channel's build.
+    #[serde(default)]
+    pub bundled: Option<PathBuf>,
+    /// Whether a fresh install starts at login.
+    #[serde(default = "yes")]
+    pub login_item: bool,
+    /// The installation's config file; none is the default one.
+    #[serde(default)]
+    pub config: Option<PathBuf>,
+}
+
+/// What the installer found or did.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum Installed {
+    /// amux was already answering; nothing was touched.
+    Running,
+    /// amux was installed but stopped, and is now started.
+    Started,
+    /// amux was installed, set up and started: from the app's own copy, or
+    /// downloaded.
+    Installed { version: String, bundled: bool },
+}
+
 /// Where a person's report went: written on the device, and sent to their
 /// account when the profile is signed in to one.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
@@ -638,6 +678,77 @@ pub struct ProfileView {
     /// empty for a profile nobody has signed in on.
     pub subject: String,
     pub account: AccountView,
+}
+
+impl From<&wire::Profile> for ProfileView {
+    /// A profile as the installation describes it, over its socket or in
+    /// process.
+    fn from(profile: &wire::Profile) -> ProfileView {
+        use wire::cloud_standing::Standing;
+        use wire::relay_link::State;
+        let standing = profile
+            .cloud
+            .as_ref()
+            .and_then(|cloud| cloud.standing.as_ref());
+        let link = match standing {
+            Some(Standing::SignedIn(link)) => link.state.as_ref(),
+            _ => None,
+        };
+        ProfileView {
+            id: uuid_text(&profile.id),
+            label: profile.label.clone(),
+            subject: profile.account_subject.clone(),
+            account: AccountView {
+                binding: match standing {
+                    Some(Standing::SignedIn(_)) => AccountBinding::SignedIn,
+                    Some(Standing::SignedOut(_)) => AccountBinding::SignedOut,
+                    Some(Standing::Unbound(_)) | None => AccountBinding::Unbound,
+                },
+                email: profile.email.clone(),
+                name: profile.account_name.clone(),
+                picture: profile.picture_url.clone(),
+                pro: match link {
+                    Some(State::Connected(connected)) => Some(connected.tier() == wire::Tier::Pro),
+                    _ => None,
+                },
+                relay: match (standing, link) {
+                    (Some(Standing::SignedIn(_)), Some(State::Connecting(_)) | None) => {
+                        RelayLink::Connecting
+                    }
+                    (Some(Standing::SignedIn(_)), Some(State::Connected(_))) => {
+                        RelayLink::Connected
+                    }
+                    (Some(Standing::SignedIn(_)), Some(State::Retrying(_))) => RelayLink::Retrying,
+                    (Some(Standing::SignedIn(_)), Some(State::SignInAgain(_))) => {
+                        RelayLink::SignInAgain
+                    }
+                    (Some(Standing::SignedIn(_)), Some(State::VersionMismatch(_))) => {
+                        RelayLink::VersionMismatch
+                    }
+                    _ => RelayLink::Off,
+                },
+            },
+        }
+    }
+}
+
+/// A 16-byte id in its text form; anything else as hex, which no id
+/// parses from.
+fn uuid_text(id: &[u8]) -> String {
+    match <[u8; 16]>::try_from(id) {
+        Ok(bytes) => {
+            let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+            format!(
+                "{}-{}-{}-{}-{}",
+                &hex[0..8],
+                &hex[8..12],
+                &hex[12..16],
+                &hex[16..20],
+                &hex[20..32]
+            )
+        }
+        Err(_) => id.iter().map(|byte| format!("{byte:02x}")).collect(),
+    }
 }
 
 /// The account this device's profile is bound to, as the account screens

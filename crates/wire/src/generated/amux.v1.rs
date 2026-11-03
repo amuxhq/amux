@@ -8207,6 +8207,11 @@ pub struct Profile {
     /// daemon has read it, and for a profile never signed in.
     #[prost(message, optional, tag = "8")]
     pub access: ::core::option::Option<Access>,
+    /// The account's identifier at its service, kept after a sign-out: what
+    /// makes two profiles' accounts the same. Empty for a profile never signed
+    /// in.
+    #[prost(string, tag = "9")]
+    pub account_subject: ::prost::alloc::string::String,
 }
 impl ::prost::Name for Profile {
     const NAME: &'static str = "Profile";

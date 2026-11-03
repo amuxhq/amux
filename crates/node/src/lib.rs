@@ -22,6 +22,7 @@ mod dump;
 mod edge;
 mod forward;
 mod front_door;
+pub use front_door::{FrontDoor, info as profile_info};
 mod generation;
 mod grpc;
 mod hosts;

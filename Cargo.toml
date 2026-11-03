@@ -71,6 +71,7 @@ patience = { path = "crates/patience" }
 release = { path = "crates/release" }
 testnet = { path = "crates/testnet" }
 client = { path = "crates/client" }
+installer = { path = "crates/installer" }
 interpret = { path = "crates/interpret" }
 journal = { path = "crates/journal" }
 models = { path = "crates/models" }

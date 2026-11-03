@@ -203,6 +203,14 @@ impl Client for FakeRuntime {
     async fn get_draft(&self, _: wire::GetDraftRequest) -> Result<wire::Draft, RpcError> {
         unimplemented!("get_draft")
     }
+
+    async fn sign_out(&self) -> Result<(), RpcError> {
+        unimplemented!("sign_out")
+    }
+
+    async fn get_device_identity(&self) -> Result<wire::DeviceIdentity, RpcError> {
+        unimplemented!("get_device_identity")
+    }
 }
 
 impl Calls {

@@ -54,7 +54,14 @@ moved in that view, see below) and `answers` (each an act's ticket and its
 result as JSON text, after the deltas of what the act moved).
 
 `amux_runtime_start` takes a `StartConfig` and blocks until every profile's
-store is open. Every call that blocks until the cores have done something
+store is open. A desktop app hosts nothing: `amux_install` takes
+`InstallOptions` (the app's own copy of `amux`, whether a fresh install
+starts at login) and blocks, off the main thread, until amux answers,
+answering an `Installed`; then `amux_runtime_attach` takes an `AttachConfig`
+and attaches to that daemon. An attached runtime answers the same calls over
+the daemon's sockets; those only a hosted installation can answer (pairing
+from this device, its roster, a bearer, which profiles trust a host) answer
+`{"Err": ..}` saying the app is attached, and lifecycle inputs do nothing. Every call that blocks until the cores have done something
 steps them on the calling thread while it waits, so it may be made from the
 queue that steps. `amux_profile_open` opens one
 profile's fleet and blocks until it has caught up with that profile's store;

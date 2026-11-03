@@ -51,6 +51,10 @@ message Profile {
   // What the account may do, as amux.sh last said; absent until the
   // daemon has read it, and for a profile never signed in.
   Access access = 8;
+  // The account's identifier at its service, kept after a sign-out: what
+  // makes two profiles' accounts the same. Empty for a profile never signed
+  // in.
+  string account_subject = 9;
 }
 
 // What an account may do. `pro` is the whole gate; the rest explains it.

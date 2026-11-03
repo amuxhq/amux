@@ -206,6 +206,19 @@ impl Registry {
             .clone())
     }
 
+    /// A hosted profile's client services and administration, to call in
+    /// process: what an embedder that serves no sockets hands its client.
+    pub fn in_process(
+        &self,
+        id: ProfileId,
+    ) -> Result<(crate::ClientApi, crate::ProfileAdmin), ProfileRefusal> {
+        let runtime = self.runtime(id)?;
+        Ok((
+            crate::ClientApi::new(&runtime, None),
+            crate::ProfileAdmin::new(self.clone(), id),
+        ))
+    }
+
     /// A hosted profile's network edge.
     pub fn edge(&self, id: ProfileId) -> Result<Arc<Edge>, ProfileRefusal> {
         Self::edge_of(&*self.installation()?, id)

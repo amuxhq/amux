@@ -598,7 +598,10 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     // SAFETY: the runtime is live.
     unsafe { amux_runtime_list_sources(phone.runtime, std::ptr::null()) };
     // SAFETY: the runtime is live and not stopped until the phone drops.
-    let embedded = unsafe { &*phone.runtime }.embedded().clone();
+    let embedded = unsafe { &*phone.runtime }
+        .embedded()
+        .expect("hosted")
+        .clone();
     let id: ProfileId = phone.id.to_str().unwrap().parse().unwrap();
     assert_eq!(embedded.source_policy(id).unwrap(), SourcePolicy::OnDemand);
     // SAFETY: the runtime is live.
@@ -977,7 +980,7 @@ fn network_changed_rebinds_the_link_socket_and_tells_every_path_machine() {
     pair_desk(&phone, &net, &tokio);
     let profile: ProfileId = phone.id.to_str().unwrap().parse().unwrap();
     // SAFETY: the runtime is live until the phone drops.
-    let embedded = unsafe { &*phone.runtime }.embedded();
+    let embedded = unsafe { &*phone.runtime }.embedded().expect("hosted");
     let host = node::HostId::from_slice(&embedded.host_id(profile).unwrap()).unwrap();
     assert_eq!(testnet::link_log::rebinds(host), vec![]);
     // The pairing's link to the desk is up at the phone.
@@ -1242,7 +1245,7 @@ mod confinement {
 
         // Another thread posts work onto the profile's core and waits on it.
         let (stepped_on, stepped) = std::sync::mpsc::channel();
-        let embedded = shared.embedded().clone();
+        let embedded = shared.embedded().expect("hosted").clone();
         let handle = shared.handle().clone();
         let poster = std::thread::spawn(move || {
             handle.spawn(async move {
@@ -1465,4 +1468,87 @@ fn the_composers_rules_come_from_the_shared_view() {
     // SAFETY: the strings live for the call.
     assert!(!unsafe { amux_pastes_as_attachment(short.as_ptr()) });
     assert_eq!(amux_attachment_limit(), wire::ATTACHMENT_SIZE_LIMIT as u64);
+}
+
+/// A desktop app attaches to the daemon on its machine instead of hosting
+/// an installation: the daemon's profiles arrive with the first step, a
+/// profile's fleet opens with the daemon's agents, and a call only an
+/// installation hosted here could answer says so instead of failing
+/// silently.
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
+fn an_attached_app_lists_the_daemons_profiles_and_the_agents_of_one() {
+    let tokio = tokio::runtime::Runtime::new().unwrap();
+    let net = tokio.block_on(Net::start(topology())).unwrap();
+    let door = net.host("desk").unwrap().front_door.clone();
+    let runtime = Box::into_raw(attach(&door, 50).unwrap());
+    let queue = Queue::start(runtime);
+    let profiles = loop {
+        let stepped = queue
+            .stepped
+            .recv_timeout(PATIENCE)
+            .expect("a step hands over the profile list");
+        if !stepped["profiles"].is_null() {
+            break stepped["profiles"].clone();
+        }
+    };
+    let profiles = profiles.as_array().unwrap().clone();
+    assert_eq!(profiles.len(), 1, "{profiles:?}");
+    let desk_profile = net.host("desk").unwrap().profile.to_string();
+    assert_eq!(profiles[0]["id"], desk_profile);
+    assert_eq!(profiles[0]["account"]["binding"], "Unbound");
+
+    let id = c(&desk_profile);
+    let mut error = std::ptr::null_mut();
+    // SAFETY: the runtime is live; the strings live for the call.
+    let profile = unsafe { amux_profile_open(runtime, id.as_ptr(), &mut error) };
+    assert!(!profile.is_null());
+    // SAFETY: the profile is open.
+    let fleet = unsafe { amux_profile_fleet_id(profile) };
+    // SAFETY: as above.
+    let mut shown = take(unsafe { amux_fleet_opening(profile) }).to_string();
+    let deadline = Instant::now() + PATIENCE;
+    while !shown.contains("worker") {
+        assert!(
+            Instant::now() < deadline,
+            "the fleet never showed the worker: {shown}"
+        );
+        if let Ok(stepped) = queue.stepped.recv_timeout(Duration::from_millis(200)) {
+            for moved in stepped["fleets"].as_array().into_iter().flatten() {
+                if moved["fleet"] == fleet {
+                    shown = moved["delta"].to_string();
+                }
+            }
+        }
+    }
+
+    // The roster is the hosted installation's own, which a daemon keeps.
+    // SAFETY: the profile is open.
+    let ticket = unsafe { amux_profile_roster(profile) };
+    let answer = loop {
+        let stepped = queue
+            .stepped
+            .recv_timeout(PATIENCE)
+            .expect("the roster's answer comes with a step");
+        if let Some(answer) = stepped["answers"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|answer| answer["ticket"] == ticket)
+        {
+            break answer["json"].as_str().unwrap().to_owned();
+        }
+    };
+    assert!(answer.contains("attached to amux"), "{answer}");
+
+    drop(queue);
+    // SAFETY: from `amux_profile_open` and `attach`, not used again.
+    unsafe {
+        amux_profile_close(profile);
+        amux_runtime_stop(runtime);
+    }
+    tokio.block_on(net.shutdown()).unwrap();
 }

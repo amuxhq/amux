@@ -20,10 +20,15 @@ them is on [the iPhone page](IOS.md).
 Nothing in `app-runtime` reaches the daemon. It talks to its runtime only
 through `client::Client`, the same trait the terminal uses, which has two
 implementations: `GrpcClient` over a profile's local socket, and `InProcess`,
-the profile's client service called directly. A desktop app that attaches to
-a running daemon uses `app-runtime` over `GrpcClient` and needs no
-`app-embedded`; the phone uses it over `InProcess`, which `app-embedded`
-hands out per profile.
+the profile's client service called directly. Profiles are managed through
+`client::Installation` the same way: `GrpcInstallation` over the daemon's
+front door, `InProcessInstallation` over the embedded one. A desktop app
+attaches to the daemon on its machine (`amux_runtime_attach`): the same
+library, with `Phone` started without an installation (`Phone::attached`),
+so there are no cores to step and the step only hands over what the
+transport left. The phone hosts the installation (`amux_runtime_start`);
+either way the C library reaches profiles only through the installation
+seam.
 
 `scripts/check-dependency-policy.py` (`just dependency-policy`) holds every
 local edge to a fixed list:
@@ -32,7 +37,7 @@ local edge to a fixed list:
 | --- | --- |
 | `app-runtime` | `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` |
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` |
-| `app-ffi` | `app-embedded`, `app-runtime`, `client`, `node`, `ui-state`, `ui-view` |
+| `app-ffi` | `app-embedded`, `app-runtime`, `client`, `installer` (not on iOS), `node`, `ui-state`, `ui-view`, `wire` |
 
 `app-runtime` is also one of the UI crates, which may not reach `node`,
 `store`, `interpret`, `agent` or `pty-host` directly or through anything
@@ -203,7 +208,8 @@ that ticket; nothing in the library calls into the client.
 
 | Family | Handle | What it covers |
 | --- | --- | --- |
-| `amux_runtime_*` | `AmuxRuntime` | The installation: start and stop, the wake descriptor and the step, lifecycle inputs (foreground, background, suspending, network changed), the profile list, the registry (create, delete, bind, sign out), source policy, discovered machines, bearers, entitlement refresh, which profiles trust a host, product analytics (the setting and the app's own events) |
+| `amux_install` | none | A desktop app's first call: finds amux, installs the app's copy or a checked download when it is missing, and starts it ([the installer](../crates/installer/src/lib.rs)); blocks |
+| `amux_runtime_*` | `AmuxRuntime` | The installation: start (hosted) or attach (a daemon on this machine) and stop, the wake descriptor and the step, lifecycle inputs (foreground, background, suspending, network changed), the profile list, the registry (create, delete, bind, sign out), source policy, discovered machines, bearers, entitlement refresh, which profiles trust a host, product analytics (the setting and the app's own events) |
 | `amux_profile_*` | `AmuxProfile` | One profile open on screen: pairing, the roster, account state, creating agents and listing directories, renaming, stopping and deleting agents, the dump |
 | `amux_fleet_*` | `AmuxProfile` | That profile's fleet: rows, cards, family headers, hosts, and taking its changes |
 | `amux_session_*` | `AmuxChat` | One open chat: keys and rows by key, the ask card, overview, settings and frame, taking changes; sending, answering, withdrawing, interrupting, resuming, paging, blobs and the review |
@@ -214,6 +220,8 @@ runtime.
 
 ```c
 AmuxRuntime *rt = amux_runtime_start(config_json, &error);
+/* or, on a desktop: amux_install(options_json, &error), then
+   rt = amux_runtime_attach(attach_json, &error) */
 /* watch amux_runtime_wake_fd(rt); call amux_runtime_step(rt) when readable */
 AmuxProfile *p = amux_profile_open(rt, profile_id, &error);
 AmuxChat *chat = amux_session_open(p, agent_key_json, 0, &error);

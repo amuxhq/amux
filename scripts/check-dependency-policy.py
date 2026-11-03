@@ -69,7 +69,10 @@ ALLOWED_LOCAL = {
     # The daemon's profile runtime hosted in the phone's process.
     "app-embedded": {"analytics", "app-runtime", "client", "log-file", "node", "wire"},
     # The C ABI over both.
-    "app-ffi": {"app-embedded", "app-runtime", "client", "node", "ui-state", "ui-view"},
+    # The installer only off the phone, for a desktop app's first call.
+    "app-ffi": {
+        "app-embedded", "app-runtime", "client", "installer", "node", "ui-state", "ui-view", "wire",
+    },
     # The terminal client composes the views over the drivers' state.
     "tui": {"attachments", "client", "settings", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The bounded ring of a core's inputs since its last checkpoint, in

@@ -16,8 +16,9 @@
 //!
 //! What it cannot stand for is said in [`Synthetic::notes`]: a ring
 //! segment that started from a state a fresh interpreter does not have
-//! (an older checkpoint's open items), and a frame the provider's own
-//! types would not read.
+//! (an older checkpoint's open items, or a record that left out its oldest
+//! events to fit a report), and a frame the provider's own types would not
+//! read.
 
 use std::collections::{HashMap, HashSet};
 
@@ -113,6 +114,11 @@ pub fn synthesize<I: Interpreter>(record: &Value) -> Synthetic {
     let mut values = Values::default();
     values.named(record);
     let mut notes = Vec::new();
+    if let Some(left_out) = record["events_left_out"].as_u64() {
+        notes.push(format!(
+            "the record left out its {left_out} oldest events to fit a report"
+        ));
+    }
     let spec = values.spec::<I>(&record["settings"]);
     let (mut state, _) = I::initial(&spec);
     let fresh = I::structure(&state);

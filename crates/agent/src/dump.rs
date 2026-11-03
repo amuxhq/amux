@@ -49,18 +49,29 @@ pub(crate) fn facts(dir: &Path) -> Facts {
 }
 
 /// The agent's record, encoded: `facts` run through `I` from each
-/// segment's checkpoint, beside the lifecycle `core`.
+/// segment's checkpoint, beside the lifecycle `core`, its oldest events
+/// left out where the whole would not fit a report.
 pub(crate) fn build<I: Interpreter>(
     spec: &AgentSpec,
     core: serde_json::Value,
     facts: Facts,
 ) -> Vec<u8> {
     let salt = uuid::Uuid::new_v4().into_bytes();
-    let mut record = interpret::record::record::<I>(spec, salt, core, facts.segments);
+    let mut record = interpret::record::within::<I>(spec, salt, core, facts.segments, |record| {
+        fits(&serde_json::to_vec(record).unwrap_or_default())
+    });
     if !facts.errors.is_empty() {
         record["errors"] = facts.errors.into();
     }
     serde_json::to_vec(&record).unwrap_or_default()
+}
+
+/// Whether an encoded record fits a report once compressed, as the daemon
+/// compresses it, with room for the errors added after.
+fn fits(record: &[u8]) -> bool {
+    const ROOM: usize = 1 << 10;
+    zstd::bulk::compress(record, 3)
+        .is_ok_and(|compressed| compressed.len() + ROOM <= interpret::record::LIMIT)
 }
 
 /// The record of an agent whose record could not be built: its kind and

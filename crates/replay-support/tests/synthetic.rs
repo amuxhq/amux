@@ -356,6 +356,61 @@ fn an_item_opened_again_reproduces_from_its_record() {
     assert_eq!(reproduced(&record), [(2, checks::ITEM_BEFORE_OPEN.id)]);
 }
 
+/// A record that left out its oldest events to fit a report still
+/// reproduces the check its newest broke, from its first kept event, and
+/// says what it left out.
+#[test]
+fn a_record_cut_to_fit_still_reproduces_its_check() {
+    let item = |method: &str, id: &str| {
+        fact(
+            Channel::Rpc,
+            json!({"method": method, "params": {"threadId": "t", "turnId": "u", "item":
+                {"type": "agentMessage", "id": id, "text": ""}}}),
+        )
+    };
+    let mut events: Vec<Event> = (0..200)
+        .flat_map(|n| {
+            let id = format!("msg_{n}");
+            [item("item/started", &id), item("item/completed", &id)]
+        })
+        .collect();
+    events.extend([
+        item("item/started", "last"),
+        item("item/completed", "last"),
+        item("item/started", "last"),
+    ]);
+    let spec = spec(wire::Kind::Codex);
+    let (state, _) = Codex::initial(&spec);
+    let whole = record::<Codex>(&spec, RECORDED, &events);
+    let size = |record: &Value| serde_json::to_vec(record).unwrap().len();
+    let limit = size(&whole) / 10;
+    let record = interpret::record::within::<Codex>(
+        &spec,
+        RECORDED,
+        Value::Null,
+        [(interpret::encode_checkpoint(&state), ring(&events))],
+        |record| size(record) <= limit,
+    );
+    let left_out = record["events_left_out"].as_u64().unwrap() as usize;
+    assert!(left_out > 0 && size(&record) <= limit);
+    let reproduction = synthetic::reproduce(&record).unwrap();
+    let kept = events.len() - left_out;
+    assert_eq!(reproduction.synthetic.events.len(), kept);
+    assert_eq!(
+        reproduction
+            .broken
+            .iter()
+            .map(|(index, broken)| (*index, broken.invariant.id))
+            .collect::<Vec<_>>(),
+        [(kept - 1, checks::ITEM_BEFORE_OPEN.id)]
+    );
+    assert!(
+        reproduction.synthetic.notes[0].contains(&format!("left out its {left_out} oldest events")),
+        "{:?}",
+        reproduction.synthetic.notes
+    );
+}
+
 /// Headless Claude dying halfway through a reply, as a report's record
 /// carries it: the record the interpreter wrote before it closed what was
 /// streaming on the provider's exit.

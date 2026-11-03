@@ -43,6 +43,7 @@ dependencies = [
  "tower",
  "uuid",
  "wire",
+ "zstd",
 ]
 
 [[package]]

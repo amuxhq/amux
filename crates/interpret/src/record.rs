@@ -27,6 +27,10 @@ use crate::shape::{Name, Structure};
 use crate::skeleton::{Skeleton, input_message, schema_name};
 use crate::{Effect, Event, Interpreter, Stepped};
 
+/// The size a report holds each record to once compressed (zstd, level
+/// 3): a record past it is left out of the report.
+pub const LIMIT: usize = 64 << 10;
+
 /// The record of an agent under `spec` whose lifecycle stands as `core`,
 /// from its facts ring's segments, oldest first, each the checkpoint at
 /// its start and its bytes as written. `salt` keys the aliases.
@@ -39,40 +43,100 @@ pub fn record<I: Interpreter>(
     core: Value,
     segments: impl IntoIterator<Item = (Vec<u8>, Vec<u8>)>,
 ) -> Value {
+    within::<I>(spec, salt, core, segments, |_| true)
+}
+
+/// [`record`], with its oldest events left out until `fits` holds it, so
+/// a long session's record still fits a report and keeps the step that
+/// broke and the steps that led to it. The segment the record then starts
+/// in starts from the interpreter's state at its first kept event, and
+/// `events_left_out` counts the events left out. At least the newest
+/// event is kept, fitting or not.
+pub fn within<I: Interpreter>(
+    spec: &AgentSpec,
+    salt: [u8; 16],
+    core: Value,
+    segments: impl IntoIterator<Item = (Vec<u8>, Vec<u8>)>,
+    fits: impl Fn(&Value) -> bool,
+) -> Value {
+    let segments: Vec<(Vec<u8>, Vec<u8>)> = segments.into_iter().collect();
     let mut run = Run {
         alias: Alias { salt },
         version: None,
         open: HashSet::new(),
     };
-    let segments: Vec<Value> = segments
-        .into_iter()
-        .map(|(checkpoint, bytes)| run.segment::<I>(&checkpoint, &bytes))
-        .collect();
-    let config = spec.config.clone().unwrap_or_default();
-    let flags: Vec<&str> = spec
-        .provider_args
+    let built: Vec<Value> = segments
         .iter()
-        .filter(|arg| arg.starts_with('-'))
-        .map(|flag| flag.split('=').next().unwrap_or_default())
-        .filter(|flag| schema_name(flag.trim_start_matches('-')))
+        .map(|(checkpoint, bytes)| run.segment::<I>(checkpoint, bytes, 0))
         .collect();
-    json!({
-        "settings": {
-            "kind": spec.kind().as_str_name(),
-            "provider": std::path::Path::new(&spec.provider_command)
-                .file_name()
-                .map(|name| name.to_string_lossy()),
-            "version": run.version,
-            "model": config.model,
-            "permission": config.permission,
-            "mode": config.mode,
-            "effort": config.effort,
-            "flags": flags,
-            "spec": spec_shape(&run.alias.skeleton(), spec),
-        },
-        "core": core,
-        "segments": segments,
-    })
+    let whole = run.record(spec, core.clone(), built.clone(), 0);
+    if fits(&whole) {
+        return whole;
+    }
+    let counts: Vec<usize> = built.iter().map(|segment| array(segment).len()).collect();
+    let total: usize = counts.iter().sum();
+    if total <= 1 {
+        return whole;
+    }
+    // Where the record would start with `left_out` events left out: the
+    // segment, and how many of its own events go.
+    let start = |left_out: usize| {
+        let mut rest = left_out;
+        for (index, count) in counts.iter().enumerate() {
+            if rest < *count {
+                return (index, rest);
+            }
+            rest -= count;
+        }
+        (
+            counts.len().saturating_sub(1),
+            counts.last().copied().unwrap_or(0),
+        )
+    };
+    // The fewest left out that fits, judged with each segment's events
+    // as built: a segment cut short starts from a different state, whose
+    // few open keys hardly change the size.
+    let estimate = |left_out: usize| {
+        let (index, skip) = start(left_out);
+        let mut kept: Vec<Value> = built[index..].to_vec();
+        if let Some(Value::Array(events)) = kept[0].get_mut("events") {
+            events.drain(..skip.min(events.len()));
+        }
+        run.record(spec, core.clone(), kept, left_out)
+    };
+    let last = total.saturating_sub(1);
+    let (mut low, mut high) = (1, last.max(1));
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if fits(&estimate(middle)) {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    let mut left_out = low;
+    loop {
+        let (index, skip) = start(left_out);
+        let mut kept: Vec<Value> = built[index..].to_vec();
+        if skip > 0 {
+            let version = run.version.clone();
+            let (checkpoint, bytes) = &segments[index];
+            kept[0] = run.segment::<I>(checkpoint, bytes, skip);
+            run.version = version;
+        }
+        let record = run.record(spec, core.clone(), kept, left_out);
+        if left_out >= last || fits(&record) {
+            return record;
+        }
+        left_out = (left_out + (left_out / 64).max(1)).min(last);
+    }
+}
+
+fn array(segment: &Value) -> &[Value] {
+    segment["events"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
 }
 
 /// The replay in progress.
@@ -85,10 +149,72 @@ struct Run {
 }
 
 impl Run {
-    fn segment<I: Interpreter>(&mut self, checkpoint: &[u8], bytes: &[u8]) -> Value {
+    /// The record of `segments`, with how many older events were left out.
+    fn record(
+        &self,
+        spec: &AgentSpec,
+        core: Value,
+        segments: Vec<Value>,
+        left_out: usize,
+    ) -> Value {
+        let config = spec.config.clone().unwrap_or_default();
+        let flags: Vec<&str> = spec
+            .provider_args
+            .iter()
+            .filter(|arg| arg.starts_with('-'))
+            .map(|flag| flag.split('=').next().unwrap_or_default())
+            .filter(|flag| schema_name(flag.trim_start_matches('-')))
+            .collect();
+        let mut record = json!({
+            "settings": {
+                "kind": spec.kind().as_str_name(),
+                "provider": std::path::Path::new(&spec.provider_command)
+                    .file_name()
+                    .map(|name| name.to_string_lossy()),
+                "version": self.version,
+                "model": config.model,
+                "permission": config.permission,
+                "mode": config.mode,
+                "effort": config.effort,
+                "flags": flags,
+                "spec": spec_shape(&self.alias.skeleton(), spec),
+            },
+            "core": core,
+            "segments": segments,
+        });
+        if left_out > 0 {
+            record["events_left_out"] = left_out.into();
+        }
+        record
+    }
+
+    /// One segment's record, its first `skip` events stepped and left
+    /// out: the segment then starts from the state they leave.
+    fn segment<I: Interpreter>(&mut self, checkpoint: &[u8], bytes: &[u8], skip: usize) -> Value {
         let Ok(mut state) = crate::decode_checkpoint::<I::State>(checkpoint) else {
             return json!({ "checkpoint": null, "events": [] });
         };
+        let entries: Vec<Entry> = core_ring::inputs::<Entry>(bytes);
+        let mut unreadable = 0;
+        let mut entries = entries.into_iter();
+        let mut skipped = 0;
+        while skipped < skip {
+            let Some(entry) = entries.next() else {
+                break;
+            };
+            match entry.event() {
+                Some(event) => {
+                    if let Event::Fact(fact) = &event
+                        && let Some(version) = I::fact_shape(fact).version
+                    {
+                        self.version = Some(version);
+                    }
+                    I::step(&mut state, event);
+                    skipped += 1;
+                }
+                None => unreadable += 1,
+            }
+        }
         let alias = &self.alias;
         let Structure {
             open_items,
@@ -118,8 +244,7 @@ impl Run {
         });
         self.open = open_items.into_iter().map(|(key, _)| key).collect();
         let mut events = Vec::new();
-        let mut unreadable = 0;
-        for entry in core_ring::inputs::<Entry>(bytes) {
+        for entry in entries {
             let Some(event) = entry.event() else {
                 unreadable += 1;
                 continue;

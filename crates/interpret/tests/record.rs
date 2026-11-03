@@ -246,3 +246,100 @@ fn an_item_reopened_across_a_checkpoint_breaks_its_check_in_the_record() {
         "{record}"
     );
 }
+
+fn codex_item(method: &str, id: &str, text: &str) -> Event {
+    Event::Fact(Fact {
+        channel: Channel::Rpc,
+        payload: serde_json::to_vec(&json!({"method": method, "params": {
+            "threadId": "t", "turnId": "u",
+            "item": {"type": "agentMessage", "id": id, "text": text}}}))
+        .unwrap(),
+    })
+}
+
+/// A record too long for a report keeps its newest events, the one that
+/// broke a check among them, and says how many older ones it left out.
+/// The segment it starts in starts from the interpreter's state at its
+/// first kept event.
+#[test]
+fn a_long_record_keeps_its_newest_events_and_counts_the_rest() {
+    let spec = AgentSpec {
+        agent_id: b"agent".to_vec(),
+        kind: wire::Kind::Codex as i32,
+        incarnation: 1,
+        ..AgentSpec::default()
+    };
+    let filler = |from: usize| -> Vec<Event> {
+        (from..from + 10)
+            .flat_map(|n| {
+                let id = format!("msg_{n}");
+                [
+                    codex_item("item/started", &id, ""),
+                    codex_item("item/completed", &id, "done"),
+                ]
+            })
+            .collect()
+    };
+    let (mut state, _) = Codex::initial(&spec);
+    let mut segments = Vec::new();
+    let mut total = 0;
+    for events in [filler(0), {
+        let mut events = filler(10);
+        events.extend([
+            codex_item("item/started", "open", ""),
+            codex_item("item/started", "again", ""),
+            codex_item("item/completed", "again", "done"),
+            codex_item("item/started", "again", ""),
+        ]);
+        events
+    }] {
+        let checkpoint = interpret::encode_checkpoint(&state);
+        for event in &events {
+            Codex::step(&mut state, event.clone());
+        }
+        total += events.len();
+        segments.push((
+            checkpoint,
+            events.iter().flat_map(line).collect::<Vec<u8>>(),
+        ));
+    }
+    let kept = |record: &Value| -> usize {
+        record["segments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|segment| segment["events"].as_array().unwrap().len())
+            .sum()
+    };
+    // Room for the three newest events alone.
+    let record = interpret::record::within::<Codex>(
+        &spec,
+        [3; 16],
+        Value::Null,
+        segments.clone(),
+        |record| kept(record) <= 3,
+    );
+    assert_eq!(kept(&record), 3, "{record}");
+    assert_eq!(record["events_left_out"], total - 3, "{record}");
+    let segments_kept = record["segments"].as_array().unwrap();
+    assert_eq!(segments_kept.len(), 1, "the older segment goes whole");
+    // It starts after the item left open was opened, as the state there
+    // stood.
+    assert_eq!(
+        segments_kept[0]["checkpoint"]["open_items"]
+            .as_array()
+            .map(Vec::len),
+        Some(1),
+        "{record}"
+    );
+    let events = segments_kept[0]["events"].as_array().unwrap();
+    assert_eq!(
+        events[2]["broken"],
+        interpret::checks::ITEM_BEFORE_OPEN.id,
+        "{record}"
+    );
+    // A record that fits is whole.
+    let whole = interpret::record::within::<Codex>(&spec, [3; 16], Value::Null, segments, |_| true);
+    assert_eq!(kept(&whole), total);
+    assert!(whole.get("events_left_out").is_none());
+}

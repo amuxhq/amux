@@ -24,7 +24,8 @@
 //! that names a tool server's tool. A number inside a
 //! tool's input or result becomes `#<characters>`. A kept string is
 //! written `=<value>`; a model, which is not a closed set but is not
-//! content either, `%<hash>=<value>`, so a value that appears elsewhere
+//! content either when it is named as the providers name theirs
+//! ([`chosen`]), `%<hash>=<value>`, so a value that appears elsewhere
 //! aliased stays recognisably the same one.
 //!
 //! A string that is JSON becomes `{"=json": <skeleton>, "bytes": <n>}`. A
@@ -974,24 +975,96 @@ fn kept(subtree: &str) -> &'static [&'static str] {
 }
 
 /// The protobuf fields that name a model, effort, permission or mode from
-/// the provider's own catalogue, kept as a fact's model is.
-const CHOSEN: &[(&str, &str)] = &[
-    ("amux.v1.SetPermission", "value"),
-    ("amux.v1.SetMode", "value"),
-    ("amux.v1.SetModel", "model"),
-    ("amux.v1.SetEffort", "effort"),
-    ("amux.v1.EffectiveConfig", "model"),
-    ("amux.v1.EffectiveConfig", "permission"),
-    ("amux.v1.EffectiveConfig", "mode"),
-    ("amux.v1.EffectiveConfig", "effort"),
-    ("amux.v1.OfferedModel", "value"),
-    ("amux.v1.OfferedModel", "efforts"),
-    ("amux.v1.OfferedModel", "default_effort"),
-    ("amux.v1.OfferedModel", "resolved_model"),
-    ("amux.v1.OfferedPermission", "value"),
-    ("amux.v1.OfferedPermission", "models"),
-    ("amux.v1.OfferedMode", "value"),
+/// the provider's own catalogue, kept as a fact's model is when [`chosen`]
+/// holds them.
+const CHOSEN: &[(&str, &str, Chosen)] = &[
+    ("amux.v1.SetPermission", "value", Chosen::Permission),
+    ("amux.v1.SetMode", "value", Chosen::Mode),
+    ("amux.v1.SetModel", "model", Chosen::Model),
+    ("amux.v1.SetEffort", "effort", Chosen::Effort),
+    ("amux.v1.EffectiveConfig", "model", Chosen::Model),
+    ("amux.v1.EffectiveConfig", "permission", Chosen::Permission),
+    ("amux.v1.EffectiveConfig", "mode", Chosen::Mode),
+    ("amux.v1.EffectiveConfig", "effort", Chosen::Effort),
+    ("amux.v1.OfferedModel", "value", Chosen::Model),
+    ("amux.v1.OfferedModel", "efforts", Chosen::Effort),
+    ("amux.v1.OfferedModel", "default_effort", Chosen::Effort),
+    ("amux.v1.OfferedModel", "resolved_model", Chosen::Model),
+    ("amux.v1.OfferedPermission", "value", Chosen::Permission),
+    ("amux.v1.OfferedPermission", "models", Chosen::Model),
+    ("amux.v1.OfferedMode", "value", Chosen::Mode),
 ];
+
+/// What a setting chosen from the provider's catalogue names.
+#[derive(Clone, Copy)]
+pub enum Chosen {
+    Model,
+    Permission,
+    Mode,
+    Effort,
+}
+
+/// The permissions amux offers and the providers report: Claude's
+/// permission modes and Codex's named permissions.
+const PERMISSION_SET: &[&str] = &[
+    "default",
+    "acceptEdits",
+    "bypassPermissions",
+    "plan",
+    "dontAsk",
+    "auto",
+    "read-only",
+    "full-access",
+];
+
+/// Codex's collaboration modes.
+const MODE_SET: &[&str] = &["default", "plan"];
+
+const EFFORT_SET: &[&str] = &[
+    "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+];
+
+/// Claude's own names for its models, which its catalogue offers beside
+/// their ids.
+const MODEL_ALIASES: &[&str] = &[
+    "default",
+    "best",
+    "opus",
+    "sonnet",
+    "haiku",
+    "opusplan",
+    "<synthetic>",
+];
+
+/// Whether `value` reads as a setting of `chosen`'s kind: a permission,
+/// mode or effort from its closed set, or a model in a form the providers
+/// name their own (`claude-…`, `gpt-…`, `o<digit>…`, `codex-…`, Claude's
+/// own aliases, with Claude's `[1m]`). A model named any other way (a
+/// cloud's model ARN, a deployment or a gateway's route) is the person's
+/// and aliased.
+pub fn chosen(chosen: Chosen, value: &str) -> bool {
+    match chosen {
+        Chosen::Permission => PERMISSION_SET.contains(&value),
+        Chosen::Mode => MODE_SET.contains(&value),
+        Chosen::Effort => EFFORT_SET.contains(&value),
+        Chosen::Model => {
+            let id = value.strip_suffix("[1m]").unwrap_or(value);
+            let provider = ["claude-", "gpt-", "codex-"]
+                .iter()
+                .any(|prefix| id.starts_with(prefix))
+                || id
+                    .strip_prefix('o')
+                    .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()));
+            MODEL_ALIASES.contains(&id)
+                || (provider
+                    && id.len() <= 64
+                    && !id.to_ascii_lowercase().contains("arn")
+                    && id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"-._".contains(&b)))
+        }
+    }
+}
 
 /// Tool servers the providers and amux run themselves.
 const OWN_SERVERS: &[&str] = &[crate::AMUX_TOOL_SERVER, "codex_apps"];
@@ -1302,8 +1375,7 @@ impl Skeleton {
             if timestamp(text) || (key.ends_with("version") && version(text)) {
                 return format!("={text}");
             }
-            if (MODEL.contains(&key) && (schema_name(text) || text == "<synthetic>"))
-                || OWN_SERVERS.contains(&text)
+            if (MODEL.contains(&key) && chosen(Chosen::Model, text)) || OWN_SERVERS.contains(&text)
             {
                 return self.named(text);
             }
@@ -1614,8 +1686,7 @@ impl Skeleton {
         }
         if CHOSEN
             .iter()
-            .any(|(of, named)| *of == message && *named == field)
-            && schema_name(text)
+            .any(|(of, named, kind)| *of == message && *named == field && chosen(*kind, text))
         {
             return self.named(text);
         }

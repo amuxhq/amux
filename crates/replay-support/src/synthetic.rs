@@ -364,9 +364,12 @@ impl Values {
         let bytes = self.proto("amux.v1.AgentSpec", &settings["spec"]);
         let mut spec = AgentSpec::decode(bytes.as_slice()).unwrap_or_default();
         spec.kind = I::KIND as i32;
-        // The provider's file name is kept beside the spec, its folders
-        // made up to the command's length.
+        // The provider's file name is kept beside the spec, or made up
+        // where it was aliased, its folders made up to the command's
+        // length.
         if let Some(provider) = settings["provider"].as_str() {
+            let provider = String::from_utf8_lossy(&self.text(provider)).into_owned();
+            let provider = provider.as_str();
             let len = spec.provider_command.len();
             spec.provider_command = if len > provider.len() + 1 {
                 format!("/{}/{provider}", "p".repeat(len - provider.len() - 2))

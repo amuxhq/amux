@@ -409,3 +409,84 @@ fn only_the_phrase_of_a_marked_text_is_kept_whatever_follows_it() {
             .starts_with("@Reconnecting... @")
     );
 }
+
+/// A model named the way a cloud or a gateway names it, a permission
+/// outside the providers' own and a wrapper the person launches the
+/// provider through are the person's, and aliased wherever the record
+/// would keep a setting; a model named as a provider names its own is
+/// kept.
+#[test]
+fn a_record_keeps_a_setting_only_in_the_providers_own_form() {
+    let arn = format!("arn:aws:bedrock:us-east-1:123456789012:inference-profile/{MARKER}");
+    let spec = AgentSpec {
+        agent_id: b"agent".to_vec(),
+        kind: wire::Kind::ClaudeSdk as i32,
+        incarnation: 1,
+        provider_command: format!("/opt/bin/{MARKER}-claude-wrapper"),
+        config: Some(wire::EffectiveConfig {
+            model: Some(arn.clone()),
+            permission: Some(format!("{MARKER}Permission")),
+            mode: Some("plan".into()),
+            effort: Some("high".into()),
+            ..wire::EffectiveConfig::default()
+        }),
+        ..AgentSpec::default()
+    };
+    let (state, _) = ClaudeSdk::initial(&spec);
+    let set_model = |model: &str| {
+        Event::Input(wire::Input {
+            input_id: model.as_bytes().to_vec(),
+            kind: wire::Kind::ClaudeSdk as i32,
+            body: prost::Message::encode_to_vec(&wire::ClaudeSdkInput {
+                of: Some(wire::claude_sdk_input::Of::Model(wire::SetModel {
+                    model: Some(model.to_owned()),
+                })),
+            }),
+        })
+    };
+    let events = [
+        fact(
+            json!({"type": "system", "subtype": "init", "session_id": "s",
+            "claude_code_version": "2.1.312", "model": arn}),
+        ),
+        fact(
+            json!({"type": "system", "subtype": "init", "session_id": "s",
+            "claude_code_version": "2.1.312", "model": "claude-opus-5-5[1m]"}),
+        ),
+        set_model(&format!("us.anthropic.{MARKER}-v1:0")),
+        set_model("claude-sonnet-5"),
+    ];
+    let record = interpret::record::record::<ClaudeSdk>(
+        &spec,
+        [3; 16],
+        Value::Null,
+        [(
+            interpret::encode_checkpoint(&state),
+            events.iter().flat_map(line).collect(),
+        )],
+    );
+    let text = record.to_string();
+    assert!(!text.contains(MARKER), "{text}");
+    assert!(!text.contains("123456789012"), "{text}");
+    let settings = &record["settings"];
+    for aliased in ["provider", "model", "permission"] {
+        assert!(
+            settings[aliased].as_str().unwrap().starts_with('@'),
+            "{aliased}: {settings}"
+        );
+    }
+    assert_eq!(settings["mode"], "plan");
+    assert_eq!(settings["effort"], "high");
+    let shapes = &record["segments"][0]["events"];
+    let model = |index: usize, at: &[&str]| -> String {
+        let mut value = &shapes[index]["event"]["shape"];
+        for field in at {
+            value = &value[*field];
+        }
+        value.as_str().unwrap().to_owned()
+    };
+    assert!(model(0, &["model"]).starts_with('@'));
+    assert!(model(1, &["model"]).ends_with("=claude-opus-5-5[1m]"));
+    assert!(model(2, &["model", "model"]).starts_with('@'));
+    assert!(model(3, &["model", "model"]).ends_with("=claude-sonnet-5"));
+}

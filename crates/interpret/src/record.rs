@@ -24,7 +24,7 @@ use wire::AgentSpec;
 
 use crate::ring::Entry;
 use crate::shape::{Name, Structure};
-use crate::skeleton::{Skeleton, input_message, schema_name};
+use crate::skeleton::{Chosen, Skeleton, chosen, input_message, schema_name};
 use crate::{Effect, Event, Interpreter, Stepped};
 
 /// The size a report holds each record to once compressed (zstd, level
@@ -165,17 +165,23 @@ impl Run {
             .map(|flag| flag.split('=').next().unwrap_or_default())
             .filter(|flag| schema_name(flag.trim_start_matches('-')))
             .collect();
+        let skeleton = self.alias.skeleton();
+        // A setting is kept when it reads as one, else aliased.
+        let setting = |kind: Chosen, value: &Option<String>| {
+            value.as_deref().map(|value| match chosen(kind, value) {
+                true => value.to_owned(),
+                false => skeleton.alias("", value),
+            })
+        };
         let mut record = json!({
             "settings": {
                 "kind": spec.kind().as_str_name(),
-                "provider": std::path::Path::new(&spec.provider_command)
-                    .file_name()
-                    .map(|name| name.to_string_lossy()),
+                "provider": provider(&skeleton, &spec.provider_command),
                 "version": self.version,
-                "model": config.model,
-                "permission": config.permission,
-                "mode": config.mode,
-                "effort": config.effort,
+                "model": setting(Chosen::Model, &config.model),
+                "permission": setting(Chosen::Permission, &config.permission),
+                "mode": setting(Chosen::Mode, &config.mode),
+                "effort": setting(Chosen::Effort, &config.effort),
                 "flags": flags,
                 "spec": spec_shape(&self.alias.skeleton(), spec),
             },
@@ -502,6 +508,20 @@ impl Alias {
             Name::Own(name) => alias(name),
         }
     }
+}
+
+/// The provider command's file name when it is a provider's own (`claude`,
+/// `codex`), else its alias: a wrapper's name is the person's.
+fn provider(skeleton: &Skeleton, command: &str) -> Option<String> {
+    let name = command
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|name| !name.is_empty())?;
+    let stem = name.strip_suffix(".exe").unwrap_or(name);
+    Some(match stem {
+        "claude" | "codex" => name.to_owned(),
+        _ => skeleton.alias("", name),
+    })
 }
 
 /// The spec's skeleton, its launch arguments read in order.

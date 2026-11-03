@@ -250,9 +250,12 @@ size, the snapshot's phase and queue, turn ends, its effects by kind with their 
 its two queries (messages pending, typed input unrecorded) answered after the step, and the check the step broke.
 Each segment starts from the interpreter's open items, queue, asks and pending inputs by key. Git facts are counts:
 files and lines changed, and whether there is a branch, never its name. Of a shell command only the shell's name and
-flag are kept. The record names the spec's kind, provider, model, permission, mode, effort and launch flags without
-their values, and the provider's version once it reports one, and carries the agent core's lifecycle as the report
-found it, its states by name and its sets by size. Aliases are hashed with a salt that never leaves the process, so
+flag are kept. The record names the spec's kind; the provider's command when it is `claude` or `codex`, never a
+wrapper's name; the model when it is named as the providers name theirs (`claude-…`, `gpt-…`, `o3`, `codex-…`, Claude's
+`opus` and the like), never a cloud's model ARN or a gateway's route, here and wherever an event names a model; the
+permission, mode and effort from their closed sets; and the launch flags without their values. Any other value of
+these is aliased. It names the provider's version once it reports one, and carries the agent core's lifecycle as the
+report found it, its states by name and its sets by size. Aliases are hashed with a salt that never leaves the process, so
 equal values stay equal within one record and none can be looked up. A long session's record would not fit a report,
 so it keeps its newest events, the step that asked for the report last among them, and leaves out the oldest until it
 fits; `events_left_out` counts them, and the segment it then starts in starts from the interpreter's state at its first

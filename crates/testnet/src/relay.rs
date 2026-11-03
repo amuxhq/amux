@@ -78,6 +78,11 @@ struct CloudState {
     reports: Vec<Received>,
     /// Why the account service turns reports down from now on, if it does.
     refusing: Option<String>,
+    /// Each account's picture, where it has one.
+    pictures: BTreeMap<String, String>,
+    /// Device sign-ins started, in order: the code a person enters, and
+    /// the account that approved it once one has.
+    devices: Vec<(String, Option<String>)>,
 }
 
 /// A report handed to the account service: whose, each multipart section
@@ -103,6 +108,8 @@ struct Cloud {
     state: Mutex<CloudState>,
     clock: Arc<dyn Clock>,
     quic_port: u16,
+    /// Where the hosts reach this service, for the pages it names.
+    url: String,
 }
 
 pub struct Relay {
@@ -151,10 +158,13 @@ impl Relay {
                 },
             );
         }
+        let http = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let url = format!("http://{}", http.local_addr()?);
         let cloud = Arc::new(Cloud {
             state: Mutex::new(state),
             clock: clock.clone(),
             quic_port: quic.port(),
+            url: url.clone(),
         });
         let host_id = Uuid::new_v4();
         let server = CloudLinkServer::new(
@@ -169,8 +179,6 @@ impl Relay {
         );
         let tcp_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let tcp = tcp_listener.local_addr()?;
-        let http = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-        let url = format!("http://{}", http.local_addr()?);
         let serving = server.serve_tcp(udp, tcp_listener, quic_server)?;
         let mut tasks = vec![tokio::spawn(serve_cloud(http, cloud.clone()))];
         let client_url = match client_ip {
@@ -253,6 +261,31 @@ impl Relay {
     /// does one it cannot take; `None` takes them again.
     pub fn refuse_reports(&self, reason: Option<String>) {
         self.cloud.state.lock().unwrap().refusing = reason;
+    }
+
+    /// Gives `account` a picture from its next userinfo read on.
+    pub fn set_picture(&self, account: &str, url: &str) {
+        self.cloud
+            .state
+            .lock()
+            .unwrap()
+            .pictures
+            .insert(account.to_owned(), url.to_owned());
+    }
+
+    /// The codes of the device sign-ins started so far, in order.
+    pub fn device_codes(&self) -> Vec<String> {
+        let state = self.cloud.state.lock().unwrap();
+        state.devices.iter().map(|(code, _)| code.clone()).collect()
+    }
+
+    /// Approves the device sign-in whose code is `user_code` as `account`,
+    /// as a person who opened the page and signed in would.
+    pub fn approve_device(&self, user_code: &str, account: &str) {
+        let mut state = self.cloud.state.lock().unwrap();
+        if let Some((_, approved)) = state.devices.iter_mut().find(|(code, _)| code == user_code) {
+            *approved = Some(account.to_owned());
+        }
     }
 
     /// The refresh token a person signing in as `account` hands the daemon.
@@ -514,7 +547,45 @@ impl Cloud {
             .map(|body| body.to_bytes())
             .unwrap_or_default();
         let form = String::from_utf8_lossy(&body).into_owned();
+        let field = |name: &str| {
+            form.split('&')
+                .find_map(|pair| pair.strip_prefix(&format!("{name}=")[..]))
+                .map(str::to_owned)
+        };
         match path.as_str() {
+            "/connect/deviceauthorization" => {
+                let mut state = self.state.lock().unwrap();
+                let code = format!("CODE-{}", state.devices.len() + 1);
+                state.devices.push((code.clone(), None));
+                json(serde_json::json!({
+                    "device_code": format!("device-{code}"),
+                    "user_code": code,
+                    "verification_uri": format!("{}/device", self.url),
+                    "verification_uri_complete": format!("{}/device?user_code={code}", self.url),
+                    "expires_in": 600,
+                    "interval": 1,
+                }))
+            }
+            "/connect/token" if field("device_code").is_some() => {
+                let code = field("device_code").unwrap_or_default();
+                let approved = self
+                    .state
+                    .lock()
+                    .unwrap()
+                    .devices
+                    .iter()
+                    .find(|(user_code, _)| format!("device-{user_code}") == code)
+                    .and_then(|(_, approved)| approved.clone());
+                match approved {
+                    Some(account) => json(serde_json::json!({
+                        "access_token": format!("access-{account}"),
+                        "token_type": "bearer",
+                        "expires_in": 3600,
+                        "refresh_token": format!("refresh-{account}"),
+                    })),
+                    None => status(400, serde_json::json!({ "error": "authorization_pending" })),
+                }
+            }
             "/connect/token" => {
                 let client = form
                     .split('&')
@@ -542,6 +613,7 @@ impl Cloud {
                     "sub": account,
                     "name": account,
                     "email": format!("{account}@example.com"),
+                    "picture": self.state.lock().unwrap().pictures.get(&account),
                 })),
                 None => status(401, serde_json::json!({})),
             },

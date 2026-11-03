@@ -13,7 +13,7 @@ use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
-use super::binding::CloudServiceId;
+use super::binding::{AccountAccess, CloudServiceId};
 use crate::auth::oauth::{self, OAuthError};
 use crate::auth::{AccessToken, AuthError, CredentialProvider};
 use crate::identity::atomic_replace_private;
@@ -69,6 +69,11 @@ pub(crate) struct Account {
     /// Called after each change to the record: this host's own entry says
     /// whether it is signed in.
     changed: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
+    /// What the account may do, as the service last said; read whenever
+    /// the account's token is refreshed, never stored.
+    access_read: Mutex<Option<AccountAccess>>,
+    /// Counts every change a client sees: the record, and the access read.
+    revision: tokio::sync::watch::Sender<u64>,
 }
 
 impl Account {
@@ -88,11 +93,27 @@ impl Account {
             access: Mutex::new(None),
             changes: tokio::sync::Mutex::new(()),
             changed: std::sync::OnceLock::new(),
+            access_read: Mutex::new(None),
+            revision: tokio::sync::watch::Sender::new(0),
         }))
     }
 
     pub(crate) fn record(&self) -> Option<AccountRecord> {
         self.record.lock().unwrap().clone()
+    }
+
+    /// What the account may do, once the service has said.
+    pub(crate) fn access(&self) -> Option<AccountAccess> {
+        self.access_read.lock().unwrap().clone()
+    }
+
+    /// Rings on every change a client sees: the record and the access read.
+    pub(crate) fn subscribe(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.revision.subscribe()
+    }
+
+    fn moved(&self) {
+        self.revision.send_modify(|revision| *revision += 1);
     }
 
     pub(crate) fn binding(&self) -> Binding {
@@ -123,6 +144,7 @@ impl Account {
         if let Some(changed) = self.changed.get() {
             changed();
         }
+        self.moved();
         Ok(())
     }
 
@@ -135,6 +157,7 @@ impl Account {
     pub(crate) async fn bind(&self, record: AccountRecord, access: AccessToken) -> io::Result<()> {
         let _change = self.changes.lock().await;
         self.forget_relay_token()?;
+        *self.access_read.lock().unwrap() = None;
         self.write(record)?;
         *self.access.lock().unwrap() = Some(access);
         Ok(())
@@ -152,7 +175,64 @@ impl Account {
             })?;
         }
         *self.access.lock().unwrap() = None;
+        *self.access_read.lock().unwrap() = None;
+        self.moved();
         Ok(())
+    }
+
+    /// Reads who the account is and what it may do with `token`, and keeps
+    /// what changed: the name, email and picture onto the record (only the
+    /// binding the token was minted for), the access read in memory.
+    async fn read_account(&self, token: &AccessToken) -> Result<(), String> {
+        let service = self.service().ok_or("the profile is not bound")?;
+        let http = reqwest::Client::new();
+        let info = super::binding::fetch_userinfo(&http, service.as_str(), token)
+            .await
+            .map_err(|error| error.to_string())?;
+        // An account service without the access read still names the
+        // account.
+        let access = super::binding::fetch_access(&http, service.as_str(), token)
+            .await
+            .ok()
+            .flatten();
+        let _change = self.changes.lock().await;
+        if let Some(record) = self.record().filter(|record| {
+            record.service == service
+                && record.subject == info.sub
+                && record.refresh_token.is_some()
+        }) {
+            if (&record.name, &record.email, &record.picture)
+                != (&info.name, &info.email, &info.picture)
+            {
+                self.write(AccountRecord {
+                    name: info.name,
+                    email: info.email,
+                    picture: info.picture,
+                    ..record
+                })
+                .map_err(|error| error.to_string())?;
+            }
+            let changed = {
+                let mut held = self.access_read.lock().unwrap();
+                let changed = *held != access;
+                *held = access;
+                changed
+            };
+            if changed {
+                self.moved();
+            }
+        }
+        Ok(())
+    }
+
+    /// Reads the account again now: a fresh token, then who it is and what
+    /// it may do.
+    pub(crate) async fn refresh(self: &Arc<Self>) -> Result<(), String> {
+        let token = AccountCredentials(self.clone())
+            .access_token()
+            .await
+            .map_err(|error| error.to_string())?;
+        self.read_account(&token).await
     }
 
     /// A relay token belongs to the login that fetched it: signing in or
@@ -166,14 +246,14 @@ impl Account {
 
     /// The access token, refreshed first if it is missing or about to
     /// expire. Holds the record still from the exchange to the save.
-    async fn access_token(&self) -> Result<AccessToken, AuthError> {
+    async fn access_token(&self) -> Result<(AccessToken, bool), AuthError> {
         let _change = self.changes.lock().await;
         if let Some(access) = self.access.lock().unwrap().clone()
             && access
                 .expires_at
                 .is_none_or(|at| at > SystemTime::now() + ACCESS_TOKEN_MARGIN)
         {
-            return Ok(access);
+            return Ok((access, false));
         }
         let record = self.record().ok_or(AuthError::Unauthenticated)?;
         let refresh = record
@@ -209,7 +289,7 @@ impl Account {
             .map_err(|error| AuthError::Provider(error.to_string()))?;
         }
         *self.access.lock().unwrap() = Some(access.clone());
-        Ok(access)
+        Ok((access, true))
     }
 }
 
@@ -223,11 +303,25 @@ impl CredentialProvider for AccountCredentials {
     /// The exchange and its save run apart from the caller, so a caller
     /// that stops waiting, such as a cloud link told to stop while it
     /// connects, cannot cancel between the two and lose a rotated token.
+    ///
+    /// A token just refreshed is also when the account is read again, so
+    /// its name, picture and access follow the service within the token's
+    /// lifetime; the read runs on its own and never holds the caller up.
     async fn access_token(&self) -> Result<AccessToken, AuthError> {
         let account = self.0.clone();
-        tokio::spawn(async move { account.access_token().await })
+        let (token, refreshed) = tokio::spawn(async move { account.access_token().await })
             .await
-            .map_err(|error| AuthError::Provider(error.to_string()))?
+            .map_err(|error| AuthError::Provider(error.to_string()))??;
+        if refreshed {
+            let account = self.0.clone();
+            let read = token.clone();
+            tokio::spawn(async move {
+                if let Err(error) = account.read_account(&read).await {
+                    tracing::debug!(%error, "reading the account after a refresh");
+                }
+            });
+        }
+        Ok(token)
     }
 
     fn invalidate(&self, token: &AccessToken) {
@@ -249,6 +343,34 @@ pub(crate) async fn bind(
     installation: &Arc<crate::daemon::Installation>,
     sign_in: SignIn,
 ) -> Result<crate::ProfileId, ProfileRefusal> {
+    // A login refused only because its profile holds data is kept a while,
+    // since its refresh token was spent proving who it is: binding again
+    // with the same token and `adopt` takes it up without a second login.
+    let staged = installation.take_staged_login(&sign_in.refresh_token);
+    let login = match staged {
+        Some(login) => login,
+        None => authenticate(&sign_in).await?,
+    };
+    match place(installation, &sign_in, &login).await {
+        Err(ProfileRefusal::HoldsData) => {
+            installation.stage_login(sign_in.refresh_token, login);
+            Err(ProfileRefusal::HoldsData)
+        }
+        placed => placed,
+    }
+}
+
+/// A login proven with the account service: its fresh tokens and who it is.
+#[derive(Clone)]
+pub(crate) struct Login {
+    service: CloudServiceId,
+    client_id: String,
+    access: AccessToken,
+    refresh: String,
+    info: super::binding::UserInfo,
+}
+
+async fn authenticate(sign_in: &SignIn) -> Result<Login, ProfileRefusal> {
     let service = CloudServiceId::canonicalize(&sign_in.cloud_url)
         .map_err(|error| ProfileRefusal::BadService(error.to_string()))?;
     if sign_in.refresh_token.is_empty() {
@@ -263,10 +385,31 @@ pub(crate) async fn bind(
         oauth::refresh_access_token(service.as_str(), &client_id, &sign_in.refresh_token)
             .await
             .map_err(|error| ProfileRefusal::Rejected(error.to_string()))?;
-    let refresh = rotated.unwrap_or(sign_in.refresh_token);
+    let refresh = rotated.unwrap_or_else(|| sign_in.refresh_token.clone());
     let info = super::binding::fetch_userinfo(&reqwest::Client::new(), service.as_str(), &access)
         .await
         .map_err(|error| ProfileRefusal::Unreachable(error.to_string()))?;
+    Ok(Login {
+        service,
+        client_id,
+        access,
+        refresh,
+        info,
+    })
+}
+
+async fn place(
+    installation: &Arc<crate::daemon::Installation>,
+    sign_in: &SignIn,
+    login: &Login,
+) -> Result<crate::ProfileId, ProfileRefusal> {
+    let Login {
+        service,
+        client_id,
+        access,
+        refresh,
+        info,
+    } = login.clone();
     let same_account =
         |record: &AccountRecord| record.service == service && record.subject == info.sub;
 
@@ -362,9 +505,17 @@ pub(crate) async fn bind(
         refresh_token: Some(refresh),
         client_id,
     };
-    edge.bind_account(record, access)
+    edge.bind_account(record, access.clone())
         .await
         .map_err(|error| ProfileRefusal::Failed(error.to_string()))?;
+    // What the account may do, read now rather than at the token's first
+    // refresh an hour on.
+    let account = edge.account().clone();
+    tokio::spawn(async move {
+        if let Err(error) = account.read_account(&access).await {
+            tracing::debug!(%error, "reading the account after a sign-in");
+        }
+    });
     Ok(id)
 }
 

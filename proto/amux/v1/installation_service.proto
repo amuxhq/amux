@@ -19,6 +19,22 @@ service InstallationService {
   rpc BindProfile(BindProfileRequest) returns (Profile);
   rpc RenameProfile(RenameProfileRequest) returns (Profile);
   rpc DeleteProfile(DeleteProfileRequest) returns (Empty);
+  // Every profile now, then again whenever any of them changes: a new or
+  // removed profile, a sign-in or sign-out, its relay link, its account's
+  // name, picture or access. Each message is the whole list.
+  rpc SubscribeProfiles(Empty) returns (stream ListProfilesResponse);
+  // Signs a profile in with the device flow, run by the daemon: the first
+  // event is the code to show the person and the page to open, the last is
+  // the signed-in profile. A profile that already holds agents or paired
+  // hosts asks first, with an adopt event, unless the request already
+  // adopts; AnswerSignIn answers it. The stream's closing abandons the
+  // sign-in.
+  rpc SignIn(SignInRequest) returns (stream SignInEvent);
+  rpc AnswerSignIn(AnswerSignInRequest) returns (Empty);
+  // Reads the profile's account again now (its name, picture and access),
+  // as after a purchase; the daemon also reads it whenever it refreshes the
+  // account's token.
+  rpc RefreshProfile(RefreshProfileRequest) returns (Profile);
 }
 
 message Installation { string version = 1; }
@@ -30,6 +46,39 @@ message Profile {
   string account_name = 4;
   string socket_path = 5;
   CloudStanding cloud = 6;
+  // The account's picture, an https URL; empty when it has none.
+  string picture_url = 7;
+  // What the account may do, as amux.sh last said; absent until the
+  // daemon has read it, and for a profile never signed in.
+  Access access = 8;
+}
+
+// What an account may do. `pro` is the whole gate; the rest explains it.
+message Access {
+  bool pro = 1;
+  // When access ends, or ended, in milliseconds since the epoch; absent
+  // when nothing ends.
+  optional int64 until_ms = 2;
+  // Why the account has it; absent when nothing was ever bought or given.
+  oneof grant {
+    // Given without a purchase: complimentary, a trial, a beta.
+    Empty granted = 3;
+    Purchase purchased = 4;
+  }
+}
+
+message Purchase {
+  PurchaseStore store = 1;
+  // Whether it charges again; a cancelled subscription runs to its end.
+  bool will_renew = 2;
+  // When it charges again, in milliseconds since the epoch.
+  optional int64 renews_at_ms = 3;
+}
+
+enum PurchaseStore {
+  PURCHASE_STORE_UNSPECIFIED = 0;
+  PURCHASE_STORE_APP_STORE = 1;
+  PURCHASE_STORE_WEB = 2;
 }
 
 // A profile's standing with its cloud account: what the person asked for
@@ -96,3 +145,50 @@ message RenameProfileRequest {
 message DeleteProfileRequest {
   bytes profile_id = 1;
 }
+
+message SignInRequest {
+  // The profile to sign in; absent lets the installation pick: the profile
+  // already bound to this account, else the one that holds nothing yet,
+  // else a new one.
+  optional bytes profile_id = 1;
+  // The account service; empty is https://amux.sh.
+  string cloud_url = 2;
+  // Sign in a profile that already holds agents or paired hosts without
+  // asking.
+  bool adopt_non_pristine = 3;
+}
+
+message SignInEvent {
+  oneof of {
+    SignInCode code = 1;
+    // The chosen profile holds agents or paired hosts: answer with
+    // AnswerSignIn, naming this sign-in.
+    SignInAdopt adopt = 2;
+    // Signed in; the stream ends.
+    Profile signed_in = 3;
+  }
+}
+
+// What the person does to sign in: open `verification_uri_complete`, or
+// open `verification_uri` and type `user_code`.
+message SignInCode {
+  string verification_uri = 1;
+  string verification_uri_complete = 2;
+  string user_code = 3;
+  // When the code stops working, in milliseconds since the epoch.
+  int64 expires_at_ms = 4;
+}
+
+message SignInAdopt {
+  bytes sign_in_id = 1;
+  // The profile that would be signed in.
+  Profile profile = 2;
+}
+
+message AnswerSignInRequest {
+  bytes sign_in_id = 1;
+  // Sign the profile in anyway; false abandons the sign-in.
+  bool adopt = 2;
+}
+
+message RefreshProfileRequest { bytes profile_id = 1; }

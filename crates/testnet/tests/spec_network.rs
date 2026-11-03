@@ -3330,3 +3330,125 @@ async fn a_suspended_host_lets_go_of_its_links_and_dials_them_at_once_as_it_resu
     still_relayed(&net, "phone", "desk");
     net.shutdown().await.unwrap();
 }
+
+/// The daemon runs the device sign-in a client asks for: it hands out the
+/// code and page, asks before adopting a profile that holds an agent, and
+/// binds it once the person approves. The profile stream follows: the
+/// account's name and picture as it signs in, what it may do once read,
+/// and a new picture once the account is read again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sign_in_the_daemon_runs_hands_out_its_code_and_the_profile_stream_follows_the_account() {
+    use wire::sign_in_event::Of;
+    let net = Net::start(
+        Topology::new()
+            .relay(&["ada"])
+            .host_decl(lan_host("desk", "home"))
+            .agent(testnet::AgentDecl::new("worker", "desk").prompt("Keep going.")),
+    )
+    .await
+    .unwrap();
+    let relay = net.relay().unwrap();
+    relay.set_picture("ada", "https://pictures.test/ada-1.png");
+    let main = profile(&net, "desk");
+    let mut door = door(&net, "desk").await;
+    let mut profiles = door
+        .subscribe_profiles(wire::Empty {})
+        .await
+        .unwrap()
+        .into_inner();
+    let first = profiles.message().await.unwrap().expect("the list now");
+    assert_eq!(first.profiles.len(), 1);
+    assert_eq!(first.profiles[0].id, main);
+    assert!(first.profiles[0].account_name.is_empty());
+    assert!(first.profiles[0].access.is_none());
+
+    let mut events = door
+        .sign_in(wire::SignInRequest {
+            profile_id: Some(main.clone()),
+            cloud_url: relay.url().to_owned(),
+            adopt_non_pristine: false,
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let Some(Of::Code(code)) = events.message().await.unwrap().unwrap().of else {
+        panic!("the code comes first");
+    };
+    assert_eq!(relay.device_codes(), std::slice::from_ref(&code.user_code));
+    assert!(
+        code.verification_uri_complete
+            .ends_with(&format!("user_code={}", code.user_code)),
+        "{code:?}"
+    );
+    assert!(code.expires_at_ms > 0);
+    relay.approve_device(&code.user_code, "ada");
+
+    // The worker makes the main profile one to adopt, so the daemon asks.
+    let Some(Of::Adopt(asked)) = events.message().await.unwrap().unwrap().of else {
+        panic!("asked to adopt");
+    };
+    assert_eq!(asked.profile.expect("the profile").id, main);
+    let unknown = door
+        .answer_sign_in(wire::AnswerSignInRequest {
+            sign_in_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            adopt: true,
+        })
+        .await
+        .expect_err("no sign-in waits under that id");
+    assert_eq!(unknown.code(), tonic::Code::NotFound);
+    door.answer_sign_in(wire::AnswerSignInRequest {
+        sign_in_id: asked.sign_in_id,
+        adopt: true,
+    })
+    .await
+    .unwrap();
+    let Some(Of::SignedIn(signed)) = events.message().await.unwrap().unwrap().of else {
+        panic!("signed in");
+    };
+    assert_eq!(signed.id, main);
+    assert_eq!(signed.account_name, "ada");
+    assert_eq!(signed.picture_url, "https://pictures.test/ada-1.png");
+    assert!(events.message().await.unwrap().is_none(), "the stream ends");
+
+    let read = streamed(&mut profiles, "the account's access", |profile| {
+        profile.access.as_ref().is_some_and(|access| access.pro)
+    })
+    .await;
+    assert_eq!(read.account_name, "ada");
+
+    relay.set_picture("ada", "https://pictures.test/ada-2.png");
+    let refreshed = door
+        .refresh_profile(wire::RefreshProfileRequest {
+            profile_id: main.clone(),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(refreshed.picture_url, "https://pictures.test/ada-2.png");
+    streamed(&mut profiles, "the new picture", |profile| {
+        profile.picture_url == "https://pictures.test/ada-2.png"
+    })
+    .await;
+}
+
+/// Reads the profile stream until its first profile is `wanted`.
+async fn streamed(
+    profiles: &mut tonic::Streaming<wire::ListProfilesResponse>,
+    what: &str,
+    wanted: impl Fn(&wire::Profile) -> bool,
+) -> wire::Profile {
+    tokio::time::timeout(testnet::PATIENCE, async {
+        loop {
+            let list = profiles
+                .message()
+                .await
+                .unwrap()
+                .expect("the stream stays open");
+            if let Some(profile) = list.profiles.into_iter().find(|profile| wanted(profile)) {
+                return profile;
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("the profile stream never showed {what}"))
+}

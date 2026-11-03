@@ -35,16 +35,17 @@ Two rules run through all of it:
 The base is `https://amux.sh`. The phone is the registered client `mobile`,
 with the one redirect `amux://callback` and no secret. The scopes asked for
 are `openid profile email offline_access api`; `offline_access` is what makes
-sign-in happen once rather than hourly. `amux login` on a desktop signs in as
-the client `cli` with the device flow and the same scopes.
+sign-in happen once rather than hourly. On a desktop the daemon runs the
+device flow as the client `cli` with the same scopes, for `amux login` and for
+any client that calls `InstallationService.SignIn`.
 
 | Path | Method | Called by | For |
 | --- | --- | --- | --- |
 | `/connect/authorize` | browser | app | Sign-in in the system browser, with a PKCE challenge and a state. Every sign-in sends `prompt=select_account`; signing back into a listed account adds `login_hint=<its address>`. |
-| `/connect/deviceauthorization` | POST | `amux login` | The desktop's device-code sign-in. |
+| `/connect/deviceauthorization` | POST | daemon | The device-code sign-in a client asks the daemon for (`SignIn`; `amux login` is one such client). |
 | `/connect/token` | POST | app, profile runtime | The app redeems its code here. A profile refreshes here as the client the token was issued to. Refresh tokens rotate: the one that comes back replaces the one spent. |
-| `/connect/userinfo` | GET | app | Who signed in: `sub`, `email`, `name`. `sub` is the account identifier everything else is keyed by. |
-| `/api/graphql` | POST | app | The access read, below. |
+| `/connect/userinfo` | GET | app, profile runtime | Who signed in: `sub`, `email`, `name`, `picture`. `sub` is the account identifier everything else is keyed by. The runtime reads it at sign-in and again at every token refresh, so a renamed account or a new picture reaches clients within the hour. |
+| `/api/graphql` | POST | app, profile runtime | The access read, below. The runtime makes it at sign-in, at every token refresh and when a client calls `RefreshProfile`, and publishes the answer on the profile. |
 | `/api/connect` | GET | profile runtime | A relay credential, below. |
 | `/api/purchases` | POST | app | A purchase the App Store signed, below. |
 | `/api/account` | DELETE | app | Deletes the account. `409` while a subscription is still set to renew. |
@@ -74,6 +75,12 @@ forgets it. From then on the profile alone holds and spends the refresh
 token. The app uses the sign-in's own access token until a minute before it
 expires, and after that borrows a bearer for its own calls from the profile
 (`amux_runtime_access_token`).
+
+A desktop client never holds a token. The daemon reads who the account is
+and what it may do, and publishes both on the profile
+(`Profile.account_name`, `email`, `picture_url` and `access`), which
+`InstallationService.SubscribeProfiles` streams to every client as it
+changes. A client that just learned of a purchase calls `RefreshProfile`.
 
 ## The access read
 

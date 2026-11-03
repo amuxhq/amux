@@ -111,7 +111,13 @@ pub(crate) struct Installation {
     shutdown: watch::Sender<bool>,
     /// Where profiles record analytics; unset records nothing.
     analytics: std::sync::OnceLock<Arc<dyn analytics::Sink>>,
+    /// Logins refused only because their profile held data, by the token
+    /// they were staged with, until bound again with adopt or forgotten.
+    staged_logins: Mutex<Vec<(String, std::time::Instant, crate::edge::account::Login)>>,
 }
+
+/// How long a login refused for its profile's data waits to be adopted.
+const STAGED_LOGIN_LIFETIME: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 
 pub(crate) struct Hosted {
     pub(crate) runtime: Arc<ProfileRuntime>,
@@ -216,9 +222,17 @@ impl Installation {
             })?;
         let observer = {
             let installation = Arc::downgrade(self);
-            let mut observed = edge.subscribe_relay();
+            let mut relay = edge.subscribe_relay();
+            let mut account = edge.account().subscribe();
             tokio::spawn(async move {
-                while observed.changed().await.is_ok() {
+                loop {
+                    let moved = tokio::select! {
+                        moved = relay.changed() => moved,
+                        moved = account.changed() => moved,
+                    };
+                    if moved.is_err() {
+                        return;
+                    }
                     let Some(installation) = installation.upgrade() else {
                         return;
                     };
@@ -272,6 +286,19 @@ impl Installation {
             .await
             .map_err(|error| StartError::Sweep { profile, error })?;
         self.host(runtime, entry).await
+    }
+
+    pub(crate) fn stage_login(&self, token: String, login: crate::edge::account::Login) {
+        let mut staged = self.staged_logins.lock().unwrap();
+        staged.retain(|(_, at, _)| at.elapsed() < STAGED_LOGIN_LIFETIME);
+        staged.push((token, std::time::Instant::now(), login));
+    }
+
+    pub(crate) fn take_staged_login(&self, token: &str) -> Option<crate::edge::account::Login> {
+        let mut staged = self.staged_logins.lock().unwrap();
+        staged.retain(|(_, at, _)| at.elapsed() < STAGED_LOGIN_LIFETIME);
+        let index = staged.iter().position(|(staged, ..)| staged == token)?;
+        Some(staged.remove(index).2)
     }
 
     /// Tells the registry's watchers the profile list moved.
@@ -439,6 +466,7 @@ pub async fn start(
         profile_changes: tokio::sync::Mutex::new(()),
         moved: watch::Sender::new(()),
         shutdown: watch::Sender::new(false),
+        staged_logins: Mutex::new(Vec::new()),
         analytics: std::sync::OnceLock::new(),
     });
     let uploader = installation.start_analytics(telemetry);

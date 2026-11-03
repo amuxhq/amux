@@ -684,7 +684,7 @@ never does, because its directory and journal are its whole interface (see
 
 | Endpoint | Services | Who dials it |
 | --- | --- | --- |
-| The installation front door | `InstallationService` | the CLI and the terminal client, to find profiles and manage them |
+| The installation front door, `<root>/amux.sock` | `InstallationService` | every client on this machine, to find profiles, sign them in and follow them |
 | A profile's client socket, `<data_dir>/profiles/<id>/sock` | `AgentService`, `SessionService`, `ProfileAdminService` | the terminal client, the CLI and third-party clients, at the path the front door reports as `Profile.socket_path` |
 | An agent's `agents/<id>/tools.sock` | `AgentService` and `SessionService`, with that agent as the caller | the agent's MCP tool server, and nothing else |
 | A profile's `link.sock` | a link, not a service | `amux internal ssh-link`, carrying an SSH link |
@@ -722,7 +722,25 @@ profiles. A bind names its profile or lets the installation pick the one
 already bound to that account, else one that holds nothing, else a new one.
 A call about one profile names it by id, and profile and host ids travel as
 their 16 bytes; the CLI reads and prints their text form. It also answers `GetInstallation` (the daemon's version) and
-`Shutdown`. The rules behind these calls are `node::Registry`'s; the front
+`Shutdown`.
+
+`SubscribeProfiles` sends the whole list at once and again whenever any
+profile changes: one created or deleted, a sign-in or sign-out, its relay
+link, its account's name, picture or access. A client draws its profiles from
+this stream alone.
+
+Two ways sign a profile in. `BindProfile` takes a refresh token a client got
+itself in a browser (the phone and the Mac app), names the OAuth client it was
+issued to, and the client forgets it. `SignIn` is for every other client: the
+daemon runs the device flow under the `cli` client, streams the code and the
+page to open (`verification_uri_complete` has the code filled in), and ends
+the stream with the signed-in profile once the person approves. A profile
+named for either that already holds agents or paired hosts is not adopted
+silently: `BindProfile` refuses with `FAILED_PRECONDITION` and keeps the login
+a while, so binding again with the same token and `adopt_non_pristine` needs
+no second login; `SignIn` sends an `adopt` event and waits for
+`AnswerSignIn`. Closing the `SignIn` stream abandons it. `RefreshProfile`
+reads the account again now, as after a purchase. The rules behind these calls are `node::Registry`'s; the front
 door (`crates/node/src/front_door.rs`) converts.
 
 `ProfileAdminService`, on each profile's own socket, is that profile's

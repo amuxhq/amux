@@ -2,17 +2,26 @@
 //! profiles, finds each one's client socket, creates, names, deletes and
 //! signs them in, and manages the installation.
 
+use std::collections::HashMap;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use std::time::UNIX_EPOCH;
+
 use agent_dir::local_socket::LocalListener;
+use futures_util::Stream;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 use wire::installation_service_server::{InstallationService, InstallationServiceServer};
 use wire::{
-    BindProfileRequest, CreateProfileRequest, DeleteProfileRequest, Empty, ErrorCode,
-    ListProfilesResponse, RenameProfileRequest,
+    AnswerSignInRequest, BindProfileRequest, CreateProfileRequest, DeleteProfileRequest, Empty,
+    ErrorCode, ListProfilesResponse, RefreshProfileRequest, RenameProfileRequest, SignInEvent,
+    SignInRequest, sign_in_event,
 };
 
 use crate::Tier;
+use crate::auth::oauth::DeviceSignIn;
 use crate::edge::{Cloud, Relay, RelayCarrier};
 use crate::grpc::{self, status, wire_error};
 use crate::registry::{ProfileRefusal, ProfileState, Registry, SignIn};
@@ -47,12 +56,37 @@ pub(crate) fn info(state: ProfileState) -> wire::Profile {
     wire::Profile {
         email: account.email.unwrap_or_default(),
         account_name: account.name.unwrap_or_default(),
+        picture_url: account.picture.unwrap_or_default(),
+        access: state.access.map(access),
         cloud: Some(wire::CloudStanding {
             standing: Some(standing),
         }),
         id: state.id.as_bytes().to_vec(),
         label: state.label,
         socket_path: state.socket.to_string_lossy().into_owned(),
+    }
+}
+
+fn access(access: crate::AccountAccess) -> wire::Access {
+    use wire::access::Grant;
+    wire::Access {
+        pro: access.pro,
+        until_ms: access.until_ms,
+        grant: access.grant.map(|grant| match grant {
+            crate::Grant::Granted => Grant::Granted(Empty {}),
+            crate::Grant::Purchased {
+                store,
+                will_renew,
+                renews_at_ms,
+            } => Grant::Purchased(wire::Purchase {
+                store: match store {
+                    crate::PurchaseStore::AppStore => wire::PurchaseStore::AppStore,
+                    crate::PurchaseStore::Web => wire::PurchaseStore::Web,
+                } as i32,
+                will_renew,
+                renews_at_ms,
+            }),
+        }),
     }
 }
 
@@ -76,11 +110,93 @@ pub(crate) fn serve(listener: LocalListener, registry: Registry) -> JoinHandle<(
 #[derive(Clone)]
 pub struct FrontDoor {
     registry: Registry,
+    /// Sign-ins waiting for their client to say whether to adopt a profile
+    /// that holds data.
+    asking: Arc<Mutex<HashMap<Uuid, oneshot::Sender<bool>>>>,
 }
 
 impl FrontDoor {
     pub(crate) fn new(registry: Registry) -> FrontDoor {
-        FrontDoor { registry }
+        FrontDoor {
+            registry,
+            asking: Arc::default(),
+        }
+    }
+}
+
+type EventStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>>;
+
+/// A response stream of what arrives on `received`, ending when its
+/// sender does.
+fn receiving<T: Send + 'static>(received: mpsc::Receiver<Result<T, Status>>) -> EventStream<T> {
+    Box::pin(futures_util::stream::unfold(
+        received,
+        |mut received| async move { received.recv().await.map(|item| (item, received)) },
+    ))
+}
+
+fn ms_since_epoch(time: std::time::SystemTime) -> i64 {
+    time.duration_since(UNIX_EPOCH).map_or(0, |since| {
+        i64::try_from(since.as_millis()).unwrap_or(i64::MAX)
+    })
+}
+
+/// A device sign-in run to its end: the approved code's token bound to the
+/// profile, asking the client first when the profile holds data. `None`
+/// when the client went away or declined.
+async fn finish_sign_in(
+    registry: Registry,
+    asking: Arc<Mutex<HashMap<Uuid, oneshot::Sender<bool>>>>,
+    events: &mpsc::Sender<Result<SignInEvent, Status>>,
+    device: DeviceSignIn,
+    request: SignInRequest,
+    profile: Option<Uuid>,
+    cloud_url: String,
+) -> Result<Option<wire::Profile>, Status> {
+    let refresh = tokio::select! {
+        refresh = device.finish() => refresh
+            .map_err(|error| failed(ErrorCode::Unauthenticated, error.to_string()))?,
+        () = events.closed() => return Ok(None),
+    };
+    let mut adopt = request.adopt_non_pristine;
+    loop {
+        let sign_in = SignIn {
+            profile,
+            cloud_url: cloud_url.clone(),
+            refresh_token: refresh.clone(),
+            client_id: String::new(),
+            adopt,
+        };
+        match registry.bind(sign_in).await {
+            Ok(state) => return Ok(Some(info(state))),
+            Err(ProfileRefusal::HoldsData) if !adopt => {
+                let id = Uuid::new_v4();
+                let (answer, answered) = oneshot::channel();
+                asking.lock().unwrap().insert(id, answer);
+                let named = registry
+                    .list()?
+                    .into_iter()
+                    .find(|state| Some(state.id) == profile)
+                    .map(info);
+                let asked = SignInEvent {
+                    of: Some(sign_in_event::Of::Adopt(wire::SignInAdopt {
+                        sign_in_id: id.as_bytes().to_vec(),
+                        profile: named,
+                    })),
+                };
+                let yes = events.send(Ok(asked)).await.is_ok()
+                    && tokio::select! {
+                        yes = answered => yes.unwrap_or(false),
+                        () = events.closed() => false,
+                    };
+                asking.lock().unwrap().remove(&id);
+                if !yes {
+                    return Ok(None);
+                }
+                adopt = true;
+            }
+            Err(refusal) => return Err(refusal.into()),
+        }
     }
 }
 
@@ -101,6 +217,112 @@ fn profile_id(bytes: &[u8]) -> Result<Uuid, Status> {
 
 #[tonic::async_trait]
 impl InstallationService for FrontDoor {
+    type SubscribeProfilesStream = EventStream<ListProfilesResponse>;
+    type SignInStream = EventStream<SignInEvent>;
+
+    async fn subscribe_profiles(
+        &self,
+        _request: Request<wire::Empty>,
+    ) -> Result<Response<Self::SubscribeProfilesStream>, Status> {
+        let mut moved = self.registry.subscribe()?;
+        let registry = self.registry.clone();
+        let (events, received) = mpsc::channel(4);
+        tokio::spawn(async move {
+            // The list is read after the watch is marked seen, so a change
+            // between the two rings again rather than being lost.
+            loop {
+                moved.borrow_and_update();
+                let listed = registry.list().map(|states| ListProfilesResponse {
+                    profiles: states.into_iter().map(info).collect(),
+                });
+                let stopping = listed.is_err();
+                if events.send(listed.map_err(Status::from)).await.is_err() || stopping {
+                    return;
+                }
+                tokio::select! {
+                    changed = moved.changed() => if changed.is_err() { return },
+                    () = events.closed() => return,
+                }
+            }
+        });
+        Ok(Response::new(receiving(received)))
+    }
+
+    async fn sign_in(
+        &self,
+        request: Request<SignInRequest>,
+    ) -> Result<Response<Self::SignInStream>, Status> {
+        let request = request.into_inner();
+        let profile = request.profile_id.as_deref().map(profile_id).transpose()?;
+        if let Some(id) = profile
+            && !self.registry.list()?.iter().any(|state| state.id == id)
+        {
+            return Err(ProfileRefusal::NoProfile(id).into());
+        }
+        let cloud_url = match request.cloud_url.trim() {
+            "" => settings::DEFAULT_CLOUD_URL.to_owned(),
+            url => url.trim_end_matches('/').to_owned(),
+        };
+        let device = DeviceSignIn::start(&cloud_url)
+            .await
+            .map_err(|error| failed(ErrorCode::Unavailable, error.to_string()))?;
+        let code = SignInEvent {
+            of: Some(sign_in_event::Of::Code(wire::SignInCode {
+                verification_uri_complete: device
+                    .verification_uri_complete
+                    .clone()
+                    .unwrap_or_else(|| device.verification_uri.clone()),
+                verification_uri: device.verification_uri.clone(),
+                user_code: device.user_code.clone(),
+                expires_at_ms: ms_since_epoch(device.expires_at),
+            })),
+        };
+        let (events, received) = mpsc::channel(4);
+        events
+            .send(Ok(code))
+            .await
+            .expect("the receiver is held here");
+        let (registry, asking) = (self.registry.clone(), self.asking.clone());
+        tokio::spawn(async move {
+            let finished = finish_sign_in(
+                registry, asking, &events, device, request, profile, cloud_url,
+            )
+            .await;
+            let last = match finished {
+                Ok(Some(profile)) => Ok(SignInEvent {
+                    of: Some(sign_in_event::Of::SignedIn(profile)),
+                }),
+                Ok(None) => Err(failed(ErrorCode::Cancelled, "not signed in")),
+                Err(status) => Err(status),
+            };
+            let _ = events.send(last).await;
+        });
+        Ok(Response::new(receiving(received)))
+    }
+
+    async fn answer_sign_in(
+        &self,
+        request: Request<AnswerSignInRequest>,
+    ) -> Result<Response<Empty>, Status> {
+        let request = request.into_inner();
+        let id = Uuid::from_slice(&request.sign_in_id)
+            .map_err(|_| failed(ErrorCode::InvalidArgument, "a sign-in id is 16 bytes"))?;
+        let answer =
+            self.asking.lock().unwrap().remove(&id).ok_or_else(|| {
+                failed(ErrorCode::NotFound, "no sign-in is waiting for that answer")
+            })?;
+        let _ = answer.send(request.adopt);
+        Ok(Response::new(Empty {}))
+    }
+
+    async fn refresh_profile(
+        &self,
+        request: Request<RefreshProfileRequest>,
+    ) -> Result<Response<wire::Profile>, Status> {
+        let id = profile_id(&request.into_inner().profile_id)?;
+        Ok(Response::new(info(self.registry.refresh(id).await?)))
+    }
+
     async fn list_profiles(
         &self,
         _request: Request<wire::Empty>,

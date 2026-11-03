@@ -31,6 +31,7 @@ use std::time::Duration;
 
 use account::Binding;
 pub(crate) use account::{Account, AccountCredentials};
+pub use binding::{AccountAccess, Grant, PurchaseStore};
 pub use cloud::UDP_BLOCKED_MEMORY;
 use futures_util::stream;
 pub(crate) use relay_server::Accounts;

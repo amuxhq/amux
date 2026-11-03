@@ -111,58 +111,82 @@ fn refused(error: &ErrorResponse) -> OAuthError {
     OAuthError::Request(format!("{}{description}", error.error))
 }
 
-/// Run the OAuth 2.0 device authorization flow.
-pub async fn run_device_flow(cloud_url: &str) -> Result<String, OAuthError> {
-    let http = http_client()?;
-    let details: DeviceAuthorization = match post(
-        &http,
-        &format!("{cloud_url}/connect/deviceauthorization"),
-        &[("client_id", CLI_CLIENT_ID), ("scope", DEVICE_SCOPES)],
-    )
-    .await?
-    {
-        Answer::Ok(details) => details,
-        Answer::Refused(error) => return Err(refused(&error)),
-    };
+/// A device sign-in under way (RFC 8628): the code the person enters, and
+/// the page to enter it on, until [`DeviceSignIn::finish`] has the token.
+pub struct DeviceSignIn {
+    pub user_code: String,
+    pub verification_uri: String,
+    /// The page with the code filled in, when the service offers one.
+    pub verification_uri_complete: Option<String>,
+    /// When the code stops working.
+    pub expires_at: SystemTime,
+    device_code: String,
+    interval: Duration,
+    deadline: Instant,
+    token_url: String,
+    http: reqwest::Client,
+}
 
-    println!("\nTo authenticate, visit:");
-    println!("  {}", details.verification_uri);
-    if let Some(complete_uri) = &details.verification_uri_complete {
-        println!("\nOr open this URL directly:");
-        println!("  {complete_uri}");
-    }
-    println!("\nAnd enter code: {}", details.user_code);
-    println!("\nWaiting for authentication...");
-
-    let token_url = format!("{cloud_url}/connect/token");
-    let deadline = Instant::now() + Duration::from_secs(details.expires_in);
-    let mut interval = details
-        .interval
-        .map_or(DEFAULT_INTERVAL, Duration::from_secs);
-    loop {
-        tokio::time::sleep(interval).await;
-        let answer = post::<TokenResponse>(
+impl DeviceSignIn {
+    /// Asks the cloud for a device code under the CLI's OAuth client.
+    pub async fn start(cloud_url: &str) -> Result<Self, OAuthError> {
+        let http = http_client()?;
+        let details: DeviceAuthorization = match post(
             &http,
-            &token_url,
-            &[
-                ("grant_type", DEVICE_CODE_GRANT),
-                ("device_code", &details.device_code),
-                ("client_id", CLI_CLIENT_ID),
-            ],
+            &format!("{cloud_url}/connect/deviceauthorization"),
+            &[("client_id", CLI_CLIENT_ID), ("scope", DEVICE_SCOPES)],
         )
-        .await?;
-        match answer {
-            Answer::Ok(tokens) => return tokens.refresh_token.ok_or(OAuthError::NoRefreshToken),
-            Answer::Refused(error) => match error.error.as_str() {
-                "authorization_pending" => {}
-                "slow_down" => interval += DEFAULT_INTERVAL,
-                _ => return Err(refused(&error)),
-            },
-        }
-        if Instant::now() >= deadline {
-            return Err(OAuthError::Request(
-                "the sign-in code expired before it was approved".into(),
-            ));
+        .await?
+        {
+            Answer::Ok(details) => details,
+            Answer::Refused(error) => return Err(refused(&error)),
+        };
+        let lifetime = Duration::from_secs(details.expires_in);
+        Ok(Self {
+            user_code: details.user_code,
+            verification_uri: details.verification_uri,
+            verification_uri_complete: details.verification_uri_complete,
+            expires_at: SystemTime::now() + lifetime,
+            device_code: details.device_code,
+            interval: details
+                .interval
+                .map_or(DEFAULT_INTERVAL, Duration::from_secs),
+            deadline: Instant::now() + lifetime,
+            token_url: format!("{cloud_url}/connect/token"),
+            http,
+        })
+    }
+
+    /// Polls until the person approves the code, and returns the refresh
+    /// token it was exchanged for.
+    pub async fn finish(mut self) -> Result<String, OAuthError> {
+        loop {
+            tokio::time::sleep(self.interval).await;
+            let answer = post::<TokenResponse>(
+                &self.http,
+                &self.token_url,
+                &[
+                    ("grant_type", DEVICE_CODE_GRANT),
+                    ("device_code", &self.device_code),
+                    ("client_id", CLI_CLIENT_ID),
+                ],
+            )
+            .await?;
+            match answer {
+                Answer::Ok(tokens) => {
+                    return tokens.refresh_token.ok_or(OAuthError::NoRefreshToken);
+                }
+                Answer::Refused(error) => match error.error.as_str() {
+                    "authorization_pending" => {}
+                    "slow_down" => self.interval += DEFAULT_INTERVAL,
+                    _ => return Err(refused(&error)),
+                },
+            }
+            if Instant::now() >= self.deadline {
+                return Err(OAuthError::Request(
+                    "the sign-in code expired before it was approved".into(),
+                ));
+            }
         }
     }
 }
@@ -298,7 +322,9 @@ mod tests {
         ])
         .await;
 
-        assert_eq!(run_device_flow(&service.url).await.unwrap(), "refresh-1");
+        let started = DeviceSignIn::start(&service.url).await.unwrap();
+        assert_eq!(started.verification_uri, "https://cloud.test/device");
+        assert_eq!(started.finish().await.unwrap(), "refresh-1");
         let forms = service.forms.lock().unwrap();
         assert_eq!(forms[0].0, "/connect/deviceauthorization");
         assert_eq!(
@@ -326,7 +352,12 @@ mod tests {
         ])
         .await;
 
-        let error = run_device_flow(&service.url).await.unwrap_err();
+        let error = DeviceSignIn::start(&service.url)
+            .await
+            .unwrap()
+            .finish()
+            .await
+            .unwrap_err();
         assert_eq!(
             error.to_string(),
             "OAuth request error: access_denied: the person declined"

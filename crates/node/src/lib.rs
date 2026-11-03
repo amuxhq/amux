@@ -71,9 +71,10 @@ pub use dump::{
 #[cfg(not(target_os = "ios"))]
 pub use edge::mdns_discovery;
 pub use edge::{
-    Cloud, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge, EdgeOptions,
-    JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET, LanOptions, LoopbackLink, Relay,
-    RelayCarrier, RelayIdentity, RelayQuic, RelayServing, UDP_BLOCKED_MEMORY, test_interfaces,
+    AccountAccess, Cloud, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge,
+    EdgeOptions, Grant, JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET, LanOptions,
+    LoopbackLink, PurchaseStore, Relay, RelayCarrier, RelayIdentity, RelayQuic, RelayServing,
+    UDP_BLOCKED_MEMORY, test_interfaces,
 };
 pub use forward::Owner;
 pub use generation::{Generation, boot_id};
@@ -138,7 +139,6 @@ pub type HostId = uuid::Uuid;
 pub use agent_dir::Clock;
 pub use auth::AuthError;
 pub use auth::claims::Tier;
-pub use auth::oauth::run_device_flow;
 pub use link::client_tickets::CLIENT_TICKETS_DIR;
 pub use link::resumption::{RELAY_TICKETS, SessionTickets, TICKETS_DIR};
 pub use link::validation::CLIENT_TOKENS_DIR;

@@ -100,3 +100,133 @@ pub(crate) async fn fetch_userinfo(
     }
     Ok(info)
 }
+
+/// What an account may do, as the account service answers its access read.
+/// `pro` is the whole gate; the rest explains it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AccountAccess {
+    pub pro: bool,
+    /// When access ends, or ended; none when nothing ends.
+    pub until_ms: Option<i64>,
+    pub grant: Option<Grant>,
+}
+
+/// Why an account has access.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Grant {
+    /// Given without a purchase.
+    Granted,
+    Purchased {
+        store: PurchaseStore,
+        will_renew: bool,
+        renews_at_ms: Option<i64>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PurchaseStore {
+    AppStore,
+    Web,
+}
+
+/// The access read: one GraphQL query, the same the phone made itself.
+const ACCESS_QUERY: &str = "{ me { access { pro until grant { __typename \
+    ... on Purchased { provider willRenew entitledUntil } } } } }";
+
+#[derive(Deserialize)]
+struct AccessAnswer {
+    data: Option<AccessData>,
+}
+
+#[derive(Deserialize)]
+struct AccessData {
+    me: Option<AccessMe>,
+}
+
+#[derive(Deserialize)]
+struct AccessMe {
+    access: Option<AccessRead>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AccessRead {
+    pro: bool,
+    until: Option<String>,
+    grant: Option<GrantRead>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GrantRead {
+    #[serde(rename = "__typename")]
+    type_name: String,
+    provider: Option<String>,
+    will_renew: Option<bool>,
+    entitled_until: Option<String>,
+}
+
+/// Milliseconds since the epoch of an RFC 3339 time, as GraphQL's DateTime
+/// writes it.
+fn rfc3339_ms(text: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(text)
+        .ok()
+        .map(|time| time.timestamp_millis())
+}
+
+pub(crate) async fn fetch_access(
+    http: &reqwest::Client,
+    cloud_url: &str,
+    token: &AccessToken,
+) -> Result<Option<AccountAccess>, reqwest::Error> {
+    let answer: AccessAnswer = http
+        .post(format!("{cloud_url}/api/graphql"))
+        .timeout(std::time::Duration::from_secs(15))
+        .bearer_auth(&token.bearer)
+        .json(&serde_json::json!({ "query": ACCESS_QUERY }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let Some(read) = answer
+        .data
+        .and_then(|data| data.me)
+        .and_then(|me| me.access)
+    else {
+        return Ok(None);
+    };
+    let grant = read.grant.map(|grant| match grant.type_name.as_str() {
+        "Purchased" => Grant::Purchased {
+            store: match grant.provider.as_deref() {
+                Some("REVENUE_CAT") => PurchaseStore::AppStore,
+                _ => PurchaseStore::Web,
+            },
+            will_renew: grant.will_renew.unwrap_or(false),
+            renews_at_ms: grant.entitled_until.as_deref().and_then(rfc3339_ms),
+        },
+        // A member added later reads as a grant, not a purchase with
+        // everything missing.
+        _ => Grant::Granted,
+    });
+    Ok(Some(AccountAccess {
+        pro: read.pro,
+        until_ms: read.until.as_deref().and_then(rfc3339_ms),
+        grant,
+    }))
+}
+
+#[cfg(test)]
+mod access_tests {
+    use super::*;
+
+    #[test]
+    fn an_access_time_reads_as_milliseconds() {
+        assert_eq!(rfc3339_ms("2026-11-03T00:00:00Z"), Some(1_793_664_000_000));
+        assert_eq!(
+            rfc3339_ms("2026-11-03T01:00:00+01:00"),
+            Some(1_793_664_000_000)
+        );
+        assert_eq!(rfc3339_ms("soon"), None);
+    }
+}

@@ -8200,6 +8200,13 @@ pub struct Profile {
     pub socket_path: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "6")]
     pub cloud: ::core::option::Option<CloudStanding>,
+    /// The account's picture, an https URL; empty when it has none.
+    #[prost(string, tag = "7")]
+    pub picture_url: ::prost::alloc::string::String,
+    /// What the account may do, as amux.sh last said; absent until the
+    /// daemon has read it, and for a profile never signed in.
+    #[prost(message, optional, tag = "8")]
+    pub access: ::core::option::Option<Access>,
 }
 impl ::prost::Name for Profile {
     const NAME: &'static str = "Profile";
@@ -8209,6 +8216,62 @@ impl ::prost::Name for Profile {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Profile".into()
+    }
+}
+/// What an account may do. `pro` is the whole gate; the rest explains it.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Access {
+    #[prost(bool, tag = "1")]
+    pub pro: bool,
+    /// When access ends, or ended, in milliseconds since the epoch; absent
+    /// when nothing ends.
+    #[prost(int64, optional, tag = "2")]
+    pub until_ms: ::core::option::Option<i64>,
+    /// Why the account has it; absent when nothing was ever bought or given.
+    #[prost(oneof = "access::Grant", tags = "3, 4")]
+    pub grant: ::core::option::Option<access::Grant>,
+}
+/// Nested message and enum types in `Access`.
+pub mod access {
+    /// Why the account has it; absent when nothing was ever bought or given.
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Grant {
+        /// Given without a purchase: complimentary, a trial, a beta.
+        #[prost(message, tag = "3")]
+        Granted(super::Empty),
+        #[prost(message, tag = "4")]
+        Purchased(super::Purchase),
+    }
+}
+impl ::prost::Name for Access {
+    const NAME: &'static str = "Access";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Access".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Access".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Purchase {
+    #[prost(enumeration = "PurchaseStore", tag = "1")]
+    pub store: i32,
+    /// Whether it charges again; a cancelled subscription runs to its end.
+    #[prost(bool, tag = "2")]
+    pub will_renew: bool,
+    /// When it charges again, in milliseconds since the epoch.
+    #[prost(int64, optional, tag = "3")]
+    pub renews_at_ms: ::core::option::Option<i64>,
+}
+impl ::prost::Name for Purchase {
+    const NAME: &'static str = "Purchase";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Purchase".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Purchase".into()
     }
 }
 /// A profile's standing with its cloud account: what the person asked for
@@ -8378,6 +8441,165 @@ impl ::prost::Name for DeleteProfileRequest {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.DeleteProfileRequest".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SignInRequest {
+    /// The profile to sign in; absent lets the installation pick: the profile
+    /// already bound to this account, else the one that holds nothing yet,
+    /// else a new one.
+    #[prost(bytes = "vec", optional, tag = "1")]
+    pub profile_id: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    /// The account service; empty is <https://amux.sh.>
+    #[prost(string, tag = "2")]
+    pub cloud_url: ::prost::alloc::string::String,
+    /// Sign in a profile that already holds agents or paired hosts without
+    /// asking.
+    #[prost(bool, tag = "3")]
+    pub adopt_non_pristine: bool,
+}
+impl ::prost::Name for SignInRequest {
+    const NAME: &'static str = "SignInRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SignInRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.SignInRequest".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SignInEvent {
+    #[prost(oneof = "sign_in_event::Of", tags = "1, 2, 3")]
+    pub of: ::core::option::Option<sign_in_event::Of>,
+}
+/// Nested message and enum types in `SignInEvent`.
+pub mod sign_in_event {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Of {
+        #[prost(message, tag = "1")]
+        Code(super::SignInCode),
+        /// The chosen profile holds agents or paired hosts: answer with
+        /// AnswerSignIn, naming this sign-in.
+        #[prost(message, tag = "2")]
+        Adopt(super::SignInAdopt),
+        /// Signed in; the stream ends.
+        #[prost(message, tag = "3")]
+        SignedIn(super::Profile),
+    }
+}
+impl ::prost::Name for SignInEvent {
+    const NAME: &'static str = "SignInEvent";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SignInEvent".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.SignInEvent".into()
+    }
+}
+/// What the person does to sign in: open `verification_uri_complete`, or
+/// open `verification_uri` and type `user_code`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SignInCode {
+    #[prost(string, tag = "1")]
+    pub verification_uri: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub verification_uri_complete: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub user_code: ::prost::alloc::string::String,
+    /// When the code stops working, in milliseconds since the epoch.
+    #[prost(int64, tag = "4")]
+    pub expires_at_ms: i64,
+}
+impl ::prost::Name for SignInCode {
+    const NAME: &'static str = "SignInCode";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SignInCode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.SignInCode".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SignInAdopt {
+    #[prost(bytes = "vec", tag = "1")]
+    pub sign_in_id: ::prost::alloc::vec::Vec<u8>,
+    /// The profile that would be signed in.
+    #[prost(message, optional, tag = "2")]
+    pub profile: ::core::option::Option<Profile>,
+}
+impl ::prost::Name for SignInAdopt {
+    const NAME: &'static str = "SignInAdopt";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SignInAdopt".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.SignInAdopt".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AnswerSignInRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub sign_in_id: ::prost::alloc::vec::Vec<u8>,
+    /// Sign the profile in anyway; false abandons the sign-in.
+    #[prost(bool, tag = "2")]
+    pub adopt: bool,
+}
+impl ::prost::Name for AnswerSignInRequest {
+    const NAME: &'static str = "AnswerSignInRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AnswerSignInRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AnswerSignInRequest".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RefreshProfileRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub profile_id: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for RefreshProfileRequest {
+    const NAME: &'static str = "RefreshProfileRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.RefreshProfileRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.RefreshProfileRequest".into()
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum PurchaseStore {
+    Unspecified = 0,
+    AppStore = 1,
+    Web = 2,
+}
+impl PurchaseStore {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "PURCHASE_STORE_UNSPECIFIED",
+            Self::AppStore => "PURCHASE_STORE_APP_STORE",
+            Self::Web => "PURCHASE_STORE_WEB",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "PURCHASE_STORE_UNSPECIFIED" => Some(Self::Unspecified),
+            "PURCHASE_STORE_APP_STORE" => Some(Self::AppStore),
+            "PURCHASE_STORE_WEB" => Some(Self::Web),
+            _ => None,
+        }
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -8674,6 +8896,112 @@ pub mod installation_service_client {
                 .insert(GrpcMethod::new("amux.v1.InstallationService", "DeleteProfile"));
             self.inner.unary(req, path, codec).await
         }
+        /// Every profile now, then again whenever any of them changes: a new or
+        /// removed profile, a sign-in or sign-out, its relay link, its account's
+        /// name, picture or access. Each message is the whole list.
+        pub async fn subscribe_profiles(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::ListProfilesResponse>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.InstallationService/SubscribeProfiles",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("amux.v1.InstallationService", "SubscribeProfiles"),
+                );
+            self.inner.server_streaming(req, path, codec).await
+        }
+        /// Signs a profile in with the device flow, run by the daemon: the first
+        /// event is the code to show the person and the page to open, the last is
+        /// the signed-in profile. A profile that already holds agents or paired
+        /// hosts asks first, with an adopt event, unless the request already
+        /// adopts; AnswerSignIn answers it. The stream's closing abandons the
+        /// sign-in.
+        pub async fn sign_in(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SignInRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::SignInEvent>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.InstallationService/SignIn",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.InstallationService", "SignIn"));
+            self.inner.server_streaming(req, path, codec).await
+        }
+        pub async fn answer_sign_in(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AnswerSignInRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.InstallationService/AnswerSignIn",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.InstallationService", "AnswerSignIn"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Reads the profile's account again now (its name, picture and access),
+        /// as after a purchase; the daemon also reads it whenever it refreshes the
+        /// account's token.
+        pub async fn refresh_profile(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RefreshProfileRequest>,
+        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.InstallationService/RefreshProfile",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("amux.v1.InstallationService", "RefreshProfile"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -8722,6 +9050,49 @@ pub mod installation_service_server {
             &self,
             request: tonic::Request<super::DeleteProfileRequest>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
+        /// Server streaming response type for the SubscribeProfiles method.
+        type SubscribeProfilesStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::ListProfilesResponse, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        /// Every profile now, then again whenever any of them changes: a new or
+        /// removed profile, a sign-in or sign-out, its relay link, its account's
+        /// name, picture or access. Each message is the whole list.
+        async fn subscribe_profiles(
+            &self,
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<
+            tonic::Response<Self::SubscribeProfilesStream>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the SignIn method.
+        type SignInStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::SignInEvent, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        /// Signs a profile in with the device flow, run by the daemon: the first
+        /// event is the code to show the person and the page to open, the last is
+        /// the signed-in profile. A profile that already holds agents or paired
+        /// hosts asks first, with an adopt event, unless the request already
+        /// adopts; AnswerSignIn answers it. The stream's closing abandons the
+        /// sign-in.
+        async fn sign_in(
+            &self,
+            request: tonic::Request<super::SignInRequest>,
+        ) -> std::result::Result<tonic::Response<Self::SignInStream>, tonic::Status>;
+        async fn answer_sign_in(
+            &self,
+            request: tonic::Request<super::AnswerSignInRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
+        /// Reads the profile's account again now (its name, picture and access),
+        /// as after a purchase; the daemon also reads it whenever it refreshes the
+        /// account's token.
+        async fn refresh_profile(
+            &self,
+            request: tonic::Request<super::RefreshProfileRequest>,
+        ) -> std::result::Result<tonic::Response<super::Profile>, tonic::Status>;
     }
     /// Local Unix socket and in-process only. Calls are not retried by any
     /// client; a mutation that loses its reply is re-run by the person.
@@ -9108,6 +9479,194 @@ pub mod installation_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = DeleteProfileSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.InstallationService/SubscribeProfiles" => {
+                    #[allow(non_camel_case_types)]
+                    struct SubscribeProfilesSvc<T: InstallationService>(pub Arc<T>);
+                    impl<
+                        T: InstallationService,
+                    > tonic::server::ServerStreamingService<super::Empty>
+                    for SubscribeProfilesSvc<T> {
+                        type Response = super::ListProfilesResponse;
+                        type ResponseStream = T::SubscribeProfilesStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Empty>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as InstallationService>::subscribe_profiles(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SubscribeProfilesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.InstallationService/SignIn" => {
+                    #[allow(non_camel_case_types)]
+                    struct SignInSvc<T: InstallationService>(pub Arc<T>);
+                    impl<
+                        T: InstallationService,
+                    > tonic::server::ServerStreamingService<super::SignInRequest>
+                    for SignInSvc<T> {
+                        type Response = super::SignInEvent;
+                        type ResponseStream = T::SignInStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SignInRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as InstallationService>::sign_in(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SignInSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.InstallationService/AnswerSignIn" => {
+                    #[allow(non_camel_case_types)]
+                    struct AnswerSignInSvc<T: InstallationService>(pub Arc<T>);
+                    impl<
+                        T: InstallationService,
+                    > tonic::server::UnaryService<super::AnswerSignInRequest>
+                    for AnswerSignInSvc<T> {
+                        type Response = super::Empty;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::AnswerSignInRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as InstallationService>::answer_sign_in(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = AnswerSignInSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.InstallationService/RefreshProfile" => {
+                    #[allow(non_camel_case_types)]
+                    struct RefreshProfileSvc<T: InstallationService>(pub Arc<T>);
+                    impl<
+                        T: InstallationService,
+                    > tonic::server::UnaryService<super::RefreshProfileRequest>
+                    for RefreshProfileSvc<T> {
+                        type Response = super::Profile;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RefreshProfileRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as InstallationService>::refresh_profile(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RefreshProfileSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

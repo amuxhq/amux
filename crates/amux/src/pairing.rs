@@ -14,9 +14,9 @@ use uuid::Uuid;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
-    BeginPairRequest, BindProfileRequest, Empty, HostEntry, HostRef, PairingIdentity,
-    PairingWindow, PendingPair, RouteKind, StartPairingRequest, TrustSshPeerRequest, UnpairRequest,
-    begin_pair_request, pairing_window, start_pairing_request,
+    BeginPairRequest, Empty, HostEntry, HostRef, PairingIdentity, PairingWindow, PendingPair,
+    RouteKind, StartPairingRequest, TrustSshPeerRequest, UnpairRequest, begin_pair_request,
+    pairing_window, start_pairing_request,
 };
 
 type Door = InstallationServiceClient<Channel>;
@@ -738,43 +738,57 @@ pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
 /// gave. A profile that already has agents or paired hosts is adopted only
 /// when the person says so.
 pub async fn login(mut door: Door, profile: Option<&wire::Profile>, cloud_url: &str) -> Result<()> {
-    let refresh = node::run_device_flow(cloud_url)
+    use wire::sign_in_event::Of;
+    let mut events = door
+        .sign_in(wire::SignInRequest {
+            profile_id: profile.map(|profile| profile.id.clone()),
+            cloud_url: cloud_url.to_owned(),
+            adopt_non_pristine: false,
+        })
         .await
-        .context("signing in")?;
-    let mut request = BindProfileRequest {
-        profile_id: profile.map(|profile| profile.id.clone()),
-        cloud_url: cloud_url.to_owned(),
-        staged_refresh_token: refresh,
-        adopt_non_pristine: false,
-        client_id: String::new(),
-    };
-    let bound = match door.bind_profile(request.clone()).await {
-        Err(status)
-            if status.code() == tonic::Code::FailedPrecondition
-                && status.message().contains("adopting") =>
-        {
-            let answer = ask(
-                "This profile already has agents or paired hosts. Sign it in to this account \
-                 anyway? [y/N] ",
-            )?;
-            if !matches!(answer.to_ascii_lowercase().as_str(), "y" | "yes") {
-                println!("Not signed in.");
+        .map_err(plain)?
+        .into_inner();
+    while let Some(event) = events.message().await.map_err(plain)? {
+        match event.of {
+            Some(Of::Code(code)) => {
+                println!("\nTo sign in, open:");
+                println!("  {}", code.verification_uri_complete);
+                println!(
+                    "\nOr open {} and enter the code {}.",
+                    code.verification_uri, code.user_code
+                );
+                println!("\nWaiting for you to sign in...");
+            }
+            Some(Of::Adopt(asked)) => {
+                let answer = ask(
+                    "This profile already has agents or paired hosts. Sign it in to this account \
+                     anyway? [y/N] ",
+                )?;
+                let adopt = matches!(answer.to_ascii_lowercase().as_str(), "y" | "yes");
+                door.answer_sign_in(wire::AnswerSignInRequest {
+                    sign_in_id: asked.sign_in_id,
+                    adopt,
+                })
+                .await
+                .map_err(plain)?;
+                if !adopt {
+                    println!("Not signed in.");
+                    return Ok(());
+                }
+            }
+            Some(Of::SignedIn(bound)) => {
+                let who = [&bound.account_name, &bound.email]
+                    .into_iter()
+                    .find(|who| !who.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| "your account".to_owned());
+                println!("Signed {} in as {who}.", bound.label);
                 return Ok(());
             }
-            request.adopt_non_pristine = true;
-            door.bind_profile(request).await
+            None => {}
         }
-        other => other,
     }
-    .map_err(plain)?
-    .into_inner();
-    let who = [&bound.account_name, &bound.email]
-        .into_iter()
-        .find(|who| !who.is_empty())
-        .cloned()
-        .unwrap_or_else(|| "your account".to_owned());
-    println!("Signed {} in as {who}.", bound.label);
-    Ok(())
+    bail!("the sign-in ended before it finished")
 }
 
 /// Signs a profile out; its agents and paired hosts stay.

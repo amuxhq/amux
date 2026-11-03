@@ -229,13 +229,10 @@ impl ProfileRuntime {
     /// An agent's core asked for a dump over its control connection, after
     /// this host's own limit per kind.
     pub(crate) fn agent_asked(self: &Arc<Self>, id: Uuid, asked: wire::DumpAsked) {
-        // An agent from before checks had ids names its check by sentence.
         let check = if asked.invariant.is_empty() {
             String::new()
-        } else if core_ring::Check::is_id(&asked.check) {
-            asked.check.clone()
         } else {
-            crate::reports::UNNAMED_AGENT_CHECK.to_owned()
+            asked.check.clone()
         };
         let (kind, prefix) = if check.is_empty() {
             (DumpKind::OverBudget, AGENT_DUMP)

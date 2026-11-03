@@ -9,22 +9,18 @@ package amux.v1;
 // directory: the daemon core's, each own agent's and the asking client's
 // chats', with our own logs. Every dump carries the same parts.
 message DumpRequest {
-  // Once the agents a dump covered, and the scope that chose its parts:
-  // every dump now carries every own agent's record.
-  reserved 1, 5;
-  reserved "agent_ids", "scope";
-  string reason = 2;
+  string reason = 1;
   // Produced on an invariant violation or panic rather than on request.
-  bool automatic = 3;
+  bool automatic = 2;
   // The records of the chats the asking client shows, each an encoded
   // amux.dump.ClientSessionHistory with `structure_only` set: the session as
   // its trace began and every message since, with nothing anybody wrote. The
   // client stage of a replay. Opaque here because only the build that wrote
   // it reads it; the daemon leaves out one that does not decode or is not a
   // record, and says so, and passes none on to another host.
-  repeated bytes sessions = 4;
+  repeated bytes sessions = 3;
   // The id of the check that broke, for an automatic dump a check asked for.
-  string check = 6;
+  string check = 4;
 }
 
 // Where the bundle was written, for a caller on the same machine.

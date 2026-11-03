@@ -30,9 +30,6 @@ use wire::{DumpFile, DumpRequest, SubmitReportRequest, SubmitReportResponse};
 
 use crate::runtime::ProfileRuntime;
 
-/// The check an agent process names by sentence alone: one from before
-/// checks had ids.
-pub(crate) const UNNAMED_AGENT_CHECK: &str = "agent.unnamed";
 /// The report header's schema this build writes. amux.sh accepts exactly
 /// this one; it stays 1 until 0.9.0, and before then a header change keeps
 /// the version and ships with amux.sh's reader.

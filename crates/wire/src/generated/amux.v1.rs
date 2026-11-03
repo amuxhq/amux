@@ -4080,10 +4080,10 @@ impl Provider {
 /// chats', with our own logs. Every dump carries the same parts.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DumpRequest {
-    #[prost(string, tag = "2")]
+    #[prost(string, tag = "1")]
     pub reason: ::prost::alloc::string::String,
     /// Produced on an invariant violation or panic rather than on request.
-    #[prost(bool, tag = "3")]
+    #[prost(bool, tag = "2")]
     pub automatic: bool,
     /// The records of the chats the asking client shows, each an encoded
     /// amux.dump.ClientSessionHistory with `structure_only` set: the session as
@@ -4091,10 +4091,10 @@ pub struct DumpRequest {
     /// client stage of a replay. Opaque here because only the build that wrote
     /// it reads it; the daemon leaves out one that does not decode or is not a
     /// record, and says so, and passes none on to another host.
-    #[prost(bytes = "vec", repeated, tag = "4")]
+    #[prost(bytes = "vec", repeated, tag = "3")]
     pub sessions: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     /// The id of the check that broke, for an automatic dump a check asked for.
-    #[prost(string, tag = "6")]
+    #[prost(string, tag = "4")]
     pub check: ::prost::alloc::string::String,
 }
 impl ::prost::Name for DumpRequest {

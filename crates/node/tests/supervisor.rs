@@ -731,13 +731,12 @@ async fn the_amux_daemon_exits_when_its_supervisor_dies() {
     let root = tempfile::tempdir().unwrap();
     let data = root.path().join("data");
     let config = root.path().join("config.toml");
-    let socket = root.path().join("amux.sock");
+    let socket = data.join("amux.sock");
     std::fs::write(
         &config,
         format!(
-            "root = {:?}\nfront_door_socket = {:?}\nsupervisor = true\nupdates = \"manual\"\n",
+            "root = {:?}\nsupervisor = true\nupdates = \"manual\"\n",
             data.display().to_string(),
-            socket.display().to_string()
         ),
     )
     .unwrap();

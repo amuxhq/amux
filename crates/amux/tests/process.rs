@@ -64,15 +64,14 @@ impl Install {
             .unwrap(),
         )
         .unwrap();
-        let socket = root.path().join("amux.sock");
+        let socket = root.path().join("data").join("amux.sock");
         let config = root.path().join("config.toml");
         std::fs::write(
             &config,
             format!(
-                "root = {:?}\nfront_door_socket = {:?}\nsupervisor = false\n\
+                "root = {:?}\nsupervisor = false\n\
                  [agent]\ngrace_secs = {GRACE_SECS}\ndrain_secs = 5\n",
                 root.path().join("data").display().to_string(),
-                socket.display().to_string(),
             ),
         )
         .unwrap();

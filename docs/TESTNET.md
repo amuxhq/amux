@@ -476,7 +476,7 @@ empty net. With `RUST_LOG` set, the daemons' tracing goes to standard error.
   "gates": "/tmp/testnetAbc123/gates",
   "hosts": [
     {"name": "desk", "host_id": "…", "profile": "…",
-     "front_door": "/tmp/testnetAbc123/desk/door.sock",
+     "front_door": "/tmp/testnetAbc123/desk/data/amux.sock",
      "config": "/tmp/testnetAbc123/desk/config.toml",
      "dir": "/tmp/testnetAbc123/desk", "process": false, "supervised": false,
      "provider": "fake", "up": true, "lan_port": 53990}

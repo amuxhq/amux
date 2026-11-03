@@ -110,35 +110,8 @@ pub fn validate_host_name(host_name: &str) -> Result<(), ConfigError> {
     Ok(())
 }
 
-/// Per-user runtime directory for the amux socket on Unix.
-///
-/// - macOS: `$TMPDIR/amux/` (already per-user, e.g. `/var/folders/xx/.../T/`)
-/// - Linux: `$XDG_RUNTIME_DIR/amux/` (per-user tmpfs, e.g. `/run/user/1000/`)
-/// - Fallback: `/tmp/amux-<uid>/` (UID-embedded for isolation)
-#[cfg(unix)]
-pub(crate) fn default_socket_dir() -> PathBuf {
-    if cfg!(target_os = "macos") {
-        if let Ok(tmpdir) = std::env::var("TMPDIR") {
-            return PathBuf::from(tmpdir).join("amux");
-        }
-    } else if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
-        return PathBuf::from(runtime_dir).join("amux");
-    }
-    // Fallback: embed UID for per-user isolation
-    let uid = unsafe { libc::getuid() };
-    PathBuf::from(format!("/tmp/amux-{uid}"))
-}
-
-#[cfg(unix)]
-fn default_socket_path() -> PathBuf {
-    default_socket_dir().join("amux.sock")
-}
-
-#[cfg(windows)]
-fn default_socket_path() -> PathBuf {
-    let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-    PathBuf::from(format!(r"\\.\pipe\amux-{user}"))
-}
+/// The front door's file name in the root.
+pub const FRONT_DOOR: &str = "amux.sock";
 
 /// A control-key leader parsed from the `ctrl+<char>` format (e.g. `ctrl+a`).
 #[derive(Debug, Clone)]
@@ -432,7 +405,6 @@ pub struct InstallationConfig {
     pub new_agent: NewAgentSettings,
     /// Where the installation keeps its data: profiles, stores, reports.
     pub root: PathBuf,
-    pub front_door_socket: PathBuf,
     /// Where channel manifests live: the supervisor reads
     /// `<releases_url>/<channel>.json`.
     pub releases_url: String,
@@ -462,7 +434,6 @@ impl Default for InstallationConfig {
             keybinds: Keybinds::default(),
             new_agent: NewAgentSettings::default(),
             root: default_data_dir(),
-            front_door_socket: default_socket_path(),
             releases_url: format!("{DEFAULT_CLOUD_URL}/releases"),
             discovery: DiscoverySettings::default(),
             agent: AgentSettings::default(),
@@ -512,7 +483,6 @@ impl InstallationConfig {
             .map_err(|error| ConfigError::Invalid(format!("{}: {error}", path.display())))?;
         let base = path.parent().unwrap();
         config.root = absolute_path(&config.root, base)?;
-        config.front_door_socket = socket_path(&config.front_door_socket, base)?;
         config.path = Some(path);
         config.validate()?;
         Ok(config)
@@ -526,6 +496,16 @@ impl InstallationConfig {
             Some(host_name) => validate_host_name(host_name),
             None => Ok(()),
         }
+    }
+
+    /// The front door, where `InstallationService` answers: `amux.sock` in
+    /// the root, so whoever finds the root finds the daemon. A path too long
+    /// for a Unix socket address is reached through a short link, and on
+    /// Windows the file names the pipe the daemon listens on; both ends
+    /// derive the same address from the path
+    /// (`agent_dir::local_socket`).
+    pub fn front_door(&self) -> PathBuf {
+        self.root.join(FRONT_DOOR)
     }
 
     /// The name this host goes by: the configured one, else
@@ -577,17 +557,6 @@ pub fn installation_keys() -> Vec<String> {
     keys
 }
 
-/// The front door's address: a socket file, resolved like any other path, or
-/// on Windows a named pipe, which lives in the pipe namespace rather than on
-/// a drive. Resolving a pipe's name against the filesystem fails with
-/// "Incorrect function", so it is kept as written.
-fn socket_path(path: &Path, base: &Path) -> Result<PathBuf, ConfigError> {
-    if path.to_string_lossy().starts_with(r"\\.\pipe\") {
-        return Ok(path.to_owned());
-    }
-    absolute_path(path, base)
-}
-
 // Resolve aliases in the existing ancestor, even before a socket or state file
 // exists. This gives /tmp and /private/tmp the same identity on macOS.
 fn absolute_path(path: &Path, base: &Path) -> Result<PathBuf, ConfigError> {
@@ -624,9 +593,9 @@ mod tests {
     }
 
     #[test]
-    fn a_named_pipe_is_kept_as_written() {
-        let pipe = Path::new(r"\\.\pipe\amux-ada");
-        assert_eq!(socket_path(pipe, Path::new("/")).unwrap(), pipe);
+    fn the_front_door_follows_the_root() {
+        let config = installation("root = \"/srv/amux\"\n").unwrap();
+        assert_eq!(config.front_door(), Path::new("/srv/amux/amux.sock"));
     }
 
     #[test]

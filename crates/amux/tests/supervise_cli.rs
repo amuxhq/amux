@@ -34,7 +34,7 @@ impl Install {
     fn with_binary(supervisor: bool, extra: &str, binary: PathBuf) -> Self {
         let root = tempfile::tempdir().unwrap();
         let data = root.path().join("data");
-        let socket = root.path().join("amux.sock");
+        let socket = data.join("amux.sock");
         let config = root.path().join("config.toml");
         // Tests do not keep the machine awake unless they say so.
         let keep_awake = if extra.contains("keep_awake") {
@@ -45,9 +45,8 @@ impl Install {
         std::fs::write(
             &config,
             format!(
-                "root = {:?}\nfront_door_socket = {:?}\nsupervisor = {supervisor}\nupdates = \"manual\"\n{keep_awake}{extra}",
+                "root = {:?}\nsupervisor = {supervisor}\nupdates = \"manual\"\n{keep_awake}{extra}",
                 data.display().to_string(),
-                socket.display().to_string(),
             ),
         )
         .unwrap();

@@ -225,7 +225,7 @@ fn note(key: &str) -> Option<&'static str> {
              profile is signed in to, and hold what agents were told and said, redacted of \
              secrets.",
         ),
-        "supervisor" | "updates" | "root" | "front_door_socket" | "host_name" => {
+        "supervisor" | "updates" | "root" | "host_name" => {
             Some("amux uses it from its next start: `amux server stop`, then any amux command.")
         }
         _ => None,

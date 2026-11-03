@@ -9,8 +9,7 @@
 //! file still lives at its path. On Windows the file at the path names a
 //! pipe that each bind makes afresh: a pipe lives on while any connection to
 //! it is open, so a successor could not take its predecessor's name, just as
-//! a Unix bind replaces the file and leaves old connections to finish. A
-//! path already in the pipe namespace is that pipe itself.
+//! a Unix bind replaces the file and leaves old connections to finish.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -299,16 +298,13 @@ mod imp {
 
     impl Listener {
         pub fn bind(path: &Path) -> io::Result<Self> {
-            let name = direct(path).unwrap_or_else(|| pipe_name(path));
+            let name = pipe_name(path);
             // First instance: a name someone else already holds is refused,
             // never joined.
             let next = ServerOptions::new()
                 .first_pipe_instance(true)
                 .reject_remote_clients(true)
                 .create(&name)?;
-            if direct(path).is_some() {
-                return Ok(Self { name, next });
-            }
             // Named once the pipe listens, and replaced whole, so a client
             // reads either the old name or this one.
             let mut staged = path.as_os_str().to_owned();
@@ -329,9 +325,7 @@ mod imp {
     }
 
     pub fn unbind(path: &Path) {
-        if direct(path).is_none() {
-            let _ = std::fs::remove_file(path);
-        }
+        let _ = std::fs::remove_file(path);
     }
 
     pub async fn connect(path: &Path) -> io::Result<LocalStream> {
@@ -357,10 +351,7 @@ mod imp {
     }
 
     async fn open(path: &Path) -> io::Result<NamedPipeClient> {
-        let name = match direct(path) {
-            Some(name) => name,
-            None => std::fs::read_to_string(path)?,
-        };
+        let name = std::fs::read_to_string(path)?;
         loop {
             match ClientOptions::new().open(&name) {
                 Ok(client) => return Ok(client),
@@ -370,15 +361,6 @@ mod imp {
                 Err(error) => return Err(error),
             }
         }
-    }
-
-    /// A path already in the pipe namespace (the front door's default,
-    /// `\\.\pipe\amux-<user>`) is that pipe; no file can stand there.
-    fn direct(path: &Path) -> Option<String> {
-        let path = path.to_str()?;
-        path.get(..9)
-            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(r"\\.\pipe\"))
-            .then(|| path.to_owned())
     }
 
     fn bind_number() -> u64 {

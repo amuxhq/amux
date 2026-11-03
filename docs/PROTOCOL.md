@@ -691,14 +691,14 @@ never does, because its directory and journal are its whole interface (see
 | A link stream whose handshake presented a pinned key | `AgentService` and `SessionService`, with that host as the caller | paired daemons, including a phone's embedded daemon |
 | A link stream admitted by an open pairing window | `PairingService` | a host pairing with this one |
 
-The front door's path is the installation setting `front_door_socket`. By
-default it is `amux.sock` in a per-user runtime directory: `$TMPDIR/amux/` on
-macOS, `$XDG_RUNTIME_DIR/amux/` on Linux, `/tmp/amux-<uid>/` when neither is
-set, and the named pipe `\\.\pipe\amux-<user>` on Windows. Local sockets are
-Unix domain sockets on Unix and named pipes on Windows
-(`crates/agent-dir/src/local_socket.rs`); a path too long for a Unix socket
+The front door is `amux.sock` in the installation's root (default
+`~/.local/share/amux`, or `$XDG_DATA_HOME/amux`); the config's `root` moves it,
+and nothing else does, so whoever finds the root finds the daemon. Local
+sockets are Unix domain sockets on Unix and named pipes on Windows
+(`crates/agent-dir/src/local_socket.rs`). A path too long for a Unix socket
 address is reached through a short symbolic link in the per-user runtime
-directory, so both ends derive the same address from the same path.
+directory, and on Windows the file at the path holds the name of the pipe the
+daemon listens on, so both ends derive the same address from the same path.
 
 An agent's `ctl.sock` and `pty.sock` are not part of this surface. The daemon
 dials `ctl.sock` to hand the agent its inputs, and a terminal on the same

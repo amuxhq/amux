@@ -3408,7 +3408,6 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "gethostname",
- "libc",
  "serde",
  "serde_ignored",
  "thiserror 2.0.20",

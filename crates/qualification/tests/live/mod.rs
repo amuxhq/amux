@@ -709,15 +709,14 @@ impl Install {
             eprintln!("keeping the installation at {}", path.display());
         }
         let config = path.join("config.toml");
-        let socket = path.join("amux.sock");
+        let socket = path.join("data").join("amux.sock");
         std::fs::create_dir_all(path.join("project")).map_err(|error| error.to_string())?;
         std::fs::write(
             &config,
             format!(
-                "root = {:?}\nfront_door_socket = {:?}\nhost_name = \"live\"\nsupervisor = false\n\
+                "root = {:?}\nhost_name = \"live\"\nsupervisor = false\n\
                  [agent]\ngrace_secs = 10\ndrain_secs = 5\n[discovery]\nscope = \"amux-live-{}\"\n",
                 path.join("data").display().to_string(),
-                socket.display().to_string(),
                 uuid::Uuid::new_v4().simple(),
             ),
         )

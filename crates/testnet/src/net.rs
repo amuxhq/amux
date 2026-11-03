@@ -1684,12 +1684,9 @@ impl Net {
         }
         let profile = node::create_profile(&data_dir)?;
         let host_id = profile;
-        let front_door = dir.join("door.sock");
+        let front_door = data_dir.join("amux.sock");
         let config = dir.join("config.toml");
-        std::fs::write(
-            &config,
-            self.installation_toml(decl, &dir, &data_dir, &front_door)?,
-        )?;
+        std::fs::write(&config, self.installation_toml(decl, &dir, &data_dir)?)?;
         if let Some(script) = &decl.script {
             self.write_script(&format!("{}.host", decl.name), script.clone())?;
         }
@@ -1772,17 +1769,15 @@ impl Net {
         decl: &HostDecl,
         dir: &Path,
         data_dir: &Path,
-        front_door: &Path,
     ) -> Result<String, NetError> {
         let quoted = |path: &Path| format!("{:?}", path.display().to_string());
         // Only a supervised process host runs under a supervisor; a client
         // of an in-process host must never start one.
         let supervised = decl.runs_as_process() && decl.supervised;
         let mut text = format!(
-            "root = {}\nfront_door_socket = {}\nhost_name = {:?}\nsupervisor = {supervised}\n\
+            "root = {}\nhost_name = {:?}\nsupervisor = {supervised}\n\
              updates = \"manual\"\nkeep_awake = false\ntelemetry = false\n",
             quoted(data_dir),
-            quoted(front_door),
             decl.name,
         );
         if decl.runs_as_process() {

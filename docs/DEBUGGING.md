@@ -241,10 +241,14 @@ text, and a person's screenshot shows them.
 An agent's record is built only when a report is made, from the facts ring the agent already keeps: the agent process
 runs the ring's events through its own interpreter again, from each segment's checkpoint, on the machine that wrote
 them, and keeps what the interpreter concluded and each event's skeleton, never what was said. A skeleton keeps an
-event's field names where the provider's protocol names them, the provider's fixed vocabulary the interpreters
-branch on (a stop reason, an item's status, a permission mode and similar closed sets), bools and timestamps, and
-writes every other value as an alias with its size; the subtrees whose keys are the data's own (a tool's input, a
-change's files) keep only the names the protocol places there, every other key aliased. For each event the record
+event's field names only where amux's types for the provider's protocol read them, at that place in that kind of
+event, the provider's fixed vocabulary the interpreters branch on (a stop reason, an item's status, a permission mode
+and similar closed sets), bools and timestamps, and writes every other value as an alias with its size; the subtrees
+whose keys are the data's own (a tool's input, a change's files, a tool server's form) keep only the names the
+protocol places there, every other key aliased. A field amux's types do not know, as a new provider version adds, is
+aliased with everything under it, and the event's `untyped` lists where it sits (`params.item`, `message.content[]`),
+so a report shows that the provider wrote something new, and where, without its name. Of a text that opens with one of
+the provider's fixed phrases only the phrase is kept, never what follows it. For each event the record
 also keeps what the interpreter concluded: each item opened, updated or closed by key and arm, appends by key and
 size, the snapshot's phase and queue, turn ends, its effects by kind with their sizes and the ids they answer, what
 its two queries (messages pending, typed input unrecorded) answered after the step, and the check the step broke.

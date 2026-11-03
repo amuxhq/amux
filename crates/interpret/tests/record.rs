@@ -1,6 +1,7 @@
 //! An agent's record, built from its facts ring: the interpreter's
 //! conclusions and the checks its steps broke, with nothing that was said.
 
+use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
 use interpret::ring::Entry;
@@ -42,7 +43,7 @@ fn a_record_keeps_the_sessions_shape_and_its_checks_and_no_words() {
     let stream = |event: Value| fact(json!({"type": "stream_event", "event": event}));
     let events = [
         fact(
-            json!({"type": "system", "subtype": "init", "session_id": "s",
+            json!({"type": "system", "subtype": "init", "session_id": "s", "uuid": "u",
             "claude_code_version": "2.1.312", "cwd": format!("/home/{MARKER}")}),
         ),
         fact(json!({"type": "assistant", "session_id": "s", "message": {
@@ -446,11 +447,11 @@ fn a_record_keeps_a_setting_only_in_the_providers_own_form() {
     };
     let events = [
         fact(
-            json!({"type": "system", "subtype": "init", "session_id": "s",
+            json!({"type": "system", "subtype": "init", "session_id": "s", "uuid": "u",
             "claude_code_version": "2.1.312", "model": arn}),
         ),
         fact(
-            json!({"type": "system", "subtype": "init", "session_id": "s",
+            json!({"type": "system", "subtype": "init", "session_id": "s", "uuid": "u",
             "claude_code_version": "2.1.312", "model": "claude-opus-5-5[1m]"}),
         ),
         set_model(&format!("us.anthropic.{MARKER}-v1:0")),
@@ -489,4 +490,81 @@ fn a_record_keeps_a_setting_only_in_the_providers_own_form() {
     assert!(model(1, &["model"]).ends_with("=claude-opus-5-5[1m]"));
     assert!(model(2, &["model", "model"]).starts_with('@'));
     assert!(model(3, &["model", "model"]).ends_with("=claude-sonnet-5"));
+}
+
+#[test]
+fn a_tool_servers_form_keeps_its_own_shape_and_none_of_its_field_names() {
+    let spec = AgentSpec {
+        agent_id: b"agent".to_vec(),
+        kind: wire::Kind::ClaudePty as i32,
+        incarnation: 1,
+        ..AgentSpec::default()
+    };
+    let (state, _) = ClaudePty::initial(&spec);
+    let hook = Event::Fact(Fact {
+        channel: Channel::Hook,
+        payload: serde_json::to_vec(&json!({
+            "hook_event_name": "Elicitation", "session_id": "s",
+            "transcript_path": "/t", "cwd": "/w",
+            "mcp_server_name": "forms", "message": "Fill this in", "mode": "form",
+            "requested_schema": {"type": "object", "required": [MARKER],
+                "properties": {MARKER: {"type": "string", "title": MARKER}}},
+        }))
+        .unwrap(),
+    });
+    let record = interpret::record::record::<ClaudePty>(
+        &spec,
+        [3; 16],
+        Value::Null,
+        [(interpret::encode_checkpoint(&state), line(&hook))],
+    );
+    let text = record.to_string();
+    assert!(!text.contains(MARKER), "{text}");
+    let schema = &record["segments"][0]["events"][0]["event"]["shape"]["requested_schema"];
+    assert_eq!(schema["type"], "=object", "{text}");
+    let fields = schema["properties"].as_object().unwrap();
+    assert_eq!(fields.len(), 1, "{text}");
+    let field = fields.values().next().unwrap();
+    assert_eq!(field["type"], "=string", "{text}");
+    assert_eq!(field.as_object().unwrap().len(), 2, "{text}");
+    assert!(field.get("title").is_none(), "{text}");
+}
+
+#[test]
+fn a_field_the_providers_schema_does_not_know_is_named_by_where_it_sits() {
+    let spec = AgentSpec {
+        agent_id: b"agent".to_vec(),
+        kind: wire::Kind::Codex as i32,
+        incarnation: 1,
+        ..AgentSpec::default()
+    };
+    let (state, _) = Codex::initial(&spec);
+    let started = Event::Fact(Fact {
+        channel: Channel::Rpc,
+        payload: serde_json::to_vec(&json!({"method": "item/started", "params": {
+            "threadId": "t", "turnId": "u", "item": {
+                "type": "commandExecution", "id": "c1", "command": "ls", "cwd": "/w",
+                "status": "inProgress", "commandActions": [], MARKER: "x"}}}))
+        .unwrap(),
+    });
+    let record = interpret::record::record::<Codex>(
+        &spec,
+        [3; 16],
+        Value::Null,
+        [(interpret::encode_checkpoint(&state), line(&started))],
+    );
+    let text = record.to_string();
+    assert!(!text.contains(MARKER), "{text}");
+    let event = &record["segments"][0]["events"][0]["event"];
+    assert_eq!(event["untyped"], json!(["params.item"]), "{text}");
+    let item = event["shape"]["params"]["item"].as_object().unwrap();
+    assert_eq!(
+        item["cwd"].as_str().map(|cwd| cwd.starts_with('@')),
+        Some(true)
+    );
+    assert_eq!(
+        item.keys().filter(|name| name.starts_with('@')).count(),
+        1,
+        "{text}"
+    );
 }

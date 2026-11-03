@@ -103,6 +103,23 @@ pub fn decode_input(line: &[u8]) -> Result<Input, DecodeError> {
     Ok(decode_input_object(object, raw))
 }
 
+/// The field names [`decode`] types at each place of a line Claude
+/// printed (see [`crate::Fields`]); None for a line that is not a JSON
+/// object.
+pub fn fields(line: &[u8]) -> Option<crate::Fields> {
+    crate::probe::probe(line, crate::DATA_SUBTREES, crate::DATA_MAPS, |line| {
+        let _ = decode(line);
+    })
+}
+
+/// The field names [`decode_input`] types at each place of a line amux
+/// wrote to Claude.
+pub fn input_fields(line: &[u8]) -> Option<crate::Fields> {
+    crate::probe::probe(line, crate::DATA_SUBTREES, crate::DATA_MAPS, |line| {
+        let _ = decode_input(line);
+    })
+}
+
 /// [`decode_input`], failing on anything it would keep without knowing it.
 pub fn strict_input(line: &[u8]) -> Result<Input, Drift> {
     let (object, raw) = parse(line).map_err(Drift::NotAnObject)?;
@@ -159,7 +176,7 @@ fn unknown(object: &Map<String, Value>, raw: Box<RawValue>) -> Unknown {
 }
 
 /// The frame's fields without its `type`.
-fn fields<T: for<'de> Deserialize<'de>>(object: &Map<String, Value>) -> Option<T> {
+fn frame<T: for<'de> Deserialize<'de>>(object: &Map<String, Value>) -> Option<T> {
     let mut fields = object.clone();
     fields.remove("type");
     T::deserialize(Value::Object(fields))
@@ -169,9 +186,9 @@ fn fields<T: for<'de> Deserialize<'de>>(object: &Map<String, Value>) -> Option<T
 
 fn decode_output(object: Map<String, Value>, raw: Box<RawValue>) -> Output {
     let decoded = match kind_of(&object).as_deref() {
-        Some("control_request") => fields(&object).map(Output::ControlRequest),
-        Some("control_cancel_request") => fields(&object).map(Output::ControlCancelRequest),
-        Some("control_response") => fields(&object).map(Output::ControlResponse),
+        Some("control_request") => frame(&object).map(Output::ControlRequest),
+        Some("control_cancel_request") => frame(&object).map(Output::ControlCancelRequest),
+        Some("control_response") => frame(&object).map(Output::ControlResponse),
         _ => match Message::parse(Value::Object(object.clone())) {
             Ok(Message::Unknown(_) | Message::UnknownSystem(_)) => None,
             Ok(message) => Some(Output::Message(message)),
@@ -186,9 +203,9 @@ fn decode_output(object: Map<String, Value>, raw: Box<RawValue>) -> Output {
 
 fn decode_input_object(object: Map<String, Value>, raw: Box<RawValue>) -> Input {
     let decoded = match kind_of(&object).as_deref() {
-        Some("user") => fields(&object).map(Input::User),
-        Some("control_request") => fields(&object).map(Input::ControlRequest),
-        Some("control_response") => fields(&object).map(Input::ControlResponse),
+        Some("user") => frame(&object).map(Input::User),
+        Some("control_request") => frame(&object).map(Input::ControlRequest),
+        Some("control_response") => frame(&object).map(Input::ControlResponse),
         _ => None,
     };
     decoded.unwrap_or_else(|| Input::Unknown(unknown(&object, raw)))

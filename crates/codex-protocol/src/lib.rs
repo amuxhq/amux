@@ -18,6 +18,7 @@
 //! the phone links can depend on it.
 
 mod macros;
+mod probe;
 
 pub mod client;
 pub mod items;
@@ -28,6 +29,7 @@ use std::fmt;
 
 pub use client::{ClientNotification, ClientRequest, ClientResponse};
 pub use items::ThreadItem;
+pub use probe::{Fields, is_map};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};
@@ -57,6 +59,11 @@ pub const DATA_SUBTREES: &[&str] = &[
     "result.content",
 ];
 
+/// The maps of a line keyed by the data, whose values this protocol types
+/// (`*.<name>` any field called `name`): an error's details, by the name
+/// of its kind.
+pub const DATA_MAPS: &[&str] = &["*.codexErrorInfo"];
+
 /// The lists of a turn's items, and of a thread's turns that hold them, by
 /// path from a line's root: each item in them is the item a
 /// `params.item` carries.
@@ -67,7 +74,67 @@ pub const ITEM_LISTS: &[&str] = &[
 ];
 
 /// The fields of an object this crate does not type, kept as written.
-pub type Extra = Map<String, Value>;
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct Extra(pub Map<String, Value>);
+
+impl Extra {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl std::ops::Deref for Extra {
+    type Target = Map<String, Value>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Extra {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<Map<String, Value>> for Extra {
+    fn from(fields: Map<String, Value>) -> Self {
+        Self(fields)
+    }
+}
+
+impl FromIterator<(String, Value)> for Extra {
+    fn from_iter<I: IntoIterator<Item = (String, Value)>>(fields: I) -> Self {
+        Self(fields.into_iter().collect())
+    }
+}
+
+impl IntoIterator for Extra {
+    type Item = (String, Value);
+    type IntoIter = serde_json::map::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Extra {
+    type Item = (&'a String, &'a Value);
+    type IntoIter = serde_json::map::Iter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'de> Deserialize<'de> for Extra {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut fields = Map::deserialize(deserializer)?;
+        probe::heard(&mut fields);
+        Ok(Self(fields))
+    }
+}
 
 /// A JSON-RPC request id: Codex numbers its own, amux names some of its.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -288,6 +355,78 @@ pub fn decode_client(line: &[u8]) -> Result<ClientMessage, DecodeError> {
         .unwrap_or_else(|(unknown, _)| ClientMessage::Unknown(unknown)))
 }
 
+/// The field names [`decode`] types at each place of a line from Codex's
+/// server (see [`Fields`]); None for a line that is not a JSON object. A
+/// response is read as each response this crate types, as nothing in it
+/// says which request it answers: a name is typed where any of them types
+/// it.
+pub fn fields(line: &[u8]) -> Option<Fields> {
+    probe::probe(line, DATA_SUBTREES, DATA_MAPS, |line| {
+        let message = match decode(line) {
+            Ok(ServerMessage::Unknown(_)) => return envelope_only(line),
+            Err(_) => return,
+            Ok(message) => message,
+        };
+        let extra = match &message {
+            ServerMessage::Notification { extra, .. }
+            | ServerMessage::Request { extra, .. }
+            | ServerMessage::Response { extra, .. } => extra,
+            ServerMessage::Unknown(_) => return,
+        };
+        probe::heard_at("", extra.keys().cloned());
+        if let ServerMessage::Response {
+            result: Ok(result), ..
+        } = &message
+        {
+            use server::*;
+            let _ = (
+                InitializeResponse::deserialize(result),
+                ThreadResponse::deserialize(result),
+                TurnStartResponse::deserialize(result),
+                TurnSteerResponse::deserialize(result),
+                ModelListResponse::deserialize(result),
+                SkillsListResponse::deserialize(result),
+                ThreadReadResponse::deserialize(result),
+                AccountReadResponse::deserialize(result),
+                BackgroundTerminalsResponse::deserialize(result),
+                BackgroundTerminalTerminateResponse::deserialize(result),
+            );
+        }
+    })
+}
+
+/// The field names [`decode_client`] types at each place of a line amux
+/// wrote to Codex's server.
+pub fn client_fields(line: &[u8]) -> Option<Fields> {
+    probe::probe(line, DATA_SUBTREES, DATA_MAPS, |line| {
+        let extra = match decode_client(line) {
+            Ok(
+                ClientMessage::Request { extra, .. }
+                | ClientMessage::Response { extra, .. }
+                | ClientMessage::Notification { extra, .. },
+            ) => extra,
+            Ok(ClientMessage::Unknown(_)) => return envelope_only(line),
+            Err(_) => return,
+        };
+        probe::heard_at("", extra.keys().cloned());
+    })
+}
+
+/// A line whose method this crate does not know still has the envelope
+/// every line has.
+fn envelope_only(line: &[u8]) {
+    const ENVELOPE: &[&str] = &["id", "method", "params", "result", "error", "emittedAtMs"];
+    if let Ok(object) = serde_json::from_slice::<Map<String, Value>>(line) {
+        probe::heard_at(
+            "",
+            object
+                .keys()
+                .filter(|key| !ENVELOPE.contains(&key.as_str()))
+                .cloned(),
+        );
+    }
+}
+
 /// [`decode_client`], failing on anything it would keep as unknown.
 pub fn strict_client(line: &[u8]) -> Result<ClientMessage, Drift> {
     let (object, raw) = parse(line).map_err(Drift::NotAnObject)?;
@@ -402,7 +541,7 @@ fn envelope(
     id: Option<&RequestId>,
     params: Value,
 ) -> Map<String, Value> {
-    let mut object = extra.clone();
+    let mut object = extra.0.clone();
     if let Some(id) = id {
         object.insert("id".into(), to_value(id));
     }
@@ -498,7 +637,7 @@ fn decode_server_object(
             Ok(ServerMessage::Request {
                 id,
                 request,
-                extra: rest,
+                extra: Extra(rest),
             })
         }
         (Some(method), None) => {
@@ -519,7 +658,7 @@ fn decode_server_object(
             Ok(ServerMessage::Notification {
                 notification,
                 emitted_at_ms,
-                extra: rest,
+                extra: Extra(rest),
             })
         }
         (None, Some(id)) => {
@@ -527,7 +666,7 @@ fn decode_server_object(
             Ok(ServerMessage::Response {
                 id,
                 result,
-                extra: rest,
+                extra: Extra(rest),
             })
         }
         (None, None) => Err(unknown(&raw, None, "neither a method nor an id")),
@@ -554,7 +693,7 @@ fn decode_client_object(
             Ok(ClientMessage::Request {
                 id,
                 request,
-                extra: rest,
+                extra: Extra(rest),
             })
         }
         (Some(method), None) => {
@@ -565,7 +704,7 @@ fn decode_client_object(
             )?;
             Ok(ClientMessage::Notification {
                 notification,
-                extra: rest,
+                extra: Extra(rest),
             })
         }
         (None, Some(id)) => {
@@ -581,7 +720,7 @@ fn decode_client_object(
             Ok(ClientMessage::Response {
                 id,
                 response,
-                extra: rest,
+                extra: Extra(rest),
             })
         }
         (None, None) => Err(unknown(&raw, None, "neither a method nor an id")),

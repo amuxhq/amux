@@ -5,7 +5,6 @@
 //! decoded line's JSON equal to what was written.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::Extra;
 use crate::items::ThreadItem;
@@ -76,7 +75,23 @@ pub struct TurnError {
 #[serde(untagged)]
 pub enum CodexErrorInfo {
     Named(String),
-    Detailed(serde_json::Map<String, Value>),
+    /// The kind's name, with its details.
+    Detailed(std::collections::BTreeMap<String, ErrorDetails>),
+}
+
+/// What a detailed error kind carries.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ErrorDetails {
+    /// Null when the failure had no response to give one.
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub http_status_code: Option<Option<i64>>,
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 impl CodexErrorInfo {
@@ -84,7 +99,7 @@ impl CodexErrorInfo {
     pub fn kind(&self) -> &str {
         match self {
             Self::Named(kind) => kind,
-            Self::Detailed(object) => object.keys().next().map(String::as_str).unwrap_or(""),
+            Self::Detailed(kinds) => kinds.keys().next().map(String::as_str).unwrap_or(""),
         }
     }
 
@@ -92,7 +107,7 @@ impl CodexErrorInfo {
     pub fn http_status_code(&self) -> Option<i64> {
         match self {
             Self::Named(_) => None,
-            Self::Detailed(object) => object.values().next()?.get("httpStatusCode")?.as_i64(),
+            Self::Detailed(kinds) => kinds.values().next()?.http_status_code.flatten(),
         }
     }
 }
@@ -161,9 +176,10 @@ impl SandboxMode {
             Self::ReadOnly => SandboxPolicy::ReadOnly(Extra::new()),
             Self::WorkspaceWrite => SandboxPolicy::WorkspaceWrite(Extra::new()),
             Self::DangerFullAccess => SandboxPolicy::DangerFullAccess(Extra::new()),
-            Self::Other(kind) => {
-                SandboxPolicy::Unknown(Extra::from_iter([("type".into(), kind.clone().into())]))
-            }
+            Self::Other(kind) => SandboxPolicy::Unknown(serde_json::Map::from_iter([(
+                "type".into(),
+                kind.clone().into(),
+            )])),
         }
     }
 }

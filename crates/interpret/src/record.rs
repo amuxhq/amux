@@ -276,14 +276,33 @@ impl Run {
                 if shape.version.is_some() {
                     self.version = shape.version;
                 }
+                let (skeleton, untyped) =
+                    alias
+                        .skeleton()
+                        .frame(I::KIND, Some(fact.channel), &fact.payload);
+                // A Codex item's own field is kept as the skeleton kept
+                // it: where the protocol crate types it.
+                let item: Option<HashSet<&str>> = skeleton
+                    .pointer("/params/item")
+                    .and_then(Value::as_object)
+                    .map(|item| item.keys().map(String::as_str).collect());
                 let tools: Vec<Value> = shape
                     .tools
                     .iter()
                     .map(|tool| {
+                        let item = item
+                            .as_ref()
+                            .filter(|_| matches!(tool.name, Some(Name::Own(_))));
+                        let key = |key: &Name| match (key, item) {
+                            (Name::Own(name), Some(item)) if !item.contains(name.as_str()) => {
+                                alias.name(&Name::Server(name.clone()))
+                            }
+                            (key, _) => alias.name(key),
+                        };
                         sparse(json!({
                             "result": tool.result,
                             "name": tool.name.as_ref().map(|name| alias.name(name)),
-                            "keys": tool.keys.iter().map(|key| alias.name(key)).collect::<Vec<_>>(),
+                            "keys": tool.keys.iter().map(key).collect::<Vec<_>>(),
                         }))
                     })
                     .collect();
@@ -293,7 +312,10 @@ impl Run {
                     "variant": shape.variant,
                     "bytes": fact.payload.len(),
                     "tools": tools,
-                    "shape": alias.skeleton().fact(I::KIND, &fact.payload),
+                    "shape": skeleton,
+                    // Where the provider wrote a field its protocol crate
+                    // does not type, aliased in the shape like any other.
+                    "untyped": untyped,
                 })
             }
             Event::Input(input) => {
@@ -537,7 +559,7 @@ fn spec_shape(skeleton: &Skeleton, spec: &AgentSpec) -> Value {
 /// JSON: the ids it chose, by alias, for a reply that echoes them.
 fn json_shape(alias: &Alias, kind: wire::Kind, bytes: &[u8]) -> Value {
     serde_json::from_slice::<Value>(bytes)
-        .map(|_| alias.skeleton().fact(kind, bytes))
+        .map(|_| alias.skeleton().write(kind, bytes))
         .unwrap_or(Value::Null)
 }
 

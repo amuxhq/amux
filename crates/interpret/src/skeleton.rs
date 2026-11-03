@@ -35,12 +35,17 @@
 //! a shell command keeps only the shell's name and flag, never the folder
 //! the shell was found in.
 //!
-//! Field names are the protocol's except in the subtrees its protocol
-//! crate names as the data's (`DATA_SUBTREES`: a tool's input and result,
-//! a change's files, a server's schema, per-model tallies). Outside them a
-//! name that reads as a field's is kept, so a field a new provider version
-//! adds shows by name.
-//! Inside them a name is kept only at a path `KEPT` lists for that
+//! Outside the subtrees a provider's protocol crate names as the data's
+//! (`DATA_SUBTREES`: a tool's input and result, a change's files, a
+//! server's schema, per-model tallies) a field name is kept only where
+//! that crate's types read it, at that place in that kind of line; a name
+//! they do not type there is aliased like a value, as is everything below
+//! it, and its place is listed beside the skeleton, so a field a new
+//! provider version adds shows by where it sits, never by its name. A key
+//! of a map keyed by the data (`DATA_MAPS`) is aliased unless it is the
+//! provider's own vocabulary, and what it holds is typed. amux's own facts
+//! about the provider keep amux's names.
+//! Inside the data a name is kept only at a path `KEPT` lists for that
 //! subtree, the protocol's own fields there and a built-in tool's; every
 //! other name is aliased like a value, as is every name in JSON written
 //! into a string and in a tool server's own input or result.
@@ -52,6 +57,8 @@ use prost::Message as _;
 use prost_types::FileDescriptorSet;
 use prost_types::field_descriptor_proto::{Label, Type};
 use serde_json::{Map, Value};
+
+use crate::Channel;
 
 /// The closed sets of the status-like fields the interpreters branch on,
 /// by field name, as each protocol crate spells them.
@@ -521,6 +528,7 @@ const KEPT: &[(&str, &[&str])] = &[
     ),
     // A tool server's form: its fields are the server's own.
     ("request.requested_schema", FORM_SCHEMA),
+    ("requested_schema", FORM_SCHEMA),
     ("permission_suggestions", PERMISSION_UPDATES),
     ("request.permission_suggestions", PERMISSION_UPDATES),
     // What a control request answers, either way: initialize's catalogue,
@@ -1076,6 +1084,115 @@ const MODEL: &[&str] = &["model", "modelId", "defaultModel"];
 /// The fields a protocol tags its messages with.
 const TAGS: &[&str] = &["type", "subtype", "method", "hook_event_name"];
 
+/// Fields amux itself adds to what a provider writes, before the
+/// interpreter reads it: a notebook cell's source beside its edit, and the
+/// number a hook waiting on its answer is held by.
+const OWN_FIELDS: &[&str] = &[crate::NOTEBOOK_OLD_SOURCE, crate::HOOK_ANSWER_FIELD];
+
+/// The maps keyed by the data whose keys are kept when they are the
+/// provider's own vocabulary, by the field whose closed set holds them: a
+/// rate limit's windows by their kind.
+const MAP_KEYS: &[(&str, &str)] = &[("rate_limit_info.unifiedWindows", "rateLimitType")];
+
+/// The place of what sits below a field nobody types, which no type
+/// reads.
+const UNTYPED: &str = "\u{1}";
+
+/// Each place holding an object the provider's protocol crate types,
+/// with the names it holds there the crate does not type.
+type Fields = claude_protocol::Fields;
+
+/// Which field names a frame outside its data keeps.
+enum Names<'a> {
+    /// The provider's: those its protocol crate types at each place.
+    Typed(&'a Fields),
+    /// amux's own, every name its own: its facts about the provider it
+    /// runs, and data, which keeps names by `KEPT` alone.
+    Own,
+}
+
+impl Names<'_> {
+    /// Whether the field `name` of the object at `place` is kept: where
+    /// the protocol crate types it, or holds an object it types below it
+    /// (a field of an object that keeps nothing unknown, so is not heard
+    /// itself). Of an object the protocol crate does not type (data it
+    /// holds as written, a kind of object it does not know) only the names
+    /// the protocol tags its objects with are.
+    fn keep(&self, place: &str, name: &str) -> bool {
+        match self {
+            Names::Own => schema_name(name),
+            Names::Typed(fields) => {
+                if place == UNTYPED {
+                    return TAGS.contains(&name);
+                }
+                let typed = match fields.get(place) {
+                    Some(untyped) => !untyped.contains(name) || OWN_FIELDS.contains(&name),
+                    None => TAGS.contains(&name),
+                };
+                let below = child(place, name);
+                typed
+                    || fields
+                        .range(below.clone()..)
+                        .map(|(heard, _)| heard)
+                        .take_while(|heard| heard.starts_with(below.as_str()))
+                        .any(|heard| {
+                            let rest = &heard[below.len()..];
+                            rest.is_empty() || rest.starts_with(['.', '['])
+                        })
+            }
+        }
+    }
+}
+
+/// The places holding a field the protocol crate does not type, by path,
+/// a key of `maps` written `*`.
+fn untyped(fields: &Fields, maps: &[&str]) -> Vec<String> {
+    let mut places: Vec<String> = fields
+        .iter()
+        .filter(|(_, untyped)| {
+            untyped
+                .iter()
+                .any(|name| !OWN_FIELDS.contains(&name.as_str()))
+        })
+        .map(|(place, _)| {
+            // `a[2].b` as `a[].b`, and a data-keyed map's key as `*`.
+            let mut path = String::new();
+            let mut index = false;
+            let mut keyed = false;
+            for c in place.chars() {
+                match c {
+                    '[' => index = true,
+                    ']' => {
+                        index = false;
+                        path.push_str("[]");
+                        continue;
+                    }
+                    '.' if !index => {
+                        keyed = codex_protocol::is_map(maps, &path);
+                        path.push('.');
+                        if keyed {
+                            path.push('*');
+                        }
+                        continue;
+                    }
+                    _ => {}
+                }
+                if !index && !keyed {
+                    path.push(c);
+                }
+            }
+            if path.is_empty() {
+                "(top level)".to_owned()
+            } else {
+                path
+            }
+        })
+        .collect();
+    places.sort();
+    places.dedup();
+    places
+}
+
 /// One leaf of a skeleton, as [`leaf`] reads it back.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Leaf<'a> {
@@ -1149,6 +1266,8 @@ struct At {
 pub struct Frame {
     data: &'static [&'static str],
     items: &'static [&'static str],
+    /// Maps keyed by the data whose values the protocol types.
+    maps: &'static [&'static str],
 }
 
 impl Frame {
@@ -1158,14 +1277,17 @@ impl Frame {
             wire::Kind::ClaudeSdk | wire::Kind::ClaudePty => Frame {
                 data: claude_protocol::DATA_SUBTREES,
                 items: &[],
+                maps: claude_protocol::DATA_MAPS,
             },
             wire::Kind::Codex => Frame {
                 data: codex_protocol::DATA_SUBTREES,
                 items: codex_protocol::ITEM_LISTS,
+                maps: codex_protocol::DATA_MAPS,
             },
             _ => Frame {
                 data: &[],
                 items: &[],
+                maps: &[],
             },
         }
     }
@@ -1256,21 +1378,79 @@ impl Skeleton {
         self.alias(marker, text)
     }
 
-    /// A provider fact's skeleton, or one of what amux writes to its
-    /// provider; a payload that is not JSON is one text.
-    pub fn fact(&self, kind: wire::Kind, payload: &[u8]) -> Value {
-        match serde_json::from_slice::<Value>(payload) {
-            Ok(value) => self.json(&value, At::root(Frame::of(kind)), "", "", None),
-            Err(_) => Value::String(self.text(&String::from_utf8_lossy(payload))),
-        }
+    /// A provider fact's skeleton; a payload that is not JSON is one text.
+    pub fn fact(&self, kind: wire::Kind, channel: Channel, payload: &[u8]) -> Value {
+        self.frame(kind, Some(channel), payload).0
     }
 
-    /// `value` at `path` under the field `key` of an object whose `type`
-    /// is `kind`. Outside data a field name is the protocol's and kept, as
-    /// a new field must show by name; inside data only the names at the
-    /// paths `KEPT` lists for that subtree are, and every other is aliased
-    /// like a value, its path written `*`.
-    fn json(&self, value: &Value, at: At, path: &str, key: &str, kind: Option<&str>) -> Value {
+    /// The skeleton of what amux writes to its provider.
+    pub fn write(&self, kind: wire::Kind, bytes: &[u8]) -> Value {
+        self.frame(kind, None, bytes).0
+    }
+
+    /// The skeleton of a provider fact on `channel`, or with none of what
+    /// amux writes to its provider, beside the places outside data that
+    /// hold a field the provider's protocol crate does not type (by path,
+    /// `[]` an element): a field a new provider version added, aliased like
+    /// every name the crate does not type, so its place still shows.
+    pub fn frame(
+        &self,
+        kind: wire::Kind,
+        channel: Option<Channel>,
+        payload: &[u8],
+    ) -> (Value, Vec<String>) {
+        let Ok(value) = serde_json::from_slice::<Value>(payload) else {
+            return (
+                Value::String(self.text(&String::from_utf8_lossy(payload))),
+                Vec::new(),
+            );
+        };
+        let typed = match (kind, channel) {
+            (_, Some(Channel::Agent)) => None,
+            (wire::Kind::ClaudeSdk, Some(Channel::Stream)) => {
+                claude_protocol::stream::fields(payload)
+            }
+            (wire::Kind::ClaudePty, Some(Channel::Transcript)) => {
+                claude_protocol::transcript::fields(payload)
+            }
+            (wire::Kind::ClaudePty, Some(Channel::Hook)) => claude_protocol::hooks::fields(payload),
+            (wire::Kind::ClaudeSdk | wire::Kind::ClaudePty, None) => {
+                claude_protocol::stream::input_fields(payload)
+            }
+            (wire::Kind::Codex, Some(Channel::Rpc)) => codex_protocol::fields(payload),
+            (wire::Kind::Codex, None) => codex_protocol::client_fields(payload),
+            _ => Some(Fields::new()),
+        };
+        let names = match &typed {
+            None => Names::Own,
+            Some(fields) => Names::Typed(fields),
+        };
+        let shape = self.json(&value, At::root(Frame::of(kind)), &names, "", "", "", None);
+        let maps = Frame::of(kind).maps;
+        let untyped = typed
+            .as_ref()
+            .map(|fields| untyped(fields, maps))
+            .unwrap_or_default();
+        (shape, untyped)
+    }
+
+    /// `value` at `path` (and at `place`, the same with each element's
+    /// index) under the field `key` of an object whose `type` is `kind`.
+    /// Outside data a field name is kept where `names` types it; inside
+    /// data only the names at the paths `KEPT` lists for that subtree are.
+    /// Every other is aliased like a value, inside data its path written
+    /// `*`.
+    #[allow(clippy::too_many_arguments)]
+    fn json(
+        &self,
+        value: &Value,
+        at: At,
+        names: &Names,
+        place: &str,
+        path: &str,
+        key: &str,
+        kind: Option<&str>,
+    ) -> Value {
         match value {
             Value::Null | Value::Bool(_) => value.clone(),
             Value::Number(number) if at.tool => {
@@ -1298,7 +1478,11 @@ impl Skeleton {
                 Value::Array(
                     items
                         .iter()
-                        .map(|item| self.json(item, at, &element, key, kind))
+                        .enumerate()
+                        .map(|(index, item)| {
+                            let place = format!("{place}[{index}]");
+                            self.json(item, at, names, &place, &element, key, kind)
+                        })
                         .collect(),
                 )
             }
@@ -1323,29 +1507,60 @@ impl Skeleton {
                             }
                         }
                         None => {
+                            let above = path;
                             let path = child(path, name);
-                            let name_out = if schema_name(name) {
-                                name.clone()
-                            } else {
-                                self.alias("", name)
-                            };
                             let entered = at.frame.data.iter().find(|subtree| **subtree == path);
-                            let inner = match entered {
+                            match entered {
+                                // The protocol crate names its data's place.
                                 Some(subtree) => (
-                                    At {
-                                        data: Some((subtree, kept(subtree))),
-                                        server: at.server || (server && tool_data(subtree)),
-                                        ..at
-                                    },
-                                    String::new(),
+                                    name.clone(),
+                                    (
+                                        At {
+                                            data: Some((subtree, kept(subtree))),
+                                            server: at.server || (server && tool_data(subtree)),
+                                            ..at
+                                        },
+                                        String::new(),
+                                    ),
+                                    name.as_str(),
                                 ),
-                                None => (at, path),
-                            };
-                            (name_out, inner, name.as_str())
+                                // A key of a map keyed by the data, whose
+                                // values are typed.
+                                None if codex_protocol::is_map(at.frame.maps, above) => {
+                                    let kept = MAP_KEYS.iter().any(|(map, field)| {
+                                        codex_protocol::is_map(&[map], above)
+                                            && VOCABULARY.iter().any(|(named, values)| {
+                                                named == field && values.contains(&name.as_str())
+                                            })
+                                    });
+                                    let name_out = if kept {
+                                        name.clone()
+                                    } else {
+                                        self.alias("", name)
+                                    };
+                                    (name_out, (at, child(above, "*")), "")
+                                }
+                                None if names.keep(place, name) => {
+                                    (name.clone(), (at, path), name.as_str())
+                                }
+                                // A value is read by its field's rules only
+                                // where its field's name is kept, and
+                                // nothing below a name nobody types is
+                                // typed or the protocol's data.
+                                None => (self.alias("", name), (at, UNTYPED.to_owned()), ""),
+                            }
                         }
                     };
                     let (name_out, (inner, path), key) = entry;
-                    out.insert(name_out, self.json(value, inner, &path, key, kind));
+                    let place = if path == UNTYPED || place == UNTYPED {
+                        UNTYPED.to_owned()
+                    } else {
+                        child(place, name)
+                    };
+                    out.insert(
+                        name_out,
+                        self.json(value, inner, names, &place, &path, key, kind),
+                    );
                 }
                 Value::Object(out)
             }
@@ -1530,7 +1745,7 @@ impl Skeleton {
             ..at
         };
         Some(serde_json::json!({
-            "=json": self.json(&json, inner, "", key, kind),
+            "=json": self.json(&json, inner, &Names::Own, "", "", key, kind),
             "bytes": text.len(),
         }))
     }
@@ -1631,6 +1846,8 @@ impl Skeleton {
                         self.json(
                             &json,
                             At::data(Frame::of(wire::Kind::Unspecified)),
+                            &Names::Own,
+                            "",
                             "",
                             "",
                             None,
@@ -1904,18 +2121,26 @@ mod tests {
     fn a_fact_keeps_its_fields_tags_and_statuses_and_no_words() {
         let fact = json!({
             "method": "item/completed",
-            "params": {"item": {"type": "commandExecution", "id": "call_1",
-                "command": "cat secret.txt", "status": "completed", "exitCode": 0,
+            "params": {"threadId": "t1", "turnId": "u1",
+                "item": {"type": "commandExecution", "id": "call_1",
+                "command": "cat secret.txt", "commandActions": [], "cwd": "w",
+                "status": "completed", "exitCode": 0,
                 "aggregatedOutput": "secret\nwords\n"}},
         });
-        let out = SKELETON.fact(wire::Kind::ClaudeSdk, &serde_json::to_vec(&fact).unwrap());
+        let out = SKELETON.fact(
+            wire::Kind::Codex,
+            Channel::Rpc,
+            &serde_json::to_vec(&fact).unwrap(),
+        );
         let output = format!("{}/2", h("secret\nwords\n", 13));
         assert_eq!(
             out,
             json!({
                 "method": "=item/completed",
-                "params": {"item": {"type": "=commandExecution", "id": h("call_1", 6),
-                    "command": h("cat secret.txt", 14), "status": SKELETON.named("completed"),
+                "params": {"threadId": h("t1", 2), "turnId": h("u1", 2),
+                    "item": {"type": "=commandExecution", "id": h("call_1", 6),
+                    "command": h("cat secret.txt", 14), "commandActions": [], "cwd": h("w", 1),
+                    "status": SKELETON.named("completed"),
                     "exitCode": 0,
                     "aggregatedOutput": output}},
             })
@@ -1940,7 +2165,11 @@ mod tests {
             {"type": "tool_use", "id": "u", "name": "Read",
              "input": {"file_path": "/x", "offset": 120}},
         ]}});
-        let out = SKELETON.fact(wire::Kind::ClaudeSdk, &serde_json::to_vec(&fact).unwrap());
+        let out = SKELETON.fact(
+            wire::Kind::ClaudeSdk,
+            Channel::Stream,
+            &serde_json::to_vec(&fact).unwrap(),
+        );
         let blocks = &out["message"]["content"];
         assert_eq!(
             blocks[0]["name"],

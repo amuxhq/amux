@@ -71,6 +71,14 @@ pub fn decode(bytes: &[u8]) -> Result<Payload, DecodeError> {
     Ok(Payload::deserialize(object).expect("a payload decodes from any object"))
 }
 
+/// The field names [`decode`] types at each place of a payload (see
+/// [`crate::Fields`]); None for one that is not a JSON object.
+pub fn fields(bytes: &[u8]) -> Option<crate::Fields> {
+    crate::probe::probe(bytes, crate::DATA_SUBTREES, crate::DATA_MAPS, |bytes| {
+        let _ = decode(bytes);
+    })
+}
+
 /// Decodes one payload, failing on anything [`decode`] would keep without
 /// knowing it.
 pub fn strict(bytes: &[u8]) -> Result<Payload, Drift> {

@@ -10,6 +10,7 @@
 
 mod absent;
 mod decoding;
+mod probe;
 mod strictness;
 
 pub mod hooks;
@@ -18,6 +19,7 @@ pub mod stream;
 pub mod transcript;
 
 pub use decoding::{DecodeError, Drift};
+pub use probe::{Fields, is_map};
 
 /// The subtrees of a frame, by path from its root (`[]` an array's
 /// element), whose fields are the data's rather than this protocol's: a
@@ -44,4 +46,9 @@ pub const DATA_SUBTREES: &[&str] = &[
     "event.content_block.input",
     "attachment",
     "snapshot",
+    "requested_schema",
 ];
+
+/// The maps of a frame keyed by the data, whose values this protocol
+/// types: a rate limit's windows, by a window's or a model's name.
+pub const DATA_MAPS: &[&str] = &["rate_limit_info.unifiedWindows"];

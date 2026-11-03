@@ -333,7 +333,10 @@ pub fn fact(fact: &Fact) -> FactShape {
         {
             for block in blocks {
                 match block.ty.as_deref() {
-                    Some("tool_use" | "server_tool_use" | "mcp_tool_use") => {
+                    // Only the call block Claude's protocol crate types:
+                    // one it holds as written (`server_tool_use`,
+                    // `mcp_tool_use`) keeps none of its names in a record.
+                    Some("tool_use") => {
                         let name = block.name.as_deref().map(claude_tool);
                         let server = matches!(name, Some(Name::Server(_)));
                         tools.push(ToolShape {

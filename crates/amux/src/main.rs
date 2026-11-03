@@ -205,6 +205,15 @@ enum Command {
         #[arg(long)]
         retry: bool,
     },
+    /// Stop amux and remove it from this machine.
+    Uninstall {
+        /// Stop running agents without asking.
+        #[arg(long)]
+        yes: bool,
+        /// Delete the installation's data and config file too.
+        #[arg(long)]
+        delete_data: bool,
+    },
     /// Read or change a setting in the config file.
     Config {
         #[command(subcommand)]
@@ -428,6 +437,9 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 .await
             }
             Command::Update { retry } => setup::update(&config, retry).await,
+            Command::Uninstall { yes, delete_data } => {
+                setup::uninstall(&config, config_path.as_deref(), yes, delete_data).await
+            }
             Command::Server {
                 command: ServerCommand::Start,
             } => server::start(&config, config_path.as_deref()).await,
@@ -652,9 +664,28 @@ mod tests {
         assert_eq!(
             listed,
             [
-                "attach", "ls", "new", "send", "stop", "resume", "rename", "rm", "dump", "pair",
-                "hosts", "unpair", "login", "logout", "profile", "status", "init", "update",
-                "config", "server", "help",
+                "attach",
+                "ls",
+                "new",
+                "send",
+                "stop",
+                "resume",
+                "rename",
+                "rm",
+                "dump",
+                "pair",
+                "hosts",
+                "unpair",
+                "login",
+                "logout",
+                "profile",
+                "status",
+                "init",
+                "update",
+                "uninstall",
+                "config",
+                "server",
+                "help",
             ]
         );
         for hidden in [

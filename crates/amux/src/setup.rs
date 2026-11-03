@@ -1,5 +1,6 @@
 //! The verbs that set an install up rather than talk to its agents:
-//! `amux init` (whether amux starts at login) and `amux update`.
+//! `amux init` (whether amux starts at login), `amux update` and
+//! `amux uninstall`.
 
 use std::io::{BufRead as _, IsTerminal as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -196,6 +197,277 @@ fn login_item_for_this_platform(
             ]),
             words(&["schtasks", "/Run", "/TN", WINDOWS_TASK]),
         ],
+    ))
+}
+
+/// The login item's file and the commands that unregister it, run before
+/// the file goes; a failure among them means there was nothing to remove.
+#[cfg(target_os = "macos")]
+fn login_item_removal(_config: &InstallationConfig) -> Result<(PathBuf, Vec<Vec<String>>)> {
+    use node::supervisor::login::LAUNCH_AGENT_LABEL;
+    let home = std::env::var_os("HOME").context("HOME is not set")?;
+    let file = PathBuf::from(home)
+        .join("Library/LaunchAgents")
+        .join(format!("{LAUNCH_AGENT_LABEL}.plist"));
+    // SAFETY: getuid cannot fail.
+    let uid = unsafe { libc::getuid() };
+    Ok((
+        file,
+        vec![words(&[
+            "launchctl",
+            "bootout",
+            &format!("gui/{uid}/{LAUNCH_AGENT_LABEL}"),
+        ])],
+    ))
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn login_item_removal(_config: &InstallationConfig) -> Result<(PathBuf, Vec<Vec<String>>)> {
+    use node::supervisor::login::SYSTEMD_UNIT;
+    let config_home = match std::env::var_os("XDG_CONFIG_HOME") {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+        _ => PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?).join(".config"),
+    };
+    Ok((
+        config_home.join("systemd/user").join(SYSTEMD_UNIT),
+        vec![words(&[
+            "systemctl",
+            "--user",
+            "disable",
+            "--now",
+            SYSTEMD_UNIT,
+        ])],
+    ))
+}
+
+#[cfg(windows)]
+fn login_item_removal(config: &InstallationConfig) -> Result<(PathBuf, Vec<Vec<String>>)> {
+    use node::supervisor::login::WINDOWS_TASK;
+    Ok((
+        config.root.join("amux-task.xml"),
+        vec![
+            words(&["schtasks", "/End", "/TN", WINDOWS_TASK]),
+            words(&["schtasks", "/Delete", "/F", "/TN", WINDOWS_TASK]),
+        ],
+    ))
+}
+
+/// `amux uninstall`: stops this machine's running agents, removes the
+/// login item, stops amux, and deletes the installed binary; with
+/// `delete_data`, the installation's root and config file too. A person at
+/// a terminal is asked before agents are stopped; anyone else passes
+/// `yes`. The only way amux is removed: no client deletes these itself.
+pub async fn uninstall(
+    config: &InstallationConfig,
+    config_path: Option<&Path>,
+    yes: bool,
+    delete_data: bool,
+) -> Result<()> {
+    let running = running_agents(config).await?;
+    if !running.is_empty() && !yes {
+        let count = running
+            .iter()
+            .map(|(_, agents)| agents.len())
+            .sum::<usize>();
+        let question = format!(
+            "Uninstalling stops {count} running agent{}. Continue? [y/N] ",
+            if count == 1 { "" } else { "s" }
+        );
+        if !std::io::stdin().is_terminal() {
+            bail!(
+                "{count} agent{} still running; `amux uninstall --yes` stops them and uninstalls",
+                if count == 1 { " is" } else { "s are" }
+            );
+        }
+        if !ask_no(&question)? {
+            bail!("nothing was removed");
+        }
+    }
+    for (client, agents) in running {
+        let mut client = client;
+        for agent in agents {
+            client
+                .agents
+                .stop_agent(wire::StopAgentRequest {
+                    agent_id: agent.agent_id.clone(),
+                })
+                .await
+                .map_err(crate::plain)
+                .with_context(|| format!("stopping {}", agent.name))?;
+            println!("Stopped {}.", agent.name);
+        }
+    }
+    // The login item goes before amux stops, so its service manager does
+    // not start amux again. It is this installation's when it writes the
+    // supervisor's log into this root; another installation's stays.
+    let (file, commands) = login_item_removal(config)?;
+    if login_item_is_ours(&file, config) {
+        for command in &commands {
+            let _ = Command::new(&command[0])
+                .args(&command[1..])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+        if remove_file(&file)? {
+            println!("Removed the login item ({}).", file.display());
+        }
+    }
+    crate::server::stop(config).await?;
+    // The installed binary serves the default installation; one named by
+    // --config or AMUX_CONFIG (a worktree's, a test's) leaves it alone.
+    if config_path.is_none() {
+        let bin = install_dir()?;
+        let mut removed = false;
+        for name in BINARY_NAMES {
+            removed |= remove_file(&bin.join(name))?;
+        }
+        if removed {
+            println!("Removed amux from {}.", bin.display());
+        }
+        remove_empty_dir(&bin);
+        if let Some(parent) = bin.parent() {
+            remove_empty_dir(parent);
+        }
+        #[cfg(unix)]
+        unset_shell_path()?;
+    }
+    if delete_data {
+        if config.root.exists() {
+            std::fs::remove_dir_all(&config.root)
+                .with_context(|| format!("deleting {}", config.root.display()))?;
+            println!("Deleted {}.", config.root.display());
+        }
+        let config_file = config_path
+            .map(Path::to_owned)
+            .unwrap_or_else(InstallationConfig::default_path);
+        if remove_file(&config_file)? {
+            println!("Deleted {}.", config_file.display());
+        }
+    } else {
+        println!(
+            "Kept amux's data in {}; `amux uninstall --delete-data` deletes it.",
+            config.root.display()
+        );
+    }
+    Ok(())
+}
+
+/// Whether the login item at `file` runs this installation: every login
+/// item names the supervisor's log in its root.
+fn login_item_is_ours(file: &Path, config: &InstallationConfig) -> bool {
+    let Ok(bytes) = std::fs::read(file) else {
+        return false;
+    };
+    // Task Scheduler's XML is UTF-16, and sits in the root anyway.
+    if cfg!(windows) {
+        return true;
+    }
+    let log = config.root.join(SUPERVISOR_LOG);
+    String::from_utf8_lossy(&bytes).contains(&*log.to_string_lossy())
+}
+
+/// The binaries an install and its updates leave in the install directory.
+#[cfg(unix)]
+const BINARY_NAMES: [&str; 3] = ["amux", "amux.staged", "amux.prev"];
+#[cfg(windows)]
+const BINARY_NAMES: [&str; 3] = ["amux.exe", "amux.staged.exe", "amux.prev.exe"];
+
+/// Where amux is installed: `~/.amux/bin`, on every platform.
+fn install_dir() -> Result<PathBuf> {
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .context("the home directory is not set")?;
+    Ok(PathBuf::from(home).join(".amux").join("bin"))
+}
+
+/// This machine's live agents on each profile, with the profile's client;
+/// none when amux is not running.
+async fn running_agents(
+    config: &InstallationConfig,
+) -> Result<Vec<(wire::ClientStubs, Vec<wire::Agent>)>> {
+    let Some(door) = connect::front_door_now(config).await else {
+        return Ok(Vec::new());
+    };
+    let profiles = connect::installation(door)
+        .list_profiles(wire::Empty {})
+        .await
+        .map_err(crate::plain)?
+        .into_inner()
+        .profiles;
+    let mut running = Vec::new();
+    for profile in profiles {
+        let own = connect::admin_of(&profile)
+            .await?
+            .get_device_identity(wire::Empty {})
+            .await
+            .map_err(crate::plain)?
+            .into_inner()
+            .host_id;
+        let mut client = connect::client_of(&profile).await?;
+        let (_, agents) = crate::verbs::inventory(&mut client).await?;
+        let live: Vec<wire::Agent> = agents
+            .into_iter()
+            .filter(|agent| {
+                agent.host_id == own
+                    && wire::Lifecycle::try_from(agent.lifecycle) != Ok(wire::Lifecycle::Exited)
+            })
+            .collect();
+        if !live.is_empty() {
+            running.push((client, live));
+        }
+    }
+    Ok(running)
+}
+
+/// Removes a file, saying whether there was one.
+fn remove_file(path: &Path) -> Result<bool> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error).with_context(|| format!("deleting {}", path.display())),
+    }
+}
+
+fn remove_empty_dir(path: &Path) {
+    // Fails, and leaves it, when something else is in it.
+    let _ = std::fs::remove_dir(path);
+}
+
+/// The two lines `https://amux.sh/install` adds to a shell profile, which
+/// it adds once and only in this form.
+#[cfg(unix)]
+const SHELL_PATH_LINES: &str =
+    "\n# Added by amux installer\nexport PATH=\"$HOME/.amux/bin:$PATH\"\n";
+
+/// Takes the install script's PATH lines back out of the shell profiles it
+/// writes to.
+#[cfg(unix)]
+fn unset_shell_path() -> Result<()> {
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+        return Ok(());
+    };
+    for name in [".zshrc", ".bashrc", ".profile"] {
+        let file = home.join(name);
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        if text.contains(SHELL_PATH_LINES) {
+            std::fs::write(&file, text.replacen(SHELL_PATH_LINES, "\n", 1))
+                .with_context(|| format!("writing {}", file.display()))?;
+            println!("Took ~/.amux/bin off PATH in {}.", file.display());
+        }
+    }
+    Ok(())
+}
+
+fn ask_no(question: &str) -> Result<bool> {
+    print!("{question}");
+    std::io::stdout().flush()?;
+    let mut answer = String::new();
+    std::io::stdin().lock().read_line(&mut answer)?;
+    Ok(matches!(
+        answer.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes"
     ))
 }
 

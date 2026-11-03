@@ -120,6 +120,13 @@ running `amux` executable, and sends the supervisor's own output to
 running, `amux init` stops it first so the login item's supervisor owns the
 install; agents keep running and the new daemon adopts them.
 
+`amux uninstall` undoes it: it unregisters the login item (`launchctl
+bootout`, `systemctl --user disable --now`, or `schtasks /End` and `/Delete`)
+and deletes its file, but only when the item names this installation's
+`supervisor.log`, so uninstalling a worktree's installation leaves the real one
+starting at login. It stops this machine's agents first and amux after, so
+nothing is left running without its binary.
+
 ## Stop goes to the owner
 
 A stop request reaches the process that owns the daemon, or the daemon would

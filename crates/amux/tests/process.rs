@@ -618,3 +618,43 @@ async fn the_cli_verbs_work_against_a_started_daemon() {
     assert!(install.front_door().await.is_none());
     install.run_daemon().await;
 }
+
+/// `amux uninstall` without a terminal refuses while agents run, and with
+/// `--yes --delete-data` stops them, stops the daemon and deletes the
+/// installation. An installation named by its config leaves the installed
+/// binary, which serves the default one, where it is.
+#[tokio::test(flavor = "multi_thread")]
+async fn uninstall_stops_agents_and_the_daemon_and_deletes_the_installation() {
+    let gate = tempfile::NamedTempFile::new().unwrap();
+    let mut install = Install::new(gated_turn(gate.path()));
+    let work = install.work.to_string_lossy().into_owned();
+    install.run_daemon().await;
+    created_id(
+        &install
+            .ok(&[
+                "new", "claude", "--in", "amux", "--name", "busy", "--cwd", &work,
+            ])
+            .await,
+    );
+
+    let refused = install.amux(&["uninstall"]).await;
+    assert!(!refused.status.success());
+    let said = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        said.contains("1 agent is still running") && said.contains("--yes"),
+        "{said}"
+    );
+    assert!(install.front_door().await.is_some(), "nothing was stopped");
+
+    let said = install.ok(&["uninstall", "--yes", "--delete-data"]).await;
+    assert!(said.contains("Stopped busy."), "{said}");
+    assert!(!said.contains("Removed amux from"), "{said}");
+    let data = install.root.path().join("data");
+    assert!(!data.exists(), "{said}");
+    assert!(!install.config.exists(), "{said}");
+    let daemon = install.daemon.take().expect("the daemon ran");
+    tokio::time::timeout(PATIENCE, daemon.wait_with_output())
+        .await
+        .expect("the daemon exits")
+        .unwrap();
+}

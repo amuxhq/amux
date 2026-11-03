@@ -520,7 +520,8 @@ these; the entries amux and service managers run are hidden from it and listed a
 | `amux logout` | Signs the profile out; its agents and paired hosts stay. |
 | `amux profile ls\|new [label]\|rename <profile> <name>\|rm <profile>` | Lists and manages the installation's profiles. |
 | `amux status` | Says whether amux is running and under what, its version and this command's, how updates arrive, each profile's account and relay link, telemetry, and the config file's path. Starts nothing; exits 0 when the daemon answers and 3 when it does not. |
-| `amux init` | Sets up this install, including whether amux starts at login (`--login-item yes\|no`, asked when omitted). |
+| `amux init` | Sets up this install, including whether amux starts at login (`--login-item yes\|no`, asked on a terminal when omitted; without a terminal it asks nothing and adds nothing). |
+| `amux uninstall` | Stops this machine's running agents (asking first on a terminal; `--yes` without one), removes this installation's login item, stops amux, and deletes `~/.amux/bin/amux` and the PATH lines the install script added; with `--delete-data`, the installation's root and config file too. An installation named by `--config` keeps the installed binary, which serves the default one. |
 | `amux update` | Asks the supervisor to install the channel's release now and says whether it started; `--retry` installs it even if it was rolled back here. |
 | `amux config get\|set\|unset <key>` | Reads a setting (its default when the file does not set it), sets one, or removes one so its default applies. A key is dotted (`ui.chat_in`, `new_agent.claude.model`); a value is read as TOML where it is one and as a string otherwise. A write changes that key alone, comments and layout kept, and only when the file still reads after it. |
 | `amux config edit\|path` | Opens the config file in `$VISUAL` or `$EDITOR` and checks it after, or prints where it is. |

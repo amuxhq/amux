@@ -1,0 +1,84 @@
+# The Mac app's project. Separate from the iPhone app's (../project.yml) so
+# neither app's recipes generate, build or check the other's targets; both
+# link the same Swift packages and the same Rust bridge.
+name: AmuxMac
+
+options:
+  bundleIdPrefix: sh.amux
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "26.0"
+  minimumXcodeGenVersion: "2.46.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    # The bridge's Mac slice is built for Apple silicon alone
+    # (apps/apple/Tools/ios-rust.py --mac).
+    ARCHS: arm64
+
+packages:
+  AmuxCore:
+    path: ../Packages/AmuxCore
+
+targets:
+  AmuxMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Amux
+        CFBundleName: Amux
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.developer-tools
+        NSHumanReadableCopyright: ""
+    postBuildScripts:
+      # The app carries its own copy of amux and installs it when this Mac
+      # has none (InstallOptions.bundled). Contents/Helpers is where a bundle
+      # keeps a command-line tool it runs, so code signing seals it with the
+      # app. Development builds carry the checkout's own debug build, which
+      # the linker has already signed ad hoc; a distribution build signs it
+      # with the app's identity before the app is sealed.
+      - name: Bundle amux
+        basedOnDependencyAnalysis: true
+        inputFiles:
+          - "$(SRCROOT)/../../../target/debug/amux"
+        outputFiles:
+          - "$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/amux"
+        script: |
+          set -eu
+          helpers="$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers"
+          mkdir -p "$helpers"
+          cp -f "$SCRIPT_INPUT_FILE_0" "$SCRIPT_OUTPUT_FILE_0"
+    settings:
+      base:
+        PRODUCT_NAME: Amux
+        PRODUCT_BUNDLE_IDENTIFIER: sh.amux.desktop
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        # Distributed outside the App Store and signed with Developer ID, so
+        # the hardened runtime is on and the sandbox is off: the app talks to
+        # amux's sockets under ~/.amux and installs amux into ~/.amux/bin.
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: NO
+        # Development builds sign ad hoc; a distribution build is signed with
+        # the Developer ID certificate, chosen by its type, at release.
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        COMBINE_HIDPI_IMAGES: YES
+        GENERATE_INFOPLIST_FILE: NO
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+    dependencies:
+      - package: AmuxCore
+        product: AmuxCore
+      - package: AmuxCore
+        product: AmuxValues

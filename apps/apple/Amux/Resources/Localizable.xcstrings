@@ -1717,6 +1717,18 @@
         }
       }
     },
+    "amux did not install" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/Runtime.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "amux did not install"
+          }
+        }
+      }
+    },
     "amux is not running on this phone yet. Try again in a moment." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/Reporting.swift.",
       "extractionState" : "manual",
@@ -9169,6 +9181,18 @@
         }
       }
     },
+    "the installer answered something unreadable" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/Runtime.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the installer answered something unreadable"
+          }
+        }
+      }
+    },
     "the profile did not open" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/Runtime.swift.",
       "extractionState" : "manual",
@@ -9201,6 +9225,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "the runtime answered what this build cannot read"
+          }
+        }
+      }
+    },
+    "the runtime did not attach" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/Runtime.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the runtime did not attach"
           }
         }
       }

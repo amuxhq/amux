@@ -2,6 +2,9 @@ import Darwin
 import Foundation
 import LaunchClock
 import QuartzCore
+#if os(macOS)
+import AppKit
+#endif
 import os
 
 /// The named moments the app marks in every build.
@@ -264,7 +267,10 @@ public enum DisplayTick {
         }
 
         func start() {
-            let link = CADisplayLink(target: self, selector: #selector(fired))
+            guard let link = displayLink(target: self, selector: #selector(fired)) else {
+                Task { @MainActor in self.fired() }
+                return
+            }
             link.add(to: .main, forMode: .common)
             self.link = link
         }
@@ -290,7 +296,8 @@ public enum DisplayTick {
 
         fileprivate init(body: @escaping @MainActor () -> Void) {
             self.body = body
-            let link = CADisplayLink(target: self, selector: #selector(fired))
+            // With no screen to refresh there are no frames to tick.
+            guard let link = displayLink(target: self, selector: #selector(fired)) else { return }
             link.add(to: .main, forMode: .common)
             self.link = link
         }
@@ -305,4 +312,15 @@ public enum DisplayTick {
             body()
         }
     }
+}
+
+/// A display link for the screen the app draws on. On the Mac a link belongs
+/// to a screen, and a Mac with no screen attached has none to give.
+@MainActor
+private func displayLink(target: Any, selector: Selector) -> CADisplayLink? {
+    #if os(macOS)
+    (NSScreen.main ?? NSScreen.screens.first)?.displayLink(target: target, selector: selector)
+    #else
+    CADisplayLink(target: target, selector: selector)
+    #endif
 }

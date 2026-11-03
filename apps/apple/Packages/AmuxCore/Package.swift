@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "AmuxCore",
-    platforms: [.iOS(.v26)],
+    platforms: [.iOS(.v26), .macOS(.v26)],
     products: [
         .library(name: "AmuxCore", targets: ["AmuxCore"]),
         // The values the Rust bridge hands over, generated from their Rust

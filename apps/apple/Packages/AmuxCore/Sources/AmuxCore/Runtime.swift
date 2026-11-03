@@ -84,6 +84,46 @@ public final class Runtime: @unchecked Sendable {
         return Runtime(handle: try started.get().pointer, loop: loop)
     }
 
+    #if os(macOS)
+    /// Attaches to amux on this Mac: the same runtime `start` answers, with
+    /// the daemon's profiles and their agents, reached over its sockets.
+    /// Install amux first (`install`). Blocks, on the core queue, until the
+    /// daemon's profile list is read.
+    public static func attach(
+        _ config: AttachConfig, profilesMoved: @escaping @MainActor @Sendable ([ProfileView]) -> Void
+    ) throws(RuntimeFailure) -> Runtime {
+        let loop = CoreLoop(profilesMoved: profilesMoved)
+        let config = Bridge.json(config)
+        let attached = loop.blocking { () -> Result<Live, RuntimeFailure> in
+            var error: UnsafeMutablePointer<CChar>?
+            guard let attached = config.withCString({ amux_runtime_attach($0, &error) }) else {
+                return .failure(Bridge.failure(error, otherwise: "the runtime did not attach"))
+            }
+            loop.run(attached)
+            return .success(Live(attached))
+        }
+        return Runtime(handle: try attached.get().pointer, loop: loop)
+    }
+
+    /// Makes sure amux is installed and answering, installing the app's own
+    /// copy when it is missing. Blocks for as long as that takes, a download
+    /// included, so it runs off the caller's thread.
+    public static func install(_ options: InstallOptions) async throws(RuntimeFailure) -> Installed {
+        let options = Bridge.json(options)
+        let answer: Result<Installed, RuntimeFailure> = await Task.detached {
+            var error: UnsafeMutablePointer<CChar>?
+            guard let installed = options.withCString({ amux_install($0, &error) }) else {
+                return .failure(Bridge.failure(error, otherwise: "amux did not install"))
+            }
+            guard let value = Bridge.read(Installed.self, installed) else {
+                return .failure(RuntimeFailure("the installer answered something unreadable"))
+            }
+            return .success(value)
+        }.value
+        return try answer.get()
+    }
+    #endif
+
     /// Stops the runtime and flushes every profile's store, closing every
     /// profile opened from it first. Close their chats before that; any read
     /// after this answers nothing, and any act answers that it stopped.

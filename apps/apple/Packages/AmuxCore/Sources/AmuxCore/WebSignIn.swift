@@ -1,7 +1,10 @@
-import AmuxCore
 import AuthenticationServices
 import Foundation
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// The browser a sign-in happens in.
 ///
@@ -100,10 +103,16 @@ private final class Browser: NSObject, ASWebAuthenticationPresentationContextPro
         anchor
     }
 
-    static func frontWindow() -> UIWindow? {
+    static func frontWindow() -> ASPresentationAnchor? {
+        #if os(macOS)
+        // On the Mac the browser is a sheet on the app's window, or the
+        // person's default browser when it supports authentication sessions.
+        return NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first
+        #else
         let windows = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows)
         return windows.first { $0.isKeyWindow } ?? windows.first
+        #endif
     }
 }

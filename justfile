@@ -38,6 +38,9 @@ store *ARGS:
 # The iPhone app's recipes: `just ios build`, `just ios verify`, ... (`just --list ios`).
 mod ios 'apps/apple/justfile'
 
+# The Mac app's recipes: `just mac build`, `just mac run` (`just --list mac`).
+mod mac 'apps/apple/Mac/justfile'
+
 # Build the desktop product binaries.
 build:
     {{bounded}} 900 cargo build --locked -p amux --bins

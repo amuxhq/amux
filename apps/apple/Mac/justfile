@@ -1,0 +1,38 @@
+# The Mac app's recipes. `just mac <recipe>` from anywhere in the checkout;
+# every recipe runs from the repository root, as the iPhone app's do.
+
+set shell := ["sh", "-cu"]
+set positional-arguments
+set working-directory := "../../.."
+
+bounded := "scripts/bounded"
+python := "scripts/py"
+derived := "target/mac/DerivedData"
+app := "target/mac/DerivedData/Build/Products/Debug/Amux.app"
+
+# List the Mac app's recipes.
+default:
+    @just --list mac
+
+# The bridge's Mac slice, added to the framework the Swift packages link.
+# Build the bridge with its Mac slice.
+rust:
+    {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-rust.py --mac
+
+# The app, with the checkout's own amux inside it, from a project generated
+# from apps/apple/Mac/project.yml.
+# Build the Mac app.
+build: rust
+    {{bounded}} 900 cargo build --locked -p amux --bin amux
+    {{bounded}} 300 sh -c 'cd apps/apple/Mac && xcodegen generate --spec project.yml --quiet'
+    {{bounded}} 1200 xcodebuild -project apps/apple/Mac/AmuxMac.xcodeproj -scheme AmuxMac \
+        -configuration Debug -destination 'platform=macOS,arch=arm64' \
+        -derivedDataPath {{derived}} -quiet build
+
+# Runs the built app in the foreground against this checkout's installation
+# (AMUX_CONFIG, as wt sets it), starting the checkout's daemon first so the
+# app attaches rather than installs.
+# Build and run the Mac app against this checkout's amux.
+run: build
+    {{bounded}} 60 sh -c 'target/debug/amux status >/dev/null 2>&1 || target/debug/amux server start'
+    {{app}}/Contents/MacOS/Amux

@@ -30,7 +30,21 @@ public struct CloudEndpoint: Sendable, Equatable {
         base: URL(string: "https://amux.sh")!,
         clientID: "mobile",
         callback: URL(string: "amux://callback")!,
-        scopes: ["openid", "profile", "email", "offline_access", "api"])
+        scopes: signedInScopes)
+
+    /// The account service as the desktop app knows it: its own registered
+    /// client, so the account page and the analytics tell a Mac from a phone.
+    /// The authentication session catches the callback itself, so the scheme
+    /// is registered with nothing on the Mac.
+    public static let desktop = CloudEndpoint(
+        base: production.base,
+        clientID: "desktop",
+        callback: URL(string: "sh.amux.desktop://callback")!,
+        scopes: signedInScopes)
+
+    /// What every app asks for: who the person is, a refresh token, and the
+    /// account API.
+    private static let signedInScopes = ["openid", "profile", "email", "offline_access", "api"]
 
     /// The host this app tells somebody it is sending them to. It is read off
     /// the URL rather than written twice, so the screen cannot name one place

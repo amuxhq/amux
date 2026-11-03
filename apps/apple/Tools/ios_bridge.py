@@ -53,6 +53,12 @@ SIMULATOR_TRIPLE = "aarch64-apple-ios-sim"
 DEVICE_TRIPLE = "aarch64-apple-ios"
 SHIPPING_TRIPLES = (SIMULATOR_TRIPLE, DEVICE_TRIPLE)
 DEPLOYMENT_TARGET = "26.0"
+# The Mac app links the same framework through the same Swift package, so a
+# Mac build adds this slice to it. Only the package's framework carries it:
+# the driving library is force-loaded by the iPhone app alone.
+MAC_TRIPLE = "aarch64-apple-darwin"
+MAC_SLICE = "macos-arm64"
+MAC_DEPLOYMENT_TARGET = "26.0"
 
 OUTPUT = Path("target/ios")
 # One Cargo target directory per target triple. Simulator and device builds
@@ -82,7 +88,10 @@ def build_environment(triple: str) -> dict[str, str]:
     # changing Rust metadata. Cargo tracks those inputs; wrapper caches may not.
     environment["RUSTC_WRAPPER"] = ""
     environment["CARGO_TARGET_DIR"] = str((RUST_TARGETS / triple).resolve())
-    environment["IPHONEOS_DEPLOYMENT_TARGET"] = DEPLOYMENT_TARGET
+    if triple == MAC_TRIPLE:
+        environment["MACOSX_DEPLOYMENT_TARGET"] = MAC_DEPLOYMENT_TARGET
+    else:
+        environment["IPHONEOS_DEPLOYMENT_TARGET"] = DEPLOYMENT_TARGET
     # SDKROOT is deliberately absent: cargo fingerprints host-side build
     # scripts with it, so exporting the simulator and device SDKs in turn
     # rebuilds the shared host graph every time. The C compiler selects the SDK

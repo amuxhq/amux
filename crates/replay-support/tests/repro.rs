@@ -9,18 +9,21 @@ use std::path::Path;
 
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::{Channel, Event, Fact, Interpreter, checks};
+#[cfg(unix)]
 use provider_fakes::script::Step;
 use replay_support::fetch::{self, Bucket, Listing};
 use replay_support::replay::{Stage, StageVerdict, Verdict};
 use replay_support::repro::{Run, repro};
 use replay_support::window;
 use serde_json::{Value, json};
+#[cfg(unix)]
 use testnet::{AgentDecl, Net, Topology};
 
 use crate::support;
 
 /// Every regular file under `from`, copied to the same place under `to`:
 /// a running installation also holds sockets.
+#[cfg(unix)]
 fn copy_files(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
     for entry in std::fs::read_dir(from).unwrap() {
@@ -194,7 +197,10 @@ fn an_agents_record_that_broke_a_check_reproduces_it_at_its_event() {
 /// through its interpreter against what it journaled. A line planted in
 /// the ring that breaks a check fails the interpreter at that line, and
 /// after a clean stop the core says why it cannot be replayed; a journal
-/// missing the agent's last step no longer matches the replay.
+/// missing the agent's last step no longer matches the replay. Unix only,
+/// as are the net's own tests of real agents: on Windows its agent
+/// processes outlive the net's shutdown.
+#[cfg(unix)]
 #[test]
 fn an_installation_replays_its_core_and_its_agents_facts() {
     let text = |chunks: &[&str]| Step::Text {

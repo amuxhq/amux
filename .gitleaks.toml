@@ -17,3 +17,12 @@ regexes = ['''^(exec-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 [[allowlists]]
 description = "Planted test credentials"
 regexes = ['''PLANTED''']
+
+# An agent record stands in for each id, item key and tool server name with
+# an alias (`interpret::record`): its kind and twelve hex digits. Only in
+# fixtures, so a key of that shape pasted into source is still caught.
+[[allowlists]]
+description = "Agent record aliases in fixtures"
+condition = "AND"
+paths = ['''(^|/)fixtures/''']
+regexes = ['''^(id|key|name)-[0-9a-f]{12}$''']

@@ -415,7 +415,10 @@ fn no_report_of_any_trigger_carries_a_word_and_each_core_replays() {
 
 /// A daemon's log, which a report carries, names the hosts it pairs and
 /// links with by id and never by name: each daemon here runs as a process
-/// writing its own log, paired with the other for real.
+/// writing its own log, paired with the other for real. Unix only, as are
+/// the net's own tests of whole daemons: a daemon process the net starts
+/// on Windows does not come up.
+#[cfg(unix)]
 #[test]
 fn a_daemons_log_names_no_other_host() {
     const BOX: &str = "PLANTEDbox";

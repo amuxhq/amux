@@ -19,8 +19,9 @@
 //! `@<hash>~<bytes>`, and `/<lines>` when it has line breaks, so equal
 //! strings alias alike within one record and the size of what was said
 //! survives without the words. A provider's fixed phrase that opens a text
-//! ([`MARKERS`]) is kept ahead of the alias, `@<phrase>@<hash>~<bytes>`, as
-//! is the `mcp__` that names a tool server's tool. A number inside a
+//! ([`MARKERS`]) is kept ahead of the alias of the rest,
+//! `@<phrase>@<hash>~<bytes>`, whatever the rest holds, as is the `mcp__`
+//! that names a tool server's tool. A number inside a
 //! tool's input or result becomes `#<characters>`. A kept string is
 //! written `=<value>`; a model, which is not a closed set but is not
 //! content either, `%<hash>=<value>`, so a value that appears elsewhere
@@ -1173,9 +1174,10 @@ impl Skeleton {
             .max_by_key(|marker| marker.len())
             .copied()
             .unwrap_or_default();
-        // A fixed phrase and a count (`Reconnecting... 2/5`) says no word
-        // of anyone's.
-        if marker.len() > 1 && !text[marker.len()..].contains(char::is_alphabetic) {
+        // What follows the phrase is anyone's, digits as much as words,
+        // but for the count Codex's interpreter reads off its reconnects
+        // (`Reconnecting... 2/5`).
+        if marker == "Reconnecting... " && count(&text[marker.len()..]) {
             return self.named(text);
         }
         self.alias(marker, text)
@@ -1729,6 +1731,15 @@ pub(crate) fn schema_name(name: &str) -> bool {
         && name
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"_-.".contains(&b))
+}
+
+/// An attempt and its limit, `<n>/<m>`, of at most three digits each.
+fn count(text: &str) -> bool {
+    text.split_once('/').is_some_and(|(attempt, limit)| {
+        [attempt, limit]
+            .iter()
+            .all(|part| (1..=3).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit()))
+    })
 }
 
 fn timestamp(text: &str) -> bool {

@@ -343,3 +343,69 @@ fn a_long_record_keeps_its_newest_events_and_counts_the_rest() {
     assert_eq!(kept(&whole), total);
     assert!(whole.get("events_left_out").is_none());
 }
+
+/// Digits after a provider's fixed phrase are as much anyone's as words:
+/// a card number after `user_note: ` keeps only the phrase, in a fact and
+/// in a prompt's text.
+#[test]
+fn only_the_phrase_of_a_marked_text_is_kept_whatever_follows_it() {
+    const CARD: &str = "4111 1111 1111 1111";
+    let spec = AgentSpec {
+        agent_id: b"agent".to_vec(),
+        kind: wire::Kind::ClaudeSdk as i32,
+        incarnation: 1,
+        ..AgentSpec::default()
+    };
+    let (state, _) = ClaudeSdk::initial(&spec);
+    let prompt = wire::ClaudeSdkInput {
+        of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+            text: format!("user_note: {CARD}"),
+            attachments: Vec::new(),
+        })),
+    };
+    let events = [
+        fact(
+            json!({"type": "user", "session_id": "s", "message": {"role": "user",
+            "content": [{"type": "text", "text": format!("user_note: {CARD}")}]}}),
+        ),
+        Event::Input(wire::Input {
+            input_id: b"p1".to_vec(),
+            kind: wire::Kind::ClaudeSdk as i32,
+            body: prost::Message::encode_to_vec(&prompt),
+        }),
+    ];
+    let record = interpret::record::record::<ClaudeSdk>(
+        &spec,
+        [3; 16],
+        Value::Null,
+        [(
+            interpret::encode_checkpoint(&state),
+            events.iter().flat_map(line).collect(),
+        )],
+    );
+    let text = record.to_string();
+    for digits in [CARD, "1111 1111"] {
+        assert!(!text.contains(digits), "{text}");
+    }
+    let shapes = &record["segments"][0]["events"];
+    let kept = shapes[0]["event"]["shape"]["message"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
+    assert!(kept.starts_with("@user_note: @"), "{kept}");
+    let typed = shapes[1]["event"]["shape"]["prompt"]["text"]
+        .as_str()
+        .unwrap();
+    assert!(typed.starts_with("@user_note: @"), "{typed}");
+    // The count Codex's interpreter reads off a reconnect stays.
+    let skeleton = interpret::skeleton::Skeleton { salt: [3; 16] };
+    assert!(
+        skeleton
+            .text("Reconnecting... 2/5")
+            .ends_with("=Reconnecting... 2/5")
+    );
+    assert!(
+        skeleton
+            .text(&format!("Reconnecting... {CARD}"))
+            .starts_with("@Reconnecting... @")
+    );
+}

@@ -11241,6 +11241,10 @@ impl ::prost::Name for CtlFrame {
 pub struct AgentDumpRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub dump_id: ::prost::alloc::vec::Vec<u8>,
+    /// The most the agent's record may take compressed: what is left of the
+    /// report's limit when the daemon asks. Zero is the report's whole limit.
+    #[prost(uint64, tag = "2")]
+    pub limit: u64,
 }
 impl ::prost::Name for AgentDumpRequest {
     const NAME: &'static str = "AgentDumpRequest";

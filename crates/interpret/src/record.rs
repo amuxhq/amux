@@ -27,9 +27,10 @@ use crate::shape::{Name, Structure};
 use crate::skeleton::{Chosen, Skeleton, chosen, input_message, schema_name};
 use crate::{Effect, Event, Interpreter, Stepped};
 
-/// The size a report holds each record to once compressed (zstd, level
-/// 3): a record past it is left out of the report.
-pub const LIMIT: usize = 64 << 10;
+/// The most a whole report takes once compressed (zstd, level 3): its
+/// logs and every record together. A record is cut to what is left of it
+/// when the report asks, and one that does not fit is left out.
+pub const LIMIT: usize = 8 << 20;
 
 /// The record of an agent under `spec` whose lifecycle stands as `core`,
 /// from its facts ring's segments, oldest first, each the checkpoint at

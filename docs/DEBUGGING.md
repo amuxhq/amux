@@ -102,10 +102,14 @@ never what anybody wrote: no message, prompt, tool input or output, file name, f
 - **For a person's report**, the note, the marks they drew and the frozen screen, beside the bundle (see [a report
   from the terminal](#a-report-from-the-terminal) and [from the phone](#a-report-from-the-phone)).
 
-Each record is held to 64 KiB once compressed: one past it is left out, and the manifest names its size under
-`over_limit` and says why in `errors`. The core's record is measured whole, its checkpoint, inputs, store copy and
-journals together; the store copy holds every row the profile keeps, so a profile with more than a few thousand
-items has its core's record left out.
+A whole report is held to 8 MiB once compressed. The logs always go; the records fill what is left, in order:
+the record of what triggered the report (the core's for a daemon check, the agent's for an agent check, the chats'
+for a person or a transcript check), then the chats on screen, the core's, and the other agents' records, the
+most recently busy first. An agent builds its record to the room left when the daemon asks, leaving out its oldest
+events to fit, and the record says how many under `events_left_out`. A record that still does not fit is left out:
+its entry names its size and the room it had under `over_limit`, `errors` says why, and the manifest counts every
+record left out under `left_out`. The core's record is measured whole, its checkpoint, inputs, store copy and
+journals together; the store copy holds every row the profile keeps.
 
 ```text
 reports/dump-<unix ms>-<id>/
@@ -330,7 +334,7 @@ by a build whose interpreter no longer breaks the check holds, and says that the
 `dump-show` prints everything in a bundle as text: the manifest, each agent's record, each chat's record, the core's
 record with its store's rows and journals, and every other file. Both tools open a report's bundle directory, a
 report directory (its bundle is under `dump/`), or a report's `dump.pb.zst` as downloaded from the account service,
-which they unpack first, refusing one that unpacks past 256 MiB. A file the manifest names is read only from inside
+which they unpack first, refusing one that unpacks past 1 GiB. A file the manifest names is read only from inside
 the bundle.
 
 The same is a library, `replay-support` (`crates/replay-support/src/bundle.rs`, `replay.rs` and `synthetic.rs`):

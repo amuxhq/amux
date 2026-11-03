@@ -141,6 +141,7 @@ and are tuned the same way:
 | Largest journal or control-socket frame | 64 MiB | `journal::MAX_FRAME_BYTES`; `agent_dir::MAX_FRAME_BYTES` |
 | Fixed per-row allowance in retention's byte count | 48 bytes | `ITEM_BYTES` in [`crates/store/src/rows.rs`](../crates/store/src/rows.rs) |
 | Reports kept in `reports/` | The newest 20, dumps and core reports alike | `REPORTS_KEPT` in [`crates/node/src/install.rs`](../crates/node/src/install.rs) |
+| Report size | 8 MiB compressed, the logs and every record together; the record of what triggered it first, then the chats on screen, the core's and the other agents', most recently busy first; an agent past the room left is asked again for one cut to it while 4 KiB is left | `REPORT_LIMIT` and `SMALLEST_RECORD` in [`crates/node/src/dump.rs`](../crates/node/src/dump.rs); `interpret::record::LIMIT` |
 | Report upload | 120 s for one try; two more after a retryable failure, 5 s then 10 s later; the dump compressed with zstd at level 3 | `UPLOAD_TIMEOUT`, `RETRIES`, `BACKOFF` and `ZSTD_LEVEL` in [`crates/node/src/reports.rs`](../crates/node/src/reports.rs) |
 | Recent directories kept per profile | 200 | `RECENT_DIRECTORIES` in [`crates/store/src/lib.rs`](../crates/store/src/lib.rs) |
 | Chats in the terminal client's layout file | The 200 changed most recently | `CHATS_KEPT` in [`crates/tui/src/app.rs`](../crates/tui/src/app.rs) |

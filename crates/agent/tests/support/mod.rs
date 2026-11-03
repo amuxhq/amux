@@ -691,8 +691,14 @@ impl Daemon {
 
     /// Asks for the agent's part of a dump and waits for it.
     pub async fn dump(&mut self, id: &[u8]) -> wire::DumpPart {
+        self.dump_within(id, 0).await
+    }
+
+    /// [`Self::dump`], its record within `limit` bytes compressed.
+    pub async fn dump_within(&mut self, id: &[u8], limit: u64) -> wire::DumpPart {
         self.send(ctl_frame::Of::DumpRequest(wire::AgentDumpRequest {
             dump_id: id.to_vec(),
+            limit,
         }))
         .await;
         loop {

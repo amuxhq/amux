@@ -50,15 +50,21 @@ pub(crate) fn facts(dir: &Path) -> Facts {
 
 /// The agent's record, encoded: `facts` run through `I` from each
 /// segment's checkpoint, beside the lifecycle `core`, its oldest events
-/// left out where the whole would not fit a report.
+/// left out where the whole would not fit `limit` bytes compressed, or a
+/// whole report's limit when it is zero.
 pub(crate) fn build<I: Interpreter>(
     spec: &AgentSpec,
     core: serde_json::Value,
     facts: Facts,
+    limit: u64,
 ) -> Vec<u8> {
+    let limit = match usize::try_from(limit) {
+        Ok(0) | Err(_) => interpret::record::LIMIT,
+        Ok(limit) => limit.min(interpret::record::LIMIT),
+    };
     let salt = uuid::Uuid::new_v4().into_bytes();
     let mut record = interpret::record::within::<I>(spec, salt, core, facts.segments, |record| {
-        fits(&serde_json::to_vec(record).unwrap_or_default())
+        fits(&serde_json::to_vec(record).unwrap_or_default(), limit)
     });
     if !facts.errors.is_empty() {
         record["errors"] = facts.errors.into();
@@ -66,12 +72,11 @@ pub(crate) fn build<I: Interpreter>(
     serde_json::to_vec(&record).unwrap_or_default()
 }
 
-/// Whether an encoded record fits a report once compressed, as the daemon
+/// Whether an encoded record fits `limit` once compressed, as the daemon
 /// compresses it, with room for the errors added after.
-fn fits(record: &[u8]) -> bool {
+fn fits(record: &[u8], limit: usize) -> bool {
     const ROOM: usize = 1 << 10;
-    zstd::bulk::compress(record, 3)
-        .is_ok_and(|compressed| compressed.len() + ROOM <= interpret::record::LIMIT)
+    zstd::bulk::compress(record, 3).is_ok_and(|compressed| compressed.len() + ROOM <= limit)
 }
 
 /// The record of an agent whose record could not be built: its kind and
@@ -87,18 +92,19 @@ pub(crate) fn failed(spec: &AgentSpec, core: serde_json::Value, why: &str) -> Ve
     serde_json::to_vec(&record).unwrap_or_default()
 }
 
-/// The part the daemon asked for: the record alone.
+/// The part the daemon asked for: the record alone, within `limit`.
 pub(crate) fn part<I: Interpreter>(
     dir: &Path,
     dump_id: Vec<u8>,
     spec: &AgentSpec,
     core: serde_json::Value,
+    limit: u64,
 ) -> DumpPart {
     DumpPart {
         dump_id,
         files: vec![DumpFile {
             name: RECORD.to_owned(),
-            contents: build::<I>(spec, core, facts(dir)),
+            contents: build::<I>(spec, core, facts(dir), limit),
         }],
     }
 }

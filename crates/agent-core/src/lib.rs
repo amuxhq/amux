@@ -189,8 +189,9 @@ pub enum Output {
 pub enum AgentJob {
     /// Read what the agent's folder says about its repository.
     ReadGit,
-    /// Gather the agent's part of a dump bundle.
-    DumpPart { dump_id: Vec<u8> },
+    /// Gather the agent's part of a dump bundle, its record within
+    /// `limit` bytes compressed (zero for a report's whole limit).
+    DumpPart { dump_id: Vec<u8>, limit: u64 },
 }
 
 /// What a job produced.
@@ -721,6 +722,7 @@ impl<I: Interpreter> Agent<I> {
                     id,
                     op: AgentJob::DumpPart {
                         dump_id: request.dump_id,
+                        limit: request.limit,
                     },
                 });
             }

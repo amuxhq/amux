@@ -54,9 +54,16 @@
 //! alias, every id, count, revision, timing and its randomness as
 //! recorded. It still restores and replays as the original does.
 //!
-//! Each record is held to [`RECORD_LIMIT`] once compressed: one past it is
-//! left out and its size named under `over_limit`. The core's is measured
-//! whole, its checkpoint, inputs, store copy and journals together.
+//! The whole bundle is held to [`REPORT_LIMIT`] once compressed. The logs
+//! always go and come first; the records fill what is left, the one of
+//! what asked first (the core's for a daemon's check, the agent's for an
+//! agent's, the chats' for a person or a transcript's check), then the
+//! chats on screen, the core's and the other agents', the most recently
+//! busy first. An agent's record is built to the room left when it is
+//! asked for, its oldest events left out to fit; a record that still
+//! does not fit is left out, its size named under `over_limit` and
+//! counted in the manifest's `left_out`. The core's is measured whole,
+//! its checkpoint, inputs, store copy and journals together.
 //!
 //! Everything protobuf is encoded without a length prefix except journal
 //! segments, which keep the journal's own framing. [`pack`] turns a bundle
@@ -100,9 +107,11 @@ const CAPTURE_APART: Duration = Duration::from_millis(100);
 /// for its window: a log written fast enough to pass this in a minute
 /// sends only its newest lines.
 pub const DUMP_LOG_BYTES: u64 = 1 << 20;
-/// The most one record may take, compressed: the core's window since its
-/// checkpoint, an agent's record or a chat's.
-pub const RECORD_LIMIT: usize = 64 << 10;
+/// The most a bundle may take, compressed: its logs and every record.
+pub const REPORT_LIMIT: usize = interpret::record::LIMIT;
+/// The room under which an agent whose record did not fit is left out
+/// rather than asked for a shorter one: hardly an event would fit.
+const SMALLEST_RECORD: usize = 4 << 10;
 /// Where an agent's record lives in its bundle directory and in the part
 /// its process sends.
 pub const AGENT_RECORD: &str = "record";
@@ -275,32 +284,63 @@ impl ProfileRuntime {
         std::fs::create_dir_all(&partial)?;
         let mut errors = Vec::new();
         let host = self.host().as_bytes().to_vec();
-        let own: Vec<AgentRow> = self
+        let mut own: Vec<AgentRow> = self
             .read_store(|store| store.agents())
             .await??
             .into_iter()
             .filter(|row| row.agent.host == host)
             .collect();
-        let core = self.dump_core(&partial, &own, &mut errors).await?;
-        if let Some(over) = core.as_ref().and_then(|core| core.over) {
-            errors.push(format!(
-                "{CORE}: the record is {over} bytes compressed, over the limit of \
-                 {RECORD_LIMIT}: only its counts are here"
-            ));
+        own.sort_by_key(|row| std::cmp::Reverse(row.phase_since_ms.unwrap_or(row.created_at_ms)));
+        let logs = self.dump_logs(&own, &partial, &mut errors)?;
+        let mut room = Room {
+            left: REPORT_LIMIT.saturating_sub(logs),
+            left_out: 0,
+        };
+        let core_first = !request.check.is_empty()
+            && !matches!(
+                crate::reports::core_of_check(&request.check),
+                crate::reports::Core::Agent | crate::reports::Core::Transcript
+            );
+        let mut core = None;
+        if core_first {
+            core = self
+                .dump_core(&partial, &own, &mut room, &mut errors)
+                .await?;
         }
-        let agents = self
-            .dump_agents(&own, dump_id.as_bytes(), &partial, asked, &mut errors)
-            .await?;
-        let sessions = client_sessions(&request.sessions, &partial, &mut errors)?;
-        for (name, path) in [
-            (DAEMON_LOG, &self.daemon_log),
-            (SUPERVISOR_LOG, &self.supervisor_log),
-        ] {
-            let Some(path) = path else { continue };
-            if let Err(error) = dump_log(path, &partial.join(name), DUMP_LOG_BYTES) {
-                errors.push(format!("{name}: {error}"));
-            }
+        let dump_id_bytes = dump_id.as_bytes().as_slice();
+        let mut agents = Vec::new();
+        let asked_id = asked.as_ref().map(|asked| asked.agent);
+        if let Some(asked) = asked
+            && let Some(row) = own
+                .iter()
+                .find(|row| row.agent.agent == asked.agent.as_bytes())
+        {
+            let entry = self
+                .dump_agent(
+                    row,
+                    Some(asked.record),
+                    dump_id_bytes,
+                    &partial,
+                    &mut room,
+                    &mut errors,
+                )
+                .await?;
+            agents.push(entry);
         }
+        let sessions = client_sessions(&request.sessions, &partial, &mut room, &mut errors)?;
+        if !core_first {
+            core = self
+                .dump_core(&partial, &own, &mut room, &mut errors)
+                .await?;
+        }
+        let rest: Vec<&AgentRow> = own
+            .iter()
+            .filter(|row| asked_id.is_none_or(|id| row.agent.agent != id.as_bytes()))
+            .collect();
+        agents.extend(
+            self.dump_agents(&rest, dump_id_bytes, &partial, &mut room, &mut errors)
+                .await?,
+        );
         let trigger = if request.check.is_empty() {
             PERSON.to_owned()
         } else {
@@ -320,8 +360,10 @@ impl ProfileRuntime {
             "core": core.map(|core| serde_json::json!({
                 "inputs": core.inputs,
                 "reads": core.reads,
-                "over_limit": core.over.map(over_limit),
+                "over_limit": (!core.kept).then(|| over_limit(core.bytes, core.room)),
             })),
+            "limit": REPORT_LIMIT,
+            "left_out": room.left_out,
             "errors": errors,
         });
         std::fs::write(
@@ -336,15 +378,48 @@ impl ProfileRuntime {
         Ok(bundle)
     }
 
+    /// The daemon's and the supervisor's logs, and each own agent's, in
+    /// `bundle`. Returns their size together, compressed.
+    fn dump_logs(
+        &self,
+        own: &[AgentRow],
+        bundle: &Path,
+        errors: &mut Vec<String>,
+    ) -> io::Result<usize> {
+        let mut bytes = 0;
+        for (name, path) in [
+            (DAEMON_LOG, &self.daemon_log),
+            (SUPERVISOR_LOG, &self.supervisor_log),
+        ] {
+            let Some(path) = path else { continue };
+            match dump_log(path, &bundle.join(name), DUMP_LOG_BYTES) {
+                Ok(written) => bytes += written,
+                Err(error) => errors.push(format!("{name}: {error}")),
+            }
+        }
+        for row in own {
+            let id = Uuid::from_slice(&row.agent.agent).unwrap_or_default();
+            let out = bundle.join("agents").join(id.to_string());
+            std::fs::create_dir_all(&out)?;
+            let log = self.agent_dir(id).join(agent_dir::AGENT_LOG);
+            match dump_log(&log, &out.join(agent_dir::AGENT_LOG), log_file::AGENT_CAP) {
+                Ok(written) => bytes += written,
+                Err(error) => errors.push(format!("{id} agent.log: {error}")),
+            }
+        }
+        Ok(bytes)
+    }
+
     /// The core's record: its newest checkpoint, the ring's lines since,
     /// the store as of that checkpoint and each own agent's journal from
     /// its cursor there, each as its structure alone; only the counts of a
-    /// window past the limit. None, with the reason in `errors`, when it
-    /// cannot be had.
+    /// window past the room left. None, with the reason in `errors`, when
+    /// it cannot be had.
     async fn dump_core(
         &self,
         bundle: &Path,
         own: &[AgentRow],
+        room: &mut Room,
         errors: &mut Vec<String>,
     ) -> Result<Option<CoreDumped>, DumpError> {
         // The copy waits beside the live store, which holds the same rows,
@@ -376,15 +451,25 @@ impl ProfileRuntime {
                 (id, self.agent_dir(id).join(agent_dir::JOURNAL))
             })
             .collect();
+        let limit = room.left;
         let written = tokio::task::spawn_blocking(move || {
-            let written = write_core(&captured, &scratch, &out, &journals);
+            let written = write_core(&captured, &scratch, &out, &journals, limit);
             let _ = std::fs::remove_file(&scratch);
             written
         })
         .await
         .map_err(io::Error::other)?;
         match written {
-            Ok(core) => Ok(Some(core)),
+            Ok(core) => {
+                if !room.take(core.bytes) {
+                    errors.push(format!(
+                        "{CORE}: the record is {} bytes compressed, past the {} left of the \
+                         report's limit: only its counts are here",
+                        core.bytes, core.room
+                    ));
+                }
+                Ok(Some(core))
+            }
             Err(why) => {
                 errors.push(format!("{CORE}: {why}"));
                 Ok(None)
@@ -392,88 +477,102 @@ impl ProfileRuntime {
         }
     }
 
-    /// Each own agent's directory in the bundle: its record and its log.
-    /// Returns their manifest entries.
+    /// The record of each of `own`, asked of every process at once with
+    /// the room left now and placed in order. Returns their manifest
+    /// entries.
     async fn dump_agents(
         &self,
-        own: &[AgentRow],
+        own: &[&AgentRow],
         dump_id: &[u8],
         bundle: &Path,
-        asked: Option<Asked>,
+        room: &mut Room,
         errors: &mut Vec<String>,
     ) -> Result<Vec<serde_json::Value>, DumpError> {
-        // Every process at once: each runs its ring through its
-        // interpreter again, and one that does not answer waits out its
-        // patience alone.
+        // Each process runs its ring through its interpreter again, and one
+        // that does not answer waits out its patience alone.
+        let limit = room.left;
         let records = futures_util::future::join_all(own.iter().map(|row| {
             let id = Uuid::from_slice(&row.agent.agent).unwrap_or_default();
-            let sent = asked
-                .as_ref()
-                .filter(|asked| asked.agent == id)
-                .map(|asked| asked.record.clone());
-            async move {
-                match sent {
-                    Some(record) => Some(record),
-                    None => self.agent_record(id, dump_id).await,
-                }
-            }
+            self.agent_record(id, dump_id, limit)
         }))
         .await;
         let mut entries = Vec::new();
         for (row, record) in own.iter().zip(records) {
-            let id = Uuid::from_slice(&row.agent.agent).unwrap_or_default();
-            let out = bundle.join("agents").join(id.to_string());
-            std::fs::create_dir_all(&out)?;
-            let mut over = None;
-            let recorded = match record {
-                Some(record) => match fits(&record) {
-                    Ok(()) => {
-                        std::fs::write(out.join(AGENT_RECORD), record)?;
-                        true
-                    }
-                    Err(bytes) => {
-                        errors.push(format!(
-                            "{id} record: {bytes} bytes compressed, over the limit of \
-                             {RECORD_LIMIT}"
-                        ));
-                        over = Some(bytes);
-                        false
-                    }
-                },
-                None => {
-                    errors.push(format!(
-                        "{id} record: no process answered, and none was sent"
-                    ));
-                    false
-                }
-            };
-            let log = self.agent_dir(id).join(agent_dir::AGENT_LOG);
-            let to = out.join(agent_dir::AGENT_LOG);
-            if let Err(error) = dump_log(&log, &to, log_file::AGENT_CAP) {
-                errors.push(format!("{id} agent.log: {error}"));
-            }
-            entries.push(serde_json::json!({
-                "agent_id": id.to_string(),
-                "kind": row.kind,
-                "lifecycle": row.lifecycle,
-                "incarnation": row.incarnation,
-                "record": recorded,
-                "over_limit": over.map(over_limit),
-            }));
+            entries.push(
+                self.dump_agent(row, record, dump_id, bundle, room, errors)
+                    .await?,
+            );
         }
         Ok(entries)
     }
 
-    /// Asks the agent's process for its record over its control
-    /// connection. None when it has no connection or does not answer in
-    /// time.
-    async fn agent_record(&self, id: Uuid, dump_id: &[u8]) -> Option<Vec<u8>> {
+    /// Places one agent's `record` in the bundle when it fits the room
+    /// left. One that does not is asked for again, cut to that room, while
+    /// its process still answers. Returns the agent's manifest entry.
+    async fn dump_agent(
+        &self,
+        row: &AgentRow,
+        mut record: Option<Vec<u8>>,
+        dump_id: &[u8],
+        bundle: &Path,
+        room: &mut Room,
+        errors: &mut Vec<String>,
+    ) -> Result<serde_json::Value, DumpError> {
+        let id = Uuid::from_slice(&row.agent.agent).unwrap_or_default();
+        let mut bytes = record.as_deref().map(compressed_len);
+        if bytes.is_some_and(|bytes| bytes > room.left)
+            && room.left >= SMALLEST_RECORD
+            && let Some(shorter) = self.agent_record(id, dump_id, room.left).await
+        {
+            bytes = Some(compressed_len(&shorter));
+            record = Some(shorter);
+        }
+        let mut over = None;
+        let recorded = match (record, bytes) {
+            (Some(record), Some(bytes)) => {
+                let left = room.left;
+                if room.take(bytes) {
+                    let out = bundle.join("agents").join(id.to_string());
+                    std::fs::create_dir_all(&out)?;
+                    std::fs::write(out.join(AGENT_RECORD), record)?;
+                    true
+                } else {
+                    errors.push(format!(
+                        "{id} record: {bytes} bytes compressed, past the {left} left of the \
+                         report's limit"
+                    ));
+                    over = Some(over_limit(bytes, left));
+                    false
+                }
+            }
+            _ => {
+                errors.push(format!(
+                    "{id} record: no process answered, and none was sent"
+                ));
+                false
+            }
+        };
+        Ok(serde_json::json!({
+            "agent_id": id.to_string(),
+            "kind": row.kind,
+            "lifecycle": row.lifecycle,
+            "incarnation": row.incarnation,
+            "record": recorded,
+            "over_limit": over,
+        }))
+    }
+
+    /// Asks the agent's process for its record, within `limit` bytes
+    /// compressed, over its control connection. None when it has no
+    /// connection or does not answer in time.
+    async fn agent_record(&self, id: Uuid, dump_id: &[u8], limit: usize) -> Option<Vec<u8>> {
         let handle = self.handle(id)?;
         let (tx, rx) = oneshot::channel();
         handle.expect_dump(dump_id.to_vec(), tx);
         let frame = CtlFrame {
             of: Some(ctl_frame::Of::DumpRequest(AgentDumpRequest {
                 dump_id: dump_id.to_vec(),
+                limit: limit as u64,
             })),
         };
         let patience = crate::runtime::ms(self.launch().ctl_write_ms);
@@ -498,39 +597,58 @@ impl ProfileRuntime {
     }
 }
 
-fn over_limit(bytes: usize) -> serde_json::Value {
-    serde_json::json!({ "bytes": bytes, "limit": RECORD_LIMIT })
+/// What is left of [`REPORT_LIMIT`] as a bundle's records go in, and how
+/// many it left out.
+struct Room {
+    left: usize,
+    left_out: usize,
 }
 
-/// Whether a record fits [`RECORD_LIMIT`] compressed, or its size there.
-fn fits(record: &[u8]) -> Result<(), usize> {
-    let compressed = zstd::bulk::compress(record, 3).map_or(usize::MAX, |bytes| bytes.len());
-    if compressed > RECORD_LIMIT {
-        Err(compressed)
-    } else {
-        Ok(())
+impl Room {
+    /// Takes a record of `bytes` compressed when it fits what is left, and
+    /// otherwise counts it left out.
+    fn take(&mut self, bytes: usize) -> bool {
+        if bytes <= self.left {
+            self.left -= bytes;
+            true
+        } else {
+            self.left_out += 1;
+            false
+        }
     }
+}
+
+fn over_limit(bytes: usize, room: usize) -> serde_json::Value {
+    serde_json::json!({ "bytes": bytes, "room": room })
+}
+
+/// `bytes` compressed as a bundle is, measured.
+fn compressed_len(bytes: &[u8]) -> usize {
+    zstd::bulk::compress(bytes, 3).map_or(usize::MAX, |compressed| compressed.len())
 }
 
 /// The log at `path` and its `.1` for the minute before now, at most
 /// `max` bytes of it, redacted, written to `to`. The window is cut by the
 /// wall clock the log is stamped with, whatever clock the core runs on.
-fn dump_log(path: &Path, to: &Path, max: u64) -> io::Result<()> {
+/// Returns what was written's size compressed.
+fn dump_log(path: &Path, to: &Path, max: u64) -> io::Result<usize> {
     let since = log_file::unix_ms_now() - log_file::DUMP_WINDOW_MS;
     let Some(window) = log_file::window(path, since, max)? else {
-        return Ok(());
+        return Ok(0);
     };
     let text = interpret::redact_text(&String::from_utf8_lossy(&window));
-    std::fs::write(to, text)
+    std::fs::write(to, &text)?;
+    Ok(compressed_len(text.as_bytes()))
 }
 
 /// Writes each session record the asking client handed in and returns
 /// their manifest entries. Anything that is not a record, or one past the
-/// limit, is named in `errors` and left out: a whole session holds its
-/// chat's conversation.
+/// room left, is named in `errors` and left out: a whole session holds
+/// its chat's conversation.
 fn client_sessions(
     sessions: &[Vec<u8>],
     bundle: &Path,
+    room: &mut Room,
     errors: &mut Vec<String>,
 ) -> io::Result<Vec<serde_json::Value>> {
     let mut entries = Vec::new();
@@ -549,9 +667,11 @@ fn client_sessions(
             ));
             continue;
         }
-        if let Err(bytes) = fits(encoded) {
+        let (bytes, left) = (compressed_len(encoded), room.left);
+        if !room.take(bytes) {
             errors.push(format!(
-                "{id} client session: {bytes} bytes compressed, over the limit of {RECORD_LIMIT}"
+                "{id} client session: {bytes} bytes compressed, past the {left} left of the \
+                 report's limit"
             ));
             continue;
         }
@@ -628,15 +748,18 @@ struct CoreDumped {
     /// Inputs, and lines saying what an ingest read.
     inputs: usize,
     reads: usize,
-    /// The record's size compressed, when it is past the limit and so only
-    /// counted.
-    over: Option<usize>,
+    /// The record's size compressed; for one past its room, at least as
+    /// much as was measured before it was given up.
+    bytes: usize,
+    /// The room it was given, and whether it was kept in it.
+    room: usize,
+    kept: bool,
 }
 
 /// Writes the core's record from what the core thread handed over: the
 /// checkpoint and ring lines as their structure, the store copy at
 /// `scratch` redacted to its structure in place and moved in, and each of
-/// `journals` from its cursor in that store. A record past the limit
+/// `journals` from its cursor in that store. A record past `limit`
 /// compressed, all of it together, is counted and nothing of it is left
 /// written; the ring's lines alone are measured first, so a window that
 /// cannot fit costs no store copy.
@@ -645,6 +768,7 @@ fn write_core(
     scratch: &Path,
     out: &Path,
     journals: &[(Uuid, PathBuf)],
+    limit: usize,
 ) -> Result<CoreDumped, String> {
     // One for the record, so an identifier has one alias throughout it.
     let structure = Structure::new();
@@ -666,11 +790,14 @@ fn write_core(
         lines.extend(serde_json::to_vec(&recorded.redacted(&structure)).expect("a line writes"));
         lines.push(b'\n');
     }
-    if let Err(bytes) = fits(&lines) {
+    let bytes = compressed_len(&lines);
+    if bytes > limit {
         return Ok(CoreDumped {
             inputs,
             reads,
-            over: Some(bytes),
+            bytes,
+            room: limit,
+            kept: false,
         });
     }
     let checkpoint = daemon_core::redact::checkpoint(&captured.checkpoint, &structure)
@@ -700,20 +827,22 @@ fn write_core(
                 .map_err(|error| format!("writing {id}'s journal: {error}"))?;
         }
     }
-    let size = compressed(out).map_err(|error| format!("measuring {CORE}: {error}"))?;
-    let over = (size > RECORD_LIMIT).then_some(size);
-    if over.is_some() {
+    let bytes = compressed(out).map_err(|error| format!("measuring {CORE}: {error}"))?;
+    let kept = bytes <= limit;
+    if !kept {
         std::fs::remove_dir_all(out).map_err(|error| format!("removing {CORE}: {error}"))?;
     }
     Ok(CoreDumped {
         inputs,
         reads,
-        over,
+        bytes,
+        room: limit,
+        kept,
     })
 }
 
 /// Every file under `dir`, in path order, compressed together as a bundle
-/// is sent: the size a record takes against [`RECORD_LIMIT`]. Streamed, so
+/// is sent: the size a record takes against [`REPORT_LIMIT`]. Streamed, so
 /// a large store copy is never held whole.
 fn compressed(dir: &Path) -> io::Result<usize> {
     struct Counted(usize);
@@ -829,6 +958,10 @@ pub fn pack(bundle: &Path) -> io::Result<DumpPart> {
 mod tests {
     use super::*;
 
+    /// The room these give a core's record: small, so a few thousand rows
+    /// pass it.
+    const LIMIT: usize = 64 << 10;
+
     #[test]
     fn a_window_past_the_limit_is_counted_and_not_written() {
         // Randomness does not compress: enough of it passes the limit.
@@ -853,14 +986,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join(CORE);
         let scratch = dir.path().join("store.sqlite");
-        let core =
-            write_core(&captured, &scratch, &out, &[]).expect("a window past the limit is counted");
+        let core = write_core(&captured, &scratch, &out, &[], LIMIT)
+            .expect("a window past the limit is counted");
         assert_eq!((core.inputs, core.reads), (4_000, 0));
-        assert!(
-            core.over.is_some_and(|bytes| bytes > RECORD_LIMIT),
-            "{:?}",
-            core.over
-        );
+        assert!(!core.kept && core.bytes > LIMIT, "{}", core.bytes);
         assert!(!out.exists(), "nothing of the window is written");
     }
 
@@ -950,12 +1079,9 @@ mod tests {
         };
         drop(daemon);
         let out = dir.path().join(CORE);
-        let core = write_core(&captured, &scratch, &out, &[]).expect("the record is counted");
-        assert!(
-            core.over.is_some_and(|bytes| bytes > RECORD_LIMIT),
-            "{:?}",
-            core.over
-        );
+        let core =
+            write_core(&captured, &scratch, &out, &[], LIMIT).expect("the record is counted");
+        assert!(!core.kept && core.bytes > LIMIT, "{}", core.bytes);
         assert!(!out.exists(), "nothing of the record is written");
     }
 }

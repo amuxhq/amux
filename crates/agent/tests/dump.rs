@@ -59,6 +59,19 @@ fn dumps_without_its_secrets(kind: Kind) {
                 .is_some_and(|segments| !segments.is_empty()),
             "{record}"
         );
+        assert!(record.get("events_left_out").is_none(), "{record}");
+
+        // Asked with the room a nearly full report has left, it keeps its
+        // newest event and counts the rest left out.
+        let part = daemon.dump_within(b"d2", 1 << 10).await;
+        let cut: serde_json::Value =
+            serde_json::from_slice(&part.files[0].contents).expect("the record is JSON");
+        assert!(
+            cut["events_left_out"]
+                .as_u64()
+                .is_some_and(|left_out| left_out > 0),
+            "{cut}"
+        );
 
         daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);

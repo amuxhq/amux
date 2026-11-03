@@ -1077,6 +1077,72 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
     daemon.shutdown().await.unwrap();
 }
 
+/// A report is held to one limit: the record of what asked goes in first,
+/// and one that leaves no room puts the core's record out, counted.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_asking_agents_record_goes_first_and_what_finds_no_room_is_counted() {
+    let install = Install::new();
+    install.expect_core_dumps();
+    let mut asking = support::synthetic::SyntheticAgent::new(&install, "asking", 1 << 20);
+    asking.register(&install);
+    asking.go_live();
+    let daemon = install
+        .start("boot-1", support::synthetic::quiet_launch())
+        .await;
+    let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
+
+    // Bytes that do not compress, nearly the whole limit of them.
+    let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+    let record: Vec<u8> = (0..node::REPORT_LIMIT - (1 << 10))
+        .map(|_| {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (seed >> 56) as u8
+        })
+        .collect();
+    asking
+        .ask_for_dump(
+            "the agent core: one open ask at most",
+            "one open ask at most",
+            &record,
+        )
+        .await;
+    until("the bundle", || async {
+        (!install.core_dumps().is_empty())
+            .then_some(())
+            .ok_or("no bundle")
+    })
+    .await
+    .unwrap();
+    let bundle = std::fs::read_dir(install.data_dir.join(node::REPORTS))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.join(MANIFEST).is_file())
+        .unwrap();
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
+    let agent = bundle.join("agents").join(asking.id.to_string());
+    assert_eq!(
+        std::fs::read(agent.join(node::AGENT_RECORD)).unwrap(),
+        record
+    );
+    assert!(
+        !bundle.join("core").exists(),
+        "the core's record found no room"
+    );
+    let over = &manifest["core"]["over_limit"];
+    assert!(
+        over["bytes"].as_u64().unwrap() > over["room"].as_u64().unwrap(),
+        "{manifest:#}"
+    );
+    assert_eq!(manifest["left_out"], 1, "{manifest:#}");
+    assert_eq!(manifest["limit"], node::REPORT_LIMIT, "{manifest:#}");
+
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
 /// An agent's core times its steps against the budget its spec carries: a
 /// real agent process on the fake provider, under a budget of one
 /// microsecond (zero is the agent's own), soon takes a step over it, and

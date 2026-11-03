@@ -219,10 +219,11 @@ pub fn locate(named: &Path) -> Result<(PathBuf, Option<Arc<tempfile::TempDir>>),
 /// A person's report keeps its dump here, and sends it packed as this.
 const DUMP_DIR: &str = "dump";
 const ARCHIVE: &str = "dump.pb.zst";
-/// The most a packed dump unpacks to: far past any report's limits (each
-/// record 64 KiB compressed, each log 1 MiB), so only an archive that is
-/// not a report stops here.
-pub const UNPACKED_LIMIT: u64 = 256 << 20;
+/// The most a packed dump unpacks to. A report is at most 8 MiB packed,
+/// and its records, their text zero bytes of its length, pack many times
+/// smaller than they unpack; past this only an archive that is not a
+/// report reaches.
+pub const UNPACKED_LIMIT: u64 = 1 << 30;
 
 /// `packed` decompressed, or why not: an archive that unpacks past `limit`
 /// is refused before it is held whole.

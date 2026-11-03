@@ -694,7 +694,7 @@ impl<I: Interpreter> Driver<I> {
         tokio::spawn(async move {
             let (spec_kept, core_kept) = (spec.clone(), core.clone());
             let built =
-                tokio::task::spawn_blocking(move || crate::dump::build::<I>(&spec, core, facts))
+                tokio::task::spawn_blocking(move || crate::dump::build::<I>(&spec, core, facts, 0))
                     .await;
             let record = built_or_failed(built, &spec_kept, core_kept);
             let _ = done.send(Built {
@@ -728,12 +728,12 @@ impl<I: Interpreter> Driver<I> {
                     let _ = done.send((id, JobResult::Git(git)));
                 });
             }
-            AgentJob::DumpPart { dump_id } => {
+            AgentJob::DumpPart { dump_id, limit } => {
                 let dir = self.dir.clone();
                 let spec = self.spec.clone();
                 let core = self.agent.summary();
                 tokio::task::spawn_blocking(move || {
-                    let part = crate::dump::part::<I>(&dir, dump_id, &spec, core);
+                    let part = crate::dump::part::<I>(&dir, dump_id, &spec, core, limit);
                     let _ = done.send((id, JobResult::DumpPart(part)));
                 });
             }

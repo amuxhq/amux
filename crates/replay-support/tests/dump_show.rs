@@ -16,7 +16,7 @@ fn every_section_of_a_bundle_prints() {
     let dumped = support::healthy();
     let agent = dumped.agent();
     let manifest = dumped.manifest();
-    let path = dumped.path().join(format!("agents/{agent}/record"));
+    let path = dumped.path().join("agents").join(&agent).join("record");
     let record = std::fs::read_to_string(&path).unwrap();
     // Every event's skeleton makes a record longer than the printer shows
     // whole, so it names the file instead.

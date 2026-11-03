@@ -2206,12 +2206,19 @@ impl Transition<'_> {
         let mut out = Vec::new();
         let core = Agent::<Kind>::start(&spec, resumed, self.w.now_ms, &mut out);
         self.w.specs.insert(agent_id, Dbg(spec));
+        let named = self
+            .w
+            .processes
+            .iter()
+            .rev()
+            .find(|process| process.agent == agent_id)
+            .map_or(0, |process| process.provider.named());
         let p = self.w.processes.len();
         self.w.processes.push(Process {
             host: h,
             agent: agent_id,
             core: Some(Core(core.value())),
-            provider: Provider::start(),
+            provider: Provider::start(named),
             running: true,
             conn: None,
             conns: 0,

@@ -3,10 +3,13 @@
 //! pairing window and sign-in offers, run as tasks whose answers come back
 //! as [`DeskEvent`]s. The screens decide; this only carries.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use client::Installation;
 use futures_util::StreamExt as _;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::AbortHandle;
 use ui_view::SetupStep;
 use wire::answer_onboarding_request::Answer;
@@ -68,6 +71,38 @@ pub struct Desk {
     pub(super) page: Option<SettingsScreen>,
     sign_in: Option<AbortHandle>,
     pairing_watch: Option<AbortHandle>,
+    /// Opening and closing the pairing window, one call after another.
+    pairing_calls: InOrder,
+}
+
+type Call = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+/// Runs calls one after another, each finished before the next starts, in
+/// the order they were handed over. Opening the pairing window and closing
+/// it go through one of these: as independent tasks a close made while the
+/// open was still on its way could land first, leaving a window open that
+/// nothing on screen shows or follows, and that refuses the next one until
+/// it ends.
+#[derive(Default)]
+pub(super) struct InOrder {
+    calls: Option<mpsc::UnboundedSender<Call>>,
+}
+
+impl InOrder {
+    /// Queues `call` after every call handed over before it; the task that
+    /// runs them starts with the first.
+    pub(super) fn run(&mut self, call: impl Future<Output = ()> + Send + 'static) {
+        let calls = self.calls.get_or_insert_with(|| {
+            let (calls, mut queued) = mpsc::unbounded_channel::<Call>();
+            tokio::spawn(async move {
+                while let Some(call) = queued.recv().await {
+                    call.await;
+                }
+            });
+            calls
+        });
+        let _ = calls.send(Box::pin(call));
+    }
 }
 
 impl Desk {
@@ -82,6 +117,7 @@ impl Desk {
             page: None,
             sign_in: None,
             pairing_watch: None,
+            pairing_calls: InOrder::default(),
         }
     }
 
@@ -470,6 +506,7 @@ impl App {
             .map(Onboarding::close)
             .unwrap_or_default()
             .contains(&SetupEffect::ClosePairing);
+        let mut closed = None;
         if let Some(desk) = &mut self.desk {
             if let Some(watch) = desk.pairing_watch.take() {
                 watch.abort();
@@ -477,11 +514,21 @@ impl App {
             if let Some(sign_in) = desk.sign_in.take() {
                 sign_in.abort();
             }
-        }
-        let client = self.client.clone();
-        async move {
             if close {
-                let _ = client.cancel_pairing().await;
+                // After any opening still on its way, so the window it
+                // opens is the one closed.
+                let (done, finished) = oneshot::channel();
+                let client = self.client.clone();
+                desk.pairing_calls.run(async move {
+                    let _ = client.cancel_pairing().await;
+                    let _ = done.send(());
+                });
+                closed = Some(finished);
+            }
+        }
+        async move {
+            if let Some(closed) = closed {
+                let _ = closed.await;
             }
         }
     }
@@ -647,7 +694,7 @@ impl App {
                     .onboarding
                     .as_ref()
                     .is_some_and(Onboarding::holds_window);
-                tokio::spawn(async move {
+                desk.pairing_calls.run(async move {
                     if renewing {
                         let _ = client.cancel_pairing().await;
                     }
@@ -667,7 +714,7 @@ impl App {
                 if let Some(watch) = desk.pairing_watch.take() {
                     watch.abort();
                 }
-                tokio::spawn(async move {
+                desk.pairing_calls.run(async move {
                     let _ = client.cancel_pairing().await;
                 });
             }
@@ -810,5 +857,37 @@ fn pairing_words(error: &client::RpcError) -> String {
         "pairing is open in another terminal (amux pair); close it there".to_owned()
     } else {
         error.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    /// A close handed over while an open is still waiting on the daemon
+    /// runs after the open, not before it.
+    #[tokio::test]
+    async fn a_close_waits_for_the_open_before_it() {
+        let done = Arc::new(Mutex::new(Vec::new()));
+        let (answer, answered) = oneshot::channel::<()>();
+        let mut calls = InOrder::default();
+        let opened = done.clone();
+        calls.run(async move {
+            let _ = answered.await;
+            opened.lock().unwrap().push("open");
+        });
+        let (closing, closed) = oneshot::channel();
+        let closer = done.clone();
+        calls.run(async move {
+            closer.lock().unwrap().push("close");
+            let _ = closing.send(());
+        });
+        tokio::task::yield_now().await;
+        assert!(done.lock().unwrap().is_empty(), "the close waits");
+        answer.send(()).unwrap();
+        closed.await.unwrap();
+        assert_eq!(*done.lock().unwrap(), ["open", "close"]);
     }
 }

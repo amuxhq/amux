@@ -231,6 +231,19 @@ fn paired_it_asks_to_keep_the_machine_connected_and_applies_both_choices() {
     assert!(!drawn.contains("Start amux when you log in"), "{drawn}");
 }
 
+/// A window that opens only after the pairing screen was left belongs to
+/// no screen: the close queued after it ends it, and nothing shows or
+/// renews it.
+#[test]
+fn a_window_opened_after_the_screen_was_left_is_not_kept() {
+    let mut scene = scenes::pair();
+    press(&mut scene, KeyCode::Esc);
+    assert_eq!(scene.onboarding.step, SetupStep::KeepReachable);
+    scene.onboarding.pairing_opened(scenes::window(), 1_800_000_000_000);
+    assert!(!scene.onboarding.holds_window());
+    assert_eq!(scene.onboarding.renew_at(), None);
+}
+
 #[test]
 fn later_skips_each_step_in_turn_and_the_last_goes_home() {
     let mut scene = scenes::pair();

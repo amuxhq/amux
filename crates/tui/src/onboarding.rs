@@ -420,7 +420,13 @@ impl Onboarding {
         }
     }
 
+    /// A window opened for the pairing screen; one that answers after the
+    /// screen was left is closed by the close queued after it, and is not
+    /// this screen's to show or renew.
     pub fn pairing_opened(&mut self, window: wire::PairingWindow, now_ms: i64) {
+        if self.step != SetupStep::PairPhone {
+            return;
+        }
         let codes = Code::encode(&window.qr_link).map(|whole| {
             let page = page_of(&window.qr_link).and_then(Code::encode);
             (whole, page)

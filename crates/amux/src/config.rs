@@ -277,7 +277,7 @@ mod tests {
         set(&path, "agent.grace_secs", "60").unwrap();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
-            "channel = \"stable\"\n[agent]\ngrace_secs = 60\n"
+            "channel = \"stable\"\n\n[agent]\ngrace_secs = 60\n"
         );
     }
 

@@ -74,6 +74,9 @@ impl Default for EdgeOverrides {
 /// A client opening again within this long is the same visit.
 const CLIENT_OPENED_EVERY: Duration = Duration::from_secs(60 * 60);
 /// How long a flush as the app leaves the screen may take.
+/// The OAuth client the phone signs in as, the one its browser sign-in
+/// names too.
+pub const MOBILE_CLIENT_ID: &str = "mobile";
 const BACKGROUND_FLUSH: Duration = Duration::from_secs(3);
 
 /// What only the app sees, as the event it is sent as.
@@ -91,6 +94,13 @@ fn usage_event(event: UsageEvent) -> analytics::Event {
                 BillingInterval::Monthly => analytics::Interval::Monthly,
                 BillingInterval::Yearly => analytics::Interval::Yearly,
             },
+        },
+        UsageEvent::SignInOfferShown { role } => analytics::Event::SignInOffer {
+            role: match role {
+                app_runtime::values::OfferRole::Offerer => analytics::OfferRole::Offerer,
+                app_runtime::values::OfferRole::Receiver => analytics::OfferRole::Receiver,
+            },
+            outcome: analytics::OfferOutcome::Shown,
         },
     }
 }
@@ -188,6 +198,9 @@ impl EmbeddedRuntime {
             cloud: overrides.cloud,
             interfaces: None,
             liveness: Default::default(),
+            // A ticket a paired computer hands the phone signs it in as the
+            // phone's own client, as its browser sign-in does.
+            sign_in_client: MOBILE_CLIENT_ID.to_owned(),
         };
         let telemetry = Arc::new(AtomicBool::new(config.telemetry));
         let auto_reports = Arc::new(AtomicBool::new(config.auto_reports));

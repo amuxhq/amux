@@ -1235,6 +1235,10 @@ pub struct SignInOfferMade {
     pub email: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub account_name: ::prost::alloc::string::String,
+    /// The account service the account is at, which the peer redeems the
+    /// ticket with: a peer that was never signed in knows none.
+    #[prost(string, tag = "3")]
+    pub cloud_url: ::prost::alloc::string::String,
 }
 impl ::prost::Name for SignInOfferMade {
     const NAME: &'static str = "SignInOfferMade";

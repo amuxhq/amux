@@ -515,6 +515,21 @@ to one. The complete control vocabulary is:
   token, because another link of the same account has just presented a paid
   one. The host fetches one and sends it as `Reauth`, as its own refresh
   would; nothing else answers it.
+- `SignInOfferMade`, `SignInOfferAnswer` and `SignInTicket`: one-tap sign-in
+  between paired hosts, only ever on a link between the two. A signed-in host
+  whose person offered a peer its account (`ProfileAdminService.OfferSignIn`)
+  keeps that offer in memory until the peer answers it, signs in, or is
+  unpaired, and sends `SignInOfferMade` (the account's email and name, and
+  the account service it is at) on each link to the peer whose handshake says
+  the peer is signed out (`Host.account_signed_in`). The peer shows it to its
+  clients (`SubscribeSignInOffers`) while it is signed out; its person answers
+  with `AnswerSignInOffer`, which sends `SignInOfferAnswer`. Declining ends the
+  offer. Accepting makes the offerer ask the account service for a one-time
+  ticket bound to the peer's host id (`POST /api/sign-in-tickets`) and answer
+  `SignInTicket` with it, or with the status of why it could not; the peer
+  redeems the ticket at once under its own sign-in client and binds the
+  profile the offer reached. An acceptance with no offer standing is answered
+  with `FAILED_PRECONDITION`.
 - `LinkClose`: an immediate close with a reason and optional error.
 
 After the handshake a receiver ignores a control message it does not know,
@@ -785,7 +800,11 @@ silently: `BindProfile` refuses with `FAILED_PRECONDITION` and keeps the login
 a while, so binding again with the same token and `adopt_non_pristine` needs
 no second login; `SignIn` sends an `adopt` event and waits for
 `AnswerSignIn`. Closing the `SignIn` stream abandons it. `RefreshProfile`
-reads the account again now, as after a purchase. The rules behind these calls are `node::Registry`'s; the front
+reads the account again now, as after a purchase. `WebSignInLink` answers a
+one-time link (from `POST /api/web-sign-in-links`) that signs a browser in to
+a signed-in profile's account and opens a page of its account service, such
+as the after-sign-in offer page (`/offer`); a path that is not that
+service's own is refused. The rules behind these calls are `node::Registry`'s; the front
 door (`crates/node/src/front_door.rs`) converts.
 
 `ProfileAdminService`, on each profile's own socket, is that profile's
@@ -794,6 +813,9 @@ out (`SignOut`); opens, reports and cancels pairing
 windows (`StartPairing`, `GetPairingStatus`, `WatchPairing`,
 `CancelPairing`); runs the
 initiator's side of pairing (`BeginPair`, `ConfirmPair`, `AbandonPair`);
+offers a paired host the profile's account and answers the offers paired
+hosts made it (`OfferSignIn`, `SubscribeSignInOffers`, `AnswerSignInOffer`,
+[link control](#link-control));
 reports this device's identity; records a peer an SSH exchange
 authenticated (`TrustSshPeer`); lists and unpairs peers; and
 writes the profile's debug report and sends a person's report (`Dump`,

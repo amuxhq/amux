@@ -58,6 +58,7 @@ mod window;
 mod worktree;
 
 pub use activation::{ActivationError, ActivationPipe, InheritedPipe, PIPE_ENV, PREPARED};
+pub use auth::oauth::CLI_CLIENT_ID;
 pub use blobs::{BlobError, PATCH_MIME};
 pub use daemon::{Daemon, STOP_TARGET, StartError, StartOptions, start};
 pub use daemon_core::names::word_pairs;

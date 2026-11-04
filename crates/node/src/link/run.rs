@@ -814,6 +814,15 @@ async fn run_established(
     }
 
     signal_establishment(ctx.take_established_tx(), Ok(peer_host.clone()));
+    if link_role == LinkRole::Peer
+        && let Some(core) = ctx.links.core()
+    {
+        core.sign_in_link_up(
+            peer_host.id,
+            peer_host.signed_in == Some(true),
+            out_tx.clone(),
+        );
+    }
 
     let mut acceptor_auth = ctx.acceptor_session.clone();
     let mut connector_auth = ctx.connector_auth.clone();
@@ -1149,14 +1158,21 @@ async fn handle_control_body(
             ctx.report_frame(link, wire::message::Body::ForwardRefused(refused));
             ControlAction::Continue
         }
-        // The core keeps what a peer lists and what the relay sees, and the
-        // sign-in offers paired peers make each other.
-        body @ (wire::message::Body::Addresses(_)
-        | wire::message::Body::ObservedAddress(_)
-        | wire::message::Body::SignInOffer(_)
+        // The core keeps what a peer lists and what the relay sees.
+        body @ (wire::message::Body::Addresses(_) | wire::message::Body::ObservedAddress(_)) => {
+            ctx.report_frame(link, body);
+            ControlAction::Continue
+        }
+        // The profile's edge keeps the sign-in offers paired peers make
+        // each other: they move accounts, not routes.
+        body @ (wire::message::Body::SignInOffer(_)
         | wire::message::Body::SignInAnswer(_)
         | wire::message::Body::SignInTicket(_)) => {
-            ctx.report_frame(link, body);
+            if ctx.link_role == LinkRole::Peer
+                && let Some(core) = ctx.links.core()
+            {
+                core.sign_in_frame(link.peer(), body);
+            }
             ControlAction::Continue
         }
         // The handshake is one exchange; a repeat is a protocol error.

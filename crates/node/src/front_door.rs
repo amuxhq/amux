@@ -259,9 +259,12 @@ impl InstallationService for FrontDoor {
 
     async fn web_sign_in_link(
         &self,
-        _request: Request<wire::WebSignInLinkRequest>,
+        request: Request<wire::WebSignInLinkRequest>,
     ) -> Result<Response<wire::WebSignInLinkResponse>, Status> {
-        Err(Status::unimplemented("web sign-in links"))
+        let request = request.into_inner();
+        let edge = self.registry.edge(profile_id(&request.profile_id)?)?;
+        let url = edge.web_sign_in_link(&request.path).await?;
+        Ok(Response::new(wire::WebSignInLinkResponse { url }))
     }
 
     async fn subscribe_profiles(

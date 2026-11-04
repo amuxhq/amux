@@ -4472,6 +4472,14 @@ public enum NewAgentPick: Codable, Hashable, Sendable {
     }
 }
 
+/// Which side of a one-tap sign-in this device is.
+public enum OfferRole: String, Codable, Hashable, Sendable, CaseIterable {
+    /// Signed in, offering a paired device its account.
+    case offerer = "offerer"
+    /// Signed out, offered a paired device's account.
+    case receiver = "receiver"
+}
+
 /// A command or skill the provider offers this session, typed as a prompt
 /// that starts with a slash.
 public struct OfferedCommand: Codable, Hashable, Sendable {
@@ -6525,6 +6533,49 @@ public struct SettingsView: Codable, Hashable, Sendable {
     }
 }
 
+/// The person's answer to a paired machine's offer of its account.
+public struct SignInAnswer: Codable, Hashable, Sendable {
+    /// The machine that offered.
+    public var hostId: [UInt8]
+    /// Accepting signs this device's profile in to the account; declining
+    /// ends the offer.
+    public var accept: Bool
+
+    public init(hostId: [UInt8], accept: Bool) {
+        self.hostId = hostId
+        self.accept = accept
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case hostId = "host_id"
+        case accept
+    }
+}
+
+/// A paired machine's offer of its account to this device's profile: shown
+/// with the account's email, so the person knows whose account it is.
+public struct SignInOfferView: Codable, Hashable, Sendable {
+    /// The machine that offered.
+    public var hostId: [UInt8]
+    public var hostName: String
+    public var email: String
+    public var accountName: String
+
+    public init(hostId: [UInt8], hostName: String, email: String, accountName: String) {
+        self.hostId = hostId
+        self.hostName = hostName
+        self.email = email
+        self.accountName = accountName
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case hostId = "host_id"
+        case hostName = "host_name"
+        case email
+        case accountName = "account_name"
+    }
+}
+
 public enum SignInState: String, Codable, Hashable, Sendable, CaseIterable {
     case unknown = "Unknown"
     case signedIn = "SignedIn"
@@ -6809,10 +6860,15 @@ public enum UsageEvent: Codable, Hashable, Sendable {
     case paywallViewed(from: PaywallFrom)
     /// A purchase began with the App Store.
     case purchaseStarted(interval: BillingInterval)
+    /// A one-tap sign-in offer was put in front of the person: on the
+    /// signed-out side the offer itself, on the signed-in side the choice
+    /// to offer a paired device the account.
+    case signInOfferShown(role: OfferRole)
 
     private enum Tag: String, CodingKey {
         case paywallViewed = "PaywallViewed"
         case purchaseStarted = "PurchaseStarted"
+        case signInOfferShown = "SignInOfferShown"
     }
 
     private enum PaywallViewedKeys: String, CodingKey {
@@ -6821,6 +6877,10 @@ public enum UsageEvent: Codable, Hashable, Sendable {
 
     private enum PurchaseStartedKeys: String, CodingKey {
         case interval
+    }
+
+    private enum SignInOfferShownKeys: String, CodingKey {
+        case role
     }
 
     public init(from decoder: any Decoder) throws {
@@ -6842,6 +6902,11 @@ public enum UsageEvent: Codable, Hashable, Sendable {
                 keyedBy: PurchaseStartedKeys.self, forKey: .purchaseStarted)
             self = .purchaseStarted(
                 interval: try _fields.decode(BillingInterval.self, forKey: .interval))
+        case .signInOfferShown:
+            let _fields = try _container.nestedContainer(
+                keyedBy: SignInOfferShownKeys.self, forKey: .signInOfferShown)
+            self = .signInOfferShown(
+                role: try _fields.decode(OfferRole.self, forKey: .role))
         }
     }
 
@@ -6855,6 +6920,10 @@ public enum UsageEvent: Codable, Hashable, Sendable {
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: PurchaseStartedKeys.self, forKey: .purchaseStarted)
             try _fields.encode(interval, forKey: .interval)
+        case .signInOfferShown(let role):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: SignInOfferShownKeys.self, forKey: .signInOfferShown)
+            try _fields.encode(role, forKey: .role)
         }
     }
 }

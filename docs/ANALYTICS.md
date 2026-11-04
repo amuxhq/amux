@@ -92,8 +92,9 @@ a field for free text.
 | `pairing_started` | This machine shows a pairing code, or enters one. | `role`: `offerer` (showed the code) or `joiner` (entered it); `method`: `pin`, `qr` or `ssh` (a window showing both a PIN and a QR code counts as `pin`; the pairing's success or failure says which was used). |
 | `pairing_succeeded` | A pairing finished and each machine trusts the other. | `role`, `method`, and `remote_host`: the machine paired with. |
 | `pairing_failed` | A pairing did not finish. | `role`, `method`, and `reason`: `wrong_secret`, `no_window`, `unreachable`, `timed_out`, `abandoned`, `self_pairing` or `other`. |
-| `signed_in` | A profile signs in to an amux.sh account. | — |
+| `signed_in` | A profile signs in to an amux.sh account. | `via`: `browser` (the account service's pages, from this device) or `paired_device` (it accepted a paired device's offer of its account). |
 | `sign_in_failed` | Signing a profile in did not work. | `reason`: `rejected`, `unreachable`, `account_elsewhere`, `profile_conflict` or `other`. |
+| `sign_in_offer` | A signed-in device offered a paired one its account, and the offer was shown, accepted or dismissed. | `role`: `offerer` (the signed-in side) or `receiver` (the side offered the account); `outcome`: `shown` (a client put it in front of its person), `accepted` or `dismissed`. |
 | `signed_out` | A profile signs out. | — |
 | `relay_refused` | The relay refused to carry traffic because the account is on the free tier; at most once an hour. | — |
 | `paywall_viewed` | The iPhone app's subscription page opens. | `from`: the tab it was opened from, `agents`, `hosts` or `you`. |

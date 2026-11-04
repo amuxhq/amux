@@ -195,6 +195,7 @@ fn edge_options(config: &InstallationConfig) -> node::EdgeOptions {
         cloud: node::CloudOptions::default(),
         interfaces: node::test_interfaces(),
         liveness: Default::default(),
+        sign_in_client: node::CLI_CLIENT_ID.to_owned(),
     }
 }
 

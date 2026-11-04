@@ -1891,6 +1891,7 @@ impl Net {
             // a network change either.
             interfaces: Some(Vec::new()),
             liveness: Default::default(),
+            sign_in_client: node::CLI_CLIENT_ID.to_owned(),
         };
         if let Some(relay) = &self.relay {
             edge.cloud = relay.cloud_options(&self.udp[name]);

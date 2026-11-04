@@ -18,8 +18,10 @@ mod cloud;
 pub(crate) mod first_flight;
 mod peer;
 mod relay_server;
+pub(crate) mod sign_in_offers;
 mod status;
 pub mod token;
+mod web_sign_in;
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -108,6 +110,9 @@ pub struct EdgeOptions {
     pub interfaces: Option<Vec<std::net::IpAddr>>,
     /// How this host's links notice a silent peer.
     pub liveness: crate::identity::LinkLiveness,
+    /// The OAuth client a sign-in ticket a paired host hands this device is
+    /// redeemed under: the daemon's own, or the phone's.
+    pub sign_in_client: String,
 }
 
 pub type DiscoveryFactory = Arc<dyn Fn() -> Result<Arc<dyn Discovery>, String> + Send + Sync>;
@@ -170,6 +175,7 @@ impl Default for EdgeOptions {
             cloud: CloudOptions::default(),
             interfaces: None,
             liveness: Default::default(),
+            sign_in_client: crate::auth::oauth::CLI_CLIENT_ID.to_owned(),
         }
     }
 }
@@ -286,6 +292,11 @@ pub struct Edge {
     discovery: Arc<dyn Discovery>,
     /// What this host advertises on the local network, when it does.
     advert: Arc<Mutex<Option<Advertisement>>>,
+    /// The one-tap sign-in offers this profile made and was made.
+    sign_in_offers: sign_in_offers::SignInOffers,
+    /// The OAuth client this device signs in as when it redeems a ticket a
+    /// paired host offered it.
+    sign_in_client: String,
     found: Arc<FoundHosts>,
     scope: String,
     lan_addr: Option<SocketAddr>,
@@ -521,6 +532,8 @@ impl Edge {
             reachability,
             discovery,
             advert: Arc::new(Mutex::new(advert)),
+            sign_in_offers: sign_in_offers::SignInOffers::default(),
+            sign_in_client: options.sign_in_client.clone(),
             found,
             scope: options.discovery_scope.clone(),
             lan_addr,

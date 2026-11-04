@@ -241,6 +241,41 @@ pub async fn refresh_access_token(
     Ok((access_token, tokens.refresh_token))
 }
 
+/// The grant that trades a one-time sign-in ticket, which a paired host
+/// signed in to the account minted for this host, for this host's own
+/// tokens.
+const SIGN_IN_TICKET_GRANT: &str = "urn:amux:sign-in-ticket";
+
+/// Redeems a sign-in ticket minted for `host_id` (lowercase hex) as
+/// `client_id`, for the refresh token that signs this host in under its own
+/// client. The service refuses a used, expired or other host's ticket
+/// with `invalid_grant`.
+pub async fn redeem_sign_in_ticket(
+    cloud_url: &str,
+    client_id: &str,
+    ticket: &str,
+    host_id: &str,
+) -> Result<String, OAuthError> {
+    let http = http_client()?;
+    let tokens: TokenResponse = match post(
+        &http,
+        &format!("{}/connect/token", cloud_url.trim_end_matches('/')),
+        &[
+            ("grant_type", SIGN_IN_TICKET_GRANT),
+            ("ticket", ticket),
+            ("host_id", host_id),
+            ("client_id", client_id),
+            ("scope", DEVICE_SCOPES),
+        ],
+    )
+    .await?
+    {
+        Answer::Ok(tokens) => tokens,
+        Answer::Refused(error) => return Err(refused(&error)),
+    };
+    tokens.refresh_token.ok_or(OAuthError::NoRefreshToken)
+}
+
 /// Tells the cloud a refresh token is no longer wanted, so a copy taken
 /// before a sign-out stops working. The service answers success for a
 /// token it no longer knows, so only a refusal or no answer is an error.

@@ -145,6 +145,35 @@ pub trait Client: Send + Sync + 'static {
     async fn sign_out(&self) -> Result<(), RpcError>;
     /// This profile's identity as its peers pin it.
     async fn get_device_identity(&self) -> Result<wire::DeviceIdentity, RpcError>;
+    /// The profile's pairing window, now and on every change.
+    async fn watch_pairing(&self) -> Result<EventStream<wire::PairingStatus>, RpcError> {
+        Err(not_served("watch_pairing"))
+    }
+    /// Offers the paired host `host_id` this profile's account.
+    async fn offer_sign_in(&self, host_id: Vec<u8>) -> Result<(), RpcError> {
+        let _ = host_id;
+        Err(not_served("offer_sign_in"))
+    }
+    /// The offers paired hosts made this profile, now and on every change.
+    async fn subscribe_sign_in_offers(&self) -> Result<EventStream<wire::SignInOffers>, RpcError> {
+        Err(not_served("subscribe_sign_in_offers"))
+    }
+    /// Accepts an offer, which signs this profile in, or dismisses it.
+    async fn answer_sign_in_offer(
+        &self,
+        request: wire::AnswerSignInOfferRequest,
+    ) -> Result<wire::Profile, RpcError> {
+        let _ = request;
+        Err(not_served("answer_sign_in_offer"))
+    }
+}
+
+/// A call an implementation does not serve, as the runtime would refuse it.
+fn not_served(call: &str) -> RpcError {
+    RpcError::Refused(wire::Error::new(
+        ErrorCode::Unimplemented,
+        format!("{call} is not served here"),
+    ))
 }
 
 /// One implementation of [`Client`] per way of reaching the services:
@@ -271,6 +300,30 @@ macro_rules! client_impl {
 
             async fn get_device_identity(&self) -> Result<wire::DeviceIdentity, RpcError> {
                 Ok($call!(self, admin, get_device_identity, wire::Empty {}).await?.into_inner())
+            }
+
+            async fn watch_pairing(&self) -> Result<EventStream<wire::PairingStatus>, RpcError> {
+                Ok(events($call!(self, admin, watch_pairing, wire::Empty {}).await?.into_inner()))
+            }
+
+            async fn offer_sign_in(&self, host_id: Vec<u8>) -> Result<(), RpcError> {
+                $call!(self, admin, offer_sign_in, wire::OfferSignInRequest { host_id }).await?;
+                Ok(())
+            }
+
+            async fn subscribe_sign_in_offers(
+                &self,
+            ) -> Result<EventStream<wire::SignInOffers>, RpcError> {
+                Ok(events(
+                    $call!(self, admin, subscribe_sign_in_offers, wire::Empty {}).await?.into_inner(),
+                ))
+            }
+
+            async fn answer_sign_in_offer(
+                &self,
+                request: wire::AnswerSignInOfferRequest,
+            ) -> Result<wire::Profile, RpcError> {
+                Ok($call!(self, admin, answer_sign_in_offer, request).await?.into_inner())
             }
         }
     };

@@ -608,6 +608,7 @@ impl Edge {
             other => return Err(Status::internal(format!("the core unpaired {other:?}"))),
         };
         self.connections.close_host_access(host).await;
+        self.forget_sign_in_offers(host);
         Ok(peer_entry_to_wire(host, &removed))
     }
 
@@ -620,12 +621,14 @@ impl Edge {
     ) -> std::io::Result<()> {
         self.stop_cloud().await;
         self.account.bind(record, access).await?;
+        self.account_moved_for_offers();
         self.start_cloud().await;
         Ok(())
     }
 
     pub(crate) async fn sign_out(&self) -> std::io::Result<()> {
         self.account.sign_out().await?;
+        self.account_moved_for_offers();
         self.stop_cloud().await;
         Ok(())
     }

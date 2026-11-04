@@ -26,8 +26,8 @@ pub use context::{
 };
 pub use event::{
     Ask, By, CheckCause, CheckCore, CheckId, CheckIn, Client, Counts, Event, Interval, Kind,
-    Method, On, PairingFailure, PaywallFrom, Recorded, RelayCarrier, Role, Route, SignInFailure,
-    Tier, Token,
+    Method, OfferOutcome, OfferRole, On, PairingFailure, PaywallFrom, Recorded, RelayCarrier, Role,
+    Route, SignInFailure, SignInVia, Tier, Token,
 };
 pub use upload::{
     Accounts, Flusher, Gate, Http, MAX_EVENTS_PER_REQUEST, Params, Posted, Transport, Upload,
@@ -223,7 +223,7 @@ mod tests {
                 "pairing_failed",
                 json!({"role": "offerer", "method": "pin", "reason": "wrong_secret"}),
             ),
-            ("signed_in", json!({})),
+            ("signed_in", json!({"via": "paired_device"})),
             ("sign_in_failed", json!({"reason": "rejected"})),
             ("signed_out", json!({})),
             ("relay_refused", json!({})),
@@ -232,6 +232,10 @@ mod tests {
             (
                 "check_failed",
                 json!({"core": "daemon", "check": "daemon.generation_fell", "cause": "invariant", "held_back": 3}),
+            ),
+            (
+                "sign_in_offer",
+                json!({"role": "receiver", "outcome": "accepted"}),
             ),
         ];
         assert_eq!(examples, expected);

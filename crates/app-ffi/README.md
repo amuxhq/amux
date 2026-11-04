@@ -50,8 +50,11 @@ queue it steps on. A step answers JSON: `profiles` (every profile as
 `[ProfileView]`, oldest first, when the list moved: once the registry is read
 after the start, and before the answer of any act that moved it), `fleets`
 and `chats` (each the fleet's number and a `FleetDelta` or `ChatDelta`: what
-moved in that view, see below) and `answers` (each an act's ticket and its
-result as JSON text, after the deltas of what the act moved).
+moved in that view, see below), `sign_in_offers` (each an open profile's fleet
+number and every `SignInOfferView` it holds now, when they moved: a paired
+machine's offer of its account, shown with the account's email) and `answers`
+(each an act's ticket and its result as JSON text, after the deltas of what
+the act moved).
 
 `amux_runtime_start` takes a `StartConfig` and blocks until every profile's
 store is open. A desktop app hosts nothing: `amux_install` takes
@@ -174,7 +177,11 @@ host with no agent running, for the new-agent screen),
 `amux_profile_begin_pair` (a PIN or a pairing
 link: reaches and authenticates the machine, answering its name and
 fingerprint), `amux_profile_confirm_pair` and `amux_profile_abandon_pair`
-(the person's decision), `amux_profile_unpair`, `amux_profile_roster` (this
+(the person's decision), `amux_profile_offer_sign_in` (offers a paired
+machine, by host id, this profile's account) and
+`amux_profile_answer_sign_in_offer` (a `SignInAnswer`: accepting signs the
+profile in to the offered account and answers its `ProfileView`; declining
+ends the offer), `amux_profile_unpair`, `amux_profile_roster` (this
 device's identity in the profile and the machines it trusts),
 `amux_profile_create_agent`, `amux_profile_directories`,
 `amux_profile_agent_act` (rename, stop, delete), `amux_profile_dump` (the one dump, saved or sent) and

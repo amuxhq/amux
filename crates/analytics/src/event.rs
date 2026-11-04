@@ -113,6 +113,37 @@ tokens! {
 }
 
 tokens! {
+    /// How a profile came to sign in.
+    SignInVia {
+        /// Through the account service's own pages, in a browser.
+        Browser => "browser",
+        /// A paired device signed in to the account offered it, and this
+        /// profile accepted.
+        PairedDevice => "paired_device",
+    }
+}
+
+tokens! {
+    /// Which side of a one-tap sign-in this profile was.
+    OfferRole {
+        /// Signed in, it offered a paired device its account.
+        Offerer => "offerer",
+        /// Signed out, it was offered a paired device's account.
+        Receiver => "receiver",
+    }
+}
+
+tokens! {
+    /// What became of a one-tap sign-in offer.
+    OfferOutcome {
+        /// A client put the offer in front of its person.
+        Shown => "shown",
+        Accepted => "accepted",
+        Dismissed => "dismissed",
+    }
+}
+
+tokens! {
     /// Why binding a profile to an account failed, as a code.
     SignInFailure {
         /// The account service refused the login's token.
@@ -339,11 +370,18 @@ pub enum Event {
         method: Method,
         reason: PairingFailure,
     },
-    SignedIn,
+    SignedIn {
+        via: SignInVia,
+    },
     SignInFailed {
         reason: SignInFailure,
     },
     SignedOut,
+    /// A one-tap sign-in offer between paired devices moved.
+    SignInOffer {
+        role: OfferRole,
+        outcome: OfferOutcome,
+    },
     /// The relay refused to carry traffic for the account's tier.
     RelayRefused,
     /// The phone's subscription page opened.
@@ -367,7 +405,7 @@ pub enum Event {
 
 impl Event {
     /// How many variants there are; [`Event::ordinal`] numbers them.
-    pub const COUNT: usize = 19;
+    pub const COUNT: usize = 20;
 
     pub fn name(&self) -> &'static str {
         match self {
@@ -383,13 +421,14 @@ impl Event {
             Event::PairingStarted { .. } => "pairing_started",
             Event::PairingSucceeded { .. } => "pairing_succeeded",
             Event::PairingFailed { .. } => "pairing_failed",
-            Event::SignedIn => "signed_in",
+            Event::SignedIn { .. } => "signed_in",
             Event::SignInFailed { .. } => "sign_in_failed",
             Event::SignedOut => "signed_out",
             Event::RelayRefused => "relay_refused",
             Event::PaywallViewed { .. } => "paywall_viewed",
             Event::PurchaseStarted { .. } => "purchase_started",
             Event::CheckFailed { .. } => "check_failed",
+            Event::SignInOffer { .. } => "sign_in_offer",
         }
     }
 
@@ -410,13 +449,14 @@ impl Event {
             Event::PairingStarted { .. } => 9,
             Event::PairingSucceeded { .. } => 10,
             Event::PairingFailed { .. } => 11,
-            Event::SignedIn => 12,
+            Event::SignedIn { .. } => 12,
             Event::SignInFailed { .. } => 13,
             Event::SignedOut => 14,
             Event::RelayRefused => 15,
             Event::PaywallViewed { .. } => 16,
             Event::PurchaseStarted { .. } => 17,
             Event::CheckFailed { .. } => 18,
+            Event::SignInOffer { .. } => 19,
         }
     }
 
@@ -427,7 +467,12 @@ impl Event {
             out.insert(key.to_owned(), value);
         };
         match self {
-            Event::Installed | Event::SignedIn | Event::SignedOut | Event::RelayRefused => {}
+            Event::Installed | Event::SignedOut | Event::RelayRefused => {}
+            Event::SignedIn { via } => put("via", token(*via)),
+            Event::SignInOffer { role, outcome } => {
+                put("role", token(*role));
+                put("outcome", token(*outcome));
+            }
             Event::CheckedIn(check_in) => {
                 put("agents_running", check_in.agents_running.to_json());
                 put("agents_created_24h", check_in.agents_created_24h.to_json());
@@ -570,7 +615,9 @@ impl Event {
                 method: Method::Pin,
                 reason: PairingFailure::WrongSecret,
             },
-            Event::SignedIn,
+            Event::SignedIn {
+                via: SignInVia::PairedDevice,
+            },
             Event::SignInFailed {
                 reason: SignInFailure::Rejected,
             },
@@ -587,6 +634,10 @@ impl Event {
                 check: CheckId::new("daemon.generation_fell").expect("a check id"),
                 cause: CheckCause::Invariant,
                 held_back: 3,
+            },
+            Event::SignInOffer {
+                role: OfferRole::Receiver,
+                outcome: OfferOutcome::Accepted,
             },
         ]
     }

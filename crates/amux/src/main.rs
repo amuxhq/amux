@@ -310,7 +310,28 @@ enum Hook {
     Claude,
 }
 
+/// Clears the signal mask this process was started with. A process inherits
+/// its launcher's mask, and Rust's spawn keeps it, so amux started from a
+/// thread that blocks signals (a Grand Central Dispatch worker, which is
+/// where the Mac app installs and starts amux) would never hear SIGTERM or SIGINT: the
+/// supervisor could not stop its daemon, nor `amux server stop` either, and
+/// every agent and tool started below them would inherit the same deafness.
+#[cfg(unix)]
+fn unblock_signals() {
+    // SAFETY: an empty set built by sigemptyset, set before any thread is
+    // started.
+    unsafe {
+        let mut none = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+        libc::sigemptyset(none.as_mut_ptr());
+        libc::pthread_sigmask(libc::SIG_SETMASK, none.as_ptr(), std::ptr::null_mut());
+    }
+}
+
+#[cfg(not(unix))]
+fn unblock_signals() {}
+
 fn main() -> ExitCode {
+    unblock_signals();
     let cli = Cli::parse();
     let Some(command) = cli.command else {
         return report(open_ui(cli.config, cli.profile, cli.cloud_url));

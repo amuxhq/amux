@@ -1,6 +1,7 @@
 //! The CLI around the supervisor, driving the real binary: the login item
 //! `start_at_login` keeps, stop going to the owner in both install cells, a
-//! client starting the supervisor only where the install has one, the sleep
+//! client starting the supervisor only where the install has one, stop
+//! reaching an amux started with its stop signals blocked, the sleep
 //! assertion, `amux update` and `amux config channel`.
 
 #![cfg(unix)]
@@ -168,6 +169,40 @@ async fn stop_goes_to_the_supervisor_first_where_the_install_has_one() {
     )
     .await
     .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn stop_reaches_an_amux_started_with_its_stop_signals_blocked() {
+    use std::os::unix::process::CommandExt;
+
+    // The Mac app starts amux from a Grand Central Dispatch worker, which
+    // blocks signals, and a spawned process inherits its launcher's mask.
+    let install = Install::new(true, "");
+    let mut start = install.command(&["server", "start"]);
+    // SAFETY: sigemptyset, sigaddset and pthread_sigmask are
+    // async-signal-safe and touch only this child's own state.
+    unsafe {
+        start.pre_exec(|| {
+            let mut blocked = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+            libc::sigemptyset(blocked.as_mut_ptr());
+            libc::sigaddset(blocked.as_mut_ptr(), libc::SIGTERM);
+            libc::sigaddset(blocked.as_mut_ptr(), libc::SIGINT);
+            libc::pthread_sigmask(libc::SIG_BLOCK, blocked.as_ptr(), std::ptr::null_mut());
+            Ok(())
+        });
+    }
+    assert!(start.output().unwrap().status.success());
+    let supervisor = install
+        .supervisor_pid()
+        .expect("server start ran amux supervise");
+
+    let stopped = install.amux(&["server", "stop"]);
+    assert!(
+        stdout(&stopped).contains("Stopped amux supervise and its daemon."),
+        "{}",
+        stdout(&stopped)
+    );
+    until("the supervisor to exit", || !alive(supervisor)).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
